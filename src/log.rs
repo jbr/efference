@@ -5,6 +5,7 @@
 //! `Ambient`, and `Commit` payloads (and the model-driven distiller) arrive with
 //! the phases that exercise them — see DESIGN §7.
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Monotonic per-entry sequence number; the address space [`project`] reads over.
@@ -18,15 +19,15 @@ pub type Turn = u32;
 /// Wall-clock millis since the Unix epoch. **Log metadata only**: timestamps are
 /// never projected onto the wire, so their non-determinism cannot affect cache
 /// stability (DESIGN §3).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Timestamp(pub u64);
 
 /// An Anthropic tool-use id (`toolu_…`) and its matching `tool_result` id.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CallId(pub String);
 
 /// One immutable, ordered record in the log.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogEntry {
     pub seq: Seq,
     pub turn: Turn,
@@ -36,7 +37,7 @@ pub struct LogEntry {
 
 /// The content of a log entry. Immutable once appended; redaction never mutates
 /// a payload's `raw`, only flips a [`WireState`] (DESIGN §1).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Payload {
     /// Prose (and, later, richer blocks) authored by the user / operator.
     User(Vec<ContentBlock>),
@@ -55,7 +56,7 @@ pub enum Payload {
 }
 
 /// Phase 0 content is text-only; richer blocks (images, …) come later.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentBlock {
     Text(String),
 }
@@ -63,7 +64,7 @@ pub enum ContentBlock {
 /// A tool invocation emitted by the model. `input` is a [`serde_json::Value`],
 /// whose object maps serialize with sorted keys — deterministic, sidestepping
 /// the `HashMap`-key-order cache hazard (DESIGN §3).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: CallId,
     pub name: String,
@@ -72,7 +73,7 @@ pub struct ToolCall {
 
 /// The full, immutable result of a tool run. Survives in the log forever; never
 /// overwritten by redaction — that is what makes every redaction reversible.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RawResult {
     pub content: String,
     pub is_error: bool,
@@ -87,7 +88,7 @@ pub struct RawResult {
 /// would invalidate the byte-stability test.
 ///
 /// [`project`]: crate::project::project
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WireState {
     /// Project the full `raw` content.
     Raw,

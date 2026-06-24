@@ -27,6 +27,11 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 struct Request<'a> {
     model: &'a str,
     max_tokens: u32,
+    /// Tool definitions. Always sent (Phase 0 always has bash), so the request
+    /// never toggles the tools-cache tier (DESIGN §3). Their *content* must be
+    /// byte-stable — `Bash::definition()` builds them from a [`Value`], whose
+    /// keys serialize sorted, so it is.
+    tools: &'a [Value],
     messages: &'a [ApiMessage],
 }
 
@@ -120,10 +125,15 @@ impl Client {
     /// One non-streaming round-trip: serialize `messages`, POST, and parse the
     /// response into a [`Completion`]. Non-2xx responses return an error whose
     /// message includes the raw body.
-    pub async fn complete(&self, messages: &[ApiMessage]) -> Result<Completion, Error> {
+    pub async fn complete(
+        &self,
+        messages: &[ApiMessage],
+        tools: &[Value],
+    ) -> Result<Completion, Error> {
         let request = Request {
             model: &self.model,
             max_tokens: 1024,
+            tools,
             messages,
         };
         let body = serde_json::to_string(&request)?;

@@ -27,6 +27,17 @@ pub enum Role {
     Assistant,
 }
 
+/// A prompt-cache breakpoint marker (DESIGN §3). `ephemeral` is the 5-minute TTL.
+/// Serializes as `{"type":"ephemeral"}`. It rides on whichever content block it's
+/// attached to; [`place_trailing_cache_breakpoint`] puts exactly one at the wire
+/// tail each request, so the (stable) prefix before it is cache-read while only
+/// the small new tail is cache-written.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CacheControl {
+    Ephemeral,
+}
+
 /// A content block on the wire. `#[serde(tag = "type")]` renders the Anthropic
 /// discriminator (`"type":"text"` / `"tool_use"` / `"tool_result"`).
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -34,11 +45,15 @@ pub enum Role {
 pub enum ApiBlock {
     Text {
         text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
     },
     ToolUse {
         id: String,
         name: String,
         input: Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
     },
     ToolResult {
         tool_use_id: String,
@@ -47,7 +62,31 @@ pub enum ApiBlock {
         // wire (and thus the cache prefix) as lean as possible.
         #[serde(skip_serializing_if = "is_false")]
         is_error: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
     },
+}
+
+impl ApiBlock {
+    /// Set (or clear) this block's cache breakpoint, whatever its variant.
+    fn set_cache_control(&mut self, cc: Option<CacheControl>) {
+        match self {
+            ApiBlock::Text { cache_control, .. }
+            | ApiBlock::ToolUse { cache_control, .. }
+            | ApiBlock::ToolResult { cache_control, .. } => *cache_control = cc,
+        }
+    }
+}
+
+/// Place the single trailing cache breakpoint (DESIGN §3, Phase 0): mark the last
+/// block of the last message `ephemeral`. Kept out of [`project`] so projection
+/// stays a pure, byte-stable function (the breakpoint moves every request; the
+/// prefix it caches does not). Idempotent re-placement on an identical wire is
+/// byte-identical.
+pub fn place_trailing_cache_breakpoint(messages: &mut [ApiMessage]) {
+    if let Some(block) = messages.last_mut().and_then(|m| m.content.last_mut()) {
+        block.set_cache_control(Some(CacheControl::Ephemeral));
+    }
 }
 
 fn is_false(b: &bool) -> bool {
@@ -82,6 +121,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
                         id: call.id.0.clone(),
                         name: call.name.clone(),
                         input: call.input.clone(),
+                        cache_control: None,
                     });
                 }
                 messages.push(ApiMessage {
@@ -111,7 +151,10 @@ fn flush_tool_results(pending: &mut Vec<ApiBlock>, messages: &mut Vec<ApiMessage
 
 fn block_to_api(block: &ContentBlock) -> ApiBlock {
     match block {
-        ContentBlock::Text(text) => ApiBlock::Text { text: text.clone() },
+        ContentBlock::Text(text) => ApiBlock::Text {
+            text: text.clone(),
+            cache_control: None,
+        },
     }
 }
 
@@ -129,6 +172,7 @@ fn tool_result_block(call_id: &CallId, raw: &RawResult, wire: &WireState) -> Api
         tool_use_id: call_id.0.clone(),
         content,
         is_error,
+        cache_control: None,
     }
 }
 
@@ -325,5 +369,33 @@ mod tests {
         let wire = serde_json::to_string(&project(&log)).unwrap();
         assert!(wire.contains("just the gist"), "distillate must be projected");
         assert!(!wire.contains("ten thousand lines"), "raw must stay off the wire");
+    }
+
+    /// The trailing breakpoint marks exactly the last block as `ephemeral` and
+    /// nothing else — the cached prefix bytes are untouched, only the tail gains
+    /// the marker (DESIGN §3).
+    #[test]
+    fn trailing_cache_breakpoint_marks_only_the_last_block() {
+        let mut messages = project(&sample_log());
+        assert!(
+            !serde_json::to_string(&messages).unwrap().contains("cache_control"),
+            "pure projection carries no breakpoint"
+        );
+
+        place_trailing_cache_breakpoint(&mut messages);
+        let wire = serde_json::to_string(&messages).unwrap();
+        assert_eq!(wire.matches("cache_control").count(), 1, "exactly one breakpoint");
+        assert!(
+            wire.ends_with(r#""cache_control":{"type":"ephemeral"}}]}]"#),
+            "breakpoint sits on the final block: {wire}"
+        );
+    }
+
+    /// Placement on an empty wire is a no-op, not a panic.
+    #[test]
+    fn trailing_cache_breakpoint_on_empty_is_a_noop() {
+        let mut empty: Vec<ApiMessage> = Vec::new();
+        place_trailing_cache_breakpoint(&mut empty);
+        assert!(empty.is_empty());
     }
 }
