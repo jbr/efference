@@ -1,21 +1,45 @@
-//! Phase 0 binary — the agent loop entry point.
+//! The binary — the control-channel daemon entry point.
 //!
-//! Parses the first user turn from argv (a backgrounded run can't be fed over
-//! stdin, DESIGN §10), opens a JSONL session log, wires the live transport to
-//! the interactive frontend, and hands off to [`agent::run`]. Runs against Haiku
-//! to keep the blast radius cheap; DESIGN §8 locks `claude-opus-4-8` as the real
-//! default.
+//! `efference serve` opens a JSONL session log, binds the control socket, and runs
+//! the agent loop with the HTTP-fed [`RemoteFrontend`] (DESIGN §10 control-channel):
+//! the socket is the singular authoritative input source — the first user turn
+//! arrives via `POST /turn`, not argv. Runs against Haiku to keep the blast radius
+//! cheap; DESIGN §8 locks `claude-opus-4-8` as the real default.
+//!
+//! [`RemoteFrontend`]: efference::daemon::RemoteFrontend
 
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use efference::agent;
+use clap::{Parser, Subcommand};
 use efference::api::Client;
+use efference::daemon;
 use efference::distill::ForkPeek;
-use efference::frontend::Interactive;
 use efference::persist::Log;
 use efference::tools::Toolbox;
 
 const MODEL: &str = "claude-haiku-4-5";
+
+/// The default control-socket path, under the gitignored `.efference/`.
+const DEFAULT_SOCKET: &str = ".efference/control.sock";
+
+#[derive(Parser)]
+#[command(name = "efference", about = "An API-backed agentic coding harness.")]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Run the daemon: bind the control socket and drive the agent loop. Waits for
+    /// the first user turn over the socket (`POST /turn`).
+    Serve {
+        /// Path to the control socket.
+        #[arg(long, default_value = DEFAULT_SOCKET)]
+        socket: PathBuf,
+    },
+}
 
 /// The system preamble. Explains the curation model so the agent stops defending
 /// against context bloat the old way (DESIGN §4-realized) — the run that
@@ -48,33 +72,35 @@ Work one tool call at a time, using what each result taught you to choose the ne
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match Cli::parse().command {
+        Command::Serve { socket } => serve(socket).await,
+    }
+}
+
+async fn serve(socket: PathBuf) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| "ANTHROPIC_API_KEY is not set in the environment")?;
 
-    let prompt = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
-    if prompt.trim().is_empty() {
-        return Err("usage: efference <prompt>   (the first user turn)".into());
-    }
-
-    // One JSONL file per session under .efference/ (gitignored).
+    // One JSONL file per session under .efference/ (gitignored). The socket lives
+    // alongside it; clear any stale socket from a prior run before binding.
+    std::fs::create_dir_all(".efference")?;
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before Unix epoch")
         .as_millis();
-    std::fs::create_dir_all(".efference")?;
     let log_path = format!(".efference/session-{millis}.jsonl");
     let log = Log::create(&log_path)?;
     eprintln!("logging to {log_path}");
+    let _ = std::fs::remove_file(&socket); // ignore if absent.
 
     // Append the session environment block once, here at startup, and freeze it
-    // into the system prompt. It must stay byte-stable for the whole session or
-    // it would invalidate the cached prefix every turn (DESIGN §3) — so it carries
-    // only session-stable facts (cwd, platform, project type), never volatile
-    // state like git status. See `env::context`.
+    // into the system prompt. It must stay byte-stable for the whole session or it
+    // would invalidate the cached prefix every turn (DESIGN §3) — so it carries
+    // only session-stable facts (cwd, platform, project type), never volatile state
+    // like git status. See `env::context`.
     let system = format!("{SYSTEM}\n\n{}", efference::env::context());
 
     let client = Client::new(api_key, MODEL, system);
-    let mut frontend = Interactive::new()?;
 
     // The model-driven fork (DESIGN §4): every tool result is peeked and the
     // canonical wire keeps only what the model retains. `Toolbox` is the §5 tool
@@ -82,5 +108,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // their session cwd seeded to where we're running.
     let cwd = std::env::current_dir()?;
     let toolbox = Toolbox::bash_and_mcps(cwd)?;
-    agent::run(&client, &mut frontend, prompt, log, ForkPeek, toolbox).await
+    daemon::serve(client, toolbox, ForkPeek, log, socket).await
 }

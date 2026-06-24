@@ -13,6 +13,11 @@ mcplease = "0.2.3"
 anyhow = "1"
 tokio = { version = "1.52.3", features = ["macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 libc = "0.2.186"
-trillium-client = "0.9.7"
+clap = { version = "4", features = ["derive"] }
+# Core trillium types (Conn/Handler/Method) for the control-channel HTTP server.
+trillium = "1.3.0"
+trillium-client = { version = "0.9.7", features = ["sse"] }
 trillium-rustls = "0.11.3"
 trillium-tokio = "0.6.3"
+# StreamExt for consuming the SSE EventStream; already in-tree via trillium.
+futures-lite = "2.6.1"

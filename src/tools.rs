@@ -34,8 +34,11 @@ use crate::log::{RawResult, ToolCall};
 /// when integrated).
 pub enum Provider {
     Bash(Bash),
-    Fs(McpServer<FsTools, fs_mcp::Tools>),
-    SemanticEdit(McpServer<SemanticEditTools, semantic_edit_mcp::Tools>),
+    // The MCP servers are boxed: their session state makes them far larger than
+    // `Bash`, and an unboxed enum would size every `Provider` to the largest
+    // variant (clippy::large_enum_variant). Method calls auto-deref through the box.
+    Fs(Box<McpServer<FsTools, fs_mcp::Tools>>),
+    SemanticEdit(Box<McpServer<SemanticEditTools, semantic_edit_mcp::Tools>>),
 }
 
 impl Provider {
@@ -178,8 +181,10 @@ impl Toolbox {
     pub fn bash_and_mcps(cwd: PathBuf) -> anyhow::Result<Self> {
         Ok(Self::new(vec![
             Provider::Bash(Bash),
-            Provider::Fs(McpServer::from_state(FsTools::embedded(cwd.clone())?)),
-            Provider::SemanticEdit(McpServer::from_state(SemanticEditTools::embedded(cwd)?)),
+            Provider::Fs(Box::new(McpServer::from_state(FsTools::embedded(cwd.clone())?))),
+            Provider::SemanticEdit(Box::new(McpServer::from_state(SemanticEditTools::embedded(
+                cwd,
+            )?))),
         ]))
     }
 

@@ -1,20 +1,23 @@
-//! The agent loop — Phase 0's turn engine (DESIGN §7).
+//! The agent loop — the turn engine (DESIGN §7).
 //!
-//! Where the substrate, the transport, and the user meet. Seed a user turn, then
+//! Where the substrate, the transport, and the user meet. Read a user turn, then
 //! repeat `project → complete → append assistant → {approve, run, append result}`
-//! until the model stops calling tools, then read the next user turn (EOF quits).
+//! until the model stops calling tools, then read the next user turn.
 //!
-//! The first turn comes from **argv**, not stdin: a backgrounded run can't be fed
-//! its opening prompt over stdin (the same agent-usability constraint that gives
-//! us the SIGUSR1 approval channel, DESIGN §10). Subsequent turns come over the
-//! `Frontend`. The [`Log`] persists every entry to JSONL as it's appended.
+//! Every input — including the first turn — arrives over the `Frontend`, which is
+//! the daemon's HTTP-fed [`RemoteFrontend`] (DESIGN §10 control-channel): the
+//! control socket is the singular authoritative input source. The log lives in the
+//! shared daemon state ([`Shared`]); the loop appends through it, which both
+//! persists the JSONL line and wakes any SSE tailers.
+
+use std::sync::Arc;
 
 use crate::api::{Client, Error, ToolChoice};
+use crate::daemon::Shared;
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
 use crate::log::{ContentBlock, Payload, RawResult, ToolCall, Turn, WireState};
-use crate::persist::Log;
-use crate::project::{place_trailing_cache_breakpoint, project};
+use crate::project::place_trailing_cache_breakpoint;
 use crate::tools::Toolbox;
 
 /// A `tool_result` standing in for a call that didn't run (aborted). Every
@@ -47,28 +50,39 @@ fn rejected(call: &ToolCall) -> Payload {
     }
 }
 
-/// Drive the loop until the user ends input. Owns the log for the session.
+/// Drive the loop until input ends. The log lives in [`Shared`]; the loop appends
+/// through it.
 pub async fn run<F: Frontend, D: Distiller>(
     client: &Client,
     frontend: &mut F,
-    first_prompt: String,
-    mut log: Log,
+    shared: Arc<Shared>,
     distiller: D,
     toolbox: Toolbox,
 ) -> Result<(), Error> {
     let tools = toolbox.definitions();
     let mut turn: Turn = 0;
 
-    // The first user turn is seeded from argv.
-    log.append(turn, Payload::User(vec![ContentBlock::Text(first_prompt)]))?;
-
     loop {
+        // Read the next user turn (the first one too — it arrives over the control
+        // socket now, not argv). `None` (the daemon tearing down) ends the loop.
+        eprintln!("\n(awaiting a user turn on the control socket)");
+        let next = loop {
+            match frontend.read_user_turn().await {
+                Some(line) if !line.trim().is_empty() => break Some(line),
+                Some(_) => continue, // blank turn: keep waiting.
+                None => break None,
+            }
+        };
+        let Some(line) = next else { break };
+        turn += 1;
+        shared.append(turn, Payload::User(vec![ContentBlock::Text(line)]))?;
+
         // Inner loop: keep round-tripping while the model calls tools.
         loop {
-            // Project, then place the single trailing cache breakpoint just
-            // before sending — projection stays pure; the breakpoint walks the
-            // tail each request (DESIGN §3).
-            let mut messages = project(log.entries());
+            // Project, then place the single trailing cache breakpoint just before
+            // sending — projection stays pure; the breakpoint walks the tail each
+            // request (DESIGN §3).
+            let mut messages = shared.project_messages();
             place_trailing_cache_breakpoint(&mut messages);
             // One tool call per turn (DESIGN §8) — the agent picks its next single
             // action; the fork's `retain` is the only forced call.
@@ -90,10 +104,10 @@ pub async fn run<F: Frontend, D: Distiller>(
                 Vec::new()
             };
             eprintln!("[usage: {:?}]", completion.usage);
-            log.append(turn, completion.assistant)?;
+            shared.append(turn, completion.assistant)?;
 
             if calls.is_empty() {
-                break; // model is done with this turn → ask the user for more.
+                break; // model is done with this turn → wait for the next.
             }
 
             let mut abort_turn = false;
@@ -103,21 +117,22 @@ pub async fn run<F: Frontend, D: Distiller>(
                 // every remaining `tool_use` still needs a paired result or the
                 // wire orphans it and the API rejects the request (DESIGN §10).
                 if abort_turn || redirect.is_some() {
-                    log.append(turn, aborted(call))?;
+                    shared.append(turn, aborted(call))?;
                     continue;
                 }
                 match frontend.approve(call).await {
                     Approval::Approve => {
-                        // `interrupted()` resolves on SIGINT — the tool's kill
-                        // trigger (C-c during a bash run `killpg`s its process
-                        // group, DESIGN §6). The toolbox routes by name.
+                        // `interrupted()` resolves on a `POST /interrupt` — the
+                        // tool's kill trigger (kills the process group, DESIGN §6).
                         let result = toolbox.run(call, frontend.interrupted()).await;
                         // Distill at append: the canonical wire never carries raw;
                         // `raw` is kept in the log for reversibility (DESIGN §4).
                         // `ForkPeek` re-enters the model here (the §4 fork) — the
-                        // prefix is the log through this call's `tool_use`.
-                        let wire = distiller.distill(client, log.entries(), call, &result).await;
-                        log.append(
+                        // prefix is the log through this call's `tool_use`, so we
+                        // snapshot it (can't borrow across the distiller's await).
+                        let entries = shared.snapshot();
+                        let wire = distiller.distill(client, &entries, call, &result).await;
+                        shared.append(
                             turn,
                             Payload::ToolResult {
                                 call_id: call.id.clone(),
@@ -127,14 +142,14 @@ pub async fn run<F: Frontend, D: Distiller>(
                         )?;
                     }
                     Approval::Abort => {
-                        log.append(turn, aborted(call))?;
+                        shared.append(turn, aborted(call))?;
                         abort_turn = true;
                     }
                     Approval::Redirect(message) => {
                         // Reject this call but keep the turn alive: the human's
                         // message becomes the next user turn so the model can
                         // course-correct instead of bailing (DESIGN §10).
-                        log.append(turn, rejected(call))?;
+                        shared.append(turn, rejected(call))?;
                         redirect = Some(message);
                     }
                 }
@@ -148,26 +163,8 @@ pub async fn run<F: Frontend, D: Distiller>(
                 // user turn carries the steer. Don't break — fall through to the
                 // inner loop so we re-project and let the model respond.
                 turn += 1;
-                log.append(turn, Payload::User(vec![ContentBlock::Text(message)]))?;
+                shared.append(turn, Payload::User(vec![ContentBlock::Text(message)]))?;
             }
-        }
-
-        // The model is waiting on the user. Read the next turn, skipping blank
-        // lines; EOF (Ctrl-D, or a backgrounded run with no stdin) ends it.
-        eprintln!("\n(your turn — type a message, Ctrl-D to quit)");
-        let next = loop {
-            match frontend.read_user_turn().await {
-                Some(line) if !line.trim().is_empty() => break Some(line),
-                Some(_) => continue, // blank line: re-prompt.
-                None => break None,
-            }
-        };
-        match next {
-            Some(line) => {
-                turn += 1;
-                log.append(turn, Payload::User(vec![ContentBlock::Text(line)]))?;
-            }
-            None => break,
         }
     }
 
