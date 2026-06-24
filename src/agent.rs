@@ -11,9 +11,9 @@
 
 use serde_json::Value;
 
-use crate::api::{Client, Error};
+use crate::api::{Client, Error, ToolChoice};
 use crate::bash::{self, Bash};
-use crate::distill::{Distiller, HeadTail};
+use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
 use crate::log::{ContentBlock, Payload, RawResult, ToolCall, Turn, WireState};
 use crate::persist::Log;
@@ -49,17 +49,14 @@ async fn run_tool<F: Frontend>(bash: &Bash, frontend: &mut F, call: &ToolCall) -
 }
 
 /// Drive the loop until the user ends input. Owns the log for the session.
-pub async fn run<F: Frontend>(
+pub async fn run<F: Frontend, D: Distiller>(
     client: &Client,
     frontend: &mut F,
     first_prompt: String,
     mut log: Log,
+    distiller: D,
 ) -> Result<(), Error> {
     let bash = Bash;
-    // Slice-1 stub distiller (DESIGN §10 Phase 1): generous head/tail so small
-    // and medium output passes through whole; only big output is trimmed. The
-    // model peek (`ForkPeek`) swaps in behind the same `Distiller` trait.
-    let distiller = HeadTail { head: 40, tail: 20 };
     let tools: Vec<Value> = vec![Bash::definition()];
     let mut turn: Turn = 0;
 
@@ -74,7 +71,11 @@ pub async fn run<F: Frontend>(
             // tail each request (DESIGN §3).
             let mut messages = project(log.entries());
             place_trailing_cache_breakpoint(&mut messages);
-            let completion = client.complete(&messages, &tools).await?;
+            // One tool call per turn (DESIGN §8) — the agent picks its next single
+            // action; the fork's `retain` is the only forced call.
+            let completion = client
+                .complete(&messages, &tools, ToolChoice::auto())
+                .await?;
             turn += 1;
 
             // Surface the model's prose, then pull its calls before the payload
@@ -108,7 +109,9 @@ pub async fn run<F: Frontend>(
                         let result = run_tool(&bash, frontend, call).await;
                         // Distill at append: the canonical wire never carries raw;
                         // `raw` is kept in the log for reversibility (DESIGN §4).
-                        let wire = distiller.distill(&result);
+                        // `ForkPeek` re-enters the model here (the §4 fork) — the
+                        // prefix is the log through this call's `tool_use`.
+                        let wire = distiller.distill(client, log.entries(), call, &result).await;
                         log.append(
                             turn,
                             Payload::ToolResult {

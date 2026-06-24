@@ -27,12 +27,47 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 struct Request<'a> {
     model: &'a str,
     max_tokens: u32,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    system: &'a str,
     /// Tool definitions. Always sent (Phase 0 always has bash), so the request
     /// never toggles the tools-cache tier (DESIGN §3). Their *content* must be
     /// byte-stable — `Bash::definition()` builds them from a [`Value`], whose
     /// keys serialize sorted, so it is.
     tools: &'a [Value],
+    tool_choice: ToolChoice,
     messages: &'a [ApiMessage],
+}
+
+/// The `tool_choice` field. Phase 1+ always sets `disable_parallel_tool_use` so
+/// the model emits **at most one** `tool_use` per turn (DESIGN §8) — set once and
+/// never varied, so it never invalidates the cache. `auto()` lets the model
+/// decide whether to call a tool; `force(name)` makes it call exactly that one
+/// (the fork's `retain`, §4).
+#[derive(Serialize, Clone, Copy)]
+pub struct ToolChoice {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'static str>,
+    disable_parallel_tool_use: bool,
+}
+
+impl ToolChoice {
+    pub fn auto() -> Self {
+        Self {
+            kind: "auto",
+            name: None,
+            disable_parallel_tool_use: true,
+        }
+    }
+
+    pub fn force(name: &'static str) -> Self {
+        Self {
+            kind: "tool",
+            name: Some(name),
+            disable_parallel_tool_use: true,
+        }
+    }
 }
 
 /// The Anthropic `usage` object. The two `cache_*` fields are the Phase 0 gate
@@ -104,21 +139,26 @@ impl Response {
     }
 }
 
-/// A thin Anthropic Messages client: holds the HTTP stack, key, and model.
+/// A thin Anthropic Messages client: holds the HTTP stack, key, model, and the
+/// stable system prompt. The system is byte-stable across the session, so it
+/// stays in the cached prefix (DESIGN §3); the fork (§4) shares the same client
+/// and thus the same system, so its prefix matches and hits cache.
 pub struct Client {
     http: HttpClient,
     api_key: String,
     model: String,
+    system: String,
 }
 
 impl Client {
-    pub fn new(api_key: String, model: impl Into<String>) -> Self {
+    pub fn new(api_key: String, model: impl Into<String>, system: impl Into<String>) -> Self {
         Self {
             // TLS over the tokio TCP connector; ALPN negotiates HTTP/2 (no h3
             // advertised by Anthropic/Cloudflare as of 2026-06). See main.rs.
             http: HttpClient::new(RustlsConfig::<ClientConfig>::default()),
             api_key,
             model: model.into(),
+            system: system.into(),
         }
     }
 
@@ -129,11 +169,14 @@ impl Client {
         &self,
         messages: &[ApiMessage],
         tools: &[Value],
+        tool_choice: ToolChoice,
     ) -> Result<Completion, Error> {
         let request = Request {
             model: &self.model,
             max_tokens: 1024,
+            system: &self.system,
             tools,
+            tool_choice,
             messages,
         };
         let body = serde_json::to_string(&request)?;

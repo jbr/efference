@@ -10,10 +10,29 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use efference::agent;
 use efference::api::Client;
+use efference::distill::ForkPeek;
 use efference::frontend::Interactive;
 use efference::persist::Log;
 
 const MODEL: &str = "claude-haiku-4-5";
+
+/// The system preamble. Explains the curation model so the agent stops defending
+/// against context bloat the old way (DESIGN §4-realized) — the run that
+/// motivated this watched the model reflexively `grep`/`head` its own tool output.
+const SYSTEM: &str = "\
+You are an agent working through a harness that automatically focuses tool \
+output for you: after each command, only the parts that matter are kept on your \
+transcript. You'll see line-numbered output, sometimes with `… [N lines elided] \
+…` markers where less-relevant spans were dropped. Treat what you receive as the \
+output and work with it directly — it has already been focused for relevance.
+
+Because the harness focuses output for you, do NOT pre-filter it yourself. Run \
+commands plainly — avoid piping to `head`, `tail`, `grep`, `sed`, `awk`, `cut`, \
+or similar to trim what comes back. Pre-trimming risks discarding the part you \
+needed before you've had a chance to read it; letting the full output come back \
+and keeping the relevant parts afterward is strictly better.
+
+Work one tool call at a time, using what each result taught you to choose the next.";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -35,8 +54,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let log = Log::create(&log_path)?;
     eprintln!("logging to {log_path}");
 
-    let client = Client::new(api_key, MODEL);
+    let client = Client::new(api_key, MODEL, SYSTEM);
     let mut frontend = Interactive::new()?;
 
-    agent::run(&client, &mut frontend, prompt, log).await
+    // The model-driven fork (DESIGN §4): every tool result is peeked and the
+    // canonical wire keeps only what the model retains.
+    agent::run(&client, &mut frontend, prompt, log, ForkPeek).await
 }
