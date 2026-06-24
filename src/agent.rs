@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use crate::api::{Client, Error};
 use crate::bash::{self, Bash};
+use crate::distill::{Distiller, HeadTail};
 use crate::frontend::{Approval, Frontend};
 use crate::log::{ContentBlock, Payload, RawResult, ToolCall, Turn, WireState};
 use crate::persist::Log;
@@ -55,6 +56,10 @@ pub async fn run<F: Frontend>(
     mut log: Log,
 ) -> Result<(), Error> {
     let bash = Bash;
+    // Slice-1 stub distiller (DESIGN §10 Phase 1): generous head/tail so small
+    // and medium output passes through whole; only big output is trimmed. The
+    // model peek (`ForkPeek`) swaps in behind the same `Distiller` trait.
+    let distiller = HeadTail { head: 40, tail: 20 };
     let tools: Vec<Value> = vec![Bash::definition()];
     let mut turn: Turn = 0;
 
@@ -101,12 +106,15 @@ pub async fn run<F: Frontend>(
                 match frontend.approve(call).await {
                     Approval::Approve => {
                         let result = run_tool(&bash, frontend, call).await;
+                        // Distill at append: the canonical wire never carries raw;
+                        // `raw` is kept in the log for reversibility (DESIGN §4).
+                        let wire = distiller.distill(&result);
                         log.append(
                             turn,
                             Payload::ToolResult {
                                 call_id: call.id.clone(),
                                 raw: result,
-                                wire: WireState::Raw,
+                                wire,
                             },
                         )?;
                     }

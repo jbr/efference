@@ -8,6 +8,7 @@
 pub mod agent;
 pub mod api;
 pub mod bash;
+pub mod distill;
 pub mod frontend;
 pub mod log;
 pub mod persist;
