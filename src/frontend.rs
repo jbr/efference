@@ -9,9 +9,10 @@
 //!
 //! - [`Frontend::read_user_turn`] — a line read (the human's message to the
 //!   agent). EOF (`None`) means "done" → the loop quits.
-//! - [`Frontend::approve`] — a *single-decision* gate on a pending tool call, not
-//!   a line-edit surface. This is the Phase-0 guardrail: see the command before
-//!   it runs, approve or bail.
+//! - [`Frontend::approve`] — a gate on a pending tool call. Enter (an empty line)
+//!   approves; any other text rejects the call and is sent to the model as the
+//!   next user message (a *redirect*); C-c bails the turn. This is the Phase-0
+//!   guardrail: see the command before it runs, wave it through or steer.
 //!
 //! ## Why a signal is an approval channel (DESIGN §10)
 //!
@@ -21,7 +22,8 @@
 //! interactive backend accepts approval over **three** channels, raced in one
 //! `select!`:
 //!
-//! - stdin `y`/Enter — the human primary;
+//! - stdin Enter — approve; any other line — redirect (reject the call and send
+//!   the line to the model as the next user turn);
 //! - **SIGUSR1** — approve; drivable with just a pid (`kill -USR1 <pid>`), which
 //!   is the one robust channel an automated driver has. Unambiguous in Phase 0
 //!   because the loop is sequential — exactly one approval is ever pending.
@@ -42,18 +44,23 @@ use crate::log::ToolCall;
 /// Where the interactive backend records its pid so an approver can find it.
 pub const PIDFILE: &str = ".efference.pid";
 
-/// The decision returned by [`Frontend::approve`]. Phase 0 is deliberately
-/// two-valued — approve, or bail — matching the "see the command, approve or
-/// abort" guardrail (DESIGN §10). A graceful *deny-and-continue* is a later
-/// third variant if it earns its keep; the user de-prioritized that path.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The decision returned by [`Frontend::approve`] (DESIGN §10). The empty-line
+/// default is *approve*; a typed line is a *redirect* — the call is rejected and
+/// the human's text is fed to the model as the next user turn, steering it
+/// without ending the turn. C-c still bails. Every un-run `tool_use` always gets
+/// a paired `is_error` `tool_result` so the wire never orphans a call (the API
+/// rejects that); the loop owns that pairing.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Approval {
-    /// Run the call.
+    /// Run the call (empty line, or SIGUSR1).
     Approve,
-    /// Don't run it; abort the turn back to the user prompt. Every un-run
-    /// `tool_use` still gets an `is_error` `tool_result` so the wire never
-    /// orphans a call (the API rejects that) — that's the loop's job.
+    /// Don't run it; bail the turn back to the user prompt (SIGINT).
     Abort,
+    /// Don't run it; reject the call and send this text to the model as the next
+    /// user message, then keep going. The human's words land as a real user turn
+    /// (after the rejection `tool_result`), so the model reads it as direction,
+    /// not tool output.
+    Redirect(String),
 }
 
 /// The interaction seam. Used generically by the loop (`<F: Frontend>`); not
@@ -141,7 +148,7 @@ impl Frontend for Interactive {
         eprintln!("\n▶ tool call: {}", call.name);
         eprintln!("  input: {}", call.input);
         eprintln!(
-            "  approve? [y/N]   or   kill -USR1 {}",
+            "  Enter to approve · type a message to redirect · C-c to abort   (or kill -USR1 {})",
             std::process::id()
         );
 
@@ -156,12 +163,13 @@ impl Frontend for Interactive {
             tokio::select! {
                 // Only poll stdin while it's open. A *closed* stdin — a
                 // backgrounded, signal-driven run with no human at the keyboard —
-                // must NOT read as a deny, or every call would auto-abort before
-                // an approver could send SIGUSR1. On EOF we stop polling it and
+                // must NOT resolve, or every call would decide itself before an
+                // approver could send SIGUSR1. On EOF we stop polling it and
                 // wait on the signals alone.
                 line = lines.recv(), if stdin_open => match line {
-                    Some(answer) if is_yes(&answer) => return Approval::Approve,
-                    Some(_) => return Approval::Abort, // explicit non-yes → abort.
+                    // Empty line (just Enter) approves; any other text redirects.
+                    Some(answer) if answer.trim().is_empty() => return Approval::Approve,
+                    Some(answer) => return Approval::Redirect(answer),
                     None => stdin_open = false,        // EOF: signals only now.
                 },
                 _ = sigusr1.recv() => return Approval::Approve,
@@ -173,10 +181,6 @@ impl Frontend for Interactive {
     async fn interrupted(&mut self) {
         self.sigint.recv().await;
     }
-}
-
-fn is_yes(answer: &str) -> bool {
-    matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
 #[cfg(test)]
@@ -194,22 +198,34 @@ mod tests {
         }
     }
 
-    /// `y` (any case / `yes`) approves.
+    /// Empty input (just Enter) approves — the default.
     #[tokio::test]
-    async fn typed_yes_approves() {
+    async fn empty_line_approves() {
         let (tx, rx) = mpsc::channel(1);
         let mut f = Interactive::with_lines(rx).unwrap();
-        tx.send("Y".to_string()).await.unwrap();
+        tx.send("".to_string()).await.unwrap();
         assert_eq!(f.approve(&a_call()).await, Approval::Approve);
     }
 
-    /// Anything that isn't yes aborts the turn.
+    /// Whitespace-only input still counts as empty → approve.
     #[tokio::test]
-    async fn typed_no_aborts() {
+    async fn blank_line_approves() {
         let (tx, rx) = mpsc::channel(1);
         let mut f = Interactive::with_lines(rx).unwrap();
-        tx.send("n".to_string()).await.unwrap();
-        assert_eq!(f.approve(&a_call()).await, Approval::Abort);
+        tx.send("   ".to_string()).await.unwrap();
+        assert_eq!(f.approve(&a_call()).await, Approval::Approve);
+    }
+
+    /// Any other text rejects the call and rides back as a redirect, verbatim.
+    #[tokio::test]
+    async fn typed_text_redirects() {
+        let (tx, rx) = mpsc::channel(1);
+        let mut f = Interactive::with_lines(rx).unwrap();
+        tx.send("use ripgrep instead".to_string()).await.unwrap();
+        assert_eq!(
+            f.approve(&a_call()).await,
+            Approval::Redirect("use ripgrep instead".to_string())
+        );
     }
 
     /// Closed stdin at an approval must NOT auto-resolve — a backgrounded,
@@ -235,13 +251,5 @@ mod tests {
         assert_eq!(f.read_user_turn().await.as_deref(), Some("do the thing"));
         drop(tx);
         assert_eq!(f.read_user_turn().await, None);
-    }
-
-    #[test]
-    fn yes_matching() {
-        assert!(is_yes("y"));
-        assert!(is_yes(" YES "));
-        assert!(!is_yes("yep"));
-        assert!(!is_yes(""));
     }
 }

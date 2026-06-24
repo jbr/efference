@@ -18,6 +18,12 @@ use crate::project::ApiMessage;
 const MESSAGES_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+/// Response-token ceiling per request. 1024 truncated real final answers in a
+/// live run (the model's synthesis was cut mid-sentence); 4096 gives the agent
+/// room to conclude while staying bounded. A `Client` field can replace this when
+/// per-call control becomes load-bearing.
+const MAX_TOKENS: u32 = 4096;
+
 /// Boxed error for the Phase 0 transport. A typed error enum can replace this
 /// once error handling becomes load-bearing; for now non-2xx responses carry
 /// the raw body in the message so failures are legible.
@@ -173,7 +179,7 @@ impl Client {
     ) -> Result<Completion, Error> {
         let request = Request {
             model: &self.model,
-            max_tokens: 1024,
+            max_tokens: MAX_TOKENS,
             system: &self.system,
             tools,
             tool_choice,

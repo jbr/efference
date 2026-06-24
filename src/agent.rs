@@ -9,15 +9,13 @@
 //! us the SIGUSR1 approval channel, DESIGN §10). Subsequent turns come over the
 //! `Frontend`. The [`Log`] persists every entry to JSONL as it's appended.
 
-use serde_json::Value;
-
 use crate::api::{Client, Error, ToolChoice};
-use crate::bash::{self, Bash};
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
 use crate::log::{ContentBlock, Payload, RawResult, ToolCall, Turn, WireState};
 use crate::persist::Log;
 use crate::project::{place_trailing_cache_breakpoint, project};
+use crate::tools::Toolbox;
 
 /// A `tool_result` standing in for a call that didn't run (aborted). Every
 /// assistant `tool_use` needs exactly one paired result or projection orphans it
@@ -33,18 +31,19 @@ fn aborted(call: &ToolCall) -> Payload {
     }
 }
 
-/// Run one approved tool call. Phase 0 knows only bash; an unknown name comes
-/// back as an error result (never a panic) so the `tool_use` still gets its pair.
-async fn run_tool<F: Frontend>(bash: &Bash, frontend: &mut F, call: &ToolCall) -> RawResult {
-    if call.name == bash::NAME {
-        // `interrupted()` resolves on SIGINT and is the bash tool's kill trigger:
-        // C-c during a run `killpg`s the process group (DESIGN §6).
-        bash.run(&call.input, frontend.interrupted()).await
-    } else {
-        RawResult {
-            content: format!("unknown tool: {}", call.name),
+/// A `tool_result` for a call the user rejected in favor of a redirect message.
+/// Like [`aborted`] it pairs the orphaned `tool_use`; the human's actual words
+/// follow as a separate user turn (the API merges the two consecutive user
+/// messages), so the model reads this as context for the steer that follows
+/// rather than as tool output (DESIGN §10).
+fn rejected(call: &ToolCall) -> Payload {
+    Payload::ToolResult {
+        call_id: call.id.clone(),
+        raw: RawResult {
+            content: "Not run — the user replied instead of approving; see their next message.".into(),
             is_error: true,
-        }
+        },
+        wire: WireState::Raw,
     }
 }
 
@@ -55,9 +54,9 @@ pub async fn run<F: Frontend, D: Distiller>(
     first_prompt: String,
     mut log: Log,
     distiller: D,
+    toolbox: Toolbox,
 ) -> Result<(), Error> {
-    let bash = Bash;
-    let tools: Vec<Value> = vec![Bash::definition()];
+    let tools = toolbox.definitions();
     let mut turn: Turn = 0;
 
     // The first user turn is seeded from argv.
@@ -98,15 +97,21 @@ pub async fn run<F: Frontend, D: Distiller>(
             }
 
             let mut abort_turn = false;
+            let mut redirect: Option<String> = None;
             for call in &calls {
-                if abort_turn {
-                    // Already aborting: still pair every remaining call.
+                // Once we've decided to stop running calls (abort or redirect),
+                // every remaining `tool_use` still needs a paired result or the
+                // wire orphans it and the API rejects the request (DESIGN §10).
+                if abort_turn || redirect.is_some() {
                     log.append(turn, aborted(call))?;
                     continue;
                 }
                 match frontend.approve(call).await {
                     Approval::Approve => {
-                        let result = run_tool(&bash, frontend, call).await;
+                        // `interrupted()` resolves on SIGINT — the tool's kill
+                        // trigger (C-c during a bash run `killpg`s its process
+                        // group, DESIGN §6). The toolbox routes by name.
+                        let result = toolbox.run(call, frontend.interrupted()).await;
                         // Distill at append: the canonical wire never carries raw;
                         // `raw` is kept in the log for reversibility (DESIGN §4).
                         // `ForkPeek` re-enters the model here (the §4 fork) — the
@@ -125,11 +130,25 @@ pub async fn run<F: Frontend, D: Distiller>(
                         log.append(turn, aborted(call))?;
                         abort_turn = true;
                     }
+                    Approval::Redirect(message) => {
+                        // Reject this call but keep the turn alive: the human's
+                        // message becomes the next user turn so the model can
+                        // course-correct instead of bailing (DESIGN §10).
+                        log.append(turn, rejected(call))?;
+                        redirect = Some(message);
+                    }
                 }
             }
             if abort_turn {
                 eprintln!("[turn aborted]");
                 break;
+            }
+            if let Some(message) = redirect {
+                // The rejection `tool_result`(s) answer the orphaned call(s); this
+                // user turn carries the steer. Don't break — fall through to the
+                // inner loop so we re-project and let the model respond.
+                turn += 1;
+                log.append(turn, Payload::User(vec![ContentBlock::Text(message)]))?;
             }
         }
 
