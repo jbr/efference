@@ -19,12 +19,16 @@
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
+use futures_lite::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{Notify, mpsc, oneshot};
-use trillium::{Conn, Method};
+use trillium::Conn;
+use trillium_router::{Router, RouterConnExt};
+use trillium_sse::{Eventable, SseConnExt};
 
 use crate::agent;
 use crate::api::{Client, Error};
@@ -100,6 +104,13 @@ impl Shared {
     /// model and so can't borrow across the lock (DESIGN §4).
     pub fn snapshot(&self) -> Vec<LogEntry> {
         self.log.lock().unwrap().entries().to_vec()
+    }
+
+    /// A clone of the single entry at `seq` (== its index in the log), or `None`
+    /// if the log hasn't reached it yet. The `/events` tail reads one entry at a
+    /// time, so it never clones the whole log.
+    fn entry_at(&self, seq: u64) -> Option<LogEntry> {
+        self.log.lock().unwrap().entries().get(seq as usize).cloned()
     }
 
     fn submit_turn(&self, text: String) {
@@ -204,20 +215,24 @@ struct DecisionBody {
     message: Option<String>,
 }
 
-/// The single HTTP handler — hand-routed over (method, path). Reads `Shared` from
-/// trillium's server-global state. JSON in, JSON out.
-async fn handler(mut conn: Conn) -> Conn {
-    let Some(shared) = conn.shared_state::<Arc<Shared>>().map(Arc::clone) else {
-        return conn.with_status(500).with_body(r#"{"error":"missing shared state"}"#);
-    };
-    let method = conn.method();
-    let path = conn.path().to_string();
-    let query = conn.querystring().to_string();
+/// Pull the shared daemon state out of a conn's server-global TypeSet, or short
+/// out with a 500 if it's somehow absent (a wiring bug, never seen at runtime).
+fn shared_of(conn: &Conn) -> Option<Arc<Shared>> {
+    conn.shared_state::<Arc<Shared>>().map(Arc::clone)
+}
 
-    match (method, path.as_str()) {
+/// The HTTP surface — a `trillium-router` over the verb set (DESIGN §10). Each
+/// handler reads `Shared` from the server-global state; JSON in, JSON out. The
+/// router gives method-aware dispatch (and a clean `:call_id` capture) in place
+/// of the earlier hand-rolled `(method, path)` match.
+fn router() -> Router {
+    Router::new()
         // Enqueue a user turn (also seeds turn 1). 202 — watch /log (and the
         // future /events) for the response; submission is decoupled from inference.
-        (Method::Post, "/turn") => {
+        .post("/turn", |mut conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
             let body = conn.request_body_string().await.unwrap_or_default();
             match serde_json::from_str::<TurnBody>(&body) {
                 Ok(TurnBody { text }) => {
@@ -228,10 +243,13 @@ async fn handler(mut conn: Conn) -> Conn {
                     .with_status(400)
                     .with_body(format!(r#"{{"error":"bad /turn body: {e}"}}"#)),
             }
-        }
+        })
         // Resolve a pending approval gate by its tool_use id.
-        (Method::Post, p) if p.starts_with("/approvals/") => {
-            let id = CallId(p.trim_start_matches("/approvals/").to_string());
+        .post("/approvals/:call_id", |mut conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            let id = CallId(conn.param("call_id").unwrap_or_default().to_string());
             let body = conn.request_body_string().await.unwrap_or_default();
             let decision = match serde_json::from_str::<DecisionBody>(&body) {
                 Ok(d) => d,
@@ -257,21 +275,113 @@ async fn handler(mut conn: Conn) -> Conn {
                 conn.with_status(404)
                     .with_body(r#"{"error":"no pending approval with that id"}"#)
             }
-        }
-        (Method::Post, "/interrupt") => {
+        })
+        .post("/interrupt", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
             shared.interrupt();
             conn.with_status(200).with_body(r#"{"status":"interrupted"}"#)
-        }
-        (Method::Get, "/state") => conn.with_status(200).with_body(shared.state_json()),
-        (Method::Get, "/log") => {
-            let since = parse_since(&query);
+        })
+        .get("/state", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            conn.with_status(200).with_body(shared.state_json())
+        })
+        .get("/log", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            let since = parse_since(conn.querystring());
             conn.with_status(200).with_body(shared.log_json(since))
-        }
-        _ => conn
-            .with_status(404)
-            .with_body(r#"{"error":"not found"}"#),
+        })
+        // Live tail of the append-only log (DESIGN §1 — the log *is* the event
+        // store). `?since=<seq>` replays from there then follows; default 0 streams
+        // the whole session and then live. Each event carries `id: <seq>`, so a
+        // reconnecting client resumes with `?since=<last_seq + 1>` — the explicit
+        // cursor the SSE crate's bare framing leaves to us.
+        .get("/events", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            let since = parse_since(conn.querystring()).unwrap_or(0);
+            conn.with_sse_stream(tail_events(shared, since))
+        })
+}
+
+/// One log entry as a Server-Sent Event. We implement [`Eventable`] ourselves
+/// rather than use `trillium_sse::Event` because that struct exposes no `id`
+/// setter, and `id: <seq>` is the whole point — it's the resume cursor.
+struct LogEvent {
+    /// The entry's `seq`, stringified so `id()` can hand back a `&str`.
+    id: String,
+    /// The payload kind → the SSE `event:` field (`user` / `assistant` /
+    /// `tool_result`), so clients can switch without parsing the body first.
+    kind: &'static str,
+    /// The full serialized [`LogEntry`] — the same JSON `GET /log` returns, so the
+    /// tail and the catch-up read are byte-identical per entry.
+    data: String,
+}
+
+impl Eventable for LogEvent {
+    fn data(&self) -> &str {
+        &self.data
+    }
+    fn event_type(&self) -> Option<&str> {
+        Some(self.kind)
+    }
+    fn id(&self) -> Option<&str> {
+        Some(&self.id)
     }
 }
+
+fn log_event(entry: &LogEntry) -> LogEvent {
+    let kind = match &entry.payload {
+        Payload::User(_) => "user",
+        Payload::Assistant { .. } => "assistant",
+        Payload::ToolResult { .. } => "tool_result",
+    };
+    LogEvent {
+        id: entry.seq.to_string(),
+        kind,
+        data: serde_json::to_string(entry).unwrap_or_default(),
+    }
+}
+
+/// A per-connection stream that emits every log entry from `since` onward and
+/// then follows new appends live (DESIGN §10 slice 2b). This is the fanout
+/// `trillium-sse` deliberately doesn't provide — and tailing the durable log
+/// (rather than a broadcast channel) means a slow client never drops events: the
+/// log *is* the buffer, and each connection reads at its own pace.
+///
+/// Boxed because `with_sse_stream` demands `Unpin + Send + Sync`: the raw
+/// `unfold` over an async block is `!Unpin`, and `futures-lite`'s `.boxed()` adds
+/// only `+ Send`, so we box to the `+ Send + Sync` trait object by hand.
+fn tail_events(
+    shared: Arc<Shared>,
+    since: u64,
+) -> Pin<Box<dyn Stream<Item = LogEvent> + Send + Sync + 'static>> {
+    Box::pin(futures_lite::stream::unfold(
+        (shared, since),
+        |(shared, next)| async move {
+            loop {
+                // Arm the wait BEFORE reading the log. tokio guarantees a
+                // `notify_waiters()` reaches any `Notified` created before the
+                // call, so an append landing between our read and our await can't
+                // be lost (no `enable()` needed for the `notify_waiters` path).
+                let waiter = Arc::clone(&shared);
+                let appended = waiter.appended.notified();
+                if let Some(entry) = shared.entry_at(next) {
+                    return Some((log_event(&entry), (shared, next + 1)));
+                }
+                appended.await;
+            }
+        },
+    ))
+}
+
+const MISSING_STATE: &str = r#"{"error":"missing shared state"}"#;
 
 /// Pull `since=<n>` out of a raw query string (`GET /log?since=12`).
 fn parse_since(query: &str) -> Option<u64> {
@@ -307,8 +417,88 @@ pub async fn serve<D: Distiller>(
         .listeners()
         .bind_uds(&socket)
         .map_err(|e| -> Error { format!("failed to bind {}: {e}", socket.display()).into() })?
-        .spawn(handler);
+        .spawn(router());
     eprintln!("control socket: {}", socket.display());
 
     agent::run(&client, &mut frontend, shared, distiller, toolbox).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::Client as ControlClient;
+    use crate::log::ContentBlock;
+    use futures_lite::StreamExt;
+    use std::time::Duration;
+
+    fn user(text: &str) -> Payload {
+        Payload::User(vec![ContentBlock::Text(text.into())])
+    }
+
+    /// (id, event_type, data) of the next SSE event, with a timeout so a hung tail
+    /// fails loudly instead of blocking the suite.
+    async fn next_event(
+        events: &mut trillium_client::sse::EventStream,
+    ) -> (Option<String>, Option<String>, String) {
+        let event = tokio::time::timeout(Duration::from_secs(5), events.next())
+            .await
+            .expect("an event within the timeout")
+            .expect("the stream has not ended")
+            .expect("the event parsed");
+        (
+            event.id().map(str::to_string),
+            event.event_type().map(str::to_string),
+            event.data().to_string(),
+        )
+    }
+
+    /// `GET /events` replays the pre-existing log (id == seq) and then follows new
+    /// appends live — including an append that lands *after* the client has caught
+    /// up and is awaiting, which is the lost-wakeup path the tail is built to
+    /// survive (the `Notified` is armed before the catch-up read).
+    ///
+    /// Multi-thread flavor: an SSE body streams server-write ↔ client-read
+    /// concurrently, which a single-threaded test runtime can deadlock (the real
+    /// daemon runs on the multi-thread runtime).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn events_replays_then_tails_live() {
+        let dir = std::env::temp_dir();
+        let log_path = dir.join("efference-sse-test.jsonl");
+        let socket = dir.join("efference-sse-test.sock");
+        let _ = std::fs::remove_file(&log_path);
+        let _ = std::fs::remove_file(&socket);
+
+        let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
+        // Two entries present before any client connects (the replay set).
+        shared.append(1, user("first")).unwrap();
+        shared.append(2, user("second")).unwrap();
+
+        trillium_tokio::config()
+            .with_shared_state(Arc::clone(&shared))
+            .listeners()
+            .bind_uds(&socket)
+            .expect("bind uds")
+            .spawn(router());
+
+        let client = ControlClient::new(&socket);
+        let mut events = client.events(Some(0)).await.expect("open events");
+
+        // Replay: the two pre-existing entries, in order, id == seq, typed `user`.
+        let (id, kind, data) = next_event(&mut events).await;
+        assert_eq!(id.as_deref(), Some("0"));
+        assert_eq!(kind.as_deref(), Some("user"));
+        assert!(data.contains("first"));
+        let (id, _, data) = next_event(&mut events).await;
+        assert_eq!(id.as_deref(), Some("1"));
+        assert!(data.contains("second"));
+
+        // Live tail: append once the client is caught up and parked on the wait.
+        shared.append(3, user("third")).unwrap();
+        let (id, _, data) = next_event(&mut events).await;
+        assert_eq!(id.as_deref(), Some("2"));
+        assert!(data.contains("third"));
+
+        let _ = std::fs::remove_file(&socket);
+        let _ = std::fs::remove_file(&log_path);
+    }
 }

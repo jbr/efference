@@ -8,6 +8,7 @@
 pub mod agent;
 pub mod api;
 pub mod bash;
+pub mod client;
 pub mod daemon;
 pub mod distill;
 pub mod env;

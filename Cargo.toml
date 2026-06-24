@@ -11,13 +11,24 @@ fs-mcp = { path = "../fs-mcp" }
 semantic-edit-mcp = { path = "../semantic-edit-mcp" }
 mcplease = "0.2.3"
 anyhow = "1"
-tokio = { version = "1.52.3", features = ["macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.52.3", features = ["macros", "process", "rt-multi-thread", "signal", "sync", "time", "io-std", "io-util"] }
 libc = "0.2.186"
 clap = { version = "4", features = ["derive"] }
 # Core trillium types (Conn/Handler/Method) for the control-channel HTTP server.
 trillium = "1.3.0"
 trillium-client = { version = "0.9.7", features = ["sse"] }
 trillium-rustls = "0.11.3"
-trillium-tokio = "0.6.3"
+# 0.6.4 adds `UnixClientConfig` — the client-side Unix-socket connector the
+# control-channel client (src/client.rs) dials the daemon through (DESIGN §10).
+trillium-tokio = "0.6.4"
 # StreamExt for consuming the SSE EventStream; already in-tree via trillium.
 futures-lite = "2.6.1"
+trillium-router = "0.5.2"
+trillium-sse = "0.2.1"
+
+# Local trillium-http with a fix to its body→socket copy loop: it only flushed the
+# write buffer on EOF, so an endless SSE stream's events sat buffered and never
+# reached the client. The fix flushes when the body yields `Pending`. Patch until
+# it's published (DESIGN §10 control-channel slice 2b).
+[patch.crates-io]
+trillium-http = { path = "/Users/jbr/code/trillium/http" }
