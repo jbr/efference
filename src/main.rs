@@ -22,8 +22,6 @@ use efference::tools::Toolbox;
 use futures_lite::StreamExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-const MODEL: &str = "claude-haiku-4-5";
-
 /// The default control-socket path, under the gitignored `.efference/`.
 const DEFAULT_SOCKET: &str = ".efference/control.sock";
 
@@ -41,7 +39,11 @@ struct Cli {
 enum Command {
     /// Run the daemon: bind the control socket and drive the agent loop. Waits for
     /// the first user turn over the socket (`POST /turn`).
-    Serve,
+    Serve {
+        /// Model to use for the agent. Defaults to claude-haiku-4-5.
+        #[arg(long, default_value = "claude-haiku-4-5")]
+        model: String,
+    },
     /// Send a user turn to a running daemon (`POST /turn`). Seeds turn 1 on an
     /// idle daemon. Returns immediately — watch `state`/`log` for the response.
     Turn {
@@ -111,7 +113,7 @@ Work one tool call at a time, using what each result taught you to choose the ne
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Serve => serve(cli.socket).await,
+        Command::Serve { model } => serve(cli.socket, &model).await,
         Command::Turn { text } => turn(cli.socket, text.join(" ")).await,
         Command::Approve {
             call_id,
@@ -157,7 +159,9 @@ async fn approve(
 }
 
 /// Read the daemon's one pending approval out of `GET /state`.
-async fn pending_call_id(client: &ControlClient) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+async fn pending_call_id(
+    client: &ControlClient,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let state: serde_json::Value = serde_json::from_str(&client.state().await?)?;
     state
         .get("pending_approval")
@@ -286,7 +290,9 @@ fn render_event(kind: Option<&str>, data: &str) {
             for call in assistant["calls"].as_array().into_iter().flatten() {
                 let name = call["name"].as_str().unwrap_or("?");
                 let input = call["input"].to_string();
-                println!("\n#{seq} ◂ wants {name}: {input}  (Enter approves · text redirects · .abort)");
+                println!(
+                    "\n#{seq} ◂ wants {name}: {input}  (Enter approves · text redirects · .abort)"
+                );
             }
         }
         Some("tool_result") => {
@@ -308,7 +314,10 @@ fn render_event(kind: Option<&str>, data: &str) {
     }
 }
 
-async fn serve(socket: PathBuf) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn serve(
+    socket: PathBuf,
+    model: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| "ANTHROPIC_API_KEY is not set in the environment")?;
 
@@ -331,7 +340,7 @@ async fn serve(socket: PathBuf) -> Result<(), Box<dyn std::error::Error + Send +
     // like git status. See `env::context`.
     let system = format!("{SYSTEM}\n\n{}", efference::env::context());
 
-    let client = Client::new(api_key, MODEL, system);
+    let client = Client::new(api_key, model, system);
 
     // The model-driven fork (DESIGN §4): every tool result is peeked and the
     // canonical wire keeps only what the model retains. `Toolbox` is the §5 tool
