@@ -3,12 +3,12 @@
 //! trajectory into a concise summary, so the working context stays lean as a
 //! session runs long.
 //!
-//! **Slice 0 (this) records a boundary [`Mark`] but does not yet fold.** The mark
-//! is inert on the wire (`project` skips it), so we can first measure the thing the
-//! whole idea hinges on: does the model bracket its work cleanly — call
-//! `consolidate` at sensible task boundaries, with a useful summary? Slice 1 then
-//! teaches `project` to fold the span the boundary names (its `upto`) down to the
-//! summary.
+//! **Slice 1 implemented:** the boundary [`Mark`] now folds on the wire.
+//! `project` elides every entry with `seq <= upto` and injects the summary as
+//! a user-role text message just before the first live entry that follows the
+//! fold. The consolidate `tool_use` / `tool_result` pair that records the
+//! boundary projects normally (visible on the wire as low-noise context).
+//! The raw transcript survives in the log for reversibility.
 //!
 //! It is the first tool that acts on the **log**, not the world: it produces a
 //! `Mark`, not a [`RawResult`] to distill, so the loop handles it structurally
@@ -71,7 +71,11 @@ pub fn summary(input: &Value) -> Option<String> {
 /// with no later user turn): the live user seq itself. Slice 1 refines the
 /// self-directed edge with the fold + its tests.
 pub fn extent(log: &[LogEntry]) -> Seq {
-    match log.iter().rev().find(|e| matches!(e.payload, Payload::User(_))) {
+    match log
+        .iter()
+        .rev()
+        .find(|e| matches!(e.payload, Payload::User(_)))
+    {
         Some(live) => log
             .iter()
             .map(|e| e.seq)
@@ -88,25 +92,43 @@ mod tests {
     use crate::log::{ContentBlock, LogEntry, Payload, Timestamp};
 
     fn at(seq: Seq, payload: Payload) -> LogEntry {
-        LogEntry { seq, turn: 0, at: Timestamp(seq), payload }
+        LogEntry {
+            seq,
+            turn: 0,
+            at: Timestamp(seq),
+            payload,
+        }
     }
     fn user(seq: Seq) -> LogEntry {
         at(seq, Payload::User(vec![ContentBlock::Text("u".into())]))
     }
     fn work(seq: Seq) -> LogEntry {
-        at(seq, Payload::Assistant { text: vec![], calls: vec![] })
+        at(
+            seq,
+            Payload::Assistant {
+                text: vec![],
+                calls: vec![],
+            },
+        )
     }
 
     #[test]
     fn extent_folds_up_to_just_before_the_live_user_turn() {
         // task A (0..=2), the new task instruction at 3, then the consolidate turn.
         let log = vec![user(0), work(1), work(2), user(3), work(4)];
-        assert_eq!(extent(&log), 2, "fold task A; preserve the live instruction at seq 3");
+        assert_eq!(
+            extent(&log),
+            2,
+            "fold task A; preserve the live instruction at seq 3"
+        );
     }
 
     #[test]
     fn summary_parses_and_tolerates_garbage() {
-        assert_eq!(summary(&json!({"summary": "did X"})).as_deref(), Some("did X"));
+        assert_eq!(
+            summary(&json!({"summary": "did X"})).as_deref(),
+            Some("did X")
+        );
         assert!(summary(&json!({"nope": 1})).is_none());
     }
 

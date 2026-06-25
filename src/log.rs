@@ -56,9 +56,9 @@ pub enum Payload {
     /// A salience annotation written at the moment it's known (DESIGN §1, §2): a
     /// decision, a dead end, a relevance note, or a consolidation boundary. The
     /// Phase-3 substrate for intent-aware compaction — *kept* through a fold while
-    /// the deliberation around it is elided. Wired into [`project`] ahead of the
-    /// feature: today it projects to nothing; Slice 1 teaches projection to fold
-    /// the span behind a boundary mark (DESIGN §10 condensed map → Phase 3).
+    /// the deliberation around it is elided. [`MarkKind::Boundary`] folds its named
+    /// span (`seq <= upto`) to a summary user message on the wire (Slice 1,
+    /// DESIGN §10 Phase 3).
     ///
     /// [`project`]: crate::project::project
     Mark(Mark),
@@ -100,11 +100,10 @@ pub struct Mark {
     pub note: String,
 }
 
-/// What a [`Mark`] does to the projection. Slice 0 introduces only the
-/// consolidation `Boundary`; the §1/§2 salience kinds (decision / dead-end /
-/// relevance — the "keep marks, drop deliberation" breadcrumbs) land when they get
-/// a construction site. `upto` is the seq the boundary folds up to — recorded now,
-/// read by the Slice-1 projection fold (DESIGN §10 condensed map → Phase 3).
+/// What a [`Mark`] does to the projection. `Boundary` is the consolidation
+/// variant (Slice 1 — active in `project`): folds every entry with `seq <=
+/// upto` to a summary user message. The §1/§2 salience kinds (decision /
+/// dead-end / relevance) land when they get a construction site.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MarkKind {
     Boundary { upto: Seq },
