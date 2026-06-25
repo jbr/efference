@@ -129,11 +129,9 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
                     content,
                 });
             }
-            Payload::ToolResult {
-                call_id,
-                raw,
-                wire,
-            } => pending_tool_results.push(tool_result_block(call_id, raw, wire)),
+            Payload::ToolResult { call_id, raw, wire } => {
+                pending_tool_results.push(tool_result_block(entry.seq, call_id, raw, wire))
+            }
             // Marks are log metadata — projected to nothing for now (DESIGN §10
             // condensed map: the seam is wired ahead of the fold). Deliberately it
             // does NOT flush `pending_tool_results`: a mark sitting between an
@@ -165,7 +163,7 @@ fn block_to_api(block: &ContentBlock) -> ApiBlock {
     }
 }
 
-fn tool_result_block(call_id: &CallId, raw: &RawResult, wire: &WireState) -> ApiBlock {
+fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireState) -> ApiBlock {
     let (content, is_error) = match wire {
         WireState::Raw => (raw.content.clone(), raw.is_error),
         WireState::Distilled(distilled) => (distilled.clone(), raw.is_error),
@@ -175,9 +173,14 @@ fn tool_result_block(call_id: &CallId, raw: &RawResult, wire: &WireState) -> Api
         // whether elision folds the paired `tool_use` away too — flagged here.
         WireState::Elided => ("[elided]".to_string(), false),
     };
+    // Prefix with [seq] handle so tool results are describable as 'reread 14' /
+    // 'branch from 14' — the entry's stable seq. The wire never carries seq
+    // itself; this handle makes it visible at read-time without schema change
+    // (DESIGN §10 Phase 1 slice 2b).
+    let prefixed = format!("[{}] {}", seq, content);
     ApiBlock::ToolResult {
         tool_use_id: call_id.0.clone(),
-        content,
+        content: prefixed,
         is_error,
         cache_control: None,
     }
@@ -244,16 +247,22 @@ mod tests {
         let log = sample_log();
         let a = serde_json::to_string(&project(&log)).unwrap();
         let b = serde_json::to_string(&project(&log)).unwrap();
-        assert_eq!(a, b, "re-projecting an identical log must yield identical bytes");
+        assert_eq!(
+            a, b,
+            "re-projecting an identical log must yield identical bytes"
+        );
     }
 
     /// Pins the exact wire encoding. If a field is reordered, renamed, or
     /// added, this fails — which is the point: such a change silently breaks the
     /// cache prefix in production, so we want it to break a test first.
+    ///
+    /// Each tool result is prefixed with [seq] on the wire so results are
+    /// describable as 'reread 14' / 'branch from 14' — the entry's stable seq.
     #[test]
     fn projection_matches_expected_wire_bytes() {
         let wire = serde_json::to_string(&project(&sample_log())).unwrap();
-        let expected = r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"file.txt"}]}]"#;
+        let expected = r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] file.txt"}]}]"#;
         assert_eq!(wire, expected);
     }
 
@@ -289,7 +298,11 @@ mod tests {
                 },
             ),
         ];
-        assert!(serde_json::to_string(&project(&errored)).unwrap().contains(r#""is_error":true"#));
+        assert!(
+            serde_json::to_string(&project(&errored))
+                .unwrap()
+                .contains(r#""is_error":true"#)
+        );
     }
 
     /// Results answering one assistant turn collapse into a single user message.
@@ -341,9 +354,17 @@ mod tests {
             ),
         ];
         let messages = project(&log);
-        assert_eq!(messages.len(), 2, "assistant turn, then ONE coalesced user turn");
+        assert_eq!(
+            messages.len(),
+            2,
+            "assistant turn, then ONE coalesced user turn"
+        );
         assert_eq!(messages[1].role, Role::User);
-        assert_eq!(messages[1].content.len(), 2, "both tool_results in one message");
+        assert_eq!(
+            messages[1].content.len(),
+            2,
+            "both tool_results in one message"
+        );
     }
 
     /// Distillation projects the replacement and keeps `raw` off the wire.
@@ -376,8 +397,14 @@ mod tests {
             ),
         ];
         let wire = serde_json::to_string(&project(&log)).unwrap();
-        assert!(wire.contains("just the gist"), "distillate must be projected");
-        assert!(!wire.contains("ten thousand lines"), "raw must stay off the wire");
+        assert!(
+            wire.contains("just the gist"),
+            "distillate must be projected"
+        );
+        assert!(
+            !wire.contains("ten thousand lines"),
+            "raw must stay off the wire"
+        );
     }
 
     /// A `Mark` is log metadata — wired into `project` ahead of the Phase-3 fold
@@ -392,8 +419,16 @@ mod tests {
             Payload::Assistant {
                 text: vec![],
                 calls: vec![
-                    ToolCall { id: CallId("a".into()), name: "bash".into(), input: json!({}) },
-                    ToolCall { id: CallId("b".into()), name: "bash".into(), input: json!({}) },
+                    ToolCall {
+                        id: CallId("a".into()),
+                        name: "bash".into(),
+                        input: json!({}),
+                    },
+                    ToolCall {
+                        id: CallId("b".into()),
+                        name: "bash".into(),
+                        input: json!({}),
+                    },
                 ],
             },
         );
@@ -403,12 +438,19 @@ mod tests {
                 0,
                 Payload::ToolResult {
                     call_id: CallId(id.into()),
-                    raw: RawResult { content: out.into(), is_error: false },
+                    raw: RawResult {
+                        content: out.into(),
+                        is_error: false,
+                    },
                     wire: WireState::Raw,
                 },
             )
         };
-        let without = vec![assistant.clone(), result(1, "a", "out-a"), result(2, "b", "out-b")];
+        let without = vec![
+            assistant.clone(),
+            result(1, "a", "out-a"),
+            result(2, "b", "out-b"),
+        ];
         let with = vec![
             assistant,
             result(1, "a", "out-a"),
@@ -428,7 +470,11 @@ mod tests {
             "a mark between two tool_results must be invisible and not split them"
         );
         let messages = project(&with);
-        assert_eq!(messages[1].content.len(), 2, "both results stay in one coalesced user message");
+        assert_eq!(
+            messages[1].content.len(),
+            2,
+            "both results stay in one coalesced user message"
+        );
     }
 
     /// The trailing breakpoint marks exactly the last block as `ephemeral` and
@@ -438,13 +484,19 @@ mod tests {
     fn trailing_cache_breakpoint_marks_only_the_last_block() {
         let mut messages = project(&sample_log());
         assert!(
-            !serde_json::to_string(&messages).unwrap().contains("cache_control"),
+            !serde_json::to_string(&messages)
+                .unwrap()
+                .contains("cache_control"),
             "pure projection carries no breakpoint"
         );
 
         place_trailing_cache_breakpoint(&mut messages);
         let wire = serde_json::to_string(&messages).unwrap();
-        assert_eq!(wire.matches("cache_control").count(), 1, "exactly one breakpoint");
+        assert_eq!(
+            wire.matches("cache_control").count(),
+            1,
+            "exactly one breakpoint"
+        );
         assert!(
             wire.ends_with(r#""cache_control":{"type":"ephemeral"}}]}]"#),
             "breakpoint sits on the final block: {wire}"

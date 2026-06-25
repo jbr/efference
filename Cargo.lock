@@ -2660,7 +2660,7 @@ dependencies = [
  "futures-lite",
  "log",
  "trillium-http",
- "trillium-macros 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trillium-macros",
 ]
 
 [[package]]
@@ -2681,13 +2681,15 @@ dependencies = [
  "smallvec",
  "thiserror 2.0.18",
  "trillium-http",
- "trillium-macros 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trillium-macros",
  "trillium-server-common",
 ]
 
 [[package]]
 name = "trillium-http"
 version = "1.3.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84c6de92944bcc6f4c19ffa329d9f20ad81bc2f93a2008871e1facd3219ae78a"
 dependencies = [
  "atomic-waker",
  "encoding_rs",
@@ -2707,17 +2709,8 @@ dependencies = [
  "swansong",
  "sync_wrapper",
  "thiserror 2.0.18",
- "trillium-macros 0.1.0",
+ "trillium-macros",
  "type-set",
-]
-
-[[package]]
-name = "trillium-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.118",
 ]
 
 [[package]]
@@ -2803,7 +2796,7 @@ dependencies = [
  "tokio-stream",
  "trillium",
  "trillium-http",
- "trillium-macros 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trillium-macros",
  "trillium-server-common",
 ]
 
