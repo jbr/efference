@@ -15,10 +15,11 @@
 //! Unix-only: `process_group` / `killpg` are POSIX. Phase 0 targets darwin.
 
 use std::future::Future;
-use std::process::{Output, Stdio};
+use std::process::{ExitStatus, Stdio};
 
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 use crate::log::RawResult;
@@ -66,13 +67,26 @@ impl Bash {
     /// spawn failure, malformed input, or a user abort all come back as
     /// `is_error: true` rather than bubbling up — the loop must always have a
     /// `tool_result` to pair with the `tool_use`, or the API rejects the orphan.
-    pub async fn run(&self, input: &Value, abort: impl Future<Output = ()>) -> RawResult {
+    ///
+    /// Streams as it runs: instead of buffering with `wait_with_output`, both pipes
+    /// are drained incrementally and each chunk is forwarded to `on_output` (the
+    /// transport-only live sink — the daemon publishes it to `GET /stream`) while
+    /// the canonical bytes accumulate. Stdout and stderr land in **arrival order**
+    /// (a single interleaved buffer), so progress output written to stderr — cargo,
+    /// say — streams too; this is also more terminal-faithful than the old
+    /// stdout-block-then-stderr-block rendering.
+    pub async fn run(
+        &self,
+        input: &Value,
+        abort: impl Future<Output = ()>,
+        mut on_output: impl FnMut(&str),
+    ) -> RawResult {
         let command = match Input::deserialize(input) {
             Ok(input) => input.command,
             Err(e) => return error(format!("invalid bash input: {e}")),
         };
 
-        let child = match Command::new("bash")
+        let mut child = match Command::new("bash")
             .arg("-c")
             .arg(&command)
             .stdin(Stdio::null())
@@ -87,23 +101,57 @@ impl Bash {
             Err(e) => return error(format!("failed to spawn bash: {e}")),
         };
 
-        // Grab the pgid before `wait_with_output` consumes the handle; on the
-        // abort branch the handle is gone, but the pid is all `killpg` needs.
+        // Grab the pgid before anything consumes the handle; `killpg` needs only it.
         let pgid = child.id();
+        // Take the pipes so we can read them incrementally; both are piped above.
+        let mut stdout = child.stdout.take().expect("stdout is piped");
+        let mut stderr = child.stderr.take().expect("stderr is piped");
 
-        tokio::select! {
-            result = child.wait_with_output() => match result {
-                Ok(output) => render(output),
-                Err(e) => error(format!("error waiting on bash: {e}")),
-            },
-            _ = abort => {
-                if let Some(pgid) = pgid {
-                    kill_group(pgid);
+        let mut combined: Vec<u8> = Vec::new();
+        let mut out_buf = [0u8; 8192];
+        let mut err_buf = [0u8; 8192];
+        let (mut out_done, mut err_done) = (false, false);
+
+        tokio::pin!(abort);
+        // Drain both pipes in arrival order — forwarding each chunk live and
+        // accumulating the canonical bytes — until both close or the user aborts.
+        while !(out_done && err_done) {
+            tokio::select! {
+                _ = &mut abort => {
+                    if let Some(pgid) = pgid {
+                        kill_group(pgid);
+                    }
+                    let mut content = String::from_utf8_lossy(&combined).into_owned();
+                    push_line_break(&mut content);
+                    content.push_str("[aborted by user — process group killed]");
+                    return RawResult { content, is_error: true };
                 }
-                error("aborted by user — process group killed")
+                r = stdout.read(&mut out_buf), if !out_done => match r {
+                    Ok(0) | Err(_) => out_done = true,
+                    Ok(n) => stream_chunk(&out_buf[..n], &mut combined, &mut on_output),
+                },
+                r = stderr.read(&mut err_buf), if !err_done => match r {
+                    Ok(0) | Err(_) => err_done = true,
+                    Ok(n) => stream_chunk(&err_buf[..n], &mut combined, &mut on_output),
+                },
             }
         }
+
+        // Both pipes are at EOF, so the child has finished writing; reap its status.
+        match child.wait().await {
+            Ok(status) => render(combined, status),
+            Err(e) => error(format!("error waiting on bash: {e}")),
+        }
     }
+}
+
+/// Forward one freshly-read chunk to the live sink and append it to the canonical
+/// buffer. The live view is per-chunk `from_utf8_lossy` (a multi-byte char split at
+/// the read boundary shows a transient replacement char — cosmetic only); the
+/// canonical bytes are decoded once, whole, in [`render`].
+fn stream_chunk(chunk: &[u8], combined: &mut Vec<u8>, on_output: &mut impl FnMut(&str)) {
+    on_output(&String::from_utf8_lossy(chunk));
+    combined.extend_from_slice(chunk);
 }
 
 /// `SIGKILL` the whole process group led by `pgid`. The child was spawned with
@@ -118,20 +166,14 @@ fn kill_group(pgid: u32) {
     }
 }
 
-/// Combine stdout then stderr; mark `is_error` on non-zero exit and annotate the
-/// status (a code, or `signal` when the process was killed by one).
-fn render(output: Output) -> RawResult {
-    let mut content = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !stderr.is_empty() {
-        push_line_break(&mut content);
-        content.push_str(&stderr);
-    }
+/// Decode the accumulated (arrival-interleaved) output and mark `is_error` on a
+/// non-zero exit, annotating the status (a code, or `signal` when killed by one).
+fn render(combined: Vec<u8>, status: ExitStatus) -> RawResult {
+    let mut content = String::from_utf8_lossy(&combined).into_owned();
 
-    let is_error = !output.status.success();
+    let is_error = !status.success();
     if is_error {
-        let status = output
-            .status
+        let status = status
             .code()
             .map_or_else(|| "signal".to_string(), |c| c.to_string());
         push_line_break(&mut content);
@@ -172,30 +214,36 @@ mod tests {
         ready(())
     }
 
+    /// A sink that discards streamed chunks — the unit tests assert the canonical
+    /// result; the live-streaming path is exercised separately.
+    fn sink() -> impl FnMut(&str) {
+        |_| {}
+    }
+
     #[tokio::test]
     async fn runs_command_and_captures_stdout() {
-        let result = Bash.run(&json!({ "command": "echo hello" }), never()).await;
+        let result = Bash.run(&json!({ "command": "echo hello" }), never(), sink()).await;
         assert!(!result.is_error);
         assert!(result.content.contains("hello"), "got {:?}", result.content);
     }
 
     #[tokio::test]
     async fn captures_stderr_without_marking_error() {
-        let result = Bash.run(&json!({ "command": "echo oops 1>&2" }), never()).await;
+        let result = Bash.run(&json!({ "command": "echo oops 1>&2" }), never(), sink()).await;
         assert!(!result.is_error, "exit 0 even though it wrote to stderr");
         assert!(result.content.contains("oops"));
     }
 
     #[tokio::test]
     async fn nonzero_exit_is_error_and_surfaces_status() {
-        let result = Bash.run(&json!({ "command": "exit 7" }), never()).await;
+        let result = Bash.run(&json!({ "command": "exit 7" }), never(), sink()).await;
         assert!(result.is_error);
         assert!(result.content.contains('7'), "status should surface: {:?}", result.content);
     }
 
     #[tokio::test]
     async fn malformed_input_is_an_error_result_not_a_panic() {
-        let result = Bash.run(&json!({ "not_command": true }), never()).await;
+        let result = Bash.run(&json!({ "not_command": true }), never(), sink()).await;
         assert!(result.is_error);
         assert!(result.content.contains("invalid bash input"));
     }
@@ -205,9 +253,30 @@ mod tests {
     #[tokio::test]
     async fn abort_kills_a_running_command_promptly() {
         let start = Instant::now();
-        let result = Bash.run(&json!({ "command": "sleep 30" }), now()).await;
+        let result = Bash.run(&json!({ "command": "sleep 30" }), now(), sink()).await;
         assert!(result.is_error);
         assert!(result.content.contains("aborted"));
         assert!(start.elapsed().as_secs() < 5, "must not wait out the sleep");
+    }
+
+    /// Each chunk reaches the live sink as it is read — and the concatenation of the
+    /// streamed chunks matches the canonical output (modulo the trailing status
+    /// note), proving the stream and the committed result agree.
+    #[tokio::test]
+    async fn streams_chunks_to_the_sink() {
+        let mut streamed = String::new();
+        let result = Bash
+            .run(
+                &json!({ "command": "echo one; echo two 1>&2; echo three" }),
+                never(),
+                |chunk: &str| streamed.push_str(chunk),
+            )
+            .await;
+        assert!(!result.is_error);
+        for line in ["one", "two", "three"] {
+            assert!(streamed.contains(line), "live stream missing {line}: {streamed:?}");
+            assert!(result.content.contains(line), "result missing {line}: {:?}", result.content);
+        }
+        assert_eq!(streamed, result.content, "streamed bytes must equal the canonical output");
     }
 }

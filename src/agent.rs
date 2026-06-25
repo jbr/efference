@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use crate::api::{Client, Error, ToolChoice};
 use crate::consolidate;
-use crate::daemon::Shared;
+use crate::daemon::{Shared, StreamDelta};
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
 use crate::log::{ContentBlock, Mark, MarkKind, Payload, RawResult, ToolCall, Turn, WireState};
@@ -90,9 +90,13 @@ pub async fn run<F: Frontend, D: Distiller>(
             let mut messages = shared.project_messages();
             place_trailing_cache_breakpoint(&mut messages);
             // One tool call per turn (DESIGN §8) — the agent picks its next single
-            // action; the fork's `retain` is the only forced call.
+            // action; the fork's `retain` is the only forced call. Each streamed
+            // prose fragment is published to `GET /stream` as it arrives — the live
+            // view; the committed assistant entry on `/events` remains canonical.
             let completion = client
-                .complete(&messages, &tools, ToolChoice::auto())
+                .complete(&messages, &tools, ToolChoice::auto(), |fragment| {
+                    shared.publish_delta(StreamDelta::AssistantText(fragment.to_string()));
+                })
                 .await?;
             turn += 1;
 
@@ -157,7 +161,16 @@ pub async fn run<F: Frontend, D: Distiller>(
                     Approval::Approve => {
                         // `interrupted()` resolves on a `POST /interrupt` — the
                         // tool's kill trigger (kills the process group, DESIGN §6).
-                        let result = toolbox.run(call, frontend.interrupted()).await;
+                        // Tool output streams to `GET /stream` chunk-by-chunk as it
+                        // runs (bash; the MCP tools resolve whole), tagged by call id.
+                        let result = toolbox
+                            .run(call, frontend.interrupted(), |chunk| {
+                                shared.publish_delta(StreamDelta::ToolOutput {
+                                    call_id: call.id.0.clone(),
+                                    chunk: chunk.to_string(),
+                                });
+                            })
+                            .await;
                         // Distill at append: the canonical wire never carries raw;
                         // `raw` is kept in the log for reversibility (DESIGN §4).
                         // `ForkPeek` re-enters the model here (the §4 fork) — the

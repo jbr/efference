@@ -61,11 +61,19 @@ impl Provider {
     }
 
     /// Run a call this backend handles. `abort` is the loop's interrupt future
-    /// (SIGINT → kill); backends that can't be interrupted ignore it.
-    async fn run(&self, call: &ToolCall, abort: impl Future<Output = ()>) -> RawResult {
+    /// (SIGINT → kill); backends that can't be interrupted ignore it. `on_output`
+    /// is the live-stream sink (DESIGN §10) — only the long-running, interruptible
+    /// bash tool streams; the MCP tools are synchronous and resolve whole.
+    async fn run(
+        &self,
+        call: &ToolCall,
+        abort: impl Future<Output = ()>,
+        on_output: impl FnMut(&str),
+    ) -> RawResult {
         match self {
-            Provider::Bash(b) => b.run(&call.input, abort).await,
-            // Synchronous and fast — no await, so these ignore `abort`.
+            Provider::Bash(b) => b.run(&call.input, abort, on_output).await,
+            // Synchronous and fast — no await, so these ignore `abort` and stream
+            // nothing; their result lands whole as one committed entry.
             Provider::Fs(s) => s.run_call(&call.name, &call.input),
             Provider::SemanticEdit(s) => s.run_call(&call.name, &call.input),
         }
@@ -196,9 +204,14 @@ impl Toolbox {
     /// Route a call to the backend that handles its name. An unknown name comes
     /// back as an error result (never a panic) so the assistant `tool_use` still
     /// gets exactly one paired `tool_result` — the API rejects an orphan.
-    pub async fn run(&self, call: &ToolCall, abort: impl Future<Output = ()>) -> RawResult {
+    pub async fn run(
+        &self,
+        call: &ToolCall,
+        abort: impl Future<Output = ()>,
+        on_output: impl FnMut(&str),
+    ) -> RawResult {
         match self.providers.iter().find(|p| p.handles(&call.name)) {
-            Some(provider) => provider.run(call, abort).await,
+            Some(provider) => provider.run(call, abort, on_output).await,
             None => RawResult {
                 content: format!("unknown tool: {}", call.name),
                 is_error: true,
@@ -232,7 +245,7 @@ mod tests {
     #[tokio::test]
     async fn routes_a_bash_call_to_the_bash_backend() {
         let box_ = Toolbox::bash_only();
-        let result = box_.run(&call(bash::NAME, json!({"command": "echo routed"})), pending()).await;
+        let result = box_.run(&call(bash::NAME, json!({"command": "echo routed"})), pending(), |_| {}).await;
         assert!(!result.is_error);
         assert!(result.content.contains("routed"), "got {:?}", result.content);
     }
@@ -241,7 +254,7 @@ mod tests {
     async fn unknown_tool_is_an_error_result_not_a_panic() {
         let box_ = Toolbox::bash_only();
         // An already-resolved abort proves the unknown path never touches it.
-        let result = box_.run(&call("nope", json!({})), ready(())).await;
+        let result = box_.run(&call("nope", json!({})), ready(()), |_| {}).await;
         assert!(result.is_error);
         assert!(result.content.contains("unknown tool: nope"), "got {:?}", result.content);
     }

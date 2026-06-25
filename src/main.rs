@@ -208,10 +208,15 @@ async fn attach(socket: PathBuf) -> CliResult {
 
     // Background: tail `/events` from the start of the session and render each
     // entry as it lands. Dropped when `attach` returns (process exit).
+    // Background: render the durable event tail and the ephemeral delta stream in
+    // ONE task. Merging them (rather than two racing tasks) lets the live-streamed
+    // prose suppress its own committed echo: when a turn streamed text, the
+    // committed entry's text blocks are omitted — only its tool-call/approval lines,
+    // which are never streamed, still render. See `render_streams`.
     let tail = client.clone();
     let handle = tokio::spawn(async move {
-        if let Err(e) = tail_events(tail).await {
-            eprintln!("[event stream ended: {e}]");
+        if let Err(e) = render_streams(tail).await {
+            eprintln!("[render loop ended: {e}]");
         }
     });
 
@@ -249,20 +254,87 @@ async fn attach(socket: PathBuf) -> CliResult {
     Ok(())
 }
 
-/// Tail the event stream from the session start, rendering each entry.
-async fn tail_events(client: ControlClient) -> CliResult {
+/// What the merged renderer has already shown live, so a committed entry can skip
+/// re-printing it. Both flags are set as fragments stream and cleared when the
+/// corresponding committed entry arrives.
+#[derive(Default)]
+struct RenderState {
+    /// A turn's assistant prose was streamed → omit its committed text blocks.
+    streamed_assistant: bool,
+    /// A tool's output was streamed → close that live region before the result.
+    streamed_tool: bool,
+}
+
+/// Render the durable event tail (`GET /events`) and the ephemeral delta stream
+/// (`GET /stream`) from a single task (DESIGN §10). Deltas physically precede the
+/// commit they belong to (the daemon publishes them during inference, then appends
+/// the entry), so the live fragments print first and the committed entry simply
+/// finalizes — without the duplicated block the two-task version produced.
+async fn render_streams(client: ControlClient) -> CliResult {
     let mut events = client.events(Some(0)).await?;
-    while let Some(event) = events.next().await {
-        let event = event?;
-        render_event(event.event_type(), event.data());
+    let mut deltas = client.stream().await?;
+    let mut state = RenderState::default();
+    let mut deltas_done = false;
+    loop {
+        tokio::select! {
+            event = events.next() => match event {
+                Some(event) => {
+                    let event = event?;
+                    render_event(event.event_type(), event.data(), &mut state);
+                }
+                None => break, // the durable tail ended (daemon down) → stop.
+            },
+            // Guarded so a finished delta stream (None forever) can't busy-loop the
+            // select; the durable tail keeps rendering on its own after.
+            delta = deltas.next(), if !deltas_done => match delta {
+                Some(delta) => render_delta(delta?, &mut state),
+                None => deltas_done = true,
+            },
+        }
     }
     Ok(())
 }
 
+/// Render one ephemeral delta: append its fragment to the current line and flush
+/// (no newline, so prose / output accrete as they stream). The first fragment of a
+/// region prints a label and trips the matching [`RenderState`] flag so the
+/// committed entry knows to omit its echo.
+fn render_delta(event: trillium_client::sse::Event, state: &mut RenderState) {
+    let value: serde_json::Value = serde_json::from_str(event.data()).unwrap_or_default();
+    match event.event_type() {
+        Some("assistant_delta") => {
+            if let Some(text) = value["text"].as_str() {
+                if !state.streamed_assistant {
+                    print!("\n◂ assistant: ");
+                    state.streamed_assistant = true;
+                }
+                print_flush(text);
+            }
+        }
+        Some("tool_output") => {
+            if let Some(chunk) = value["chunk"].as_str() {
+                if !state.streamed_tool {
+                    print!("\n· output: ");
+                    state.streamed_tool = true;
+                }
+                print_flush(chunk);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn print_flush(s: &str) {
+    print!("{s}");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+}
+
 /// Render one SSE event (a serialized [`LogEntry`]) as a concise line. Navigates
 /// the JSON loosely (via `Value`) so the CLI stays decoupled from the log's
-/// internal shape.
-fn render_event(kind: Option<&str>, data: &str) {
+/// internal shape. `state` carries what was already shown live, so a streamed turn
+/// finalizes without re-printing its prose (the dedup the merged renderer exists
+/// for).
+fn render_event(kind: Option<&str>, data: &str, state: &mut RenderState) {
     let Ok(entry) = serde_json::from_str::<serde_json::Value>(data) else {
         println!("· {data}");
         return;
@@ -280,11 +352,18 @@ fn render_event(kind: Option<&str>, data: &str) {
         }
         Some("assistant") => {
             let assistant = &payload["Assistant"];
-            for block in assistant["text"].as_array().into_iter().flatten() {
-                if let Some(s) = block["Text"].as_str()
-                    && !s.is_empty()
-                {
-                    println!("\n#{seq} ◂ assistant: {s}");
+            // If the prose was streamed live, just close the live line and skip the
+            // text blocks — only the never-streamed tool-call lines still render.
+            if state.streamed_assistant {
+                println!();
+                state.streamed_assistant = false;
+            } else {
+                for block in assistant["text"].as_array().into_iter().flatten() {
+                    if let Some(s) = block["Text"].as_str()
+                        && !s.is_empty()
+                    {
+                        println!("\n#{seq} ◂ assistant: {s}");
+                    }
                 }
             }
             for call in assistant["calls"].as_array().into_iter().flatten() {
@@ -296,6 +375,12 @@ fn render_event(kind: Option<&str>, data: &str) {
             }
         }
         Some("tool_result") => {
+            // Close the live output region (if any) before the committed result —
+            // which is the fork *distillate*, not a dup of the raw streamed output.
+            if state.streamed_tool {
+                println!();
+                state.streamed_tool = false;
+            }
             let result = &payload["ToolResult"];
             let tag = if result["raw"]["is_error"].as_bool().unwrap_or(false) {
                 "error"

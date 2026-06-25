@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use futures_lite::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::{Notify, mpsc, oneshot};
+use tokio::sync::{Notify, broadcast, mpsc, oneshot};
 use trillium::Conn;
 use trillium_router::{Router, RouterConnExt};
 use trillium_sse::{Eventable, SseConnExt};
@@ -39,6 +39,20 @@ use crate::log::{CallId, LogEntry, Payload, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{ApiMessage, place_trailing_cache_breakpoint, project};
 use crate::tools::Toolbox;
+
+/// A live, pre-commit output fragment streamed to clients over `GET /stream`
+/// (DESIGN §10 — the deferred token-level deltas). **Ephemeral and transport-only**:
+/// never appended to the log, never projected, and droppable for a slow consumer.
+/// The authoritative text always lands as a committed [`LogEntry`] on `/events`, so
+/// the stream is interface candy with the durable log as its backstop — which is
+/// exactly why it can ride a lossy `broadcast` where `/events` must tail the log.
+#[derive(Clone)]
+pub enum StreamDelta {
+    /// A fragment of assistant prose as the model streams it from the upstream SSE.
+    AssistantText(String),
+    /// A chunk of a running tool's combined output, tagged by its `tool_use` id.
+    ToolOutput { call_id: String, chunk: String },
+}
 
 /// An in-flight approval surfaced to clients via `GET /state` (the ephemeral
 /// control state the log doesn't record — it stores only the *result*).
@@ -70,6 +84,10 @@ pub struct Shared {
     interrupt: Notify,
     /// Pinged on each log append; the SSE tail (next slice) will wake on it.
     appended: Notify,
+    /// Fan-out for ephemeral pre-commit output deltas (DESIGN §10). Producers (the
+    /// loop's `complete` sink and the bash tool) publish via [`Shared::publish_delta`];
+    /// each `GET /stream` connection subscribes. Lossy by design — see [`StreamDelta`].
+    stream_tx: broadcast::Sender<StreamDelta>,
     /// Cache/usage telemetry — the most recent request's `usage` and a wall-clock
     /// stamp, surfaced by `GET /state` so clients can see cache hit/miss and
     /// predict TTL eviction (DESIGN §3). Transport-only: never touches the log.
@@ -99,6 +117,11 @@ impl Shared {
     /// Build the shared state and hand back the turn-inbox receiver for the loop.
     pub fn new(log: Log) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
         let (turns_tx, turns_rx) = mpsc::unbounded_channel();
+        // Bounded ring: a consumer that falls this far behind drops the oldest
+        // deltas (a `Lagged` on `recv`) rather than stalling the loop — the log is
+        // the durable record, so a dropped delta is only a momentary gap in the
+        // live view.
+        let (stream_tx, _) = broadcast::channel(1024);
         let shared = Arc::new(Self {
             log: Mutex::new(log),
             turns_tx,
@@ -106,6 +129,7 @@ impl Shared {
             pending: Mutex::new(None),
             interrupt: Notify::new(),
             appended: Notify::new(),
+            stream_tx,
             metrics: Mutex::new(Metrics::default()),
         });
         (shared, turns_rx)
@@ -156,6 +180,19 @@ impl Shared {
         self.log.lock().unwrap().append(turn, payload)?;
         self.appended.notify_waiters();
         Ok(())
+    }
+
+    /// Publish an ephemeral pre-commit output delta to `GET /stream` subscribers
+    /// (DESIGN §10). Intentionally lossy: a send with no subscribers — or to a
+    /// lagging one — is dropped, because the committed entry on `/events` is the
+    /// authoritative copy. Never touches the log.
+    pub fn publish_delta(&self, delta: StreamDelta) {
+        let _ = self.stream_tx.send(delta);
+    }
+
+    /// A fresh subscription to the delta fan-out for one `GET /stream` connection.
+    fn subscribe_stream(&self) -> broadcast::Receiver<StreamDelta> {
+        self.stream_tx.subscribe()
     }
 
     /// Project the current log into the wire (DESIGN §1). Lock held only for the
@@ -388,6 +425,17 @@ fn router() -> Router {
             let since = parse_since(conn.querystring()).unwrap_or(0);
             conn.with_sse_stream(tail_events(shared, since))
         })
+        // Live tail of *ephemeral* output deltas (DESIGN §10): assistant prose and
+        // tool output as they're produced, before the turn commits. No `since`
+        // cursor and no replay — these carry no `seq` and aren't durable; a client
+        // that wants the authoritative record tails `/events`. A late subscriber
+        // simply starts from the next delta.
+        .get("/stream", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            conn.with_sse_stream(stream_deltas(shared))
+        })
 }
 
 /// One log entry as a Server-Sent Event. We implement [`Eventable`] ourselves
@@ -460,6 +508,65 @@ fn tail_events(
             }
         },
     ))
+}
+
+/// One ephemeral [`StreamDelta`] as an SSE event. **No `id`** — deltas are
+/// pre-commit and carry no `seq`; that absence is the whole reason they ride a
+/// side channel rather than `/events`, whose `id == seq` is a durable resume
+/// cursor. The body is always JSON so a fragment containing newlines can't perturb
+/// SSE's line-oriented `data:` framing.
+struct DeltaEvent {
+    /// The delta kind → the SSE `event:` field, so a client switches without
+    /// parsing the body first (`assistant_delta` / `tool_output`).
+    kind: &'static str,
+    data: String,
+}
+
+impl Eventable for DeltaEvent {
+    fn data(&self) -> &str {
+        &self.data
+    }
+    fn event_type(&self) -> Option<&str> {
+        Some(self.kind)
+    }
+    fn id(&self) -> Option<&str> {
+        None
+    }
+}
+
+fn delta_event(delta: &StreamDelta) -> DeltaEvent {
+    match delta {
+        StreamDelta::AssistantText(text) => DeltaEvent {
+            kind: "assistant_delta",
+            data: serde_json::json!({ "text": text }).to_string(),
+        },
+        StreamDelta::ToolOutput { call_id, chunk } => DeltaEvent {
+            kind: "tool_output",
+            data: serde_json::json!({ "call_id": call_id, "chunk": chunk }).to_string(),
+        },
+    }
+}
+
+/// A per-connection stream of ephemeral output deltas (DESIGN §10). Subscribes to
+/// the broadcast and forwards each delta as an SSE event. A consumer that lags past
+/// the ring drops the oldest deltas (`Lagged`) and continues — acceptable precisely
+/// because the durable log (`/events`) is the authoritative backstop, so the stream
+/// trades completeness for never stalling the producing loop.
+fn stream_deltas(
+    shared: Arc<Shared>,
+) -> Pin<Box<dyn Stream<Item = DeltaEvent> + Send + Sync + 'static>> {
+    let rx = shared.subscribe_stream();
+    Box::pin(futures_lite::stream::unfold(rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(delta) => return Some((delta_event(&delta), rx)),
+                // Fell behind the ring: skip the gap and keep tailing live.
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                // All senders dropped (daemon tearing down): end the stream.
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    }))
 }
 
 const MISSING_STATE: &str = r#"{"error":"missing shared state"}"#;
@@ -541,7 +648,7 @@ pub async fn serve<D: Distiller>(
     // upgrades to the multi-listener builder (carrying that state over) so we can
     // `bind_uds`. The same builder's `bind_tcp`/`bind_env` is the deferred-TCP
     // seam (DESIGN §8) — a config switch, not an abstraction to build.
-    let _server = trillium_tokio::config()
+    let server = trillium_tokio::config()
         .with_shared_state(Arc::clone(&shared))
         .listeners()
         .bind_uds(&socket)
@@ -558,7 +665,23 @@ pub async fn serve<D: Distiller>(
         tools,
     ));
 
-    agent::run(&client, &mut frontend, shared, distiller, toolbox).await
+    // Trillium owns the signal registry: by default it registers SIGINT/SIGTERM and
+    // drives graceful shutdown through its `Swansong`. But the future `serve` awaits
+    // is `agent::run`, which parks in `read_user_turn` on the turn channel — whose
+    // senders live in the still-alive `Arc<Shared>`, so a C-c that stops the HTTP
+    // listener would otherwise leave the loop parked forever (the `kill -9` hang).
+    // Hook the *same* Swansong via `interrupt`: it drives the loop normally until
+    // shutdown is initiated, then cancels it and resolves to `None`. (`server` is
+    // held — not dropped — for the whole await so the listener stays up; it drops on
+    // return, after shutdown has already begun.)
+    let run = agent::run(&client, &mut frontend, shared, distiller, toolbox);
+    match server.swansong().interrupt(run).await {
+        Some(result) => result,
+        None => {
+            eprintln!("\nshutting down");
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -713,6 +836,58 @@ mod tests {
         let (id, _, data) = next_event(&mut events).await;
         assert_eq!(id.as_deref(), Some("2"));
         assert!(data.contains("third"));
+
+        let _ = std::fs::remove_file(&socket);
+        let _ = std::fs::remove_file(&log_path);
+    }
+
+    /// `GET /stream` carries ephemeral deltas published after a client subscribes:
+    /// assistant prose (`assistant_delta`) and tool output (`tool_output`), each
+    /// typed, JSON-bodied, and crucially **id-less** — they're pre-commit and have
+    /// no `seq`, which is the contract that keeps them off the durable `/events`
+    /// cursor. The handler subscribes synchronously while building the response, so
+    /// a publish after `stream()` resolves can't race ahead of the subscription.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn stream_carries_ephemeral_deltas() {
+        let dir = std::env::temp_dir();
+        let log_path = dir.join("efference-stream-test.jsonl");
+        let socket = dir.join("efference-stream-test.sock");
+        let _ = std::fs::remove_file(&log_path);
+        let _ = std::fs::remove_file(&socket);
+
+        let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
+        trillium_tokio::config()
+            .with_shared_state(Arc::clone(&shared))
+            .listeners()
+            .bind_uds(&socket)
+            .expect("bind uds")
+            .spawn(router());
+
+        let client = ControlClient::new(&socket);
+        let mut stream = client.stream().await.expect("open stream");
+
+        // Published only after the subscription exists (the handler subscribed
+        // before returning the response headers `stream()` just awaited).
+        shared.publish_delta(StreamDelta::AssistantText("hello ".into()));
+        shared.publish_delta(StreamDelta::ToolOutput {
+            call_id: "toolu_5".into(),
+            chunk: "line of output\n".into(),
+        });
+
+        // Prose delta: typed, id-less, text in a JSON body.
+        let (id, kind, data) = next_event(&mut stream).await;
+        assert_eq!(id, None, "deltas carry no seq");
+        assert_eq!(kind.as_deref(), Some("assistant_delta"));
+        let v: Value = serde_json::from_str(&data).unwrap();
+        assert_eq!(v["text"], "hello ");
+
+        // Tool-output delta: tagged by the call id so a client can attribute it.
+        let (id, kind, data) = next_event(&mut stream).await;
+        assert_eq!(id, None);
+        assert_eq!(kind.as_deref(), Some("tool_output"));
+        let v: Value = serde_json::from_str(&data).unwrap();
+        assert_eq!(v["call_id"], "toolu_5");
+        assert_eq!(v["chunk"], "line of output\n");
 
         let _ = std::fs::remove_file(&socket);
         let _ = std::fs::remove_file(&log_path);

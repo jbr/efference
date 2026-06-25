@@ -166,8 +166,11 @@ impl Assembler {
     }
 
     /// Fold one SSE event into the running state. `event_type` is the SSE
-    /// `event:` field; `data` is the raw JSON payload.
-    fn apply(&mut self, event_type: Option<&str>, data: &str) -> Result<(), Error> {
+    /// `event:` field; `data` is the raw JSON payload. Returns the prose fragment a
+    /// `text_delta` contributed (if any), so [`Client::complete`] can forward it to
+    /// a live sink without re-parsing — every other event yields `None`.
+    fn apply(&mut self, event_type: Option<&str>, data: &str) -> Result<Option<String>, Error> {
+        let mut streamed = None;
         match event_type {
             Some("message_start") => {
                 #[derive(Deserialize)]
@@ -232,7 +235,9 @@ impl Assembler {
                 })?;
                 match (kind, block) {
                     ("text_delta", BlockAccum::Text(buf)) => {
-                        buf.push_str(delta.get("text").and_then(Value::as_str).unwrap_or_default());
+                        let frag = delta.get("text").and_then(Value::as_str).unwrap_or_default();
+                        buf.push_str(frag);
+                        streamed = Some(frag.to_string());
                     }
                     ("input_json_delta", BlockAccum::ToolUse { partial_json, .. }) => {
                         partial_json.push_str(
@@ -286,7 +291,7 @@ impl Assembler {
             Some("error") => return Err(format!("Anthropic stream error: {data}").into()),
             other => return Err(format!("unknown SSE event {other:?}: {data}").into()),
         }
-        Ok(())
+        Ok(streamed)
     }
 
     /// Collapse the accumulated blocks into the assistant turn. Tool inputs parse
@@ -348,7 +353,10 @@ impl Client {
     }
 
     /// One streaming round-trip: serialize `messages`, POST with `stream: true`,
-    /// and fold the SSE event stream back into a [`Completion`].
+    /// and fold the SSE event stream back into a [`Completion`]. Each streamed prose
+    /// fragment is handed to `on_text` as it arrives — the transport-only live sink
+    /// (the daemon publishes it to `GET /stream`); pass a no-op `|_| {}` when nothing
+    /// is listening (e.g. the fork peek, whose triage tokens must never surface).
     ///
     /// `into_sse` *is* the execution — the conn must not be awaited first (that
     /// is `SseErrorKind::AlreadyExecuted`). On a non-2xx it returns
@@ -362,6 +370,7 @@ impl Client {
         messages: &[ApiMessage],
         tools: &[Value],
         tool_choice: ToolChoice,
+        mut on_text: impl FnMut(&str),
     ) -> Result<Completion, Error> {
         let request = Request {
             model: &self.model,
@@ -396,7 +405,9 @@ impl Client {
         let mut assembler = Assembler::new();
         while let Some(event) = events.next().await {
             let event = event?;
-            assembler.apply(event.event_type(), event.data())?;
+            if let Some(fragment) = assembler.apply(event.event_type(), event.data())? {
+                on_text(&fragment);
+            }
         }
         assembler.finish()
     }

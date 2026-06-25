@@ -144,7 +144,9 @@ impl Distiller for ForkPeek {
         // unusable (the request still happened and slid the prefix's TTL); only a
         // transport error yields no usage.
         let (verdict, usage) = match client
-            .complete(&messages, &[retain_tool()], ToolChoice::force(RETAIN))
+            // No-op sink: the fork peek's triage tokens are internal and must never
+            // surface on `GET /stream` — only the main thread's prose streams.
+            .complete(&messages, &[retain_tool()], ToolChoice::force(RETAIN), |_| {})
             .await
         {
             Ok(completion) => (verdict_from(&completion), Some(completion.usage)),
