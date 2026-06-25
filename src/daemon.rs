@@ -421,6 +421,7 @@ fn log_event(entry: &LogEntry) -> LogEvent {
         Payload::User(_) => "user",
         Payload::Assistant { .. } => "assistant",
         Payload::ToolResult { .. } => "tool_result",
+        Payload::Mark(_) => "mark",
     };
     LogEvent {
         id: entry.seq.to_string(),

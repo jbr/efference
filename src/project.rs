@@ -134,6 +134,13 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
                 raw,
                 wire,
             } => pending_tool_results.push(tool_result_block(call_id, raw, wire)),
+            // Marks are log metadata — projected to nothing for now (DESIGN §10
+            // condensed map: the seam is wired ahead of the fold). Deliberately it
+            // does NOT flush `pending_tool_results`: a mark sitting between an
+            // assistant turn's `tool_use`s and their results must stay invisible and
+            // leave those results coalesced. Slice 1 replaces this with the
+            // span-folding behaviour.
+            Payload::Mark(_) => {}
         }
     }
     flush_tool_results(&mut pending_tool_results, &mut messages);
@@ -179,7 +186,9 @@ fn tool_result_block(call_id: &CallId, raw: &RawResult, wire: &WireState) -> Api
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::log::{ContentBlock, LogEntry, Payload, RawResult, Timestamp, ToolCall, WireState};
+    use crate::log::{
+        ContentBlock, LogEntry, Mark, MarkKind, Payload, RawResult, Timestamp, ToolCall, WireState,
+    };
     use serde_json::json;
 
     fn entry(seq: u64, turn: u32, payload: Payload) -> LogEntry {
@@ -369,6 +378,57 @@ mod tests {
         let wire = serde_json::to_string(&project(&log)).unwrap();
         assert!(wire.contains("just the gist"), "distillate must be projected");
         assert!(!wire.contains("ten thousand lines"), "raw must stay off the wire");
+    }
+
+    /// A `Mark` is log metadata — wired into `project` ahead of the Phase-3 fold
+    /// (DESIGN §10). For now it must be invisible on the wire, even when it lands
+    /// mid-turn between two coalesced `tool_result`s: byte-identical output, and the
+    /// results must stay in one user message.
+    #[test]
+    fn mark_is_invisible_and_does_not_split_coalesced_tool_results() {
+        let assistant = entry(
+            0,
+            0,
+            Payload::Assistant {
+                text: vec![],
+                calls: vec![
+                    ToolCall { id: CallId("a".into()), name: "bash".into(), input: json!({}) },
+                    ToolCall { id: CallId("b".into()), name: "bash".into(), input: json!({}) },
+                ],
+            },
+        );
+        let result = |seq: u64, id: &str, out: &str| {
+            entry(
+                seq,
+                0,
+                Payload::ToolResult {
+                    call_id: CallId(id.into()),
+                    raw: RawResult { content: out.into(), is_error: false },
+                    wire: WireState::Raw,
+                },
+            )
+        };
+        let without = vec![assistant.clone(), result(1, "a", "out-a"), result(2, "b", "out-b")];
+        let with = vec![
+            assistant,
+            result(1, "a", "out-a"),
+            entry(
+                99,
+                0,
+                Payload::Mark(Mark {
+                    kind: MarkKind::Boundary { upto: 1 },
+                    note: "mid-turn breadcrumb".into(),
+                }),
+            ),
+            result(2, "b", "out-b"),
+        ];
+        assert_eq!(
+            serde_json::to_string(&project(&without)).unwrap(),
+            serde_json::to_string(&project(&with)).unwrap(),
+            "a mark between two tool_results must be invisible and not split them"
+        );
+        let messages = project(&with);
+        assert_eq!(messages[1].content.len(), 2, "both results stay in one coalesced user message");
     }
 
     /// The trailing breakpoint marks exactly the last block as `ephemeral` and

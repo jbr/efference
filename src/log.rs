@@ -53,6 +53,15 @@ pub enum Payload {
         raw: RawResult,
         wire: WireState,
     },
+    /// A salience annotation written at the moment it's known (DESIGN §1, §2): a
+    /// decision, a dead end, a relevance note, or a consolidation boundary. The
+    /// Phase-3 substrate for intent-aware compaction — *kept* through a fold while
+    /// the deliberation around it is elided. Wired into [`project`] ahead of the
+    /// feature: today it projects to nothing; Slice 1 teaches projection to fold
+    /// the span behind a boundary mark (DESIGN §10 condensed map → Phase 3).
+    ///
+    /// [`project`]: crate::project::project
+    Mark(Mark),
 }
 
 /// Phase 0 content is text-only; richer blocks (images, …) come later.
@@ -77,6 +86,28 @@ pub struct ToolCall {
 pub struct RawResult {
     pub content: String,
     pub is_error: bool,
+}
+
+/// The content of a [`Payload::Mark`] — a breadcrumb left in the record. `note` is
+/// the one-line decision / dead-end / relevance / consolidation-summary text.
+/// Richer structure (a `kind` discriminator, the span a consolidation boundary
+/// covers) lands with Slice 1, when projection starts folding behind it. Additive
+/// by design: because a mark projects to nothing today, growing this struct cannot
+/// perturb the byte-stability pin (DESIGN §3).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Mark {
+    pub kind: MarkKind,
+    pub note: String,
+}
+
+/// What a [`Mark`] does to the projection. Slice 0 introduces only the
+/// consolidation `Boundary`; the §1/§2 salience kinds (decision / dead-end /
+/// relevance — the "keep marks, drop deliberation" breadcrumbs) land when they get
+/// a construction site. `upto` is the seq the boundary folds up to — recorded now,
+/// read by the Slice-1 projection fold (DESIGN §10 condensed map → Phase 3).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum MarkKind {
+    Boundary { upto: Seq },
 }
 
 /// How a [`Payload::ToolResult`] should be projected. Flipping this (never

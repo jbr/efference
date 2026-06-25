@@ -13,10 +13,11 @@
 use std::sync::Arc;
 
 use crate::api::{Client, Error, ToolChoice};
+use crate::consolidate;
 use crate::daemon::Shared;
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
-use crate::log::{ContentBlock, Payload, RawResult, ToolCall, Turn, WireState};
+use crate::log::{ContentBlock, Mark, MarkKind, Payload, RawResult, ToolCall, Turn, WireState};
 use crate::project::place_trailing_cache_breakpoint;
 use crate::tools::Toolbox;
 
@@ -59,7 +60,11 @@ pub async fn run<F: Frontend, D: Distiller>(
     distiller: D,
     toolbox: Toolbox,
 ) -> Result<(), Error> {
-    let tools = toolbox.definitions();
+    // World-facing tools plus the harness-level `consolidate` (handled structurally
+    // in the loop below, not by a `Provider`). Appended once; the def is a constant
+    // `json!`, so `tools[]` stays byte-stable across requests (DESIGN §3).
+    let mut tools = toolbox.definitions();
+    tools.push(consolidate::definition());
     let mut turn: Turn = 0;
 
     loop {
@@ -129,6 +134,26 @@ pub async fn run<F: Frontend, D: Distiller>(
                     continue;
                 }
                 match frontend.approve(call).await {
+                    // `consolidate` acts on the log, not the world (DESIGN §10
+                    // Phase 3): record the boundary mark + pair the `tool_use`. No
+                    // world-run, no distill. Slice 0 — the mark is inert; Slice 1's
+                    // projection folds the span it names (its `upto`).
+                    Approval::Approve if call.name == consolidate::NAME => {
+                        let note = consolidate::summary(&call.input).unwrap_or_default();
+                        let upto = consolidate::extent(&shared.snapshot());
+                        shared.append(
+                            turn,
+                            Payload::Mark(Mark { kind: MarkKind::Boundary { upto }, note }),
+                        )?;
+                        shared.append(
+                            turn,
+                            Payload::ToolResult {
+                                call_id: call.id.clone(),
+                                raw: RawResult { content: "consolidated".into(), is_error: false },
+                                wire: WireState::Raw,
+                            },
+                        )?;
+                    }
                     Approval::Approve => {
                         // `interrupted()` resolves on a `POST /interrupt` — the
                         // tool's kill trigger (kills the process group, DESIGN §6).
