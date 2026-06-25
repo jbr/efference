@@ -2687,7 +2687,7 @@ dependencies = [
 
 [[package]]
 name = "trillium-http"
-version = "1.3.9"
+version = "1.3.10"
 dependencies = [
  "atomic-waker",
  "encoding_rs",

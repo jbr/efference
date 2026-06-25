@@ -87,7 +87,7 @@ impl ToolChoice {
 /// The Anthropic `usage` object. The two `cache_*` fields are the Phase 0 gate
 /// metrics; defaulted because they're absent unless caching is in play. `Default`
 /// seeds the [`Assembler`] before `message_start` arrives.
-#[derive(Deserialize, Debug, Clone, Default)]
+#[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct Usage {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -399,6 +399,54 @@ impl Client {
             assembler.apply(event.event_type(), event.data())?;
         }
         assembler.finish()
+    }
+
+    /// A cache-keepalive ping (DESIGN §3): a **non-streaming** `max_tokens: 0`
+    /// round-trip over the same prefix a real turn would send. It READS the cached
+    /// prefix — refreshing its (sliding) TTL — and generates nothing, so the
+    /// (empty) assistant turn is discarded and the log is never touched. Returns
+    /// only the `usage`, which the daemon folds into the §3 cache telemetry.
+    ///
+    /// Non-streaming on purpose: `max_tokens: 0` is rejected with `stream: true`
+    /// (verified live). The prefix bytes must match a real request's **exactly**
+    /// or the ping writes a *new* entry instead of refreshing the live one — so it
+    /// takes the same `messages` / `tools` / `tool_choice` and reuses the client's
+    /// `system`. (Set `tool_choice` to whatever the loop uses — `auto()`.)
+    pub async fn keepalive(
+        &self,
+        messages: &[ApiMessage],
+        tools: &[Value],
+        tool_choice: ToolChoice,
+    ) -> Result<Usage, Error> {
+        let request = Request {
+            model: &self.model,
+            max_tokens: 0,
+            system: &self.system,
+            tools,
+            tool_choice,
+            messages,
+            stream: false,
+        };
+        let body = serde_json::to_string(&request)?;
+        let mut conn = self
+            .http
+            .post(MESSAGES_ENDPOINT)
+            .with_request_header("x-api-key", self.api_key.clone())
+            .with_request_header("anthropic-version", ANTHROPIC_VERSION)
+            .with_request_header("content-type", "application/json")
+            .with_body(body)
+            .await?;
+        let ok = conn.status().is_some_and(|s| s.is_success());
+        let text = conn.response_body().read_string().await?;
+        if !ok {
+            return Err(format!("keepalive returned non-2xx: {text}").into());
+        }
+        #[derive(Deserialize)]
+        struct KeepaliveResponse {
+            usage: Usage,
+        }
+        let parsed: KeepaliveResponse = serde_json::from_str(&text)?;
+        Ok(parsed.usage)
     }
 }
 

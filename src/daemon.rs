@@ -21,6 +21,7 @@ use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use futures_lite::Stream;
 use serde::{Deserialize, Serialize};
@@ -31,12 +32,12 @@ use trillium_router::{Router, RouterConnExt};
 use trillium_sse::{Eventable, SseConnExt};
 
 use crate::agent;
-use crate::api::{Client, Error};
+use crate::api::{Client, Error, ToolChoice, Usage};
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
 use crate::log::{CallId, LogEntry, Payload, ToolCall, Turn};
 use crate::persist::Log;
-use crate::project::{ApiMessage, project};
+use crate::project::{ApiMessage, place_trailing_cache_breakpoint, project};
 use crate::tools::Toolbox;
 
 /// An in-flight approval surfaced to clients via `GET /state` (the ephemeral
@@ -69,6 +70,29 @@ pub struct Shared {
     interrupt: Notify,
     /// Pinged on each log append; the SSE tail (next slice) will wake on it.
     appended: Notify,
+    /// Cache/usage telemetry — the most recent request's `usage` and a wall-clock
+    /// stamp, surfaced by `GET /state` so clients can see cache hit/miss and
+    /// predict TTL eviction (DESIGN §3). Transport-only: never touches the log.
+    metrics: Mutex<Metrics>,
+}
+
+/// Per-session cache/usage telemetry. `last_request_at` is an [`Instant`] (not
+/// serialized — we surface the derived elapsed seconds, so the non-determinism
+/// never reaches a client and there's nothing to keep byte-stable).
+#[derive(Default)]
+struct Metrics {
+    last_usage: Option<Usage>,
+    /// Stamped by **any** request — real turn, fork peek, or keepalive ping. The
+    /// cache-touch clock: drives `seconds_since_last_request` and when to ping.
+    last_request_at: Option<Instant>,
+    /// Stamped by real loop turns (incl. the fork) but **not** keepalive pings, so
+    /// it measures genuine idle and a ping can't reset its own deadline. Gates the
+    /// keepalive cap (DESIGN §3).
+    last_real_turn_at: Option<Instant>,
+    total_input: u64,
+    total_output: u64,
+    total_cache_read: u64,
+    total_cache_creation: u64,
 }
 
 impl Shared {
@@ -82,8 +106,48 @@ impl Shared {
             pending: Mutex::new(None),
             interrupt: Notify::new(),
             appended: Notify::new(),
+            metrics: Mutex::new(Metrics::default()),
         });
         (shared, turns_rx)
+    }
+
+    /// Record a completed request's `usage` and stamp the wall clock. The loop
+    /// calls this once per API round-trip; `GET /state` reports the latest plus
+    /// running totals and the seconds-since (the eviction-prediction signal,
+    /// DESIGN §3). Transport-only — no log append, no projection change.
+    pub fn record_request(&self, usage: Usage) {
+        let mut m = self.metrics.lock().unwrap();
+        Self::fold_usage(&mut m, usage);
+        m.last_real_turn_at = Some(Instant::now());
+    }
+
+    /// A keepalive ping's usage (DESIGN §3). Folded into the telemetry and the
+    /// cache-touch clock like any request, but it does **not** stamp the real-turn
+    /// clock — a ping must not reset the cap that decides when to stop pinging.
+    pub fn record_keepalive(&self, usage: Usage) {
+        let mut m = self.metrics.lock().unwrap();
+        Self::fold_usage(&mut m, usage);
+    }
+
+    fn fold_usage(m: &mut Metrics, usage: Usage) {
+        m.total_input += usage.input_tokens;
+        m.total_output += usage.output_tokens;
+        m.total_cache_read += usage.cache_read_input_tokens;
+        m.total_cache_creation += usage.cache_creation_input_tokens;
+        m.last_request_at = Some(Instant::now());
+        m.last_usage = Some(usage);
+    }
+
+    /// `(since last cache-touch, since last real turn)` — the keepalive task's two
+    /// clocks. The first decides *when* to ping (the cache is nearing its TTL); the
+    /// second enforces the *cap* (a ping doesn't reset it, so unbounded idle still
+    /// stops). Both `None` until the first real turn — nothing to keep warm yet.
+    fn keepalive_clocks(&self) -> (Option<Duration>, Option<Duration>) {
+        let m = self.metrics.lock().unwrap();
+        (
+            m.last_request_at.map(|t| t.elapsed()),
+            m.last_real_turn_at.map(|t| t.elapsed()),
+        )
     }
 
     /// Append to the log (durably) and wake SSE tailers. The single appender is
@@ -162,7 +226,23 @@ impl Shared {
             .len()
             .checked_sub(1)
             .map(|i| i as u64);
-        serde_json::json!({ "last_seq": last_seq, "pending_approval": pending }).to_string()
+        let metrics = self.metrics.lock().unwrap();
+        let usage = serde_json::json!({
+            "last": metrics.last_usage,
+            "cumulative": {
+                "input_tokens": metrics.total_input,
+                "output_tokens": metrics.total_output,
+                "cache_read_input_tokens": metrics.total_cache_read,
+                "cache_creation_input_tokens": metrics.total_cache_creation,
+            },
+            "seconds_since_last_request": metrics.last_request_at.map(|t| t.elapsed().as_secs()),
+        });
+        serde_json::json!({
+            "last_seq": last_seq,
+            "pending_approval": pending,
+            "usage": usage,
+        })
+        .to_string()
     }
 
     fn log_json(&self, since: Option<u64>) -> String {
@@ -383,6 +463,49 @@ fn tail_events(
 
 const MISSING_STATE: &str = r#"{"error":"missing shared state"}"#;
 
+/// The cache keepalive (DESIGN §3): a daemon-side timer that fires a
+/// `max_tokens: 0` ping when the canonical prefix nears its 5-minute cache TTL
+/// during idle, refreshing it so the next real turn resumes hot instead of cold.
+/// Pure transport — it reads the prefix and records the usage; the log is never
+/// touched.
+///
+/// Two clocks ([`Shared::keepalive_clocks`]): ping when the cache-touch clock
+/// nears the TTL, but stop once the *real-turn* clock passes `CAP` — past that the
+/// human has been gone long enough that pinging forever costs more than one cold
+/// read on resume (the §3 crossover). 5m TTL only: a warm cache can't be entered
+/// at 1h (verified — TTL is write-time), so 1h is a future cold-write knob, not a
+/// keepalive concern.
+async fn keepalive_loop(client: Arc<Client>, shared: Arc<Shared>, tools: Vec<Value>) {
+    const CHECK: Duration = Duration::from_secs(20);
+    const PING_AT: Duration = Duration::from_secs(240); // 4 min — margin under the 5m TTL
+    const CAP: Duration = Duration::from_secs(30 * 60); // give up after 30 min idle
+    loop {
+        tokio::time::sleep(CHECK).await;
+        // Need a real turn to have happened (a prefix worth keeping warm) and to be
+        // inside the window: nearing eviction but not yet past the give-up cap.
+        let (Some(touch), Some(turn)) = shared.keepalive_clocks() else {
+            continue;
+        };
+        if turn >= CAP || touch < PING_AT {
+            continue;
+        }
+        // Same prefix a real turn would send (byte-identical, or it writes a new
+        // entry instead of refreshing the live one); `max_tokens: 0` reads it.
+        let mut messages = shared.project_messages();
+        place_trailing_cache_breakpoint(&mut messages);
+        match client.keepalive(&messages, &tools, ToolChoice::auto()).await {
+            Ok(usage) => {
+                eprintln!(
+                    "[keepalive: cache read {} — TTL refreshed]",
+                    usage.cache_read_input_tokens
+                );
+                shared.record_keepalive(usage);
+            }
+            Err(e) => eprintln!("[keepalive failed: {e}]"),
+        }
+    }
+}
+
 /// Pull `since=<n>` out of a raw query string (`GET /log?since=12`).
 fn parse_since(query: &str) -> Option<u64> {
     query
@@ -403,6 +526,11 @@ pub async fn serve<D: Distiller>(
     socket: PathBuf,
 ) -> Result<(), Error> {
     let (shared, turns) = Shared::new(log);
+    // Share the client between the loop and the keepalive task. `tools` is computed
+    // once here for the ping; `agent::run` recomputes the same (byte-stable, §3)
+    // definitions internally, so both send an identical prefix.
+    let client = Arc::new(client);
+    let tools = toolbox.definitions();
     let mut frontend = RemoteFrontend {
         shared: Arc::clone(&shared),
         turns,
@@ -420,6 +548,15 @@ pub async fn serve<D: Distiller>(
         .spawn(router());
     eprintln!("control socket: {}", socket.display());
 
+    // The cache keepalive runs alongside the loop (DESIGN §3) — a transport-side
+    // timer that never touches the log, so it composes with the loop without
+    // sharing anything but the read-only client and the telemetry clocks.
+    tokio::spawn(keepalive_loop(
+        Arc::clone(&client),
+        Arc::clone(&shared),
+        tools,
+    ));
+
     agent::run(&client, &mut frontend, shared, distiller, toolbox).await
 }
 
@@ -433,6 +570,84 @@ mod tests {
 
     fn user(text: &str) -> Payload {
         Payload::User(vec![ContentBlock::Text(text.into())])
+    }
+
+    /// `GET /state` reports cache telemetry: the latest `usage`, running totals,
+    /// and a seconds-since stamp. Drives the §10 gate signature through it —
+    /// a cold first request (all creation) then a hot one (reads climb, creation
+    /// collapses) — and asserts the surface reflects both. Transport-only: the
+    /// log is untouched, so this never perturbs projection or byte-stability.
+    #[test]
+    fn state_reports_cache_telemetry() {
+        let log_path = std::env::temp_dir().join("efference-usage-test.jsonl");
+        let _ = std::fs::remove_file(&log_path);
+        let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
+
+        // No request yet: no `last`, no stamp.
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert!(v["usage"]["last"].is_null());
+        assert!(v["usage"]["seconds_since_last_request"].is_null());
+
+        // Cold prefix: all creation, no read.
+        shared.record_request(Usage {
+            input_tokens: 6,
+            output_tokens: 10,
+            cache_creation_input_tokens: 9407,
+            cache_read_input_tokens: 0,
+        });
+        // Now hot: reads climb, creation collapses (the §10 gate signature).
+        shared.record_request(Usage {
+            input_tokens: 6,
+            output_tokens: 12,
+            cache_creation_input_tokens: 165,
+            cache_read_input_tokens: 9407,
+        });
+
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        // `last` is the most recent request.
+        assert_eq!(v["usage"]["last"]["cache_read_input_tokens"], 9407);
+        assert_eq!(v["usage"]["last"]["cache_creation_input_tokens"], 165);
+        // Cumulative sums across both.
+        assert_eq!(
+            v["usage"]["cumulative"]["cache_creation_input_tokens"],
+            9407 + 165
+        );
+        assert_eq!(v["usage"]["cumulative"]["cache_read_input_tokens"], 9407);
+        assert_eq!(v["usage"]["cumulative"]["output_tokens"], 22);
+        // A wall-clock stamp now exists — the eviction-prediction signal (§3).
+        assert!(v["usage"]["seconds_since_last_request"].is_u64());
+    }
+
+    /// The keepalive's load-bearing invariant (DESIGN §3): a ping advances the
+    /// cache-touch clock (it really did refresh the TTL) but must NOT reset the
+    /// real-turn clock — that clock gates the give-up cap, and a ping resetting its
+    /// own deadline would pin the cache forever. So after a real turn then a ping,
+    /// the cap clock has been ticking strictly longer than the touch clock.
+    #[test]
+    fn keepalive_advances_touch_clock_not_cap_clock() {
+        let log_path = std::env::temp_dir().join("efference-keepalive-test.jsonl");
+        let _ = std::fs::remove_file(&log_path);
+        let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
+
+        // Nothing to keep warm yet → both clocks absent.
+        assert_eq!(shared.keepalive_clocks(), (None, None));
+
+        let usage = Usage {
+            input_tokens: 1,
+            output_tokens: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 100,
+        };
+        shared.record_request(usage.clone()); // real turn → stamps both clocks
+        std::thread::sleep(Duration::from_millis(5));
+        shared.record_keepalive(usage); // ping → advances the touch clock only
+
+        let (touch, turn) = shared.keepalive_clocks();
+        let (touch, turn) = (touch.unwrap(), turn.unwrap());
+        assert!(
+            turn > touch,
+            "cap clock {turn:?} must outrun the touch clock {touch:?} a ping reset"
+        );
     }
 
     /// (id, event_type, data) of the next SSE event, with a timeout so a hung tail

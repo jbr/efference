@@ -27,7 +27,7 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::api::{Client, Completion, ToolChoice};
+use crate::api::{Client, Completion, ToolChoice, Usage};
 use crate::log::{LogEntry, Payload, RawResult, ToolCall, WireState};
 use crate::project::{ApiBlock, ApiMessage, Role, place_trailing_cache_breakpoint, project};
 
@@ -50,6 +50,11 @@ can. Always add a one-line `note` summarizing what the output showed.";
 /// the assistant turn that made `call` (the fork's cached head); `client` lets a
 /// model-driven distiller run the fork. `raw` is never mutated — it stays in the
 /// log.
+///
+/// Returns the [`WireState`] plus the fork request's [`Usage`], if any: a model
+/// distiller's peek is a real API round-trip that reads the shared canonical
+/// prefix (and so slides its cache TTL), so the loop folds it into the §3 cache
+/// telemetry. A model-free distiller returns `None`.
 #[allow(async_fn_in_trait)] // single-threaded loop; no Send bound needed.
 pub trait Distiller {
     async fn distill(
@@ -58,7 +63,7 @@ pub trait Distiller {
         prefix: &[LogEntry],
         call: &ToolCall,
         raw: &RawResult,
-    ) -> WireState;
+    ) -> (WireState, Option<Usage>);
 }
 
 /// Deterministic stub: keep the first `head` + last `tail` lines. Ignores the
@@ -75,7 +80,7 @@ impl Distiller for HeadTail {
         _prefix: &[LogEntry],
         _call: &ToolCall,
         raw: &RawResult,
-    ) -> WireState {
+    ) -> (WireState, Option<Usage>) {
         let lines: Vec<&str> = raw.content.lines().collect();
         let n = lines.len();
         let ranges = if n <= self.head + self.tail {
@@ -83,7 +88,8 @@ impl Distiller for HeadTail {
         } else {
             vec![(1, self.head), (n - self.tail + 1, n)]
         };
-        WireState::Distilled(render_hunks(&lines, &ranges, None))
+        // No API call — no usage to fold into the telemetry.
+        (WireState::Distilled(render_hunks(&lines, &ranges, None)), None)
     }
 }
 
@@ -97,7 +103,7 @@ impl Distiller for ForkPeek {
         prefix: &[LogEntry],
         call: &ToolCall,
         raw: &RawResult,
-    ) -> WireState {
+    ) -> (WireState, Option<Usage>) {
         // Cap what the peek sees before any model call (the full raw still goes
         // to the log; only the peek + distillate work over the first N lines).
         let all: Vec<&str> = raw.content.lines().collect();
@@ -134,15 +140,18 @@ impl Distiller for ForkPeek {
             ],
         });
 
-        let verdict = match client
+        // The peek is a real round-trip: keep its `usage` even when the verdict is
+        // unusable (the request still happened and slid the prefix's TTL); only a
+        // transport error yields no usage.
+        let (verdict, usage) = match client
             .complete(&messages, &[retain_tool()], ToolChoice::force(RETAIN))
             .await
         {
-            Ok(completion) => verdict_from(&completion),
-            Err(_) => None,
+            Ok(completion) => (verdict_from(&completion), Some(completion.usage)),
+            Err(_) => (None, None),
         };
 
-        match verdict {
+        let wire = match verdict {
             Some(v) => WireState::Distilled(render_verdict(lines, &v)),
             // Graceful default (DESIGN §4/§8): keep everything the peek saw rather
             // than drop data when the peek fails. Rendered as a canonical keep-all
@@ -151,7 +160,8 @@ impl Distiller for ForkPeek {
                 let note = (dropped > 0).then(|| format!("{dropped} further lines truncated"));
                 WireState::Distilled(render_hunks(lines, &[(1, lines.len())], note.as_deref()))
             }
-        }
+        };
+        (wire, usage)
     }
 }
 

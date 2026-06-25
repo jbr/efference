@@ -103,7 +103,15 @@ pub async fn run<F: Frontend, D: Distiller>(
             } else {
                 Vec::new()
             };
-            eprintln!("[usage: {:?}]", completion.usage);
+            // Record cache/usage telemetry (surfaced on `GET /state`) and print a
+            // legible live line: cache read vs creation is the hot/cold signal
+            // (DESIGN §3). Transport-only — `record_request` never touches the log.
+            let u = &completion.usage;
+            eprintln!(
+                "[usage: in {} · out {} · cache read {} · cache write {}]",
+                u.input_tokens, u.output_tokens, u.cache_read_input_tokens, u.cache_creation_input_tokens
+            );
+            shared.record_request(completion.usage.clone());
             shared.append(turn, completion.assistant)?;
 
             if calls.is_empty() {
@@ -131,7 +139,13 @@ pub async fn run<F: Frontend, D: Distiller>(
                         // prefix is the log through this call's `tool_use`, so we
                         // snapshot it (can't borrow across the distiller's await).
                         let entries = shared.snapshot();
-                        let wire = distiller.distill(client, &entries, call, &result).await;
+                        let (wire, fork_usage) =
+                            distiller.distill(client, &entries, call, &result).await;
+                        // The fork peek reads the shared canonical prefix (sliding
+                        // its TTL), so its usage belongs in the §3 telemetry too.
+                        if let Some(u) = fork_usage {
+                            shared.record_request(u);
+                        }
                         shared.append(
                             turn,
                             Payload::ToolResult {
