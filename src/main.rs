@@ -467,12 +467,17 @@ fn render_event(kind: Option<&str>, data: &str, state: &mut RenderState) {
             } else {
                 "result"
             };
-            // The wire is `{"Distilled": "…"}`, `"Raw"`, or `"Elided"`; show the
-            // distillate when present, else the raw content.
-            let shown = result["wire"]["Distilled"]
-                .as_str()
-                .or_else(|| result["raw"]["content"].as_str())
-                .unwrap_or("");
+            // The wire is `{"Distilled": {keep, note}}`, `"Raw"`, or `"Elided"`. A
+            // distilled result is re-rendered from raw + the stored verdict (DESIGN
+            // §4 — the bytes aren't stored); Raw/Elided show the raw content.
+            let raw_content = result["raw"]["content"].as_str().unwrap_or("");
+            let shown = if let Some(d) = result["wire"].get("Distilled") {
+                let keep: efference::log::Keep =
+                    serde_json::from_value(d["keep"].clone()).unwrap_or(efference::log::Keep::All);
+                efference::project::render_distilled(raw_content, &keep, d["note"].as_str())
+            } else {
+                raw_content.to_string()
+            };
             println!("\n#{seq} · tool {tag}:\n{shown}");
         }
         _ => println!("\n#{seq} · {data}"),

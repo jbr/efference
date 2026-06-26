@@ -551,15 +551,56 @@ the pending Stage-2 refinement. Dropped the unused `screen_width` param from
 
 ---
 
-## Current state (2026-06-25)
+## 2026-06-26 — Ambient notifications, Slice A: the verdict refactor
 
-**118 tests green, clippy clean.** The harness is **dogfooded** over the daemon
+Design converged with jbr on the **ambient/redactable notification system** (inbox
+semantics; event-sourced, logged at first-show; pin/dismiss/leave with leave-as-default;
+`slot` archive-and-replace supersession; pin-at-`Triage` placement; the fork reframed as a
+*perception manager* — manages what the agent perceives next, never acts on the world).
+Folded into `DESIGN.md` §2/§3/§4/§6 + the §10.0 slice plan (A verdict-refactor, B
+ingestion, C inbox-in-peek). Then built **Slice A** — the load-bearing type change, against
+the existing tool-result fork, no notifications in the loop yet.
+
+- **`WireState::Distilled` carries the verdict, not bytes** (`{ keep: Keep, note }`, was a
+  rendered `String`). `project::render_distilled` re-renders the `@@`-hunks from `raw` + the
+  verdict each turn, so the kept bytes are never persisted twice and the wire is genuinely
+  `project(log)` recomputed (§4). `render_hunks`/`normalize` moved from `distill.rs` into
+  `project.rs`; the distiller now *produces a verdict*, `project` *renders* it.
+- **Fork verdicts are now logged** as `Payload::Triage { for_result, origin, raw_keep,
+  inbox }` (§4): the throwaway peek's *transcript* stays throwaway, its *decision* is
+  durable — so every fork decision is reconstructable for audit/introspection. `origin`
+  (`Model` vs keep-all `Fallback`) recovers the one signal the rendered artifact erased
+  (a deliberate keep-all and a failed peek render identically). `inbox` empty until Slice C.
+- `Distiller::distill` returns a `Distillation` struct; `Log`/`Shared::append` now return
+  the assigned `Seq` so the loop can key the `Triage` to its result. Fixed the `attach`
+  client's loose-JSON reader, which assumed `Distilled` was a string (would have shown raw
+  instead of the distillate).
+
+**Verified.** Clean build; **125 lib tests green** (byte-stability pins unchanged — the
+verdict change doesn't perturb the wire; added `render_distilled` truncation + the moved
+render tests). 2 TUI snapshots regenerated (distilled fixtures → the `— <note>`
+breadcrumb). clippy auto-fixed 2 pre-existing collapsible-`if`s; 1 pre-existing
+large-`Err` warning left (`tui/mod.rs:340`, out of scope). **Live-verified against Haiku:**
+a `printf`-5-lines turn → the fork kept line 3 (`wire: Distilled{keep:Ranges[[3,3]],
+note:"…cherry"}`), logged `Triage{for_result:2, origin:Model, raw_keep:"3", inbox:[]}`, and
+the wire rendered `[2] @@ line 3 @@ / cherry / — …` with the other fruits off the wire — the
+agent answered from the distillate. The §4 disk/thesis win + fork-verdict audit, confirmed
+end to end.
+
+---
+
+## Current state (2026-06-26)
+
+**125 tests green, clippy clean.** The harness is **dogfooded** over the daemon
 (`efference serve` + `turn` / `approve` / `attach`) and now has a **full interactive TUI**
 (`efference tui`): a themed streaming transcript with a **conversational, minimalist**
 render (author-differentiated turns, paired call↔result exchanges, per-tool result
 renderers incl. colored diffs), an emacs-keybind composer, and in-TUI approval gates — a
 session-grade client comparable to a modern coding-agent TUI. Display work is iterable
 without being blind (`Screenplay` snapshot harness + `cell`/`find` color assertions +
-`efference gallery`). Phase 3 Slices 0–1 are in. Next: the TUI's Stage-2 render refinement
-(box → `│` connector), the remaining **TUI polish** (integrated focus, click-to-position,
-expand-state survival), and the core-harness **Slice 2** (forked compaction peek + re-read).
+`efference gallery`). Phase 3 Slices 0–1 are in; **ambient-notification Slice A** (the verdict refactor +
+logged `Triage` audit) is in and live-verified. Next: notification **Slice B** (the inbox
+queue + `POST /notify` + `slot` supersession), then **Slice C** (inbox-in-the-peek); plus
+the TUI's Stage-2 render refinement (box → `│` connector), the remaining **TUI polish**
+(integrated focus, click-to-position, expand-state survival), and the core-harness
+**Slice 2** (forked compaction peek + re-read).

@@ -57,9 +57,10 @@ impl Log {
     /// then keep it in memory. The line is flushed before returning so a crash
     /// can't lose an acknowledged entry (we stop short of `fsync` per line in
     /// Phase 0 — a deliberate durability/throughput tradeoff to revisit).
-    pub fn append(&mut self, turn: Turn, payload: Payload) -> io::Result<()> {
+    pub fn append(&mut self, turn: Turn, payload: Payload) -> io::Result<Seq> {
+        let seq = self.entries.len() as Seq;
         let entry = LogEntry {
-            seq: self.entries.len() as Seq,
+            seq,
             turn,
             at: now(),
             payload,
@@ -70,7 +71,7 @@ impl Log {
             sink.flush()?;
         }
         self.entries.push(entry);
-        Ok(())
+        Ok(seq)
     }
 }
 

@@ -14,7 +14,7 @@ use serde_json::Value;
 use std::collections::HashSet;
 
 use crate::log::{
-    CallId, ContentBlock, LogEntry, Mark, MarkKind, Payload, RawResult, Seq, WireState,
+    CallId, ContentBlock, Keep, LogEntry, Mark, MarkKind, Payload, RawResult, Seq, WireState,
 };
 
 /// One message in the Anthropic `messages` array.
@@ -221,6 +221,10 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // Boundary mark's own seq); this arm is only reachable for future
             // non-Boundary mark kinds, which can be added here when they land.
             Payload::Mark(_) => {}
+            // A fork verdict is audit-only on the wire (DESIGN §4). Slice C emits a
+            // block per pinned notification in `inbox` at this position (DESIGN §6);
+            // until then `inbox` is always empty, so this projects to nothing.
+            Payload::Triage(_) => {}
         }
     }
 
@@ -265,7 +269,11 @@ fn block_to_api(block: &ContentBlock) -> ApiBlock {
 fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireState) -> ApiBlock {
     let (content, is_error) = match wire {
         WireState::Raw => (raw.content.clone(), raw.is_error),
-        WireState::Distilled(distilled) => (distilled.clone(), raw.is_error),
+        // Re-render the distillate from `raw` + the stored verdict each turn (DESIGN
+        // §4) — the kept bytes are never persisted twice.
+        WireState::Distilled { keep, note } => {
+            (render_distilled(&raw.content, keep, note.as_deref()), raw.is_error)
+        }
         // Project a placeholder rather than nothing: dropping the block entirely
         // would orphan the assistant `tool_use` it answers, which the API
         // rejects. Phase 1 (which actually constructs `Elided`) must decide
@@ -285,11 +293,97 @@ fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireSta
     }
 }
 
+/// Hard cap on the lines the fork peek shows the model (DESIGN §4). The canonical
+/// render interprets a verdict's ranges against this same prefix of `raw`, so the two
+/// stay aligned — the model's `retain(lines=…)` coordinates address exactly what it saw.
+pub const PEEK_LINE_CAP: usize = 2000;
+
+/// Render a distilled tool result for the canonical wire from `raw` + the stored
+/// verdict (DESIGN §4): the kept ranges as diff-style `@@`-hunks over the verbatim
+/// lines, the optional `note`, and a truncation breadcrumb past the cap. The wire
+/// projection and the TUI projection share this one renderer. **Deterministic** — part
+/// of the byte-stability contract (DESIGN §3): a pure function of its inputs.
+pub fn render_distilled(content: &str, keep: &Keep, note: Option<&str>) -> String {
+    let all: Vec<&str> = content.lines().collect();
+    let total = all.len();
+    let shown = &all[..total.min(PEEK_LINE_CAP)];
+    let dropped = total - shown.len();
+    let ranges: Vec<(usize, usize)> = match keep {
+        Keep::All => vec![(1, shown.len())],
+        Keep::None => vec![],
+        Keep::Ranges(rs) => rs.clone(),
+    };
+    let mut out = render_hunks(shown, &ranges, note);
+    if dropped > 0 {
+        out.push('\n');
+        out.push_str(&format!("… [{dropped} more lines truncated before triage]"));
+    }
+    out
+}
+
+/// Render kept ranges as diff-style hunks: a `@@ lines a-b @@` header per contiguous
+/// span (`@@ line n @@` for one line), then those lines *verbatim* (unnumbered). The
+/// header carries the position anchor at one line per *range*; gaps between hunks are
+/// implied by the jump in the headers, as in a unified diff. An optional trailing note
+/// is the breadcrumb kept even when nothing is retained (DESIGN §4-realized) — one
+/// overall note, so it survives the empty-hunks case.
+fn render_hunks(lines: &[&str], ranges: &[(usize, usize)], note: Option<&str>) -> String {
+    let ranges = normalize(ranges, lines.len());
+    let mut parts: Vec<String> = Vec::new();
+    for &(start, end) in &ranges {
+        parts.push(hunk_header(start, end));
+        for i in start..=end {
+            parts.push(lines[i - 1].to_string());
+        }
+    }
+    if let Some(note) = note.map(str::trim).filter(|s| !s.is_empty()) {
+        parts.push(format!("— {note}"));
+    }
+    if parts.is_empty() {
+        parts.push("(nothing kept)".to_string());
+    }
+    parts.join("\n")
+}
+
+/// A unified-diff-style hunk header: `@@ lines a-b @@`, or `@@ line n @@` for a single
+/// kept line.
+fn hunk_header(start: usize, end: usize) -> String {
+    if start == end {
+        format!("@@ line {start} @@")
+    } else {
+        format!("@@ lines {start}-{end} @@")
+    }
+}
+
+/// Clamp ranges to `[1, n]`, drop out-of-range, sort, and merge overlapping/adjacent.
+/// Tolerates reversed ranges.
+fn normalize(ranges: &[(usize, usize)], n: usize) -> Vec<(usize, usize)> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let mut rs: Vec<(usize, usize)> = ranges
+        .iter()
+        .map(|&(s, e)| (s.min(e), s.max(e)))
+        .filter(|&(s, _)| s >= 1 && s <= n) // drop wholly-out-of-range
+        .map(|(s, e)| (s, e.min(n))) // clamp the tail down to n
+        .collect();
+    rs.sort_by_key(|&(s, _)| s);
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (s, e) in rs {
+        match merged.last_mut() {
+            Some(last) if s <= last.1 + 1 => last.1 = last.1.max(e),
+            _ => merged.push((s, e)),
+        }
+    }
+    merged
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::log::{
-        ContentBlock, LogEntry, Mark, MarkKind, Payload, RawResult, Timestamp, ToolCall, WireState,
+        ContentBlock, Keep, LogEntry, Mark, MarkKind, Payload, RawResult, Timestamp, ToolCall,
+        WireState,
     };
     use serde_json::json;
 
@@ -466,9 +560,10 @@ mod tests {
         );
     }
 
-    /// Distillation projects the replacement and keeps `raw` off the wire.
+    /// Distillation projects the *verdict* re-rendered from `raw` (DESIGN §4): the
+    /// kept line and note land; the dropped lines never reach the wire.
     #[test]
-    fn distilled_projects_replacement_not_raw() {
+    fn distilled_projects_the_verdict_not_raw() {
         let log = vec![
             entry(
                 0,
@@ -488,21 +583,22 @@ mod tests {
                 Payload::ToolResult {
                     call_id: CallId("x".into()),
                     raw: RawResult {
-                        content: "ten thousand lines of output".into(),
+                        content: "the gist line\nten thousand lines of output".into(),
                         is_error: false,
                     },
-                    wire: WireState::Distilled("just the gist".into()),
+                    wire: WireState::Distilled {
+                        keep: Keep::Ranges(vec![(1, 1)]),
+                        note: Some("summary".into()),
+                    },
                 },
             ),
         ];
         let wire = serde_json::to_string(&project(&log)).unwrap();
-        assert!(
-            wire.contains("just the gist"),
-            "distillate must be projected"
-        );
+        assert!(wire.contains("the gist line"), "kept line projected: {wire}");
+        assert!(wire.contains("summary"), "note projected: {wire}");
         assert!(
             !wire.contains("ten thousand lines"),
-            "raw must stay off the wire"
+            "dropped lines stay off the wire: {wire}"
         );
     }
 
@@ -830,5 +926,93 @@ mod tests {
         let mut empty: Vec<ApiMessage> = Vec::new();
         place_trailing_cache_breakpoint(&mut empty);
         assert!(empty.is_empty());
+    }
+
+    fn lines(s: &str) -> Vec<&str> {
+        s.lines().collect()
+    }
+
+    /// The canonical render over a stored verdict (DESIGN §4): `all` is one verbatim
+    /// hunk, `none` collapses to the breadcrumb note, ranges keep only their spans.
+    #[test]
+    fn render_distilled_covers_all_none_and_ranges() {
+        let c = "a\nb\nc\nd\ne";
+        let all = render_distilled(c, &Keep::All, None);
+        assert!(all.contains("@@ lines 1-5 @@"), "{all}");
+        assert!(all.lines().any(|l| l == "a") && all.lines().any(|l| l == "e"), "{all}");
+
+        let none = render_distilled(c, &Keep::None, Some("nothing useful here"));
+        assert_eq!(none, "— nothing useful here");
+
+        let ranges = render_distilled(c, &Keep::Ranges(vec![(2, 3)]), None);
+        assert!(ranges.contains("@@ lines 2-3 @@"), "{ranges}");
+        assert!(ranges.lines().any(|l| l == "b") && ranges.lines().any(|l| l == "c"), "{ranges}");
+        assert!(!ranges.contains("@@ lines 1") && !ranges.contains("@@ line 1 "), "line 1 dropped: {ranges}");
+    }
+
+    /// Past `PEEK_LINE_CAP` the render appends a truncation breadcrumb and a range
+    /// pointing into the truncated tail can't reach those lines (the verdict only ever
+    /// addressed the shown prefix).
+    #[test]
+    fn render_distilled_truncates_past_the_cap() {
+        let body = (1..=PEEK_LINE_CAP + 5)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = render_distilled(&body, &Keep::Ranges(vec![(1, 1)]), None);
+        assert!(out.lines().any(|l| l == "line1"), "kept line present");
+        assert!(out.contains("5 more lines truncated"), "truncation noted: {out}");
+
+        let past =
+            render_distilled(&body, &Keep::Ranges(vec![(PEEK_LINE_CAP + 2, PEEK_LINE_CAP + 4)]), None);
+        assert!(
+            !past.contains(&format!("line{}", PEEK_LINE_CAP + 3)),
+            "beyond-cap line unreachable: {past}"
+        );
+    }
+
+    #[test]
+    fn canonical_hunk_is_verbatim_under_a_diff_header() {
+        let ls = lines("alpha\nbeta\ngamma");
+        let wire = render_hunks(&ls, &[(1, 3)], None);
+        assert!(wire.contains("@@ lines 1-3 @@"), "{wire}");
+        assert!(wire.lines().any(|l| l == "alpha") && wire.lines().any(|l| l == "gamma"), "{wire}");
+        assert!(!wire.contains("     1\talpha"), "no per-line numbering on the wire: {wire}");
+    }
+
+    #[test]
+    fn gapped_hunks_get_a_header_each_and_drop_the_gap() {
+        let body = (1..=100).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n");
+        let ls = lines(&body);
+        let wire = render_hunks(&ls, &[(1, 3), (99, 100)], None);
+        assert!(wire.contains("@@ lines 1-3 @@") && wire.contains("@@ lines 99-100 @@"), "{wire}");
+        assert!(!wire.contains("line50"), "middle dropped");
+        assert!(wire.len() < body.len(), "leaner than raw");
+    }
+
+    #[test]
+    fn single_line_hunk_uses_the_singular_header() {
+        let ls = lines("a\nb\nc");
+        let wire = render_hunks(&ls, &[(2, 2)], None);
+        assert!(wire.contains("@@ line 2 @@"), "{wire}");
+        assert!(wire.lines().any(|l| l == "b"));
+    }
+
+    #[test]
+    fn note_appends_and_empty_falls_back_to_breadcrumb() {
+        let ls = lines("a\nb\nc");
+        assert!(render_hunks(&ls, &[(2, 2)], Some("the b line")).ends_with("— the b line"));
+        assert_eq!(render_hunks(&ls, &[], Some("wrong file")), "— wrong file");
+        assert_eq!(render_hunks(&ls, &[], None), "(nothing kept)");
+    }
+
+    #[test]
+    fn normalize_clamps_sorts_and_merges() {
+        assert_eq!(normalize(&[(1, 3), (2, 5)], 100), vec![(1, 5)]);
+        assert_eq!(normalize(&[(1, 3), (4, 6)], 100), vec![(1, 6)]);
+        assert_eq!(normalize(&[(310, 318), (40, 52)], 400), vec![(40, 52), (310, 318)]);
+        assert_eq!(normalize(&[(1, 1000)], 100), vec![(1, 100)]);
+        assert!(normalize(&[(0, 0)], 100).is_empty());
+        assert!(normalize(&[(50, 60)], 10).is_empty());
     }
 }

@@ -62,6 +62,13 @@ pub enum Payload {
     ///
     /// [`project`]: crate::project::project
     Mark(Mark),
+    /// A fork verdict (DESIGN §4) — the durable record of a throwaway peek's
+    /// decision. The fork's *transcript* stays throwaway; its *decision* is logged
+    /// here for audit / introspection / distiller-quality work. Projects as audit
+    /// only today (Slice A); Slice C emits a block per pinned notification at this
+    /// entry's position (DESIGN §6). `Ambient` (the notification-arrival payload)
+    /// lands with Slice C.
+    Triage(Triage),
 }
 
 /// Phase 0 content is text-only; richer blocks (images, …) come later.
@@ -109,6 +116,47 @@ pub enum MarkKind {
     Boundary { upto: Seq },
 }
 
+/// A fork verdict (DESIGN §4) — what the model decided in a throwaway peek, recorded
+/// durably so every fork decision is reconstructable from the log (including ones only
+/// ever visible inside the fork). The rendered wire form lives on the paired
+/// [`ToolResult`]'s [`WireState`]; this carries the *provenance* the rendered artifact
+/// can't, with no overlap.
+///
+/// [`ToolResult`]: Payload::ToolResult
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Triage {
+    /// The `seq` of the [`Payload::ToolResult`] this verdict distilled.
+    pub for_result: Seq,
+    /// Whether the verdict came from the model or the keep-all fallback — the one
+    /// signal the rendered artifact erases (a deliberate keep-all and a failed peek
+    /// render identically).
+    pub origin: Origin,
+    /// The model's exact `keep` string, pre-parse (empty for a model-free distiller).
+    pub raw_keep: String,
+    /// Per-notification dispositions chosen in this peek, by the notification's
+    /// arrival `seq` (DESIGN §6). Always empty until Slice C wires the inbox.
+    pub inbox: Vec<(Seq, Disposition)>,
+}
+
+/// Where a [`Triage`] verdict came from (DESIGN §4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Origin {
+    /// A real `retain` call from the peek model.
+    Model,
+    /// The keep-all fallback — the peek failed, or a model-free stub distiller ran.
+    Fallback,
+}
+
+/// What the agent chose to do with one notification at a triage gate (DESIGN §6).
+/// "Leave" (bump to the next gate) is the *absence* of an entry, so it isn't a variant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Disposition {
+    /// Promote into canonical working context (projects at the [`Triage`] position).
+    Pin,
+    /// Clear from the inbox (logged for audit, never reaches the wire).
+    Dismiss,
+}
+
 /// How a [`Payload::ToolResult`] should be projected. Flipping this (never
 /// touching `raw`) is the one redaction primitive — every projection experiment
 /// is a change to how [`project`] reads these (DESIGN §1, §2).
@@ -122,8 +170,26 @@ pub enum MarkKind {
 pub enum WireState {
     /// Project the full `raw` content.
     Raw,
-    /// Project this replacement instead; `raw` stays in the log.
-    Distilled(String),
+    /// Project the **verdict** — which lines survive (`keep`) plus an optional `note`
+    /// — re-rendered from `raw` by [`project`] each turn, *not* the rendered bytes
+    /// (DESIGN §4). The kept bytes are never stored twice, and the structured decision
+    /// doubles as the record. `raw` stays in the log.
+    ///
+    /// [`project`]: crate::project::project
+    Distilled { keep: Keep, note: Option<String> },
     /// Project nothing of substance; still recoverable from the log.
     Elided,
+}
+
+/// What of a tool result survives on the canonical wire (DESIGN §4). Ranges are
+/// 1-based inclusive line spans, interpreted against the first `PEEK_LINE_CAP` lines —
+/// the set the fork peek showed the model.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Keep {
+    /// Keep every (shown) line.
+    All,
+    /// Keep nothing — only the `note` breadcrumb survives.
+    None,
+    /// Keep these line ranges (the model's `retain(lines=…)` choice).
+    Ranges(Vec<(usize, usize)>),
 }

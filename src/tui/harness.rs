@@ -360,8 +360,8 @@ fn frame_grid(buf: &Buffer, width: u16, cursor: Option<(u16, u16)>) -> String {
         }
         out.push_str("│\n");
 
-        if let Some((cx, cy)) = cursor {
-            if cy as usize == y {
+        if let Some((cx, cy)) = cursor
+            && cy as usize == y {
                 let col = (cx as usize).min(w.saturating_sub(1));
                 out.push_str("   │");
                 out.push_str(&" ".repeat(col));
@@ -369,7 +369,6 @@ fn frame_grid(buf: &Buffer, width: u16, cursor: Option<(u16, u16)>) -> String {
                 out.push_str(&" ".repeat(w - col - 1));
                 out.push_str("│\n");
             }
-        }
     }
 
     // Bottom border.
@@ -387,7 +386,7 @@ fn frame_grid(buf: &Buffer, width: u16, cursor: Option<(u16, u16)>) -> String {
 #[cfg(test)]
 mod scenarios {
     use super::{Screenplay, tool_call};
-    use crate::log::WireState;
+    use crate::log::{Keep, WireState};
     use ratatui::style::{Color, Modifier};
     use serde_json::json;
 
@@ -719,9 +718,13 @@ mod scenarios {
             "toolu_03",
             "efference v0.1.0\n├── anyhow v1.0.86\n├── clap v4.5.4\n│   ├── …600 more lines…",
             false,
-            WireState::Distilled(
-                "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated.".into(),
-            ),
+            WireState::Distilled {
+                keep: Keep::None,
+                note: Some(
+                    "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated."
+                        .into(),
+                ),
+            },
         );
         play.snapshot("transcript_distilled_result");
     }

@@ -10,7 +10,7 @@
 //! the same shapes headlessly; this is for seeing them live, in color, scrollable.
 
 use crate::log::{
-    CallId, ContentBlock, LogEntry, Mark, MarkKind, Payload, RawResult, Timestamp, ToolCall,
+    CallId, ContentBlock, Keep, LogEntry, Mark, MarkKind, Payload, RawResult, Timestamp, ToolCall,
     WireState,
 };
 
@@ -132,9 +132,10 @@ pub(super) fn log() -> Vec<LogEntry> {
         assistant(10, "A distilled result shows its summary, not the raw bytes:", vec![call(
             "bash", "toolu_g5", serde_json::json!({ "command": "cargo tree" }),
         )]),
-        result(11, "toolu_g5", "…600 lines of dependency tree…", false, WireState::Distilled(
-            "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated.".into(),
-        )),
+        result(11, "toolu_g5", "…600 lines of dependency tree…", false, WireState::Distilled {
+            keep: Keep::None,
+            note: Some("12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated.".into()),
+        }),
 
         // The file tools: concise call lines (path / pattern, not JSON) and a
         // `read` result with its sentinel framing stripped + highlighted by type.

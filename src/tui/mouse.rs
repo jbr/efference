@@ -188,9 +188,9 @@ impl<'a> super::InteractiveState<'a> {
         }
 
         // No keyboard focus (or invalid focus) - show mouse hover or default message
-        if self.ui.mouse_enabled {
-            if let Some(pos) = self.viewport.cursor_pos {
-                if let Some((_, action)) = self
+        if self.ui.mouse_enabled
+            && let Some(pos) = self.viewport.cursor_pos
+                && let Some((_, action)) = self
                     .render_cache
                     .actions
                     .iter()
@@ -204,8 +204,6 @@ impl<'a> super::InteractiveState<'a> {
                         }
                     };
                 }
-            }
-        }
     }
 
     /// Handle scrollbar drag by calculating scroll position from mouse Y

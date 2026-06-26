@@ -35,7 +35,7 @@ use crate::agent;
 use crate::api::{Client, Error, ToolChoice, Usage};
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
-use crate::log::{CallId, LogEntry, Payload, ToolCall, Turn};
+use crate::log::{CallId, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{ApiMessage, place_trailing_cache_breakpoint, project};
 use crate::tools::Toolbox;
@@ -176,10 +176,10 @@ impl Shared {
 
     /// Append to the log (durably) and wake SSE tailers. The single appender is
     /// the loop; handlers only read.
-    pub fn append(&self, turn: Turn, payload: Payload) -> io::Result<()> {
-        self.log.lock().unwrap().append(turn, payload)?;
+    pub fn append(&self, turn: Turn, payload: Payload) -> io::Result<Seq> {
+        let seq = self.log.lock().unwrap().append(turn, payload)?;
         self.appended.notify_waiters();
-        Ok(())
+        Ok(seq)
     }
 
     /// Publish an ephemeral pre-commit output delta to `GET /stream` subscribers
@@ -470,6 +470,7 @@ fn log_event(entry: &LogEntry) -> LogEvent {
         Payload::Assistant { .. } => "assistant",
         Payload::ToolResult { .. } => "tool_result",
         Payload::Mark(_) => "mark",
+        Payload::Triage(_) => "triage",
     };
     LogEvent {
         id: entry.seq.to_string(),

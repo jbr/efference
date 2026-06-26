@@ -90,6 +90,9 @@ pub(crate) fn project(log: &[LogEntry], live: &LiveTail) -> Document<'static> {
             // Folded into its call's exchange above.
             Payload::ToolResult { .. } => {}
             Payload::Mark(mark) => push_mark(&mut nodes, &mark.kind, &mark.note),
+            // Audit-only on the transcript (DESIGN §4); Slice C renders pinned
+            // notifications here for the human too.
+            Payload::Triage(_) => {}
         }
     }
 
@@ -137,7 +140,11 @@ fn exchange(call: &ToolCall, result: Option<(&RawResult, &WireState)>) -> Docume
     if let Some((raw, wire)) = result {
         let content = match wire {
             WireState::Raw => raw.content.clone(),
-            WireState::Distilled(s) => s.clone(),
+            // Same renderer as the wire projection — re-derive the distillate from
+            // `raw` + the stored verdict (DESIGN §4).
+            WireState::Distilled { keep, note } => {
+                crate::project::render_distilled(&raw.content, keep, note.as_deref())
+            }
             WireState::Elided => "[elided]".to_string(),
         };
         body.extend(result_body(Some(call.name.as_str()), raw, wire, &content));
@@ -381,7 +388,7 @@ fn join_text(blocks: &[ContentBlock]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::log::{CallId, RawResult, Timestamp, ToolCall};
+    use crate::log::{CallId, Keep, RawResult, Timestamp, ToolCall};
 
     fn entry(seq: u64, payload: Payload) -> LogEntry {
         LogEntry {
@@ -492,15 +499,19 @@ mod tests {
                 5,
                 Payload::ToolResult {
                     call_id: CallId("toolu_9".into()),
-                    raw: RawResult { content: "RAW-NOISE".into(), is_error: false },
-                    wire: WireState::Distilled("the distilled summary".into()),
+                    raw: RawResult { content: "RAW-NOISE\nthe kept line".into(), is_error: false },
+                    wire: WireState::Distilled {
+                        keep: Keep::Ranges(vec![(2, 2)]),
+                        note: Some("the distilled summary".into()),
+                    },
                 },
             ),
         ];
         let doc = project(&log, &LiveTail::default());
         let code: String = collect_code(&doc.nodes);
-        assert!(code.contains("the distilled summary"), "shows distillate: {code}");
-        assert!(!code.contains("RAW-NOISE"), "hides raw when distilled");
+        assert!(code.contains("the distilled summary"), "shows the note: {code}");
+        assert!(code.contains("the kept line"), "shows the kept line: {code}");
+        assert!(!code.contains("RAW-NOISE"), "hides the dropped raw line: {code}");
     }
 
     #[test]

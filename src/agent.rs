@@ -17,7 +17,9 @@ use crate::consolidate;
 use crate::daemon::{Shared, StreamDelta};
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
-use crate::log::{ContentBlock, Mark, MarkKind, Payload, RawResult, ToolCall, Turn, WireState};
+use crate::log::{
+    ContentBlock, Mark, MarkKind, Payload, RawResult, ToolCall, Triage, Turn, WireState,
+};
 use crate::project::place_trailing_cache_breakpoint;
 use crate::tools::Toolbox;
 
@@ -177,20 +179,31 @@ pub async fn run<F: Frontend, D: Distiller>(
                         // prefix is the log through this call's `tool_use`, so we
                         // snapshot it (can't borrow across the distiller's await).
                         let entries = shared.snapshot();
-                        let (wire, fork_usage) =
-                            distiller.distill(client, &entries, call, &result).await;
+                        let distilled = distiller.distill(client, &entries, call, &result).await;
                         // The fork peek reads the shared canonical prefix (sliding
                         // its TTL), so its usage belongs in the §3 telemetry too.
-                        if let Some(u) = fork_usage {
+                        if let Some(u) = distilled.usage {
                             shared.record_request(u);
                         }
-                        shared.append(
+                        // Append the result, then the fork verdict as a `Triage` audit
+                        // entry keyed by the result's seq (DESIGN §4): the throwaway
+                        // peek's *decision* is logged even though its transcript isn't.
+                        let result_seq = shared.append(
                             turn,
                             Payload::ToolResult {
                                 call_id: call.id.clone(),
                                 raw: result,
-                                wire,
+                                wire: distilled.wire,
                             },
+                        )?;
+                        shared.append(
+                            turn,
+                            Payload::Triage(Triage {
+                                for_result: result_seq,
+                                origin: distilled.origin,
+                                raw_keep: distilled.raw_keep,
+                                inbox: distilled.inbox,
+                            }),
                         )?;
                     }
                     Approval::Abort => {
