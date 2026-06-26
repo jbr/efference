@@ -12,10 +12,11 @@ pub(super) fn handle_action(document: &mut Document<'_>, action: TuiAction<'_>) 
             if let Some(node) = find_node_at_path_mut(&mut document.nodes, path.indices())
                 && let DocumentNode::TruncatedBlock { level, .. } = node
             {
-                // Cycle a collapsed block open. (One step today: Brief/SingleLine -> Full.)
+                // Toggle, not a ratchet: expand a collapsed block, and re-collapse an
+                // expanded one — so you can peek into a long result and close it back up.
                 *level = match level {
                     TruncationLevel::SingleLine | TruncationLevel::Brief => TruncationLevel::Full,
-                    TruncationLevel::Full => TruncationLevel::Full,
+                    TruncationLevel::Full => TruncationLevel::Brief,
                 };
             }
         }

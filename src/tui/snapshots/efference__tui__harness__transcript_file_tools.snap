@@ -1,0 +1,49 @@
+---
+source: src/tui/harness.rs
+expression: self.render()
+---
+    0         1         2         3         4         5         6         7         
+    01234567890123456789012345678901234567890123456789012345678901234567890123456789
+   ┌────────────────────────────────────────────────────────────────────────────────┐
+ 0 │ ┃ Open state.rs, then search and list.                                         │
+ 1 │                                                                                │
+ 2 │   Reading the file:                                                            │
+ 3 │                                                                                │
+ 4 │   ❯ read · src/tui/state.rs                                                    │
+ 5 │ ╭───────────────────────────────❬rust❭─╮                                       │
+ 6 │ │ pub struct InteractiveState<'a> {    │                                       │
+ 7 │ │     pub document: DocumentState<'a>, │                                       │
+ 8 │ │     pub viewport: ViewportState,     │                                       │
+ 9 │ │ }                                    │                                       │
+10 │ ╰──────────────────────────────────────╯                                       │
+11 │                                                                                │
+12 │                                                                                │
+13 │   Now searching:                                                               │
+14 │                                                                                │
+15 │   ❯ search · fn project  in  src                                               │
+16 │ ╭───────────────────────────────────────────────────────────────────❬rust❭─╮   │
+17 │ │ Found 1 match for pattern "fn project":                                  │   │
+18 │ │                                                                          │   │
+19 │ │ src/project.rs:12: pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> { │   │
+20 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
+21 │                                                                                │
+22 │                                                                                │
+23 │   And listing:                                                                 │
+24 │                                                                                │
+25 │   ❯ list · src/tui                                                             │
+26 │ ╭─────────────────────────❬rust❭─╮                                             │
+27 │ │ All paths relative to src/tui: │                                             │
+28 │ │                                │                                             │
+29 │ │                                │                                             │
+30 │ │ composer.rs                    │                                             │
+31 │ │ document.rs                    │                                             │
+32 │ │ projection.rs                  │                                             │
+33 │ ╰────────────────────────────────╯                                             │
+34 │                                                                                │
+35 │                                                                                │
+36 │                                                                                │
+37 │                                                                                │
+38 │›                                                                               │
+   │  ^                                                                             │
+39 │   efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand                │
+   └────────────────────────────────────────────────────────────────────────────────┘

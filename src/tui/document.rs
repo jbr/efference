@@ -114,8 +114,12 @@ pub enum DocumentNode<'a> {
         nodes: Vec<DocumentNode<'a>>,
     },
 
-    /// List of items
-    List { items: Vec<ListItem<'a>> },
+    /// List of items. `start` is `None` for a bulleted list, or `Some(n)` for an
+    /// ordered list numbered from `n` (so `1.`, `2.`, … render instead of bullets).
+    List {
+        items: Vec<ListItem<'a>>,
+        start: Option<u64>,
+    },
 
     /// Code block with syntax highlighting (from markdown fenced blocks)
     CodeBlock {
@@ -125,6 +129,12 @@ pub enum DocumentNode<'a> {
 
     /// Generated code with pre-styled spans (for signatures, etc.)
     GeneratedCode { spans: Vec<Span<'a>> },
+
+    /// A unified-style diff: each line is classified (added / removed / context /
+    /// hunk) so the renderer can color it (green / red / muted). Produced by the
+    /// transcript projection from an edit tool's `===DIFF===` output. A leaf node
+    /// (lines aren't sub-`DocumentNode`s), so it clips as one unit in the accordion.
+    Diff { lines: Vec<DiffLine> },
 
     /// Horizontal rule/divider
     HorizontalRule,
@@ -138,9 +148,17 @@ pub enum DocumentNode<'a> {
         rows: Vec<Vec<TableCell<'a>>>,
     },
 
-    /// Truncated documentation block
-    /// Renderers decide how to truncate based on the level hint
+    /// A collapsible block: an optional accordion `header` line (with a disclosure
+    /// triangle the renderer draws) over a body of `nodes`. `level` is the live
+    /// expand/collapse state — `Brief` shows the first few lines with the triangle
+    /// collapsed (`▶`), `Full` shows everything expanded (`▼`). In the transcript
+    /// this wraps each tool call and tool result; `ExpandBlock` flips the level.
     TruncatedBlock {
+        header: Option<Vec<Span<'a>>>,
+        /// The leading glyph shown when the block is *not* collapsible (e.g. an
+        /// exchange's `❯`/`✗` prompt). When collapsible, the renderer shows a `▶`/`▼`
+        /// disclosure triangle instead. `None` falls back to a neutral `▌`.
+        resting: Option<Span<'a>>,
         nodes: Vec<DocumentNode<'a>>,
         level: TruncationLevel,
     },
@@ -151,6 +169,40 @@ pub enum DocumentNode<'a> {
         show_when: ShowWhen,
         nodes: Vec<DocumentNode<'a>>,
     },
+
+    /// A conversational turn — a contiguous unit authored by the user or the
+    /// assistant. The renderer marks authorship *structurally* (a colored left
+    /// gutter for the user; the assistant is the unmarked default voice) rather
+    /// than with a per-block role label. This is the transcript's top-level unit;
+    /// it replaces the old `▌ you` / `▌ assistant` markers.
+    Turn {
+        author: Author,
+        blocks: Vec<DocumentNode<'a>>,
+    },
+}
+
+/// Who authored a [`DocumentNode::Turn`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Author {
+    User,
+    Assistant,
+}
+
+/// One classified line of a [`DocumentNode::Diff`]. `text` keeps the original
+/// leading ` `/`+`/`-` so columns align; `kind` drives the color.
+#[derive(Debug, Clone)]
+pub struct DiffLine {
+    pub kind: DiffLineKind,
+    pub text: String,
+}
+
+/// What a [`DiffLine`] represents — the renderer maps this to a color.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffLineKind {
+    Added,
+    Removed,
+    Context,
+    Hunk,
 }
 
 /// A single cell in a table
@@ -222,6 +274,17 @@ pub enum SpanStyle {
     Strong,        // **bold** - semantic emphasis
     Emphasis,      // *italic* - semantic emphasis
     Strikethrough, // ~~strikethrough~~ - from GFM
+
+    // Diff lines
+    Added,   // +added line (green)
+    Removed, // -removed line (red)
+
+    // Diagnostics
+    Error, // a failed tool result / error label (red) — distinct from Strikethrough,
+           // which means deletion/redaction, not failure
+
+    // Conversation
+    UserAccent, // the user turn's gutter / accent — distinguishes the human's voice
 }
 
 impl<'a> Span<'a> {
@@ -418,9 +481,9 @@ impl<'a> DocumentNode<'a> {
         DocumentNode::Section { title: None, nodes }
     }
 
-    /// Convenience constructor for a list
+    /// Convenience constructor for a bulleted list.
     pub fn list(items: Vec<ListItem<'a>>) -> Self {
-        DocumentNode::List { items }
+        DocumentNode::List { items, start: None }
     }
 
     /// Convenience constructor for a code block
@@ -454,9 +517,26 @@ impl<'a> DocumentNode<'a> {
         DocumentNode::Table { header, rows }
     }
 
-    /// Convenience constructor for a truncated block
+    /// Convenience constructor for a header-less truncated block.
     pub fn truncated_block(nodes: Vec<DocumentNode<'a>>, level: TruncationLevel) -> Self {
-        DocumentNode::TruncatedBlock { nodes, level }
+        DocumentNode::TruncatedBlock { header: None, resting: None, nodes, level }
+    }
+
+    /// Convenience constructor for a diff node.
+    pub fn diff(lines: Vec<DiffLine>) -> Self {
+        DocumentNode::Diff { lines }
+    }
+
+    /// Convenience constructor for a collapsible block with an accordion `header`
+    /// line and a `resting` leading glyph (shown when not collapsible; replaced by a
+    /// disclosure triangle when there's more than fits).
+    pub fn collapsible(
+        header: Vec<Span<'a>>,
+        resting: Option<Span<'a>>,
+        nodes: Vec<DocumentNode<'a>>,
+        level: TruncationLevel,
+    ) -> Self {
+        DocumentNode::TruncatedBlock { header: Some(header), resting, nodes, level }
     }
 }
 
@@ -533,7 +613,7 @@ mod tests {
             ListItem::new(vec![DocumentNode::paragraph(vec![Span::field_name("bar")])]),
         ]);
 
-        if let DocumentNode::List { items } = list {
+        if let DocumentNode::List { items, .. } = list {
             assert_eq!(items.len(), 2);
             assert_eq!(items[0].content.len(), 1);
             assert_eq!(items[1].content.len(), 1);

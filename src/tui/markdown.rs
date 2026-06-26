@@ -26,6 +26,9 @@ impl MarkdownRenderer {
 
         let mut options = Options::empty();
         options.insert(Options::ENABLE_TABLES);
+        // GFM `~~strikethrough~~` — without this the `~~` markers render literally
+        // (and `Tag::Strikethrough` never fires).
+        options.insert(Options::ENABLE_STRIKETHROUGH);
         let parser = Parser::new_with_broken_link_callback(markdown, options, Some(&callback));
 
         let mut root: Vec<DocumentNode<'a>> = Vec::new();
@@ -88,7 +91,7 @@ impl MarkdownRenderer {
                             _ => HeadingLevel::Section,
                         });
                     }
-                    Tag::List(_) => {
+                    Tag::List(start) => {
                         // Flush any accumulated spans before starting a list
                         if !current_spans.is_empty() {
                             let para = DocumentNode::Paragraph {
@@ -96,7 +99,10 @@ impl MarkdownRenderer {
                             };
                             Self::push_to_parent(&mut stack, &mut root, StackItem::Node(para));
                         }
-                        stack.push(StackItem::Node(DocumentNode::List { items: vec![] }));
+                        // `start` is `Some(n)` for an ordered list (numbered from n),
+                        // `None` for a bulleted one — carried through so the renderer
+                        // can number ordered items instead of bulleting them.
+                        stack.push(StackItem::Node(DocumentNode::List { items: vec![], start }));
                     }
                     Tag::Item => {
                         stack.push(StackItem::Item(ListItem::new(vec![])));
@@ -312,7 +318,7 @@ impl MarkdownRenderer {
                     }
                 }
             }
-            Some(StackItem::Node(DocumentNode::List { items })) => {
+            Some(StackItem::Node(DocumentNode::List { items, .. })) => {
                 // Push ListItem to List's items
                 match item {
                     StackItem::Item(list_item) => items.push(list_item),
@@ -446,7 +452,7 @@ mod tests {
         assert_eq!(lists.len(), 1, "Expected exactly 1 list node");
 
         // Check that the list has 2 items with links properly nested
-        if let DocumentNode::List { items } = lists[0] {
+        if let DocumentNode::List { items, .. } = lists[0] {
             assert_eq!(items.len(), 2, "Expected 2 list items");
 
             // First item should contain a paragraph with a span containing a link

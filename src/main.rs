@@ -80,6 +80,16 @@ enum Command {
         #[arg(long, env = "EFFERENCE_THEME")]
         theme: Option<String>,
     },
+    /// Element gallery: launch the TUI on a fixed "one of each" transcript (rich
+    /// markdown, a shell call, a colored diff, a collapsed long result, an error, a
+    /// distilled result, a consolidation mark) — no daemon. A live design page for
+    /// iterating on transcript rendering. q quits, ? for help, t for the theme picker.
+    Gallery {
+        /// Syntax/UI theme — a built-in name or a `.tmTheme` path. Defaults to
+        /// "Catppuccin Frappe".
+        #[arg(long, env = "EFFERENCE_THEME")]
+        theme: Option<String>,
+    },
     /// Print the daemon's ephemeral control state (`GET /state`).
     State,
     /// Print the durable append-only log (`GET /log?since=<seq>`).
@@ -135,7 +145,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::Log { since } => log(cli.socket, since).await,
         Command::Attach => attach(cli.socket).await,
         Command::Tui { theme } => tui(cli.socket, theme).await,
+        Command::Gallery { theme } => gallery(theme).await,
     }
+}
+
+/// Launch the TUI on the fixed element gallery — no daemon, no socket.
+async fn gallery(theme: Option<String>) -> CliResult {
+    efference::tui::run_gallery(theme).await?;
+    Ok(())
 }
 
 /// Launch the interactive TUI against the daemon control socket. All rendering

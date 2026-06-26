@@ -1,0 +1,49 @@
+---
+source: src/tui/harness.rs
+expression: self.render()
+---
+    0         1         2         3         4         5         6         7         
+    01234567890123456789012345678901234567890123456789012345678901234567890123456789
+   ┌────────────────────────────────────────────────────────────────────────────────┐
+ 0 │ ┃ Why does project() rebuild the whole wire array every turn? Can we cache     │
+ 1 │ ┃ the committed prefix instead?                                                │
+ 2 │                                                                                │
+ 3 │   Good question. The rebuild is deliberate, not an oversight:                  │
+ 4 │                                                                                │
+ 5 │     ◦ project is a pure fold over the log, so it's cheap to recompute          │
+ 6 │                                                                                │
+ 7 │     ◦ caching a prefix would mean tracking invalidation across WireState flips │
+ 8 │                                                                                │
+ 9 │     ◦ the prompt cache already covers the wire cost — only the prefix bytes    │
+10 │       matter                                                                   │
+11 │                                                                                │
+12 │   Let me confirm the current signature before we touch it.                     │
+13 │                                                                                │
+14 │   ❯ bash · grep -n 'fn project' src/project.rs                                 │
+15 │ ╭───────────────────────────────────────────────────❬rust❭─╮                   │
+16 │ │ 12:pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> { │                   │
+17 │ │ 88:    fn project_coalesces_tool_results() {             │                   │
+18 │ ╰──────────────────────────────────────────────────────────╯                   │
+19 │                                                                                │
+20 │                                                                                │
+21 │   Right — project(&[LogEntry]) -> Vec<ApiMessage> is the whole surface.        │
+22 │   Caching would have to wrap that, which breaks byte-stability. I'd leave it.  │
+23 │                                                                                │
+24 │                                                                                │
+25 │                                                                                │
+26 │                                                                                │
+27 │                                                                                │
+28 │                                                                                │
+29 │                                                                                │
+30 │                                                                                │
+31 │                                                                                │
+32 │                                                                                │
+33 │                                                                                │
+34 │                                                                                │
+35 │                                                                                │
+36 │                                                                                │
+37 │                                                                                │
+38 │›                                                                               │
+   │  ^                                                                             │
+39 │   efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand                │
+   └────────────────────────────────────────────────────────────────────────────────┘

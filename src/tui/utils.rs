@@ -48,7 +48,8 @@ pub(super) fn find_node_at_path_mut<'a, 'b>(
         | DocumentNode::TruncatedBlock { nodes, .. } => {
             find_node_at_path_mut(nodes, remaining_path)
         }
-        DocumentNode::List { items } => {
+        DocumentNode::Turn { blocks, .. } => find_node_at_path_mut(blocks, remaining_path),
+        DocumentNode::List { items, .. } => {
             // Path into list items
             if remaining_path.is_empty() {
                 return None;
@@ -75,8 +76,9 @@ pub(super) fn find_paragraph_truncation_point(
     None
 }
 
-/// Estimate how many lines a node will consume when rendered
-pub(super) fn estimate_node_lines(node: &DocumentNode, _screen_width: u16) -> u16 {
+/// Estimate how many lines a node will consume when rendered. (Width-independent
+/// today — no arm wraps by width; the parameter was dropped after it went unused.)
+pub(super) fn estimate_node_lines(node: &DocumentNode) -> u16 {
     match node {
         DocumentNode::Heading { .. } => 3, // Title + underline + spacing
         DocumentNode::CodeBlock { code, .. } => {
@@ -88,7 +90,12 @@ pub(super) fn estimate_node_lines(node: &DocumentNode, _screen_width: u16) -> u1
             newlines.max(1) + 1 // At least 1 line + spacing
         }
         DocumentNode::HorizontalRule => 1,
-        DocumentNode::List { items } => items.len() as u16, // Rough estimate
+        DocumentNode::List { items, .. } => items.len() as u16, // Rough estimate
+        DocumentNode::Diff { lines } => lines.len() as u16 + 1,
+        DocumentNode::Turn { blocks, .. } => {
+            blocks.iter().map(estimate_node_lines).sum::<u16>()
+                + blocks.len().saturating_sub(1) as u16
+        }
         _ => 2,                                             // Default estimate for other nodes
     }
 }

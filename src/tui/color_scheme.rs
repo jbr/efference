@@ -135,6 +135,53 @@ impl ColorScheme {
             ),
         );
 
+        // Diff lines. Themes that define diff scopes win; otherwise fall back to a
+        // legible green / red (not the default fg, so +/- stay distinguishable even
+        // on themes without `markup.inserted`/`markup.deleted`).
+        colors.insert(
+            SpanStyle::Added,
+            Self::color_for_scope_or(
+                &highlighter,
+                &["markup.inserted", "markup.inserted.diff"],
+                default_style.foreground,
+                Color { r: 0xa6, g: 0xd1, b: 0x89, a: 0xff },
+            ),
+        );
+        colors.insert(
+            SpanStyle::Removed,
+            Self::color_for_scope_or(
+                &highlighter,
+                &["markup.deleted", "markup.deleted.diff"],
+                default_style.foreground,
+                Color { r: 0xe7, g: 0x82, b: 0x84, a: 0xff },
+            ),
+        );
+
+        // Error diagnostics — a red drawn from the theme's invalid/error scopes,
+        // falling back to the same legible red as a deleted diff line.
+        colors.insert(
+            SpanStyle::Error,
+            Self::color_for_scope_or(
+                &highlighter,
+                &["invalid.illegal", "invalid", "message.error"],
+                default_style.foreground,
+                Color { r: 0xe7, g: 0x82, b: 0x84, a: 0xff },
+            ),
+        );
+
+        // The user's accent (turn gutter) — a calm blue from the theme's
+        // function/entity scope, falling back to a legible blue, so the human's
+        // voice is distinguishable from the assistant's at a glance.
+        colors.insert(
+            SpanStyle::UserAccent,
+            Self::color_for_scope_or(
+                &highlighter,
+                &["markup.heading", "entity.name.function"],
+                default_style.foreground,
+                Color { r: 0x8c, g: 0xaa, b: 0xee, a: 0xff },
+            ),
+        );
+
         // Punctuation uses default foreground (only 27-31% coverage in themes)
         // Plain also uses default
 
@@ -184,6 +231,31 @@ impl ColorScheme {
 
         // All scopes fell back to default, so return default
         default_color
+    }
+
+    /// Like [`color_for_scope_with_fallback`](Self::color_for_scope_with_fallback)
+    /// but with a distinct `fallback` for when no scope is defined. A scope counts
+    /// as "defined" when its color differs from `theme_default` (an undefined scope
+    /// resolves to the theme's default foreground); otherwise `fallback` wins. This
+    /// is what lets diff colors fall back to a legible green/red instead of leaking
+    /// the theme's plain text color on themes without `markup.inserted`/`deleted`.
+    fn color_for_scope_or(
+        highlighter: &Highlighter,
+        scope_strs: &[&str],
+        theme_default: Color,
+        fallback: Color,
+    ) -> Color {
+        for scope_str in scope_strs {
+            if let Ok(scope) = Scope::new(scope_str) {
+                let mut stack = ScopeStack::new();
+                stack.push(scope);
+                let style = highlighter.style_for_stack(stack.as_slice());
+                if style.foreground != theme_default {
+                    return style.foreground;
+                }
+            }
+        }
+        fallback
     }
 }
 

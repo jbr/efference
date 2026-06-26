@@ -1,0 +1,41 @@
+---
+source: src/tui/harness.rs
+expression: self.render()
+---
+    0         1         2         3         4         5         6         7         
+    01234567890123456789012345678901234567890123456789012345678901234567890123456789
+   ┌────────────────────────────────────────────────────────────────────────────────┐
+ 0 │ ┃ Wrap that long line.                                                         │
+ 1 │                                                                                │
+ 2 │   Here's the reformatted version.                                              │
+ 3 │                                                                                │
+ 4 │   ❯ preview_edit · fn is_empty                                                 │
+ 5 │        /// True when the buffer holds no non-whitespace text.                  │
+ 6 │        pub(super) fn is_empty(&self) -> bool {                                 │
+ 7 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
+ 8 │   +        self.lines                                                          │
+ 9 │   +            .iter()                                                         │
+10 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
+11 │        }                                                                       │
+12 │                                                                                │
+13 │                                                                                │
+14 │                                                                                │
+15 │                                                                                │
+16 │                                                                                │
+17 │                                                                                │
+18 │                                                                                │
+19 │                                                                                │
+20 │                                                                                │
+21 │                                                                                │
+22 │                                                                                │
+23 │                                                                                │
+24 │                                                                                │
+25 │                                                                                │
+26 │                                                                                │
+27 │                                                                                │
+28 │                                                                                │
+29 │                                                                                │
+30 │›                                                                               │
+   │  ^                                                                             │
+31 │   efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand                │
+   └────────────────────────────────────────────────────────────────────────────────┘

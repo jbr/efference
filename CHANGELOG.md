@@ -502,11 +502,64 @@ cleaner future. No new deps.
 
 ---
 
+## 2026-06-25 — TUI M4: the conversational rendering pass
+
+A display-iteration session driven by the snapshot harness — the screen visible at every
+step instead of narrated by hand. Reframed the transcript projection from a flat dump of
+labeled blocks toward a deliberate **conversational, minimalist** information architecture
+(DESIGN §10.5).
+
+**The iteration loop (built first, used throughout).** `tui/harness.rs`'s `Screenplay`
+gained transcript-authoring helpers (`user` / `assistant` / `tool_result` / `tool_call` /
+`expand_all`) and — because the framed character grid drops color by design — `cell(x,y)` /
+`find(needle)` to assert the fg/bg/modifiers a snapshot can't show. Caught a latent gap: the
+harness built a `RenderContext` with an *empty* `ColorScheme` (everything gray), so it now
+loads the real `DEFAULT_THEME` — color assertions are faithful to the app. `efference
+gallery` (`tui/gallery.rs` + `run_gallery`) launches the real TUI on a fixed "one of each
+element" transcript with no daemon/API key — a live design page.
+
+**Rendering fixes the gallery surfaced.** Markdown strikethrough rendered literally
+(`Options` lacked `ENABLE_STRIKETHROUGH`); ordered lists rendered as bullets (`Tag::List`'s
+start ordinal was discarded — added `start: Option<u64>` to the `List` node, numbered in the
+renderer); the error header was `Strikethrough` (reads as deletion) → a dedicated
+`SpanStyle::Error` (red). A `color_for_scope_with_fallback` bug leaked the theme's plain fg
+when a scope was undefined → added `color_for_scope_or` (compares against the theme default).
+
+**Per-tool representations.** Tool calls/results are known at compile time, so each gets a
+shape over a JSON/text dump: `bash` → shell block; `read` → sentinel framing stripped +
+highlighted by file extension; edit tools' `===DIFF===` → a colored `DocumentNode::Diff`
+(green/red, verified via channel-dominance with the `cell` tool). Threaded `call_id → tool`
+identity through `project()` to pair a result with the tool that produced it.
+
+**The conversational IA (the headline).** After a design exploration (mocked three layouts
+as `AskUserQuestion` previews; the user picked the chat-like one), introduced a `Turn {
+author, blocks }` IR. Authorship is **structural** — a blue accent gutter for the user's
+turn, the assistant unmarked — replacing `▌ you` / `▌ assistant`. Each call is **paired with
+its result** into one collapsible *exchange* headed by `❯ <tool> · <arg>` (no `result #N` /
+seq label); the leading glyph unifies state: `❯` at rest, red `✗` on error, `▶`/`▼` when
+collapsible. Collapse is now a **toggle** (was a `Full → Full` ratchet) — peek then re-close.
+
+**Verified.** 118 lib tests green (+26), clippy clean (the 2 remaining warnings are
+pre-existing in `mouse.rs`). New cell-style assertions lock what snapshots can't: user-gutter
+blue, error-prompt red, diff green/red, strikethrough crossed-out. The `gallery` snapshot is
+the regression guard for the whole element set.
+
+**Decisions / deferred.** Staged: the conversational frame landed; swapping the result's
+syntax-highlighted *box* for a lighter `│` connector gutter (the chosen mockup's look) is
+the pending Stage-2 refinement. Dropped the unused `screen_width` param from
+`estimate_node_lines` rather than rename it. No new deps.
+
+---
+
 ## Current state (2026-06-25)
 
-**92 tests green, clippy clean.** The harness is **dogfooded** over the daemon
+**118 tests green, clippy clean.** The harness is **dogfooded** over the daemon
 (`efference serve` + `turn` / `approve` / `attach`) and now has a **full interactive TUI**
-(`efference tui`): themed streaming transcript, emacs-keybind composer, and in-TUI approval
-gates — a session-grade client comparable to a modern coding-agent TUI. Phase 3 Slices 0–1
-are in. Next: **TUI polish** (integrated focus, click-to-position, expand-state survival,
-the custom-editor pass) and the core-harness **Slice 2** (forked compaction peek + re-read).
+(`efference tui`): a themed streaming transcript with a **conversational, minimalist**
+render (author-differentiated turns, paired call↔result exchanges, per-tool result
+renderers incl. colored diffs), an emacs-keybind composer, and in-TUI approval gates — a
+session-grade client comparable to a modern coding-agent TUI. Display work is iterable
+without being blind (`Screenplay` snapshot harness + `cell`/`find` color assertions +
+`efference gallery`). Phase 3 Slices 0–1 are in. Next: the TUI's Stage-2 render refinement
+(box → `│` connector), the remaining **TUI polish** (integrated focus, click-to-position,
+expand-state survival), and the core-harness **Slice 2** (forked compaction peek + re-read).

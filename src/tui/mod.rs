@@ -20,6 +20,7 @@
 
 pub(crate) mod color_scheme;
 pub(crate) mod composer;
+pub(crate) mod gallery;
 #[cfg(test)]
 pub(crate) mod harness;
 pub(crate) mod document;
@@ -174,6 +175,34 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
     poller.abort();
     sender.abort();
     approver.abort();
+    result.context("the TUI event loop failed")
+}
+
+/// Launch the TUI on the fixed [`gallery`] transcript — every element type, no
+/// daemon. The events channel is pre-seeded and its sender held for the session's
+/// life so the UI never sees a `Disconnected` (which would exit immediately); the
+/// submit/approve far-ends are likewise held so the composer doesn't error. Real
+/// `ui_loop`, real rendering — just a synthetic, offline log to look at.
+pub async fn run_gallery(theme: Option<String>) -> Result<()> {
+    let theme = resolve_theme(theme)?;
+
+    let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
+    let (submit_tx, submit_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (approve_tx, approve_rx) =
+        tokio::sync::mpsc::unbounded_channel::<(String, crate::frontend::Approval)>();
+
+    for entry in gallery::log() {
+        let _ = tx.send(TuiEvent::Entry(entry));
+    }
+
+    let ui = tokio::task::spawn_blocking(move || ui_loop(rx, submit_tx, approve_tx, theme));
+    let result = ui.await.context("the TUI thread panicked")?;
+
+    // Hold the far-ends until the UI exits, so the channels stay open for its life.
+    drop(tx);
+    drop(submit_rx);
+    drop(approve_rx);
+
     result.context("the TUI event loop failed")
 }
 

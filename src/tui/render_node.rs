@@ -1,14 +1,15 @@
 use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 
-use super::{state::InteractiveState, utils::find_paragraph_truncation_point};
+use super::state::InteractiveState;
 use crate::tui::document::{
-    DocumentNode, HeadingLevel, ShowWhen, Span, TruncationLevel, TuiAction,
+    Author, DiffLineKind, DocumentNode, HeadingLevel, ShowWhen, Span, SpanStyle, TruncationLevel,
+    TuiAction,
 };
+use crate::tui::render_document::BASELINE_LEFT_MARGIN;
 
-// Truncated block borders are outdented (to the left of content) so that content
-// doesn't shift when expanding/collapsing the block. The border is purely decorative.
-const TRUNCATION_BORDER_WIDTH: u16 = 2; // "│ " takes 2 columns
-const TRUNCATION_BORDER_OUTDENT: i16 = -2; // Draw border 2 columns left of content
+// A collapsed (`Brief`) tool block reveals this many source lines before the
+// disclosure triangle takes over; more than this earns a "(+N lines)" hint.
+const BRIEF_LINES: usize = 8;
 
 impl<'a> InteractiveState<'a> {
     /// Draw all active blockquote markers at the current row
@@ -94,7 +95,7 @@ impl<'a> InteractiveState<'a> {
                 self.layout.pos.y += 1;
             }
 
-            DocumentNode::List { items } => {
+            DocumentNode::List { items, start } => {
                 for (item_idx, item) in items.iter().enumerate() {
                     // Add blank line between list items
                     if item_idx > 0 {
@@ -105,22 +106,27 @@ impl<'a> InteractiveState<'a> {
 
                     // Block element: unconditionally position at indent
                     self.layout.pos.x = self.layout.indent;
-                    // Draw blockquote markers before bullet
+                    // Draw blockquote markers before the item marker
                     self.draw_blockquote_markers(buf);
 
-                    // Bullet with nice unicode character based on nesting level
-                    let bullet = crate::tui::bullet_for_indent(self.layout.indent);
-                    let bullet_text = format!("  {} ", bullet);
-                    let bullet_style = self.theme.muted_style;
+                    // Ordered lists number from `start`; bulleted lists use a nesting
+                    // glyph. The marker width varies (e.g. "  1. "), so advance by its
+                    // actual width rather than a fixed 4 columns.
+                    let marker = match start {
+                        Some(n) => format!("  {}. ", n + item_idx as u64),
+                        None => format!("  {} ", crate::tui::bullet_for_indent(self.layout.indent)),
+                    };
+                    let marker_width = marker.chars().count() as u16;
+                    let marker_style = self.theme.muted_style;
                     self.write_text(
                         buf,
                         self.layout.pos.y,
                         self.layout.pos.x,
-                        &bullet_text,
+                        &marker,
                         self.layout.area,
-                        bullet_style,
+                        marker_style,
                     );
-                    self.layout.pos.x += 4;
+                    self.layout.pos.x += marker_width;
 
                     // Save indent and update for content
                     let saved_indent = self.layout.indent;
@@ -268,194 +274,116 @@ impl<'a> InteractiveState<'a> {
                 self.layout.pos.y += 1;
             }
 
-            DocumentNode::TruncatedBlock { nodes, level } => {
-                // Transparent container: doesn't add its own newlines
-                // Just controls which children to render and adds decorative borders if truncated
-
-                // Determine line limit based on truncation level
-                let line_limit = match level {
-                    TruncationLevel::SingleLine => 3,  // Show ~3 lines for single-line
-                    TruncationLevel::Brief => 8, // Show ~8 lines for brief (actual wrapped lines)
-                    TruncationLevel::Full => u16::MAX, // Show everything
-                };
-
-                let start_row = self.layout.pos.y;
-                let mut rendered_all = true;
-                let border_style = self.theme.muted_style;
-
-                // Calculate border and content columns
-                // Border is outdented (to the left) so content doesn't shift when expanding
-                // Full mode never truncates, so it will never use the border
-                let border_col = self
-                    .layout
-                    .indent
-                    .saturating_add_signed(TRUNCATION_BORDER_OUTDENT);
-                let content_col = self.layout.indent; // Content stays at current indent
-
-                // For SingleLine with heading as first node, just show the heading text (no decoration)
-                let render_nodes = if matches!(level, TruncationLevel::SingleLine) {
-                    match nodes.first() {
-                        Some(DocumentNode::Heading { spans, .. }) => {
-                            // Block element: unconditionally position at indent
-                            self.layout.pos.x = self.layout.indent;
-                            // Just render the spans without the heading decoration
-                            for span in spans {
-                                self.render_span(span, buf);
-                            }
-                            // Heading normally increments y, so do it here too
-                            self.layout.pos.y += 1;
-                            rendered_all = nodes.len() <= 1;
-                            false // Skip normal rendering
-                        }
-                        _ => true, // Normal rendering for other node types
-                    }
-                } else {
-                    true
-                };
-
-                if render_nodes {
-                    // For Brief mode, try to find a good truncation point at second paragraph break
-                    let truncate_at = if matches!(level, TruncationLevel::Brief) {
-                        find_paragraph_truncation_point(nodes, line_limit, self.layout.area.width)
-                    } else {
-                        None
+            DocumentNode::Diff { lines } => {
+                // One styled line per diff line; the leading ` `/`+`/`-` is kept so
+                // columns align. Added → green, Removed → red, Hunk → muted,
+                // Context → default foreground.
+                for line in lines {
+                    self.layout.pos.x = self.layout.indent;
+                    self.draw_blockquote_markers(buf);
+                    let style = match line.kind {
+                        DiffLineKind::Added => SpanStyle::Added,
+                        DiffLineKind::Removed => SpanStyle::Removed,
+                        DiffLineKind::Hunk => SpanStyle::Comment,
+                        DiffLineKind::Context => SpanStyle::Plain,
                     };
-
-                    // Track last row with actual content (to trim trailing blank lines)
-                    let mut last_content_row = start_row;
-
-                    // Render nodes
-                    for (idx, child_node) in nodes.iter().enumerate() {
-                        // Check if we've hit our truncation point
-                        if let Some(cutoff) = truncate_at
-                            && idx >= cutoff
-                        {
-                            rendered_all = false;
-                            break;
-                        }
-
-                        // Check if we've exceeded the line limit (fallback)
-                        if self.layout.pos.y - start_row >= line_limit
-                            && !matches!(level, TruncationLevel::Full)
-                        {
-                            rendered_all = false;
-                            break;
-                        }
-
-                        // Skip headings in the middle of truncated content (not first node)
-                        // Only do this for Brief/SingleLine, not Full
-                        if idx > 0
-                            && !matches!(level, TruncationLevel::Full)
-                            && matches!(child_node, DocumentNode::Heading { .. })
-                        {
-                            rendered_all = false;
-                            break;
-                        }
-
-                        // Skip code blocks and lists in Brief/SingleLine mode
-                        // These are multi-line structures that don't make sense in snippets
-                        if !matches!(level, TruncationLevel::Full)
-                            && matches!(
-                                child_node,
-                                DocumentNode::CodeBlock { .. }
-                                    | DocumentNode::GeneratedCode { .. }
-                                    | DocumentNode::List { .. }
-                            )
-                        {
-                            rendered_all = false;
-                            break;
-                        }
-
-                        // Add blank line between consecutive blocks
-                        if idx > 0 {
-                            self.layout.pos.y += 1;
-                        }
-
-                        // Save and update path and indent
-                        let saved_path = self.layout.node_path;
-                        self.layout.node_path.push(idx);
-                        let saved_indent = self.layout.indent;
-                        self.layout.indent = content_col;
-
-                        let row_before = self.layout.pos.y;
-                        self.render_node(child_node, buf);
-
-                        // Restore path and indent
-                        self.layout.node_path = saved_path;
-                        self.layout.indent = saved_indent;
-
-                        // Track last row with content
-                        if self.layout.pos.y > row_before {
-                            last_content_row = self.layout.pos.y;
-                        }
-
-                        // If this is the last node, we rendered everything
-                        if idx == nodes.len() - 1 {
-                            rendered_all = true;
-                        }
-                    }
-
-                    // Draw left border only if content was truncated
-                    if !rendered_all {
-                        // Draw borders from start to last content row (exclusive)
-                        for r in start_row..last_content_row {
-                            if r >= self.viewport.scroll_offset
-                                && r < self.viewport.scroll_offset + self.layout.area.height
-                            {
-                                self.write_text(
-                                    buf,
-                                    r,
-                                    border_col,
-                                    "│ ",
-                                    self.layout.area,
-                                    border_style,
-                                );
-                            }
-                        }
-                    }
-                }
-
-                // Show bottom border with [...] if we didn't render all nodes
-                if !rendered_all {
-                    let ellipsis_text = "╰─[...]";
-                    let ellipsis_row = self.layout.pos.y;
-
-                    // Check if hovered
-                    let is_hovered = self.viewport.cursor_pos.map_or_else(
-                        || false,
-                        |cursor_pos| {
-                            cursor_pos.y == ellipsis_row
-                                && cursor_pos.x >= border_col
-                                && cursor_pos.x < border_col + ellipsis_text.len() as u16
-                        },
-                    );
-
-                    let final_style = if is_hovered {
-                        border_style.add_modifier(Modifier::REVERSED)
-                    } else {
-                        border_style
-                    };
-
-                    // Write the border with ellipsis
-                    self.write_text(
+                    self.render_span(
+                        &Span { text: line.text.clone().into(), style, action: None },
                         buf,
-                        ellipsis_row,
-                        border_col,
-                        ellipsis_text,
-                        self.layout.area,
-                        final_style,
                     );
-
-                    // Track the action with the current path
-                    let rect = Rect::new(border_col, ellipsis_row, ellipsis_text.len() as u16, 1);
-                    self.render_cache
-                        .actions
-                        .push((rect, TuiAction::ExpandBlock(self.layout.node_path)));
-
-                    // Increment y to account for ellipsis line
                     self.layout.pos.y += 1;
                 }
-                // Transparent container: no additional spacing
+            }
+
+            DocumentNode::TruncatedBlock { header, resting, nodes, level } => {
+                // Source lines the body would occupy fully expanded. The transcript's
+                // collapsible body is a single CodeBlock, so this is its line count;
+                // counting newlines (not wrapped rows) keeps the collapse decision
+                // width-independent and deterministic.
+                let total_lines: usize = nodes.iter().map(node_line_count).sum();
+                let collapsible = total_lines > BRIEF_LINES;
+                let collapsed = collapsible && matches!(level, TruncationLevel::Brief);
+                let hidden = total_lines.saturating_sub(BRIEF_LINES);
+
+                // Leading glyph: a disclosure triangle (▶ collapsed / ▼ expanded) when
+                // there's more than fits, else the block's resting glyph (an exchange's
+                // `❯`/`✗`), else a neutral ▌. The whole line toggles the block.
+                if let Some(header) = header {
+                    self.layout.pos.x = self.layout.indent;
+                    self.draw_blockquote_markers(buf);
+                    let header_row = self.layout.pos.y;
+
+                    if collapsible {
+                        self.render_span(&muted_span(if collapsed { "▶ " } else { "▼ " }), buf);
+                    } else if let Some(resting) = resting {
+                        self.render_span(resting, buf);
+                    } else {
+                        self.render_span(&muted_span("▌ "), buf);
+                    }
+                    for span in header {
+                        self.render_span(span, buf);
+                    }
+                    if collapsed {
+                        let hint = format!("  (+{hidden} lines)");
+                        self.render_span(&muted_span(&hint), buf);
+                    }
+                    self.layout.pos.y += 1;
+
+                    if collapsible {
+                        // The whole header line toggles the block (mouse click /
+                        // keyboard activate), targeting this TruncatedBlock's path.
+                        let rect = Rect::new(0, header_row, self.layout.area.width, 1);
+                        self.render_cache
+                            .actions
+                            .push((rect, TuiAction::ExpandBlock(self.layout.node_path)));
+                    }
+                }
+
+                // Body: render children, clipping code to BRIEF_LINES while collapsed.
+                for (idx, child_node) in nodes.iter().enumerate() {
+                    if idx > 0 {
+                        self.layout.pos.y += 1;
+                    }
+                    let saved_path = self.layout.node_path;
+                    self.layout.node_path.push(idx);
+
+                    if collapsed {
+                        self.render_node(&clip_node(child_node, BRIEF_LINES), buf);
+                    } else {
+                        self.render_node(child_node, buf);
+                    }
+
+                    self.layout.node_path = saved_path;
+                }
+            }
+
+            DocumentNode::Turn { author, blocks } => {
+                let start_row = self.layout.pos.y;
+                for (idx, block) in blocks.iter().enumerate() {
+                    // Blank line between blocks, mirroring the top-level spacing.
+                    if idx > 0 {
+                        self.layout.pos.y += 1;
+                    }
+                    let saved_path = self.layout.node_path;
+                    self.layout.node_path.push(idx);
+                    self.render_node(block, buf);
+                    self.layout.node_path = saved_path;
+                }
+
+                // Authorship is structural: the user's turn carries an accent gutter
+                // down the reserved left margin; the assistant is the unmarked
+                // default voice. Painted after the blocks so it spans their rows.
+                if matches!(author, Author::User) {
+                    let gutter_col = BASELINE_LEFT_MARGIN.saturating_sub(2);
+                    let style = self.style(SpanStyle::UserAccent);
+                    for row in start_row..self.layout.pos.y {
+                        if row >= self.viewport.scroll_offset
+                            && row < self.viewport.scroll_offset + self.layout.area.height
+                        {
+                            self.write_text(buf, row, gutter_col, "┃", self.layout.area, style);
+                        }
+                    }
+                }
             }
 
             DocumentNode::Conditional { show_when, nodes } => {
@@ -479,5 +407,44 @@ impl<'a> InteractiveState<'a> {
                 // Transparent container: no additional spacing
             }
         }
+    }
+}
+
+/// A muted span for accordion chrome — the disclosure triangle / block marker and
+/// the "(+N lines)" hint.
+fn muted_span(text: &str) -> Span<'static> {
+    Span {
+        text: text.to_string().into(),
+        style: SpanStyle::Comment,
+        action: None,
+    }
+}
+
+/// Source-line count a node would occupy fully expanded — the input to the
+/// collapse decision. Width-independent (counts newlines, not wrapped rows).
+fn node_line_count(node: &DocumentNode<'_>) -> usize {
+    match node {
+        DocumentNode::CodeBlock { code, .. } => code.lines().count().max(1),
+        DocumentNode::Diff { lines } => lines.len().max(1),
+        DocumentNode::List { items, .. } => items.len(),
+        _ => 1,
+    }
+}
+
+/// A copy of `node` clipped to its first `max_lines` source lines (the collapsed
+/// view). Only code blocks clip — the transcript's collapsible body is always one.
+fn clip_node<'a>(node: &DocumentNode<'a>, max_lines: usize) -> DocumentNode<'a> {
+    match node {
+        DocumentNode::CodeBlock { lang, code } => {
+            let clipped = code.lines().take(max_lines).collect::<Vec<_>>().join("\n");
+            DocumentNode::CodeBlock {
+                lang: lang.clone(),
+                code: clipped.into(),
+            }
+        }
+        DocumentNode::Diff { lines } => DocumentNode::Diff {
+            lines: lines.iter().take(max_lines).cloned().collect(),
+        },
+        other => other.clone(),
     }
 }

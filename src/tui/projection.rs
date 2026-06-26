@@ -9,9 +9,12 @@
 //! Unlike the wire projection it does not coalesce or elide — every turn renders,
 //! so the human sees the whole record.
 
+use std::collections::HashMap;
+
 use crate::log::{ContentBlock, LogEntry, MarkKind, Payload, RawResult, ToolCall, WireState};
 use crate::tui::document::{
-    Document, DocumentNode, ListItem, Span, SpanStyle, TruncationLevel,
+    Author, DiffLine, DiffLineKind, Document, DocumentNode, ListItem, Span, SpanStyle,
+    TruncationLevel,
 };
 use crate::tui::markdown::MarkdownRenderer;
 
@@ -49,42 +52,109 @@ impl LiveTail {
     }
 }
 
-/// Fold the log + live tail into a transcript document.
+/// Fold the log + live tail into a transcript document of conversational
+/// [`Turn`](DocumentNode::Turn)s. Authorship is structural (the renderer draws a
+/// gutter for the user; the assistant is unmarked), and each tool call is paired
+/// with its result into one collapsible *exchange* (`❯ tool · arg` over the
+/// result) rather than two separately-labeled blocks.
 pub(crate) fn project(log: &[LogEntry], live: &LiveTail) -> Document<'static> {
-    let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
+    // A result lands in a later entry than the call it answers; index results by
+    // `call_id` up front so a call can be paired with its result in one place.
+    let mut result_for_call: HashMap<&str, (&RawResult, &WireState)> = HashMap::new();
+    for entry in log {
+        if let Payload::ToolResult { call_id, raw, wire } = &entry.payload {
+            result_for_call.insert(call_id.0.as_str(), (raw, wire));
+        }
+    }
 
+    let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
     for entry in log {
         match &entry.payload {
-            Payload::User(blocks) => push_user(&mut nodes, blocks),
-            Payload::Assistant { text, calls } => push_assistant(&mut nodes, text, calls),
-            Payload::ToolResult { raw, wire, .. } => {
-                push_tool_result(&mut nodes, entry.seq, raw, wire)
+            Payload::User(blocks) => {
+                nodes.push(turn(Author::User, markdown(&join_text(blocks))));
             }
+            Payload::Assistant { text, calls } => {
+                let mut blocks = Vec::new();
+                let prose = join_text(text);
+                if !prose.trim().is_empty() {
+                    blocks.extend(markdown(&prose));
+                }
+                for call in calls {
+                    let result = result_for_call.get(call.id.0.as_str()).copied();
+                    blocks.push(exchange(call, result));
+                }
+                if !blocks.is_empty() {
+                    nodes.push(turn(Author::Assistant, blocks));
+                }
+            }
+            // Folded into its call's exchange above.
+            Payload::ToolResult { .. } => {}
             Payload::Mark(mark) => push_mark(&mut nodes, &mark.kind, &mark.note),
         }
     }
 
-    // The live tail renders after everything committed.
+    // The live tail renders after everything committed: in-flight assistant prose
+    // as its own turn, and each running tool as a result-less exchange.
     if !live.assistant.is_empty() {
-        nodes.push(label("assistant", SpanStyle::Keyword));
-        nodes.extend(markdown(&live.assistant));
+        nodes.push(turn(Author::Assistant, markdown(&live.assistant)));
     }
     for (call_id, buf) in &live.tools {
-        nodes.push(label(&format!("running {call_id}"), SpanStyle::FunctionName));
-        nodes.push(code_block(None, buf));
+        let header = vec![inline_code(call_id.clone())];
+        nodes.push(turn(
+            Author::Assistant,
+            vec![DocumentNode::collapsible(
+                header,
+                Some(prompt_span(false)),
+                vec![code_block(None, buf)],
+                TruncationLevel::Brief,
+            )],
+        ));
     }
 
     Document::with_nodes(nodes)
 }
 
-/// A single styled role marker line (e.g. "▌ assistant").
-fn label(text: &str, style: SpanStyle) -> DocumentNode<'static> {
-    DocumentNode::Paragraph {
-        spans: vec![Span {
-            text: format!("▌ {text}").into(),
-            style,
-            action: None,
-        }],
+/// Wrap a turn's blocks under its author.
+fn turn(author: Author, blocks: Vec<DocumentNode<'static>>) -> DocumentNode<'static> {
+    DocumentNode::Turn { author, blocks }
+}
+
+/// One tool call paired with its result as a collapsible exchange: the header is
+/// the call (`❯ tool · arg`, or `✗ tool …` when the result errored); the body is
+/// the (tool-specifically rendered) result. No `result #N` label — the result is
+/// obviously the response to the call directly above it.
+fn exchange(call: &ToolCall, result: Option<(&RawResult, &WireState)>) -> DocumentNode<'static> {
+    let is_error = result.is_some_and(|(raw, _)| raw.is_error);
+
+    let mut header = vec![inline_code_styled(call.name.clone(), SpanStyle::FunctionName)];
+    let (inline, overflow) = call_args(call);
+    if let Some(arg_spans) = inline {
+        header.push(Span { text: " · ".into(), style: SpanStyle::Comment, action: None });
+        header.extend(arg_spans);
+    }
+
+    let mut body = overflow;
+    if let Some((raw, wire)) = result {
+        let content = match wire {
+            WireState::Raw => raw.content.clone(),
+            WireState::Distilled(s) => s.clone(),
+            WireState::Elided => "[elided]".to_string(),
+        };
+        body.extend(result_body(Some(call.name.as_str()), raw, wire, &content));
+    }
+
+    // The `❯`/`✗` prompt is the block's resting marker (the renderer swaps in a
+    // ▶/▼ disclosure triangle when the result is long enough to collapse).
+    DocumentNode::collapsible(header, Some(prompt_span(is_error)), body, TruncationLevel::Brief)
+}
+
+/// The exchange prompt glyph: `❯` for a normal call, `✗` (red) when its result
+/// failed — so an error reads as an error without a `[error]` word.
+fn prompt_span(is_error: bool) -> Span<'static> {
+    if is_error {
+        Span { text: "✗ ".into(), style: SpanStyle::Error, action: None }
+    } else {
+        Span { text: "❯ ".into(), style: SpanStyle::Comment, action: None }
     }
 }
 
@@ -102,65 +172,190 @@ fn code_block(lang: Option<&str>, code: &str) -> DocumentNode<'static> {
     }
 }
 
-fn push_user(nodes: &mut Vec<DocumentNode<'static>>, blocks: &[ContentBlock]) {
-    nodes.push(label("you", SpanStyle::Strong));
-    let text = join_text(blocks);
-    nodes.extend(markdown(&text));
-}
-
-fn push_assistant(nodes: &mut Vec<DocumentNode<'static>>, text: &[ContentBlock], calls: &[ToolCall]) {
-    let prose = join_text(text);
-    if !prose.trim().is_empty() {
-        nodes.push(label("assistant", SpanStyle::Keyword));
-        nodes.extend(markdown(&prose));
+/// The call's argument, split into what goes inline on the `❯ tool · …` header
+/// (a short summary) and what overflows into the exchange body (a multi-line
+/// `bash` command, or a JSON envelope for an unrecognized tool). Known tools get a
+/// tool-specific summary — the file tools surface their path/pattern; `bash` shows
+/// a single-line command inline, a multi-line one as a shell block.
+fn call_args(call: &ToolCall) -> (Option<Vec<Span<'static>>>, Vec<DocumentNode<'static>>) {
+    let input = |key| call.input.get(key).and_then(|v| v.as_str());
+    match call.name.as_str() {
+        n if n == crate::bash::NAME => {
+            if let Some(command) = input("command") {
+                return if command.contains('\n') {
+                    (None, vec![code_block(Some("bash"), command)])
+                } else {
+                    (Some(vec![inline_code(command)]), vec![])
+                };
+            }
+        }
+        "read" => {
+            if let Some(paths) = call.input.get("paths").and_then(|v| v.as_array()) {
+                let joined = paths.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", ");
+                return (Some(vec![inline_code(joined)]), vec![]);
+            }
+        }
+        "search" => {
+            if let Some(pattern) = input("pattern") {
+                let mut spans = vec![inline_code(pattern.to_string())];
+                if let Some(path) = input("path") {
+                    spans.push(Span::plain("  in  "));
+                    spans.push(inline_code(path.to_string()));
+                }
+                return (Some(spans), vec![]);
+            }
+        }
+        "list" => {
+            if let Some(path) = input("path") {
+                return (Some(vec![inline_code(path.to_string())]), vec![]);
+            }
+        }
+        name if is_diff_tool(name) => {
+            // The diff result is the representation — never dump the (verbose) edit
+            // input. Show a concise anchor hint inline if present, else just the name.
+            let inline = input("anchor").map(|anchor| {
+                let snippet: String = anchor.lines().next().unwrap_or(anchor).chars().take(48).collect();
+                vec![inline_code(snippet)]
+            });
+            return (inline, vec![]);
+        }
+        _ => {}
     }
-    for call in calls {
-        push_call(nodes, call);
-    }
-}
-
-fn push_call(nodes: &mut Vec<DocumentNode<'static>>, call: &ToolCall) {
-    nodes.push(label(&format!("{} (wants to run)", call.name), SpanStyle::FunctionName));
     let pretty = serde_json::to_string_pretty(&call.input).unwrap_or_else(|_| call.input.to_string());
-    // The input is collapsible so a long argument blob doesn't dominate the view.
-    nodes.push(DocumentNode::truncated_block(
-        vec![code_block(Some("json"), &pretty)],
-        TruncationLevel::Brief,
-    ));
+    (None, vec![code_block(Some("json"), &pretty)])
 }
 
-fn push_tool_result(
-    nodes: &mut Vec<DocumentNode<'static>>,
-    seq: u64,
+/// An inline-code-styled span (paths, patterns, commands).
+fn inline_code(text: impl Into<String>) -> Span<'static> {
+    inline_code_styled(text, SpanStyle::InlineCode)
+}
+
+/// A span with an explicit style (header tool name, inline args).
+fn inline_code_styled(text: impl Into<String>, style: SpanStyle) -> Span<'static> {
+    Span { text: text.into().into(), style, action: None }
+}
+
+/// The body shown under a tool-result header. Known tools get a tool-specific
+/// representation of their raw output — an edit tool's `===DIFF===` becomes a
+/// colored [`DocumentNode::Diff`], and a `read` result drops its sentinel framing
+/// and highlights by file type. Distilled / elided / error results, and anything
+/// unrecognized, fall back to the content as a plain code block.
+fn result_body(
+    tool: Option<&str>,
     raw: &RawResult,
     wire: &WireState,
-) {
-    // Distillate-when-present, else raw — the same precedence as the wire
-    // projection (`crate::project::tool_result_block`).
-    let (content, marker_style) = match wire {
-        WireState::Raw => (raw.content.clone(), SpanStyle::Comment),
-        WireState::Distilled(s) => (s.clone(), SpanStyle::Emphasis),
-        WireState::Elided => ("[elided]".to_string(), SpanStyle::Comment),
-    };
-    let style = if raw.is_error {
-        SpanStyle::Strikethrough
+    content: &str,
+) -> Vec<DocumentNode<'static>> {
+    if !raw.is_error && matches!(wire, WireState::Raw) {
+        match tool {
+            Some(t) if is_diff_tool(t) => {
+                if let Some(diff) = parse_diff(content) {
+                    return vec![diff];
+                }
+            }
+            Some("read") => {
+                if let Some(body) = read_result(content) {
+                    return vec![body];
+                }
+            }
+            _ => {}
+        }
+    }
+    vec![code_block(None, content)]
+}
+
+/// The known tools whose result carries a `===DIFF===` section.
+fn is_diff_tool(name: &str) -> bool {
+    matches!(name, "preview_edit" | "persist_edit" | "retarget_edit")
+}
+
+/// Strip a `read` result's sentinel framing (`==<token> BEGIN <path>, LENGTH: n
+/// <token>==` … matching `END`) and render the file body as a code block, syntax-
+/// highlighted by the path's extension. Returns `None` if the marker isn't present
+/// (so the caller falls back to a plain code block).
+fn read_result(content: &str) -> Option<DocumentNode<'static>> {
+    let mut path: Option<String> = None;
+    let mut saw_marker = false;
+    let mut body: Vec<&str> = Vec::new();
+    for line in content.lines() {
+        match read_marker(line) {
+            Some(found_path) => {
+                saw_marker = true;
+                if found_path.is_some() {
+                    path = found_path;
+                }
+            }
+            None => body.push(line),
+        }
+    }
+    if !saw_marker {
+        return None;
+    }
+    let lang = path.as_deref().and_then(lang_for_path);
+    Some(code_block(lang, &body.join("\n")))
+}
+
+/// Classify a `read` sentinel line: `Some(Some(path))` for a `BEGIN` line,
+/// `Some(None)` for an `END` line, `None` for ordinary file content.
+fn read_marker(line: &str) -> Option<Option<String>> {
+    let inner = line.strip_prefix("==")?.strip_suffix("==")?;
+    if let Some(rest) = inner.split_once(" BEGIN ").map(|(_, r)| r) {
+        let path = rest.split(", LENGTH:").next().unwrap_or(rest).trim();
+        Some(Some(path.to_string()))
+    } else if inner.contains(" END ") {
+        Some(None)
     } else {
-        marker_style
-    };
-    let tag = if raw.is_error { "error" } else { "result" };
-    nodes.push(label(&format!("{tag} #{seq}"), style));
-    // Long output collapses; short output shows in full (the renderer decides
-    // based on the TruncationLevel hint).
-    nodes.push(DocumentNode::truncated_block(
-        vec![code_block(None, &content)],
-        TruncationLevel::Brief,
-    ));
+        None
+    }
+}
+
+/// A syntect language token for a file path's extension, or `None` for plain text.
+fn lang_for_path(path: &str) -> Option<&'static str> {
+    Some(match path.rsplit('.').next()? {
+        "rs" => "rust",
+        "toml" => "toml",
+        "md" | "markdown" => "markdown",
+        "json" => "json",
+        "js" | "mjs" | "cjs" => "javascript",
+        "ts" => "typescript",
+        "py" => "python",
+        "sh" | "bash" => "bash",
+        "yaml" | "yml" => "yaml",
+        "html" => "html",
+        "css" => "css",
+        _ => return None,
+    })
+}
+
+/// Parse an edit tool's result into a colored diff: take the text after the
+/// `===DIFF===` marker and classify each line by its leading ` `/`+`/`-`/`@`.
+/// Returns `None` when there's no diff section (so the caller falls back to a
+/// plain code block).
+fn parse_diff(content: &str) -> Option<DocumentNode<'static>> {
+    let body = content.split_once("===DIFF===")?.1.trim_start_matches('\n');
+    if body.trim().is_empty() {
+        return None;
+    }
+    let lines = body
+        .lines()
+        .map(|line| {
+            let kind = match line.chars().next() {
+                Some('+') => DiffLineKind::Added,
+                Some('-') => DiffLineKind::Removed,
+                Some('@') => DiffLineKind::Hunk,
+                _ => DiffLineKind::Context,
+            };
+            DiffLine { kind, text: line.to_string() }
+        })
+        .collect();
+    Some(DocumentNode::diff(lines))
 }
 
 fn push_mark(nodes: &mut Vec<DocumentNode<'static>>, kind: &MarkKind, note: &str) {
     nodes.push(DocumentNode::horizontal_rule());
     let MarkKind::Boundary { upto } = kind;
     nodes.push(DocumentNode::List {
+        start: None,
         items: vec![ListItem::new(vec![DocumentNode::Paragraph {
             spans: vec![
                 Span {
@@ -228,46 +423,80 @@ mod tests {
     }
 
     #[test]
-    fn projects_each_payload_into_labeled_blocks() {
+    fn projects_turns_and_pairs_call_with_result() {
         let doc = project(&sample_log(), &LiveTail::default());
 
-        // The role labels (▌ you / assistant / wants-to-run / result) all land,
-        // and tool output / call input are collapsible TruncatedBlocks.
-        let mut paragraph_text = String::new();
-        let mut truncated = 0;
-        for node in &doc.nodes {
-            match node {
-                DocumentNode::Paragraph { spans } => {
-                    for s in spans {
-                        paragraph_text.push_str(&s.text);
-                        paragraph_text.push('\n');
-                    }
-                }
-                DocumentNode::TruncatedBlock { .. } => truncated += 1,
-                _ => {}
-            }
-        }
-        assert!(paragraph_text.contains("▌ you"), "user label: {paragraph_text}");
-        assert!(paragraph_text.contains("▌ assistant"), "assistant label");
-        assert!(paragraph_text.contains("bash (wants to run)"), "tool-call label");
-        assert!(paragraph_text.contains("result #3"), "tool-result label");
-        // One collapsible block for the call input, one for the result output.
-        assert_eq!(truncated, 2, "collapsible call-input + tool-output blocks");
+        // Top level is a sequence of authored turns: user, then assistant.
+        let authors: Vec<Author> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                DocumentNode::Turn { author, .. } => Some(*author),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(authors, vec![Author::User, Author::Assistant]);
+
+        // The assistant turn holds prose plus exactly one exchange (the call paired
+        // with its result) — not two separately-labeled blocks.
+        let assistant_blocks = doc
+            .nodes
+            .iter()
+            .find_map(|n| match n {
+                DocumentNode::Turn { author: Author::Assistant, blocks } => Some(blocks),
+                _ => None,
+            })
+            .expect("assistant turn");
+        let exchanges = assistant_blocks
+            .iter()
+            .filter(|n| matches!(n, DocumentNode::TruncatedBlock { .. }))
+            .count();
+        assert_eq!(exchanges, 1, "one exchange, not separate call + result blocks");
+
+        // The exchange header names the tool, with no role/seq label.
+        let header_text: String = assistant_blocks
+            .iter()
+            .filter_map(|n| match n {
+                DocumentNode::TruncatedBlock { header, .. } => header.as_ref(),
+                _ => None,
+            })
+            .flatten()
+            .map(|s| s.text.as_ref())
+            .collect();
+        assert!(header_text.contains("bash"), "tool name in header: {header_text}");
+        assert!(!header_text.contains("result #"), "no result label: {header_text}");
+        assert!(!header_text.contains("wants to run"), "call already ran");
+
+        // The result content lives in the exchange body.
+        let code = collect_code(&doc.nodes);
+        assert!(code.contains("line one"), "result body present: {code}");
     }
 
     #[test]
     fn distilled_wire_supersedes_raw() {
-        let log = vec![entry(
-            5,
-            Payload::ToolResult {
-                call_id: CallId("toolu_9".into()),
-                raw: RawResult {
-                    content: "RAW-NOISE".into(),
-                    is_error: false,
+        // A call and its distilled result (a result is only rendered as part of its
+        // call's exchange, so the call must be present).
+        let log = vec![
+            entry(
+                4,
+                Payload::Assistant {
+                    text: vec![],
+                    calls: vec![ToolCall {
+                        id: CallId("toolu_9".into()),
+                        name: "bash".into(),
+                        input: serde_json::json!({ "command": "noise" }),
+                    }],
                 },
-                wire: WireState::Distilled("the distilled summary".into()),
-            },
-        )];
+            ),
+            entry(
+                5,
+                Payload::ToolResult {
+                    call_id: CallId("toolu_9".into()),
+                    raw: RawResult { content: "RAW-NOISE".into(), is_error: false },
+                    wire: WireState::Distilled("the distilled summary".into()),
+                },
+            ),
+        ];
         let doc = project(&log, &LiveTail::default());
         let code: String = collect_code(&doc.nodes);
         assert!(code.contains("the distilled summary"), "shows distillate: {code}");
@@ -325,12 +554,11 @@ mod tests {
                 screen.push_str(buf[(x, y)].symbol());
             }
         }
-        assert!(screen.contains("you"), "user turn on screen");
+        assert!(screen.contains("hello there"), "user prompt on screen");
         assert!(screen.contains("plan"), "assistant prose on screen");
-        // The tool result's label renders; its body sits in a collapsed
-        // TruncatedBlock (the collapsible-node feature), so we assert the label,
-        // not the hidden output.
-        assert!(screen.contains("result"), "tool-result label on screen");
+        // The exchange header names the tool; its result body sits in the (short,
+        // shown) exchange below it.
+        assert!(screen.contains("bash"), "exchange header on screen");
     }
 
     fn collect_code(nodes: &[DocumentNode<'_>]) -> String {
@@ -342,6 +570,7 @@ mod tests {
                     out.push('\n');
                 }
                 DocumentNode::TruncatedBlock { nodes, .. } => out.push_str(&collect_code(nodes)),
+                DocumentNode::Turn { blocks, .. } => out.push_str(&collect_code(blocks)),
                 _ => {}
             }
         }
