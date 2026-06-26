@@ -1,0 +1,414 @@
+# efference — build journal
+
+The dated, session-by-session record of what was built and verified, with the live
+results and the bugs root-caused along the way. This is **history**; for how the
+system works *now*, read `DESIGN.md` (the forward-looking spec). Entries are
+chronological (oldest first). Section numbers like §3, §10.1 refer to `DESIGN.md`.
+
+---
+
+## 2026-06-23 — Phase 0: transport, substrate, projection, seam
+
+First implementation session. Built and verified:
+
+- **Transport** (`src/api.rs`): non-streaming POST to `/v1/messages` via
+  `trillium-client` + `trillium-rustls` (TLS; ALPN negotiates HTTP/2). Two live
+  round-trips confirmed against Haiku; `usage` (incl. `cache_*`) parsed.
+  `api::Client::complete(&[ApiMessage]) -> Completion`.
+- **Substrate** (`src/log.rs`): the minimal walking set — `LogEntry`, `Payload`
+  (`User` / `Assistant` / `ToolResult` only), `WireState` (all three), `ContentBlock::
+  Text`, `ToolCall`, `RawResult`, `Timestamp`/`Seq`/`Turn`. No `Mark`/`Ambient`/
+  `Commit` yet.
+- **Projection** (`src/project.rs`): `project(&[LogEntry]) -> Vec<ApiMessage>`.
+  Coalesces consecutive `tool_result`s into one user message; omits `is_error:false`.
+  Tested for byte-stability **and** an exact expected-wire-bytes pin (the
+  cache-determinism guard, §3).
+- **Seam closed** (`src/main.rs`): request built from `project(log)`; response parsed
+  back into `Payload::Assistant` and appended. Single turn — no loop yet.
+- 7 tests green; clean build (edition 2024, nightly). lib + bin split.
+
+Decisions this session (beyond §8): dev model `claude-haiku-4-5` for cost (Opus default
+unchanged). **HTTP/3 deferred** — Anthropic is fronted by Cloudflare, negotiates HTTP/2,
+advertises no `alt-svc: h3`; an `--http3-only` probe didn't connect. `serde_json::Value`
+(sorted-key serialization) gives projection determinism — no `preserve_order` needed.
+
+### Bash tool, Frontend seam, agent loop, persistence, cache breakpoint
+
+- **Bash tool** (`src/bash.rs`) — spawns `bash -c` into a fresh process group
+  (`process_group(0)`; child pid == pgid), captures combined stdout/stderr, marks
+  `is_error` on non-zero exit, and races completion against an injected `abort` future
+  — on abort it `killpg`s the whole group with `SIGKILL` (§6 ownership, seeded now).
+  `abort` is injected (not `ctrl_c` inline) so the kill path is unit-tested without
+  signalling the runner. 5 tests. Deps: `libc`, tokio `process`.
+- **`Frontend` seam** (`src/frontend.rs`) — trait (`read_user_turn` / `approve` /
+  `interrupted`) + the `Interactive` backend. A background thread owns the blocking
+  stdin read and forwards over an mpsc channel; `approve()` races stdin + SIGUSR1
+  (approve) + SIGINT (abort). `Approval` is three-valued — `Approve | Abort |
+  Redirect(String)`: an empty line approves, other text redirects, C-c bails. 5 tests.
+- **Agent loop** (`src/agent.rs`) — `project → complete → append assistant → {approve,
+  run, append result} → repeat` until the model stops calling tools, then
+  `read_user_turn` (EOF quits). First turn seeded from **argv**.
+- **JSONL persistence** (`src/persist.rs`) — `Log { entries, sink }` appends one
+  `LogEntry` per line, flushed per append; `load()` replays for the daemon-attach
+  future. Headline test: a log written to disk and read back **projects to
+  byte-identical wire**. 18 tests.
+- **Trailing cache breakpoint** (`project::place_trailing_cache_breakpoint`) —
+  `CacheControl::Ephemeral` on the last block of the last message, applied *after*
+  `project` (which stays pure/byte-stable).
+
+**Bug caught wiring the loop:** a backgrounded run has **closed stdin**, so the line
+channel closes immediately — and `approve` was reading that `None` as a deny,
+auto-aborting every call before an approver could send SIGUSR1. Fixed: a *closed* stdin
+drops out of the `select!` and approval waits on the signals alone. This is the case
+that makes the SIGUSR1 channel usable headless.
+
+**Live round-trip confirmed (Haiku):** backgrounded run, argv-seeded turn → tool call →
+waited at the gate → approved with `kill -USR1` → bash ran → result fed back → final
+answer → clean exit (0) on stdin EOF.
+
+### Phase 0 — COMPLETE (gate cleared) ✓
+
+The §7 gate passed on a live multi-step run (`cat DESIGN.md` → `wc -l` → `git log`,
+each approved via `kill -USR1`):
+
+| req | input | cache_creation | cache_read |
+| --- | --- | --- | --- |
+| 1 (prompt only) | 665 | 0 | 0 |
+| 2 (after `cat DESIGN.md`) | 6 | **9407** | 0 |
+| 3 (after `wc`) | 6 | 165 | **9407** |
+| 4 (after `git log`) | 6 | 89 | **9572** |
+
+`cache_read` climbs (0 → 9407 → 9572) while `cache_creation` collapses after the one
+initial write — the prefix is reused, only the small tail re-written each turn. Req 1's
+665-token prefix was under Haiku's minimum and silently didn't cache (§3). **That
+`cache_read` climbs *at all* is live proof projection is byte-stable.** Persistence
+verified: the 8-entry session JSONL replays and `jq`s cleanly.
+
+Phase 0 retired all four risks: loop works, projection byte-stable, cache reads
+register, bash tool safe.
+
+---
+
+## 2026-06-23 — Phase 1+2: the universal redaction fork
+
+**Design pivot.** An earlier "deferred keep-last-N + tail-rewrite + `Commit`" sketch
+carried raw on the wire transiently and then time-travelled back to mutate it — which
+forced all the `Commit` machinery. jbr flipped it to the cleaner shape: **redact every
+result at append; the canonical wire never carries raw at all** (§4-realized). Because a
+result's `wire` is fixed the moment it's appended and never changes, **no cached prefix
+is ever mutated** → caching is trivially safe, exactly like Phase 0. `Commit` is not
+needed here; it moves to Phase 3 compaction.
+
+- **Slice 1 — stub distiller (BUILT).** `src/distill.rs`: a `Distiller` trait + a
+  deterministic `HeadTail { head, tail }` stub (keep first *head* + last *tail* numbered
+  lines), `cat -n` numbering with absolute numbers across the elision. Distill-at-append
+  wired into `agent::run`. Proves the divergence + caching in isolation, no model call.
+
+- **Phase 1+2 — the model fork (BUILT & verified live on Haiku and Opus).** 25 tests.
+  - `Distiller` is now **async with fork context**: `distill(client, prefix, call, raw)
+    -> WireState`. `ForkPeek` (the §4 model fork; default) projects the
+    prefix-through-`tool_use`, places a cache breakpoint, appends the full
+    line-numbered raw + a retain prompt, **forces one `retain` call**, parses `keep`
+    (`all`/`none`/`"40-52,310-318"`) + `note`, and renders the distillate. On any
+    failure → keep-all (never lose data).
+  - `tool_choice` (`api.rs`): `{auto, disable_parallel_tool_use: true}` every request
+    — **one tool call per turn** (§8); `force(name)` for the fork.
+  - **System preamble** explains the curation, says *don't pre-filter*, "the distillate
+    IS the output." `PEEK_LINE_CAP = 2000` is a safety floor on what the peek sees.
+  - **Verified** (ferritin "find the request-header method signature" task): both models
+    reached the exact answer (`Conn::with_request_header`, full signature). The fork
+    redacts hard (Conn struct 134→13 lines; `--help` 79→8), and the `note` field behaves
+    as a *running research log* carrying intent forward — §1 intent-aware compaction
+    emerging on its own.
+
+**Decisions locked.** "The distillate IS the output" — no "raw in log" / "re-read"
+framing anywhere the agent or the peek can see it; it manufactured anxiety (Opus wasted
+a turn trying to un-elide `--help`) and the old "can be re-read" line likely *caused*
+over-dropping. The peek is now told *"whatever you drop is gone from the working context
+— keep what might matter, stay lean."* **Findings:** the preamble lands on Opus (zero
+pre-filtering) but not Haiku (reflexive `grep`/`head` — a weak-instruction-follower
+artifact); pre-filtering never produced a wrong answer.
+
+### Distillate inflation finding → diff-hunk rendering
+
+Auditing a real Haiku session (24 tool results) surfaced a quantified problem: **for 13
+of 24 results the distillate was *larger* than the raw it replaced.** Cause: the
+canonical wire numbered every kept line `cat -n`-style (~7 bytes/line), and the common
+verdict on small outputs is `keep=all` — so the distillate was raw + a number on every
+line + the note, while *also* paying the extra peek round-trip.
+
+**Fix (jbr's call):** drop per-line numbers from the canonical wire; carry position in
+diff-style hunk headers (`@@ lines a-b @@`) instead. Per-line numbering stays in the
+*fork peek view* (the coordinate system `retain(lines=…)` addresses), so the two
+renderings split into `number_lines` (fork only) and `render_hunks` (canonical wire).
+`retain({keep, note?})` schema unchanged. No cache/persistence impact (a distillate's
+wire is computed once at append and stored). 30 tests. Also fixed in passing: the
+`retain` tool *description* still carried the "can be re-read" framing the §8 decision
+removed everywhere else.
+
+---
+
+## 2026-06-23 — Tool seam + fs-mcp / semantic-edit-mcp in-process
+
+Driven by a live Haiku run that exposed three gaps (a no-tool-call when the prompt
+didn't spoon-feed orientation; a wrong-language guess; a final answer truncated at
+`max_tokens`). Built:
+
+- **Orientation + env context.** The system preamble now orients the agent ("you are a
+  coding agent in a Git repo at the cwd; explore it"), and `src/env.rs` appends a
+  **session-fixed** block (working dir, platform, project type) computed once at startup
+  and frozen into the system prompt — only session-stable facts, so it never invalidates
+  the cached prefix (§3). Volatile state (git status, file lists) is excluded.
+- **`max_tokens` 1024 → 4096** (`api.rs`) — 1024 truncated a real final answer.
+- **The §5 Tool seam** (`src/tools.rs`). A `Provider` enum aggregated by a `Toolbox`
+  (enum, static dispatch — no `async-trait` dep). The loop knows only `Toolbox::
+  {definitions, run}`; bash is no longer special-cased.
+- **fs-mcp + semantic-edit-mcp integrated in-process** (resolves the §5 Phase-4 open
+  question). Approach: reuse the generated `mcplease` `Tools` enum; one additive
+  `lib.rs` per crate exposes `Tools`, the state struct, and an `embedded(cwd)`
+  constructor. `McpServer<State, ToolEnum>` (generic) holds state in a `RefCell`,
+  dispatches via `from_value::<ToolEnum>` + `Tool::execute`, and translates `mcplease`'s
+  `ToolSchema` into the Anthropic `input_schema` shape. semantic-edit integrated with
+  **all** features (tree-sitter grammars not gated — accepted build cost). 40 tests.
+- **Shared-store side effect, RESOLVED.** `FsTools::new` persists to a shared store
+  (`~/.ai-tools/...`) other servers read; mounting would clobber it. Fix: `embedded(cwd)`
+  builds the session store **in memory** (`SessionStore::new(None)` — no disk, no
+  file-watcher). This also made the fs end-to-end test hermetic, so it un-`#[ignore]`d.
+- **Curation forced:** `McpServer` filters `set_working_directory` (a `HIDDEN` list) —
+  both servers expose it, so advertising would duplicate a name (the API rejects
+  duplicates). A `mounted_toolbox_advertises_unique_tool_names` test guards collisions.
+
+Still open: cargo-mcp not yet integrated (mcplease version skew 0.2.2 vs 0.2.3; shells
+out to real `cargo`/`rustup`) — later moved *off* the critical path (§5).
+
+---
+
+## 2026-06-24 — Streaming the upstream wire (SSE)
+
+The §8 streaming swap landed: the upstream call now sends `stream: true` and consumes
+the response as SSE via `Conn::into_sse()`, replacing the single non-streaming POST. The
+transport boundary stays put — `complete()` keeps its signature and returns one
+`Completion`, so loop, projection, fork, and caching are untouched.
+
+- **`api::Assembler`** — a pure fold over the event sequence (`message_start` /
+  `content_block_*` / `_delta` / `_stop` / `message_delta` / `message_stop` / `ping` /
+  `error`); `finish()` collapses to the `Payload::Assistant`. Reassembles `tool_use`
+  input from arbitrarily split `input_json_delta` fragments. Unit-tested without a live
+  stream.
+- **Invariants preserved:** loud-on-unknown (unknown event/block/delta = hard error);
+  usage merge (`input` + `cache_*` from `message_start`, `output_tokens` from
+  `message_delta` — reading only one regresses the §7 gate metrics).
+- **Thinking carved out, not built.** Streamed `thinking`/`redacted_thinking` and their
+  deltas are recognized and rejected with a precise `THINKING_UNSUPPORTED` error — a
+  clean landing spot. Storing thinking needs a `ContentBlock` variant, the mandatory
+  same-turn round-trip (moves the byte-stability pin), and a resolution for the fork's
+  forced `tool_choice` vs. adaptive thinking.
+- **Error-body tradeoff (accepted).** `into_sse()` collapses a pre-stream non-2xx into
+  `SseErrorKind::Status(code)` and discards the JSON body; operational overload still
+  arrives as an in-stream `error` event whose full body we surface. Filed as a
+  trillium-client backlog item.
+- **Verified live (Haiku):** streamed assistant turn → `tool_use` input reassembled from
+  fragments → approved via SIGUSR1 → bash ran → fork-distilled → second streamed turn →
+  final answer; session JSONL replays clean. 46 tests. (Cache columns were 0 — the toy
+  session's ~3.2k prefix is under Haiku's 4096 floor, not a regression.)
+
+---
+
+## 2026-06-24 — Control channel: HTTP over a Unix socket
+
+Closes the §8 interface-parity gap. The `Approval::Redirect` steer was reachable only
+through an interactive terminal, violating "no TUI-only capability." The settled shape is
+**stronger than parity**: the HTTP interface is the *singular, authoritative input
+source* — no privileged in-process path; the loop's only `Frontend` is the remote one.
+
+**The thesis payoff: the log is already the event store.** SSE has no replay, so
+reconnect drops events — but the append-only log with monotonic `seq` *is* the event
+store. `GET /events` tails the log; reconnect = `GET /log?since=<seq>` then tail. The
+durable design and verb set are now in `DESIGN.md §10.1`.
+
+### Slice 1 — `Shared` + `RemoteFrontend` + write verbs (BUILT & verified)
+
+`src/daemon.rs`: `Shared` (the loop ↔ handlers seam, `Arc<Shared>` in trillium's
+server-global `shared_state`), `RemoteFrontend`, a hand-routed `handler`, `serve()`.
+`agent::run` now takes `Arc<Shared>` and reads the **first** turn over the socket too
+(argv-seeding gone); the log moved behind `Arc<Mutex<Log>>` (never held across an await
+— the fork gets a `snapshot()` clone). `Interactive` / stdin / SIGUSR1 / `.efference.pid`
+**retired**. `main.rs` is clap now: `efference serve [--socket]`. Verbs: `POST /turn` →
+202; `POST /approvals/{call_id}`; `POST /interrupt`; `GET /state`; `GET /log?since`.
+**Verified live (Haiku) over `curl --unix-socket`** end to end. 41 tests, clippy clean.
+
+### Slice 2a — client + scriptable verbs (BUILT & verified)
+
+The blocker — trillium-tokio shipped no *client-side* Unix connector — was cleared by
+jbr writing `trillium_tokio::UnixClientConfig` (a fixed-path-dialing `Connector`,
+released in **0.6.4**). `src/client.rs`: one method per verb, each surfacing the daemon's
+own JSON error body verbatim. **Daemon re-routed onto `trillium-router`** (real
+`:call_id` capture); the hermetic client test dogfoods the same router. CLI verbs
+`efference turn` / `approve [--abort | --redirect]` / `interrupt` / `state` / `log`; a
+bare `efference approve` defaults to the one pending gate — **what replaces the SIGUSR1
+hack**. **Multi-turn headless confirmed** (a second `efference turn` answered from
+context, no tool call) — retiring the "backgrounded run can't get its opening prompt"
+constraint that demanded this channel. 43 tests.
+
+### Slice 2b — `GET /events` SSE + `attach` REPL (BUILT & verified)
+
+Clients now tail the log live instead of polling. `GET /events` is an SSE tail of the
+append-only log (`?since=<seq>` replays then follows live; `event: <kind>`, `id: <seq>`,
+`data: <serialized LogEntry>`). **We tail the durable log rather than a broadcast
+channel**, so a slow client never drops events. The stream is a `futures_lite` `unfold`
+that is **lost-wakeup-safe** (the `Notified` is created before the catch-up read).
+`efference attach` is the first interactive client: a background task tails `/events` and
+renders; the foreground reads stdin and per line resolves the gate or sends a turn.
+
+**The trillium-http fix that unblocked this (root-caused live).** `/events` first
+returned **zero bytes** while `/log`/`/state` worked. Root cause was *not* in efference
+or trillium-sse: **`trillium-http`'s body→socket copy loop only flushed on EOF**, so an
+endless SSE stream's events sat in the `BufWriter` forever. Fix (patched in via
+`[patch.crates-io]` to a local checkout): flush the writer when the body yields
+`Poll::Pending`. **(2026-06-25: the upstream flush fix shipped — the `[patch.crates-io]`
+is now removable; drop it next time `Cargo.toml` is touched.)** **Verified live (Haiku):**
+`curl -N /events` streamed events the instant a turn was posted; the approval gate over
+`attach` works end to end. 44 tests.
+
+---
+
+## 2026-06-24 — Cache-aware transport: instrument panel + keepalive
+
+Caching is the §3 constraint the whole design bends around, yet it was invisible (usage
+was `eprintln!`'d and dropped) and the cache died at the 5m TTL on any idle. This slice
+makes it **legible** and **keeps it warm**, entirely in transport/daemon — never touching
+the log or a projection, so it can't perturb the byte-stability pins (§3).
+
+**Two live probes settled the mechanics first** (~3¢, before any policy code):
+- **`max_tokens: 0` reads the cache** — returns `cache_read > 0`, `output: 0`, instant: a
+  genuine cache-hitting use that refreshes the sliding TTL while generating nothing. **The
+  keepalive primitive.**
+- **Cache TTL is a WRITE-time property — no cheap read-upgrade.** A `ttl: "1h"` request
+  against a prefix cached at 5m returned `cache_creation: 0`, `cache_read: 14402`,
+  `ephemeral_1h: 0` — it just *read* the 5m entry. A warm 5m cache **cannot** be lifted to
+  1h. **Decision: the 5m keepalive is the tool; 1h is dropped** as a keepalive concern
+  (becomes a future session-init knob). This killed the "stepping-away → bump to 1h" idea
+  before it was built.
+
+**Instrument panel.** `Shared` holds a transport-only `metrics` cell (latest `usage`,
+cumulative totals, two wall-clock `Instant`s — never serialized, only derived elapsed
+seconds). `GET /state` now carries a `usage` block. The fork peek's usage is folded in (it
+reads the shared prefix and so slides its TTL). **Keepalive.** `keepalive_loop` (spawned
+in `serve`) fires a non-streaming `max_tokens: 0` round-trip over the byte-identical
+prefix when the cache nears eviction at idle. **Two clocks:** a *cache-touch* clock
+(turns + fork + pings) and a *real-turn* clock (turns + fork only) — a ping refreshes the
+TTL but doesn't reset its own give-up deadline. Pings at `PING_AT` (240s), stops past
+`CAP` (30 min idle, the §3 crossover where one cold read on resume wins).
+
+**Verified live (Haiku).** Cold write of a 6149-token entry → idle → at ~235s no ping →
+keepalive fired (`cache read 6149 — TTL refreshed`) → `/state` showed the ping's usage
+and `seconds_since_last_request` reset 234 → 65. The timer fires only at genuine idle.
+46 tests.
+
+---
+
+## 2026-06-25 — Token-level streaming (deltas)
+
+The "token-level deltas, cheap to add later" note is built — realized as the insight that
+**assistant prose and tool stdout are the same thing**: ephemeral, pre-commit output the
+committed log entry supersedes on commit. One mechanism carries both.
+
+- **The side channel.** `Shared` gained a lossy `broadcast::Sender<StreamDelta>`
+  (`AssistantText` | `ToolOutput { call_id, chunk }`). A new `GET /stream` SSE route
+  subscribes per connection. Deliberately **lossy** where `/events` is durable (the log is
+  the backstop); delta events are **id-less** (the contract keeping them off the `/events`
+  resume cursor); `StreamDelta` is never appended/projected — transport-only.
+- **Producers stay daemon-ignorant.** `api.rs::complete` and `bash.rs::run` each take a
+  plain `impl FnMut(&str)` sink; only the loop adapts them into `StreamDelta`. **The fork
+  peek passes a no-op sink** — its triage tokens never surface.
+- **Bash streams both pipes.** `wait_with_output` gave way to concurrent incremental reads
+  of stdout+stderr via `tokio::select!` — output is now **arrival-interleaved** (more
+  terminal-faithful; streams stderr progress like cargo). The process-group abort path is
+  preserved.
+- **Client/TUI.** `attach` renders `/events` and `/stream` from a **single merged task**
+  (`render_streams`), which lets the spartan client dedup without a full TUI: live
+  fragments print first, the committed entry finalizes the line. Tool output is *not*
+  deduped against the committed `tool_result` (the stream shows raw live output, the
+  result shows the fork distillate — both carry signal).
+- **Tests:** `bash::streams_chunks_to_the_sink` and `daemon::stream_carries_ephemeral_
+  deltas`. **55 green, clippy clean.** Upstream streamed-prose path verified live through
+  `attach` (Haiku) with the original two-task renderer; the merged-renderer dedup that
+  replaced it is tests-green but wants one more live `attach` pass.
+
+---
+
+## 2026-06-25 — RE-READ resolved (design note)
+
+The re-read affordance was deferred because the *obvious* implementation — flipping a
+committed result's `WireState` back to a fuller distillate/`Raw` — mutates a cached prefix
+entry and invalidates everything downstream (the cardinal sin, §3). Resolution: a
+`reread(seq, focus?)` tool re-runs the **existing `ForkPeek`** on that entry's raw and
+**appends the new distillate at the tail** — pure append, cache-clean. It reuses the
+universal fork verbatim; the same call serves "more of X" and "all of it now"
+(`retain(all)`). Addressed by the visible `seq` handle (block addressing). Build trigger
+stays gated on evidence (over-redaction causing a wrong answer); the cost is now low enough
+to ride alongside Phase-3 Slice 2. Folded into `DESIGN.md §4`.
+
+---
+
+## 2026-06-25 — Phase 3 Slice 0: the `consolidate` tool (commit `4bf649b`)
+
+`src/consolidate.rs` + loop wiring (`DESIGN.md §10.4`). `consolidate` is an **agent-called
+tool** — advertised in `tools[]` but dispatched **structurally** in `agent.rs`, not via the
+world-facing `Toolbox`: it is the first tool that acts on the **log**, not the world. The
+agent calls `consolidate(summary)` to fold its finished work; on approval the loop appends a
+`Mark { Boundary { upto }, note: summary }` + a paired `tool_result` ("consolidated").
+`upto` (`consolidate::extent`) is the entry just before the most recent `User` turn, so the
+live task instruction always survives. `Mark` / `MarkKind::Boundary { upto }` added to
+`src/log.rs`. `branch-from-seq` rides the same substrate. The tool description is framed per
+"distillate IS the output" — the summary *becomes* the record, no "you can re-read it."
+
+## 2026-06-25 — The `[seq]` handle + first dogfooding pass (commit `ccc51f5`)
+
+Tool results now carry a visible `[<seq>]` prefix on the wire (`[2] file.txt`) — a
+render-time handle making "reread 14" / "branch from 14" describable without a schema
+change; the expected-wire-bytes pin was updated to include it (`DESIGN.md §4`). **First
+dogfooding session captured** in `feedback/session-observations.md` (efference exploring its
+own codebase over the daemon). What landed well: focused output, hunk rendering, the `[seq]`
+prefix, search-with-context. Rough edges flagged: no progress signal during a fork peek on
+big files; the `note` field never surfacing to the human; uninformative elision markers
+(`… [N lines elided] …` doesn't say *what* was dropped); and the clunky `kill -USR1` UX
+(since superseded by the daemon). These seed the backlog (distillation breadcrumb, peek
+progress indication, smarter elision markers).
+
+## 2026-06-25 — Model is a session flag (commit `985549c`)
+
+`efference serve --model <id>` (default `claude-haiku-4-5`); the model was a hardcoded const
+before. Opus 4.8 remains the locked *real* default — the flag is a dev convenience. Fixed
+for a session (changing it invalidates the whole cache, §3).
+
+## 2026-06-25 — Phase 3 Slice 1: the projection fold, multi-boundary (commit `e77aa41`)
+
+The big `project.rs` rewrite. A pre-pass (`extract_boundaries`) collects every
+`Mark::Boundary`; `project` then elides every `seq <= upto` (plus the mark itself) and
+injects the `summary` as a user-role message **just before the first live entry past
+`upto`** (the head of the live conversation, not the mark's own log position). **Multiple
+consolidations overlap** — each later fold subsumes the earlier ones, and each emits its own
+summary, so the wire reads summary-A · summary-B · … · live turns. The `consolidate`
+`tool_use` / result pair projects normally ("keep it visible" resolved). The tail edge (a
+consolidate with nothing after it yet) still injects the summary. Tests cover the single
+fold, multiple overlapping folds, the tail edge, and the mechanical span fold. `project`
+keeps its no-`upto` signature — the fold is driven entirely by the marks in the log.
+
+## 2026-06-25 — Token-level streaming committed (commit `706307b`)
+
+The token-delta work landed: `GET /stream`, the lossy `broadcast::Sender<StreamDelta>`, bash
+both-pipes arrival-interleaving, and the merged-renderer `attach` (`render_streams` +
+`RenderState`) that dedups live prose against the committed entry. The upstream
+streamed-prose path was verified live earlier with the two-task renderer; the merged
+renderer is tests-green and wants one more live `attach` pass to confirm the echo-suppression
+reads cleanly.
+
+---
+
+## Current state (2026-06-25)
+
+**55 tests green, clippy clean.** The harness is being **dogfooded** — driven over the
+daemon (`efference serve` + `turn` / `approve` / `attach`) against Haiku to explore and edit
+its own codebase. Phase 3 Slices 0–1 are in; **Slice 2** (forked compaction peek + re-read)
+is next.
