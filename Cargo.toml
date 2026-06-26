@@ -51,6 +51,12 @@ fieldwork = "0.5.2"
 thiserror = "2"
 unicode-width = "0.2.2"
 
+[dev-dependencies]
+# Snapshot the TUI as plain-text character grids (DESIGN: "playwright for TUIs").
+# File snapshots land in src/tui/snapshots/*.snap — committed, diffable, and
+# readable without running anything. `cargo insta review` / `accept` to update.
+insta = "1.48.0"
+
 [build-dependencies]
 # The theme set is baked at build time from assets/themes/*/*.tmTheme into OUT_DIR
 # (see build.rs, vendored from ferritin). The .tmTheme files come from the git

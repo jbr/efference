@@ -15,7 +15,9 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{buffer::Buffer, layout::Position, layout::Rect, style::Style};
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+use super::render_span::wrap_points;
 
 /// What feeding a key to the composer produced.
 pub(super) enum ComposerAction {
@@ -25,6 +27,19 @@ pub(super) enum ComposerAction {
     Ignored,
     /// The user submitted this text (Enter on a non-empty buffer).
     Submit(String),
+}
+
+/// The left-gutter prompt, drawn on every visual row. Its width is the chrome
+/// the wrappable content width is measured against (see [`Composer::content_width`]).
+const PROMPT: &str = "› ";
+
+/// One wrapped row of the composer: a char range `[start, end)` within logical
+/// line `line`. Produced by [`Composer::visual_rows`].
+#[derive(Debug, Clone, Copy)]
+struct VisualRow {
+    line: usize,
+    start: usize,
+    end: usize,
 }
 
 #[derive(Debug)]
@@ -54,9 +69,67 @@ impl Composer {
         self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))
     }
 
-    /// The number of text rows (for sizing the input area).
-    pub(super) fn line_count(&self) -> usize {
-        self.lines.len()
+    /// The number of *visual* rows the buffer occupies once wrapped to the input
+    /// area of `area_width` columns — i.e. how tall the input area must be. Shares
+    /// the wrap policy with [`render`](Self::render) via [`visual_rows`](Self::visual_rows),
+    /// so sizing and painting can never disagree (the bug that panicked: an area
+    /// sized to logical lines while render drew more wrapped rows).
+    pub(super) fn line_count(&self, area_width: u16) -> usize {
+        self.visual_rows(Self::content_width(area_width)).len().max(1)
+    }
+
+    /// Columns available for text after the gutter chrome. Centralized so a future
+    /// change to the input decoration (e.g. a bordered box instead of `PROMPT`)
+    /// is a localized edit here + the per-row paint, not a change to the wrap math.
+    fn content_width(area_width: u16) -> usize {
+        area_width.saturating_sub(Self::prompt_cols()) as usize
+    }
+
+    /// Display width of the left-gutter prompt.
+    fn prompt_cols() -> u16 {
+        UnicodeWidthStr::width(PROMPT) as u16
+    }
+
+    /// Wrap every logical line to `content_width` columns, flattened into visual
+    /// rows. Each row carries its logical line and the char range `[start, end)`
+    /// of that line it covers; the ranges partition the line with no gaps, which
+    /// is what lets [`locate_cursor`](Self::locate_cursor) map a caret to a cell.
+    /// Always at least one (possibly empty) row per logical line.
+    fn visual_rows(&self, content_width: usize) -> Vec<VisualRow> {
+        let mut rows = Vec::new();
+        for (line_idx, line) in self.lines.iter().enumerate() {
+            if line.is_empty() || content_width == 0 {
+                rows.push(VisualRow { line: line_idx, start: 0, end: 0 });
+                continue;
+            }
+            let text: String = line.iter().collect();
+            let mut start = 0;
+            for byte_break in wrap_points(&text, content_width) {
+                let char_break = text[..byte_break].chars().count();
+                rows.push(VisualRow { line: line_idx, start, end: char_break });
+                start = char_break;
+            }
+            rows.push(VisualRow { line: line_idx, start, end: line.len() });
+        }
+        rows
+    }
+
+    /// Find the visual row holding the caret and the caret's char offset within
+    /// it. A caret resting on a wrap boundary belongs to the *next* row's start,
+    /// except on a line's final row where it sits just past the last char.
+    fn locate_cursor(&self, rows: &[VisualRow]) -> (usize, usize) {
+        for (i, vr) in rows.iter().enumerate() {
+            if vr.line != self.row {
+                continue;
+            }
+            let last_seg = i + 1 >= rows.len() || rows[i + 1].line != self.row;
+            let upper = if last_seg { vr.end + 1 } else { vr.end };
+            if (vr.start..upper).contains(&self.col) {
+                return (i, self.col - vr.start);
+            }
+        }
+        let i = rows.len().saturating_sub(1);
+        (i, rows.get(i).map_or(0, |vr| self.col.saturating_sub(vr.start)))
     }
 
     /// The current text (lines joined with `\n`).
@@ -280,18 +353,19 @@ impl Composer {
         if area.width == 0 || area.height == 0 {
             return Position::new(area.x, area.y);
         }
-        let prompt = "› ";
-        let prompt_w = prompt.chars().count() as u16;
+        let prompt_w = Self::prompt_cols();
+        let rows = self.visual_rows(Self::content_width(area.width));
+        let (cursor_vr, cursor_off) = self.locate_cursor(&rows);
 
-        // Vertical scroll within the input area so the cursor row is visible.
+        // Vertical scroll within the input area so the cursor's visual row is shown.
         let visible = area.height as usize;
-        let top = self.row.saturating_sub(visible.saturating_sub(1));
+        let top = cursor_vr.saturating_sub(visible.saturating_sub(1));
 
-        for (screen_row, line_idx) in (top..self.lines.len()).take(visible).enumerate() {
-            let y = area.y + screen_row as u16;
+        for (screen_row, vr) in rows.iter().enumerate().skip(top).take(visible) {
+            let y = area.y + (screen_row - top) as u16;
             let mut x = area.x;
             // Prompt marker on every wrapped row's left gutter.
-            for ch in prompt.chars() {
+            for ch in PROMPT.chars() {
                 if x >= area.right() {
                     break;
                 }
@@ -300,7 +374,7 @@ impl Composer {
                 }
                 x += 1;
             }
-            for &ch in &self.lines[line_idx] {
+            for &ch in &self.lines[vr.line][vr.start..vr.end] {
                 let w = ch.width().unwrap_or(0) as u16;
                 if x + w > area.right() {
                     break;
@@ -312,10 +386,12 @@ impl Composer {
             }
         }
 
-        // Cursor screen position: prompt + display width up to the cursor column.
-        let cursor_screen_row = self.row.saturating_sub(top) as u16;
+        // Cursor screen position: prompt + display width up to the caret column
+        // within its visual row.
+        let cursor_screen_row = cursor_vr.saturating_sub(top) as u16;
+        let vr = rows[cursor_vr];
         let mut cursor_x = area.x + prompt_w;
-        for &ch in &self.lines[self.row][..self.col] {
+        for &ch in &self.lines[vr.line][vr.start..vr.start + cursor_off] {
             cursor_x += ch.width().unwrap_or(0).max(1) as u16;
         }
         Position::new(cursor_x.min(area.right().saturating_sub(1)), area.y + cursor_screen_row)
@@ -332,6 +408,52 @@ mod tests {
     }
     fn ctrl(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    /// Screenplay scenario: a line longer than the composer width. This captures
+    /// the *current* render so the wrap fix has a visible before/after. Watch the
+    /// right border in the snapshot — today the long line is clipped at the edge
+    /// instead of wrapping onto a second gutter row.
+    #[test]
+    fn composer_wraps_long_line() {
+        use crate::tui::harness::Screenplay;
+        let mut play = Screenplay::new(32, 7);
+        play.type_str("the quick brown fox jumps over the lazy dog");
+        play.snapshot("composer_wraps_long_line");
+    }
+
+    /// The caret (`^` beneath the row) sits just past the last char and advances
+    /// as text is typed — the behavior that was hard to confirm blind.
+    #[test]
+    fn cursor_advances_while_typing() {
+        use crate::tui::harness::Screenplay;
+        let mut play = Screenplay::new(32, 7);
+        play.type_str("hello");
+        play.snapshot("cursor_advances_while_typing");
+    }
+
+    /// After wrapping, the caret follows the text onto the second visual row
+    /// rather than staying stuck on the first.
+    #[test]
+    fn cursor_follows_text_across_a_wrap() {
+        use crate::tui::harness::Screenplay;
+        let mut play = Screenplay::new(32, 7);
+        play.type_str("the quick brown fox jumps over the lazy");
+        play.snapshot("cursor_follows_text_across_a_wrap");
+    }
+
+    /// The insertion point moves independently of the tail: three Left arrows
+    /// from the end land the caret inside the word, with text unchanged.
+    #[test]
+    fn cursor_moves_independently_of_the_tail() {
+        use crate::tui::harness::Screenplay;
+        use crossterm::event::KeyCode;
+        let mut play = Screenplay::new(32, 7);
+        play.type_str("hello world");
+        for _ in 0..3 {
+            play.key(KeyCode::Left, KeyModifiers::NONE);
+        }
+        play.snapshot("cursor_moves_independently_of_the_tail");
     }
 
     #[test]
@@ -367,7 +489,7 @@ mod tests {
             c.handle_key(key(ch));
         }
         assert_eq!(c.text(), "ab\ncd");
-        assert_eq!(c.line_count(), 2);
+        assert_eq!(c.line_count(80), 2);
     }
 
     #[test]
@@ -401,7 +523,7 @@ mod tests {
         c.handle_key(ctrl('a'));
         c.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
         assert_eq!(c.text(), "ab");
-        assert_eq!(c.line_count(), 1);
+        assert_eq!(c.line_count(80), 1);
     }
 
     #[test]

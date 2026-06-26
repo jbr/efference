@@ -20,6 +20,8 @@
 
 pub(crate) mod color_scheme;
 pub(crate) mod composer;
+#[cfg(test)]
+pub(crate) mod harness;
 pub(crate) mod document;
 pub(crate) mod events;
 pub(crate) mod keyboard;
@@ -346,6 +348,25 @@ fn ui_loop(
         let _ = render_context.set_theme_name(DEFAULT_THEME);
     }
     let theme = InteractiveTheme::from_render_context(&render_context);
+
+    // Leave immediate mode before a panic prints. Without this the default hook
+    // writes the payload/backtrace straight into the alternate screen while raw
+    // mode is still on — newlines don't return the carriage, so the trace lands
+    // diagonally and is unreadable. We chain the original hook so the panic is
+    // still reported, just onto a restored terminal. (Restored on clean exit by
+    // the teardown at the end of this fn; the process exits right after either
+    // way, so we don't bother re-installing the original hook.)
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(
+            stdout(),
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            crossterm::cursor::Show
+        );
+        default_hook(info);
+    }));
 
     enable_raw_mode()?;
     let mut stdout = stdout();

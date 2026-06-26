@@ -13,7 +13,7 @@ impl<'a> InteractiveState<'a> {
         // Bottom chrome, top to bottom: [gate banner?] / composer / status. The
         // composer grows with its content (1 row, up to a cap). The rightmost
         // column of the transcript is the scrollbar.
-        let input_height = (self.composer.line_count() as u16).clamp(1, 6);
+        let input_height = (self.composer.line_count(full.width) as u16).clamp(1, 6);
         let gate_height: u16 = if self.pending_gate.is_some() { 1 } else { 0 };
         self.viewport.input_height = input_height;
         self.viewport.gate_height = gate_height;

@@ -198,13 +198,87 @@ impl<'a> InteractiveState<'a> {
 }
 
 /// Calculate the display width of text, accounting for tabs rendered as 4 spaces
-fn display_width(text: &str) -> usize {
+pub(super) fn display_width(text: &str) -> usize {
     text.chars().map(|ch| if ch == '\t' { 4 } else { 1 }).sum()
+}
+
+/// Block-wrap `text` into visual rows of at most `width` display columns,
+/// returning the **byte offset at which each visual row begins** (the first row
+/// starts at 0 implicitly, so the result holds one entry per *continuation* row;
+/// an empty result means the text fits on a single row).
+///
+/// This is the shared wrap *policy* (DESIGN: single source of truth for where
+/// lines break). The document renderer's inline-flow loop and the composer's
+/// block layout both lean on the same [`find_wrap_position`] oracle; the
+/// composer additionally walks these boundaries to size its input area and place
+/// the cursor. A breaking space is kept on the *preceding* row (the boundary
+/// lands after it), so the returned offsets partition the text with no gaps —
+/// which is what lets the composer map a caret to a screen cell unambiguously.
+pub(super) fn wrap_points(text: &str, width: usize) -> Vec<usize> {
+    let mut breaks = Vec::new();
+    if width == 0 || text.is_empty() {
+        return breaks;
+    }
+    let mut base = 0;
+    while base < text.len() {
+        let remaining = &text[base..];
+        if display_width(remaining) <= width {
+            break;
+        }
+        // Where to cut, as a byte offset within `remaining`.
+        let cut = match find_wrap_position(remaining, width) {
+            // A good break (whitespace / punctuation / camelCase) within width.
+            Some(pos) if pos > 0 => pos,
+            // No break within width: prefer the next whitespace beyond it (ragged
+            // right, never splits a word); else a hard char-aligned cut so an
+            // over-wide run still makes progress.
+            _ => remaining
+                .find(char::is_whitespace)
+                .filter(|&p| p > 0)
+                .unwrap_or_else(|| hard_cut(remaining, width)),
+        };
+        // Keep a breaking space on this row: advance past it so the next row
+        // starts on a non-space. Other break kinds leave the char on the next row.
+        let consumed = if remaining[cut..].starts_with(char::is_whitespace) {
+            cut + remaining[cut..].chars().next().map_or(0, char::len_utf8)
+        } else {
+            cut
+        };
+        base += consumed.max(1);
+        breaks.push(base);
+    }
+    // A trailing boundary exactly at end-of-text means the last cut consumed the
+    // whole remainder; drop it so we don't emit an empty final row.
+    if breaks.last() == Some(&text.len()) {
+        breaks.pop();
+    }
+    breaks
+}
+
+/// Largest char-aligned byte prefix of `text` whose display width fits `width`,
+/// but always at least one char so wrapping makes progress on an over-wide glyph.
+fn hard_cut(text: &str, width: usize) -> usize {
+    let mut cols = 0;
+    let mut end = 0;
+    for (i, ch) in text.char_indices() {
+        let w = if ch == '\t' { 4 } else { 1 };
+        if cols + w > width {
+            break;
+        }
+        cols += w;
+        end = i + ch.len_utf8();
+    }
+    if end == 0 {
+        // First glyph already exceeds width — take it whole so we advance.
+        text.chars().next().map_or(text.len(), char::len_utf8)
+    } else {
+        end
+    }
 }
 
 /// Find the best position to wrap text within a given width
 /// Returns the position after which to break, or None if no good break point exists
-fn find_wrap_position(text: &str, max_width: usize) -> Option<usize> {
+pub(super) fn find_wrap_position(text: &str, max_width: usize) -> Option<usize> {
     if max_width == 0 || text.is_empty() {
         return None;
     }
@@ -266,4 +340,56 @@ fn find_wrap_position(text: &str, max_width: usize) -> Option<usize> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{wrap_points, display_width};
+
+    /// Split `text` at the byte boundaries `wrap_points` reports, for legible
+    /// assertions on the visual rows.
+    fn rows(text: &str, width: usize) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut prev = 0;
+        for b in wrap_points(text, width) {
+            out.push(text[prev..b].to_string());
+            prev = b;
+        }
+        out.push(text[prev..].to_string());
+        out
+    }
+
+    #[test]
+    fn short_text_is_one_row() {
+        assert!(wrap_points("hello", 40).is_empty());
+    }
+
+    #[test]
+    fn breaks_at_word_boundaries() {
+        // 30 cols: the break falls on a space, never mid-word, and the breaking
+        // space stays on the preceding row so the next starts clean.
+        let r = rows("the quick brown fox jumps over the lazy dog", 30);
+        assert!(r.len() >= 2, "wrapped into multiple rows");
+        for row in &r {
+            assert!(display_width(row) <= 30, "row {row:?} within width");
+            assert!(!row.starts_with(' '), "no leading space on {row:?}");
+        }
+        // Reassembling the rows reproduces the input exactly (no dropped chars) —
+        // the property the composer's cursor mapping depends on.
+        assert_eq!(r.concat(), "the quick brown fox jumps over the lazy dog");
+    }
+
+    #[test]
+    fn hard_breaks_a_word_longer_than_the_width() {
+        // No whitespace to break on, so it cuts to make progress.
+        let r = rows("superlongunbreakabletoken", 10);
+        assert!(r.len() >= 3);
+        assert_eq!(r.concat(), "superlongunbreakabletoken");
+        assert!(r.iter().all(|row| display_width(row) <= 10));
+    }
+
+    #[test]
+    fn zero_width_never_loops() {
+        assert!(wrap_points("anything", 0).is_empty());
+    }
 }
