@@ -63,6 +63,27 @@ struct Pending {
     input: Value,
 }
 
+/// The pending-notification queue + its id counter (DESIGN §6). Ids are
+/// **queue-local**: an un-shown notification has no log `seq` yet, so it's addressed
+/// by this id until Slice C's first-show append gives it a durable `seq`.
+#[derive(Default)]
+struct Inbox {
+    next_id: u64,
+    pending: Vec<PendingNotification>,
+}
+
+/// One pending ambient notification, surfaced by `GET /state` (DESIGN §6). Immutable
+/// once enqueued — supersession archives-and-replaces rather than editing (§3).
+#[derive(Clone, Serialize)]
+struct PendingNotification {
+    /// Queue-local id; the handle `POST /notifications/:id/dismiss` addresses.
+    id: u64,
+    source: String,
+    body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    slot: Option<String>,
+}
+
 /// Daemon state shared between the loop task and the HTTP handlers. Held as
 /// `Arc<Shared>` in both the loop and trillium's server-global `shared_state`
 /// (read in handlers via `conn.shared_state::<Arc<Shared>>()`). Per-conn state is
@@ -92,6 +113,12 @@ pub struct Shared {
     /// stamp, surfaced by `GET /state` so clients can see cache hit/miss and
     /// predict TTL eviction (DESIGN §3). Transport-only: never touches the log.
     metrics: Mutex<Metrics>,
+    /// The ephemeral inbox of pending ambient notifications (DESIGN §6): out-of-band
+    /// events awaiting their first triage gate. Control state, *not* a log payload —
+    /// a notification only becomes a durable `Ambient` entry when a fork peek first
+    /// shows it (Slice C). Superseded/dismissed-while-pending entries are dropped here
+    /// (the "never-happened" case); only shown ones reach the audit log.
+    inbox: Mutex<Inbox>,
 }
 
 /// Per-session cache/usage telemetry. `last_request_at` is an [`Instant`] (not
@@ -131,6 +158,7 @@ impl Shared {
             appended: Notify::new(),
             stream_tx,
             metrics: Mutex::new(Metrics::default()),
+            inbox: Mutex::new(Inbox::default()),
         });
         (shared, turns_rx)
     }
@@ -249,6 +277,60 @@ impl Shared {
         tx.send(decision).is_ok()
     }
 
+    /// Enqueue an ambient notification (DESIGN §6 — `POST /notify`). If it names a
+    /// `slot` (or an explicit `replaces` id) matching a pending entry, that entry is
+    /// **superseded**: archived-and-replaced, never edited (records are immutable,
+    /// §3). A superseded-while-pending entry is simply dropped — it never reached a
+    /// gate, so from the log's perspective it never happened. Returns the new id.
+    fn notify(
+        &self,
+        source: String,
+        body: String,
+        slot: Option<String>,
+        replaces: Option<u64>,
+    ) -> u64 {
+        let mut inbox = self.inbox.lock().unwrap();
+        // Supersede: an explicit `replaces` id, and/or any pending entry on the slot.
+        if let Some(old) = replaces {
+            inbox.pending.retain(|n| n.id != old);
+        }
+        if let Some(s) = &slot {
+            inbox.pending.retain(|n| n.slot.as_deref() != Some(s.as_str()));
+        }
+        let id = inbox.next_id;
+        inbox.next_id += 1;
+        inbox.pending.push(PendingNotification { id, source, body, slot });
+        id
+    }
+
+    /// Dismiss a pending notification out-of-band (DESIGN §6 — `POST
+    /// /notifications/:id/dismiss`). `false` → no pending notification with that id.
+    fn dismiss_notification(&self, id: u64) -> bool {
+        let mut inbox = self.inbox.lock().unwrap();
+        let before = inbox.pending.len();
+        inbox.pending.retain(|n| n.id != id);
+        inbox.pending.len() != before
+    }
+
+    /// The current pending inbox, in arrival order — surfaced by `GET /state`.
+    fn pending_notifications(&self) -> Vec<PendingNotification> {
+        self.inbox.lock().unwrap().pending.clone()
+    }
+
+    /// Drain the un-shown notifications for a triage gate (DESIGN §6): take and clear
+    /// the ephemeral queue. The loop logs each as a first-show `Ambient` entry (its
+    /// `seq` becoming its durable id) and shows it to the model, so the queue holds
+    /// only what's arrived since the last gate. Returned in arrival order as
+    /// [`Notification`](crate::log::Notification)s ready to wrap in a payload.
+    pub fn drain_inbox(&self) -> Vec<crate::log::Notification> {
+        let mut inbox = self.inbox.lock().unwrap();
+        inbox
+            .pending
+            .drain(..)
+            .map(|p| crate::log::Notification { source: p.source, body: p.body, slot: p.slot })
+            .collect()
+    }
+
     fn interrupt(&self) {
         self.interrupt.notify_waiters();
     }
@@ -277,6 +359,7 @@ impl Shared {
         serde_json::json!({
             "last_seq": last_seq,
             "pending_approval": pending,
+            "pending_notifications": self.pending_notifications(),
             "usage": usage,
         })
         .to_string()
@@ -330,6 +413,18 @@ struct DecisionBody {
     decision: String,
     #[serde(default)]
     message: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct NotifyBody {
+    source: String,
+    body: String,
+    /// Logical channel — a later notify on the same slot supersedes this one (§6).
+    #[serde(default)]
+    slot: Option<String>,
+    /// Supersede a specific pending notification by its queue-local id.
+    #[serde(default)]
+    replaces: Option<u64>,
 }
 
 /// Pull the shared daemon state out of a conn's server-global TypeSet, or short
@@ -399,6 +494,40 @@ fn router() -> Router {
             };
             shared.interrupt();
             conn.with_status(200).with_body(r#"{"status":"interrupted"}"#)
+        })
+        // Enqueue an ambient notification into the inbox (DESIGN §6). 202 — it waits
+        // for the next triage gate (Slice C); a client watches /state for the inbox.
+        .post("/notify", |mut conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            let body = conn.request_body_string().await.unwrap_or_default();
+            match serde_json::from_str::<NotifyBody>(&body) {
+                Ok(n) => {
+                    let id = shared.notify(n.source, n.body, n.slot, n.replaces);
+                    conn.with_status(202).with_body(format!(r#"{{"id":{id}}}"#))
+                }
+                Err(e) => conn
+                    .with_status(400)
+                    .with_body(format!(r#"{{"error":"bad /notify body: {e}"}}"#)),
+            }
+        })
+        // Dismiss a pending notification out-of-band by its queue-local id (DESIGN §6).
+        .post("/notifications/:id/dismiss", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            match conn.param("id").and_then(|s| s.parse::<u64>().ok()) {
+                Some(id) if shared.dismiss_notification(id) => {
+                    conn.with_status(200).with_body(r#"{"status":"dismissed"}"#)
+                }
+                Some(_) => conn
+                    .with_status(404)
+                    .with_body(r#"{"error":"no pending notification with that id"}"#),
+                None => conn
+                    .with_status(400)
+                    .with_body(r#"{"error":"notification id must be an integer"}"#),
+            }
         })
         .get("/state", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
@@ -471,6 +600,7 @@ fn log_event(entry: &LogEntry) -> LogEvent {
         Payload::ToolResult { .. } => "tool_result",
         Payload::Mark(_) => "mark",
         Payload::Triage(_) => "triage",
+        Payload::Ambient(_) => "ambient",
     };
     LogEvent {
         id: entry.seq.to_string(),
@@ -889,6 +1019,79 @@ mod tests {
         let v: Value = serde_json::from_str(&data).unwrap();
         assert_eq!(v["call_id"], "toolu_5");
         assert_eq!(v["chunk"], "line of output\n");
+
+        let _ = std::fs::remove_file(&socket);
+        let _ = std::fs::remove_file(&log_path);
+    }
+
+    /// The inbox supersedes by slot (archive-and-replace, never edit — §6/§3) and
+    /// dismisses by id; a superseded or dismissed entry is gone from the pending set.
+    #[test]
+    fn inbox_supersedes_by_slot_and_dismisses() {
+        let (shared, _turns_rx) = Shared::new(Log::in_memory());
+        let _a = shared.notify("test-watch".into(), "running 5min".into(), Some("bash#7".into()), None);
+        let b = shared.notify("reviewer".into(), "nit at L40".into(), None, None);
+        assert_eq!(shared.pending_notifications().len(), 2);
+
+        // Same slot → replace, not append (the "running 5min" → "finished" case).
+        let _c = shared.notify("test-watch".into(), "finished".into(), Some("bash#7".into()), None);
+        let pending = shared.pending_notifications();
+        assert_eq!(pending.len(), 2, "slot supersession replaced, didn't add");
+        assert!(pending.iter().any(|n| n.body == "finished"));
+        assert!(!pending.iter().any(|n| n.body == "running 5min"), "superseded entry gone");
+
+        // Explicit dismiss by id; a second dismiss of the same id is a no-op.
+        assert!(shared.dismiss_notification(b));
+        assert!(!shared.dismiss_notification(b));
+        let pending = shared.pending_notifications();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].body, "finished");
+    }
+
+    /// `POST /notify`, slot supersession, `GET /state` exposure, and
+    /// `POST /notifications/:id/dismiss` over the real router + control client.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn notify_supersede_and_dismiss_over_the_socket() {
+        let dir = std::env::temp_dir();
+        let log_path = dir.join("efference-notify-test.jsonl");
+        let socket = dir.join("efference-notify-test.sock");
+        let _ = std::fs::remove_file(&log_path);
+        let _ = std::fs::remove_file(&socket);
+
+        let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
+        trillium_tokio::config()
+            .with_shared_state(Arc::clone(&shared))
+            .listeners()
+            .bind_uds(&socket)
+            .expect("bind uds")
+            .spawn(router());
+
+        let client = ControlClient::new(&socket);
+        let gone = client
+            .notify("test-watch", "running 5min", Some("bash#7"), None)
+            .await
+            .expect("notify");
+        // Same slot supersedes the first.
+        client
+            .notify("test-watch", "finished, 0 failures", Some("bash#7"), None)
+            .await
+            .expect("notify 2");
+
+        let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
+        let notes = state["pending_notifications"].as_array().unwrap();
+        assert_eq!(notes.len(), 1, "slot superseded, not appended: {notes:?}");
+        assert_eq!(notes[0]["body"], "finished, 0 failures");
+        assert_eq!(notes[0]["source"], "test-watch");
+        let live_id = notes[0]["id"].as_u64().unwrap();
+
+        // Dismissing the live one empties the inbox; dismissing the superseded id 404s.
+        client.dismiss_notification(live_id).await.unwrap();
+        let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
+        assert!(state["pending_notifications"].as_array().unwrap().is_empty());
+        assert!(
+            client.dismiss_notification(gone).await.is_err(),
+            "the superseded id is gone → 404"
+        );
 
         let _ = std::fs::remove_file(&socket);
         let _ = std::fs::remove_file(&log_path);

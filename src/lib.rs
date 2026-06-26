@@ -14,6 +14,7 @@ pub mod daemon;
 pub mod distill;
 pub mod env;
 pub mod frontend;
+pub mod inbox;
 pub mod log;
 pub mod persist;
 pub mod pretty;

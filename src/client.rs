@@ -70,6 +70,39 @@ impl Client {
         self.post("/interrupt", String::new()).await.map(drop)
     }
 
+    /// Enqueue an ambient notification into the daemon's inbox (`POST /notify`,
+    /// DESIGN §6). `slot` binds it to a logical channel so a later notify on the same
+    /// slot supersedes it; `replaces` supersedes a specific pending id. Returns the
+    /// new notification's queue-local id.
+    pub async fn notify(
+        &self,
+        source: &str,
+        body: &str,
+        slot: Option<&str>,
+        replaces: Option<u64>,
+    ) -> Result<u64> {
+        let mut payload = serde_json::json!({ "source": source, "body": body });
+        if let Some(s) = slot {
+            payload["slot"] = serde_json::json!(s);
+        }
+        if let Some(r) = replaces {
+            payload["replaces"] = serde_json::json!(r);
+        }
+        let resp = self.post("/notify", payload.to_string()).await?;
+        serde_json::from_str::<serde_json::Value>(&resp)
+            .ok()
+            .and_then(|v| v.get("id").and_then(|i| i.as_u64()))
+            .ok_or_else(|| anyhow!("no id in /notify response: {resp}"))
+    }
+
+    /// Dismiss a pending notification out-of-band by its queue-local id
+    /// (`POST /notifications/{id}/dismiss`, DESIGN §6).
+    pub async fn dismiss_notification(&self, id: u64) -> Result<()> {
+        self.post(&format!("/notifications/{id}/dismiss"), String::new())
+            .await
+            .map(drop)
+    }
+
     /// Current ephemeral control state (`GET /state`): the last `seq` and the one
     /// pending approval, if any. Returned as the raw JSON body.
     pub async fn state(&self) -> Result<String> {

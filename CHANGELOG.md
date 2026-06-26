@@ -587,20 +587,67 @@ the wire rendered `[2] @@ line 3 @@ / cherry / — …` with the other fruits of
 agent answered from the distillate. The §4 disk/thesis win + fork-verdict audit, confirmed
 end to end.
 
+### Slice B — the inbox (ingestion)
+
+The ephemeral notification queue + its control verbs, no model in the loop yet. `Shared`
+gained an `Inbox` (a queue-local-id counter + a `Vec<PendingNotification>`); `POST /notify
+{source, body, slot?, replaces?}` enqueues with **slot supersession** — a later notify on the
+same `slot` archives-and-replaces the pending one (the "running 5min" → "finished" case,
+never an edit, §3); `POST /notifications/:id/dismiss` clears one out-of-band; `GET /state`
+grew a `pending_notifications` array. Client methods (`notify`/`dismiss_notification`) + CLI
+verbs (`efference notify <source> <body> [--slot] [--replaces]`, `efference dismiss <id>`)
+round it out — the §8 producer path (a background process / operator / another agent posting
+to the socket). Pending entries are pure control state (the pending-approval precedent,
+§10.1): a superseded/dismissed-while-pending notification is dropped, never logged — Slice C
+logs only what a gate actually *shows*.
+
+**Verified.** +2 tests (**127 green**), clippy clean of the new code: an inbox unit test
+(slot supersede + dismiss-by-id) and a full socket round-trip (`POST /notify` ×2 with slot
+supersession → `GET /state` shows one → dismiss → empty; dismissing the superseded id 404s)
+over the real router + control client. No live API run — Slice B has no model interaction;
+the live pass lands with Slice C, where notifications flow through the fork peek.
+
+### Slice C — the inbox in the peek
+
+Notifications reach the model. At each fork gate the loop opens a triage step: a new
+`inbox.rs` folds the log to the **active** inbox (`active_shown` — `Ambient` arrivals minus
+the seqs any `Triage` has pinned/dismissed), re-showing "left" notifications; newly-arrived
+ones are drained from the ephemeral queue and appended as first-show `Ambient` entries (each
+seq becoming its durable id). The peek view lists the inbox by `[seq]` under the
+line-numbered output; the forced `retain` tool grows an `inbox { pin, dismiss }` field (only
+when there's an inbox to triage); the dispositions ride back on the `Distillation` and land
+on `Triage.inbox`. `project` emits a `⟢ source: body` user block per **pinned** notification
+at its `Triage`'s position (body looked up from the `Ambient` arrival), tail-ward so a
+pin-at-a-later-gate never splices behind a breakpoint (§3); dismissed/left ones never project
+(the human TUI renders every shown notification, the wire only the pinned). "Leave" is the
+absence of a disposition — the notification stays active and re-shows next gate.
+
+**Verified.** +5 tests (**132 green**), clippy clean: the `active_shown` fold (resolves
+pin+dismiss, keeps left), the pin-at-`Triage` projection (pinned `⟢` block at the verdict
+position, dismissed off-wire, arrivals project to nothing), and `retain` inbox parsing.
+**Live-verified (Haiku):** with a tool call pending, posted three notifications — two on one
+`slot` (the second superseded the first in the ephemeral queue, live) + a noise one. On
+approval the gate logged the two survivors as `Ambient` (seq 2–3), showed them in the peek,
+and the model **pinned** the CI build failure and **dismissed** the chatter
+(`Triage.inbox=[[2,Pin],[3,Dismiss]]`). The pin rendered `⟢ ci: build #413 FAILED…` on the
+wire (the dismissed one absent), the inbox drained to empty, and the model's answer surfaced
+the build failure — it acted on the pinned fact. The full §6 inbox, end to end.
+
 ---
 
 ## Current state (2026-06-26)
 
-**125 tests green, clippy clean.** The harness is **dogfooded** over the daemon
+**132 tests green, clippy clean.** The harness is **dogfooded** over the daemon
 (`efference serve` + `turn` / `approve` / `attach`) and now has a **full interactive TUI**
 (`efference tui`): a themed streaming transcript with a **conversational, minimalist**
 render (author-differentiated turns, paired call↔result exchanges, per-tool result
 renderers incl. colored diffs), an emacs-keybind composer, and in-TUI approval gates — a
 session-grade client comparable to a modern coding-agent TUI. Display work is iterable
 without being blind (`Screenplay` snapshot harness + `cell`/`find` color assertions +
-`efference gallery`). Phase 3 Slices 0–1 are in; **ambient-notification Slice A** (the verdict refactor +
-logged `Triage` audit) is in and live-verified. Next: notification **Slice B** (the inbox
-queue + `POST /notify` + `slot` supersession), then **Slice C** (inbox-in-the-peek); plus
-the TUI's Stage-2 render refinement (box → `│` connector), the remaining **TUI polish**
-(integrated focus, click-to-position, expand-state survival), and the core-harness
-**Slice 2** (forked compaction peek + re-read).
+`efference gallery`). Phase 3 Slices 0–1 are in; the **ambient-notification inbox is complete** (Slices A–C, all
+live-verified: the verdict refactor + logged `Triage` audit, `POST /notify` ingestion with
+`slot` supersession, and inbox-in-the-peek where the model pins/dismisses notifications at
+the fork gate). Next: the inbox's deferred refinements (`urgency` / `non_redactable`, the
+idle-triage standalone peek); plus the TUI's Stage-2 render refinement (box → `│`
+connector), the remaining **TUI polish** (integrated focus, click-to-position, expand-state
+survival), and the core-harness **Slice 2** (forked compaction peek + re-read).

@@ -90,8 +90,21 @@ pub(crate) fn project(log: &[LogEntry], live: &LiveTail) -> Document<'static> {
             // Folded into its call's exchange above.
             Payload::ToolResult { .. } => {}
             Payload::Mark(mark) => push_mark(&mut nodes, &mark.kind, &mark.note),
-            // Audit-only on the transcript (DESIGN §4); Slice C renders pinned
-            // notifications here for the human too.
+            // An ambient notification (DESIGN §6), rendered as a marked line so the
+            // human sees the out-of-band event in the stream. The transcript shows the
+            // whole record — every *shown* notification renders here, where the wire
+            // carries only the pinned ones.
+            Payload::Ambient(n) => nodes.push(DocumentNode::Paragraph {
+                spans: vec![
+                    Span {
+                        text: format!("⟢ {} · ", n.source).into(),
+                        style: SpanStyle::Comment,
+                        action: None,
+                    },
+                    Span::plain(n.body.clone()),
+                ],
+            }),
+            // The verdict is internal — audit-only on the transcript (DESIGN §4).
             Payload::Triage(_) => {}
         }
     }

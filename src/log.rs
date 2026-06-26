@@ -65,10 +65,15 @@ pub enum Payload {
     /// A fork verdict (DESIGN §4) — the durable record of a throwaway peek's
     /// decision. The fork's *transcript* stays throwaway; its *decision* is logged
     /// here for audit / introspection / distiller-quality work. Projects as audit
-    /// only today (Slice A); Slice C emits a block per pinned notification at this
-    /// entry's position (DESIGN §6). `Ambient` (the notification-arrival payload)
-    /// lands with Slice C.
+    /// only, except it emits a block per **pinned** notification (its `inbox`) at this
+    /// entry's tail-ward position (DESIGN §6).
     Triage(Triage),
+    /// An out-of-band notification (DESIGN §6), logged at **first-show** — the moment
+    /// a fork peek first shows it to the model. Pure audit on the canonical wire (it
+    /// projects to nothing); a *pinned* one is emitted by its resolving [`Triage`],
+    /// at that entry's position. Its `seq` is its durable id (the handle the `retain`
+    /// inbox verdict references).
+    Ambient(Notification),
 }
 
 /// Phase 0 content is text-only; richer blocks (images, …) come later.
@@ -155,6 +160,16 @@ pub enum Disposition {
     Pin,
     /// Clear from the inbox (logged for audit, never reaches the wire).
     Dismiss,
+}
+
+/// An out-of-band notification (DESIGN §6): freeform `body` + `source`, optionally
+/// bound to a logical `slot` (for supersession in the daemon's pending queue).
+/// Immutable; once logged as a [`Payload::Ambient`] its arrival `seq` is its id.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Notification {
+    pub source: String,
+    pub body: String,
+    pub slot: Option<String>,
 }
 
 /// How a [`Payload::ToolResult`] should be projected. Flipping this (never

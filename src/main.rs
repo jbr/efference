@@ -66,6 +66,26 @@ enum Command {
     },
     /// Interrupt a running tool (`POST /interrupt`) — kills its process group.
     Interrupt,
+    /// Post an ambient notification into the daemon's inbox (`POST /notify`, §6).
+    /// It waits for the next triage gate; watch `state` for the pending inbox.
+    Notify {
+        /// Where it came from (e.g. "test-watch", "operator", "agent:reviewer").
+        source: String,
+        /// The notification text. Multiple words are joined with spaces.
+        #[arg(required = true, num_args = 1..)]
+        body: Vec<String>,
+        /// Bind to a logical slot — a later notify on the same slot supersedes this.
+        #[arg(long)]
+        slot: Option<String>,
+        /// Supersede a specific pending notification by its id.
+        #[arg(long)]
+        replaces: Option<u64>,
+    },
+    /// Dismiss a pending notification by id (`POST /notifications/{id}/dismiss`, §6).
+    Dismiss {
+        /// The notification id (from `notify`'s output or `state`).
+        id: u64,
+    },
     /// Interactive client: tail the event stream and drive the daemon from one
     /// terminal. Type a message to send a turn; at an approval gate, Enter
     /// approves, `.abort` aborts, any other text redirects. Ctrl-D quits.
@@ -142,6 +162,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             redirect,
         } => approve(cli.socket, call_id, abort, redirect).await,
         Command::Interrupt => interrupt(cli.socket).await,
+        Command::Notify {
+            source,
+            body,
+            slot,
+            replaces,
+        } => notify(cli.socket, source, body.join(" "), slot, replaces).await,
+        Command::Dismiss { id } => dismiss(cli.socket, id).await,
         Command::State => state(cli.socket).await,
         Command::Log { since } => log(cli.socket, since).await,
         Command::Attach => attach(cli.socket).await,
@@ -254,6 +281,26 @@ async fn pending_call_id(
 async fn interrupt(socket: PathBuf) -> CliResult {
     ControlClient::new(socket).interrupt().await?;
     println!("interrupted");
+    Ok(())
+}
+
+async fn notify(
+    socket: PathBuf,
+    source: String,
+    body: String,
+    slot: Option<String>,
+    replaces: Option<u64>,
+) -> CliResult {
+    let id = ControlClient::new(socket)
+        .notify(&source, &body, slot.as_deref(), replaces)
+        .await?;
+    println!("notified (id {id})");
+    Ok(())
+}
+
+async fn dismiss(socket: PathBuf, id: u64) -> CliResult {
+    ControlClient::new(socket).dismiss_notification(id).await?;
+    println!("dismissed {id}");
     Ok(())
 }
 

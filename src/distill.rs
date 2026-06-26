@@ -1,40 +1,35 @@
 //! Distillation — what a raw tool result projects to on the canonical wire
-//! (DESIGN §4-realized, §10 Phase 1/2).
+//! (DESIGN §4-realized, §10 Phase 1/2), and the inbox triage that rides the same
+//! fork peek (DESIGN §6).
 //!
 //! Every tool result is distilled at append; the durable wire never carries raw
 //! output, and a result's `wire` is fixed once and never mutated (so caching is
-//! safe by construction). The distiller's job is now to produce a **verdict** —
-//! which lines survive (`keep`) plus a `note` — not rendered bytes: the wire form is
+//! safe by construction). The distiller's job is to produce a **verdict** — which
+//! lines survive (`keep`) plus a `note` — not rendered bytes: the wire form is
 //! re-rendered from `raw` + the verdict at projection time
 //! ([`crate::project::render_distilled`], DESIGN §4), so the kept bytes are never
-//! stored twice and the structured decision doubles as the audit record. The
+//! stored twice and the structured decision doubles as the audit record.
+//!
+//! The same throwaway peek also triages the **inbox** (DESIGN §6): the pending
+//! ambient notifications are shown under the output, and the `retain` verdict's
+//! `inbox` field pins / dismisses them by `[seq]`. The dispositions ride back on the
+//! [`Distillation`] and land on the logged [`Triage`](crate::log::Triage). The
 //! distiller is the pluggable policy (§5) behind a trait:
 //!
 //! - [`HeadTail`] — a deterministic stub (first `head` + last `tail` lines).
 //! - [`ForkPeek`] — the §4 universal triage gate: fork a throwaway branch off the
-//!   cached prefix, show the model the full line-numbered output, and let it call
-//!   `retain` to choose what the canonical wire keeps. One tool call per turn
-//!   (§8), so the fork is always single-result. On any failure it keeps
-//!   everything — never loses data.
-//!
-//! Each call returns a [`Distillation`]: the [`WireState`] plus the audit pieces the
-//! loop stamps into a [`Triage`](crate::log::Triage) entry (`origin`, `raw_keep`, and
-//! — from Slice C — the inbox dispositions). Two distinct renderings stay split:
-//!
-//! - [`number_lines`] — every line `cat -n`-numbered. The coordinate system the peek
-//!   addresses with `retain(lines=…)`, shown ONLY in the throwaway fork.
-//! - [`render_distilled`](crate::project::render_distilled) — what lands on the
-//!   **canonical wire**: kept ranges as diff-style `@@ lines a-b @@` hunks, the lines
-//!   verbatim. It lives in `crate::project` now (the wire form is re-rendered from
-//!   `raw` + the stored verdict, DESIGN §4); the distiller only produces the verdict.
-//!   Per-line numbering proved heavy enough to make distillates *fatter* than the raw
-//!   they replaced (measured live), so the wire uses one header per *range*; gaps are
-//!   implied by the jump in the headers.
+//!   cached prefix, show the model the line-numbered raw output + the inbox, and let
+//!   it call `retain` to choose what the canonical wire keeps and which notifications
+//!   to pin. One tool call per turn (§8). On any failure it keeps everything and
+//!   leaves the inbox untouched — never loses data.
+
+use std::collections::HashSet;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::api::{Client, Completion, ToolChoice, Usage};
+use crate::inbox::ShownNotification;
 use crate::log::{Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall, WireState};
 use crate::project::{
     ApiBlock, ApiMessage, PEEK_LINE_CAP, Role, place_trailing_cache_breakpoint, project,
@@ -49,6 +44,11 @@ forward: \"all\", \"none\", or comma-separated 1-based inclusive line ranges lik
 anything that might matter for the rest of the task, while staying as lean as you \
 can. Always add a one-line `note` summarizing what the output showed.";
 
+const INBOX_INSTRUCTION: &str = " You also have pending notifications, listed under \
+\"inbox\" above with an [id] each. In the `inbox` field, `pin` the ids worth carrying \
+into your working context going forward and `dismiss` the noise; any id you don't list \
+is left in the inbox and shown again at the next decision point.";
+
 /// The outcome of distilling one tool result (DESIGN §4): the wire form plus the
 /// audit pieces the loop stamps into a [`Triage`](crate::log::Triage) entry. `raw` is
 /// never mutated — it stays in the log.
@@ -60,7 +60,9 @@ pub struct Distillation {
     pub origin: Origin,
     /// The model's exact `keep` string, pre-parse — empty for a model-free distiller.
     pub raw_keep: String,
-    /// Per-notification dispositions this peek chose (DESIGN §6). Empty until Slice C.
+    /// Per-notification dispositions this peek chose, by arrival `seq` (DESIGN §6) —
+    /// filtered to notifications actually shown. Empty when nothing was pinned or
+    /// dismissed (everything left for the next gate).
     pub inbox: Vec<(Seq, Disposition)>,
     /// The fork request's [`Usage`], if a model round-trip happened: it reads the
     /// shared canonical prefix (sliding its cache TTL), so the loop folds it into the
@@ -68,9 +70,9 @@ pub struct Distillation {
     pub usage: Option<Usage>,
 }
 
-/// Decide the wire form of a tool result (DESIGN §4). `prefix` is the log through the
-/// assistant turn that made `call` (the fork's cached head); `client` lets a
-/// model-driven distiller run the fork.
+/// Decide the wire form of a tool result and triage the inbox (DESIGN §4, §6).
+/// `prefix` is the log through the assistant turn that made `call` (the fork's cached
+/// head); `inbox` is the pending notifications to show the model.
 #[allow(async_fn_in_trait)] // single-threaded loop; no Send bound needed.
 pub trait Distiller {
     async fn distill(
@@ -79,11 +81,12 @@ pub trait Distiller {
         prefix: &[LogEntry],
         call: &ToolCall,
         raw: &RawResult,
+        inbox: &[ShownNotification],
     ) -> Distillation;
 }
 
 /// Deterministic stub: keep the first `head` + last `tail` lines. Ignores the fork
-/// context — for tests and as the model-free fallback.
+/// context and the inbox — for tests and as the model-free fallback.
 pub struct HeadTail {
     pub head: usize,
     pub tail: usize,
@@ -96,6 +99,7 @@ impl Distiller for HeadTail {
         _prefix: &[LogEntry],
         _call: &ToolCall,
         raw: &RawResult,
+        _inbox: &[ShownNotification],
     ) -> Distillation {
         let n = raw.content.lines().count();
         let keep = if n <= self.head + self.tail {
@@ -103,7 +107,7 @@ impl Distiller for HeadTail {
         } else {
             Keep::Ranges(vec![(1, self.head), (n - self.tail + 1, n)])
         };
-        // Model-free: a `Fallback` verdict, no usage to fold into the telemetry.
+        // Model-free: a `Fallback` verdict, no usage, inbox untouched (all left).
         Distillation {
             wire: WireState::Distilled { keep, note: None },
             origin: Origin::Fallback,
@@ -124,6 +128,7 @@ impl Distiller for ForkPeek {
         prefix: &[LogEntry],
         call: &ToolCall,
         raw: &RawResult,
+        inbox: &[ShownNotification],
     ) -> Distillation {
         // Cap what the peek sees before any model call (the full raw still goes to the
         // log; only the peek works over the first N lines). `render_distilled` re-applies
@@ -133,12 +138,20 @@ impl Distiller for ForkPeek {
         let lines = &all[..all.len().min(PEEK_LINE_CAP)];
         let dropped = all.len() - lines.len();
         // The peek sees the full (capped) output with a number on every line — the
-        // coordinate system `retain(lines=…)` addresses. This per-line numbering lives
-        // ONLY in the throwaway fork; the canonical wire uses the leaner diff-hunks.
+        // coordinate system `retain(lines=…)` addresses. Per-line numbering lives ONLY
+        // in the throwaway fork; the canonical wire uses the leaner diff-hunks.
         let mut peek_view = number_lines(lines);
         if dropped > 0 {
             peek_view.push('\n');
             peek_view.push_str(&format!("       … [{dropped} more lines truncated] …"));
+        }
+        // The pending inbox, each item by its [seq] handle (DESIGN §6) — the
+        // coordinate `retain.inbox.{pin,dismiss}` addresses.
+        if !inbox.is_empty() {
+            peek_view.push_str(&format!("\n\n═══ inbox · {} pending ═══", inbox.len()));
+            for n in inbox {
+                peek_view.push_str(&format!("\n[{}] {} · {}", n.seq, n.source, n.body));
+            }
         }
 
         // Fork: cached prefix-through-tool_use ┃ + full result + retain prompt. The
@@ -146,6 +159,11 @@ impl Distiller for ForkPeek {
         // discarded — the canonical lineage never sees raw (DESIGN §4).
         let mut messages = project(prefix);
         place_trailing_cache_breakpoint(&mut messages);
+        let instruction = if inbox.is_empty() {
+            RETAIN_INSTRUCTION.to_string()
+        } else {
+            format!("{RETAIN_INSTRUCTION}{INBOX_INSTRUCTION}")
+        };
         messages.push(ApiMessage {
             role: Role::User,
             content: vec![
@@ -155,10 +173,7 @@ impl Distiller for ForkPeek {
                     is_error: raw.is_error,
                     cache_control: None,
                 },
-                ApiBlock::Text {
-                    text: RETAIN_INSTRUCTION.to_string(),
-                    cache_control: None,
-                },
+                ApiBlock::Text { text: instruction, cache_control: None },
             ],
         });
 
@@ -168,7 +183,7 @@ impl Distiller for ForkPeek {
         let (parsed, usage) = match client
             // No-op sink: the fork peek's triage tokens are internal and must never
             // surface on `GET /stream` — only the main thread's prose streams.
-            .complete(&messages, &[retain_tool()], ToolChoice::force(RETAIN), |_| {})
+            .complete(&messages, &[retain_tool(inbox)], ToolChoice::force(RETAIN), |_| {})
             .await
         {
             Ok(completion) => (parse_retain(&completion), Some(completion.usage)),
@@ -176,16 +191,26 @@ impl Distiller for ForkPeek {
         };
 
         match parsed {
-            Some(p) => Distillation {
-                wire: WireState::Distilled { keep: p.keep, note: p.note },
-                origin: Origin::Model,
-                raw_keep: p.raw_keep,
-                inbox: Vec::new(),
-                usage,
-            },
+            Some(p) => {
+                // Keep only dispositions for notifications we actually showed (drop any
+                // stray id the model invented).
+                let shown: HashSet<Seq> = inbox.iter().map(|n| n.seq).collect();
+                let dispositions = p
+                    .inbox
+                    .into_iter()
+                    .filter(|(s, _)| shown.contains(s))
+                    .collect();
+                Distillation {
+                    wire: WireState::Distilled { keep: p.keep, note: p.note },
+                    origin: Origin::Model,
+                    raw_keep: p.raw_keep,
+                    inbox: dispositions,
+                    usage,
+                }
+            }
             // Graceful default (DESIGN §4/§8): keep everything the peek saw rather than
-            // drop data when the peek fails. `render_distilled` re-adds the truncation
-            // breadcrumb from `raw`, so the fallback stays honest about the cap.
+            // drop data when the peek fails, and leave the inbox untouched (it re-shows
+            // next gate). `render_distilled` re-adds the truncation breadcrumb from `raw`.
             None => Distillation {
                 wire: WireState::Distilled { keep: Keep::All, note: None },
                 origin: Origin::Fallback,
@@ -197,38 +222,61 @@ impl Distiller for ForkPeek {
     }
 }
 
-fn retain_tool() -> Value {
+/// The forced fork tool. Its `input_schema` gains an `inbox` field only when there are
+/// notifications to triage — the no-inbox case stays lean (and the model isn't prompted
+/// to invent dispositions).
+fn retain_tool(shown: &[ShownNotification]) -> Value {
+    let mut input_schema = json!({
+        "type": "object",
+        "properties": {
+            "keep": {
+                "type": "string",
+                "description": "\"all\", \"none\", or comma-separated 1-based inclusive line ranges, e.g. \"40-52,310-318\" (a single line is \"7\")."
+            },
+            "note": {
+                "type": "string",
+                "description": "One-line summary of what the output showed; the breadcrumb kept when little or nothing is retained."
+            }
+        },
+        "required": ["keep"]
+    });
+    if !shown.is_empty() {
+        input_schema["properties"]["inbox"] = json!({
+            "type": "object",
+            "description": "Triage your pending notifications by [id]. Unlisted ids are left for the next decision point.",
+            "properties": {
+                "pin": {
+                    "type": "array",
+                    "items": { "type": "integer" },
+                    "description": "Notification ids to pin into your working context going forward."
+                },
+                "dismiss": {
+                    "type": "array",
+                    "items": { "type": "integer" },
+                    "description": "Notification ids to clear as noise."
+                }
+            }
+        });
+    }
     json!({
         "name": RETAIN,
         "description": "Choose what of the tool output to keep on the record going forward. The output is line-numbered. Whatever you drop is gone from the working context, so keep anything that might matter — but stay lean.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "keep": {
-                    "type": "string",
-                    "description": "\"all\", \"none\", or comma-separated 1-based inclusive line ranges, e.g. \"40-52,310-318\" (a single line is \"7\")."
-                },
-                "note": {
-                    "type": "string",
-                    "description": "One-line summary of what the output showed; the breadcrumb kept when little or nothing is retained."
-                }
-            },
-            "required": ["keep"]
-        }
+        "input_schema": input_schema
     })
 }
 
 // ---- the verdict ----
 
-/// A parsed `retain` call: the structured `keep`, the optional `note`, and the
-/// model's exact pre-parse `keep` string (recorded on the [`Triage`] audit entry,
-/// DESIGN §4).
+/// A parsed `retain` call: the structured `keep`, the optional `note`, the model's
+/// exact pre-parse `keep` string (for the [`Triage`] audit entry), and the inbox
+/// dispositions (unfiltered — the caller drops ids it didn't show).
 ///
 /// [`Triage`]: crate::log::Triage
 struct ParsedRetain {
     keep: Keep,
     note: Option<String>,
     raw_keep: String,
+    inbox: Vec<(Seq, Disposition)>,
 }
 
 #[derive(Deserialize)]
@@ -236,6 +284,16 @@ struct RetainInput {
     keep: String,
     #[serde(default)]
     note: Option<String>,
+    #[serde(default)]
+    inbox: Option<InboxVerdict>,
+}
+
+#[derive(Deserialize, Default)]
+struct InboxVerdict {
+    #[serde(default)]
+    pin: Vec<u64>,
+    #[serde(default)]
+    dismiss: Vec<u64>,
 }
 
 /// Pull the `retain` verdict out of the peek's completion. `None` when the turn
@@ -246,9 +304,14 @@ fn parse_retain(completion: &Completion) -> Option<ParsedRetain> {
         return None;
     };
     let retain = calls.iter().find(|c| c.name == RETAIN)?;
-    let RetainInput { keep, note } = RetainInput::deserialize(&retain.input).ok()?;
-    let parsed = parse_keep(&keep);
-    Some(ParsedRetain { keep: parsed, note, raw_keep: keep })
+    let RetainInput { keep, note, inbox } = RetainInput::deserialize(&retain.input).ok()?;
+    let parsed_keep = parse_keep(&keep);
+    let mut dispositions = Vec::new();
+    if let Some(ib) = inbox {
+        dispositions.extend(ib.pin.into_iter().map(|s| (s, Disposition::Pin)));
+        dispositions.extend(ib.dismiss.into_iter().map(|s| (s, Disposition::Dismiss)));
+    }
+    Some(ParsedRetain { keep: parsed_keep, note, raw_keep: keep, inbox: dispositions })
 }
 
 /// Parse a `keep` string: `all` / `none` / range list. Lenient — malformed tokens are
@@ -358,13 +421,26 @@ mod tests {
         assert_eq!(p.keep, Keep::All);
         assert_eq!(p.note.as_deref(), Some("the gist"));
         assert_eq!(p.raw_keep, "all", "the model's exact string is kept for audit");
+        assert!(p.inbox.is_empty(), "no inbox field → no dispositions");
 
-        // note is optional; ranges parse through, raw_keep is preserved verbatim.
         let p = parse_retain(&retain_completion(RETAIN, json!({"keep": "40-52,310-318"})))
             .expect("ranges parse");
         assert_eq!(p.keep, Keep::Ranges(vec![(40, 52), (310, 318)]));
         assert_eq!(p.raw_keep, "40-52,310-318");
         assert_eq!(p.note, None);
+    }
+
+    #[test]
+    fn parse_retain_reads_inbox_dispositions() {
+        let p = parse_retain(&retain_completion(
+            RETAIN,
+            json!({ "keep": "all", "inbox": { "pin": [5, 7], "dismiss": [6] } }),
+        ))
+        .expect("parses");
+        assert_eq!(
+            p.inbox,
+            vec![(5, Disposition::Pin), (7, Disposition::Pin), (6, Disposition::Dismiss)]
+        );
     }
 
     #[test]

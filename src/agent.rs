@@ -17,6 +17,7 @@ use crate::consolidate;
 use crate::daemon::{Shared, StreamDelta};
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
+use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
     ContentBlock, Mark, MarkKind, Payload, RawResult, ToolCall, Triage, Turn, WireState,
 };
@@ -179,7 +180,21 @@ pub async fn run<F: Frontend, D: Distiller>(
                         // prefix is the log through this call's `tool_use`, so we
                         // snapshot it (can't borrow across the distiller's await).
                         let entries = shared.snapshot();
-                        let distilled = distiller.distill(client, &entries, call, &result).await;
+                        // Open the triage gate (DESIGN §6): re-show the still-active
+                        // notifications (left at earlier gates), then log any newly
+                        // arrived (ephemeral) ones as first-show `Ambient` entries —
+                        // each entry's seq becomes its durable id, the handle the
+                        // verdict pins/dismisses by. (They project to nothing, so the
+                        // fork prefix `entries` stays byte-identical, §3.)
+                        let mut shown = active_shown(&entries);
+                        for note in shared.drain_inbox() {
+                            let source = note.source.clone();
+                            let body = note.body.clone();
+                            let seq = shared.append(turn, Payload::Ambient(note))?;
+                            shown.push(ShownNotification { seq, source, body });
+                        }
+                        let distilled =
+                            distiller.distill(client, &entries, call, &result, &shown).await;
                         // The fork peek reads the shared canonical prefix (sliding
                         // its TTL), so its usage belongs in the §3 telemetry too.
                         if let Some(u) = distilled.usage {

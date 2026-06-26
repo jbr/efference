@@ -11,10 +11,11 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::log::{
-    CallId, ContentBlock, Keep, LogEntry, Mark, MarkKind, Payload, RawResult, Seq, WireState,
+    CallId, ContentBlock, Disposition, Keep, LogEntry, Mark, MarkKind, Notification, Payload,
+    RawResult, Seq, WireState,
 };
 
 /// One message in the Anthropic `messages` array.
@@ -154,6 +155,15 @@ fn extract_boundaries(log: &[LogEntry]) -> (Vec<Boundary>, HashSet<Seq>) {
 /// (DESIGN §10 Phase 3 Slice 1).
 pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
     let (boundaries, elided) = extract_boundaries(log);
+    // Notification bodies by arrival `seq`, so a `Triage` can emit a block for each
+    // notification it pinned (DESIGN §6) without re-walking the log.
+    let notifications: HashMap<Seq, &Notification> = log
+        .iter()
+        .filter_map(|e| match &e.payload {
+            Payload::Ambient(n) => Some((e.seq, n)),
+            _ => None,
+        })
+        .collect();
     // Cursor into `boundaries` — advance past each one as we emit the first
     // non-elided entry after its `upto`.
     let mut boundary_cursor = 0;
@@ -221,10 +231,37 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // Boundary mark's own seq); this arm is only reachable for future
             // non-Boundary mark kinds, which can be added here when they land.
             Payload::Mark(_) => {}
-            // A fork verdict is audit-only on the wire (DESIGN §4). Slice C emits a
-            // block per pinned notification in `inbox` at this position (DESIGN §6);
-            // until then `inbox` is always empty, so this projects to nothing.
-            Payload::Triage(_) => {}
+            // An `Ambient` arrival is audit-only on the wire (DESIGN §6) — it never
+            // itself projects; a *pinned* one is emitted by its `Triage` (below).
+            Payload::Ambient(_) => {}
+            // A fork verdict emits a block per **pinned** notification at its own
+            // position (DESIGN §6) — body looked up from the `Ambient` arrival. This
+            // tail-ward placement keeps the wire append-only: a notification pinned at
+            // a later gate than its first-show never splices behind a breakpoint (§3).
+            // Dismissed / left dispositions don't project. The verdict is otherwise
+            // audit-only.
+            Payload::Triage(t) => {
+                let pins: Vec<String> = t
+                    .inbox
+                    .iter()
+                    .filter(|(_, d)| matches!(d, Disposition::Pin))
+                    .filter_map(|(seq, _)| {
+                        notifications
+                            .get(seq)
+                            .map(|n| format!("⟢ {}: {}", n.source, n.body))
+                    })
+                    .collect();
+                if !pins.is_empty() {
+                    flush_tool_results(&mut pending_tool_results, &mut messages);
+                    messages.push(ApiMessage {
+                        role: Role::User,
+                        content: vec![ApiBlock::Text {
+                            text: pins.join("\n"),
+                            cache_control: None,
+                        }],
+                    });
+                }
+            }
         }
     }
 
@@ -382,8 +419,8 @@ fn normalize(ranges: &[(usize, usize)], n: usize) -> Vec<(usize, usize)> {
 mod tests {
     use super::*;
     use crate::log::{
-        ContentBlock, Keep, LogEntry, Mark, MarkKind, Payload, RawResult, Timestamp, ToolCall,
-        WireState,
+        ContentBlock, Disposition, Keep, LogEntry, Mark, MarkKind, Notification, Origin, Payload,
+        RawResult, Timestamp, ToolCall, Triage, WireState,
     };
     use serde_json::json;
 
@@ -926,6 +963,77 @@ mod tests {
         let mut empty: Vec<ApiMessage> = Vec::new();
         place_trailing_cache_breakpoint(&mut empty);
         assert!(empty.is_empty());
+    }
+
+    fn notification(source: &str, body: &str) -> Payload {
+        Payload::Ambient(Notification { source: source.into(), body: body.into(), slot: None })
+    }
+
+    /// A pinned notification projects as a `⟢ source: body` user block **at its
+    /// `Triage`'s position** (DESIGN §6) — body looked up from the `Ambient` arrival;
+    /// the dismissed one never projects, and the arrivals themselves project to
+    /// nothing.
+    #[test]
+    fn pinned_notification_projects_at_triage_position() {
+        let log = vec![
+            entry(
+                0,
+                0,
+                Payload::Assistant {
+                    text: vec![],
+                    calls: vec![ToolCall {
+                        id: CallId("t".into()),
+                        name: "bash".into(),
+                        input: json!({}),
+                    }],
+                },
+            ),
+            entry(1, 0, notification("test-watch", "3 failures")), // pinned
+            entry(2, 0, notification("reviewer", "a nit")),        // dismissed
+            entry(
+                3,
+                0,
+                Payload::ToolResult {
+                    call_id: CallId("t".into()),
+                    raw: RawResult { content: "out".into(), is_error: false },
+                    wire: WireState::Raw,
+                },
+            ),
+            entry(
+                4,
+                0,
+                Payload::Triage(Triage {
+                    for_result: 3,
+                    origin: Origin::Model,
+                    raw_keep: "all".into(),
+                    inbox: vec![(1, Disposition::Pin), (2, Disposition::Dismiss)],
+                }),
+            ),
+        ];
+        let messages = project(&log);
+        // assistant(tool_use) · user(tool_result) · user(pinned notification).
+        assert_eq!(messages.len(), 3, "{messages:#?}");
+        assert_eq!(messages[0].role, Role::Assistant);
+        assert_eq!(messages[1].role, Role::User); // the tool_result, flushed first
+        assert_eq!(messages[2].role, Role::User); // the pin block, at the Triage position
+        assert!(
+            matches!(&messages[2].content[0], ApiBlock::Text { text, .. } if text == "⟢ test-watch: 3 failures")
+        );
+        let wire = serde_json::to_string(&messages).unwrap();
+        assert!(!wire.contains("reviewer") && !wire.contains("a nit"), "dismissed off wire: {wire}");
+    }
+
+    /// An `Ambient` arrival with no resolving verdict (left / un-pinned) is audit-only
+    /// — it stays off the canonical wire.
+    #[test]
+    fn unpinned_ambient_projects_to_nothing() {
+        let log = vec![
+            entry(0, 0, Payload::User(vec![ContentBlock::Text("hi".into())])),
+            entry(1, 0, notification("src", "left notice")),
+        ];
+        let messages = project(&log);
+        assert_eq!(messages.len(), 1, "only the user message: {messages:#?}");
+        assert!(!serde_json::to_string(&messages).unwrap().contains("left notice"));
     }
 
     fn lines(s: &str) -> Vec<&str> {
