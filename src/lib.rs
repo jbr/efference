@@ -19,5 +19,6 @@ pub mod log;
 pub mod persist;
 pub mod pretty;
 pub mod project;
+pub mod supervisor;
 pub mod tools;
 pub mod tui;

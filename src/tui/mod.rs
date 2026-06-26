@@ -70,8 +70,25 @@ pub(crate) enum TuiEvent {
     /// gate is ephemeral control state with no SSE event — DESIGN §10.0 parks
     /// "pending-approval as synthetic `/events`" for later).
     Gate(Option<PendingGate>),
+    /// The live background processes changed (polled from `GET /state` alongside the
+    /// gate, DESIGN §6 — the running tail is ephemeral, never logged, so it has no
+    /// `/events` entry; the process panel is fed by the poll). TUI-bg-2 will layer
+    /// smooth `/stream` `bg_output` deltas on top.
+    Processes(Vec<BgProc>),
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
+}
+
+/// One live background process, as surfaced by `GET /state`'s `processes` array
+/// (the serialized `supervisor::BgView`, DESIGN §6). `Serialize` too so the poller
+/// can fingerprint the list and only emit on change.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BgProc {
+    pub handle: String,
+    pub command: String,
+    pub tail: String,
+    pub running_secs: u64,
+    pub idle_secs: u64,
 }
 
 /// A pending tool-approval gate, as surfaced by `GET /state`'s `pending_approval`.
@@ -135,6 +152,7 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
     let gate_tx = tx.clone();
     let poller = tokio::spawn(async move {
         let mut last: Option<String> = None;
+        let mut last_procs = String::new();
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(400)).await;
             let Ok(body) = poll_client.state().await else {
@@ -145,6 +163,17 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
             if cur != last {
                 last = cur;
                 if gate_tx.send(TuiEvent::Gate(gate)).is_err() {
+                    break;
+                }
+            }
+            // The live process list rides the same poll (DESIGN §6). Emit only when it
+            // changes — but `running`/`idle` secs tick, so a running process refreshes
+            // ~1Hz, which is exactly the live-ish cadence the panel wants.
+            let procs = parse_processes(&body);
+            let fp = serde_json::to_string(&procs).unwrap_or_default();
+            if fp != last_procs {
+                last_procs = fp;
+                if gate_tx.send(TuiEvent::Processes(procs)).is_err() {
                     break;
                 }
             }
@@ -277,6 +306,16 @@ mod gate_tests {
         let body = r#"{"last_seq":7,"pending_approval":null,"usage":{}}"#;
         assert!(parse_pending_gate(body).is_none());
     }
+}
+
+/// Parse `GET /state`'s `processes` array into the live [`BgProc`] list (DESIGN §6).
+/// A missing/malformed field is an empty list — the panel just hides.
+fn parse_processes(body: &str) -> Vec<BgProc> {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v.get("processes").cloned())
+        .and_then(|p| serde_json::from_value::<Vec<BgProc>>(p).ok())
+        .unwrap_or_default()
 }
 
 /// Parse `GET /state`'s `pending_approval` object into a [`PendingGate`].

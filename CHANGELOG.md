@@ -633,11 +633,95 @@ and the model **pinned** the CI build failure and **dismissed** the chatter
 wire (the dismissed one absent), the inbox drained to empty, and the model's answer surfaced
 the build failure — it acted on the pinned fact. The full §6 inbox, end to end.
 
+### Background processes — the supervisor, Slice 1 (§6)
+
+The §6 supervisor lands on the inbox seam, with the **hybrid record model** decided in design:
+specialize the ephemeral (a live `Supervisor` registry), reuse the durable (`ToolResult` for
+the spawn, `Ambient` for exits and pinned tails) — **no new `Payload` variant**. A
+backgrounded command is a *live entity*, not a log record: its running tail is re-sampled
+fresh each triage gate, never frozen into the log (forcing a live tail through the immutable
+notification model would pile up stale snapshots, §6).
+
+- **Substrate** (`src/supervisor.rs`, new) — `Supervisor` registry (sibling to `Inbox` /
+  `Metrics` in `Shared`): one bounded per-process capture buffer (drop-oldest-with-breadcrumb,
+  no silent caps), `spawned_at` / `last_chunk_at` timing, mute + running state. Read
+  projections: `views()` (the ambient auto-show — running, un-muted, fresh tail + `running`/
+  `idle` secs), `pin_snapshot()` (a frozen tail for a pin), `finish()` (the exit notification
+  body — status + duration + final tail). 6 unit tests.
+- **Drainer reuse** (`src/bash.rs`) — the foreground `tokio::select!` pipe loop is extracted
+  to `drain_pipes(stdout, stderr, cancel, on_chunk) -> cancelled`, shared by the foreground
+  bash tool (accumulate + race abort) and the background drain task (feed the buffer, never
+  cancel — a kill closes the pipes externally). `kill_group` is now `pub(crate)` for teardown.
+- **Orchestration** (`src/daemon.rs`) — `Shared::spawn_background` spawns into a fresh process
+  group and detaches a drain task that feeds the registry and, on exit, fires the `Ambient`
+  exit notification via the existing `notify` path (slot `bg#<n>`). `bg_snapshot` / `bg_pin_snapshot`
+  / `mute_bg` / `kill_all_bg` (teardown reaps live children, §6 ownership).
+- **Spawn + triage** (`src/agent.rs`, `src/bash.rs` def) — `bash` gains a `background: true`
+  flag; the loop routes such a call to the supervisor (returning a `bg#<n>` handle) and still
+  distills the tiny spawn result through the universal fork (no bypass). The live tails ride
+  the same peek.
+- **Peek + verdict** (`src/distill.rs`) — the fork view grows a `═══ background · n running ═══`
+  section (each process by `[bg#n]` with tail + timing), re-rendered every gate off the cached
+  prefix so it never touches the canonical wire (§3). `retain` gains a handle-keyed `background
+  { pin, mute }` field (distinct from the seq-keyed `inbox`). A `pin` snapshots the current tail
+  into an `Ambient` and folds a `Pin` into the inbox verdict — reusing the notification
+  pin-at-`Triage`-position projection (**zero `project.rs` changes**); a `mute` flags the
+  supervisor (process keeps running, exit still notifies).
+
+**Verified.** +7 tests (**139 green**), no new clippy warnings. The supervisor unit tests
+(register/tail/mute/finish/pin/front-drop) plus a daemon integration test
+(`background_process_drains_and_notifies_on_exit`) that runs the real spawn→drain→exit→notify
+path with no model: a backgrounded command spawns, drains, and on exit lands an `Ambient` in
+the inbox carrying `exited 0` + the final tail on slot `bg#1`.
+
+**Live-verified (Haiku).** One turn: "background a 20s ticking loop, then `ls -la`." The model
+called `bash{background:true, command:"for i in $(seq 1 20)…"}` → spawned `bg#1`, returning
+immediately. At the **spawn gate** the live tail already surfaced (`[bg#1] … running 1s` with
+`tick 1`/`tick 2`) and the model **pinned** it — which projected `⟢ bg#1: … · running 1s\ntick
+1…` on the **canonical wire** at the `Triage` position (the pinned tail, the `⟢` sigil, reusing
+the notification pin path). The loop kept running; by the **`ls` gate** ~20s later it had exited,
+and the **exit notification** (`exited 0 after 20s; final output: … [8 earlier lines]\ntick 9…`
+on slot `bg#1`, the front-drop breadcrumb intact — no silent cap) had drained into the inbox,
+where the model **dismissed** it (clean exit, nothing to do) — staying audit-only, off the wire.
+SIGINT shutdown ran `kill_all_bg` cleanly (exit 0). All four requirements, end to end. (The
+`·`/`…` are correct UTF-8 in the log — U+00B7 / U+2026; a terminal-only mojibake during
+inspection, not stored.)
+
+### Background processes — the TUI process panel, TUI-bg-1 (§6, §10.5)
+
+The human's view of the supervisor — so the TUI is no longer blind to a subsystem that, on
+`/events`, shows only the lifecycle bookends (the spawn `ToolResult`, the exit `Ambient`); the
+live running state in between is deliberately unlogged. **No new endpoints:** the running tail
+is ephemeral, so it rides `/state`, not `/events`.
+
+- **Transport** (`src/daemon.rs`, `src/supervisor.rs`) — `BgView` derives `Serialize`; `GET
+  /state` grows a `processes` array (the same `views()` snapshot the peek auto-shows the model —
+  one view, two consumers).
+- **TUI** (`src/tui/{mod,state,render_frame}.rs`) — the existing 400ms `/state` poller (built
+  for approval gates) now also parses `processes` and emits a `TuiEvent::Processes` on change
+  (running/idle secs tick, so a live process refreshes ~1Hz — the cadence the panel wants).
+  `InteractiveState` holds the list as **chrome, not transcript** (updates redraw, never
+  reproject — the tail is never in the log). `render_frame` reserves a capped row band between
+  the transcript and the gate/composer and renders one row per process: `▶ bg#n  command ·
+  running · idle │ <last output line>` (handle/header in the accent style, last line muted),
+  hidden when none run.
+- **Decided:** reuse the single lossy `/stream` (a future `BgOutput { handle, chunk }` variant,
+  demuxed by handle like `ToolOutput { call_id }`) for smooth live tailing (TUI-bg-2) rather
+  than one SSE channel per process — selective subscription buys nothing for a local
+  all-processes TUI over a UDS.
+
+**Verified (test).** +2 tests (**141 green**), no new clippy warnings. A `Screenplay` snapshot
+(`background_process_panel`) pins the rendered strip (two processes with timing + last line,
+above the composer), and a daemon test (`state_json_surfaces_running_processes`) confirms a real
+backgrounded child appears in `/state` with its handle/command/timing — the data path the poller
+reads. (The supervisor end-to-end was already live-verified; this is the human projection of the
+same registry.)
+
 ---
 
 ## Current state (2026-06-26)
 
-**132 tests green, clippy clean.** The harness is **dogfooded** over the daemon
+**141 tests green, clippy clean.** The harness is **dogfooded** over the daemon
 (`efference serve` + `turn` / `approve` / `attach`) and now has a **full interactive TUI**
 (`efference tui`): a themed streaming transcript with a **conversational, minimalist**
 render (author-differentiated turns, paired call↔result exchanges, per-tool result
@@ -647,7 +731,12 @@ without being blind (`Screenplay` snapshot harness + `cell`/`find` color asserti
 `efference gallery`). Phase 3 Slices 0–1 are in; the **ambient-notification inbox is complete** (Slices A–C, all
 live-verified: the verdict refactor + logged `Triage` audit, `POST /notify` ingestion with
 `slot` supersession, and inbox-in-the-peek where the model pins/dismisses notifications at
-the fork gate). Next: the inbox's deferred refinements (`urgency` / `non_redactable`, the
-idle-triage standalone peek); plus the TUI's Stage-2 render refinement (box → `│`
-connector), the remaining **TUI polish** (integrated focus, click-to-position, expand-state
-survival), and the core-harness **Slice 2** (forked compaction peek + re-read).
+the fork gate). **Background processes — the supervisor (§6) Slice 1 is in and live-verified:**
+`bash background:true` registers a child with an ephemeral `Supervisor`, its live tail is
+re-sampled into the peek each gate, pins snapshot onto the wire (reusing the notification pin
+path), and exits fire an `Ambient` notification. The **TUI now shows running processes** in a
+live panel above the composer (TUI-bg-1, `/state`-fed, no new endpoints). Next on that track:
+Slice 2 (directed `list`/`read_since`/`kill` + `notifications()` reads), Slice 3 (`wait`), Slice 4
+(idle-triggered triage); and TUI-bg-2 (smooth `/stream` live tailing). Elsewhere: the inbox's deferred refinements (`urgency` / `non_redactable`); the TUI's
+Stage-2 render refinement (box → `│` connector) and remaining **TUI polish**; and the
+core-harness **Slice 2** (forked compaction peek + re-read).

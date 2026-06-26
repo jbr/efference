@@ -20,12 +20,14 @@ use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_lite::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::process::Command;
 use tokio::sync::{Notify, broadcast, mpsc, oneshot};
 use trillium::Conn;
 use trillium_router::{Router, RouterConnExt};
@@ -38,6 +40,7 @@ use crate::frontend::{Approval, Frontend};
 use crate::log::{CallId, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{ApiMessage, place_trailing_cache_breakpoint, project};
+use crate::supervisor::{BgView, Supervisor};
 use crate::tools::Toolbox;
 
 /// A live, pre-commit output fragment streamed to clients over `GET /stream`
@@ -74,7 +77,7 @@ struct Inbox {
 
 /// One pending ambient notification, surfaced by `GET /state` (DESIGN §6). Immutable
 /// once enqueued — supersession archives-and-replaces rather than editing (§3).
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 struct PendingNotification {
     /// Queue-local id; the handle `POST /notifications/:id/dismiss` addresses.
     id: u64,
@@ -119,6 +122,12 @@ pub struct Shared {
     /// shows it (Slice C). Superseded/dismissed-while-pending entries are dropped here
     /// (the "never-happened" case); only shown ones reach the audit log.
     inbox: Mutex<Inbox>,
+    /// The background-process registry (DESIGN §6): live children whose running tail
+    /// is re-sampled fresh each triage gate. Ephemeral control state like `inbox` /
+    /// `metrics` — never logged, never projected (a running tail forced through the
+    /// immutable notification model would pile up stale snapshots). Pinned tails and
+    /// exits *do* reach the durable log, but as `Ambient` notifications, not from here.
+    supervisor: Mutex<Supervisor>,
 }
 
 /// Per-session cache/usage telemetry. `last_request_at` is an [`Instant`] (not
@@ -159,6 +168,7 @@ impl Shared {
             stream_tx,
             metrics: Mutex::new(Metrics::default()),
             inbox: Mutex::new(Inbox::default()),
+            supervisor: Mutex::new(Supervisor::new()),
         });
         (shared, turns_rx)
     }
@@ -331,6 +341,60 @@ impl Shared {
             .collect()
     }
 
+    /// Spawn a backgrounded bash command into the supervisor (DESIGN §6). Returns
+    /// its `bg#<n>` handle immediately; a detached task drains the child's output
+    /// into the registry (re-surfaced live at each triage gate) and fires an exit
+    /// notification when it ends. The child leads a fresh process group, so one
+    /// `killpg` reaps it and any grandchildren on teardown.
+    pub fn spawn_background(self: &Arc<Self>, command: String) -> io::Result<String> {
+        let mut child = Command::new("bash")
+            .arg("-c")
+            .arg(&command)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .process_group(0)
+            .spawn()?;
+        let pgid = child.id();
+        let stdout = child.stdout.take().expect("stdout is piped");
+        let stderr = child.stderr.take().expect("stderr is piped");
+        let handle = self.supervisor.lock().unwrap().register(command, pgid);
+        tokio::spawn(drain_background(
+            Arc::clone(self),
+            handle.clone(),
+            child,
+            stdout,
+            stderr,
+        ));
+        Ok(handle)
+    }
+
+    /// The peek's ambient `background` section (DESIGN §6) — a snapshot of running,
+    /// un-muted processes, taken under the lock so the loop can hand it to the fork.
+    pub fn bg_snapshot(&self) -> Vec<BgView> {
+        self.supervisor.lock().unwrap().views()
+    }
+
+    /// Snapshot a process's current tail for a pin — `(source, body)` ready to wrap
+    /// in a [`Notification`](crate::log::Notification) (DESIGN §6).
+    pub fn bg_pin_snapshot(&self, handle: &str) -> Option<(String, String)> {
+        self.supervisor.lock().unwrap().pin_snapshot(handle)
+    }
+
+    /// Mute a process's running tail (the §6 `dismiss` for a live process — it keeps
+    /// running and still notifies on exit).
+    pub fn mute_bg(&self, handle: &str) {
+        self.supervisor.lock().unwrap().mute(handle);
+    }
+
+    /// `killpg` every still-running background child — daemon teardown (DESIGN §6
+    /// ownership). Best-effort: a child that already exited is a benign `ESRCH`.
+    pub fn kill_all_bg(&self) {
+        for pgid in self.supervisor.lock().unwrap().running_pgids() {
+            crate::bash::kill_group(pgid);
+        }
+    }
+
     fn interrupt(&self) {
         self.interrupt.notify_waiters();
     }
@@ -360,6 +424,10 @@ impl Shared {
             "last_seq": last_seq,
             "pending_approval": pending,
             "pending_notifications": self.pending_notifications(),
+            // The live background processes (DESIGN §6) — the same `views()` snapshot
+            // the peek auto-shows the model, surfaced here for the human clients (the
+            // TUI process panel, §10.5). Ephemeral, like the rest of `/state`.
+            "processes": self.bg_snapshot(),
             "usage": usage,
         })
         .to_string()
@@ -700,6 +768,30 @@ fn stream_deltas(
     }))
 }
 
+/// The detached drain task for one backgrounded process (DESIGN §6): feed every
+/// output chunk into the registry's capture buffer until the child exits (EOF —
+/// reached naturally, or because a kill closed the pipes), then mark it exited and
+/// fire its exit notification into the inbox, where the next triage gate adjudicates
+/// it like any notification. The supervisor lock is taken per chunk and never held
+/// across an await.
+async fn drain_background(
+    shared: Arc<Shared>,
+    handle: String,
+    mut child: tokio::process::Child,
+    stdout: tokio::process::ChildStdout,
+    stderr: tokio::process::ChildStderr,
+) {
+    crate::bash::drain_pipes(stdout, stderr, std::future::pending(), |chunk| {
+        shared.supervisor.lock().unwrap().push_chunk(&handle, chunk);
+    })
+    .await;
+    let status = child.wait().await.ok();
+    let summary = shared.supervisor.lock().unwrap().finish(&handle, status);
+    if let Some((source, body)) = summary {
+        shared.notify(source, body, Some(handle), None);
+    }
+}
+
 const MISSING_STATE: &str = r#"{"error":"missing shared state"}"#;
 
 /// The cache keepalive (DESIGN §3): a daemon-side timer that fires a
@@ -805,14 +897,20 @@ pub async fn serve<D: Distiller>(
     // shutdown is initiated, then cancels it and resolves to `None`. (`server` is
     // held — not dropped — for the whole await so the listener stays up; it drops on
     // return, after shutdown has already begun.)
+    // Keep a handle for teardown — `run` moves the loop's `Arc<Shared>`.
+    let teardown = Arc::clone(&shared);
     let run = agent::run(&client, &mut frontend, shared, distiller, toolbox);
-    match server.swansong().interrupt(run).await {
+    let outcome = match server.swansong().interrupt(run).await {
         Some(result) => result,
         None => {
             eprintln!("\nshutting down");
             Ok(())
         }
-    }
+    };
+    // Reap any background children before exiting so a killed daemon doesn't orphan
+    // a process group (DESIGN §6 ownership).
+    teardown.kill_all_bg();
+    outcome
 }
 
 #[cfg(test)]
@@ -1046,6 +1144,59 @@ mod tests {
         let pending = shared.pending_notifications();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].body, "finished");
+    }
+
+    /// A backgrounded command runs end-to-end through the supervisor (DESIGN §6): it
+    /// spawns, its output drains into the registry, and on exit it fires an `Ambient`
+    /// exit notification into the inbox — status + final tail — where a triage gate
+    /// would adjudicate it. Exercises the real spawn/drain/finish/notify path with no
+    /// model in the loop.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn background_process_drains_and_notifies_on_exit() {
+        let (shared, _turns_rx) = Shared::new(Log::in_memory());
+        let handle = shared
+            .spawn_background("echo hello; echo world 1>&2".into())
+            .expect("spawn");
+        assert_eq!(handle, "bg#1");
+
+        // The detached drain task runs on the runtime; poll until the exit
+        // notification lands (the command exits near-immediately).
+        let mut tries = 0;
+        loop {
+            let pending = shared.pending_notifications();
+            if let Some(n) = pending.iter().find(|n| n.source == "bg#1") {
+                assert!(n.body.contains("exited 0"), "exit status in body: {}", n.body);
+                assert!(
+                    n.body.contains("hello") || n.body.contains("world"),
+                    "final tail carried: {}",
+                    n.body
+                );
+                assert_eq!(n.slot.as_deref(), Some("bg#1"), "exit rides the bg slot");
+                break;
+            }
+            tries += 1;
+            assert!(tries < 100, "exit notification never arrived: {pending:?}");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        // Exited → no longer in the ambient show or the teardown set.
+        assert!(shared.bg_snapshot().is_empty(), "exited process off the peek");
+        shared.kill_all_bg(); // no-op (nothing running) — must not panic.
+    }
+
+    /// `GET /state` surfaces the live background processes (DESIGN §6) — the data the
+    /// TUI process panel polls. A running child appears with its handle/command;
+    /// `bg_snapshot`/`state_json` read the registry synchronously after spawn.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn state_json_surfaces_running_processes() {
+        let (shared, _turns_rx) = Shared::new(Log::in_memory());
+        shared.spawn_background("sleep 5".into()).expect("spawn");
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        let procs = v["processes"].as_array().expect("processes array on /state");
+        assert_eq!(procs.len(), 1);
+        assert_eq!(procs[0]["handle"], "bg#1");
+        assert_eq!(procs[0]["command"], "sleep 5");
+        assert!(procs[0]["running_secs"].is_u64(), "timing present: {procs:?}");
+        shared.kill_all_bg();
     }
 
     /// `POST /notify`, slot supersession, `GET /state` exposure, and

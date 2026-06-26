@@ -16,7 +16,7 @@ use super::theme::InteractiveTheme;
 use super::utils::supports_cursor_shape;
 use crate::frontend::Approval;
 use crate::log::LogEntry;
-use crate::tui::{PendingGate, TuiEvent};
+use crate::tui::{BgProc, PendingGate, TuiEvent};
 use crate::tui::composer::Composer;
 use crate::tui::document::{Document, NodePath, TuiAction};
 use crate::tui::projection::{self, LiveTail};
@@ -171,6 +171,10 @@ pub(super) struct InteractiveState<'a> {
     /// Sends an approval decision (`call_id`, decision) to the tokio side, which
     /// resolves it via `POST /approvals/:call_id`.
     pub approve_tx: UnboundedSender<(String, Approval)>,
+    /// The live background processes (DESIGN §6), polled from `GET /state`. Rendered
+    /// as a persistent panel above the composer; empty hides it. Ephemeral chrome —
+    /// never part of the transcript document, so it never triggers a reproject.
+    pub processes: Vec<BgProc>,
 
     // Rendering config
     pub render_context: RenderContext,
@@ -240,6 +244,7 @@ impl<'a> InteractiveState<'a> {
             submit_tx,
             pending_gate: None,
             approve_tx,
+            processes: Vec::new(),
             render_context,
             theme,
             current_theme_name,
@@ -310,6 +315,12 @@ impl<'a> InteractiveState<'a> {
                             .into();
                 }
                 self.pending_gate = gate;
+                return false;
+            }
+            TuiEvent::Processes(processes) => {
+                // Ephemeral chrome, not transcript content — update and redraw, no
+                // reproject (the running tail is never in the log, DESIGN §6).
+                self.processes = processes;
                 return false;
             }
             TuiEvent::Disconnected => return true,

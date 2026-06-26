@@ -31,6 +31,7 @@ use serde_json::{Value, json};
 use crate::api::{Client, Completion, ToolChoice, Usage};
 use crate::inbox::ShownNotification;
 use crate::log::{Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall, WireState};
+use crate::supervisor::BgView;
 use crate::project::{
     ApiBlock, ApiMessage, PEEK_LINE_CAP, Role, place_trailing_cache_breakpoint, project,
 };
@@ -49,6 +50,27 @@ const INBOX_INSTRUCTION: &str = " You also have pending notifications, listed un
 into your working context going forward and `dismiss` the noise; any id you don't list \
 is left in the inbox and shown again at the next decision point.";
 
+const BACKGROUND_INSTRUCTION: &str = " Background processes are listed under \
+\"background\" above, each with a [bg#n] handle and its recent output. In the \
+`background` field, `pin` the handles whose current output you want captured onto the \
+record now, and `mute` the ones whose tail you no longer need to see (they keep \
+running and still notify you when they exit). Anything you don't list keeps streaming \
+its latest tail to you at the next decision point.";
+
+/// A live-process triage disposition (DESIGN §6) — distinct from the seq-keyed
+/// notification [`Disposition`] because a running process is addressed by its live
+/// `bg#<n>` handle, not a frozen arrival seq, and its "dismiss" is **mute** (stop
+/// surfacing the tail; the process keeps running), not clear.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BgVerdict {
+    /// Snapshot the current tail onto the canonical wire — the loop materializes it
+    /// as a pinned `Ambient` at the `Triage` position (reusing the notification pin
+    /// path).
+    Pin,
+    /// Stop surfacing the running tail; the process runs on and its exit still notifies.
+    Mute,
+}
+
 /// The outcome of distilling one tool result (DESIGN §4): the wire form plus the
 /// audit pieces the loop stamps into a [`Triage`](crate::log::Triage) entry. `raw` is
 /// never mutated — it stays in the log.
@@ -64,15 +86,20 @@ pub struct Distillation {
     /// filtered to notifications actually shown. Empty when nothing was pinned or
     /// dismissed (everything left for the next gate).
     pub inbox: Vec<(Seq, Disposition)>,
+    /// Live-process dispositions this peek chose, by `bg#<n>` handle (DESIGN §6) —
+    /// filtered to processes actually shown. The loop materializes a `Pin` into a
+    /// snapshot `Ambient` and applies a `Mute` to the supervisor.
+    pub background: Vec<(String, BgVerdict)>,
     /// The fork request's [`Usage`], if a model round-trip happened: it reads the
     /// shared canonical prefix (sliding its cache TTL), so the loop folds it into the
     /// §3 telemetry. `None` for a model-free distiller.
     pub usage: Option<Usage>,
 }
 
-/// Decide the wire form of a tool result and triage the inbox (DESIGN §4, §6).
-/// `prefix` is the log through the assistant turn that made `call` (the fork's cached
-/// head); `inbox` is the pending notifications to show the model.
+/// Decide the wire form of a tool result and triage the inbox + live background
+/// processes (DESIGN §4, §6). `prefix` is the log through the assistant turn that
+/// made `call` (the fork's cached head); `inbox` is the pending notifications and
+/// `background` the running processes' fresh tails to show the model.
 #[allow(async_fn_in_trait)] // single-threaded loop; no Send bound needed.
 pub trait Distiller {
     async fn distill(
@@ -82,11 +109,13 @@ pub trait Distiller {
         call: &ToolCall,
         raw: &RawResult,
         inbox: &[ShownNotification],
+        background: &[BgView],
     ) -> Distillation;
 }
 
 /// Deterministic stub: keep the first `head` + last `tail` lines. Ignores the fork
-/// context and the inbox — for tests and as the model-free fallback.
+/// context, the inbox, and the background processes — for tests and as the
+/// model-free fallback.
 pub struct HeadTail {
     pub head: usize,
     pub tail: usize,
@@ -100,6 +129,7 @@ impl Distiller for HeadTail {
         _call: &ToolCall,
         raw: &RawResult,
         _inbox: &[ShownNotification],
+        _background: &[BgView],
     ) -> Distillation {
         let n = raw.content.lines().count();
         let keep = if n <= self.head + self.tail {
@@ -107,12 +137,13 @@ impl Distiller for HeadTail {
         } else {
             Keep::Ranges(vec![(1, self.head), (n - self.tail + 1, n)])
         };
-        // Model-free: a `Fallback` verdict, no usage, inbox untouched (all left).
+        // Model-free: a `Fallback` verdict, no usage, inbox + background untouched.
         Distillation {
             wire: WireState::Distilled { keep, note: None },
             origin: Origin::Fallback,
             raw_keep: String::new(),
             inbox: Vec::new(),
+            background: Vec::new(),
             usage: None,
         }
     }
@@ -129,6 +160,7 @@ impl Distiller for ForkPeek {
         call: &ToolCall,
         raw: &RawResult,
         inbox: &[ShownNotification],
+        background: &[BgView],
     ) -> Distillation {
         // Cap what the peek sees before any model call (the full raw still goes to the
         // log; only the peek works over the first N lines). `render_distilled` re-applies
@@ -153,17 +185,36 @@ impl Distiller for ForkPeek {
                 peek_view.push_str(&format!("\n[{}] {} · {}", n.seq, n.source, n.body));
             }
         }
+        // The live background processes, each by its [bg#n] handle with a fresh tail
+        // and timing (DESIGN §6) — the coordinate `retain.background.{pin,mute}`
+        // addresses. Re-rendered every gate, off the cached prefix, so it never
+        // touches the canonical wire (§3).
+        if !background.is_empty() {
+            peek_view.push_str(&format!("\n\n═══ background · {} running ═══", background.len()));
+            for b in background {
+                peek_view.push_str(&format!(
+                    "\n[{}] {} · running {}s · idle {}s",
+                    b.handle, b.command, b.running_secs, b.idle_secs
+                ));
+                for line in b.tail.lines() {
+                    peek_view.push_str("\n    ");
+                    peek_view.push_str(line);
+                }
+            }
+        }
 
         // Fork: cached prefix-through-tool_use ┃ + full result + retain prompt. The
         // prefix hits cache; only the raw + instruction tail is fresh, and it is
         // discarded — the canonical lineage never sees raw (DESIGN §4).
         let mut messages = project(prefix);
         place_trailing_cache_breakpoint(&mut messages);
-        let instruction = if inbox.is_empty() {
-            RETAIN_INSTRUCTION.to_string()
-        } else {
-            format!("{RETAIN_INSTRUCTION}{INBOX_INSTRUCTION}")
-        };
+        let mut instruction = RETAIN_INSTRUCTION.to_string();
+        if !inbox.is_empty() {
+            instruction.push_str(INBOX_INSTRUCTION);
+        }
+        if !background.is_empty() {
+            instruction.push_str(BACKGROUND_INSTRUCTION);
+        }
         messages.push(ApiMessage {
             role: Role::User,
             content: vec![
@@ -183,7 +234,7 @@ impl Distiller for ForkPeek {
         let (parsed, usage) = match client
             // No-op sink: the fork peek's triage tokens are internal and must never
             // surface on `GET /stream` — only the main thread's prose streams.
-            .complete(&messages, &[retain_tool(inbox)], ToolChoice::force(RETAIN), |_| {})
+            .complete(&messages, &[retain_tool(inbox, background)], ToolChoice::force(RETAIN), |_| {})
             .await
         {
             Ok(completion) => (parse_retain(&completion), Some(completion.usage)),
@@ -200,22 +251,33 @@ impl Distiller for ForkPeek {
                     .into_iter()
                     .filter(|(s, _)| shown.contains(s))
                     .collect();
+                // Same guard for background handles: only verdicts on processes we
+                // actually showed (drop any handle the model invented).
+                let shown_bg: HashSet<&str> = background.iter().map(|b| b.handle.as_str()).collect();
+                let bg = p
+                    .background
+                    .into_iter()
+                    .filter(|(h, _)| shown_bg.contains(h.as_str()))
+                    .collect();
                 Distillation {
                     wire: WireState::Distilled { keep: p.keep, note: p.note },
                     origin: Origin::Model,
                     raw_keep: p.raw_keep,
                     inbox: dispositions,
+                    background: bg,
                     usage,
                 }
             }
             // Graceful default (DESIGN §4/§8): keep everything the peek saw rather than
-            // drop data when the peek fails, and leave the inbox untouched (it re-shows
-            // next gate). `render_distilled` re-adds the truncation breadcrumb from `raw`.
+            // drop data when the peek fails, and leave the inbox + background untouched
+            // (they re-show next gate). `render_distilled` re-adds the truncation
+            // breadcrumb from `raw`.
             None => Distillation {
                 wire: WireState::Distilled { keep: Keep::All, note: None },
                 origin: Origin::Fallback,
                 raw_keep: String::new(),
                 inbox: Vec::new(),
+                background: Vec::new(),
                 usage,
             },
         }
@@ -223,9 +285,9 @@ impl Distiller for ForkPeek {
 }
 
 /// The forced fork tool. Its `input_schema` gains an `inbox` field only when there are
-/// notifications to triage — the no-inbox case stays lean (and the model isn't prompted
-/// to invent dispositions).
-fn retain_tool(shown: &[ShownNotification]) -> Value {
+/// notifications to triage, and a `background` field only when processes are running —
+/// each absent case stays lean (and the model isn't prompted to invent dispositions).
+fn retain_tool(shown: &[ShownNotification], background: &[BgView]) -> Value {
     let mut input_schema = json!({
         "type": "object",
         "properties": {
@@ -258,6 +320,24 @@ fn retain_tool(shown: &[ShownNotification]) -> Value {
             }
         });
     }
+    if !background.is_empty() {
+        input_schema["properties"]["background"] = json!({
+            "type": "object",
+            "description": "Triage live background processes by [bg#n] handle. Unlisted handles keep streaming their tail at the next decision point.",
+            "properties": {
+                "pin": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Handles whose current tail to capture onto the record now (e.g. \"bg#3\")."
+                },
+                "mute": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Handles whose running tail to stop showing — they keep running and still notify on exit."
+                }
+            }
+        });
+    }
     json!({
         "name": RETAIN,
         "description": "Choose what of the tool output to keep on the record going forward. The output is line-numbered. Whatever you drop is gone from the working context, so keep anything that might matter — but stay lean.",
@@ -277,6 +357,7 @@ struct ParsedRetain {
     note: Option<String>,
     raw_keep: String,
     inbox: Vec<(Seq, Disposition)>,
+    background: Vec<(String, BgVerdict)>,
 }
 
 #[derive(Deserialize)]
@@ -286,6 +367,8 @@ struct RetainInput {
     note: Option<String>,
     #[serde(default)]
     inbox: Option<InboxVerdict>,
+    #[serde(default)]
+    background: Option<BackgroundVerdict>,
 }
 
 #[derive(Deserialize, Default)]
@@ -296,6 +379,14 @@ struct InboxVerdict {
     dismiss: Vec<u64>,
 }
 
+#[derive(Deserialize, Default)]
+struct BackgroundVerdict {
+    #[serde(default)]
+    pin: Vec<String>,
+    #[serde(default)]
+    mute: Vec<String>,
+}
+
 /// Pull the `retain` verdict out of the peek's completion. `None` when the turn
 /// didn't call `retain` (or called something else) — the caller then falls back to
 /// keep-all (DESIGN §4/§8).
@@ -304,14 +395,20 @@ fn parse_retain(completion: &Completion) -> Option<ParsedRetain> {
         return None;
     };
     let retain = calls.iter().find(|c| c.name == RETAIN)?;
-    let RetainInput { keep, note, inbox } = RetainInput::deserialize(&retain.input).ok()?;
+    let RetainInput { keep, note, inbox, background } =
+        RetainInput::deserialize(&retain.input).ok()?;
     let parsed_keep = parse_keep(&keep);
     let mut dispositions = Vec::new();
     if let Some(ib) = inbox {
         dispositions.extend(ib.pin.into_iter().map(|s| (s, Disposition::Pin)));
         dispositions.extend(ib.dismiss.into_iter().map(|s| (s, Disposition::Dismiss)));
     }
-    Some(ParsedRetain { keep: parsed_keep, note, raw_keep: keep, inbox: dispositions })
+    let mut bg = Vec::new();
+    if let Some(b) = background {
+        bg.extend(b.pin.into_iter().map(|h| (h, BgVerdict::Pin)));
+        bg.extend(b.mute.into_iter().map(|h| (h, BgVerdict::Mute)));
+    }
+    Some(ParsedRetain { keep: parsed_keep, note, raw_keep: keep, inbox: dispositions, background: bg })
 }
 
 /// Parse a `keep` string: `all` / `none` / range list. Lenient — malformed tokens are

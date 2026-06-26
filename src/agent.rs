@@ -12,17 +12,38 @@
 
 use std::sync::Arc;
 
+use serde_json::Value;
+
 use crate::api::{Client, Error, ToolChoice};
+use crate::bash;
 use crate::consolidate;
 use crate::daemon::{Shared, StreamDelta};
-use crate::distill::Distiller;
+use crate::distill::{BgVerdict, Distiller};
 use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
-    ContentBlock, Mark, MarkKind, Payload, RawResult, ToolCall, Triage, Turn, WireState,
+    ContentBlock, Disposition, Mark, MarkKind, Notification, Payload, RawResult, ToolCall, Triage,
+    Turn, WireState,
 };
 use crate::project::place_trailing_cache_breakpoint;
 use crate::tools::Toolbox;
+
+/// Whether a call is a `bash` invocation asking to be backgrounded (DESIGN §6) —
+/// `{ "command": …, "background": true }`. Such a call is handled structurally in
+/// the loop (it registers a child with the supervisor) rather than run to completion.
+fn is_background_bash(call: &ToolCall) -> bool {
+    call.name == bash::NAME
+        && call
+            .input
+            .get("background")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+/// The `command` of a background-bash call, if present.
+fn background_command(call: &ToolCall) -> Option<String> {
+    call.input.get("command").and_then(Value::as_str).map(str::to_string)
+}
 
 /// A `tool_result` standing in for a call that didn't run (aborted). Every
 /// assistant `tool_use` needs exactly one paired result or projection orphans it
@@ -162,18 +183,45 @@ pub async fn run<F: Frontend, D: Distiller>(
                         )?;
                     }
                     Approval::Approve => {
-                        // `interrupted()` resolves on a `POST /interrupt` — the
-                        // tool's kill trigger (kills the process group, DESIGN §6).
-                        // Tool output streams to `GET /stream` chunk-by-chunk as it
-                        // runs (bash; the MCP tools resolve whole), tagged by call id.
-                        let result = toolbox
-                            .run(call, frontend.interrupted(), |chunk| {
-                                shared.publish_delta(StreamDelta::ToolOutput {
-                                    call_id: call.id.0.clone(),
-                                    chunk: chunk.to_string(),
-                                });
-                            })
-                            .await;
+                        // Acquire the result. A backgrounded bash spawn returns
+                        // immediately — the child runs on under the supervisor and its
+                        // output surfaces at later gates (DESIGN §6); everything else
+                        // runs to completion through the toolbox. `interrupted()`
+                        // resolves on a `POST /interrupt` — the tool's kill trigger
+                        // (kills the process group). Tool output streams to `GET
+                        // /stream` chunk-by-chunk as it runs (bash; the MCP tools
+                        // resolve whole), tagged by call id.
+                        let result = if is_background_bash(call) {
+                            match background_command(call) {
+                                Some(command) => match shared.spawn_background(command) {
+                                    Ok(handle) => RawResult {
+                                        content: format!(
+                                            "backgrounded as {handle}. its recent output will \
+                                             surface in your inbox at each step, and you'll get a \
+                                             notification when it exits."
+                                        ),
+                                        is_error: false,
+                                    },
+                                    Err(e) => RawResult {
+                                        content: format!("failed to background: {e}"),
+                                        is_error: true,
+                                    },
+                                },
+                                None => RawResult {
+                                    content: "background bash requires a `command`".into(),
+                                    is_error: true,
+                                },
+                            }
+                        } else {
+                            toolbox
+                                .run(call, frontend.interrupted(), |chunk| {
+                                    shared.publish_delta(StreamDelta::ToolOutput {
+                                        call_id: call.id.0.clone(),
+                                        chunk: chunk.to_string(),
+                                    });
+                                })
+                                .await
+                        };
                         // Distill at append: the canonical wire never carries raw;
                         // `raw` is kept in the log for reversibility (DESIGN §4).
                         // `ForkPeek` re-enters the model here (the §4 fork) — the
@@ -193,12 +241,40 @@ pub async fn run<F: Frontend, D: Distiller>(
                             let seq = shared.append(turn, Payload::Ambient(note))?;
                             shown.push(ShownNotification { seq, source, body });
                         }
-                        let distilled =
-                            distiller.distill(client, &entries, call, &result, &shown).await;
+                        // The live background processes' fresh tails ride the same peek
+                        // (DESIGN §6) — re-sampled now, never logged unless pinned.
+                        let background = shared.bg_snapshot();
+                        let distilled = distiller
+                            .distill(client, &entries, call, &result, &shown, &background)
+                            .await;
                         // The fork peek reads the shared canonical prefix (sliding
                         // its TTL), so its usage belongs in the §3 telemetry too.
                         if let Some(u) = distilled.usage {
                             shared.record_request(u);
+                        }
+                        // Apply the background verdicts before writing the `Triage`: a
+                        // `Pin` snapshots the process's current tail into an `Ambient`
+                        // and folds a `Pin` disposition into the inbox verdict — so it
+                        // projects at the `Triage` position, reusing the notification
+                        // pin path (DESIGN §6). A `Mute` just flags the supervisor.
+                        let mut inbox = distilled.inbox;
+                        for (handle, verdict) in distilled.background {
+                            match verdict {
+                                BgVerdict::Mute => shared.mute_bg(&handle),
+                                BgVerdict::Pin => {
+                                    if let Some((source, body)) = shared.bg_pin_snapshot(&handle) {
+                                        let seq = shared.append(
+                                            turn,
+                                            Payload::Ambient(Notification {
+                                                source,
+                                                body,
+                                                slot: Some(handle),
+                                            }),
+                                        )?;
+                                        inbox.push((seq, Disposition::Pin));
+                                    }
+                                }
+                            }
                         }
                         // Append the result, then the fork verdict as a `Triage` audit
                         // entry keyed by the result's seq (DESIGN §4): the throwaway
@@ -217,7 +293,7 @@ pub async fn run<F: Frontend, D: Distiller>(
                                 for_result: result_seq,
                                 origin: distilled.origin,
                                 raw_keep: distilled.raw_keep,
-                                inbox: distilled.inbox,
+                                inbox,
                             }),
                         )?;
                     }

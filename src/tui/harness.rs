@@ -448,6 +448,35 @@ mod scenarios {
         assert!(rr > rg && rr > rb, "removed line should be red, got {removed:?}");
     }
 
+    /// The live background-process panel (DESIGN §6): a `Processes` event renders a
+    /// persistent strip above the composer — one row per running process with handle,
+    /// command, running/idle timing, and the last output line. Fed by the `/state`
+    /// poll, it is chrome, not transcript (no reproject).
+    #[test]
+    fn background_process_panel() {
+        use super::super::{BgProc, TuiEvent};
+        let mut play = Screenplay::new(80, 16);
+        play.user("watch the build");
+        play.assistant("Started it — I'll keep working.", vec![]);
+        play.event(TuiEvent::Processes(vec![
+            BgProc {
+                handle: "bg#1".into(),
+                command: "cargo watch -x test".into(),
+                tail: "Compiling efference\nrunning 12 tests\ntest result: ok. 12 passed".into(),
+                running_secs: 252,
+                idle_secs: 8,
+            },
+            BgProc {
+                handle: "bg#2".into(),
+                command: "npm run dev".into(),
+                tail: "ready - started server on 0.0.0.0:3000".into(),
+                running_secs: 9,
+                idle_secs: 9,
+            },
+        ]));
+        play.snapshot("background_process_panel");
+    }
+
     /// Unpack an (asserted) RGB cell color into channels.
     fn rgb(color: Color) -> (u8, u8, u8) {
         match color {
