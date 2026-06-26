@@ -18,3 +18,4 @@ pub mod log;
 pub mod persist;
 pub mod project;
 pub mod tools;
+pub mod tui;

@@ -22,7 +22,7 @@ tokio = { version = "1.52.3", features = [
   "io-util",
 ] }
 libc = "0.2.186"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 # Core trillium types (Conn/Handler/Method) for the control-channel HTTP server.
 trillium = "1.3.0"
 trillium-client = { version = "0.9.7", features = ["sse"] }
@@ -35,4 +35,25 @@ futures-lite = "2.6.1"
 trillium-router = "0.5.2"
 trillium-sse = "0.2.1"
 
+# TUI (DESIGN §10 — the interactive client). Vendored-and-adapted from ferritin's
+# interactive renderer into src/tui/: a ratatui document renderer with syntect
+# theming, markdown parsing, a custom scrollbar, line wrapping, and collapsible
+# nodes. crossterm/crossbeam drive the dedicated UI thread; the SSE event tail is
+# bridged in from tokio (src/main.rs).
+ratatui = "0.30"
+crossterm = "0.29"
+crossbeam-channel = "0.5"
+pulldown-cmark = "0.13"
+percent-encoding = "2.3"
+syntect = { version = "5.3", default-features = false, features = ["parsing", "default-syntaxes", "html", "plist-load", "yaml-load", "dump-load", "dump-create", "regex-onig"] }
+# Used by the vendored render_context (getters/builders) and its theme error type.
+fieldwork = "0.5.2"
+thiserror = "2"
+unicode-width = "0.2.2"
 
+[build-dependencies]
+# The theme set is baked at build time from assets/themes/*/*.tmTheme into OUT_DIR
+# (see build.rs, vendored from ferritin). The .tmTheme files come from the git
+# submodules under assets/themes/ — a fresh clone needs
+# `git submodule update --init --recursive` or the build falls back to an empty set.
+syntect = { version = "5.3", default-features = false, features = ["parsing", "plist-load", "dump-load", "dump-create", "regex-onig"] }

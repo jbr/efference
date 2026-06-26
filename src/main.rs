@@ -70,6 +70,16 @@ enum Command {
     /// terminal. Type a message to send a turn; at an approval gate, Enter
     /// approves, `.abort` aborts, any other text redirects. Ctrl-D quits.
     Attach,
+    /// Interactive TUI: a themed, scrolling, markdown-rendering view of the
+    /// transcript, fed live from the daemon's event streams, with a composer and
+    /// in-TUI approval gates. q quits, ? for help, t for the theme picker.
+    Tui {
+        /// Syntax/UI theme: a built-in theme name (e.g. "Catppuccin Frappe",
+        /// "Nord", "gruvbox-dark") or a path to a `.tmTheme` file. An unknown name
+        /// lists the available ones. Defaults to "Catppuccin Frappe".
+        #[arg(long, env = "EFFERENCE_THEME")]
+        theme: Option<String>,
+    },
     /// Print the daemon's ephemeral control state (`GET /state`).
     State,
     /// Print the durable append-only log (`GET /log?since=<seq>`).
@@ -124,7 +134,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::State => state(cli.socket).await,
         Command::Log { since } => log(cli.socket, since).await,
         Command::Attach => attach(cli.socket).await,
+        Command::Tui { theme } => tui(cli.socket, theme).await,
     }
+}
+
+/// Launch the interactive TUI against the daemon control socket. All rendering
+/// lives in `efference::tui`; here we just hand it a control client and the
+/// optional theme override.
+async fn tui(socket: PathBuf, theme: Option<String>) -> CliResult {
+    efference::tui::run(ControlClient::new(socket), theme).await?;
+    Ok(())
 }
 
 type CliResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;

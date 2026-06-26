@@ -406,9 +406,107 @@ reads cleanly.
 
 ---
 
+## 2026-06-25 — Interactive TUI (M1): vendor ferritin's renderer
+
+Went from no TUI (the spartan `attach` REPL — an SSE tail piped through `println!`) to a
+themed, scrolling, markdown-rendering interactive client, by vendoring-and-adapting
+ferritin's `renderer::interactive` into `src/tui/` (~26 modules). The load-bearing seam
+ferritin exposed carried over near-verbatim: a general-purpose document IR
+(`tui/document.rs`, ex-`styled_string`) rendered by a **domain-free** pipeline
+(`render_node` / `render_span` / `render_code_block` / `render_table` / `render_scrollbar` /
+`write_text`) over a syntect theme (`tui/theme.rs` + `render_context.rs` + `color_scheme.rs`).
+A grep of the whole `render_*` family for ferritin domain types returned one hit (`theme.rs`
+→ `RenderContext`) — that's what made this a lift, not a rewrite.
+
+- **New `efference tui` subcommand** (`src/main.rs`) — a read-only viewer. A tokio task
+  bridges the daemon's `/events` (durable `LogEntry`) + `/stream` (`assistant_delta` /
+  `tool_output`) SSE into a crossbeam channel; the crossterm UI loop runs on a dedicated
+  blocking thread (`tui::run` → `ui_loop`). The daemon *is* the request side, so ferritin's
+  two-thread request architecture (Navigator / Request / Commands / `request_thread`) is
+  dropped entirely.
+- **Projection** (`src/tui/projection.rs`) — `project(&[LogEntry], &LiveTail) -> Document`:
+  the transcript as another `project(log)` (§10, sibling of the wire projection). Mirrors
+  `project.rs`'s distillate-else-raw rule; wraps tool output + call input in collapsible
+  `TruncatedBlock`s. A `LiveTail` holds in-flight streaming deltas, superseded by the
+  committed entry (the structural form of `attach`'s `streamed_*` dedup). Re-projects per
+  inbound event; auto-scrolls while following the stream (`stuck_to_bottom`).
+- **Theming** — 22 themes baked at build time (`build.rs` + 14 git submodules under
+  `assets/themes/`, registered to match ferritin); live theme picker (`t`); startup theme
+  via `--theme` / `EFFERENCE_THEME`, defaulting to "Catppuccin Frappe" (not the sort-first
+  "1337"). An unknown name errors before the alt-screen with the available list.
+- **Input** (M1 keyset) — `j`/`k`/PgUp/Dn/mouse scroll + the custom scrollbar; `Tab`/`Enter`
+  expand collapsible blocks; `t` themes; `?` help; `q` quit.
+
+**Verified.** 79 lib tests green (vendored markdown/table tests + new projection tests: all
+payload types, distillate-supersedes-raw, live-tail commit, and a `TestBackend` render
+asserting transcript text reaches the screen). Live e2e against Haiku: drove a streaming
+turn — haiku prose streamed token-by-token, paused at the `bash` gate, tool output (`26`)
+streamed after approval, closing sentence streamed — confirmed both in an automated pty
+capture and by the user watching live. Path: daemon → SSE → bridge → re-project-per-token →
+ratatui render.
+
+**Decisions.** (1) **Vendor-and-adapt, share later** — copy into `src/tui/` and edit into
+shape; extract a shared crate only if a clean core emerges. The rustdoc appendage
+(`TuiAction::Navigate` / `Metadata` / `DocRef`, the markdown link resolver) was stripped; the
+IR is now markdown + code + collapsible blocks. (2) **Kept the IR's `Cow<'a>` lifetimes**
+rather than converting to owned `String`: streaming re-projects the whole `Document` (it
+never mutates nodes), so owned-mutation bought nothing, and keeping the pipeline
+byte-identical to ferritin maximizes backportability. Revisit if the M2 editor wants in-place
+mutation. (3) Themes as **git submodules**, not vendored files (faithful to upstream,
+preserves LICENSEs). Deps added: `ratatui` 0.30, `crossterm` 0.29, `crossbeam-channel`,
+`syntect` 5.3, `pulldown-cmark` 0.13, `percent-encoding`, `unicode-width`, `fieldwork`,
+`thiserror`.
+
+**Known M1 limits (by design).** Read-only — input is M2 (a tui-textarea composer behind a
+swappable `Composer` seam), approvals M3. A block expanded mid-stream resets on the next
+token (expand state lives in the doc, which re-projects) — fine when idle; moving it into
+`state` is the fix. `OpenUrl` is a no-op (no `webbrowser` dep).
+
+---
+
+## 2026-06-25 — TUI M2 + M3: composer & in-TUI approvals
+
+Same session as M1; the TUI went from read-only viewer to a full interactive client.
+
+- **M2 — input composer** (`src/tui/composer.rs`). `tui-textarea` was the planned first cut
+  but is pinned to ratatui 0.29 / unicode-width 0.1 and won't resolve against our ratatui
+  0.30 — so the composer is a small **dependency-free** emacs-keybind editor behind a
+  swappable seam (`handle_key` / `render` / `text`): a `Vec<Vec<char>>` buffer with
+  C-a/e/f/b/p/n/k/u/w/d, Alt-f/b, arrows, Home/End, Backspace; Enter submits, C-j/Alt-Enter
+  inserts a newline. **Focus model** (the user's choice): an Esc-toggled *compose* vs
+  *command* mode — compose routes keys to the editor (PgUp/PgDn still scroll); command
+  restores M1's single-key transcript commands (`j/k/t/?/q/Tab`), and any printable key (or
+  `i`) returns to compose. `render_frame` carves a growing input area above the status bar
+  (the `mouse.rs` height math moved in lockstep); submit drives `POST /turn` over a tokio
+  `mpsc` → the daemon.
+- **M3 — in-TUI approval gates.** The gate is ephemeral control state with no SSE event
+  (DESIGN §10.0 parks "pending-approval as synthetic `/events`"), so a poll task watches
+  `GET /state`'s `pending_approval` and emits a `Gate` event only on change. A highlighted
+  banner renders above the composer; submitting while gated resolves it with the same
+  three-valued [`Approval`](src/frontend.rs) the loop consumes — empty = approve, `.abort` =
+  abort, other text = redirect (the `attach` REPL's semantics, now in the composer). An
+  empty Enter still approves (the composer would otherwise swallow it). Decisions flow over
+  a second tokio `mpsc` → `POST /approvals/:call_id`.
+
+**Verified.** 92 lib tests green (+13 over M1): composer editing/motion/kill/submit (7),
+gate `/state` parse + null (2), and the gate-aware submit mapping incl. approve/abort/
+redirect/normal-turn (4). Live against Haiku: composer turn observed landing in the TUI by
+the user and confirmed server-side (`#8 User "…composerworks" → #9 Assistant "composerworks"`);
+a tool-calling turn produced a pending gate visible to the poller. (Interactive keystroke
+capture under a headless pty proved flaky — the real-terminal check is authoritative.)
+
+**Decisions.** Hand-rolled composer over `tui-textarea` (forced by the ratatui-0.30 version
+gap, and aligned with the user's plan to own/rewrite the editor anyway — spellcheck,
+typeahead, integrated focus). Gates via `/state` polling for now; synthetic `/events` is the
+cleaner future. No new deps.
+
+---
+
 ## Current state (2026-06-25)
 
-**55 tests green, clippy clean.** The harness is being **dogfooded** — driven over the
-daemon (`efference serve` + `turn` / `approve` / `attach`) against Haiku to explore and edit
-its own codebase. Phase 3 Slices 0–1 are in; **Slice 2** (forked compaction peek + re-read)
-is next.
+**92 tests green, clippy clean.** The harness is **dogfooded** over the daemon
+(`efference serve` + `turn` / `approve` / `attach`) and now has a **full interactive TUI**
+(`efference tui`): themed streaming transcript, emacs-keybind composer, and in-TUI approval
+gates — a session-grade client comparable to a modern coding-agent TUI. Phase 3 Slices 0–1
+are in. Next: **TUI polish** (integrated focus, click-to-position, expand-state survival,
+the custom-editor pass) and the core-harness **Slice 2** (forked compaction peek + re-read).
