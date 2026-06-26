@@ -16,6 +16,7 @@ pub mod env;
 pub mod frontend;
 pub mod log;
 pub mod persist;
+pub mod pretty;
 pub mod project;
 pub mod tools;
 pub mod tui;

@@ -90,6 +90,27 @@ enum Command {
         #[arg(long, env = "EFFERENCE_THEME")]
         theme: Option<String>,
     },
+    /// Dev tool (not part of the shippable product, like `gallery`): point it at a
+    /// session JSONL log and print the wire request — the deterministic projection
+    /// the assistant actually sees. Reconstructs the full envelope (`system` +
+    /// `tools` + `messages`) exactly as a real turn POSTs it: `project(log)` with
+    /// the trailing cache breakpoint placed and `tool_choice: auto`. The `system`
+    /// block and `tools[]` aren't stored in the log, so they're rebuilt from the
+    /// current code and cwd — flagged on stderr, since the recorded session may
+    /// have run elsewhere.
+    Wire {
+        /// Path to a session JSONL log (e.g. `.efference/session-<millis>.jsonl`).
+        path: PathBuf,
+        /// Rendering: `json` (true-to-bytes, pipeable to `jq`) or `yaml` (a lossy,
+        /// read-only pseudo-YAML that unfolds escaped/multi-line strings for
+        /// readability — not parseable back).
+        #[arg(long, value_enum, default_value = "json")]
+        format: WireFormat,
+        /// Model id to stamp into the envelope. Matches the `serve` default; only
+        /// cosmetic here (the request isn't sent).
+        #[arg(long, default_value = "claude-haiku-4-5")]
+        model: String,
+    },
     /// Print the daemon's ephemeral control state (`GET /state`).
     State,
     /// Print the durable append-only log (`GET /log?since=<seq>`).
@@ -100,34 +121,14 @@ enum Command {
     },
 }
 
-/// The system preamble. Explains the curation model so the agent stops defending
-/// against context bloat the old way (DESIGN §4-realized) — the run that
-/// motivated this watched the model reflexively `grep`/`head` its own tool output.
-const SYSTEM: &str = "\
-You are a coding agent working in a software project. The current working \
-directory is the root of that project (a Git repository); you can investigate it \
-directly by running shell commands — list files, read sources, search. When a \
-question is about this codebase, explore it yourself rather than asking for the \
-source: you are already inside it.
-
-You work through a harness that automatically focuses tool \
-output for you: after each command, only the parts that matter are kept on your \
-transcript. You'll see line-numbered output, sometimes with `… [N lines elided] \
-…` markers where less-relevant spans were dropped. Treat what you receive as the \
-output and work with it directly — it has already been focused for relevance.
-
-Because the harness focuses output for you, do NOT pre-filter it yourself. Run \
-commands plainly — avoid piping to `head`, `tail`, `grep`, `sed`, `awk`, `cut`, \
-or similar to trim what comes back. Pre-trimming risks discarding the part you \
-needed before you've had a chance to read it; letting the full output come back \
-and keeping the relevant parts afterward is strictly better.
-
-For working with files, prefer the dedicated tools over the shell: `read` (read \
-whole files), `search` (find a pattern across files), and `list` (directory \
-contents). They return focused, structured results the harness can curate \
-cleanly — reach for them before `cat`/`grep`/`ls`.
-
-Work one tool call at a time, using what each result taught you to choose the next.";
+/// Output format for the `wire` dev view.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum WireFormat {
+    /// Pretty-printed JSON — true to the bytes POSTed; pipeable to `jq`.
+    Json,
+    /// Lossy, read-only pseudo-YAML that unfolds escaped/multi-line strings.
+    Yaml,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -146,7 +147,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::Attach => attach(cli.socket).await,
         Command::Tui { theme } => tui(cli.socket, theme).await,
         Command::Gallery { theme } => gallery(theme).await,
+        Command::Wire {
+            path,
+            format,
+            model,
+        } => wire(path, format, &model).await,
     }
+}
+
+/// Reconstruct and print the wire request for a recorded session JSONL — the
+/// deterministic projection the assistant sees (DESIGN §1–§3). No daemon, no
+/// socket, no network: load the log, fold it to `messages`, place the trailing
+/// cache breakpoint, and rebuild the `system`/`tools` envelope exactly as a real
+/// turn would (`tool_choice: auto`, DESIGN §8). `system` and `tools[]` are not in
+/// the log; they're rebuilt from the current code + cwd, so the note on stderr
+/// warns when the session may have run in a different environment.
+async fn wire(path: PathBuf, format: WireFormat, model: &str) -> CliResult {
+    let entries = efference::persist::load(&path)?;
+    let mut messages = efference::project::project(&entries);
+    efference::project::place_trailing_cache_breakpoint(&mut messages);
+
+    // The envelope's system + tools aren't recorded in the log — rebuild them the
+    // same way `serve` does (current cwd seeds both the env block and the MCP
+    // servers' session roots).
+    let system = efference::env::system_prompt();
+    let cwd = std::env::current_dir()?;
+    let tools = Toolbox::bash_and_mcps(cwd)?.definitions();
+
+    eprintln!(
+        "note: {} log entries → {} wire messages. `system`/`tools[]` are rebuilt \
+         from the current code and cwd, not the recorded session.",
+        entries.len(),
+        messages.len()
+    );
+    let choice = efference::api::ToolChoice::auto();
+    let rendered = match format {
+        WireFormat::Json => {
+            efference::api::render_request_pretty(model, &system, &tools, choice, &messages)?
+        }
+        WireFormat::Yaml => {
+            efference::api::render_request_yaml(model, &system, &tools, choice, &messages)?
+        }
+    };
+    println!("{rendered}");
+    Ok(())
 }
 
 /// Launch the TUI on the fixed element gallery — no daemon, no socket.
@@ -458,8 +502,9 @@ async fn serve(
     // into the system prompt. It must stay byte-stable for the whole session or it
     // would invalidate the cached prefix every turn (DESIGN §3) — so it carries
     // only session-stable facts (cwd, platform, project type), never volatile state
-    // like git status. See `env::context`.
-    let system = format!("{SYSTEM}\n\n{}", efference::env::context());
+    // like git status. See `env::system_prompt`. The `wire` dev view reconstructs
+    // the same string.
+    let system = efference::env::system_prompt();
 
     let client = Client::new(api_key, model, system);
 
