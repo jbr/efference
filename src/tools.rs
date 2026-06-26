@@ -98,18 +98,16 @@ where
     // `Tool<State>`'s supertrait gives `DeserializeOwned`, so `from_value` works.
     ToolEnum: AsToolsList + McpTool<State>,
 {
-    /// Adapt an already-constructed server state. The tool schemas are built once
-    /// here (pure; `serde_json::to_value` sorts keys, so the defs are byte-stable
-    /// for the session — §3) and reused as the wire `tools[]`.
-    fn from_state(state: State) -> Self {
-        // Tools efference manages itself and must not advertise. `set_working_
-        // directory` in particular: efference seeds the cwd via `embedded`, AND
-        // both MCP servers expose it — advertising both would put a duplicate tool
-        // name on the wire, which the API rejects.
-        const HIDDEN: &[&str] = &["set_working_directory"];
+    /// Adapt an already-constructed server state, advertising every tool the
+    /// generated enum exposes **except** those named in `hidden` — the curation
+    /// point for which of a server's tools reach the wire (DESIGN §5 taxonomy).
+    /// The tool schemas are built once here (pure; `serde_json::to_value` sorts
+    /// keys, so the defs are byte-stable for the session — §3) and reused as the
+    /// wire `tools[]`.
+    fn from_state(state: State, hidden: &[&str]) -> Self {
         let schemas: Vec<ToolSchema> = <ToolEnum as AsToolsList>::tools_list()
             .into_iter()
-            .filter(|s| !HIDDEN.contains(&s.name.as_str()))
+            .filter(|s| !hidden.contains(&s.name.as_str()))
             .collect();
         let names = schemas.iter().map(|s| s.name.clone()).collect();
         let definitions = schemas.iter().map(anthropic_def).collect();
@@ -180,19 +178,32 @@ impl Toolbox {
         Self::new(vec![Provider::Bash(Bash)])
     }
 
-    /// Bash plus the in-process MCP servers — fs-mcp (read / write / list /
-    /// search / move / delete) and semantic-edit-mcp (preview / retarget /
-    /// persist tree-sitter edits) — each with its session cwd seeded to `cwd` and
-    /// an in-memory session store (no shared `~/.ai-tools` writes). The agent gets
-    /// real file + structured-edit tools that lean on the fork instead of piping
-    /// to `head`/`grep` (DESIGN §4-realized, §5).
+    /// Bash plus the in-process MCP servers — fs-mcp (read / search / write /
+    /// list) and semantic-edit-mcp (preview / retarget / persist tree-sitter
+    /// edits) — each with its session cwd seeded to `cwd` and an in-memory session
+    /// store (no shared `~/.ai-tools` writes). The agent gets real file +
+    /// structured-edit tools that lean on the fork instead of piping to
+    /// `head`/`grep` (DESIGN §4-realized, §5).
     pub fn bash_and_mcps(cwd: PathBuf) -> anyhow::Result<Self> {
         Ok(Self::new(vec![
             Provider::Bash(Bash),
-            Provider::Fs(Box::new(McpServer::from_state(FsTools::embedded(cwd.clone())?))),
-            Provider::SemanticEdit(Box::new(McpServer::from_state(SemanticEditTools::embedded(
-                cwd,
-            )?))),
+            // fs-mcp curated down to the tools whose structured, fork-friendly
+            // output genuinely beats the shell. `set_working_directory` is managed
+            // by efference (the cwd is seeded). `move`/`delete` are dropped: they
+            // earn nothing over bash's `mv`/`rm` — even Haiku reaches for those —
+            // so they aren't worth the tool-doc tokens (DESIGN §5 taxonomy).
+            // `list` survives because it is gitignore-aware (skips `target/`,
+            // `.git/`), which `ls`/`find` are not.
+            Provider::Fs(Box::new(McpServer::from_state(
+                FsTools::embedded(cwd.clone())?,
+                &["set_working_directory", "move", "delete"],
+            ))),
+            // semantic-edit-mcp: only `set_working_directory` is hidden (both
+            // servers expose it, and a duplicate name on the wire is a 400).
+            Provider::SemanticEdit(Box::new(McpServer::from_state(
+                SemanticEditTools::embedded(cwd)?,
+                &["set_working_directory"],
+            ))),
         ]))
     }
 
@@ -260,7 +271,7 @@ mod tests {
     }
 
     fn fs_server(cwd: PathBuf) -> McpServer<FsTools, fs_mcp::Tools> {
-        McpServer::from_state(FsTools::embedded(cwd).unwrap())
+        McpServer::from_state(FsTools::embedded(cwd).unwrap(), &["set_working_directory"])
     }
 
     /// fs-mcp's schemas translate to the Anthropic `tools[]` shape. Uses
@@ -322,7 +333,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
 
         let server: McpServer<SemanticEditTools, semantic_edit_mcp::Tools> =
-            McpServer::from_state(SemanticEditTools::embedded(dir.clone()).unwrap());
+            McpServer::from_state(
+                SemanticEditTools::embedded(dir.clone()).unwrap(),
+                &["set_working_directory"],
+            );
 
         for expected in ["preview_edit", "retarget_edit", "persist_edit"] {
             assert!(server.handles(expected), "missing {expected} in {:?}", server.names);
@@ -349,8 +363,12 @@ mod tests {
         unique.dedup();
         assert_eq!(names, unique, "duplicate tool name on the wire");
 
-        assert!(!names.contains(&"set_working_directory"), "should be filtered: {names:?}");
-        for tool in ["bash", "read", "search", "preview_edit", "persist_edit"] {
+        // `set_working_directory` collides; `move`/`delete` are curated out (bash
+        // does them as well — DESIGN §5). The fork-friendly fs tools survive.
+        for hidden in ["set_working_directory", "move", "delete"] {
+            assert!(!names.contains(&hidden), "should be filtered: {names:?}");
+        }
+        for tool in ["bash", "read", "search", "write", "list", "preview_edit", "persist_edit"] {
             assert!(names.contains(&tool), "missing {tool} in {names:?}");
         }
 

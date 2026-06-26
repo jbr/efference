@@ -39,9 +39,10 @@ needed before you've had a chance to read it; letting the full output come back 
 and keeping the relevant parts afterward is strictly better.
 
 For working with files, prefer the dedicated tools over the shell: `read` (read \
-whole files), `search` (find a pattern across files), and `list` (directory \
-contents). They return focused, structured results the harness can curate \
-cleanly — reach for them before `cat`/`grep`/`ls`.
+whole files), `search` (find a pattern across files), `write` (create or \
+overwrite files), and `list` (directory contents). They return focused, \
+structured results the harness can curate cleanly — reach for them before \
+`cat`/`grep`/`ls`.
 
 Work one tool call at a time, using what each result taught you to choose the next.";
 
