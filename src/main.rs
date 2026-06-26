@@ -199,7 +199,10 @@ async fn wire(path: PathBuf, format: WireFormat, model: &str) -> CliResult {
     // servers' session roots).
     let system = efference::env::system_prompt();
     let cwd = std::env::current_dir()?;
-    let tools = Toolbox::bash_and_mcps(cwd)?.definitions();
+    // The full tools[] a real turn sends — world tools + the harness tools
+    // (`consolidate`, the §6 supervisor/inbox tools) — so the dev view matches.
+    let toolbox = Toolbox::bash_and_mcps(cwd)?;
+    let tools = efference::agent::tool_definitions(&toolbox);
 
     eprintln!(
         "note: {} log entries → {} wire messages. `system`/`tools[]` are rebuilt \

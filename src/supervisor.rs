@@ -18,6 +18,62 @@ use std::process::ExitStatus;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use serde_json::{Value, json};
+
+/// `list_processes` — the directed read of running processes (DESIGN §6). Named to
+/// avoid colliding with fs-mcp's `list`.
+pub const LIST: &str = "list_processes";
+/// `read_process` — cursor-based tailing of one process's output (the §6
+/// `read_since`). Named to avoid colliding with fs-mcp's `read`.
+pub const READ: &str = "read_process";
+/// `kill_process` — terminate a background process's group (DESIGN §6).
+pub const KILL: &str = "kill_process";
+/// `check_inbox` — surface pending notifications on demand (the directed inbox read,
+/// DESIGN §6) so the model needn't wait for them to ride its next action.
+pub const CHECK_INBOX: &str = "check_inbox";
+
+/// The harness-level supervisor/inbox tools (DESIGN §6). Like `consolidate`, these
+/// act on daemon state (the registry, the inbox), not the world, so the agent loop
+/// dispatches them structurally — but their results distill through the universal
+/// fork like any tool (no bypass). Definitions are constant `json!` (sorted keys),
+/// so `tools[]` stays byte-stable for the session (DESIGN §3).
+pub fn tool_definitions() -> Vec<Value> {
+    vec![
+        json!({
+            "name": LIST,
+            "description": "List the background processes currently running — handle, command, how long each has run, and how long since its last output. Their recent output also surfaces automatically after each of your actions; use this to check on them deliberately.",
+            "input_schema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": READ,
+            "description": "Read a background process's output. Returns everything from `cursor` (a byte offset returned by a previous read; omit to start from the earliest retained output) to the end, plus a new cursor to pass next time so you don't re-read what you've seen.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "handle": { "type": "string", "description": "The process handle, e.g. \"bg#3\"." },
+                    "cursor": { "type": "integer", "description": "Byte offset from a previous read_process result; omit to start from the earliest retained output." }
+                },
+                "required": ["handle"]
+            }
+        }),
+        json!({
+            "name": KILL,
+            "description": "Kill a running background process (SIGKILL to its whole process group). Its exit is then confirmed in your inbox.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "handle": { "type": "string", "description": "The process handle, e.g. \"bg#3\"." }
+                },
+                "required": ["handle"]
+            }
+        }),
+        json!({
+            "name": CHECK_INBOX,
+            "description": "Show your pending notifications now — background-process exits, operator nudges, messages from other agents — so you can triage them on demand instead of waiting for them to surface after your next action.",
+            "input_schema": { "type": "object", "properties": {} }
+        }),
+    ]
+}
 
 /// Lines of tail shown per process in the peek (and carried in a pin / exit
 /// snapshot). A tuned constant (DESIGN §6).
@@ -171,6 +227,75 @@ impl Supervisor {
         Some((p.handle.clone(), body))
     }
 
+    /// The directed `list_processes` view (DESIGN §6): all *running* processes —
+    /// muted ones included and annotated, since the model asked explicitly (the
+    /// ambient `views()` auto-show hides muted; this doesn't). Exited ones have
+    /// already notified, so they drop off.
+    pub fn list_text(&self) -> String {
+        let running: Vec<&BgProcess> = self.procs.iter().filter(|p| p.running).collect();
+        if running.is_empty() {
+            return "No background processes running.".to_string();
+        }
+        let now = Instant::now();
+        let mut out = format!("{} background process(es) running:", running.len());
+        for p in running {
+            let run = humanize(now.saturating_duration_since(p.spawned_at));
+            let idle = humanize(now.saturating_duration_since(p.last_chunk_at));
+            let muted = if p.muted { " (muted)" } else { "" };
+            out.push_str(&format!(
+                "\n[{}] {} · running {run} · idle {idle}{muted}",
+                p.handle, p.command
+            ));
+        }
+        out
+    }
+
+    /// Cursor-based tailing of one process's output (the §6 `read_since`): return
+    /// everything from `cursor` (a byte offset into the *logical* stream; `None` =
+    /// from the earliest still-retained byte) to the current end, plus the new
+    /// cursor. Bytes dropped off the front at the cap (and thus before the cursor)
+    /// are reported, not silently skipped. `None` if the handle is unknown.
+    pub fn read_since(&self, handle: &str, cursor: Option<u64>) -> Option<String> {
+        let p = self.find(handle)?;
+        let dropped = p.dropped as u64;
+        let total = dropped + p.buffer.len() as u64;
+        // Can't read before what we still hold; track anything lost before the cursor.
+        let from = cursor.unwrap_or(dropped).max(dropped);
+        let lost = match cursor {
+            Some(c) if c < dropped => dropped - c,
+            _ => 0,
+        };
+        let now = Instant::now();
+        let status = if p.running {
+            format!("running · idle {}", humanize(now.saturating_duration_since(p.last_chunk_at)))
+        } else {
+            "exited".to_string()
+        };
+        if from >= total {
+            return Some(format!(
+                "{handle}: no new output since cursor {from} ({status}). cursor: {total}"
+            ));
+        }
+        let slice = &p.buffer[(from - dropped) as usize..];
+        let mut out = String::new();
+        if lost > 0 {
+            out.push_str(&format!("… [{lost} bytes before your cursor were dropped at the cap]\n"));
+        }
+        out.push_str(&format!("{handle} output [bytes {from}–{total}] ({status}):\n"));
+        out.push_str(&String::from_utf8_lossy(slice));
+        out.push_str(&format!("\ncursor: {total}"));
+        Some(out)
+    }
+
+    /// The pgid of a *running* process by handle — the lookup `kill_process` and the
+    /// daemon's `kill_bg` use. `None` if unknown or already exited.
+    pub fn pgid_of(&self, handle: &str) -> Option<u32> {
+        self.procs
+            .iter()
+            .find(|p| p.handle == handle && p.running)
+            .and_then(|p| p.pgid)
+    }
+
     /// The pgids of every still-running process — the killpg set for teardown
     /// (DESIGN §6 ownership). A muted process is still running, so it's included.
     pub fn running_pgids(&self) -> Vec<u32> {
@@ -301,5 +426,46 @@ mod tests {
         let mut s = Supervisor::new();
         let h = s.register("slow".into(), None);
         assert!(s.views()[0].tail.contains("no output yet"));
+    }
+
+    #[test]
+    fn list_text_shows_running_and_marks_muted() {
+        let mut s = Supervisor::new();
+        s.register("cargo watch".into(), Some(1));
+        let b = s.register("sleep 9".into(), Some(2));
+        s.mute(&b);
+        let text = s.list_text();
+        assert!(text.contains("[bg#1] cargo watch"), "{text}");
+        assert!(text.contains("[bg#2] sleep 9") && text.contains("(muted)"), "{text}");
+    }
+
+    #[test]
+    fn read_since_advances_a_cursor_and_reports_no_new() {
+        let mut s = Supervisor::new();
+        let h = s.register("x".into(), None);
+        s.push_chunk(&h, b"hello world\n");
+        let first = s.read_since(&h, None).unwrap();
+        assert!(first.contains("hello world"), "{first}");
+        // Pull the cursor out of the footer and read again — nothing new.
+        let cursor: u64 = first.rsplit("cursor: ").next().unwrap().trim().parse().unwrap();
+        assert!(s.read_since(&h, Some(cursor)).unwrap().contains("no new output"));
+        // More output → only the delta comes back from that cursor.
+        s.push_chunk(&h, b"more\n");
+        let third = s.read_since(&h, Some(cursor)).unwrap();
+        assert!(third.contains("more") && !third.contains("hello"), "{third}");
+    }
+
+    #[test]
+    fn read_since_unknown_handle_is_none() {
+        assert!(Supervisor::new().read_since("bg#99", None).is_none());
+    }
+
+    #[test]
+    fn pgid_of_only_running() {
+        let mut s = Supervisor::new();
+        let h = s.register("x".into(), Some(42));
+        assert_eq!(s.pgid_of(&h), Some(42));
+        s.finish(&h, None);
+        assert_eq!(s.pgid_of(&h), None, "exited → no kill target");
     }
 }

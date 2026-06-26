@@ -26,7 +26,143 @@ use crate::log::{
     Turn, WireState,
 };
 use crate::project::place_trailing_cache_breakpoint;
+use crate::supervisor;
 use crate::tools::Toolbox;
+
+/// The exact `tools[]` a turn advertises: the world tools (`toolbox`) plus the
+/// harness tools handled structurally in the loop — `consolidate` (DESIGN §10 Phase
+/// 3) and the §6 supervisor/inbox tools. One source of truth so the keepalive ping
+/// (DESIGN §3) and the real turns send a byte-identical prefix; drift here silently
+/// breaks the tools cache tier.
+pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
+    let mut tools = toolbox.definitions();
+    tools.push(consolidate::definition());
+    tools.extend(supervisor::tool_definitions());
+    tools
+}
+
+/// Run a harness supervisor/inbox tool (DESIGN §6) against daemon state, or `None`
+/// if `call` isn't one (so the caller falls through to the world toolbox). Like
+/// `consolidate` these act on `Shared`, not the world — but unlike it their result
+/// distills through the universal fork like any tool (no bypass).
+fn supervisor_tool_result(shared: &Arc<Shared>, call: &ToolCall) -> Option<RawResult> {
+    let handle = || call.input.get("handle").and_then(Value::as_str);
+    match call.name.as_str() {
+        supervisor::LIST => Some(ok(shared.bg_list_text())),
+        supervisor::CHECK_INBOX => Some(ok(shared.inbox_summary())),
+        supervisor::READ => Some(match handle() {
+            Some(h) => match shared.bg_read_since(h, call.input.get("cursor").and_then(Value::as_u64)) {
+                Some(text) => ok(text),
+                None => err(format!("no background process {h}")),
+            },
+            None => err("read_process requires a `handle`".into()),
+        }),
+        supervisor::KILL => Some(match handle() {
+            Some(h) if shared.kill_bg(h) => ok(format!(
+                "killed {h} (SIGKILL to its process group); its exit will be confirmed in your inbox."
+            )),
+            Some(h) => err(format!("no running background process {h}")),
+            None => err("kill_process requires a `handle`".into()),
+        }),
+        _ => None,
+    }
+}
+
+fn ok(content: String) -> RawResult {
+    RawResult { content, is_error: false }
+}
+fn err(content: String) -> RawResult {
+    RawResult { content, is_error: true }
+}
+
+/// How the idle loop was woken (DESIGN §6): a user turn, a blank line (keep idling),
+/// a notification event (run a standalone triage), or shutdown.
+enum IdleWake {
+    Turn(String),
+    Blank,
+    Event,
+    Shutdown,
+}
+
+impl IdleWake {
+    fn from_turn(line: Option<String>) -> Self {
+        match line {
+            Some(l) if !l.trim().is_empty() => IdleWake::Turn(l),
+            Some(_) => IdleWake::Blank,
+            None => IdleWake::Shutdown,
+        }
+    }
+}
+
+/// Coalesce a burst of near-simultaneous events into one idle-triage peek (DESIGN §6).
+const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
+
+/// The standalone idle triage (DESIGN §6 — wake-on-notification). Drains the newly
+/// arrived notifications (logging them first-show) alongside the still-active ones and
+/// the running background tails, runs the tool-result-free triage peek, applies the
+/// dispositions, and logs the verdict as a `Triage` with `for_result: None`. Returns
+/// **true** iff it pinned something — the escalation contract: a pin grows the wire, so
+/// the caller runs a real turn to act on it; nothing pinned leaves the projection
+/// byte-identical (audit-only), so the agent returns to idle with its cache still hot.
+async fn run_idle_triage<D: Distiller>(
+    client: &Client,
+    shared: &Arc<Shared>,
+    distiller: &D,
+    turn: &mut Turn,
+) -> Result<bool, Error> {
+    // Let a burst settle so several events triage together, not one peek each.
+    tokio::time::sleep(std::time::Duration::from_millis(IDLE_TRIAGE_DEBOUNCE_MS)).await;
+
+    let entries = shared.snapshot();
+    let mut shown = active_shown(&entries);
+    for note in shared.drain_inbox() {
+        let source = note.source.clone();
+        let body = note.body.clone();
+        let seq = shared.append(*turn, Payload::Ambient(note))?;
+        shown.push(ShownNotification { seq, source, body });
+    }
+    let background = shared.bg_snapshot();
+    // Nothing to look at (e.g. the waking notifications were dismissed out-of-band before
+    // we drained) — back to idle without spending a model round-trip.
+    if shown.is_empty() && background.is_empty() {
+        return Ok(false);
+    }
+
+    let triage = distiller.triage(client, &entries, &shown, &background).await;
+    if let Some(u) = triage.usage {
+        shared.record_request(u);
+    }
+
+    // Apply dispositions; escalate iff anything was pinned (the wire grew, DESIGN §6).
+    let mut inbox = triage.inbox;
+    let mut escalate = inbox.iter().any(|(_, d)| matches!(d, Disposition::Pin));
+    for (handle, verdict) in triage.background {
+        match verdict {
+            BgVerdict::Mute => shared.mute_bg(&handle),
+            BgVerdict::Pin => {
+                if let Some((source, body)) = shared.bg_pin_snapshot(&handle) {
+                    let seq = shared.append(
+                        *turn,
+                        Payload::Ambient(Notification { source, body, slot: Some(handle) }),
+                    )?;
+                    inbox.push((seq, Disposition::Pin));
+                    escalate = true;
+                }
+            }
+        }
+    }
+    *turn += 1;
+    shared.append(
+        *turn,
+        Payload::Triage(Triage {
+            for_result: None,
+            origin: triage.origin,
+            raw_keep: String::new(),
+            inbox,
+        }),
+    )?;
+    Ok(escalate)
+}
 
 /// Whether a call is a `bash` invocation asking to be backgrounded (DESIGN §6) —
 /// `{ "command": …, "background": true }`. Such a call is handled structurally in
@@ -84,27 +220,40 @@ pub async fn run<F: Frontend, D: Distiller>(
     distiller: D,
     toolbox: Toolbox,
 ) -> Result<(), Error> {
-    // World-facing tools plus the harness-level `consolidate` (handled structurally
-    // in the loop below, not by a `Provider`). Appended once; the def is a constant
-    // `json!`, so `tools[]` stays byte-stable across requests (DESIGN §3).
-    let mut tools = toolbox.definitions();
-    tools.push(consolidate::definition());
+    // World-facing tools plus the harness tools (`consolidate`, the §6
+    // supervisor/inbox tools) handled structurally in the loop below, not by a
+    // `Provider`. Built once from the shared source; the defs are constant `json!`,
+    // so `tools[]` stays byte-stable across requests (DESIGN §3).
+    let tools = tool_definitions(&toolbox);
     let mut turn: Turn = 0;
 
     loop {
-        // Read the next user turn (the first one too — it arrives over the control
-        // socket now, not argv). `None` (the daemon tearing down) ends the loop.
-        eprintln!("\n(awaiting a user turn on the control socket)");
-        let next = loop {
-            match frontend.read_user_turn().await {
-                Some(line) if !line.trim().is_empty() => break Some(line),
-                Some(_) => continue, // blank turn: keep waiting.
-                None => break None,
-            }
+        // Idle: race the next user turn against a notification wake (DESIGN §6 —
+        // wake-on-notification, which replaced a blocking `wait`). A user turn drives a
+        // normal trajectory; an event wakes a standalone triage that escalates to a
+        // trajectory only if it pins something. The first turn arrives here too.
+        eprintln!("\n(idle — awaiting a user turn or an event on the control socket)");
+        let next = tokio::select! {
+            line = frontend.read_user_turn() => IdleWake::from_turn(line),
+            _ = shared.inbox_wake() => IdleWake::Event,
         };
-        let Some(line) = next else { break };
-        turn += 1;
-        shared.append(turn, Payload::User(vec![ContentBlock::Text(line)]))?;
+        match next {
+            IdleWake::Shutdown => break, // daemon tearing down.
+            IdleWake::Blank => continue, // blank turn: keep idling.
+            IdleWake::Event => {
+                // Standalone triage. Escalate to a trajectory only if it changed the
+                // wire (pinned something); otherwise back to idle, the prefix still hot.
+                if !run_idle_triage(client, &shared, &distiller, &mut turn).await? {
+                    continue;
+                }
+                // Escalated: fall into the trajectory with no new user turn — the model
+                // responds to the pinned event at the wire tail.
+            }
+            IdleWake::Turn(line) => {
+                turn += 1;
+                shared.append(turn, Payload::User(vec![ContentBlock::Text(line)]))?;
+            }
+        }
 
         // Inner loop: keep round-tripping while the model calls tools.
         loop {
@@ -212,6 +361,10 @@ pub async fn run<F: Frontend, D: Distiller>(
                                     is_error: true,
                                 },
                             }
+                        } else if let Some(r) = supervisor_tool_result(&shared, call) {
+                            // A §6 supervisor/inbox read/act tool — resolves against
+                            // daemon state synchronously, no world run.
+                            r
                         } else {
                             toolbox
                                 .run(call, frontend.interrupted(), |chunk| {
@@ -290,7 +443,7 @@ pub async fn run<F: Frontend, D: Distiller>(
                         shared.append(
                             turn,
                             Payload::Triage(Triage {
-                                for_result: result_seq,
+                                for_result: Some(result_seq),
                                 origin: distilled.origin,
                                 raw_keep: distilled.raw_keep,
                                 inbox,

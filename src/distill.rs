@@ -38,6 +38,17 @@ use crate::project::{
 
 const RETAIN: &str = "retain";
 
+/// The forced tool of the **standalone** idle-triage peek (DESIGN §6): no `keep`
+/// (there's no tool output to retain), only inbox/background dispositions.
+const TRIAGE: &str = "triage";
+
+const TRIAGE_INSTRUCTION: &str = "You're between tasks and have been woken to triage \
+out-of-band events. Review the pending notifications (and any running background \
+processes) above and call `triage`: `pin` what genuinely needs to enter your working \
+context and be acted on now, `dismiss` the noise, and leave anything you're deferring \
+unlisted. If you pin nothing you simply go back to idle and nothing changes — so pin only \
+what truly warrants picking the work back up.";
+
 const RETAIN_INSTRUCTION: &str = "Above is the FULL, line-numbered output of the \
 tool call you just made. Call `retain` to choose what stays on the record going \
 forward: \"all\", \"none\", or comma-separated 1-based inclusive line ranges like \
@@ -96,6 +107,17 @@ pub struct Distillation {
     pub usage: Option<Usage>,
 }
 
+/// The verdict of a **standalone** idle-triage peek (DESIGN §6) — a gate that rides no
+/// tool result, so it has no [`WireState`]; just the inbox/background dispositions (and
+/// the audit pieces the loop stamps into a [`Triage`](crate::log::Triage) with
+/// `for_result: None`).
+pub struct InboxTriage {
+    pub inbox: Vec<(Seq, Disposition)>,
+    pub background: Vec<(String, BgVerdict)>,
+    pub origin: Origin,
+    pub usage: Option<Usage>,
+}
+
 /// Decide the wire form of a tool result and triage the inbox + live background
 /// processes (DESIGN §4, §6). `prefix` is the log through the assistant turn that
 /// made `call` (the fork's cached head); `inbox` is the pending notifications and
@@ -111,6 +133,25 @@ pub trait Distiller {
         inbox: &[ShownNotification],
         background: &[BgView],
     ) -> Distillation;
+
+    /// Triage the inbox + background with **no tool result to ride** — the
+    /// idle-triggered standalone peek (DESIGN §6). The loop calls this when a
+    /// notification wakes an idle agent; it escalates to a real turn iff this pins
+    /// something. Default: no-op (the stub distiller never escalates).
+    async fn triage(
+        &self,
+        _client: &Client,
+        _prefix: &[LogEntry],
+        _inbox: &[ShownNotification],
+        _background: &[BgView],
+    ) -> InboxTriage {
+        InboxTriage {
+            inbox: Vec::new(),
+            background: Vec::new(),
+            origin: Origin::Fallback,
+            usage: None,
+        }
+    }
 }
 
 /// Deterministic stub: keep the first `head` + last `tail` lines. Ignores the fork
@@ -177,31 +218,11 @@ impl Distiller for ForkPeek {
             peek_view.push('\n');
             peek_view.push_str(&format!("       … [{dropped} more lines truncated] …"));
         }
-        // The pending inbox, each item by its [seq] handle (DESIGN §6) — the
-        // coordinate `retain.inbox.{pin,dismiss}` addresses.
-        if !inbox.is_empty() {
-            peek_view.push_str(&format!("\n\n═══ inbox · {} pending ═══", inbox.len()));
-            for n in inbox {
-                peek_view.push_str(&format!("\n[{}] {} · {}", n.seq, n.source, n.body));
-            }
-        }
-        // The live background processes, each by its [bg#n] handle with a fresh tail
-        // and timing (DESIGN §6) — the coordinate `retain.background.{pin,mute}`
-        // addresses. Re-rendered every gate, off the cached prefix, so it never
-        // touches the canonical wire (§3).
-        if !background.is_empty() {
-            peek_view.push_str(&format!("\n\n═══ background · {} running ═══", background.len()));
-            for b in background {
-                peek_view.push_str(&format!(
-                    "\n[{}] {} · running {}s · idle {}s",
-                    b.handle, b.command, b.running_secs, b.idle_secs
-                ));
-                for line in b.tail.lines() {
-                    peek_view.push_str("\n    ");
-                    peek_view.push_str(line);
-                }
-            }
-        }
+        // The pending inbox + live background processes, by their `[seq]` / `[bg#n]`
+        // handles (DESIGN §6) — the coordinates `retain.{inbox,background}` address.
+        // Re-rendered every gate off the cached prefix, so they never touch the
+        // canonical wire (§3). The same builder feeds the standalone idle triage.
+        append_inbox_and_background(&mut peek_view, inbox, background);
 
         // Fork: cached prefix-through-tool_use ┃ + full result + retain prompt. The
         // prefix hits cache; only the raw + instruction tail is fresh, and it is
@@ -282,6 +303,100 @@ impl Distiller for ForkPeek {
             },
         }
     }
+
+    /// The standalone idle-triage peek (DESIGN §6): fork off the cached prefix, show
+    /// the inbox + background with no tool result, and force the `triage` tool (no
+    /// `keep`). The caller wakes this when an event arrives while idle and escalates to
+    /// a real turn iff it pins something. On any failure it pins/dismisses nothing —
+    /// the agent simply goes back to idle, losing no data.
+    async fn triage(
+        &self,
+        client: &Client,
+        prefix: &[LogEntry],
+        inbox: &[ShownNotification],
+        background: &[BgView],
+    ) -> InboxTriage {
+        let mut view = String::new();
+        append_inbox_and_background(&mut view, inbox, background);
+        view.push_str("\n\n");
+        view.push_str(TRIAGE_INSTRUCTION);
+
+        let mut messages = project(prefix);
+        place_trailing_cache_breakpoint(&mut messages);
+        messages.push(ApiMessage {
+            role: Role::User,
+            content: vec![ApiBlock::Text { text: view, cache_control: None }],
+        });
+
+        let (parsed, usage) = match client
+            .complete(&messages, &[triage_tool(inbox, background)], ToolChoice::force(TRIAGE), |_| {})
+            .await
+        {
+            Ok(completion) => (parse_dispositions(&completion, TRIAGE), Some(completion.usage)),
+            Err(_) => (None, None),
+        };
+
+        match parsed {
+            Some((ibx, bg)) => {
+                let shown: HashSet<Seq> = inbox.iter().map(|n| n.seq).collect();
+                let shown_bg: HashSet<&str> = background.iter().map(|b| b.handle.as_str()).collect();
+                InboxTriage {
+                    inbox: ibx.into_iter().filter(|(s, _)| shown.contains(s)).collect(),
+                    background: bg.into_iter().filter(|(h, _)| shown_bg.contains(h.as_str())).collect(),
+                    origin: Origin::Model,
+                    usage,
+                }
+            }
+            None => InboxTriage {
+                inbox: Vec::new(),
+                background: Vec::new(),
+                origin: Origin::Fallback,
+                usage,
+            },
+        }
+    }
+}
+
+/// The `inbox` triage schema field (seq-keyed pin/dismiss) — shared by `retain` and
+/// the standalone `triage` tool.
+fn inbox_schema_field() -> Value {
+    json!({
+        "type": "object",
+        "description": "Triage your pending notifications by [id]. Unlisted ids are left for the next decision point.",
+        "properties": {
+            "pin": {
+                "type": "array",
+                "items": { "type": "integer" },
+                "description": "Notification ids to pin into your working context going forward."
+            },
+            "dismiss": {
+                "type": "array",
+                "items": { "type": "integer" },
+                "description": "Notification ids to clear as noise."
+            }
+        }
+    })
+}
+
+/// The `background` triage schema field (handle-keyed pin/mute) — shared by `retain`
+/// and the standalone `triage` tool.
+fn background_schema_field() -> Value {
+    json!({
+        "type": "object",
+        "description": "Triage live background processes by [bg#n] handle. Unlisted handles keep streaming their tail at the next decision point.",
+        "properties": {
+            "pin": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Handles whose current tail to capture onto the record now (e.g. \"bg#3\")."
+            },
+            "mute": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Handles whose running tail to stop showing — they keep running and still notify on exit."
+            }
+        }
+    })
 }
 
 /// The forced fork tool. Its `input_schema` gains an `inbox` field only when there are
@@ -303,46 +418,63 @@ fn retain_tool(shown: &[ShownNotification], background: &[BgView]) -> Value {
         "required": ["keep"]
     });
     if !shown.is_empty() {
-        input_schema["properties"]["inbox"] = json!({
-            "type": "object",
-            "description": "Triage your pending notifications by [id]. Unlisted ids are left for the next decision point.",
-            "properties": {
-                "pin": {
-                    "type": "array",
-                    "items": { "type": "integer" },
-                    "description": "Notification ids to pin into your working context going forward."
-                },
-                "dismiss": {
-                    "type": "array",
-                    "items": { "type": "integer" },
-                    "description": "Notification ids to clear as noise."
-                }
-            }
-        });
+        input_schema["properties"]["inbox"] = inbox_schema_field();
     }
     if !background.is_empty() {
-        input_schema["properties"]["background"] = json!({
-            "type": "object",
-            "description": "Triage live background processes by [bg#n] handle. Unlisted handles keep streaming their tail at the next decision point.",
-            "properties": {
-                "pin": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Handles whose current tail to capture onto the record now (e.g. \"bg#3\")."
-                },
-                "mute": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Handles whose running tail to stop showing — they keep running and still notify on exit."
-                }
-            }
-        });
+        input_schema["properties"]["background"] = background_schema_field();
     }
     json!({
         "name": RETAIN,
         "description": "Choose what of the tool output to keep on the record going forward. The output is line-numbered. Whatever you drop is gone from the working context, so keep anything that might matter — but stay lean.",
         "input_schema": input_schema
     })
+}
+
+/// The forced tool of the standalone idle-triage peek (DESIGN §6): inbox/background
+/// dispositions only, no `keep` (there's no tool output). At least one section is always
+/// present (the loop skips the peek when both are empty).
+fn triage_tool(shown: &[ShownNotification], background: &[BgView]) -> Value {
+    let mut properties = serde_json::Map::new();
+    if !shown.is_empty() {
+        properties.insert("inbox".into(), inbox_schema_field());
+    }
+    if !background.is_empty() {
+        properties.insert("background".into(), background_schema_field());
+    }
+    json!({
+        "name": TRIAGE,
+        "description": "Triage your pending notifications and running background processes. Pin what needs to enter your working context and be acted on now; dismiss noise; leave anything you're deferring unlisted (pinning nothing returns you to idle, unchanged).",
+        "input_schema": { "type": "object", "properties": properties }
+    })
+}
+
+/// Render the inbox + background sections of a peek view (DESIGN §6) — shared by the
+/// tool-result-riding gate and the standalone idle triage. Each item by its `[seq]` /
+/// `[bg#n]` handle, with running-process tails indented.
+fn append_inbox_and_background(
+    view: &mut String,
+    inbox: &[ShownNotification],
+    background: &[BgView],
+) {
+    if !inbox.is_empty() {
+        view.push_str(&format!("\n\n═══ inbox · {} pending ═══", inbox.len()));
+        for n in inbox {
+            view.push_str(&format!("\n[{}] {} · {}", n.seq, n.source, n.body));
+        }
+    }
+    if !background.is_empty() {
+        view.push_str(&format!("\n\n═══ background · {} running ═══", background.len()));
+        for b in background {
+            view.push_str(&format!(
+                "\n[{}] {} · running {}s · idle {}s",
+                b.handle, b.command, b.running_secs, b.idle_secs
+            ));
+            for line in b.tail.lines() {
+                view.push_str("\n    ");
+                view.push_str(line);
+            }
+        }
+    }
 }
 
 // ---- the verdict ----
@@ -387,6 +519,37 @@ struct BackgroundVerdict {
     mute: Vec<String>,
 }
 
+/// The inbox/background fields of the standalone `triage` tool (no `keep`).
+#[derive(Deserialize)]
+struct TriageInput {
+    #[serde(default)]
+    inbox: Option<InboxVerdict>,
+    #[serde(default)]
+    background: Option<BackgroundVerdict>,
+}
+
+/// Triaged dispositions: inbox items (seq-keyed) and background processes (handle-keyed).
+type Dispositions = (Vec<(Seq, Disposition)>, Vec<(String, BgVerdict)>);
+
+/// Flatten the optional inbox/background verdicts into disposition lists (unfiltered —
+/// the caller drops handles/ids it didn't show). Shared by `retain` and `triage`.
+fn collect_dispositions(
+    inbox: Option<InboxVerdict>,
+    background: Option<BackgroundVerdict>,
+) -> Dispositions {
+    let mut ibx = Vec::new();
+    if let Some(ib) = inbox {
+        ibx.extend(ib.pin.into_iter().map(|s| (s, Disposition::Pin)));
+        ibx.extend(ib.dismiss.into_iter().map(|s| (s, Disposition::Dismiss)));
+    }
+    let mut bg = Vec::new();
+    if let Some(b) = background {
+        bg.extend(b.pin.into_iter().map(|h| (h, BgVerdict::Pin)));
+        bg.extend(b.mute.into_iter().map(|h| (h, BgVerdict::Mute)));
+    }
+    (ibx, bg)
+}
+
 /// Pull the `retain` verdict out of the peek's completion. `None` when the turn
 /// didn't call `retain` (or called something else) — the caller then falls back to
 /// keep-all (DESIGN §4/§8).
@@ -398,17 +561,19 @@ fn parse_retain(completion: &Completion) -> Option<ParsedRetain> {
     let RetainInput { keep, note, inbox, background } =
         RetainInput::deserialize(&retain.input).ok()?;
     let parsed_keep = parse_keep(&keep);
-    let mut dispositions = Vec::new();
-    if let Some(ib) = inbox {
-        dispositions.extend(ib.pin.into_iter().map(|s| (s, Disposition::Pin)));
-        dispositions.extend(ib.dismiss.into_iter().map(|s| (s, Disposition::Dismiss)));
-    }
-    let mut bg = Vec::new();
-    if let Some(b) = background {
-        bg.extend(b.pin.into_iter().map(|h| (h, BgVerdict::Pin)));
-        bg.extend(b.mute.into_iter().map(|h| (h, BgVerdict::Mute)));
-    }
+    let (dispositions, bg) = collect_dispositions(inbox, background);
     Some(ParsedRetain { keep: parsed_keep, note, raw_keep: keep, inbox: dispositions, background: bg })
+}
+
+/// Pull the inbox/background dispositions from a `triage`-tool completion (the
+/// standalone idle peek). `None` when the turn didn't call the named tool.
+fn parse_dispositions(completion: &Completion, tool: &str) -> Option<Dispositions> {
+    let Payload::Assistant { calls, .. } = &completion.assistant else {
+        return None;
+    };
+    let call = calls.iter().find(|c| c.name == tool)?;
+    let TriageInput { inbox, background } = TriageInput::deserialize(&call.input).ok()?;
+    Some(collect_dispositions(inbox, background))
 }
 
 /// Parse a `keep` string: `all` / `none` / range list. Lenient — malformed tokens are
@@ -538,6 +703,26 @@ mod tests {
             p.inbox,
             vec![(5, Disposition::Pin), (7, Disposition::Pin), (6, Disposition::Dismiss)]
         );
+    }
+
+    #[test]
+    fn parse_dispositions_reads_triage_inbox_and_background() {
+        // The standalone idle-triage tool carries inbox + background, no `keep`.
+        let c = retain_completion(
+            TRIAGE,
+            json!({
+                "inbox": { "pin": [5], "dismiss": [6] },
+                "background": { "pin": ["bg#1"], "mute": ["bg#2"] }
+            }),
+        );
+        let (ibx, bg) = parse_dispositions(&c, TRIAGE).expect("a triage call parses");
+        assert_eq!(ibx, vec![(5, Disposition::Pin), (6, Disposition::Dismiss)]);
+        assert_eq!(
+            bg,
+            vec![("bg#1".to_string(), BgVerdict::Pin), ("bg#2".to_string(), BgVerdict::Mute)]
+        );
+        // A call by a different name yields nothing.
+        assert!(parse_dispositions(&c, "something_else").is_none());
     }
 
     #[test]

@@ -65,7 +65,7 @@ mod tests {
     }
     fn triage(seq: Seq, inbox: Vec<(Seq, Disposition)>) -> LogEntry {
         entry(seq, Payload::Triage(Triage {
-            for_result: 0,
+            for_result: None,
             origin: crate::log::Origin::Model,
             raw_keep: "all".into(),
             inbox,

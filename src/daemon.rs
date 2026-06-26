@@ -108,6 +108,10 @@ pub struct Shared {
     interrupt: Notify,
     /// Pinged on each log append; the SSE tail (next slice) will wake on it.
     appended: Notify,
+    /// Pinged when a notification is enqueued (DESIGN §6 — `notify`). The agent loop's
+    /// idle path awaits this to wake an idle agent for a standalone triage (the
+    /// wake-on-notification model that replaced blocking `wait`).
+    notified: Notify,
     /// Fan-out for ephemeral pre-commit output deltas (DESIGN §10). Producers (the
     /// loop's `complete` sink and the bash tool) publish via [`Shared::publish_delta`];
     /// each `GET /stream` connection subscribes. Lossy by design — see [`StreamDelta`].
@@ -165,6 +169,7 @@ impl Shared {
             pending: Mutex::new(None),
             interrupt: Notify::new(),
             appended: Notify::new(),
+            notified: Notify::new(),
             stream_tx,
             metrics: Mutex::new(Metrics::default()),
             inbox: Mutex::new(Inbox::default()),
@@ -310,7 +315,31 @@ impl Shared {
         let id = inbox.next_id;
         inbox.next_id += 1;
         inbox.pending.push(PendingNotification { id, source, body, slot });
+        drop(inbox);
+        // Wake an idle agent for a standalone triage (DESIGN §6 — wake-on-notification).
+        self.notified.notify_waiters();
         id
+    }
+
+    /// Whether any **un-shown** notification is queued (the ephemeral pending set).
+    /// The idle wake triggers on this — never on already-shown "left" items, so a
+    /// deferred notification can't spin the idle loop (DESIGN §6).
+    fn has_pending_notifications(&self) -> bool {
+        !self.inbox.lock().unwrap().pending.is_empty()
+    }
+
+    /// Resolve when there's an un-shown notification to triage (DESIGN §6). Lost-wakeup
+    /// safe: arm the waiter before the check, so a `notify` landing between the check
+    /// and the await still wakes us (the `appended`-tail pattern). The agent loop's
+    /// idle `select!` races this against the next user turn.
+    pub async fn inbox_wake(&self) {
+        loop {
+            let waiter = self.notified.notified();
+            if self.has_pending_notifications() {
+                return;
+            }
+            waiter.await;
+        }
     }
 
     /// Dismiss a pending notification out-of-band (DESIGN §6 — `POST
@@ -385,6 +414,56 @@ impl Shared {
     /// running and still notifies on exit).
     pub fn mute_bg(&self, handle: &str) {
         self.supervisor.lock().unwrap().mute(handle);
+    }
+
+    /// The directed `list_processes` view (DESIGN §6).
+    pub fn bg_list_text(&self) -> String {
+        self.supervisor.lock().unwrap().list_text()
+    }
+
+    /// Cursor-based read of one process's output (the §6 `read_since`). `None` if the
+    /// handle is unknown.
+    pub fn bg_read_since(&self, handle: &str, cursor: Option<u64>) -> Option<String> {
+        self.supervisor.lock().unwrap().read_since(handle, cursor)
+    }
+
+    /// Kill a running background process by handle (DESIGN §6 — `kill_process`):
+    /// `killpg` its group; the drain task then sees EOF and fires the exit
+    /// notification. `false` if no such running process. The lock is dropped before
+    /// the FFI kill (never held across it).
+    pub fn kill_bg(&self, handle: &str) -> bool {
+        let pgid = self.supervisor.lock().unwrap().pgid_of(handle);
+        match pgid {
+            Some(pgid) => {
+                crate::bash::kill_group(pgid);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The directed inbox read (DESIGN §6 — `check_inbox`): the active shown
+    /// notifications (left at earlier gates) plus the newly-arrived ephemeral ones,
+    /// so the model can survey what's waiting on demand. The fork peek for this
+    /// tool's own result is where they're actually triaged.
+    pub fn inbox_summary(&self) -> String {
+        let pending = self.pending_notifications();
+        let active = {
+            let log = self.log.lock().unwrap();
+            crate::inbox::active_shown(log.entries())
+        };
+        if pending.is_empty() && active.is_empty() {
+            return "Inbox empty — no pending notifications.".to_string();
+        }
+        let mut out = format!("Inbox: {} pending notification(s).", pending.len() + active.len());
+        for n in &active {
+            out.push_str(&format!("\n[{}] {} · {}", n.seq, n.source, n.body));
+        }
+        for n in &pending {
+            out.push_str(&format!("\n(new) {} · {}", n.source, n.body));
+        }
+        out.push_str("\n(triage them in this step's review.)");
+        out
     }
 
     /// `killpg` every still-running background child — daemon teardown (DESIGN §6
@@ -861,7 +940,11 @@ pub async fn serve<D: Distiller>(
     // once here for the ping; `agent::run` recomputes the same (byte-stable, §3)
     // definitions internally, so both send an identical prefix.
     let client = Arc::new(client);
-    let tools = toolbox.definitions();
+    // The exact tools[] a real turn sends — world tools + the harness tools
+    // (`consolidate`, the §6 supervisor/inbox tools). Built from the one source
+    // (`agent::tool_definitions`) so the keepalive ping warms the *same* cache prefix
+    // a real turn reads; any drift here silently breaks idle cache-warming (DESIGN §3).
+    let tools = agent::tool_definitions(&toolbox);
     let mut frontend = RemoteFrontend {
         shared: Arc::clone(&shared),
         turns,
@@ -1196,6 +1279,56 @@ mod tests {
         assert_eq!(procs[0]["handle"], "bg#1");
         assert_eq!(procs[0]["command"], "sleep 5");
         assert!(procs[0]["running_secs"].is_u64(), "timing present: {procs:?}");
+        shared.kill_all_bg();
+    }
+
+    /// `inbox_wake` (DESIGN §6 — the idle wake signal) resolves immediately when a
+    /// notification is already pending, and otherwise unblocks when one arrives. Drained
+    /// (shown) notifications don't re-trigger it, so a deferred item can't spin the loop.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn inbox_wake_fires_on_pending_not_on_drained() {
+        let (shared, _turns_rx) = Shared::new(Log::in_memory());
+
+        // Already pending → resolves at once.
+        shared.notify("ci".into(), "failed".into(), None, None);
+        tokio::time::timeout(Duration::from_secs(2), shared.inbox_wake())
+            .await
+            .expect("woke on an existing pending notification");
+
+        // Drain it (now "shown") → the queue is empty, so the wake blocks…
+        let _ = shared.drain_inbox();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(150), shared.inbox_wake()).await.is_err(),
+            "a drained notification must not keep waking the idle loop"
+        );
+
+        // …until a fresh one arrives.
+        let s2 = Arc::clone(&shared);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            s2.notify("op".into(), "nudge".into(), None, None);
+        });
+        tokio::time::timeout(Duration::from_secs(2), shared.inbox_wake())
+            .await
+            .expect("woke on a freshly-arrived notification");
+    }
+
+    /// The directed Slice-2 reads/acts (DESIGN §6): `kill_bg` finds a running child
+    /// (and rejects unknown handles), and `inbox_summary` lists pending notifications.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn kill_bg_and_inbox_summary() {
+        let (shared, _turns_rx) = Shared::new(Log::in_memory());
+        assert!(!shared.kill_bg("bg#1"), "unknown handle → false");
+
+        let h = shared.spawn_background("sleep 30".into()).expect("spawn");
+        assert!(shared.kill_bg(&h), "kills a running process");
+
+        // Inbox read: empty, then surfaces a posted notification.
+        assert!(shared.inbox_summary().contains("empty"), "{}", shared.inbox_summary());
+        shared.notify("ci".into(), "build failed".into(), None, None);
+        let summary = shared.inbox_summary();
+        assert!(summary.contains("ci") && summary.contains("build failed"), "{summary}");
+
         shared.kill_all_bg();
     }
 

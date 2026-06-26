@@ -130,8 +130,10 @@ pub enum MarkKind {
 /// [`ToolResult`]: Payload::ToolResult
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Triage {
-    /// The `seq` of the [`Payload::ToolResult`] this verdict distilled.
-    pub for_result: Seq,
+    /// The `seq` of the [`Payload::ToolResult`] this verdict distilled — `None` for a
+    /// **standalone** triage (the idle-triggered inbox-only peek, DESIGN §6: a gate that
+    /// rides no tool result). Backward-compatible: serde reads an old bare `seq` as `Some`.
+    pub for_result: Option<Seq>,
     /// Whether the verdict came from the model or the keep-all fallback — the one
     /// signal the rendered artifact erases (a deliberate keep-all and a failed peek
     /// render identically).

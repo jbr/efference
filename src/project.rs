@@ -1003,7 +1003,7 @@ mod tests {
                 4,
                 0,
                 Payload::Triage(Triage {
-                    for_result: 3,
+                    for_result: Some(3),
                     origin: Origin::Model,
                     raw_keep: "all".into(),
                     inbox: vec![(1, Disposition::Pin), (2, Disposition::Dismiss)],

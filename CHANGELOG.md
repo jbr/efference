@@ -717,11 +717,91 @@ backgrounded child appears in `/state` with its handle/command/timing — the da
 reads. (The supervisor end-to-end was already live-verified; this is the human projection of the
 same registry.)
 
+### Background processes — directed reads + teardown, Slice 2 (§6)
+
+The model's *directed* access to the supervisor + inbox, complementing the ambient auto-show:
+four harness tools dispatched structurally in the loop (like `consolidate`), but whose results
+distill through the universal fork like any tool (no bypass).
+
+- **Tools** (`src/supervisor.rs` defs, `src/agent.rs` dispatch) — `list_processes` (running
+  processes with timing, muted ones annotated), `read_process` (the §6 `read_since`:
+  cursor-based tailing of one process's bounded capture — returns the delta from a byte cursor
+  plus a new cursor, reporting any front-dropped bytes, never silently re-paying), `kill_process`
+  (`killpg` the group; the drain task then fires the exit notification), and `check_inbox` (the
+  directed inbox read — surfaces pending notifications on demand so the model needn't manufacture
+  a tool call to trip a gate). Names dodge the fs-mcp `read`/`list` collisions.
+- **`Shared`/`Supervisor` methods** (`src/daemon.rs`, `src/supervisor.rs`) — `list_text`,
+  `read_since`, `pgid_of` → `kill_bg`, and `inbox_summary` (active shown ∪ pending ephemeral).
+- **Cache-correctness fix** (`src/agent.rs`, `src/daemon.rs`, `src/main.rs`) — the `tools[]`
+  array is now built from one source, `agent::tool_definitions(&toolbox)` (world tools +
+  `consolidate` + the §6 tools), shared by the agent loop, the keepalive ping, and the `wire`
+  dev view. Previously the keepalive sent `toolbox.definitions()` *without* `consolidate`, so its
+  `max_tokens:0` ping warmed a different prefix than real turns read — silently defeating idle
+  cache-warming on the tools tier (DESIGN §3). Now byte-identical across all three.
+
+**Verified (test).** +5 tests (**146 green**), no new clippy warnings. Supervisor units
+(`list_text` running/muted, `read_since` cursor-advance + no-new + delta, `pgid_of` only-running)
+and a daemon test (`kill_bg_and_inbox_summary`: rejects unknown handles, kills a running child,
+and the inbox read surfaces a posted notification).
+
+**Live-verified (Haiku).** Two turns. Turn 1 backgrounded a 16s `for`-loop, then `list_processes`
+/ `read_process` / `kill_process` — the loop finished mid-gating, so this exercised the *exit/
+empty* paths: `list_processes` → "No background processes running", `read_process bg#1` → the
+captured buffer with a `bytes 0–311 (exited)` header + cursor, `kill_process bg#1` → "no running
+background process" (and the exit notification `exited 0 after 16s` had drained into the inbox,
+which the model pinned). Turn 2 backgrounded an *infinite* `while true; …` loop to hit the *live*
+paths: `list_processes` → "1 background process(es) running: [bg#2] … · running 21s · idle 0s",
+`kill_process bg#2` → "killed bg#2 (SIGKILL to its process group)", after which `/state` showed no
+processes and the exit notification `killed by signal after 37s` was queued (pending the next gate
+— no idle-triage until Slice 4). `/state` also showed `bg#2` live mid-turn — the TUI panel's data
+path, confirmed live. Clean SIGINT teardown (exit 0).
+
+### Background processes — idle-triggered triage, Slice 3 (§6); blocking `wait` dropped
+
+**Design decision:** the planned blocking `wait(handle, until=…)` is **dropped**. In an
+event-driven loop a blocking wait is redundant *and* worse — it makes the agent inert (can't
+react to a *different* process failing while blocked) and holds a turn open for nothing.
+"Wait for exit" is just the idle agent woken by the exit notification; "wait for a pattern" is
+a future non-blocking `watch(handle, pattern)` (the drain task fires a notification on match)
+— both compose with wake-on-notification instead of fighting it. So Slice 3 is now
+idle-triggered triage.
+
+- **Wake signal** (`src/daemon.rs`) — a `notified` `Notify` pinged by `notify()`; `inbox_wake`
+  is a lost-wakeup-safe await that resolves whenever the *ephemeral pending* queue is non-empty
+  (never on already-shown "left" items, so a deferred notification can't spin the loop).
+- **Standalone triage** (`src/distill.rs`) — a `Distiller::triage(prefix, inbox, background)`
+  with a default no-op (the stub never escalates); `ForkPeek::triage` forks off the cached
+  prefix, shows the inbox + background with **no tool result**, and forces a `triage` tool
+  (inbox/background dispositions, **no `keep`**). The peek-view sections and the inbox/background
+  schema fields are factored out and shared with the riding `retain` gate (the Slice-1
+  seam-ahead, paid off). `Triage.for_result` becomes `Option<Seq>` (`None` for standalone;
+  serde reads an old bare seq as `Some`, so existing logs still load).
+- **Idle loop** (`src/agent.rs`) — the idle path is now `select!{ read_user_turn, inbox_wake }`.
+  An event wakes `run_idle_triage`: a 250ms debounce, drain + log first-show `Ambient`s, run the
+  standalone peek, apply dispositions (pin → snapshot `Ambient` folded into the verdict; mute →
+  supervisor), log a `Triage{for_result:None}`, and **escalate iff anything was pinned** — the
+  contract: a pin grows the wire, so a real turn runs to act on it; nothing pinned leaves the
+  projection byte-identical (audit-only), so the agent re-parks with its cache hot.
+
+**Verified.** +2 tests (**148 green**), no new clippy warnings. `parse_dispositions` (the
+`triage`-tool parse) and `inbox_wake_fires_on_pending_not_on_drained` (fires on a pending
+notification, blocks on a drained one, wakes on a fresh arrival).
+
+**Live-verified (Haiku).** Two idle scenarios. (1) Backgrounded a clean-exiting job, told to
+"take no further action" → it went idle, the exit woke a standalone triage (`Triage
+{for_result:None}`) which **dismissed** it → no escalation, the wire unchanged (two audit-only
+log entries, projection byte-identical — cache hot while idle, the §3 payoff). (2) Backgrounded
+`cargo clippy -- -D warnings` (**opaque** — the model couldn't know the outcome) with "report
+back if it fails"; it confirmed it'd kicked off and went idle; clippy failed (`exited 101 after
+7s`); the exit woke a standalone triage that **pinned** the failure and **escalated** to a real
+turn reporting the exact lint (`src/tui/mod.rs:379`, the large `Err` variant — read live from
+clippy's output). Wake → pin → escalate → act, on a real opaque task.
+
 ---
 
 ## Current state (2026-06-26)
 
-**141 tests green, clippy clean.** The harness is **dogfooded** over the daemon
+**148 tests green, clippy clean.** The harness is **dogfooded** over the daemon
 (`efference serve` + `turn` / `approve` / `attach`) and now has a **full interactive TUI**
 (`efference tui`): a themed streaming transcript with a **conversational, minimalist**
 render (author-differentiated turns, paired call↔result exchanges, per-tool result
@@ -735,8 +815,12 @@ the fork gate). **Background processes — the supervisor (§6) Slice 1 is in an
 `bash background:true` registers a child with an ephemeral `Supervisor`, its live tail is
 re-sampled into the peek each gate, pins snapshot onto the wire (reusing the notification pin
 path), and exits fire an `Ambient` notification. The **TUI now shows running processes** in a
-live panel above the composer (TUI-bg-1, `/state`-fed, no new endpoints). Next on that track:
-Slice 2 (directed `list`/`read_since`/`kill` + `notifications()` reads), Slice 3 (`wait`), Slice 4
-(idle-triggered triage); and TUI-bg-2 (smooth `/stream` live tailing). Elsewhere: the inbox's deferred refinements (`urgency` / `non_redactable`); the TUI's
+live panel above the composer (TUI-bg-1, `/state`-fed, no new endpoints). **Slice 2 is in**
+(directed `list_processes`/`read_process`/`kill_process`/`check_inbox` reads, plus a §3
+cache-correctness fix unifying the `tools[]` source across the loop, keepalive, and `wire`).
+**Slice 3 is in** — idle-triggered triage (wake-on-notification): an idle agent woken by an
+event runs a standalone tool-result-free triage and escalates to a real turn iff it pins. The
+blocking `wait` was dropped as redundant. Remaining on that track: an optional `watch(handle,
+pattern)` for pattern-waking, and TUI-bg-2 (smooth `/stream` live tailing). Elsewhere: the inbox's deferred refinements (`urgency` / `non_redactable`); the TUI's
 Stage-2 render refinement (box → `│` connector) and remaining **TUI polish**; and the
 core-harness **Slice 2** (forked compaction peek + re-read).
