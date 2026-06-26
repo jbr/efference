@@ -373,15 +373,21 @@ async fn bridge(client: Client, tx: Sender<TuiEvent>) -> Result<()> {
 /// Decode one ephemeral delta event, sending the matching [`TuiEvent`].
 fn decode_delta(event: &trillium_client::sse::Event, tx: &Sender<TuiEvent>) -> std::ops::ControlFlow<()> {
     let value: serde_json::Value = serde_json::from_str(event.data()).unwrap_or_default();
+    // A failed send carries the whole rejected `TuiEvent` back in `SendError`,
+    // which makes the `Err` variant large; we only care *that* it failed, so box
+    // it to keep the result small (clippy `result_large_err`).
     let sent = match event.event_type() {
         Some("assistant_delta") => value["text"]
             .as_str()
-            .map(|text| tx.send(TuiEvent::AssistantDelta(text.to_string()))),
+            .map(|text| tx.send(TuiEvent::AssistantDelta(text.to_string())).map_err(Box::new)),
         Some("tool_output") => match (value["call_id"].as_str(), value["chunk"].as_str()) {
-            (Some(call_id), Some(chunk)) => Some(tx.send(TuiEvent::ToolOutput {
-                call_id: call_id.to_string(),
-                chunk: chunk.to_string(),
-            })),
+            (Some(call_id), Some(chunk)) => Some(
+                tx.send(TuiEvent::ToolOutput {
+                    call_id: call_id.to_string(),
+                    chunk: chunk.to_string(),
+                })
+                .map_err(Box::new),
+            ),
             _ => None,
         },
         _ => None,
@@ -461,36 +467,60 @@ fn ui_loop(
     state.update_cursor(&mut terminal);
 
     let result = loop {
-        let mut redraw = true;
+        // Default to *not* painting: daemon-side changes set `state.dirty` and ride
+        // the redraw tick (debounce), so a reattach burst or a fast token stream
+        // folds cheaply and paints at the frame rate rather than once per event.
+        // Only user input and the tick request an immediate paint below.
+        let mut redraw = false;
+        let mut exit = false;
         select! {
             recv(state.events) -> ev => match ev {
                 Ok(ev) => {
-                    if state.handle_event(ev) {
-                        break Ok(());
+                    exit = state.handle_event(ev);
+                    // Drain the rest of an arriving burst in one wakeup so it folds
+                    // without interleaving projections — the crux of the O(N²)→O(N)
+                    // reattach fix. Painting still waits for the next tick.
+                    while !exit {
+                        match state.events.try_recv() {
+                            Ok(ev) => exit = state.handle_event(ev),
+                            Err(_) => break,
+                        }
                     }
                 }
-                Err(_) => break Ok(()), // bridge dropped → daemon gone.
+                Err(_) => exit = true, // bridge dropped → daemon gone.
             },
             recv(timer_tick) -> _ => {
-                // Only the streaming spinner needs the periodic redraw.
-                redraw = state.loading.pending_request;
+                // Paint coalesced daemon changes and advance the streaming spinner.
+                redraw = state.dirty || state.loading.pending_request;
             }
             recv(event_rx) -> event => match event {
                 Ok(Event::Key(key)) if !key.is_release() => {
-                    if state.handle_key_event(key, &mut terminal) {
-                        break Ok(());
-                    }
+                    // A key may act on the transcript (expand/scroll), so realise any
+                    // pending reproject first; then paint immediately for responsiveness.
+                    state.flush_reproject();
+                    exit = state.handle_key_event(key, &mut terminal);
+                    redraw = true;
                 }
-                Ok(Event::Mouse(mouse_event)) => state.handle_mouse_event(mouse_event, &terminal),
-                Ok(_) => redraw = false,
-                Err(_) => break Ok(()),
+                Ok(Event::Mouse(mouse_event)) => {
+                    state.flush_reproject();
+                    state.handle_mouse_event(mouse_event, &terminal);
+                    redraw = true;
+                }
+                Ok(_) => {}
+                Err(_) => exit = true,
             },
         }
 
+        if exit {
+            break Ok(());
+        }
         if !redraw {
             continue;
         }
 
+        // Realise any pending reproject, then clear the dirty flag for this paint.
+        state.flush_reproject();
+        state.dirty = false;
         state.handle_hover();
         state.handle_click();
         terminal.draw(|frame| state.render_frame(frame))?;

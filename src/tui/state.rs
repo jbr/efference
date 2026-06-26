@@ -176,6 +176,20 @@ pub(super) struct InteractiveState<'a> {
     /// never part of the transcript document, so it never triggers a reproject.
     pub processes: Vec<BgProc>,
 
+    /// A daemon-side change (committed entry, stream delta, gate, process list) is
+    /// waiting to be painted. The UI loop coalesces these onto the redraw tick
+    /// rather than painting per event, so a reattach burst or a fast token stream
+    /// folds cheaply and paints at the frame rate. User input bypasses this and
+    /// paints immediately. Cleared after each draw.
+    pub dirty: bool,
+    /// The log/live tail changed and the transcript must be re-projected before the
+    /// next paint. Set alongside [`dirty`](Self::dirty) by transcript-changing
+    /// events; chrome-only changes (gate, processes) set `dirty` without this.
+    /// Deferring the (O(log)) [`reproject`](Self::reproject) out of the per-event
+    /// path is what turns the reattach replay from O(N²) into one fold + a few
+    /// projections.
+    pub reproject_pending: bool,
+
     // Rendering config
     pub render_context: RenderContext,
     pub theme: InteractiveTheme,
@@ -245,6 +259,8 @@ impl<'a> InteractiveState<'a> {
             pending_gate: None,
             approve_tx,
             processes: Vec::new(),
+            dirty: false,
+            reproject_pending: false,
             render_context,
             theme,
             current_theme_name,
@@ -284,8 +300,14 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// Apply one inbound event: fold it into the log or live tail, then
-    /// re-project the transcript. Returns true if the UI should exit.
+    /// Apply one inbound event: fold it into the log or live tail and flag what the
+    /// UI loop must do next. Returns true if the UI should exit.
+    ///
+    /// This never re-projects or paints itself — it only updates state and sets
+    /// [`reproject_pending`](Self::reproject_pending) / [`dirty`](Self::dirty). The
+    /// loop drains a whole arriving burst through here, then re-projects and paints
+    /// at most once per redraw tick. That deferral is what keeps a reattach replay
+    /// (or a fast token stream) from doing O(N²) projection work.
     pub(super) fn handle_event(&mut self, event: TuiEvent) -> bool {
         match event {
             TuiEvent::Entry(entry) => {
@@ -298,41 +320,62 @@ impl<'a> InteractiveState<'a> {
                     Err(idx) => self.log.insert(idx, entry),
                 }
                 self.loading.pending_request = false;
+                self.mark_reproject();
             }
             TuiEvent::AssistantDelta(text) => {
                 self.live.assistant.push_str(&text);
                 self.loading.pending_request = true;
+                self.mark_reproject();
             }
             TuiEvent::ToolOutput { call_id, chunk } => {
                 self.live.push_tool_output(&call_id, &chunk);
                 self.loading.pending_request = true;
+                self.mark_reproject();
             }
             TuiEvent::Gate(gate) => {
-                // A gate is a control-state change, not a log change — no reproject.
+                // A gate is a control-state change, not a log change — no reproject,
+                // but the banner still needs a paint.
                 if let Some(g) = &gate {
                     self.ui.debug_message =
                         format!("approval needed: {} — ⏎ approve · type to redirect · .abort", g.name)
                             .into();
                 }
                 self.pending_gate = gate;
-                return false;
+                self.dirty = true;
             }
             TuiEvent::Processes(processes) => {
-                // Ephemeral chrome, not transcript content — update and redraw, no
-                // reproject (the running tail is never in the log, DESIGN §6).
+                // Ephemeral chrome, not transcript content — repaint, no reproject
+                // (the running tail is never in the log, DESIGN §6).
                 self.processes = processes;
-                return false;
+                self.dirty = true;
             }
             TuiEvent::Disconnected => return true,
         }
-        self.reproject();
         false
     }
 
-    /// Rebuild the transcript document from the log + live tail. The cached
-    /// layout is invalidated; the next frame recomputes `document_height` and the
-    /// UI loop re-pins the bottom if [`stuck_to_bottom`](ViewportState::stuck_to_bottom).
-    fn reproject(&mut self) {
+    /// Flag that the transcript must be re-projected before the next paint.
+    fn mark_reproject(&mut self) {
+        self.reproject_pending = true;
+        self.dirty = true;
+    }
+
+    /// Re-project the transcript from the log + live tail if a change is pending,
+    /// then clear the flag. Called once before each paint, so a drained burst of
+    /// events collapses to a single projection. The cached layout is invalidated;
+    /// the next frame recomputes `document_height` and the UI loop re-pins the
+    /// bottom if [`stuck_to_bottom`](ViewportState::stuck_to_bottom).
+    pub(super) fn flush_reproject(&mut self) {
+        if self.reproject_pending {
+            self.reproject();
+            self.reproject_pending = false;
+        }
+    }
+
+    /// Rebuild the transcript document from the log + live tail unconditionally.
+    /// Prefer [`flush_reproject`](Self::flush_reproject) on the hot path; this is
+    /// for callers that must reproject immediately (e.g. tests, an expand action).
+    pub(super) fn reproject(&mut self) {
         self.document.document = projection::project(&self.log, &self.live);
         self.viewport.cached_layout = None;
     }

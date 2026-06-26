@@ -139,8 +139,29 @@ impl<'a> InteractiveState<'a> {
                                 // Draw blockquote markers on new line
                                 self.draw_blockquote_markers(buf);
                                 remaining = rest.trim_start();
+                            } else if self.layout.pos.x == self.layout.indent {
+                                // Already at the start of a fresh line and the word
+                                // still overflows the full text column — it fits on
+                                // no line. Hard-cut it so we make progress; otherwise
+                                // pos.y increments forever and overflows (a panic).
+                                let cut = hard_cut(remaining, available_width as usize);
+                                let (chunk, rest) = remaining.split_at(cut);
+                                self.write_text(
+                                    buf,
+                                    self.layout.pos.y,
+                                    self.layout.pos.x,
+                                    chunk,
+                                    self.layout.area,
+                                    style,
+                                );
+                                self.layout.pos.y += 1;
+                                self.layout.pos.x = self.layout.indent;
+                                self.draw_blockquote_markers(buf);
+                                remaining = rest;
                             } else {
-                                // Word doesn't fit, wrap to next line first
+                                // Word doesn't fit here but may on a fresh, full-width
+                                // line — wrap and retry there (next pass hard-cuts if
+                                // it still doesn't fit).
                                 self.layout.pos.y += 1;
                                 self.layout.pos.x = self.layout.indent;
                                 // Draw blockquote markers on new line
@@ -161,8 +182,27 @@ impl<'a> InteractiveState<'a> {
                                 );
                                 self.layout.pos.x += display_width(remaining) as u16;
                                 break;
+                            } else if self.layout.pos.x == self.layout.indent {
+                                // No whitespace and already at line start: the token
+                                // is wider than the whole column. Hard-cut so we
+                                // advance instead of looping pos.y to overflow.
+                                let cut = hard_cut(remaining, available_width as usize);
+                                let (chunk, rest) = remaining.split_at(cut);
+                                self.write_text(
+                                    buf,
+                                    self.layout.pos.y,
+                                    self.layout.pos.x,
+                                    chunk,
+                                    self.layout.area,
+                                    style,
+                                );
+                                self.layout.pos.y += 1;
+                                self.layout.pos.x = self.layout.indent;
+                                self.draw_blockquote_markers(buf);
+                                remaining = rest;
                             } else {
-                                // Doesn't fit, wrap to next line
+                                // Doesn't fit here, but a fresh full-width line might
+                                // hold it — wrap and retry (hard-cut next pass if not).
                                 self.layout.pos.y += 1;
                                 self.layout.pos.x = self.layout.indent;
                                 // Draw blockquote markers on new line
