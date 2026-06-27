@@ -293,14 +293,24 @@ impl Distiller for ForkPeek {
             // drop data when the peek fails, and leave the inbox + background untouched
             // (they re-show next gate). `render_distilled` re-adds the truncation
             // breadcrumb from `raw`.
-            None => Distillation {
-                wire: WireState::Distilled { keep: Keep::All, note: None },
-                origin: Origin::Fallback,
-                raw_keep: String::new(),
-                inbox: Vec::new(),
-                background: Vec::new(),
-                usage,
-            },
+            None => {
+                // No usable verdict (the peek errored or didn't call `retain`): keep
+                // everything rather than drop data. With a large raw result this is
+                // exactly the path that puts the full output on the wire — the ingestion
+                // cap (`agent::cap_tool_result`) is what bounds it.
+                log::debug!(
+                    "fork peek produced no verdict for `{}`; falling back to keep-all",
+                    call.name
+                );
+                Distillation {
+                    wire: WireState::Distilled { keep: Keep::All, note: None },
+                    origin: Origin::Fallback,
+                    raw_keep: String::new(),
+                    inbox: Vec::new(),
+                    background: Vec::new(),
+                    usage,
+                }
+            }
         }
     }
 

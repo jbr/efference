@@ -799,6 +799,51 @@ clippy's output). Wake → pin → escalate → act, on a real opaque task.
 
 ---
 
+## 2026-06-26 — runaway tool result → 400; swiss-cheese defense
+
+**Bug, live.** A turn 400'd and killed the daemon with an opaque `Anthropic API returned
+400 Bad Request (no body on the streaming path)`. Root-caused from the session JSONL (not,
+as first suspected, the preceding compaction — the post-fold wire was structurally identical
+to the turns that succeeded before it):
+
+- The agent ran `search "consolidate"` over the **whole cwd, including the gitignored
+  `.efference/`** session logs. `fs-mcp`'s `search` hand-rolled its own `read_dir` walk with
+  a hardcoded exclude list (`.git/`, `target/`, …) and was **not** gitignore-aware (unlike
+  `list`, which uses `ignore::WalkBuilder`). So it grepped the append-only JSONL logs, whose
+  lines each embed a full prior tool result — one matched line was **458 KB**; the raw result
+  was **1.57 MB**.
+- The fork peek hit its `Fallback` path (no verdict) → `Distilled { keep: All }`, so
+  `render_distilled` put the whole 1.57 MB on the wire. `PEEK_LINE_CAP` bounds *lines* (201
+  here) but not a pathological long line. The ~1.7 MB envelope exceeded the request limit → 400.
+- The SSE error path **discarded the body**, so the real cause was invisible.
+
+**Fixed, defense in depth (swiss cheese — every layer mitigates, plus the principled fix):**
+
+- **`fs-mcp` `search` is now gitignore-aware** (`ignore::WalkBuilder` + `standard_filters`,
+  matching `list`) — the principled fix; `.efference/` is skipped (hidden *and* gitignored).
+  An explicitly named ignored file is still searched. Non-UTF-8/unreadable files are now
+  skipped, not fatal.
+- **`search` windows long lines** — a matched line is trimmed to ±100 bytes around the match
+  (`…`-elided, char-boundary-safe); matchless context lines clamp to 200 bytes.
+- **Ingestion cap (`agent::cap_tool_result`, 256 KiB)** — bounds *every* tool result before
+  the fork peek, the wire, and the logged `raw` (which also breaks the recursive
+  log-bloat→search-bloat loop). Over-cap → a **hard error** (not a silent truncation) naming
+  the byte counts with a 1 KB head, so the model narrows the call.
+- **Transport now reads the error body** (`api::Client::sse_open_error`): trillium-client
+  0.9.7's `SseError: Into<Conn>` exposes the response, so a non-2xx surfaces Anthropic's JSON
+  `error.message` (the prior "no body" comment was stale). Logged at `error`. Classifying
+  transient statuses as retryable rather than fatal is still deferred.
+- **`env_logger` in `serve`** (`RUST_LOG=efference=debug`) — request sizes, fork-peek
+  fallbacks, capped results, and full API error bodies.
+
+**Tests.** efference 153 green (cap pass-through / hard-error / char-boundary). fs-mcp 15 green
+(gitignore skip, named-ignored-file still searched, binary skip, match windowing + clamp,
+codepoint safety). Also fixed a long-punted `unused variable: h` warning in
+`supervisor.rs` tests. Not yet live-verified against the API (the body-capture path needs a
+real 400).
+
+---
+
 ## Current state (2026-06-26)
 
 **148 tests green, clippy clean.** The harness is **dogfooded** over the daemon

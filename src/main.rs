@@ -538,6 +538,15 @@ async fn serve(
     socket: PathBuf,
     model: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Daemon logging: RUST_LOG controls verbosity (default: efference at info, deps
+    // quiet). The transport (request sizes, full API error bodies), the agent loop
+    // (capped tool results), and the distiller (fork-peek fallbacks) emit through `log`.
+    // `try_init` so a second `serve` in-process (tests) doesn't panic.
+    let _ = env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("warn,efference=info"),
+    )
+    .try_init();
+
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| "ANTHROPIC_API_KEY is not set in the environment")?;
 

@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn empty_capture_reads_as_no_output_yet() {
         let mut s = Supervisor::new();
-        let h = s.register("slow".into(), None);
+        s.register("slow".into(), None);
         assert!(s.views()[0].tail.contains("no output yet"));
     }
 

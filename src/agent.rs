@@ -75,6 +75,46 @@ fn err(content: String) -> RawResult {
     RawResult { content, is_error: true }
 }
 
+/// Hard cap on a single tool result's bytes (defense in depth). The fork peek caps
+/// *line count* (`PEEK_LINE_CAP`), but not a pathological single huge line; an
+/// over-cap result is almost always a mistake — e.g. grepping the gitignored session
+/// logs, which embed prior raw results, so one matched line can be hundreds of KB —
+/// and feeding it onward would bloat the fork peek, blow the request size limit (the
+/// 400 this guards against), and, since `raw` is logged verbatim, recursively bloat
+/// the next session's searches. Generous, since legitimate large reads should pass;
+/// crossing it signals something went wrong, so we don't silently truncate.
+const MAX_TOOL_RESULT_BYTES: usize = 256 * 1024;
+
+/// Enforce [`MAX_TOOL_RESULT_BYTES`]: replace an over-cap result with a hard error
+/// (rather than a silent truncation) that names the byte counts and shows a short,
+/// char-boundary-safe head, so both the model and the logs see what overflowed and the
+/// model knows to narrow the call. Under the cap, the result passes through untouched.
+fn cap_tool_result(call: &ToolCall, result: RawResult) -> RawResult {
+    let len = result.content.len();
+    if len <= MAX_TOOL_RESULT_BYTES {
+        return result;
+    }
+    log::warn!(
+        "tool `{}` returned {len} bytes (> {MAX_TOOL_RESULT_BYTES} cap); \
+         replacing with a hard error",
+        call.name
+    );
+    let mut head = String::new();
+    for ch in result.content.chars() {
+        if head.len() + ch.len_utf8() > 1024 {
+            break;
+        }
+        head.push(ch);
+    }
+    err(format!(
+        "tool `{}` returned {len} bytes, over the {MAX_TOOL_RESULT_BYTES}-byte limit \
+         for a single tool result. This almost always means the call was too broad \
+         (e.g. searching generated or log files). Narrow it — a tighter path, a more \
+         specific pattern, or a line range — and try again. First 1KB of the output:\n\n{head}",
+        call.name
+    ))
+}
+
 /// How the idle loop was woken (DESIGN §6): a user turn, a blank line (keep idling),
 /// a notification event (run a standalone triage), or shutdown.
 enum IdleWake {
@@ -375,6 +415,10 @@ pub async fn run<F: Frontend, D: Distiller>(
                                 })
                                 .await
                         };
+                        // Bound the result before it touches anything (defense in depth):
+                        // the fork peek, the wire, and the logged `raw`. An over-cap
+                        // result becomes a hard error so the model narrows the call.
+                        let result = cap_tool_result(call, result);
                         // Distill at append: the canonical wire never carries raw;
                         // `raw` is kept in the log for reversibility (DESIGN §4).
                         // `ForkPeek` re-enters the model here (the §4 fork) — the
@@ -478,4 +522,50 @@ pub async fn run<F: Frontend, D: Distiller>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::log::CallId;
+
+    fn call(name: &str) -> ToolCall {
+        ToolCall {
+            id: CallId("toolu_x".into()),
+            name: name.into(),
+            input: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn cap_passes_through_results_under_the_limit() {
+        let r = ok("a".repeat(MAX_TOOL_RESULT_BYTES));
+        let capped = cap_tool_result(&call("search"), r);
+        assert!(!capped.is_error);
+        assert_eq!(capped.content.len(), MAX_TOOL_RESULT_BYTES);
+    }
+
+    #[test]
+    fn cap_turns_oversized_results_into_a_hard_error_with_a_head() {
+        let huge = "x".repeat(MAX_TOOL_RESULT_BYTES + 1);
+        let capped = cap_tool_result(&call("search"), ok(huge));
+        assert!(capped.is_error, "over-cap result must be a hard error");
+        // The result no longer carries the megabytes; it carries the explanation + head.
+        assert!(capped.content.len() < 4096, "the error is small, not the raw payload");
+        assert!(capped.content.contains("search"), "names the offending tool");
+        assert!(capped.content.contains("over the"), "states it crossed the limit");
+    }
+
+    /// The head is cut on a char boundary, never mid-codepoint (it would panic / produce
+    /// invalid UTF-8 otherwise).
+    #[test]
+    fn cap_head_is_char_boundary_safe() {
+        // 4-byte chars straddling the 1KB head boundary.
+        let huge = "🦀".repeat(MAX_TOOL_RESULT_BYTES); // 4 bytes each → well over the cap
+        let capped = cap_tool_result(&call("read"), ok(huge));
+        assert!(capped.is_error);
+        // Round-trips as valid UTF-8 (the test would not even construct otherwise, but
+        // assert the head contains whole crabs).
+        assert!(capped.content.contains('🦀'));
+    }
 }

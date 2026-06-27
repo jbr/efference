@@ -11,7 +11,8 @@ use futures_lite::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use trillium_client::Client as HttpClient;
-use trillium_client::sse::SseErrorKind;
+use trillium_client::Conn;
+use trillium_client::sse::{SseError, SseErrorKind};
 use trillium_rustls::RustlsConfig;
 use trillium_tokio::ClientConfig;
 
@@ -360,11 +361,11 @@ impl Client {
     ///
     /// `into_sse` *is* the execution — the conn must not be awaited first (that
     /// is `SseErrorKind::AlreadyExecuted`). On a non-2xx it returns
-    /// `SseErrorKind::Status` carrying the code but **not** the body (a known
-    /// trillium-client limitation, filed in its backlog); we accept that lossy
-    /// path here, since pre-stream non-2xx is mostly dev-time request bugs and
-    /// operational overload arrives as an in-stream `error` event with its full
-    /// body intact.
+    /// `SseErrorKind::Status` carrying the code; the failed `SseError` still owns the
+    /// `Conn` (`SseError: Into<Conn>`), so [`Self::sse_open_error`] reads the response
+    /// body off it — Anthropic's 4xx carry a JSON `error.message` naming exactly what
+    /// was malformed (e.g. an oversized request that exceeds the input limit), which is
+    /// what makes such failures diagnosable.
     pub async fn complete(
         &self,
         messages: &[ApiMessage],
@@ -382,8 +383,13 @@ impl Client {
             stream: true,
         };
         let body = serde_json::to_string(&request)?;
+        log::debug!(
+            "POST {MESSAGES_ENDPOINT}: {} messages, {} request bytes",
+            messages.len(),
+            body.len()
+        );
 
-        let mut events = self
+        let mut events = match self
             .http
             .post(MESSAGES_ENDPOINT)
             .with_request_header("x-api-key", self.api_key.clone())
@@ -392,15 +398,10 @@ impl Client {
             .with_body(body)
             .into_sse()
             .await
-            .map_err(|e| -> Error {
-                match &e.kind {
-                    SseErrorKind::Status(status) => {
-                        format!("Anthropic API returned {status} (no body on the streaming path)")
-                            .into()
-                    }
-                    other => format!("Anthropic SSE request failed: {other}").into(),
-                }
-            })?;
+        {
+            Ok(events) => events,
+            Err(e) => return Err(Self::sse_open_error(e).await),
+        };
 
         let mut assembler = Assembler::new();
         while let Some(event) = events.next().await {
@@ -410,6 +411,34 @@ impl Client {
             }
         }
         assembler.finish()
+    }
+
+    /// Turn a failed `into_sse` into a legible [`Error`], reading the response body on a
+    /// non-2xx. The `SseError` still owns the `Conn` (it `Deref`s to it and converts
+    /// back via `Into<Conn>`), so on `Status` we read the body — Anthropic's error
+    /// responses carry a JSON `error.message` that names the actual problem. Logged at
+    /// `error` so the daemon's log preserves it even though the error also propagates.
+    ///
+    /// Note: this still *propagates* (the caller currently treats any completion error
+    /// as terminal). Classifying transient statuses (429 / 529 overload, 5xx) as
+    /// retryable rather than fatal is a separate, deferred change; this only makes the
+    /// failure diagnosable.
+    async fn sse_open_error(e: SseError) -> Error {
+        // `Status` is `Copy`, so binding it doesn't move `e.kind` — `e` stays whole and
+        // convertible into its `Conn`.
+        let message = if let SseErrorKind::Status(status) = e.kind {
+            let mut conn: Conn = e.into();
+            let body = conn
+                .response_body()
+                .read_string()
+                .await
+                .unwrap_or_else(|read_err| format!("(could not read error body: {read_err})"));
+            format!("Anthropic API returned {status}: {body}")
+        } else {
+            format!("Anthropic SSE request failed: {}", e.kind)
+        };
+        log::error!("{message}");
+        message.into()
     }
 
     /// A cache-keepalive ping (DESIGN §3): a **non-streaming** `max_tokens: 0`
