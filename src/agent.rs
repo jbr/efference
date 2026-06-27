@@ -21,6 +21,7 @@ use crate::daemon::{Shared, StreamDelta};
 use crate::distill::{BgVerdict, Distiller};
 use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
+use crate::policy::{self, Verdict};
 use crate::log::{
     ContentBlock, Disposition, Mark, MarkKind, Notification, Payload, RawResult, ToolCall, Triage,
     Turn, WireState,
@@ -350,7 +351,16 @@ pub async fn run<F: Frontend, D: Distiller>(
                     shared.append(turn, aborted(call))?;
                     continue;
                 }
-                match frontend.approve(call).await {
+                // Consult the deterministic fast-path before troubling the human
+                // (backlog/permissions/prefix-fastpath.md): a `Clear` verdict
+                // auto-approves with zero model cost and no gate; anything it can't
+                // clear falls through to the human gate (the judge, later). The
+                // classifier is a pure function of the role policy and the call.
+                let approval = match policy::classify(shared.role(), call) {
+                    Verdict::Clear => Approval::Approve,
+                    Verdict::Gate => frontend.approve(call).await,
+                };
+                match approval {
                     // `consolidate` acts on the log, not the world (docs/consolidate.md):
                     // record the boundary mark + pair the `tool_use`. No world-run, no
                     // distill. Slice 0 — the mark is inert; Slice 1's projection folds

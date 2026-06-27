@@ -47,11 +47,18 @@ structured results the harness can curate cleanly — reach for them before \
 Work one tool call at a time, using what each result taught you to choose the next.";
 
 /// The full system prompt sent in the request's `system` field (docs/substrate.md): the
-/// curation-model [`PREAMBLE`] plus the frozen session environment block from
-/// [`context`]. Built once at session start and frozen into the cached prefix —
-/// the `wire` dev view reconstructs it identically by calling this.
-pub fn system_prompt() -> String {
-    format!("{PREAMBLE}\n\n{}", context())
+/// curation-model [`PREAMBLE`], the frozen session environment block from [`context`],
+/// and — when the session runs under a role with a brief — the role's preamble section
+/// (`role_section`, rendered by [`crate::role::Role::preamble_section`]). Built once at
+/// session start and frozen into the cached prefix, so every part must be byte-stable;
+/// the `wire` dev view reconstructs it identically by calling this with the same inputs.
+pub fn system_prompt(role_section: Option<&str>) -> String {
+    let mut prompt = format!("{PREAMBLE}\n\n{}", context());
+    if let Some(section) = role_section {
+        prompt.push_str("\n\n");
+        prompt.push_str(section);
+    }
+    prompt
 }
 
 /// Build the environment block appended to the system preamble. Call **once** at
@@ -146,6 +153,17 @@ mod tests {
         let dir = tmpdir("bare");
         assert_eq!(detect_project(&dir), "unknown");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn system_prompt_appends_role_section_when_present() {
+        let without = system_prompt(None);
+        let with = system_prompt(Some("Your role for this session:\n\nStay put."));
+        // The role section is appended verbatim after the env block; without a role the
+        // prompt is exactly the preamble + env (no trailing role text).
+        assert!(with.starts_with(&without));
+        assert!(with.ends_with("Your role for this session:\n\nStay put."));
+        assert!(!without.contains("Your role for this session"));
     }
 
     #[test]

@@ -23,6 +23,8 @@ behind a change, see [`journal/`](journal/).
 - In-process MCP tools (fs-mcp, semantic-edit-mcp) reusing the generated `mcplease` tool enums.
 - Interactive TUI (`efference tui`): themed streaming transcript, conversational rendering with per-tool result renderers, emacs-keybind composer, inline approval gates, and a live background-process panel.
 - `Screenplay` snapshot harness + `efference gallery` for iterating TUI display without being blind.
+- Role config (KDL via `knus`): `serve --config <path>` / `efference.kdl`, a session brief that folds byte-stably into the cached preamble, a judge-only rubric, `tool`/`path`/`allow` grants, resolved path reported on `GET /state`.
+- Permission fast-path: deterministic, zero-model-cost auto-approval of allowlisted bash — a `yash-syntax` structural-simplicity check (single simple command, no operators/redirection/expansion/glob) then a `(program, arg-prefix)` match; everything else falls through to the gate.
 
 ### Changed
 - Model selection moved to a per-session `serve --model <id>` flag (default `claude-haiku-4-5` for dev).

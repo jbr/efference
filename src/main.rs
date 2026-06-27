@@ -43,6 +43,12 @@ enum Command {
         /// Model to use for the agent. Defaults to claude-haiku-4-5.
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
+        /// Path to the role config (KDL, see backlog/permissions/role-config.md). If
+        /// omitted, `efference.kdl` in the cwd is probed; absent → the built-in default
+        /// role. An explicit path that doesn't exist is an error. The resolved path is
+        /// reported on `GET /state`.
+        #[arg(long, short = 'c')]
+        config: Option<PathBuf>,
     },
     /// Send a user turn to a running daemon (`POST /turn`). Seeds turn 1 on an
     /// idle daemon. Returns immediately — watch `state`/`log` for the response.
@@ -130,6 +136,12 @@ enum Command {
         /// cosmetic here (the request isn't sent).
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
+        /// Role config to fold into the reconstructed preamble, same resolution as
+        /// `serve` (defaults to probing `efference.kdl`). The role file isn't recorded
+        /// in the log, so — like `system`/`tools[]` — it's rebuilt from the current
+        /// environment; pass `--config` to match the session that produced the log.
+        #[arg(long, short = 'c')]
+        config: Option<PathBuf>,
     },
     /// Print the daemon's ephemeral control state (`GET /state`).
     State,
@@ -154,7 +166,7 @@ enum WireFormat {
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Serve { model } => serve(cli.socket, &model).await,
+        Command::Serve { model, config } => serve(cli.socket, &model, config).await,
         Command::Turn { text } => turn(cli.socket, text.join(" ")).await,
         Command::Approve {
             call_id,
@@ -178,7 +190,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             path,
             format,
             model,
-        } => wire(path, format, &model).await,
+            config,
+        } => wire(path, format, &model, config).await,
     }
 }
 
@@ -189,15 +202,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 /// turn would (`tool_choice: auto`, docs/transport.md). `system` and `tools[]` are not in
 /// the log; they're rebuilt from the current code + cwd, so the note on stderr
 /// warns when the session may have run in a different environment.
-async fn wire(path: PathBuf, format: WireFormat, model: &str) -> CliResult {
+async fn wire(
+    path: PathBuf,
+    format: WireFormat,
+    model: &str,
+    config: Option<PathBuf>,
+) -> CliResult {
     let entries = efference::persist::load(&path)?;
     let mut messages = efference::project::project(&entries);
     efference::project::place_trailing_cache_breakpoint(&mut messages);
 
     // The envelope's system + tools aren't recorded in the log — rebuild them the
     // same way `serve` does (current cwd seeds both the env block and the MCP
-    // servers' session roots).
-    let system = efference::env::system_prompt();
+    // servers' session roots; the role config folds its brief into the preamble).
+    let loaded = match efference::role::load(config.as_deref()) {
+        Ok(l) => l,
+        Err(e) => {
+            e.eprint();
+            return Err("could not load role config".into());
+        }
+    };
+    let role_section = loaded.role.preamble_section();
+    let system = efference::env::system_prompt(role_section.as_deref());
     let cwd = std::env::current_dir()?;
     // The full tools[] a real turn sends — world tools + the harness tools
     // (`consolidate`, the docs/supervisor.md and docs/inbox.md tools) — so the dev view matches.
@@ -537,6 +563,7 @@ fn render_event(kind: Option<&str>, data: &str, state: &mut RenderState) {
 async fn serve(
     socket: PathBuf,
     model: &str,
+    config: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Daemon logging: RUST_LOG controls verbosity (default: efference at info, deps
     // quiet). The transport (request sizes, full API error bodies), the agent loop
@@ -549,6 +576,22 @@ async fn serve(
 
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| "ANTHROPIC_API_KEY is not set in the environment")?;
+
+    // Resolve the role *before* anything else: a malformed config should fail fast with
+    // a source-span report, not after a socket is bound (backlog/permissions/role-config.md).
+    // The brief folds into the frozen preamble below; the rest of the role rides on
+    // `Shared` for `/state` and the (not-yet-built) cascade rungs.
+    let loaded = match efference::role::load(config.as_deref()) {
+        Ok(l) => l,
+        Err(e) => {
+            e.eprint();
+            return Err("could not load role config".into());
+        }
+    };
+    match &loaded.source {
+        efference::role::RoleSource::Path(p) => eprintln!("role config: {}", p.display()),
+        efference::role::RoleSource::Default => eprintln!("role config: (default — no file)"),
+    }
 
     // One JSONL file per session under .efference/ (gitignored). The socket lives
     // alongside it; clear any stale socket from a prior run before binding.
@@ -567,8 +610,11 @@ async fn serve(
     // would invalidate the cached prefix every turn (docs/substrate.md) — so it carries
     // only session-stable facts (cwd, platform, project type), never volatile state
     // like git status. See `env::system_prompt`. The `wire` dev view reconstructs
-    // the same string.
-    let system = efference::env::system_prompt();
+    // the same string. The role's brief (if any) folds in here, frozen for the session
+    // exactly like the env block (backlog/permissions/role-config.md — the
+    // config→preamble projection must be byte-stable).
+    let role_section = loaded.role.preamble_section();
+    let system = efference::env::system_prompt(role_section.as_deref());
 
     let client = Client::new(api_key, model, system);
 
@@ -578,5 +624,5 @@ async fn serve(
     // their session cwd seeded to where we're running.
     let cwd = std::env::current_dir()?;
     let toolbox = Toolbox::bash_and_mcps(cwd)?;
-    daemon::serve(client, toolbox, ForkPeek, log, socket).await
+    daemon::serve(client, toolbox, ForkPeek, log, socket, loaded).await
 }

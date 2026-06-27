@@ -55,6 +55,15 @@ syntect = { version = "5.3", default-features = false, features = ["parsing", "d
 fieldwork = "0.5.2"
 thiserror = "2"
 unicode-width = "0.2.2"
+# Role config (backlog/permissions/role-config.md): KDL parsed into typed structs via
+# knus's derive. Pinned exact — the schema is the contract. knus::Error is a
+# miette::Diagnostic, so a malformed role file renders with a source-span underline
+# (the load-time diagnostic that substitutes for KDL's thin LSP). miette is pinned to
+# knus's exact version so the Diagnostic trait is the same one; `fancy` is the
+# graphical reporter the CLI prints the load error through.
+knus = "=3.4.0"
+miette = { version = "=7.6.0", features = ["fancy"] }
+yash-syntax = "=0.14.1"
 
 [dev-dependencies]
 # Snapshot the TUI as plain-text character grids (DESIGN: "playwright for TUIs").

@@ -139,6 +139,7 @@ Read top-down; open the subsystem doc you need.
 | Ambient notifications — the inbox (enqueue then triage) | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon.rs` |
 | Background processes — the supervisor | [supervisor.md](supervisor.md) | `src/supervisor.rs`, `src/bash.rs` |
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs`, `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
+| Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/role.rs`, `src/policy.rs`, `src/agent.rs` |
 | Transport & streaming (upstream SSE, deltas, keepalive) | [transport.md](transport.md) | `src/api.rs` |
 | The TUI client | [tui.md](tui.md) | `src/tui/` |
 

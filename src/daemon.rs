@@ -40,6 +40,7 @@ use crate::frontend::{Approval, Frontend};
 use crate::log::{CallId, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{ApiMessage, place_trailing_cache_breakpoint, project};
+use crate::role::{LoadedRole, RoleSource};
 use crate::supervisor::{BgView, Supervisor};
 use crate::tools::Toolbox;
 
@@ -138,6 +139,12 @@ pub struct Shared {
     /// immutable notification model would pile up stale snapshots). Pinned tails and
     /// exits *do* reach the durable log, but as `Ambient` notifications, not from here.
     supervisor: Mutex<Supervisor>,
+    /// The resolved role config and where it came from (backlog/permissions/role-config.md).
+    /// Read-only for the session's lifetime — the brief is already frozen into the
+    /// cached preamble; this copy backs the `GET /state` report ("which role am I?") and
+    /// is where the not-yet-built cascade rungs (the prefix fast-path, the judge) will
+    /// read the allowlist and thresholds from. Immutable, so no lock.
+    role: LoadedRole,
 }
 
 /// Per-session cache/usage telemetry. `last_request_at` is an [`Instant`] (not
@@ -160,8 +167,19 @@ struct Metrics {
 }
 
 impl Shared {
-    /// Build the shared state and hand back the turn-inbox receiver for the loop.
+    /// Build the shared state under the built-in default role (no config). The real
+    /// daemon uses [`Shared::with_role`]; this convenience keeps the many tests that
+    /// don't exercise role config terse.
     pub fn new(log: Log) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
+        Self::with_role(log, LoadedRole::default())
+    }
+
+    /// Build the shared state under a resolved role and hand back the turn-inbox
+    /// receiver for the loop.
+    pub fn with_role(
+        log: Log,
+        role: LoadedRole,
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
         let (turns_tx, turns_rx) = mpsc::unbounded_channel();
         // Bounded ring: a consumer that falls this far behind drops the oldest
         // deltas (a `Lagged` on `recv`) rather than stalling the loop — the log is
@@ -180,6 +198,7 @@ impl Shared {
             metrics: Mutex::new(Metrics::default()),
             inbox: Mutex::new(Inbox::default()),
             supervisor: Mutex::new(Supervisor::new()),
+            role,
         });
         (shared, turns_rx)
     }
@@ -254,6 +273,13 @@ impl Shared {
     /// model and so can't borrow across the lock (docs/redaction-fork.md).
     pub fn snapshot(&self) -> Vec<LogEntry> {
         self.log.lock().unwrap().entries().to_vec()
+    }
+
+    /// The resolved role's policy, for the loop's fast-path classifier
+    /// (backlog/permissions/prefix-fastpath.md). Immutable for the session, so a borrow
+    /// is fine — no lock.
+    pub fn role(&self) -> &crate::role::Role {
+        &self.role.role
     }
 
     /// A clone of the single entry at `seq` (== its index in the log), or `None`
@@ -508,6 +534,7 @@ impl Shared {
         serde_json::json!({
             "last_seq": last_seq,
             "pending_approval": pending,
+            "role": self.role_json(),
             "pending_notifications": self.pending_notifications(),
             // The live background processes (docs/supervisor.md) — the same `views()` snapshot
             // the peek auto-shows the model, surfaced here for the human clients (the
@@ -516,6 +543,25 @@ impl Shared {
             "usage": usage,
         })
         .to_string()
+    }
+
+    /// The role report for `GET /state` (backlog/permissions/role-config.md): the
+    /// resolved config `source` (the path, or `null` for the built-in default) so
+    /// "which role am I running?" is never ambiguous, plus a terse summary of what is in
+    /// effect. The brief itself isn't surfaced here — it's already on the wire in the
+    /// preamble; this is the provenance, not the content.
+    fn role_json(&self) -> Value {
+        let source = match &self.role.source {
+            RoleSource::Default => Value::Null,
+            RoleSource::Path(p) => Value::String(p.display().to_string()),
+        };
+        serde_json::json!({
+            "source": source,
+            "has_brief": self.role.role.preamble_section().is_some(),
+            "allow_count": self.role.role.allow.len(),
+            "tool_count": self.role.role.tools.len(),
+            "path_count": self.role.role.paths.len(),
+        })
     }
 
     fn log_json(&self, since: Option<u64>) -> String {
@@ -950,8 +996,9 @@ pub async fn serve<D: Distiller>(
     distiller: D,
     log: Log,
     socket: PathBuf,
+    role: LoadedRole,
 ) -> Result<(), Error> {
-    let (shared, turns) = Shared::new(log);
+    let (shared, turns) = Shared::with_role(log, role);
     // Share the client between the loop and the keepalive task. `tools` is computed
     // once here for the ping; `agent::run` recomputes the same (byte-stable, docs/substrate.md)
     // definitions internally, so both send an identical prefix.
@@ -1068,6 +1115,51 @@ mod tests {
         assert_eq!(v["usage"]["cumulative"]["output_tokens"], 22);
         // A wall-clock stamp now exists — the eviction-prediction signal (docs/substrate.md).
         assert!(v["usage"]["seconds_since_last_request"].is_u64());
+    }
+
+    /// `GET /state` reports the resolved role (backlog/permissions/role-config.md): a
+    /// `null` source for the built-in default, and the path plus a content summary
+    /// (`has_brief`, `allow_count`) when a config is in effect — so "which role am I
+    /// running?" is never ambiguous.
+    #[test]
+    fn state_reports_role_source() {
+        // Default role (no config file) → null source, no brief, empty allowlist.
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert!(v["role"]["source"].is_null());
+        assert_eq!(v["role"]["has_brief"], false);
+        assert_eq!(v["role"]["allow_count"], 0);
+        assert_eq!(v["role"]["tool_count"], 0);
+        assert_eq!(v["role"]["path_count"], 0);
+
+        // A loaded role surfaces its resolved path and a content summary.
+        let loaded = LoadedRole {
+            role: crate::role::Role {
+                brief: Some("stay in the repo".into()),
+                allow: vec![
+                    crate::role::Allow { program: "cargo".into(), prefix: vec![] },
+                    crate::role::Allow {
+                        program: "git".into(),
+                        prefix: vec!["diff".into()],
+                    },
+                ],
+                tools: vec![crate::role::ToolGrant { name: "read".into() }],
+                paths: vec![crate::role::PathGrant {
+                    path: ".".into(),
+                    read: true,
+                    write: true,
+                }],
+                ..Default::default()
+            },
+            source: RoleSource::Path("roles/dev.kdl".into()),
+        };
+        let (shared, _rx) = Shared::with_role(Log::in_memory(), loaded);
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert_eq!(v["role"]["source"], "roles/dev.kdl");
+        assert_eq!(v["role"]["has_brief"], true);
+        assert_eq!(v["role"]["allow_count"], 2);
+        assert_eq!(v["role"]["tool_count"], 1);
+        assert_eq!(v["role"]["path_count"], 1);
     }
 
     /// The keepalive's load-bearing invariant (docs/substrate.md): a ping advances the
