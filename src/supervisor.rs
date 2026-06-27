@@ -1,9 +1,9 @@
-//! The background-process supervisor (DESIGN §6 — Background processes, Slice 1).
+//! The background-process supervisor (docs/supervisor.md).
 //!
 //! A backgrounded command is a *live entity*, not a log record: its running tail is
 //! re-sampled fresh at each triage gate, never frozen into the log (forcing a live
 //! tail through the immutable notification model would pile up stale snapshots,
-//! DESIGN §6). So this registry is **ephemeral daemon state** — a sibling of the
+//! docs/supervisor.md). So this registry is **ephemeral daemon state** — a sibling of the
 //! inbox queue and the cache `Metrics` in [`Shared`](crate::daemon): dropped on
 //! restart, where killpg-on-teardown reaps the children it owns.
 //!
@@ -20,23 +20,23 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-/// `list_processes` — the directed read of running processes (DESIGN §6). Named to
+/// `list_processes` — the directed read of running processes (docs/supervisor.md). Named to
 /// avoid colliding with fs-mcp's `list`.
 pub const LIST: &str = "list_processes";
-/// `read_process` — cursor-based tailing of one process's output (the §6
-/// `read_since`). Named to avoid colliding with fs-mcp's `read`.
+/// `read_process` — cursor-based tailing of one process's output (the supervisor's
+/// `read_since`, docs/supervisor.md). Named to avoid colliding with fs-mcp's `read`.
 pub const READ: &str = "read_process";
-/// `kill_process` — terminate a background process's group (DESIGN §6).
+/// `kill_process` — terminate a background process's group (docs/supervisor.md).
 pub const KILL: &str = "kill_process";
 /// `check_inbox` — surface pending notifications on demand (the directed inbox read,
-/// DESIGN §6) so the model needn't wait for them to ride its next action.
+/// docs/inbox.md) so the model needn't wait for them to ride its next action.
 pub const CHECK_INBOX: &str = "check_inbox";
 
-/// The harness-level supervisor/inbox tools (DESIGN §6). Like `consolidate`, these
+/// The harness-level supervisor/inbox tools (docs/supervisor.md). Like `consolidate`, these
 /// act on daemon state (the registry, the inbox), not the world, so the agent loop
 /// dispatches them structurally — but their results distill through the universal
 /// fork like any tool (no bypass). Definitions are constant `json!` (sorted keys),
-/// so `tools[]` stays byte-stable for the session (DESIGN §3).
+/// so `tools[]` stays byte-stable for the session (docs/substrate.md).
 pub fn tool_definitions() -> Vec<Value> {
     vec![
         json!({
@@ -76,11 +76,11 @@ pub fn tool_definitions() -> Vec<Value> {
 }
 
 /// Lines of tail shown per process in the peek (and carried in a pin / exit
-/// snapshot). A tuned constant (DESIGN §6).
+/// snapshot). A tuned constant (docs/supervisor.md).
 const TAIL_LINES: usize = 12;
 
 /// Bounded per-process capture. Output past this is dropped from the *front*
-/// (oldest-first) with a counted breadcrumb — no silent caps (DESIGN §6).
+/// (oldest-first) with a counted breadcrumb — no silent caps (docs/supervisor.md).
 const BUFFER_CAP: usize = 256 * 1024;
 
 /// One backgrounded process. `buffer` is the single bounded capture both read
@@ -97,17 +97,17 @@ struct BgProcess {
     dropped: usize,
     spawned_at: Instant,
     last_chunk_at: Instant,
-    /// Muted (the §6 `dismiss` for a live process): kept running, exit still
+    /// Muted (the supervisor's `dismiss` for a live process, docs/supervisor.md): kept running, exit still
     /// notifies, but the running tail stops surfacing in the peek.
     muted: bool,
     running: bool,
 }
 
 /// A live snapshot of one running process for the peek's ambient `background`
-/// section (DESIGN §6). Owned (it borrows nothing of the registry) so the loop can
+/// section (docs/supervisor.md). Owned (it borrows nothing of the registry) so the loop can
 /// build it under the lock and hand it to the fork distiller, which then awaits.
 /// `Serialize` so the same snapshot rides `GET /state` to the human clients (the
-/// TUI process panel, DESIGN §10.5) — one view, two consumers.
+/// TUI process panel, docs/tui.md) — one view, two consumers.
 #[derive(Clone, Debug, Serialize)]
 pub struct BgView {
     pub handle: String,
@@ -117,7 +117,7 @@ pub struct BgView {
     pub idle_secs: u64,
 }
 
-/// The ephemeral background-process registry (DESIGN §6). Held behind a `Mutex` in
+/// The ephemeral background-process registry (docs/supervisor.md). Held behind a `Mutex` in
 /// [`Shared`](crate::daemon); never logged, never projected — its `Instant`s can't
 /// reach the wire, so it's cache-safe by construction.
 #[derive(Default)]
@@ -166,7 +166,7 @@ impl Supervisor {
         }
     }
 
-    /// Mute a process's running tail (the §6 `dismiss` for a live process).
+    /// Mute a process's running tail (the supervisor's `dismiss` for a live process, docs/supervisor.md).
     pub fn mute(&mut self, handle: &str) {
         if let Some(p) = self.find_mut(handle) {
             p.muted = true;
@@ -174,7 +174,7 @@ impl Supervisor {
     }
 
     /// The ambient auto-show: a snapshot of every *running, un-muted* process for
-    /// the peek's `background` section (DESIGN §6). The directed `list()` read
+    /// the peek's `background` section (docs/supervisor.md). The directed `list()` read
     /// (Slice 2) will reuse this.
     pub fn views(&self) -> Vec<BgView> {
         let now = Instant::now();
@@ -191,7 +191,7 @@ impl Supervisor {
             .collect()
     }
 
-    /// Snapshot a running process's current tail for a **pin** (DESIGN §6): the
+    /// Snapshot a running process's current tail for a **pin** (docs/supervisor.md): the
     /// model chose to freeze this moment onto the canonical wire. Returns
     /// `(source, body)` ready to wrap in a [`Notification`](crate::log::Notification)
     /// that the pinning `Triage` projects as `⟢ <source>: <body>`. `None` if the
@@ -209,7 +209,7 @@ impl Supervisor {
     }
 
     /// Mark a process exited and produce its exit notification `(source, body)` —
-    /// status + duration + final tail (DESIGN §6, requirement #4). `None` if the
+    /// status + duration + final tail (docs/supervisor.md, requirement #4). `None` if the
     /// handle is unknown.
     pub fn finish(&mut self, handle: &str, status: Option<ExitStatus>) -> Option<(String, String)> {
         let ran = {
@@ -227,7 +227,7 @@ impl Supervisor {
         Some((p.handle.clone(), body))
     }
 
-    /// The directed `list_processes` view (DESIGN §6): all *running* processes —
+    /// The directed `list_processes` view (docs/supervisor.md): all *running* processes —
     /// muted ones included and annotated, since the model asked explicitly (the
     /// ambient `views()` auto-show hides muted; this doesn't). Exited ones have
     /// already notified, so they drop off.
@@ -250,7 +250,7 @@ impl Supervisor {
         out
     }
 
-    /// Cursor-based tailing of one process's output (the §6 `read_since`): return
+    /// Cursor-based tailing of one process's output (the supervisor's `read_since`, docs/supervisor.md): return
     /// everything from `cursor` (a byte offset into the *logical* stream; `None` =
     /// from the earliest still-retained byte) to the current end, plus the new
     /// cursor. Bytes dropped off the front at the cap (and thus before the cursor)
@@ -297,7 +297,7 @@ impl Supervisor {
     }
 
     /// The pgids of every still-running process — the killpg set for teardown
-    /// (DESIGN §6 ownership). A muted process is still running, so it's included.
+    /// (docs/supervisor.md). A muted process is still running, so it's included.
     pub fn running_pgids(&self) -> Vec<u32> {
         self.procs
             .iter()
@@ -316,7 +316,7 @@ impl Supervisor {
 
 /// The last [`TAIL_LINES`] lines of a capture, lossily decoded, with a leading
 /// breadcrumb when content was dropped (off the front at the cap, or just older
-/// than the tail window) — no silent truncation (DESIGN §6).
+/// than the tail window) — no silent truncation (docs/supervisor.md).
 fn tail_text(buffer: &[u8], dropped: usize) -> String {
     let decoded = String::from_utf8_lossy(buffer);
     let lines: Vec<&str> = decoded.lines().collect();

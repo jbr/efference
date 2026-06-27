@@ -1,7 +1,7 @@
-//! The bash tool — Phase 0's only tool (DESIGN §5, §6).
+//! The bash tool — Phase 0's only tool (docs/tools.md, docs/supervisor.md).
 //!
 //! Two concerns meet here. The *capability* is trivial: run a shell command,
-//! return its combined output. The load-bearing part is *ownership* (DESIGN §6,
+//! return its combined output. The load-bearing part is *ownership* (docs/supervisor.md,
 //! seeded now): the child is spawned with `process_group(0)` so it leads a fresh
 //! process group (child pid == pgid), and [`Bash::run`] races completion against
 //! an injected `abort` future — on abort it `killpg`s the whole group with
@@ -10,7 +10,7 @@
 //! `abort` is injected rather than reaching for `tokio::signal::ctrl_c()` inside
 //! so the kill path is unit-testable without signalling the test runner; the
 //! agent loop passes `ctrl_c()`. This is the C-c guardrail from the settled
-//! interaction model (DESIGN §10): see the command, abort before it finishes.
+//! interaction model (docs/README.md): see the command, abort before it finishes.
 //!
 //! Unix-only: `process_group` / `killpg` are POSIX. Phase 0 targets darwin.
 
@@ -34,7 +34,7 @@ can abort a running command with Ctrl-C.";
 /// Phase 0's only tool: run a shell command in its own process group.
 ///
 /// A unit struct for now — it will grow a cwd / session process-group as the
-/// supervisor (DESIGN §6) lands, but Phase 0 needs no state.
+/// supervisor (docs/supervisor.md) lands, but Phase 0 needs no state.
 pub struct Bash;
 
 #[derive(Deserialize)]
@@ -45,7 +45,7 @@ struct Input {
 impl Bash {
     /// The Anthropic `tools[]` entry — name, description, JSON-Schema input.
     /// Built from a [`serde_json::Value`] so its keys serialize in sorted order
-    /// (cache determinism, DESIGN §3) when this lands in the request next slice.
+    /// (cache determinism, docs/substrate.md) when this lands in the request next slice.
     pub fn definition() -> Value {
         json!({
             "name": NAME,
@@ -97,7 +97,7 @@ impl Bash {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             // Lead a fresh process group so one `killpg` reaps the command and
-            // anything it spawns (DESIGN §6). child pid == pgid.
+            // anything it spawns (docs/supervisor.md). child pid == pgid.
             .process_group(0)
             .spawn()
         {
@@ -145,7 +145,7 @@ impl Bash {
 /// cancelled. The shared core of the foreground bash tool (which accumulates the
 /// chunks and races the user's abort) and the background supervisor's drain task
 /// (which feeds each chunk into a process's capture buffer and never cancels — a
-/// kill closes the pipes externally, so it ends at EOF). DESIGN §6.
+/// kill closes the pipes externally, so it ends at EOF). See docs/supervisor.md.
 pub(crate) async fn drain_pipes(
     mut stdout: tokio::process::ChildStdout,
     mut stderr: tokio::process::ChildStderr,
@@ -176,7 +176,7 @@ pub(crate) async fn drain_pipes(
 /// `process_group(0)`, so its pid *is* its pgid; killing the group takes down
 /// any grandchildren too. Best-effort — a racing exit may already have reaped
 /// it, in which case `killpg` just returns `ESRCH`. Used by the foreground abort
-/// path and by the supervisor's kill / teardown (DESIGN §6).
+/// path and by the supervisor's kill / teardown (docs/supervisor.md).
 pub(crate) fn kill_group(pgid: u32) {
     // SAFETY: an FFI call with no memory effects; a stale/invalid pgid is a
     // benign `ESRCH`, which we intentionally ignore (best-effort teardown).

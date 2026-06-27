@@ -247,7 +247,7 @@ pub(super) fn display_width(text: &str) -> usize {
 /// starts at 0 implicitly, so the result holds one entry per *continuation* row;
 /// an empty result means the text fits on a single row).
 ///
-/// This is the shared wrap *policy* (DESIGN: single source of truth for where
+/// This is the shared wrap *policy* (single source of truth for where
 /// lines break). The document renderer's inline-flow loop and the composer's
 /// block layout both lean on the same [`find_wrap_position`] oracle; the
 /// composer additionally walks these boundaries to size its input area and place

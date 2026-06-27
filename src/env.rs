@@ -1,4 +1,4 @@
-//! Session environment context for the system preamble (DESIGN §3, orientation).
+//! Session environment context for the system preamble (docs/substrate.md).
 //!
 //! A weak model that isn't told *where* it is guesses — a live Haiku run searched
 //! for Python/JS/TS files in a Rust repo before finding its footing. This module
@@ -17,7 +17,7 @@
 use std::path::Path;
 
 /// The system preamble. Explains the curation model so the agent stops defending
-/// against context bloat the old way (DESIGN §4-realized) — the run that
+/// against context bloat the old way (docs/redaction-fork.md) — the run that
 /// motivated this watched the model reflexively `grep`/`head` its own tool output.
 const PREAMBLE: &str = "\
 You are a coding agent working in a software project. The current working \
@@ -46,7 +46,7 @@ structured results the harness can curate cleanly — reach for them before \
 
 Work one tool call at a time, using what each result taught you to choose the next.";
 
-/// The full system prompt sent in the request's `system` field (DESIGN §3): the
+/// The full system prompt sent in the request's `system` field (docs/substrate.md): the
 /// curation-model [`PREAMBLE`] plus the frozen session environment block from
 /// [`context`]. Built once at session start and frozen into the cached prefix —
 /// the `wire` dev view reconstructs it identically by calling this.

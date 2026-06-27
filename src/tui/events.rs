@@ -10,7 +10,7 @@ use crate::tui::projection::ViewState;
 ///
 /// The in-place flip gives immediate feedback without a reproject (so focus is
 /// preserved); for a *keyed* block it also flips the persistent `view` so the
-/// state survives the next streamed-token re-projection (DESIGN §10.5) — the two
+/// state survives the next streamed-token re-projection (docs/tui.md) — the two
 /// start in sync (every projection sets the level from `view`), so flipping both
 /// keeps them in sync.
 pub(super) fn handle_action(document: &mut Document<'_>, view: &mut ViewState, action: TuiAction<'_>) {

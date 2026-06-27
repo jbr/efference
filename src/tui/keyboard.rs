@@ -162,7 +162,7 @@ impl<'a> InteractiveState<'a> {
             }
 
             // Flip the focused tool result between its wire (distilled) and raw
-            // output (DESIGN §10.5). No-op unless a tool-result exchange is focused.
+            // output (docs/tui.md). No-op unless a tool-result exchange is focused.
             (KeyCode::Char('r'), _) => {
                 self.toggle_raw_focused();
             }

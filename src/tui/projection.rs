@@ -1,5 +1,5 @@
 //! Project the append-only log (plus the in-flight streaming tail) into a
-//! renderable [`Document`] (DESIGN §10 — the transcript is another `project(log)`,
+//! renderable [`Document`] (docs/README.md — the transcript is another `project(log)`,
 //! a sibling of the wire projection in `crate::project`).
 //!
 //! This mirrors two rules from the wire projection ([`crate::project`]): a tool
@@ -53,7 +53,7 @@ impl LiveTail {
 }
 
 /// Per-exchange view-state the human has toggled, carried in `tui::state` so it
-/// survives re-projection (DESIGN §10.5). The transcript rebuilds on every
+/// survives re-projection (docs/tui.md). The transcript rebuilds on every
 /// streamed token, so a block's collapse/raw state can't live in the rebuilt
 /// [`Document`] — it lives here, keyed by the result's `call_id`, and `project`
 /// applies it when building each exchange.
@@ -103,11 +103,11 @@ fn toggle(set: &mut HashSet<String>, call_id: &str) -> bool {
 /// gutter for the user; the assistant is unmarked), and each tool call is paired
 /// with its result into one collapsible *exchange* (`❯ tool · arg` over the
 /// result) rather than two separately-labeled blocks. `view` carries the human's
-/// per-exchange toggles (expand, raw-vs-wire) across this rebuild (DESIGN §10.5).
+/// per-exchange toggles (expand, raw-vs-wire) across this rebuild (docs/tui.md).
 ///
-/// `pending_call` is the `call_id` the agent is *blocked on for approval* (DESIGN
-/// §10.5). The loop appends the assistant `tool_use` **before** it gates (so the
-/// call is already in the log), and one tool call runs per turn (§8) — so the
+/// `pending_call` is the `call_id` the agent is *blocked on for approval* (docs/tui.md).
+/// The loop appends the assistant `tool_use` **before** it gates (so the
+/// call is already in the log), and one tool call runs per turn (docs/README.md) — so the
 /// pending call is always the tail result-less exchange. That exchange renders
 /// *as if invoked*, with a `⏸` marker and an inline affordance where the result
 /// will land, so the gate reads as "after the call, before the result" rather than
@@ -151,7 +151,7 @@ pub(crate) fn project(
             // Folded into its call's exchange above.
             Payload::ToolResult { .. } => {}
             Payload::Mark(mark) => push_mark(&mut nodes, &mark.kind, &mark.note),
-            // An ambient notification (DESIGN §6), rendered as a marked line so the
+            // An ambient notification (docs/inbox.md), rendered as a marked line so the
             // human sees the out-of-band event in the stream. The transcript shows the
             // whole record — every *shown* notification renders here, where the wire
             // carries only the pinned ones.
@@ -165,7 +165,7 @@ pub(crate) fn project(
                     Span::plain(n.body.clone()),
                 ],
             }),
-            // The verdict is internal — audit-only on the transcript (DESIGN §4).
+            // The verdict is internal — audit-only on the transcript (docs/redaction-fork.md).
             Payload::Triage(_) => {}
         }
     }
@@ -218,8 +218,8 @@ fn exchange(
 
     let mut body = overflow;
     if let Some((raw, wire)) = result {
-        // The human can flip a distilled result to its full raw output (DESIGN
-        // §10.5) — both are already client-side, so this is a pure render choice. A
+        // The human can flip a distilled result to its full raw output (docs/tui.md)
+        // — both are already client-side, so this is a pure render choice. A
         // forced-raw view passes a synthetic `Raw` wire so `result_body` gives it the
         // same rich tool-specific rendering (diff/read) a natural raw result gets.
         let show_raw = view.is_raw(call_id);
@@ -230,7 +230,7 @@ fn exchange(
             let content = match wire {
                 WireState::Raw => raw.content.clone(),
                 // Same renderer as the wire projection — re-derive the distillate from
-                // `raw` + the stored verdict (DESIGN §4).
+                // `raw` + the stored verdict (docs/redaction-fork.md).
                 WireState::Distilled { keep, note } => {
                     crate::project::render_distilled(&raw.content, keep, note.as_deref())
                 }
@@ -245,7 +245,7 @@ fn exchange(
         }
         body.extend(result_body(Some(call.name.as_str()), raw, effective_wire, &content));
     } else if is_pending {
-        // No result yet — the agent is blocked here for approval (DESIGN §10.5). The
+        // No result yet — the agent is blocked here for approval (docs/tui.md). The
         // affordance sits where the result will land, so the gate reads as "after the
         // call, before the result." Resolving it (approve → result; redirect/abort →
         // an error result) replaces this with the real exchange body.
@@ -270,7 +270,7 @@ fn exchange(
 }
 
 /// The inline affordance shown in a pending exchange's body, in place of the
-/// not-yet-existent result (DESIGN §10.5). The accent-colored lead-in marks "your
+/// not-yet-existent result (docs/tui.md). The accent-colored lead-in marks "your
 /// turn"; the muted tail spells out how to answer through the composer.
 fn gate_affordance() -> DocumentNode<'static> {
     DocumentNode::Paragraph {
@@ -678,7 +678,7 @@ mod tests {
 
     #[test]
     fn expand_state_lives_in_the_view_and_survives_reprojection() {
-        // The §10.5 fix: the expand level is read from the view, not stored in the
+        // The docs/tui.md fix: the expand level is read from the view, not stored in the
         // rebuilt document — so it survives the re-projection a streamed token forces
         // (where the old in-document level reset to Brief).
         let log = sample_log(); // one bash exchange, call id toolu_1

@@ -1,0 +1,123 @@
+# The TUI client
+
+`efference tui` is the human-facing client. It is just-another-socket-client: it subscribes to the daemon's SSE streams over the same [control channel](control-channel.md) that `attach` uses, and it drives turns and approvals through the same HTTP verbs. The renderer is vendored-and-adapted from ferritin's interactive renderer into `src/tui/`. Ferritin already had the hard parts — a general-purpose document IR, a markdown→IR parser, syntect theming, a custom scrollbar, line wrapping, and collapsible nodes — and its render pipeline was domain-free (it renders an IR, not rustdoc), so the lift was strip-the-shell, not rewrite. Improvements flow back cleanly because the IR stays byte-identical to ferritin.
+
+`efference gallery` (`tui/gallery.rs`) launches the real TUI on a fixed "one of each element" transcript with no daemon — a live design page that surfaces rendering gaps (literal `~~strike~~`, ordered-lists-as-bullets) the moment you look.
+
+
+## The transcript is another `project(log)`
+
+This is the load-bearing idea. Just as the wire is a deterministic projection of the log into an Anthropic `messages` array (see [the substrate](substrate.md)), `tui/projection.rs`'s
+
+```rust
+project(&[LogEntry], &LiveTail, &ViewState, pending_call: Option<&str>) -> Document<'static>
+```
+
+is a *second* projection of the same substrate to a different target: a renderable tree instead of a model-facing message list. It reuses the wire projection's rules where they apply — distillate-else-raw for tool results, the streamed-vs-committed dedup (where the wire uses `streamed_*` flags, the TUI projection uses the structural `LiveTail`) — and diverges where a human reader differs from the model: nothing is elided or coalesced (the human sees the whole record), and the projection carries a deliberate **information architecture** rather than a flat dump of labeled blocks.
+
+
+## Information architecture: conversational and minimalist
+
+The projection emits a sequence of `Turn { author, blocks }`. Authorship is **structural, not lexical**: the renderer paints a colored accent gutter for the user's turn and leaves the assistant unmarked as the default voice, so you *see* who's speaking instead of reading a `▌ you` / `▌ assistant` noun.
+
+Each tool call is **paired with its result** into one collapsible *exchange* headed by the call:
+
+```
+❯ bash · echo hi
+line one
+line two
+```
+
+The result has no `result #N` / `[seq]` label — it is obviously the response to the call directly above it. The leading glyph unifies state and authorship: `❯` at rest, `✗` (red) when the result errored, `▶`/`▼` when the result is long enough to collapse (collapse is a toggle — peek then re-close, keyed by `call_id`). When a call is awaiting approval, the glyph is `⏸` (accent color).
+
+Because all tools are known at compile time, results get **per-tool representations** instead of a raw JSON/text dump:
+
+- `bash` — rendered as a shell code block; a single-line command goes inline on the exchange header, a multi-line command overflows into the body.
+- `read` — strips the sentinel framing (`==<token> BEGIN <path>, LENGTH: n` … `END`) and highlights the file body by extension.
+- `preview_edit` / `persist_edit` / `retarget_edit` — parses the `===DIFF===` section into a color-coded `DocumentNode::Diff` (added/removed/hunk/context lines).
+- Unrecognized tools — falls back to a plain code block of JSON input.
+
+The throughline: lean on pre-attentive cues (color, gutter, glyph) and tool-specific shape, not repeated labels.
+
+
+## View state: surviving re-projection
+
+The transcript re-projects on every streamed token. That means a `DocumentNode`'s collapse level and raw-vs-wire toggle cannot live inside the rebuilt `Document` — they would reset mid-stream. They live instead in `tui::state` as a `projection::ViewState` keyed by `call_id`, and `project` reads that state when building each exchange.
+
+```rust
+struct ViewState {
+    expanded: HashSet<String>,   // call_ids the human expanded to Full
+    raw:      HashSet<String>,   // call_ids flipped to raw output
+}
+```
+
+The `r` key flips a focused tool result between its distilled wire form and its full raw output. Both are already client-side from the log entry's `WireState` and `RawResult` (see [the redaction fork](redaction-fork.md)), so this is a pure render choice with no round-trip. When showing raw over a distillate, the exchange header gains a `· raw` annotation so the human knows they are off the default view.
+
+
+## The live tail
+
+In-flight streaming deltas not yet committed to the log live in a `LiveTail`:
+
+```rust
+struct LiveTail {
+    assistant: String,           // in-flight prose this turn
+    tools: Vec<(String, String)>, // (call_id, accumulated output)
+}
+```
+
+`project` renders the committed log first, then appends the live tail — in-flight assistant prose as its own turn, each running tool as a result-less exchange. When a committed `LogEntry` arrives, `LiveTail::commit` clears the superseded buffer (assistant prose on `Payload::Assistant`, tool output on `Payload::ToolResult`), mirroring the wire projection's `streamed_*` dedup flags, now structural.
+
+
+## Wiring: two threads, one crossbeam channel
+
+crossterm's event read blocks, so the UI runs on a dedicated OS thread (`tui::ui_loop`). A tokio task (`tui::bridge`) subscribes to `/events` (durable `LogEntry` entries) and `/stream` (ephemeral `assistant_delta` / `tool_output` deltas) over the [transport](transport.md), decodes them into `TuiEvent`s, and forwards them over a crossbeam channel into the UI thread.
+
+The UI loop drains arriving events through `InteractiveState::handle_event` and sets a `reproject_pending` flag rather than re-projecting per event. Before each paint it calls `flush_reproject`, which runs `tui/projection.rs::project` once and clears the flag. A reattach replay that delivers N entries therefore costs O(N) event folds and O(1) projections, not O(N²).
+
+ratatui is immediate-mode, so "streaming" is just mutate-and-redraw: there is no in-place document mutation and no node-level diffing.
+
+
+## The composer
+
+`tui/composer.rs` is a dependency-free, emacs-keybind multiline editor. Its interface is a swappable seam: `handle_key` / `render` / `take` (or `clear`). The buffer is `Vec<Vec<char>>` — one row per line — so cursor columns are plain char indices, correct across UTF-8 without byte-boundary juggling.
+
+`tui-textarea` was the intended first cut but is pinned to an older ratatui/unicode-width ecosystem and does not resolve against ratatui 0.30, hence the hand-rolled editor. The seam makes replacing it later surgical.
+
+**Focus model.** Esc toggles between *compose mode* (keys edit the buffer) and *command mode* (single-key transcript commands: scroll, quit, help, theme, expand, raw toggle). Starts in compose mode. A printable key in command mode returns to compose mode. Submit in compose mode drives `POST /turn`; submit while a gate is pending resolves the gate (below).
+
+
+## Inline approval gates
+
+The approval gate is ephemeral control state: the daemon gates *after* appending the `tool_use` to the log and *before* running the tool, but there is no SSE event for this transition. A poll task watches `GET /state`'s `pending_approval` field and emits a `TuiEvent::Gate` when it appears or resolves.
+
+The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail result-less exchange. `project` receives the `pending_call: Option<&str>` and marks that exchange with `⏸` and an inline affordance in place of the result:
+
+```
+⏸ bash · rm -rf /tmp/scratch
+awaiting your approval  ·  ⏎ approve · type to redirect · .abort
+```
+
+The status bar mirrors this affordance for the scrolled-away case.
+
+Submitting from the composer while a gate is pending resolves it with the same three-valued `Approval` the loop consumes (from `src/frontend.rs`):
+
+- empty → `Approval::Approve`
+- `.abort` → `Approval::Abort`
+- any other text → `Approval::Redirect(text)`
+
+Resolving replaces the inline affordance with the real result (or, on redirect/abort, an error result), and the call stays in the transcript with that outcome in place of output.
+
+
+## Iterating the display without being blind
+
+`tui/harness.rs`'s `Screenplay` (test-only) scripts a transcript through the *real* event and input handlers, renders to a ratatui `TestBackend`, and frames the buffer as a ruled character grid pinned by an `insta` snapshot — so a wrap or layout change is a legible diff. The grid drops color by design so that `cell(x, y)` / `find(needle)` assertions can check foreground styles and modifiers (diff green/red, error red, the user's blue accent gutter) that a snapshot alone cannot show.
+
+
+## Lifetimes
+
+The IR keeps ferritin's `Cow<'a>` borrowing, used as `Document<'static>` over owned strings. Streaming re-projects the whole document rather than mutating nodes in place, so owned-mutation would buy nothing, and staying byte-identical to ferritin keeps improvements backportable both ways.
+
+
+## Backlog
+
+Remaining polish — the box→`│` connector refinement for result bodies, integrated focus/click-to-position between the transcript and the composer, a custom editor pass (typeahead, goal-column spill-to-scroll), and gates-as-synthetic-`/events` to drop the poll task — is tracked in the backlog.

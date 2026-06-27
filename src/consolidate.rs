@@ -1,4 +1,4 @@
-//! The `consolidate` tool (DESIGN §10 Phase 3) — the agent's own memory-
+//! The `consolidate` tool (docs/README.md, Phase 3) — the agent's own memory-
 //! consolidation primitive. The agent calls it to fold the prior task's
 //! trajectory into a concise summary, so the working context stays lean as a
 //! session runs long.
@@ -28,7 +28,7 @@ pub const NAME: &str = "consolidate";
 
 /// The `tools[]` entry advertised alongside the world-facing tools.
 ///
-/// Framed per the **"distillate IS the output"** lesson (DESIGN §4-realized): the
+/// Framed per the **"distillate IS the output"** lesson (docs/redaction-fork.md): the
 /// summary *becomes* the record — deliberately no "you can re-read it later", which
 /// manufactured anxiety and over-dropping when the peek believed its work was
 /// recoverable. The raw transcript does survive in the log, but that is an
@@ -64,7 +64,7 @@ pub fn summary(input: &Value) -> Option<String> {
 /// The `upto` a boundary placed now folds: everything up to the entry just before
 /// the **live task instruction** — the most recent user turn, which must survive so
 /// the agent keeps the fresh ask. Append-only means the boundary mark sits at the
-/// tail, so it names this extent explicitly (DESIGN §10 → projection fold). The
+/// tail, so it names this extent explicitly (docs/consolidate.md). The
 /// field is recorded now and read by the Slice-1 fold.
 ///
 /// Degenerate fallback when there's no earlier entry to fold to (e.g. a consolidate

@@ -1,10 +1,10 @@
-//! The live ambient-notification inbox over the log (DESIGN §6).
+//! The live ambient-notification inbox over the log (docs/inbox.md).
 //!
 //! The pending inbox is **event-sourced**: a notification a fork peek has shown is an
 //! [`Payload::Ambient`] log entry, and it stays *active* until a [`Triage`] verdict
 //! pins or dismisses its `seq`. [`active_shown`] folds the log to that active set —
-//! the shown-but-unresolved notifications a gate re-shows ("left" / bumped, DESIGN §6).
-//! Not-yet-shown notifications live in the daemon's ephemeral queue (DESIGN §10.1)
+//! the shown-but-unresolved notifications a gate re-shows ("left" / bumped, docs/inbox.md).
+//! Not-yet-shown notifications live in the daemon's ephemeral queue (docs/control-channel.md)
 //! until a gate logs them as `Ambient` (first-show); the loop concatenates the two.
 //!
 //! [`Triage`]: crate::log::Triage

@@ -174,7 +174,7 @@ impl Screenplay<'_> {
         self
     }
 
-    /// Flip a tool-result exchange to its raw output (the `r` key, DESIGN §10.5) —
+    /// Flip a tool-result exchange to its raw output (the `r` key, docs/tui.md) —
     /// the view-state toggle that survives re-projection, here driven directly by
     /// `call_id` rather than through keyboard focus.
     pub(crate) fn show_raw(&mut self, call_id: &str) -> &mut Self {
@@ -203,7 +203,7 @@ impl Screenplay<'_> {
 
     /// Mark the agent blocked on approval for `call_id` — the pending gate the
     /// daemon's `/state` poll surfaces, driven through the real `Gate` event so the
-    /// inline gate renders exactly as in the app (DESIGN §10.5).
+    /// inline gate renders exactly as in the app (docs/tui.md).
     pub(crate) fn pending_gate(
         &mut self,
         call_id: &str,
@@ -480,7 +480,7 @@ mod scenarios {
         assert!(rr > rg && rr > rb, "removed line should be red, got {removed:?}");
     }
 
-    /// The live background-process panel (DESIGN §6): a `Processes` event renders a
+    /// The live background-process panel (docs/supervisor.md): a `Processes` event renders a
     /// persistent strip above the composer — one row per running process with handle,
     /// command, running/idle timing, and the last output line. Fed by the `/state`
     /// poll, it is chrome, not transcript (no reproject).
@@ -831,7 +831,7 @@ mod scenarios {
         play.snapshot("transcript_distilled_result");
     }
 
-    /// The same distilled result after flipping it to raw (`r`, DESIGN §10.5): the
+    /// The same distilled result after flipping it to raw (`r`, docs/tui.md): the
     /// header gains a `· raw` marker and the body shows the full raw output the
     /// distillate replaced — the human's escape hatch back to what the tool actually
     /// returned, a pure client-side re-render (both forms are already local).
@@ -857,7 +857,7 @@ mod scenarios {
     }
 
     /// A pending approval gate, rendered inline at the tail call rather than as a
-    /// bottom banner (DESIGN §10.5): the exchange shows a `⏸` marker and an
+    /// bottom banner (docs/tui.md): the exchange shows a `⏸` marker and an
     /// `awaiting your approval …` affordance where the result will land — the gate
     /// reads as "after the call, before the result." Resolving it replaces the
     /// affordance with the real (or error) result.
@@ -884,7 +884,7 @@ mod scenarios {
     }
 
     /// Redirecting a gate: the call stays in the transcript with a message *instead
-    /// of a result* (DESIGN §10.5). The loop clears the gate, pairs the orphaned
+    /// of a result* (docs/tui.md). The loop clears the gate, pairs the orphaned
     /// `tool_use` with an error result ("not run — the user replied…"), and the
     /// human's words follow as a user turn — so the exchange reads `✗ bash …` over
     /// the breadcrumb, then the steer.

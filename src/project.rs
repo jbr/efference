@@ -1,11 +1,11 @@
 //! `project(log) -> Vec<ApiMessage>` — the deterministic view sent to the API
-//! (DESIGN §1–§3).
+//! (docs/README.md, docs/substrate.md).
 //!
 //! The whole thesis rides on this being **byte-stable**: identical input must
 //! serialize to identical bytes every time, or prompt caching breaks silently.
-//! The hazards (DESIGN §3) are non-deterministic map ordering (avoided by using
-//! [`serde_json::Value`], which serializes object keys in sorted order) and any
-//! accidental change to field order / naming on the wire (pinned by the
+//! The hazards (docs/substrate.md) are non-deterministic map ordering (avoided by
+//! using [`serde_json::Value`], which serializes object keys in sorted order) and
+//! any accidental change to field order / naming on the wire (pinned by the
 //! expected-bytes test below).
 
 use serde::Serialize;
@@ -32,7 +32,7 @@ pub enum Role {
     Assistant,
 }
 
-/// A prompt-cache breakpoint marker (DESIGN §3). `ephemeral` is the 5-minute TTL.
+/// A prompt-cache breakpoint marker (docs/substrate.md). `ephemeral` is the 5-minute TTL.
 /// Serializes as `{"type":"ephemeral"}`. It rides on whichever content block it's
 /// attached to; [`place_trailing_cache_breakpoint`] puts exactly one at the wire
 /// tail each request, so the (stable) prefix before it is cache-read while only
@@ -83,7 +83,7 @@ impl ApiBlock {
     }
 }
 
-/// Place the single trailing cache breakpoint (DESIGN §3, Phase 0): mark the last
+/// Place the single trailing cache breakpoint (docs/substrate.md): mark the last
 /// block of the last message `ephemeral`. Kept out of [`project`] so projection
 /// stays a pure, byte-stable function (the breakpoint moves every request; the
 /// prefix it caches does not). Idempotent re-placement on an identical wire is
@@ -152,11 +152,11 @@ fn extract_boundaries(log: &[LogEntry]) -> (Vec<Boundary>, HashSet<Seq>) {
 /// upto`) is elided and replaced by a single user-role summary message injected
 /// at the mark's position. The live conversation after `upto` — and the
 /// consolidate `tool_use` / result that recorded the boundary — project normally
-/// (DESIGN §10 Phase 3 Slice 1).
+/// (docs/README.md).
 pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
     let (boundaries, elided) = extract_boundaries(log);
     // Notification bodies by arrival `seq`, so a `Triage` can emit a block for each
-    // notification it pinned (DESIGN §6) without re-walking the log.
+    // notification it pinned (docs/inbox.md) without re-walking the log.
     let notifications: HashMap<Seq, &Notification> = log
         .iter()
         .filter_map(|e| match &e.payload {
@@ -178,7 +178,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
         // Inject the summary just before the first non-elided entry that follows
         // the fold span (i.e., the first entry with seq > upto). This places the
         // summary at the head of the live conversation rather than at the mark's
-        // own log position (DESIGN §10 Phase 3 Slice 1).
+        // own log position (docs/README.md).
         while boundary_cursor < boundaries.len()
             && !elided.contains(&entry.seq)
             && entry.seq > boundaries[boundary_cursor].upto
@@ -231,13 +231,13 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // Boundary mark's own seq); this arm is only reachable for future
             // non-Boundary mark kinds, which can be added here when they land.
             Payload::Mark(_) => {}
-            // An `Ambient` arrival is audit-only on the wire (DESIGN §6) — it never
+            // An `Ambient` arrival is audit-only on the wire (docs/inbox.md) — it never
             // itself projects; a *pinned* one is emitted by its `Triage` (below).
             Payload::Ambient(_) => {}
             // A fork verdict emits a block per **pinned** notification at its own
-            // position (DESIGN §6) — body looked up from the `Ambient` arrival. This
+            // position (docs/inbox.md) — body looked up from the `Ambient` arrival. This
             // tail-ward placement keeps the wire append-only: a notification pinned at
-            // a later gate than its first-show never splices behind a breakpoint (§3).
+            // a later gate than its first-show never splices behind a breakpoint \(docs/substrate.md\).
             // Dismissed / left dispositions don't project. The verdict is otherwise
             // audit-only.
             Payload::Triage(t) => {
@@ -306,8 +306,8 @@ fn block_to_api(block: &ContentBlock) -> ApiBlock {
 fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireState) -> ApiBlock {
     let (content, is_error) = match wire {
         WireState::Raw => (raw.content.clone(), raw.is_error),
-        // Re-render the distillate from `raw` + the stored verdict each turn (DESIGN
-        // §4) — the kept bytes are never persisted twice.
+        // Re-render the distillate from `raw` + the stored verdict each turn
+        // (docs/redaction-fork.md) — the kept bytes are never persisted twice.
         WireState::Distilled { keep, note } => {
             (render_distilled(&raw.content, keep, note.as_deref()), raw.is_error)
         }
@@ -320,7 +320,7 @@ fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireSta
     // Prefix with [seq] handle so tool results are describable as 'reread 14' /
     // 'branch from 14' — the entry's stable seq. The wire never carries seq
     // itself; this handle makes it visible at read-time without schema change
-    // (DESIGN §10 Phase 1 slice 2b).
+    // (docs/README.md).
     let prefixed = format!("[{}] {}", seq, content);
     ApiBlock::ToolResult {
         tool_use_id: call_id.0.clone(),
@@ -330,16 +330,16 @@ fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireSta
     }
 }
 
-/// Hard cap on the lines the fork peek shows the model (DESIGN §4). The canonical
+/// Hard cap on the lines the fork peek shows the model (docs/redaction-fork.md). The canonical
 /// render interprets a verdict's ranges against this same prefix of `raw`, so the two
 /// stay aligned — the model's `retain(lines=…)` coordinates address exactly what it saw.
 pub const PEEK_LINE_CAP: usize = 2000;
 
 /// Render a distilled tool result for the canonical wire from `raw` + the stored
-/// verdict (DESIGN §4): the kept ranges as diff-style `@@`-hunks over the verbatim
+/// verdict (docs/redaction-fork.md): the kept ranges as diff-style `@@`-hunks over the verbatim
 /// lines, the optional `note`, and a truncation breadcrumb past the cap. The wire
 /// projection and the TUI projection share this one renderer. **Deterministic** — part
-/// of the byte-stability contract (DESIGN §3): a pure function of its inputs.
+/// of the byte-stability contract (docs/substrate.md): a pure function of its inputs.
 pub fn render_distilled(content: &str, keep: &Keep, note: Option<&str>) -> String {
     let all: Vec<&str> = content.lines().collect();
     let total = all.len();
@@ -362,7 +362,7 @@ pub fn render_distilled(content: &str, keep: &Keep, note: Option<&str>) -> Strin
 /// span (`@@ line n @@` for one line), then those lines *verbatim* (unnumbered). The
 /// header carries the position anchor at one line per *range*; gaps between hunks are
 /// implied by the jump in the headers, as in a unified diff. An optional trailing note
-/// is the breadcrumb kept even when nothing is retained (DESIGN §4-realized) — one
+/// is the breadcrumb kept even when nothing is retained (docs/redaction-fork.md) — one
 /// overall note, so it survives the empty-hunks case.
 fn render_hunks(lines: &[&str], ranges: &[(usize, usize)], note: Option<&str>) -> String {
     let ranges = normalize(ranges, lines.len());
@@ -597,7 +597,7 @@ mod tests {
         );
     }
 
-    /// Distillation projects the *verdict* re-rendered from `raw` (DESIGN §4): the
+    /// Distillation projects the *verdict* re-rendered from `raw` (docs/redaction-fork.md): the
     /// kept line and note land; the dropped lines never reach the wire.
     #[test]
     fn distilled_projects_the_verdict_not_raw() {
@@ -640,7 +640,7 @@ mod tests {
     }
 
     /// A boundary [`Mark`] folds its named span (`seq <= upto`) into a single
-    /// summary user message (DESIGN §10 Phase 3 Slice 1). The summary message
+    /// summary user message (docs/README.md). The summary message
     /// lands in place of the elided entries; the live conversation after `upto`
     /// projects normally.
     #[test]
@@ -933,7 +933,7 @@ mod tests {
 
     /// The trailing breakpoint marks exactly the last block as `ephemeral` and
     /// nothing else — the cached prefix bytes are untouched, only the tail gains
-    /// the marker (DESIGN §3).
+    /// the marker (docs/substrate.md).
     #[test]
     fn trailing_cache_breakpoint_marks_only_the_last_block() {
         let mut messages = project(&sample_log());
@@ -970,7 +970,7 @@ mod tests {
     }
 
     /// A pinned notification projects as a `⟢ source: body` user block **at its
-    /// `Triage`'s position** (DESIGN §6) — body looked up from the `Ambient` arrival;
+    /// `Triage`'s position** (docs/inbox.md) — body looked up from the `Ambient` arrival;
     /// the dismissed one never projects, and the arrivals themselves project to
     /// nothing.
     #[test]
@@ -1040,7 +1040,7 @@ mod tests {
         s.lines().collect()
     }
 
-    /// The canonical render over a stored verdict (DESIGN §4): `all` is one verbatim
+    /// The canonical render over a stored verdict (docs/redaction-fork.md): `all` is one verbatim
     /// hunk, `none` collapses to the breadcrumb note, ranges keep only their spans.
     #[test]
     fn render_distilled_covers_all_none_and_ranges() {

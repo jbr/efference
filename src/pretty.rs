@@ -8,7 +8,7 @@
 //! not parseable back — that's the trade we want for a human inspection format.
 //!
 //! Object keys render in [`serde_json::Map`] order, which is sorted (the crate
-//! runs serde_json without `preserve_order`, DESIGN §3) — deterministic, like the
+//! runs serde_json without `preserve_order`, docs/substrate.md) — deterministic, like the
 //! JSON view. Callers that want a bespoke top-level order (the request envelope
 //! prefers `model`/`system` before the big `tools`/`messages` blocks) drive
 //! [`keyed`] per field instead of handing the whole object to [`to_pseudo_yaml`].

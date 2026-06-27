@@ -1,4 +1,4 @@
-//! The interactive TUI (DESIGN §10 — the human-facing client).
+//! The interactive TUI (docs/README.md — the human-facing client).
 //!
 //! Vendored-and-adapted from ferritin's interactive renderer. The load-bearing
 //! seam ferritin exposed — a general-purpose document IR ([`document`]) rendered
@@ -72,11 +72,11 @@ pub(crate) enum TuiEvent {
     /// `handle` exactly as [`ToolOutput`](TuiEvent::ToolOutput) is by `call_id`.
     BgOutput { handle: String, chunk: String },
     /// The pending tool-approval gate changed (polled from `GET /state`, since the
-    /// gate is ephemeral control state with no SSE event — DESIGN §10.0 parks
+    /// gate is ephemeral control state with no SSE event — docs/README.md parks
     /// "pending-approval as synthetic `/events`" for later).
     Gate(Option<PendingGate>),
     /// The live background processes changed (polled from `GET /state` alongside the
-    /// gate, DESIGN §6 — the running tail is ephemeral, never logged, so it has no
+    /// gate, docs/supervisor.md — the running tail is ephemeral, never logged, so it has no
     /// `/events` entry; the process panel is fed by the poll). Smooth `/stream`
     /// `bg_output` deltas layer on top between polls (TUI-bg-2, [`BgOutput`](TuiEvent::BgOutput)).
     Processes(Vec<BgProc>),
@@ -88,7 +88,7 @@ pub(crate) enum TuiEvent {
 }
 
 /// One live background process, as surfaced by `GET /state`'s `processes` array
-/// (the serialized `supervisor::BgView`, DESIGN §6). `Serialize` too so the poller
+/// (the serialized `supervisor::BgView`, docs/supervisor.md). `Serialize` too so the poller
 /// can fingerprint the list and only emit on change.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BgProc {
@@ -143,7 +143,7 @@ use utils::set_cursor_shape;
 /// deltas) over the [`Client`], bridges them into the UI thread, and renders the
 /// transcript until the user quits or the daemon goes away. The crossterm event
 /// loop blocks, so the UI runs on a dedicated blocking thread while the SSE
-/// bridge runs as a tokio task (DESIGN §10 — the TUI is one client of the socket).
+/// bridge runs as a tokio task (docs/README.md — the TUI is one client of the socket).
 /// The default theme — nicer than `THEME_NAMES[0]` ("1337", which only wins by
 /// sort order). Overridable with `--theme` / `EFFERENCE_THEME`.
 const DEFAULT_THEME: &str = "Catppuccin Frappe";
@@ -184,7 +184,7 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
                     break;
                 }
             }
-            // The live process list rides the same poll (DESIGN §6). Emit only when it
+            // The live process list rides the same poll (docs/supervisor.md). Emit only when it
             // changes — but `running`/`idle` secs tick, so a running process refreshes
             // ~1Hz, which is exactly the live-ish cadence the panel wants.
             let procs = parse_processes(&body);
@@ -336,7 +336,7 @@ mod gate_tests {
     }
 }
 
-/// Parse `GET /state`'s `processes` array into the live [`BgProc`] list (DESIGN §6).
+/// Parse `GET /state`'s `processes` array into the live [`BgProc`] list (docs/supervisor.md).
 /// A missing/malformed field is an empty list — the panel just hides.
 fn parse_processes(body: &str) -> Vec<BgProc> {
     serde_json::from_str::<serde_json::Value>(body)

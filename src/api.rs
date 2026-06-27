@@ -4,7 +4,7 @@
 //! the response arrives as a Server-Sent Events stream and is reassembled by
 //! [`Assembler`] back into a single [`Payload::Assistant`], so the result folds
 //! straight into the log — this is where the substrate and the transport meet.
-//! Reassembly is a pure fold over the event sequence (DESIGN §8: streaming wire);
+//! Reassembly is a pure fold over the event sequence (docs/transport.md: streaming wire);
 //! the `Assembler` is unit-tested without a live stream.
 
 use futures_lite::StreamExt;
@@ -40,24 +40,24 @@ struct Request<'a> {
     #[serde(skip_serializing_if = "str::is_empty")]
     system: &'a str,
     /// Tool definitions. Always sent (Phase 0 always has bash), so the request
-    /// never toggles the tools-cache tier (DESIGN §3). Their *content* must be
+    /// never toggles the tools-cache tier (docs/substrate.md). Their *content* must be
     /// byte-stable — `Bash::definition()` builds them from a [`Value`], whose
     /// keys serialize sorted, so it is.
     tools: &'a [Value],
     tool_choice: ToolChoice,
     messages: &'a [ApiMessage],
-    /// Always `true` — we consume the response as SSE (DESIGN §8). Set once and
-    /// never varied; a delivery flag, not part of the cached prefix (DESIGN §3),
+    /// Always `true` — we consume the response as SSE (docs/transport.md). Set once and
+    /// never varied; a delivery flag, not part of the cached prefix (docs/substrate.md),
     /// so it never invalidates the cache and isn't covered by the wire-bytes pin
     /// (which guards `project()` output, not this request envelope).
     stream: bool,
 }
 
 /// The `tool_choice` field. Phase 1+ always sets `disable_parallel_tool_use` so
-/// the model emits **at most one** `tool_use` per turn (DESIGN §8) — set once and
+/// the model emits **at most one** `tool_use` per turn (docs/README.md) — set once and
 /// never varied, so it never invalidates the cache. `auto()` lets the model
 /// decide whether to call a tool; `force(name)` makes it call exactly that one
-/// (the fork's `retain`, §4).
+/// (the fork's `retain`, docs/redaction-fork.md).
 #[derive(Serialize, Clone, Copy)]
 pub struct ToolChoice {
     #[serde(rename = "type")]
@@ -108,7 +108,7 @@ pub struct Completion {
     pub usage: Usage,
 }
 
-/// Carved out until the thinking slice (DESIGN §10): we recognize streamed
+/// Carved out until the thinking slice (docs/transport.md): we recognize streamed
 /// thinking / `redacted_thinking` blocks and their deltas and reject them with
 /// this precise error rather than letting them fall into the generic
 /// unknown-type arm. Storing thinking needs a `ContentBlock` variant, the
@@ -117,7 +117,7 @@ pub struct Completion {
 /// Until then, streaming against a thinking-enabled model fails loudly; dev runs
 /// on Haiku, which emits none.
 const THINKING_UNSUPPORTED: &str = "streamed a thinking/redacted_thinking block — \
-    extended thinking is not yet supported (DESIGN §10); develop on Haiku until \
+    extended thinking is not yet supported (see docs/transport.md); develop on Haiku until \
     the thinking slice lands";
 
 /// One content block being reassembled from the stream, keyed by its `index`.
@@ -146,7 +146,7 @@ enum BlockAccum {
 /// - **Usage merge.** `input_tokens` + `cache_*` come from `message_start`; the
 ///   final `output_tokens` from `message_delta`. Reading only one event would
 ///   regress the cache-gate metrics to the `message_start` placeholder
-///   (`output_tokens: 1`) — see DESIGN §3.
+///   (`output_tokens: 1`) — see docs/substrate.md.
 /// - **Thinking carved out, not built** (see [`THINKING_UNSUPPORTED`]).
 struct Assembler {
     /// Indexed by content-block `index`; pushed in order as blocks open.
@@ -332,8 +332,8 @@ impl Assembler {
 
 /// A thin Anthropic Messages client: holds the HTTP stack, key, model, and the
 /// stable system prompt. The system is byte-stable across the session, so it
-/// stays in the cached prefix (DESIGN §3); the fork (§4) shares the same client
-/// and thus the same system, so its prefix matches and hits cache.
+/// stays in the cached prefix (docs/substrate.md); the fork (docs/redaction-fork.md)
+/// shares the same client and thus the same system, so its prefix matches and hits cache.
 pub struct Client {
     http: HttpClient,
     api_key: String,
@@ -441,11 +441,11 @@ impl Client {
         message.into()
     }
 
-    /// A cache-keepalive ping (DESIGN §3): a **non-streaming** `max_tokens: 0`
+    /// A cache-keepalive ping (docs/transport.md): a **non-streaming** `max_tokens: 0`
     /// round-trip over the same prefix a real turn would send. It READS the cached
     /// prefix — refreshing its (sliding) TTL — and generates nothing, so the
     /// (empty) assistant turn is discarded and the log is never touched. Returns
-    /// only the `usage`, which the daemon folds into the §3 cache telemetry.
+    /// only the `usage`, which the daemon folds into the cache telemetry (docs/substrate.md).
     ///
     /// Non-streaming on purpose: `max_tokens: 0` is rejected with `stream: true`
     /// (verified live). The prefix bytes must match a real request's **exactly**
@@ -651,7 +651,7 @@ mod tests {
     }
 
     /// A streamed thinking block is rejected with a precise, labeled error — the
-    /// carved-out seam for the deferred thinking slice (DESIGN §10), not a silent
+    /// carved-out seam for the deferred thinking slice (docs/transport.md), not a silent
     /// drop.
     #[test]
     fn rejects_thinking_block_loudly() {

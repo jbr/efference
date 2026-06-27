@@ -1,8 +1,8 @@
-//! The control-channel client (DESIGN §10 control-channel, slice 2).
+//! The control-channel client (docs/control-channel.md, slice 2).
 //!
 //! Every non-loop interaction with a running daemon goes through here: the
 //! scriptable verbs (`efference turn`/`approve`/`interrupt`/`state`/`log`) and the
-//! `attach` REPL are all clients of the same socket (DESIGN §8 interface parity —
+//! `attach` REPL are all clients of the same socket (docs/control-channel.md — interface parity,
 //! there is no privileged in-process path). This is the consumer of
 //! `trillium-tokio`'s [`UnixClientConfig`], the client-side Unix-socket connector
 //! that unblocked this slice.
@@ -65,13 +65,13 @@ impl Client {
     }
 
     /// Interrupt a running tool (`POST /interrupt`) — the SIGINT equivalent that
-    /// kills the tool's process group (DESIGN §6).
+    /// kills the tool's process group (docs/supervisor.md).
     pub async fn interrupt(&self) -> Result<()> {
         self.post("/interrupt", String::new()).await.map(drop)
     }
 
     /// Enqueue an ambient notification into the daemon's inbox (`POST /notify`,
-    /// DESIGN §6). `slot` binds it to a logical channel so a later notify on the same
+    /// docs/inbox.md). `slot` binds it to a logical channel so a later notify on the same
     /// slot supersedes it; `replaces` supersedes a specific pending id. Returns the
     /// new notification's queue-local id.
     pub async fn notify(
@@ -96,7 +96,7 @@ impl Client {
     }
 
     /// Dismiss a pending notification out-of-band by its queue-local id
-    /// (`POST /notifications/{id}/dismiss`, DESIGN §6).
+    /// (`POST /notifications/{id}/dismiss`, docs/inbox.md).
     pub async fn dismiss_notification(&self, id: u64) -> Result<()> {
         self.post(&format!("/notifications/{id}/dismiss"), String::new())
             .await
@@ -110,7 +110,7 @@ impl Client {
     }
 
     /// The durable log (`GET /log?since=<seq>`), the append-only event store
-    /// (DESIGN §1). Returned as the raw JSON array body.
+    /// (docs/README.md). Returned as the raw JSON array body.
     pub async fn log(&self, since: Option<u64>) -> Result<String> {
         let path = match since {
             Some(s) => format!("/log?since={s}"),
@@ -120,7 +120,7 @@ impl Client {
     }
 
     /// Open the live event stream (`GET /events?since=<seq>`): a tail of the
-    /// append-only log (DESIGN §1). `since` replays from that `seq` then follows;
+    /// append-only log (docs/README.md). `since` replays from that `seq` then follows;
     /// `None` streams the whole session then live. Each event's `id` is the entry
     /// `seq`, so a reconnect resumes with `since = last_id + 1`.
     pub async fn events(&self, since: Option<u64>) -> Result<trillium_client::sse::EventStream> {
@@ -135,7 +135,7 @@ impl Client {
             .map_err(|e| anyhow!("opening the event stream at {path}: {e}"))
     }
 
-    /// Open the live ephemeral delta stream (`GET /stream`, DESIGN §10): assistant
+    /// Open the live ephemeral delta stream (`GET /stream`, docs/README.md): assistant
     /// prose and tool output as they're produced, before the turn commits. No
     /// cursor and no replay — it's a lossy live view; tail `/events` for the
     /// durable, authoritative record.

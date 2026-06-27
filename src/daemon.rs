@@ -1,13 +1,13 @@
 //! The control channel — the daemon and its HTTP-over-Unix-socket interface
-//! (DESIGN §10 control-channel).
+//! (docs/control-channel.md).
 //!
-//! This closes the §8 interface-parity gap with a stance stronger than parity:
+//! This closes the interface-parity gap with a stance stronger than parity:
 //! **the HTTP interface is the singular, authoritative input source.** The loop's
 //! only [`Frontend`] is [`RemoteFrontend`], fed by the handlers here; there is no
 //! privileged in-process path. Human (TUI), driver, and subagent are all clients
 //! of the same socket.
 //!
-//! The thesis pays off (DESIGN §1): the append-only log *is* the event store the
+//! The thesis pays off (docs/README.md): the append-only log *is* the event store the
 //! channel needs. `GET /log?since=<seq>` replays durably; ephemeral control state
 //! (a pending approval) lives in [`Shared`] and is reported by `GET /state`. The
 //! client's view is just another projection over the same log.
@@ -44,7 +44,7 @@ use crate::supervisor::{BgView, Supervisor};
 use crate::tools::Toolbox;
 
 /// A live, pre-commit output fragment streamed to clients over `GET /stream`
-/// (DESIGN §10 — the deferred token-level deltas). **Ephemeral and transport-only**:
+/// (docs/README.md — the deferred token-level deltas). **Ephemeral and transport-only**:
 /// never appended to the log, never projected, and droppable for a slow consumer.
 /// The authoritative text always lands as a committed [`LogEntry`] on `/events`, so
 /// the stream is interface candy with the durable log as its backstop — which is
@@ -56,7 +56,7 @@ pub enum StreamDelta {
     /// A chunk of a running tool's combined output, tagged by its `tool_use` id.
     ToolOutput { call_id: String, chunk: String },
     /// A chunk of a running background process's output, tagged by its `bg#<n>`
-    /// handle (DESIGN §6, TUI-bg-2). Demuxed by handle exactly like
+    /// handle (docs/supervisor.md, TUI-bg-2). Demuxed by handle exactly like
     /// [`ToolOutput`](Self::ToolOutput) is by `call_id` — it smooths the live process
     /// panel's tail between the ~400ms `/state` polls. The poll snapshot stays the
     /// authoritative tail; these just fill the gaps.
@@ -72,7 +72,7 @@ struct Pending {
     input: Value,
 }
 
-/// The pending-notification queue + its id counter (DESIGN §6). Ids are
+/// The pending-notification queue + its id counter (docs/inbox.md). Ids are
 /// **queue-local**: an un-shown notification has no log `seq` yet, so it's addressed
 /// by this id until Slice C's first-show append gives it a durable `seq`.
 #[derive(Default)]
@@ -81,8 +81,8 @@ struct Inbox {
     pending: Vec<PendingNotification>,
 }
 
-/// One pending ambient notification, surfaced by `GET /state` (DESIGN §6). Immutable
-/// once enqueued — supersession archives-and-replaces rather than editing (§3).
+/// One pending ambient notification, surfaced by `GET /state` (docs/inbox.md). Immutable
+/// once enqueued — supersession archives-and-replaces rather than editing (docs/substrate.md).
 #[derive(Clone, Debug, Serialize)]
 struct PendingNotification {
     /// Queue-local id; the handle `POST /notifications/:id/dismiss` addresses.
@@ -108,31 +108,31 @@ pub struct Shared {
     /// already on the wire — no new id scheme).
     approvals: Mutex<HashMap<CallId, oneshot::Sender<Approval>>>,
     /// The single pending approval, surfaced by `GET /state` (the loop is
-    /// sequential — one gate at a time, DESIGN §8).
+    /// sequential — one gate at a time, docs/README.md).
     pending: Mutex<Option<Pending>>,
     /// Fired by `POST /interrupt`; the future `interrupted()` races a running tool.
     interrupt: Notify,
     /// Pinged on each log append; the SSE tail (next slice) will wake on it.
     appended: Notify,
-    /// Pinged when a notification is enqueued (DESIGN §6 — `notify`). The agent loop's
+    /// Pinged when a notification is enqueued (docs/inbox.md — `notify`). The agent loop's
     /// idle path awaits this to wake an idle agent for a standalone triage (the
     /// wake-on-notification model that replaced blocking `wait`).
     notified: Notify,
-    /// Fan-out for ephemeral pre-commit output deltas (DESIGN §10). Producers (the
+    /// Fan-out for ephemeral pre-commit output deltas (docs/README.md). Producers (the
     /// loop's `complete` sink and the bash tool) publish via [`Shared::publish_delta`];
     /// each `GET /stream` connection subscribes. Lossy by design — see [`StreamDelta`].
     stream_tx: broadcast::Sender<StreamDelta>,
     /// Cache/usage telemetry — the most recent request's `usage` and a wall-clock
     /// stamp, surfaced by `GET /state` so clients can see cache hit/miss and
-    /// predict TTL eviction (DESIGN §3). Transport-only: never touches the log.
+    /// predict TTL eviction (docs/substrate.md). Transport-only: never touches the log.
     metrics: Mutex<Metrics>,
-    /// The ephemeral inbox of pending ambient notifications (DESIGN §6): out-of-band
+    /// The ephemeral inbox of pending ambient notifications (docs/inbox.md): out-of-band
     /// events awaiting their first triage gate. Control state, *not* a log payload —
     /// a notification only becomes a durable `Ambient` entry when a fork peek first
     /// shows it (Slice C). Superseded/dismissed-while-pending entries are dropped here
     /// (the "never-happened" case); only shown ones reach the audit log.
     inbox: Mutex<Inbox>,
-    /// The background-process registry (DESIGN §6): live children whose running tail
+    /// The background-process registry (docs/supervisor.md): live children whose running tail
     /// is re-sampled fresh each triage gate. Ephemeral control state like `inbox` /
     /// `metrics` — never logged, never projected (a running tail forced through the
     /// immutable notification model would pile up stale snapshots). Pinned tails and
@@ -151,7 +151,7 @@ struct Metrics {
     last_request_at: Option<Instant>,
     /// Stamped by real loop turns (incl. the fork) but **not** keepalive pings, so
     /// it measures genuine idle and a ping can't reset its own deadline. Gates the
-    /// keepalive cap (DESIGN §3).
+    /// keepalive cap (docs/substrate.md).
     last_real_turn_at: Option<Instant>,
     total_input: u64,
     total_output: u64,
@@ -187,14 +187,14 @@ impl Shared {
     /// Record a completed request's `usage` and stamp the wall clock. The loop
     /// calls this once per API round-trip; `GET /state` reports the latest plus
     /// running totals and the seconds-since (the eviction-prediction signal,
-    /// DESIGN §3). Transport-only — no log append, no projection change.
+    /// docs/substrate.md). Transport-only — no log append, no projection change.
     pub fn record_request(&self, usage: Usage) {
         let mut m = self.metrics.lock().unwrap();
         Self::fold_usage(&mut m, usage);
         m.last_real_turn_at = Some(Instant::now());
     }
 
-    /// A keepalive ping's usage (DESIGN §3). Folded into the telemetry and the
+    /// A keepalive ping's usage (docs/substrate.md). Folded into the telemetry and the
     /// cache-touch clock like any request, but it does **not** stamp the real-turn
     /// clock — a ping must not reset the cap that decides when to stop pinging.
     pub fn record_keepalive(&self, usage: Usage) {
@@ -232,7 +232,7 @@ impl Shared {
     }
 
     /// Publish an ephemeral pre-commit output delta to `GET /stream` subscribers
-    /// (DESIGN §10). Intentionally lossy: a send with no subscribers — or to a
+    /// (docs/README.md). Intentionally lossy: a send with no subscribers — or to a
     /// lagging one — is dropped, because the committed entry on `/events` is the
     /// authoritative copy. Never touches the log.
     pub fn publish_delta(&self, delta: StreamDelta) {
@@ -244,14 +244,14 @@ impl Shared {
         self.stream_tx.subscribe()
     }
 
-    /// Project the current log into the wire (DESIGN §1). Lock held only for the
+    /// Project the current log into the wire (docs/README.md). Lock held only for the
     /// synchronous fold.
     pub fn project_messages(&self) -> Vec<ApiMessage> {
         project(self.log.lock().unwrap().entries())
     }
 
     /// A clone of the entries — handed to the fork distiller, which awaits the
-    /// model and so can't borrow across the lock (DESIGN §4).
+    /// model and so can't borrow across the lock (docs/redaction-fork.md).
     pub fn snapshot(&self) -> Vec<LogEntry> {
         self.log.lock().unwrap().entries().to_vec()
     }
@@ -298,10 +298,10 @@ impl Shared {
         tx.send(decision).is_ok()
     }
 
-    /// Enqueue an ambient notification (DESIGN §6 — `POST /notify`). If it names a
+    /// Enqueue an ambient notification (docs/inbox.md — `POST /notify`). If it names a
     /// `slot` (or an explicit `replaces` id) matching a pending entry, that entry is
     /// **superseded**: archived-and-replaced, never edited (records are immutable,
-    /// §3). A superseded-while-pending entry is simply dropped — it never reached a
+    /// docs/substrate.md). A superseded-while-pending entry is simply dropped — it never reached a
     /// gate, so from the log's perspective it never happened. Returns the new id.
     fn notify(
         &self,
@@ -322,19 +322,19 @@ impl Shared {
         inbox.next_id += 1;
         inbox.pending.push(PendingNotification { id, source, body, slot });
         drop(inbox);
-        // Wake an idle agent for a standalone triage (DESIGN §6 — wake-on-notification).
+        // Wake an idle agent for a standalone triage (docs/inbox.md — wake-on-notification).
         self.notified.notify_waiters();
         id
     }
 
     /// Whether any **un-shown** notification is queued (the ephemeral pending set).
     /// The idle wake triggers on this — never on already-shown "left" items, so a
-    /// deferred notification can't spin the idle loop (DESIGN §6).
+    /// deferred notification can't spin the idle loop (docs/inbox.md).
     fn has_pending_notifications(&self) -> bool {
         !self.inbox.lock().unwrap().pending.is_empty()
     }
 
-    /// Resolve when there's an un-shown notification to triage (DESIGN §6). Lost-wakeup
+    /// Resolve when there's an un-shown notification to triage (docs/inbox.md). Lost-wakeup
     /// safe: arm the waiter before the check, so a `notify` landing between the check
     /// and the await still wakes us (the `appended`-tail pattern). The agent loop's
     /// idle `select!` races this against the next user turn.
@@ -348,7 +348,7 @@ impl Shared {
         }
     }
 
-    /// Dismiss a pending notification out-of-band (DESIGN §6 — `POST
+    /// Dismiss a pending notification out-of-band (docs/inbox.md — `POST
     /// /notifications/:id/dismiss`). `false` → no pending notification with that id.
     fn dismiss_notification(&self, id: u64) -> bool {
         let mut inbox = self.inbox.lock().unwrap();
@@ -362,7 +362,7 @@ impl Shared {
         self.inbox.lock().unwrap().pending.clone()
     }
 
-    /// Drain the un-shown notifications for a triage gate (DESIGN §6): take and clear
+    /// Drain the un-shown notifications for a triage gate (docs/inbox.md): take and clear
     /// the ephemeral queue. The loop logs each as a first-show `Ambient` entry (its
     /// `seq` becoming its durable id) and shows it to the model, so the queue holds
     /// only what's arrived since the last gate. Returned in arrival order as
@@ -376,7 +376,7 @@ impl Shared {
             .collect()
     }
 
-    /// Spawn a backgrounded bash command into the supervisor (DESIGN §6). Returns
+    /// Spawn a backgrounded bash command into the supervisor (docs/supervisor.md). Returns
     /// its `bg#<n>` handle immediately; a detached task drains the child's output
     /// into the registry (re-surfaced live at each triage gate) and fires an exit
     /// notification when it ends. The child leads a fresh process group, so one
@@ -404,36 +404,36 @@ impl Shared {
         Ok(handle)
     }
 
-    /// The peek's ambient `background` section (DESIGN §6) — a snapshot of running,
+    /// The peek's ambient `background` section (docs/supervisor.md) — a snapshot of running,
     /// un-muted processes, taken under the lock so the loop can hand it to the fork.
     pub fn bg_snapshot(&self) -> Vec<BgView> {
         self.supervisor.lock().unwrap().views()
     }
 
     /// Snapshot a process's current tail for a pin — `(source, body)` ready to wrap
-    /// in a [`Notification`](crate::log::Notification) (DESIGN §6).
+    /// in a [`Notification`](crate::log::Notification) (docs/supervisor.md).
     pub fn bg_pin_snapshot(&self, handle: &str) -> Option<(String, String)> {
         self.supervisor.lock().unwrap().pin_snapshot(handle)
     }
 
-    /// Mute a process's running tail (the §6 `dismiss` for a live process — it keeps
+    /// Mute a process's running tail (`dismiss` for a live process, docs/supervisor.md — it keeps
     /// running and still notifies on exit).
     pub fn mute_bg(&self, handle: &str) {
         self.supervisor.lock().unwrap().mute(handle);
     }
 
-    /// The directed `list_processes` view (DESIGN §6).
+    /// The directed `list_processes` view (docs/supervisor.md).
     pub fn bg_list_text(&self) -> String {
         self.supervisor.lock().unwrap().list_text()
     }
 
-    /// Cursor-based read of one process's output (the §6 `read_since`). `None` if the
+    /// Cursor-based read of one process's output (`read_since`, docs/supervisor.md). `None` if the
     /// handle is unknown.
     pub fn bg_read_since(&self, handle: &str, cursor: Option<u64>) -> Option<String> {
         self.supervisor.lock().unwrap().read_since(handle, cursor)
     }
 
-    /// Kill a running background process by handle (DESIGN §6 — `kill_process`):
+    /// Kill a running background process by handle (docs/supervisor.md — `kill_process`):
     /// `killpg` its group; the drain task then sees EOF and fires the exit
     /// notification. `false` if no such running process. The lock is dropped before
     /// the FFI kill (never held across it).
@@ -448,7 +448,7 @@ impl Shared {
         }
     }
 
-    /// The directed inbox read (DESIGN §6 — `check_inbox`): the active shown
+    /// The directed inbox read (docs/inbox.md — `check_inbox`): the active shown
     /// notifications (left at earlier gates) plus the newly-arrived ephemeral ones,
     /// so the model can survey what's waiting on demand. The fork peek for this
     /// tool's own result is where they're actually triaged.
@@ -472,7 +472,7 @@ impl Shared {
         out
     }
 
-    /// `killpg` every still-running background child — daemon teardown (DESIGN §6
+    /// `killpg` every still-running background child — daemon teardown (docs/supervisor.md
     /// ownership). Best-effort: a child that already exited is a benign `ESRCH`.
     pub fn kill_all_bg(&self) {
         for pgid in self.supervisor.lock().unwrap().running_pgids() {
@@ -509,9 +509,9 @@ impl Shared {
             "last_seq": last_seq,
             "pending_approval": pending,
             "pending_notifications": self.pending_notifications(),
-            // The live background processes (DESIGN §6) — the same `views()` snapshot
+            // The live background processes (docs/supervisor.md) — the same `views()` snapshot
             // the peek auto-shows the model, surfaced here for the human clients (the
-            // TUI process panel, §10.5). Ephemeral, like the rest of `/state`.
+            // TUI process panel, docs/tui.md). Ephemeral, like the rest of `/state`.
             "processes": self.bg_snapshot(),
             "usage": usage,
         })
@@ -572,7 +572,7 @@ struct DecisionBody {
 struct NotifyBody {
     source: String,
     body: String,
-    /// Logical channel — a later notify on the same slot supersedes this one (§6).
+    /// Logical channel — a later notify on the same slot supersedes this one (docs/inbox.md).
     #[serde(default)]
     slot: Option<String>,
     /// Supersede a specific pending notification by its queue-local id.
@@ -586,7 +586,7 @@ fn shared_of(conn: &Conn) -> Option<Arc<Shared>> {
     conn.shared_state::<Arc<Shared>>().map(Arc::clone)
 }
 
-/// The HTTP surface — a `trillium-router` over the verb set (DESIGN §10). Each
+/// The HTTP surface — a `trillium-router` over the verb set (docs/control-channel.md). Each
 /// handler reads `Shared` from the server-global state; JSON in, JSON out. The
 /// router gives method-aware dispatch (and a clean `:call_id` capture) in place
 /// of the earlier hand-rolled `(method, path)` match.
@@ -648,7 +648,7 @@ fn router() -> Router {
             shared.interrupt();
             conn.with_status(200).with_body(r#"{"status":"interrupted"}"#)
         })
-        // Enqueue an ambient notification into the inbox (DESIGN §6). 202 — it waits
+        // Enqueue an ambient notification into the inbox (docs/inbox.md). 202 — it waits
         // for the next triage gate (Slice C); a client watches /state for the inbox.
         .post("/notify", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
@@ -665,7 +665,7 @@ fn router() -> Router {
                     .with_body(format!(r#"{{"error":"bad /notify body: {e}"}}"#)),
             }
         })
-        // Dismiss a pending notification out-of-band by its queue-local id (DESIGN §6).
+        // Dismiss a pending notification out-of-band by its queue-local id (docs/inbox.md).
         .post("/notifications/:id/dismiss", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return conn.with_status(500).with_body(MISSING_STATE);
@@ -695,7 +695,7 @@ fn router() -> Router {
             let since = parse_since(conn.querystring());
             conn.with_status(200).with_body(shared.log_json(since))
         })
-        // Live tail of the append-only log (DESIGN §1 — the log *is* the event
+        // Live tail of the append-only log (docs/README.md — the log *is* the event
         // store). `?since=<seq>` replays from there then follows; default 0 streams
         // the whole session and then live. Each event carries `id: <seq>`, so a
         // reconnecting client resumes with `?since=<last_seq + 1>` — the explicit
@@ -707,7 +707,7 @@ fn router() -> Router {
             let since = parse_since(conn.querystring()).unwrap_or(0);
             conn.with_sse_stream(tail_events(shared, since))
         })
-        // Live tail of *ephemeral* output deltas (DESIGN §10): assistant prose and
+        // Live tail of *ephemeral* output deltas (docs/README.md): assistant prose and
         // tool output as they're produced, before the turn commits. No `since`
         // cursor and no replay — these carry no `seq` and aren't durable; a client
         // that wants the authoritative record tails `/events`. A late subscriber
@@ -763,7 +763,7 @@ fn log_event(entry: &LogEntry) -> LogEvent {
 }
 
 /// A per-connection stream that emits every log entry from `since` onward and
-/// then follows new appends live (DESIGN §10 slice 2b). This is the fanout
+/// then follows new appends live (docs/control-channel.md). This is the fanout
 /// `trillium-sse` deliberately doesn't provide — and tailing the durable log
 /// (rather than a broadcast channel) means a slow client never drops events: the
 /// log *is* the buffer, and each connection reads at its own pace.
@@ -835,7 +835,7 @@ fn delta_event(delta: &StreamDelta) -> DeltaEvent {
     }
 }
 
-/// A per-connection stream of ephemeral output deltas (DESIGN §10). Subscribes to
+/// A per-connection stream of ephemeral output deltas (docs/README.md). Subscribes to
 /// the broadcast and forwards each delta as an SSE event. A consumer that lags past
 /// the ring drops the oldest deltas (`Lagged`) and continues — acceptable precisely
 /// because the durable log (`/events`) is the authoritative backstop, so the stream
@@ -857,7 +857,7 @@ fn stream_deltas(
     }))
 }
 
-/// The detached drain task for one backgrounded process (DESIGN §6): feed every
+/// The detached drain task for one backgrounded process (docs/supervisor.md): feed every
 /// output chunk into the registry's capture buffer until the child exits (EOF —
 /// reached naturally, or because a kill closed the pipes), then mark it exited and
 /// fire its exit notification into the inbox, where the next triage gate adjudicates
@@ -889,7 +889,7 @@ async fn drain_background(
 
 const MISSING_STATE: &str = r#"{"error":"missing shared state"}"#;
 
-/// The cache keepalive (DESIGN §3): a daemon-side timer that fires a
+/// The cache keepalive (docs/substrate.md): a daemon-side timer that fires a
 /// `max_tokens: 0` ping when the canonical prefix nears its 5-minute cache TTL
 /// during idle, refreshing it so the next real turn resumes hot instead of cold.
 /// Pure transport — it reads the prefix and records the usage; the log is never
@@ -898,7 +898,7 @@ const MISSING_STATE: &str = r#"{"error":"missing shared state"}"#;
 /// Two clocks ([`Shared::keepalive_clocks`]): ping when the cache-touch clock
 /// nears the TTL, but stop once the *real-turn* clock passes `CAP` — past that the
 /// human has been gone long enough that pinging forever costs more than one cold
-/// read on resume (the §3 crossover). 5m TTL only: a warm cache can't be entered
+/// read on resume (the crossover, docs/substrate.md). 5m TTL only: a warm cache can't be entered
 /// at 1h (verified — TTL is write-time), so 1h is a future cold-write knob, not a
 /// keepalive concern.
 async fn keepalive_loop(client: Arc<Client>, shared: Arc<Shared>, tools: Vec<Value>) {
@@ -943,7 +943,7 @@ fn parse_since(query: &str) -> Option<u64> {
 /// Run the daemon: bind the control socket, spawn the HTTP server, and drive the
 /// agent loop with a [`RemoteFrontend`]. The loop blocks until a `POST /turn`
 /// arrives, so an idle daemon simply waits — retiring argv-seeding and the
-/// "backgrounded run can't get its opening prompt" problem (DESIGN §10).
+/// "backgrounded run can't get its opening prompt" problem (docs/README.md).
 pub async fn serve<D: Distiller>(
     client: Client,
     toolbox: Toolbox,
@@ -953,13 +953,13 @@ pub async fn serve<D: Distiller>(
 ) -> Result<(), Error> {
     let (shared, turns) = Shared::new(log);
     // Share the client between the loop and the keepalive task. `tools` is computed
-    // once here for the ping; `agent::run` recomputes the same (byte-stable, §3)
+    // once here for the ping; `agent::run` recomputes the same (byte-stable, docs/substrate.md)
     // definitions internally, so both send an identical prefix.
     let client = Arc::new(client);
     // The exact tools[] a real turn sends — world tools + the harness tools
-    // (`consolidate`, the §6 supervisor/inbox tools). Built from the one source
+    // (`consolidate`, the supervisor/inbox tools, docs/supervisor.md, docs/inbox.md). Built from the one source
     // (`agent::tool_definitions`) so the keepalive ping warms the *same* cache prefix
-    // a real turn reads; any drift here silently breaks idle cache-warming (DESIGN §3).
+    // a real turn reads; any drift here silently breaks idle cache-warming (docs/substrate.md).
     let tools = agent::tool_definitions(&toolbox);
     let mut frontend = RemoteFrontend {
         shared: Arc::clone(&shared),
@@ -969,7 +969,7 @@ pub async fn serve<D: Distiller>(
     // `with_shared_state` carries the Arc into every conn's TypeSet; `listeners()`
     // upgrades to the multi-listener builder (carrying that state over) so we can
     // `bind_uds`. The same builder's `bind_tcp`/`bind_env` is the deferred-TCP
-    // seam (DESIGN §8) — a config switch, not an abstraction to build.
+    // seam (docs/transport.md) — a config switch, not an abstraction to build.
     let server = trillium_tokio::config()
         .with_shared_state(Arc::clone(&shared))
         .listeners()
@@ -978,7 +978,7 @@ pub async fn serve<D: Distiller>(
         .spawn(router());
     eprintln!("control socket: {}", socket.display());
 
-    // The cache keepalive runs alongside the loop (DESIGN §3) — a transport-side
+    // The cache keepalive runs alongside the loop (docs/substrate.md) — a transport-side
     // timer that never touches the log, so it composes with the loop without
     // sharing anything but the read-only client and the telemetry clocks.
     tokio::spawn(keepalive_loop(
@@ -1007,7 +1007,7 @@ pub async fn serve<D: Distiller>(
         }
     };
     // Reap any background children before exiting so a killed daemon doesn't orphan
-    // a process group (DESIGN §6 ownership).
+    // a process group (docs/supervisor.md, ownership).
     teardown.kill_all_bg();
     outcome
 }
@@ -1025,7 +1025,7 @@ mod tests {
     }
 
     /// `GET /state` reports cache telemetry: the latest `usage`, running totals,
-    /// and a seconds-since stamp. Drives the §10 gate signature through it —
+    /// and a seconds-since stamp. Drives the cache gate signature through it (docs/README.md) —
     /// a cold first request (all creation) then a hot one (reads climb, creation
     /// collapses) — and asserts the surface reflects both. Transport-only: the
     /// log is untouched, so this never perturbs projection or byte-stability.
@@ -1047,7 +1047,7 @@ mod tests {
             cache_creation_input_tokens: 9407,
             cache_read_input_tokens: 0,
         });
-        // Now hot: reads climb, creation collapses (the §10 gate signature).
+        // Now hot: reads climb, creation collapses (the cache gate signature, docs/README.md).
         shared.record_request(Usage {
             input_tokens: 6,
             output_tokens: 12,
@@ -1066,11 +1066,11 @@ mod tests {
         );
         assert_eq!(v["usage"]["cumulative"]["cache_read_input_tokens"], 9407);
         assert_eq!(v["usage"]["cumulative"]["output_tokens"], 22);
-        // A wall-clock stamp now exists — the eviction-prediction signal (§3).
+        // A wall-clock stamp now exists — the eviction-prediction signal (docs/substrate.md).
         assert!(v["usage"]["seconds_since_last_request"].is_u64());
     }
 
-    /// The keepalive's load-bearing invariant (DESIGN §3): a ping advances the
+    /// The keepalive's load-bearing invariant (docs/substrate.md): a ping advances the
     /// cache-touch clock (it really did refresh the TTL) but must NOT reset the
     /// real-turn clock — that clock gates the give-up cap, and a ping resetting its
     /// own deadline would pin the cache forever. So after a real turn then a ping,
@@ -1233,7 +1233,7 @@ mod tests {
         let _ = std::fs::remove_file(&log_path);
     }
 
-    /// The inbox supersedes by slot (archive-and-replace, never edit — §6/§3) and
+    /// The inbox supersedes by slot (archive-and-replace, never edit — docs/inbox.md, docs/substrate.md) and
     /// dismisses by id; a superseded or dismissed entry is gone from the pending set.
     #[test]
     fn inbox_supersedes_by_slot_and_dismisses() {
@@ -1257,7 +1257,7 @@ mod tests {
         assert_eq!(pending[0].body, "finished");
     }
 
-    /// A backgrounded command runs end-to-end through the supervisor (DESIGN §6): it
+    /// A backgrounded command runs end-to-end through the supervisor (docs/supervisor.md): it
     /// spawns, its output drains into the registry, and on exit it fires an `Ambient`
     /// exit notification into the inbox — status + final tail — where a triage gate
     /// would adjudicate it. Exercises the real spawn/drain/finish/notify path with no
@@ -1294,7 +1294,7 @@ mod tests {
         shared.kill_all_bg(); // no-op (nothing running) — must not panic.
     }
 
-    /// `GET /state` surfaces the live background processes (DESIGN §6) — the data the
+    /// `GET /state` surfaces the live background processes (docs/supervisor.md) — the data the
     /// TUI process panel polls. A running child appears with its handle/command;
     /// `bg_snapshot`/`state_json` read the registry synchronously after spawn.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1310,7 +1310,7 @@ mod tests {
         shared.kill_all_bg();
     }
 
-    /// `inbox_wake` (DESIGN §6 — the idle wake signal) resolves immediately when a
+    /// `inbox_wake` (docs/inbox.md — the idle wake signal) resolves immediately when a
     /// notification is already pending, and otherwise unblocks when one arrives. Drained
     /// (shown) notifications don't re-trigger it, so a deferred item can't spin the loop.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1341,7 +1341,7 @@ mod tests {
             .expect("woke on a freshly-arrived notification");
     }
 
-    /// The directed Slice-2 reads/acts (DESIGN §6): `kill_bg` finds a running child
+    /// The directed Slice-2 reads/acts (docs/supervisor.md, docs/inbox.md): `kill_bg` finds a running child
     /// (and rejects unknown handles), and `inbox_summary` lists pending notifications.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn kill_bg_and_inbox_summary() {

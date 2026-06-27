@@ -1,0 +1,162 @@
+# Background processes — the supervisor
+
+## The poll-loop antipattern and the fix
+
+The poll-loop antipattern ("check, spin, check") emerges when the tool vocabulary
+only offers "check," forcing the model to be its own scheduler. The fix is
+**wake-on-notification**: the model never blocks waiting for a process. It ends its
+turn, goes idle, and is woken when something worth its attention happens — an exit,
+a matched pattern.
+
+This is strictly better than a blocking `wait(until=…)` call. A blocked wait makes
+the agent inert: it cannot react to a *different* process failing while it waits,
+and it holds an open turn for nothing. "Wait for exit" is simply the idle agent
+being woken by the exit notification (the idle-triggered triage gate, below). "Wait
+for a pattern" is a future non-blocking `watch(handle, pattern)` — the drain task
+matches output and fires a notification — which composes with wake-on-notification
+instead of fighting it. `watch(handle, pattern)` for pattern-waking is a deferred
+refinement tracked in the backlog.
+
+## Process-group ownership
+
+Every spawn is placed in a fresh process group (`process_group(0)` — the child pid
+equals its pgid). On teardown the daemon calls `killpg` with that pgid, taking down
+the command and any grandchildren it spawned. The `kill_group` helper in `bash.rs`
+is shared between the foreground abort path and the supervisor's kill/teardown path.
+The supervisor registry exposes `running_pgids()` — the set of all still-running
+pgids — for the teardown sweep.
+
+## Three-places decomposition
+
+A backgrounded command is not a single log record; it is a live entity that
+decomposes into three things landing in three places. The design principle:
+**specialize the ephemeral, reuse the durable**.
+
+**The spawn** — the `bash` tool result that says "backgrounded as bg#3" — is a
+normal `ToolResult` payload, already logged, already projected. No new type.
+
+**The running tail** — the last N lines of output plus timing — is a *live,
+re-sampled* view held in an ephemeral `Supervisor` registry inside `Shared` (a
+sibling to `Inbox` and `Metrics`). It is never written to the log. It is dropped on
+restart, at which point `killpg`-on-teardown reaps the children. The async
+spawn/drain orchestration — which needs `Arc<Shared>` and the `POST /notify` path
+— lives in `daemon.rs`; `supervisor.rs` is the pure substrate: the registry,
+the bounded per-process capture buffer, and the read projections over it.
+
+**The exit** — status, duration, and final tail — is a discrete immutable event.
+The supervisor posts it to `POST /notify` on slot `bg#<id>`, using the control
+socket just as any other client would. This folds into the existing `Ambient`
+[inbox](inbox.md) with no new `Payload` variant. Spawn = `ToolResult`, exit and
+pinned tail = `Ambient`, the live state = ephemeral registry.
+
+## Why the running tail is not a notification
+
+The [inbox](inbox.md) / notification model is built on immutable bodies: an
+`Ambient` body is frozen at first-show, and a "left" item re-emits verbatim.
+Supersession only touches the un-shown queue; refreshing an already-shown body is
+unbuilt by design (immutability is load-bearing for the projection invariants).
+
+A tail's whole value is that it *updates*. Forcing it through notifications would
+pile up one stale, frozen snapshot per process per gate — defeating the purpose.
+The escape is to not log the tail at all: render it live from the registry at each
+gate, in its own peek section, and materialize a durable record only when the model
+explicitly pins it.
+
+There is also a structural constraint: output arriving after the spawn's `tool_use`
+has already been answered has no `tool_use` to pair with, so it *cannot* be a
+`ToolResult`. Late output is structurally a live view or a notification — never a
+distilled result. The same argument applies to exit events, which is why exit routes
+through the Ambient inbox rather than a new payload type.
+
+## One registry, two projections
+
+The `Supervisor` registry is the substrate; it is read two ways — ambient awareness
+and directed query — mirroring the [inbox](inbox.md)'s own ephemeral-queue vs.
+logged-Ambient split.
+
+**Ambient** — every peek auto-shows a `background` section for each running,
+un-muted process: `[bg#<id>]` with a fresh tail, running time, and idle time
+(`running 4m12s · idle 8s`; "idle" = `now − last_chunk_at`, stamped in the drain
+loop). This is awareness that arrives *while the model is doing something else*.
+
+**Directed** — `list_processes` and `read_process(handle, cursor)` are normal read
+tools whose results ride the normal gate: the model reaching for a process on
+purpose. The directed `list_processes` view includes muted processes (annotated),
+because the model asked explicitly — the ambient auto-show hides muted processes.
+This retires the `bash(echo "")` antipattern (issuing a no-op to trip a gate just
+to see notifications). The missing piece was a *direct projection*, not another poll
+verb.
+
+`BgView` — the snapshot struct built under the registry lock — is serializable so
+the same view serves both the in-process peek renderer and the TUI process panel
+over `GET /state`: one view, two consumers.
+
+## Triage of a live process
+
+The forced triage gate tool carries a `background` verdict keyed by handle (distinct
+from the `inbox` verdict keyed by arrival seq — live handles and frozen arrival seqs
+are different identity models). Three dispositions:
+
+**pin** — snapshot the *current* tail, log it as one `Ambient`, and pin its seq in
+the same `Triage`. Projects as `⟢ bg#3 (cargo watch): <tail>` at the `Triage`
+position. This is cache-safe tail-ward growth. Pinning again later appends a newer
+snapshot — building the honest `running…→finished…` timeline. `pin_snapshot` in
+`supervisor.rs` produces the `(source, body)` pair ready to wrap in a
+`Notification`.
+
+**mute** — stop surfacing the running tail in the ambient peek; the process keeps
+running, and its *exit still notifies*. Killing is separate and explicit
+(`kill_process(handle)`), never conflated with "stop showing me this."
+
+**leave** (the default when unlisted) — re-show a fresh tail at the next gate.
+
+## Idle-triggered triage
+
+A gate fires on a tool result, so without an explicit mechanism an idle agent cannot
+perceive an arriving event without manufacturing a spurious tool call. The fix: when
+the loop is parked, an arriving event wakes a **triage gate that rides no tool
+result** — the inbox/background section plus a triage-only forced tool (`keep`
+absent; nothing to retain), appended as a plain user message. It is a throwaway
+fork: it logs `Ambient` + `Triage` (audit grows) but **projects to nothing unless
+it pins** — the prefix stays byte-identical and cache-hot.
+
+**Escalation contract: a main-trajectory turn runs if and only if the triage changed
+the projection — i.e., pinned something.** A clean exit that gets dismissed or left
+produces no wire change; the loop returns to idle. A failed exit that gets pinned
+lands the `⟢ …` block on the wire; a real turn runs so the model acts. A pin with
+no actionable work costs one cheap ack turn; the model avoids it by leaving
+"noted, no action" items.
+
+Throttles prevent idle-triage from thrashing: **debounce** coalesces events in a
+small window into a single triage; **urgency** lets low-urgency events wait for the
+next natural gate rather than waking a fork. The design earns this: because tails
+are *not* notifications, idle-triage fires only on discrete lifecycle events,
+operator nudges, and inter-agent messages — low-frequency by construction. Had tails
+been notifications, every refresh would wake a fork.
+
+## Tool surface
+
+`bash` gains `background: true` as an optional boolean input. The command is the
+same, the approval gate is the same; the loop registers the child in the `Supervisor`
+instead of awaiting it and returns the `bg#<id>` handle immediately.
+
+The supervisor verbs: `list_processes`, `read_process(handle, cursor)`,
+`kill_process(handle)`, and `check_inbox` (surface pending inbox notifications on
+demand, so the model need not wait for them to ride its next action). Tool
+definitions are constant `json!` values with sorted keys so the `tools[]` array
+stays byte-stable across turns (see [transport](transport.md) for why this matters
+for prefix caching).
+
+## Buffering
+
+Each process has one bounded append buffer (`BUFFER_CAP` bytes). When the cap is
+exceeded, the oldest bytes are dropped from the front and the count of dropped bytes
+is recorded in `dropped`. No truncation is ever silent: the tail text and
+`read_since` results both surface a breadcrumb — "… [N earlier bytes dropped at the
+cap]" — when content has been lost.
+
+The ring tail and the `read_since` cursor are two views of the same buffer. The
+cursor is a byte offset into the *logical* stream (total bytes ever received,
+including dropped). `read_since` clamps reads to what is still retained, reports any
+bytes lost before the cursor, and returns a new cursor so the model pays only for
+the delta on subsequent reads.

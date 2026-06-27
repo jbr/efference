@@ -1,0 +1,138 @@
+# The redaction fork — the universal triage gate
+
+Every tool result enters the canonical lineage through a fork: a throwaway branch
+that shares a cached prefix with canonical but whose raw content and extraction
+prompt are never appended to it.
+
+```
+[cached prefix through tool_use]  ──┬──►  + [full raw result] + [retain prompt]   (throwaway: 1 turn, tail uncached)
+                                    └──►  + [distilled result]                     (canonical: appended, cached)
+```
+
+The fork's prefix hits cache; only its tail — raw output plus the extraction
+instruction — is fresh. The canonical prefix grows monotonically and is never
+invalidated. What would otherwise be a mutation problem becomes an append problem.
+
+## Universal, with no small-result exemption
+
+The fork is not an optimisation applied selectively above a threshold. Every tool
+result is peeked once, and only the distillate is appended. Peeking a small result
+is cheap, and uniformity removes a special case. The payoff is **window economy**
+and cache-chain longevity: the canonical context stays maximally lean. The cost is
+one extra round-trip per result — latency, not tokens — explicitly accepted. The
+north star: **a joy for the agent to use** — it never has to fear reading a whole
+file, because only the relevant parts come back.
+
+## The `retain` verdict
+
+The fork forces a single structured tool call — no freeform parsing. The verdict
+is one of three forms:
+
+| form | meaning |
+| --- | --- |
+| `retain(all)` | every line survives |
+| `retain(lines=[40-52, 310-318])` | these 1-based inclusive ranges survive |
+| `retain(none, note="…")` | nothing survives; the one-line note is the breadcrumb |
+
+`retain(none)` is not silent: the note stays on the canonical wire so the agent
+doesn't re-run what it just disowned — inline dead-end shedding at the source.
+
+On any failure (the peek errors, or calls something other than `retain`), the
+gate falls back to keep-all. Data is never lost.
+
+## Line numbers are load-bearing
+
+All tool output is line-numbered before it is shown in the fork peek. This is not
+cosmetic: line numbers are the coordinate system `retain(lines=…)` addresses, and
+the distillate preserves original numbers across elisions so any kept line maps
+back to the raw. The raw in the log stays pristine; numbering is a render transform
+applied only inside the throwaway branch.
+
+## Two renderings: the fork view and the canonical wire
+
+Line-per-line numbering inflates the canonical wire — a keep-all verdict on a
+small result would be larger than the raw it replaces. The two renderings are
+therefore split:
+
+- **`number_lines`** (`cat -n` per line) — shown only in the throwaway fork peek;
+  the coordinate system `retain(lines=…)` addresses. Implemented in `src/distill.rs`.
+
+- **`render_hunks`** (the canonical wire form) — a `@@ lines a-b @@` header per
+  contiguous kept span, then those lines verbatim. One header per range (not per
+  line); gaps between hunks are implied by the jump in headers, as in a unified
+  diff. A keep-all result is one header plus verbatim body, approximately equal to
+  raw. `render_hunks` runs at **projection time** over the stored verdict
+  (`WireState::Distilled { keep, note }`), not at append — the wire form is
+  re-derived from `raw` plus the verdict each turn, so the kept bytes are never
+  stored twice. Implemented in `src/project.rs`.
+
+## The verdict is the stored form
+
+`WireState::Distilled` carries the **verdict** (the `keep` ranges and optional
+`note`), not the rendered bytes. Two payoffs from one move: the kept bytes are
+never persisted twice, and the structured decision is itself the record.
+
+The fork's bulky transcript — the full line-numbered output plus the `retain`
+instruction — stays throwaway and never enters canonical. That is what protects
+caching. But the fork's *decision* is logged as a `Triage` entry (in `src/log.rs`):
+
+| field | meaning |
+| --- | --- |
+| `for_result` | `seq` of the `ToolResult` this verdict distilled (`None` for a standalone idle triage) |
+| `origin` | `Model` (a real `retain` call) or `Fallback` (keep-all; the peek failed or a model-free stub ran) |
+| `raw_keep` | the model's exact `keep` string, pre-parse — the audit breadcrumb |
+| `inbox` | per-notification dispositions chosen in this peek, by arrival `seq` |
+
+`origin` carries the one signal the rendered artifact erases: a deliberate
+keep-all and a failed peek render identically, so only `Triage.origin` distinguishes
+them. `project` reads `Triage` only as audit (it emits pinned-notification blocks
+from `inbox`) and skips it otherwise. Every fork decision is reconstructable from
+the log — including ones only ever visible inside the throwaway branch — for
+observability and distiller-quality work, with none of the fork's context touching
+the wire or the cache.
+
+## The fork manages perception, not the world
+
+Redaction is one instance of a more general role: the fork is where the agent
+decides **what it will perceive next** — which lines of a result survive, which
+notifications to pin or dismiss (see [the inbox doc](inbox.md)), which streams to
+subscribe to or tail. All of it is a reversible projection choice over the agent's
+own context; none of it acts irreversibly on the world, so none of it needs the
+approval gate, and all of it is safe to settle off-main.
+
+The fork's invariant holds throughout: prefix cached, tail discarded, except an
+explicit structured result appended to canonical (the `Distilled` verdict, a pinned
+`Ambient`). The line that bounds this: the moment the fork would do something
+irreversible to the world (`kill -9` a process), that is a main-branch, gated
+action, not perception management.
+
+## `reread` — agent-initiated re-peek, tail-additive
+
+A `reread(seq, focus?)` tool re-runs the existing `ForkPeek` on the raw still in
+the log and **appends** the new, fuller distillate at the tail — pure append,
+prefix untouched, cache-clean. The same call serves "more of X" and "all of it
+now" (`retain(all)`). The content reappearing at the tail is correct: the agent
+re-read it, mirroring re-opening a file.
+
+The naive alternative — flipping a committed `WireState` back to `Raw` or a fuller
+distillate — mutates a cached prefix entry and invalidates everything downstream.
+That is the cardinal sin (see [the substrate doc](substrate.md) on cache-prefix
+immutability), so it is rejected. `reread` reuses the universal fork verbatim; only
+the trigger differs (agent-initiated vs. at-append).
+
+Building `reread` is gated on evidence of over-redaction causing a wrong or
+incomplete answer; tracked in the backlog.
+
+## Block addressing — the visible `seq` handle
+
+Each tool result carries its `seq` as a visible handle on the wire: `tool_result`
+content is prefixed `[<seq>] …` (e.g. `[2] file.txt`), a render-time tag requiring
+no schema change. This is what makes "reread 14" / "branch from 14" / "compare to
+block 14" describable across the model wire, the TUI, and the control plane.
+
+The **stable `seq`** is used, not a positional wire-index. A positional count
+renumbers on elision or consolidation, which would bust the cache. `seq` is
+immutable and survives compaction; it is a property of the substrate, and `/log`
+plus `/events` already serialize it. A `BlockId` alias can later hide the
+representation (`seq`, session-prefixed `seq`, short-sha) if needed. Tagging every
+entry uniformly (vs. only tool results) is tracked in the backlog.

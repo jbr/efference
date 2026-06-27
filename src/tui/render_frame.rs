@@ -52,10 +52,10 @@ impl<'a> InteractiveState<'a> {
 
         // Bottom chrome, top to bottom: [process panel?] / composer / status. The
         // composer grows with its content (1 row, up to a cap). The rightmost column
-        // of the transcript is the scrollbar. The process panel (DESIGN §6) is one row
+        // of the transcript is the scrollbar. The process panel (docs/supervisor.md) is one row
         // per running process, capped, hidden when none run — an ambient strip between
         // the transcript and the composer. The approval gate is *not* bottom chrome:
-        // it renders inline in the transcript at the pending call (DESIGN §10.5).
+        // it renders inline in the transcript at the pending call (docs/tui.md).
         let input_height = (self.composer.line_count(full.width) as u16).clamp(1, 6);
         let proc_height: u16 = (self.processes.len() as u16).min(PROC_PANEL_MAX);
         self.viewport.input_height = input_height;
@@ -110,7 +110,7 @@ impl<'a> InteractiveState<'a> {
 
         self.render_document(main_area, frame.buffer_mut());
 
-        // Live background-process panel, between the transcript and the gate (§6).
+        // Live background-process panel, between the transcript and the gate (docs/supervisor.md).
         if proc_height > 0 {
             self.render_processes_panel(frame.buffer_mut(), proc_area);
         }
@@ -151,7 +151,7 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// Render the live background-process panel (DESIGN §6): one row per running
+    /// Render the live background-process panel (docs/supervisor.md): one row per running
     /// process — `▶ bg#3  cargo watch · 4m12s · idle 8s │ <last output line>` — the
     /// handle/header in the accent style, the last tail line muted. Fed by the
     /// `/state` poll; capped at [`PROC_PANEL_MAX`] rows (the rest are still in the

@@ -1,19 +1,19 @@
-//! The tool seam (DESIGN §5) — how the agent loop discovers and dispatches tools.
+//! The tool seam (docs/tools.md) — how the agent loop discovers and dispatches tools.
 //!
 //! A **backend** exposes one or more tools. `Bash` is one tool; an in-process MCP
-//! server (DESIGN §5 "MCP integration") exposes many behind one shared state. So a
+//! server (docs/tools.md "MCP integration") exposes many behind one shared state. So a
 //! backend advertises a *set* of wire definitions and answers `handles` for
 //! routing.
 //!
 //! Modeled as an enum ([`Provider`]) aggregated by a [`Toolbox`], rather than a
 //! boxed `async` trait object: dispatch stays static (no `async-trait` crate, no
 //! boxing), it matches the enum-centric style of the rest of the codebase, and a
-//! new backend is a single variant. The §5 "in-process `Tool` trait" is realized
+//! new backend is a single variant. The docs/tools.md "in-process `Tool` trait" is realized
 //! as this enum boundary — the loop knows only `Toolbox`, never a concrete tool.
 //!
 //! The mounted set is fixed for the session (chosen once in `main`), so the
 //! request's `tools[]` is byte-stable and never perturbs the tools cache tier
-//! (DESIGN §3).
+//! (docs/substrate.md).
 
 use std::cell::RefCell;
 use std::future::Future;
@@ -62,7 +62,7 @@ impl Provider {
 
     /// Run a call this backend handles. `abort` is the loop's interrupt future
     /// (SIGINT → kill); backends that can't be interrupted ignore it. `on_output`
-    /// is the live-stream sink (DESIGN §10) — only the long-running, interruptible
+    /// is the live-stream sink (docs/README.md) — only the long-running, interruptible
     /// bash tool streams; the MCP tools are synchronous and resolve whole.
     async fn run(
         &self,
@@ -80,7 +80,7 @@ impl Provider {
     }
 }
 
-/// An in-process MCP server (DESIGN §5) adapted to the tool seam, generic over the
+/// An in-process MCP server (docs/tools.md) adapted to the tool seam, generic over the
 /// server's session `State` and its generated `mcplease` `ToolEnum` dispatcher.
 /// Holds the state behind a `RefCell` — the loop is single-threaded and
 /// `mcplease`'s `execute` is synchronous (`&mut state`), so the borrow never spans
@@ -100,9 +100,9 @@ where
 {
     /// Adapt an already-constructed server state, advertising every tool the
     /// generated enum exposes **except** those named in `hidden` — the curation
-    /// point for which of a server's tools reach the wire (DESIGN §5 taxonomy).
+    /// point for which of a server's tools reach the wire (docs/tools.md taxonomy).
     /// The tool schemas are built once here (pure; `serde_json::to_value` sorts
-    /// keys, so the defs are byte-stable for the session — §3) and reused as the
+    /// keys, so the defs are byte-stable for the session — docs/substrate.md) and reused as the
     /// wire `tools[]`.
     fn from_state(state: State, hidden: &[&str]) -> Self {
         let schemas: Vec<ToolSchema> = <ToolEnum as AsToolsList>::tools_list()
@@ -148,7 +148,7 @@ where
 /// Translate an mcplease [`ToolSchema`] (MCP `inputSchema`, camelCase) into the
 /// Anthropic `tools[]` shape (`input_schema`, snake_case). `serde_json::to_value`
 /// normalizes object keys to sorted order, so the result is byte-deterministic —
-/// safe for the tools cache tier (DESIGN §3).
+/// safe for the tools cache tier (docs/substrate.md).
 fn anthropic_def(schema: &ToolSchema) -> Value {
     let mut def = serde_json::Map::new();
     def.insert("name".to_string(), Value::String(schema.name.clone()));
@@ -183,7 +183,7 @@ impl Toolbox {
     /// edits) — each with its session cwd seeded to `cwd` and an in-memory session
     /// store (no shared `~/.ai-tools` writes). The agent gets real file +
     /// structured-edit tools that lean on the fork instead of piping to
-    /// `head`/`grep` (DESIGN §4-realized, §5).
+    /// `head`/`grep` (docs/redaction-fork.md, docs/tools.md).
     pub fn bash_and_mcps(cwd: PathBuf) -> anyhow::Result<Self> {
         Ok(Self::new(vec![
             Provider::Bash(Bash),
@@ -191,7 +191,7 @@ impl Toolbox {
             // output genuinely beats the shell. `set_working_directory` is managed
             // by efference (the cwd is seeded). `move`/`delete` are dropped: they
             // earn nothing over bash's `mv`/`rm` — even Haiku reaches for those —
-            // so they aren't worth the tool-doc tokens (DESIGN §5 taxonomy).
+            // so they aren't worth the tool-doc tokens (docs/tools.md taxonomy).
             // `list` survives because it is gitignore-aware (skips `target/`,
             // `.git/`), which `ls`/`find` are not.
             Provider::Fs(Box::new(McpServer::from_state(
@@ -364,7 +364,7 @@ mod tests {
         assert_eq!(names, unique, "duplicate tool name on the wire");
 
         // `set_working_directory` collides; `move`/`delete` are curated out (bash
-        // does them as well — DESIGN §5). The fork-friendly fs tools survive.
+        // does them as well — docs/tools.md). The fork-friendly fs tools survive.
         for hidden in ["set_working_directory", "move", "delete"] {
             assert!(!names.contains(&hidden), "should be filtered: {names:?}");
         }

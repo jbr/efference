@@ -1,10 +1,10 @@
 //! The binary — the control-channel daemon entry point.
 //!
 //! `efference serve` opens a JSONL session log, binds the control socket, and runs
-//! the agent loop with the HTTP-fed [`RemoteFrontend`] (DESIGN §10 control-channel):
+//! the agent loop with the HTTP-fed [`RemoteFrontend`] (docs/README.md, docs/control-channel.md):
 //! the socket is the singular authoritative input source — the first user turn
 //! arrives via `POST /turn`, not argv. Runs against Haiku to keep the blast radius
-//! cheap; DESIGN §8 locks `claude-opus-4-8` as the real default.
+//! cheap; docs/transport.md locks `claude-opus-4-8` as the real default.
 //!
 //! [`RemoteFrontend`]: efference::daemon::RemoteFrontend
 
@@ -66,7 +66,7 @@ enum Command {
     },
     /// Interrupt a running tool (`POST /interrupt`) — kills its process group.
     Interrupt,
-    /// Post an ambient notification into the daemon's inbox (`POST /notify`, §6).
+    /// Post an ambient notification into the daemon's inbox (`POST /notify`, docs/inbox.md).
     /// It waits for the next triage gate; watch `state` for the pending inbox.
     Notify {
         /// Where it came from (e.g. "test-watch", "operator", "agent:reviewer").
@@ -81,7 +81,7 @@ enum Command {
         #[arg(long)]
         replaces: Option<u64>,
     },
-    /// Dismiss a pending notification by id (`POST /notifications/{id}/dismiss`, §6).
+    /// Dismiss a pending notification by id (`POST /notifications/{id}/dismiss`, docs/inbox.md).
     Dismiss {
         /// The notification id (from `notify`'s output or `state`).
         id: u64,
@@ -183,10 +183,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 /// Reconstruct and print the wire request for a recorded session JSONL — the
-/// deterministic projection the assistant sees (DESIGN §1–§3). No daemon, no
+/// deterministic projection the assistant sees (docs/README.md, docs/substrate.md). No daemon, no
 /// socket, no network: load the log, fold it to `messages`, place the trailing
 /// cache breakpoint, and rebuild the `system`/`tools` envelope exactly as a real
-/// turn would (`tool_choice: auto`, DESIGN §8). `system` and `tools[]` are not in
+/// turn would (`tool_choice: auto`, docs/transport.md). `system` and `tools[]` are not in
 /// the log; they're rebuilt from the current code + cwd, so the note on stderr
 /// warns when the session may have run in a different environment.
 async fn wire(path: PathBuf, format: WireFormat, model: &str) -> CliResult {
@@ -200,7 +200,7 @@ async fn wire(path: PathBuf, format: WireFormat, model: &str) -> CliResult {
     let system = efference::env::system_prompt();
     let cwd = std::env::current_dir()?;
     // The full tools[] a real turn sends — world tools + the harness tools
-    // (`consolidate`, the §6 supervisor/inbox tools) — so the dev view matches.
+    // (`consolidate`, the docs/supervisor.md and docs/inbox.md tools) — so the dev view matches.
     let toolbox = Toolbox::bash_and_mcps(cwd)?;
     let tools = efference::agent::tool_definitions(&toolbox);
 
@@ -252,7 +252,7 @@ async fn approve(
     redirect: Option<String>,
 ) -> CliResult {
     let client = ControlClient::new(socket);
-    // Default to the one pending gate (the loop is sequential, DESIGN §8) so the
+    // Default to the one pending gate (the loop is sequential, docs/README.md) so the
     // common case is a bare `efference approve`.
     let call_id = match call_id {
         Some(id) => id,
@@ -328,11 +328,11 @@ fn pretty(body: &str) -> String {
         .unwrap_or_else(|| body.to_string())
 }
 
-/// The `attach` REPL — a spartan interactive client (DESIGN §10: authoritative-
+/// The `attach` REPL — a spartan interactive client (docs/README.md: authoritative-
 /// but-spartan, the full TUI is a later client). A background task renders the
 /// live event tail; the foreground reads stdin and, per line, either resolves the
 /// pending approval gate or sends a new turn. Both halves are just clients of the
-/// socket — no privileged path (DESIGN §8).
+/// socket — no privileged path (docs/control-channel.md).
 async fn attach(socket: PathBuf) -> CliResult {
     let client = ControlClient::new(socket);
 
@@ -359,7 +359,7 @@ async fn attach(socket: PathBuf) -> CliResult {
     while let Some(line) = lines.next_line().await? {
         let text = line.trim().to_string();
         // Check the gate per line: the loop is sequential, so there is at most one
-        // pending call (DESIGN §8), and stdin is dual-use — approval when a gate is
+        // pending call (docs/README.md), and stdin is dual-use — approval when a gate is
         // open (mirroring the old interactive frontend's Enter-approves policy),
         // otherwise a new turn.
         match pending_call_id(&client).await.ok() {
@@ -396,7 +396,7 @@ struct RenderState {
 }
 
 /// Render the durable event tail (`GET /events`) and the ephemeral delta stream
-/// (`GET /stream`) from a single task (DESIGN §10). Deltas physically precede the
+/// (`GET /stream`) from a single task (docs/README.md). Deltas physically precede the
 /// commit they belong to (the daemon publishes them during inference, then appends
 /// the entry), so the live fragments print first and the committed entry simply
 /// finalizes — without the duplicated block the two-task version produced.
@@ -518,8 +518,8 @@ fn render_event(kind: Option<&str>, data: &str, state: &mut RenderState) {
                 "result"
             };
             // The wire is `{"Distilled": {keep, note}}`, `"Raw"`, or `"Elided"`. A
-            // distilled result is re-rendered from raw + the stored verdict (DESIGN
-            // §4 — the bytes aren't stored); Raw/Elided show the raw content.
+            // distilled result is re-rendered from raw + the stored verdict
+            // (docs/redaction-fork.md — the bytes aren't stored); Raw/Elided show the raw content.
             let raw_content = result["raw"]["content"].as_str().unwrap_or("");
             let shown = if let Some(d) = result["wire"].get("Distilled") {
                 let keep: efference::log::Keep =
@@ -564,7 +564,7 @@ async fn serve(
 
     // Append the session environment block once, here at startup, and freeze it
     // into the system prompt. It must stay byte-stable for the whole session or it
-    // would invalidate the cached prefix every turn (DESIGN §3) — so it carries
+    // would invalidate the cached prefix every turn (docs/substrate.md) — so it carries
     // only session-stable facts (cwd, platform, project type), never volatile state
     // like git status. See `env::system_prompt`. The `wire` dev view reconstructs
     // the same string.
@@ -572,8 +572,8 @@ async fn serve(
 
     let client = Client::new(api_key, model, system);
 
-    // The model-driven fork (DESIGN §4): every tool result is peeked and the
-    // canonical wire keeps only what the model retains. `Toolbox` is the §5 tool
+    // The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
+    // canonical wire keeps only what the model retains. `Toolbox` is the docs/tools.md tool
     // seam; mount bash + the in-process MCP servers (fs-mcp + semantic-edit-mcp),
     // their session cwd seeded to where we're running.
     let cwd = std::env::current_dir()?;

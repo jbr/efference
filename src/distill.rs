@@ -1,27 +1,28 @@
 //! Distillation — what a raw tool result projects to on the canonical wire
-//! (DESIGN §4-realized, §10 Phase 1/2), and the inbox triage that rides the same
-//! fork peek (DESIGN §6).
+//! (docs/redaction-fork.md, docs/README.md), and the inbox triage that rides the
+//! same fork peek (docs/inbox.md).
 //!
 //! Every tool result is distilled at append; the durable wire never carries raw
 //! output, and a result's `wire` is fixed once and never mutated (so caching is
 //! safe by construction). The distiller's job is to produce a **verdict** — which
 //! lines survive (`keep`) plus a `note` — not rendered bytes: the wire form is
 //! re-rendered from `raw` + the verdict at projection time
-//! ([`crate::project::render_distilled`], DESIGN §4), so the kept bytes are never
-//! stored twice and the structured decision doubles as the audit record.
+//! ([`crate::project::render_distilled`], docs/redaction-fork.md), so the kept bytes
+//! are never stored twice and the structured decision doubles as the audit record.
 //!
-//! The same throwaway peek also triages the **inbox** (DESIGN §6): the pending
+//! The same throwaway peek also triages the **inbox** (docs/inbox.md): the pending
 //! ambient notifications are shown under the output, and the `retain` verdict's
 //! `inbox` field pins / dismisses them by `[seq]`. The dispositions ride back on the
 //! [`Distillation`] and land on the logged [`Triage`](crate::log::Triage). The
-//! distiller is the pluggable policy (§5) behind a trait:
+//! distiller is the pluggable policy (docs/tools.md) behind a trait:
 //!
 //! - [`HeadTail`] — a deterministic stub (first `head` + last `tail` lines).
-//! - [`ForkPeek`] — the §4 universal triage gate: fork a throwaway branch off the
-//!   cached prefix, show the model the line-numbered raw output + the inbox, and let
-//!   it call `retain` to choose what the canonical wire keeps and which notifications
-//!   to pin. One tool call per turn (§8). On any failure it keeps everything and
-//!   leaves the inbox untouched — never loses data.
+//! - [`ForkPeek`] — the universal triage gate (docs/redaction-fork.md): fork a
+//!   throwaway branch off the cached prefix, show the model the line-numbered raw
+//!   output + the inbox, and let it call `retain` to choose what the canonical wire
+//!   keeps and which notifications to pin. One tool call per turn (docs/README.md).
+//!   On any failure it keeps everything and leaves the inbox untouched — never loses
+//!   data.
 
 use std::collections::HashSet;
 
@@ -38,7 +39,7 @@ use crate::project::{
 
 const RETAIN: &str = "retain";
 
-/// The forced tool of the **standalone** idle-triage peek (DESIGN §6): no `keep`
+/// The forced tool of the **standalone** idle-triage peek (docs/supervisor.md): no `keep`
 /// (there's no tool output to retain), only inbox/background dispositions.
 const TRIAGE: &str = "triage";
 
@@ -68,7 +69,7 @@ record now, and `mute` the ones whose tail you no longer need to see (they keep 
 running and still notify you when they exit). Anything you don't list keeps streaming \
 its latest tail to you at the next decision point.";
 
-/// A live-process triage disposition (DESIGN §6) — distinct from the seq-keyed
+/// A live-process triage disposition (docs/supervisor.md) — distinct from the seq-keyed
 /// notification [`Disposition`] because a running process is addressed by its live
 /// `bg#<n>` handle, not a frozen arrival seq, and its "dismiss" is **mute** (stop
 /// surfacing the tail; the process keeps running), not clear.
@@ -82,32 +83,32 @@ pub enum BgVerdict {
     Mute,
 }
 
-/// The outcome of distilling one tool result (DESIGN §4): the wire form plus the
+/// The outcome of distilling one tool result (docs/redaction-fork.md): the wire form plus the
 /// audit pieces the loop stamps into a [`Triage`](crate::log::Triage) entry. `raw` is
 /// never mutated — it stays in the log.
 pub struct Distillation {
     /// The canonical wire form — a [`WireState::Distilled`] verdict (kept ranges +
-    /// note), re-rendered from `raw` at projection time (DESIGN §4).
+    /// note), re-rendered from `raw` at projection time (docs/redaction-fork.md).
     pub wire: WireState,
-    /// Whether the verdict is the model's or the keep-all fallback (DESIGN §4).
+    /// Whether the verdict is the model's or the keep-all fallback (docs/redaction-fork.md).
     pub origin: Origin,
     /// The model's exact `keep` string, pre-parse — empty for a model-free distiller.
     pub raw_keep: String,
-    /// Per-notification dispositions this peek chose, by arrival `seq` (DESIGN §6) —
+    /// Per-notification dispositions this peek chose, by arrival `seq` (docs/inbox.md) —
     /// filtered to notifications actually shown. Empty when nothing was pinned or
     /// dismissed (everything left for the next gate).
     pub inbox: Vec<(Seq, Disposition)>,
-    /// Live-process dispositions this peek chose, by `bg#<n>` handle (DESIGN §6) —
+    /// Live-process dispositions this peek chose, by `bg#<n>` handle (docs/supervisor.md) —
     /// filtered to processes actually shown. The loop materializes a `Pin` into a
     /// snapshot `Ambient` and applies a `Mute` to the supervisor.
     pub background: Vec<(String, BgVerdict)>,
     /// The fork request's [`Usage`], if a model round-trip happened: it reads the
     /// shared canonical prefix (sliding its cache TTL), so the loop folds it into the
-    /// §3 telemetry. `None` for a model-free distiller.
+    /// cache telemetry (docs/substrate.md). `None` for a model-free distiller.
     pub usage: Option<Usage>,
 }
 
-/// The verdict of a **standalone** idle-triage peek (DESIGN §6) — a gate that rides no
+/// The verdict of a **standalone** idle-triage peek (docs/supervisor.md) — a gate that rides no
 /// tool result, so it has no [`WireState`]; just the inbox/background dispositions (and
 /// the audit pieces the loop stamps into a [`Triage`](crate::log::Triage) with
 /// `for_result: None`).
@@ -119,7 +120,7 @@ pub struct InboxTriage {
 }
 
 /// Decide the wire form of a tool result and triage the inbox + live background
-/// processes (DESIGN §4, §6). `prefix` is the log through the assistant turn that
+/// processes (docs/redaction-fork.md, docs/inbox.md, docs/supervisor.md). `prefix` is the log through the assistant turn that
 /// made `call` (the fork's cached head); `inbox` is the pending notifications and
 /// `background` the running processes' fresh tails to show the model.
 #[allow(async_fn_in_trait)] // single-threaded loop; no Send bound needed.
@@ -135,7 +136,7 @@ pub trait Distiller {
     ) -> Distillation;
 
     /// Triage the inbox + background with **no tool result to ride** — the
-    /// idle-triggered standalone peek (DESIGN §6). The loop calls this when a
+    /// idle-triggered standalone peek (docs/supervisor.md). The loop calls this when a
     /// notification wakes an idle agent; it escalates to a real turn iff this pins
     /// something. Default: no-op (the stub distiller never escalates).
     async fn triage(
@@ -190,7 +191,7 @@ impl Distiller for HeadTail {
     }
 }
 
-/// The model peek — the §4 universal triage gate realized.
+/// The model peek — the universal triage gate (docs/redaction-fork.md) realized.
 pub struct ForkPeek;
 
 impl Distiller for ForkPeek {
@@ -219,14 +220,15 @@ impl Distiller for ForkPeek {
             peek_view.push_str(&format!("       … [{dropped} more lines truncated] …"));
         }
         // The pending inbox + live background processes, by their `[seq]` / `[bg#n]`
-        // handles (DESIGN §6) — the coordinates `retain.{inbox,background}` address.
-        // Re-rendered every gate off the cached prefix, so they never touch the
-        // canonical wire (§3). The same builder feeds the standalone idle triage.
+        // handles (docs/inbox.md, docs/supervisor.md) — the coordinates
+        // `retain.{inbox,background}` address. Re-rendered every gate off the cached
+        // prefix, so they never touch the canonical wire (docs/substrate.md). The same
+        // builder feeds the standalone idle triage.
         append_inbox_and_background(&mut peek_view, inbox, background);
 
         // Fork: cached prefix-through-tool_use ┃ + full result + retain prompt. The
         // prefix hits cache; only the raw + instruction tail is fresh, and it is
-        // discarded — the canonical lineage never sees raw (DESIGN §4).
+        // discarded — the canonical lineage never sees raw (docs/redaction-fork.md).
         let mut messages = project(prefix);
         place_trailing_cache_breakpoint(&mut messages);
         let mut instruction = RETAIN_INSTRUCTION.to_string();
@@ -289,7 +291,7 @@ impl Distiller for ForkPeek {
                     usage,
                 }
             }
-            // Graceful default (DESIGN §4/§8): keep everything the peek saw rather than
+            // Graceful default (docs/redaction-fork.md, docs/README.md): keep everything the peek saw rather than
             // drop data when the peek fails, and leave the inbox + background untouched
             // (they re-show next gate). `render_distilled` re-adds the truncation
             // breadcrumb from `raw`.
@@ -314,8 +316,9 @@ impl Distiller for ForkPeek {
         }
     }
 
-    /// The standalone idle-triage peek (DESIGN §6): fork off the cached prefix, show
-    /// the inbox + background with no tool result, and force the `triage` tool (no
+    /// The standalone idle-triage peek (docs/supervisor.md, docs/inbox.md): fork off
+    /// the cached prefix, show the inbox + background with no tool result, and force
+    /// the `triage` tool (no
     /// `keep`). The caller wakes this when an event arrives while idle and escalates to
     /// a real turn iff it pins something. On any failure it pins/dismisses nothing —
     /// the agent simply goes back to idle, losing no data.
@@ -440,9 +443,9 @@ fn retain_tool(shown: &[ShownNotification], background: &[BgView]) -> Value {
     })
 }
 
-/// The forced tool of the standalone idle-triage peek (DESIGN §6): inbox/background
-/// dispositions only, no `keep` (there's no tool output). At least one section is always
-/// present (the loop skips the peek when both are empty).
+/// The forced tool of the standalone idle-triage peek (docs/supervisor.md, docs/inbox.md):
+/// inbox/background dispositions only, no `keep` (there's no tool output). At least one
+/// section is always present (the loop skips the peek when both are empty).
 fn triage_tool(shown: &[ShownNotification], background: &[BgView]) -> Value {
     let mut properties = serde_json::Map::new();
     if !shown.is_empty() {
@@ -458,7 +461,7 @@ fn triage_tool(shown: &[ShownNotification], background: &[BgView]) -> Value {
     })
 }
 
-/// Render the inbox + background sections of a peek view (DESIGN §6) — shared by the
+/// Render the inbox + background sections of a peek view (docs/inbox.md, docs/supervisor.md) — shared by the
 /// tool-result-riding gate and the standalone idle triage. Each item by its `[seq]` /
 /// `[bg#n]` handle, with running-process tails indented.
 fn append_inbox_and_background(
@@ -562,7 +565,7 @@ fn collect_dispositions(
 
 /// Pull the `retain` verdict out of the peek's completion. `None` when the turn
 /// didn't call `retain` (or called something else) — the caller then falls back to
-/// keep-all (DESIGN §4/§8).
+/// keep-all (docs/redaction-fork.md, docs/README.md).
 fn parse_retain(completion: &Completion) -> Option<ParsedRetain> {
     let Payload::Assistant { calls, .. } = &completion.assistant else {
         return None;
@@ -620,9 +623,10 @@ fn parse_range(tok: &str) -> Option<(usize, usize)> {
 // ---- the peek view ----
 
 /// Render every line `cat -n`-style (1-based, 6-wide, tab-separated). This is the
-/// coordinate system the §4 peek addresses with `retain(lines=…)`, so it is shown
-/// ONLY in the throwaway fork — never on the canonical wire, which uses the leaner
-/// `@@`-hunks in [`render_distilled`](crate::project::render_distilled).
+/// coordinate system the fork-peek gate (docs/redaction-fork.md) addresses with
+/// `retain(lines=…)`, so it is shown ONLY in the throwaway fork — never on the
+/// canonical wire, which uses the leaner `@@`-hunks in
+/// [`render_distilled`](crate::project::render_distilled).
 fn number_lines(lines: &[&str]) -> String {
     lines
         .iter()

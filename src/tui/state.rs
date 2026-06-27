@@ -6,7 +6,7 @@
 //! are gone. Input arrives as [`TuiEvent`]s from the daemon's SSE bridge; the
 //! state holds the durable [`log`](InteractiveState::log) plus a [`LiveTail`] of
 //! in-flight streaming deltas, and re-projects both into a [`Document`] as events
-//! land (DESIGN §10 — the transcript is another `project(log)`).
+//! land (docs/README.md — the transcript is another `project(log)`).
 
 use ratatui::layout::{Position, Rect};
 use std::borrow::Cow;
@@ -104,7 +104,7 @@ pub(super) struct ViewportState {
     /// Height (rows) the composer occupied last frame, so mouse hit-testing and
     /// scroll clamping agree with `render_frame` on where the transcript ends.
     pub input_height: u16,
-    /// Retired: the approval gate moved inline into the transcript (DESIGN §10.5),
+    /// Retired: the approval gate moved inline into the transcript (docs/tui.md),
     /// so it no longer reserves a bottom-chrome row. Kept (always 0) so the mouse
     /// hit-testing math reads uniformly as `1 + input_height + gate_height`.
     pub gate_height: u16,
@@ -165,14 +165,14 @@ pub(super) struct InteractiveState<'a> {
     /// In-flight streaming deltas not yet committed to the log.
     pub live: LiveTail,
     /// Per-exchange view-state the human has toggled (expand/collapse, raw-vs-wire),
-    /// kept here so it survives re-projection (DESIGN §10.5): the transcript rebuilds
+    /// kept here so it survives re-projection (docs/tui.md): the transcript rebuilds
     /// on every streamed token, so a block's toggles can't live in the rebuilt
     /// `Document`. `project` reads it, keyed by `call_id`.
     pub view: projection::ViewState,
     /// Inbound events from the SSE bridge (durable entries + ephemeral deltas).
     pub events: Receiver<TuiEvent>,
 
-    /// The input composer (M2). The swappable input seam (DESIGN §10.5).
+    /// The input composer (M2). The swappable input seam (docs/tui.md).
     pub composer: Composer,
     /// Focus model: true = composing (keys go to the composer), false = command
     /// mode (M1's single-key transcript commands). Esc toggles; a printable key in
@@ -185,7 +185,7 @@ pub(super) struct InteractiveState<'a> {
     /// Sends an approval decision (`call_id`, decision) to the tokio side, which
     /// resolves it via `POST /approvals/:call_id`.
     pub approve_tx: UnboundedSender<(String, Approval)>,
-    /// The live background processes (DESIGN §6), polled from `GET /state`. Rendered
+    /// The live background processes (docs/supervisor.md), polled from `GET /state`. Rendered
     /// as a persistent panel above the composer; empty hides it. Ephemeral chrome —
     /// never part of the transcript document, so it never triggers a reproject.
     pub processes: Vec<BgProc>,
@@ -352,7 +352,7 @@ impl<'a> InteractiveState<'a> {
             }
             TuiEvent::Gate(gate) => {
                 // The gate renders inline in the transcript (the tail exchange shows
-                // `⏸ awaiting approval`, DESIGN §10.5), so a gate change must
+                // `⏸ awaiting approval`, docs/tui.md), so a gate change must
                 // reproject — unlike the other ephemeral chrome (processes/usage). The
                 // status bar still mirrors the affordance for the scrolled-away case.
                 self.ui.debug_message = match &gate {
@@ -369,7 +369,7 @@ impl<'a> InteractiveState<'a> {
             }
             TuiEvent::Processes(processes) => {
                 // Ephemeral chrome, not transcript content — repaint, no reproject
-                // (the running tail is never in the log, DESIGN §6).
+                // (the running tail is never in the log, docs/supervisor.md).
                 self.processes = processes;
                 self.dirty = true;
             }
@@ -432,7 +432,7 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// Flip the focused tool-result exchange between its wire (distilled) output and
-    /// its full raw output (DESIGN §10.5). Both are already client-side, so this is a
+    /// its full raw output (docs/tui.md). Both are already client-side, so this is a
     /// pure re-render — the content source changes, so unlike expand it can't mutate
     /// in place and must reproject. No-op unless a keyed (tool-result) block is
     /// focused; the focused block is the one `⏎` would expand.

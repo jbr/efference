@@ -1,8 +1,8 @@
-//! The `Frontend` — the user-facing interaction seam (DESIGN §10).
+//! The `Frontend` — the user-facing interaction seam (docs/README.md).
 //!
 //! The agent loop knows only this trait; whichever backend is mounted sits behind
 //! it. The control channel makes HTTP the *singular, authoritative* input source
-//! (DESIGN §10 control-channel), so the one mounted backend is
+//! (docs/control-channel.md), so the one mounted backend is
 //! [`crate::daemon::RemoteFrontend`], fed by the daemon's HTTP handlers. There is
 //! no privileged in-process path — the human (via the TUI), an automated driver,
 //! and a subagent are all clients of the same socket.
@@ -15,11 +15,11 @@
 //!   redirect rejects it and steers the model with the supplied text; abort
 //!   unwinds the turn.
 //! - [`Frontend::interrupted`] — resolves when the user interrupts a *running*
-//!   tool, so the loop can kill the process group (DESIGN §6).
+//!   tool, so the loop can kill the process group (docs/supervisor.md).
 
 use crate::log::ToolCall;
 
-/// The decision returned by [`Frontend::approve`] (DESIGN §10). A typed line is a
+/// The decision returned by [`Frontend::approve`] (docs/README.md). A typed line is a
 /// *redirect* — the call is rejected and the human's text is fed to the model as
 /// the next user turn, steering it without ending the turn. Every un-run
 /// `tool_use` still gets a paired `is_error` `tool_result` so the wire never
@@ -48,6 +48,6 @@ pub trait Frontend {
     async fn approve(&mut self, call: &ToolCall) -> Approval;
 
     /// Resolve when the user interrupts a *running* tool. The loop passes this as
-    /// the bash tool's `abort` future so the process group is killed (DESIGN §6).
+    /// the bash tool's `abort` future so the process group is killed (docs/supervisor.md).
     async fn interrupted(&mut self);
 }

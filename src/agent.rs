@@ -1,11 +1,11 @@
-//! The agent loop — the turn engine (DESIGN §7).
+//! The agent loop — the turn engine (docs/README.md).
 //!
 //! Where the substrate, the transport, and the user meet. Read a user turn, then
 //! repeat `project → complete → append assistant → {approve, run, append result}`
 //! until the model stops calling tools, then read the next user turn.
 //!
 //! Every input — including the first turn — arrives over the `Frontend`, which is
-//! the daemon's HTTP-fed [`RemoteFrontend`] (DESIGN §10 control-channel): the
+//! the daemon's HTTP-fed [`RemoteFrontend`] (docs/control-channel.md): the
 //! control socket is the singular authoritative input source. The log lives in the
 //! shared daemon state ([`Shared`]); the loop appends through it, which both
 //! persists the JSONL line and wakes any SSE tailers.
@@ -30,10 +30,10 @@ use crate::supervisor;
 use crate::tools::Toolbox;
 
 /// The exact `tools[]` a turn advertises: the world tools (`toolbox`) plus the
-/// harness tools handled structurally in the loop — `consolidate` (DESIGN §10 Phase
-/// 3) and the §6 supervisor/inbox tools. One source of truth so the keepalive ping
-/// (DESIGN §3) and the real turns send a byte-identical prefix; drift here silently
-/// breaks the tools cache tier.
+/// harness tools handled structurally in the loop — `consolidate` (docs/consolidate.md)
+/// and the supervisor/inbox tools (docs/supervisor.md). One source of truth so the
+/// keepalive ping (docs/substrate.md) and the real turns send a byte-identical prefix;
+/// drift here silently breaks the tools cache tier.
 pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     let mut tools = toolbox.definitions();
     tools.push(consolidate::definition());
@@ -41,7 +41,7 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     tools
 }
 
-/// Run a harness supervisor/inbox tool (DESIGN §6) against daemon state, or `None`
+/// Run a harness supervisor/inbox tool (docs/supervisor.md) against daemon state, or `None`
 /// if `call` isn't one (so the caller falls through to the world toolbox). Like
 /// `consolidate` these act on `Shared`, not the world — but unlike it their result
 /// distills through the universal fork like any tool (no bypass).
@@ -115,7 +115,7 @@ fn cap_tool_result(call: &ToolCall, result: RawResult) -> RawResult {
     ))
 }
 
-/// How the idle loop was woken (DESIGN §6): a user turn, a blank line (keep idling),
+/// How the idle loop was woken (docs/supervisor.md): a user turn, a blank line (keep idling),
 /// a notification event (run a standalone triage), or shutdown.
 enum IdleWake {
     Turn(String),
@@ -134,10 +134,10 @@ impl IdleWake {
     }
 }
 
-/// Coalesce a burst of near-simultaneous events into one idle-triage peek (DESIGN §6).
+/// Coalesce a burst of near-simultaneous events into one idle-triage peek (docs/supervisor.md).
 const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 
-/// The standalone idle triage (DESIGN §6 — wake-on-notification). Drains the newly
+/// The standalone idle triage (docs/supervisor.md — wake-on-notification). Drains the newly
 /// arrived notifications (logging them first-show) alongside the still-active ones and
 /// the running background tails, runs the tool-result-free triage peek, applies the
 /// dispositions, and logs the verdict as a `Triage` with `for_result: None`. Returns
@@ -173,7 +173,7 @@ async fn run_idle_triage<D: Distiller>(
         shared.record_request(u);
     }
 
-    // Apply dispositions; escalate iff anything was pinned (the wire grew, DESIGN §6).
+    // Apply dispositions; escalate iff anything was pinned (the wire grew, docs/inbox.md).
     let mut inbox = triage.inbox;
     let mut escalate = inbox.iter().any(|(_, d)| matches!(d, Disposition::Pin));
     for (handle, verdict) in triage.background {
@@ -204,7 +204,7 @@ async fn run_idle_triage<D: Distiller>(
     Ok(escalate)
 }
 
-/// Whether a call is a `bash` invocation asking to be backgrounded (DESIGN §6) —
+/// Whether a call is a `bash` invocation asking to be backgrounded (docs/supervisor.md) —
 /// `{ "command": …, "background": true }`. Such a call is handled structurally in
 /// the loop (it registers a child with the supervisor) rather than run to completion.
 fn is_background_bash(call: &ToolCall) -> bool {
@@ -223,7 +223,7 @@ fn background_command(call: &ToolCall) -> Option<String> {
 
 /// A `tool_result` standing in for a call that didn't run (aborted). Every
 /// assistant `tool_use` needs exactly one paired result or projection orphans it
-/// and the API rejects the request (DESIGN §10).
+/// and the API rejects the request (docs/README.md).
 fn aborted(call: &ToolCall) -> Payload {
     Payload::ToolResult {
         call_id: call.id.clone(),
@@ -239,7 +239,7 @@ fn aborted(call: &ToolCall) -> Payload {
 /// Like [`aborted`] it pairs the orphaned `tool_use`; the human's actual words
 /// follow as a separate user turn (the API merges the two consecutive user
 /// messages), so the model reads this as context for the steer that follows
-/// rather than as tool output (DESIGN §10).
+/// rather than as tool output (docs/README.md).
 fn rejected(call: &ToolCall) -> Payload {
     Payload::ToolResult {
         call_id: call.id.clone(),
@@ -260,15 +260,15 @@ pub async fn run<F: Frontend, D: Distiller>(
     distiller: D,
     toolbox: Toolbox,
 ) -> Result<(), Error> {
-    // World-facing tools plus the harness tools (`consolidate`, the §6
-    // supervisor/inbox tools) handled structurally in the loop below, not by a
-    // `Provider`. Built once from the shared source; the defs are constant `json!`,
-    // so `tools[]` stays byte-stable across requests (DESIGN §3).
+    // World-facing tools plus the harness tools (`consolidate`, the
+    // supervisor/inbox tools (docs/supervisor.md)) handled structurally in the loop
+    // below, not by a `Provider`. Built once from the shared source; the defs are
+    // constant `json!`, so `tools[]` stays byte-stable across requests (docs/substrate.md).
     let tools = tool_definitions(&toolbox);
     let mut turn: Turn = 0;
 
     loop {
-        // Idle: race the next user turn against a notification wake (DESIGN §6 —
+        // Idle: race the next user turn against a notification wake (docs/supervisor.md —
         // wake-on-notification, which replaced a blocking `wait`). A user turn drives a
         // normal trajectory; an event wakes a standalone triage that escalates to a
         // trajectory only if it pins something. The first turn arrives here too.
@@ -299,10 +299,10 @@ pub async fn run<F: Frontend, D: Distiller>(
         loop {
             // Project, then place the single trailing cache breakpoint just before
             // sending — projection stays pure; the breakpoint walks the tail each
-            // request (DESIGN §3).
+            // request (docs/substrate.md).
             let mut messages = shared.project_messages();
             place_trailing_cache_breakpoint(&mut messages);
-            // One tool call per turn (DESIGN §8) — the agent picks its next single
+            // One tool call per turn (docs/README.md) — the agent picks its next single
             // action; the fork's `retain` is the only forced call. Each streamed
             // prose fragment is published to `GET /stream` as it arrives — the live
             // view; the committed assistant entry on `/events` remains canonical.
@@ -327,7 +327,7 @@ pub async fn run<F: Frontend, D: Distiller>(
             };
             // Record cache/usage telemetry (surfaced on `GET /state`) and print a
             // legible live line: cache read vs creation is the hot/cold signal
-            // (DESIGN §3). Transport-only — `record_request` never touches the log.
+            // (docs/substrate.md). Transport-only — `record_request` never touches the log.
             let u = &completion.usage;
             eprintln!(
                 "[usage: in {} · out {} · cache read {} · cache write {}]",
@@ -345,16 +345,16 @@ pub async fn run<F: Frontend, D: Distiller>(
             for call in &calls {
                 // Once we've decided to stop running calls (abort or redirect),
                 // every remaining `tool_use` still needs a paired result or the
-                // wire orphans it and the API rejects the request (DESIGN §10).
+                // wire orphans it and the API rejects the request (docs/README.md).
                 if abort_turn || redirect.is_some() {
                     shared.append(turn, aborted(call))?;
                     continue;
                 }
                 match frontend.approve(call).await {
-                    // `consolidate` acts on the log, not the world (DESIGN §10
-                    // Phase 3): record the boundary mark + pair the `tool_use`. No
-                    // world-run, no distill. Slice 0 — the mark is inert; Slice 1's
-                    // projection folds the span it names (its `upto`).
+                    // `consolidate` acts on the log, not the world (docs/consolidate.md):
+                    // record the boundary mark + pair the `tool_use`. No world-run, no
+                    // distill. Slice 0 — the mark is inert; Slice 1's projection folds
+                    // the span it names (its `upto`).
                     Approval::Approve if call.name == consolidate::NAME => {
                         let note = consolidate::summary(&call.input).unwrap_or_default();
                         let upto = consolidate::extent(&shared.snapshot());
@@ -374,7 +374,7 @@ pub async fn run<F: Frontend, D: Distiller>(
                     Approval::Approve => {
                         // Acquire the result. A backgrounded bash spawn returns
                         // immediately — the child runs on under the supervisor and its
-                        // output surfaces at later gates (DESIGN §6); everything else
+                        // output surfaces at later gates (docs/supervisor.md); everything else
                         // runs to completion through the toolbox. `interrupted()`
                         // resolves on a `POST /interrupt` — the tool's kill trigger
                         // (kills the process group). Tool output streams to `GET
@@ -402,8 +402,8 @@ pub async fn run<F: Frontend, D: Distiller>(
                                 },
                             }
                         } else if let Some(r) = supervisor_tool_result(&shared, call) {
-                            // A §6 supervisor/inbox read/act tool — resolves against
-                            // daemon state synchronously, no world run.
+                            // A supervisor/inbox read/act tool (docs/supervisor.md) — resolves
+                            // against daemon state synchronously, no world run.
                             r
                         } else {
                             toolbox
@@ -420,17 +420,18 @@ pub async fn run<F: Frontend, D: Distiller>(
                         // result becomes a hard error so the model narrows the call.
                         let result = cap_tool_result(call, result);
                         // Distill at append: the canonical wire never carries raw;
-                        // `raw` is kept in the log for reversibility (DESIGN §4).
-                        // `ForkPeek` re-enters the model here (the §4 fork) — the
-                        // prefix is the log through this call's `tool_use`, so we
-                        // snapshot it (can't borrow across the distiller's await).
+                        // `raw` is kept in the log for reversibility (docs/redaction-fork.md).
+                        // `ForkPeek` re-enters the model here (the universal triage fork,
+                        // docs/redaction-fork.md) — the prefix is the log through this
+                        // call's `tool_use`, so we snapshot it (can't borrow across the
+                        // distiller's await).
                         let entries = shared.snapshot();
-                        // Open the triage gate (DESIGN §6): re-show the still-active
+                        // Open the triage gate (docs/inbox.md): re-show the still-active
                         // notifications (left at earlier gates), then log any newly
                         // arrived (ephemeral) ones as first-show `Ambient` entries —
                         // each entry's seq becomes its durable id, the handle the
                         // verdict pins/dismisses by. (They project to nothing, so the
-                        // fork prefix `entries` stays byte-identical, §3.)
+                        // fork prefix `entries` stays byte-identical, docs/substrate.md.)
                         let mut shown = active_shown(&entries);
                         for note in shared.drain_inbox() {
                             let source = note.source.clone();
@@ -439,13 +440,13 @@ pub async fn run<F: Frontend, D: Distiller>(
                             shown.push(ShownNotification { seq, source, body });
                         }
                         // The live background processes' fresh tails ride the same peek
-                        // (DESIGN §6) — re-sampled now, never logged unless pinned.
+                        // (docs/supervisor.md) — re-sampled now, never logged unless pinned.
                         let background = shared.bg_snapshot();
                         let distilled = distiller
                             .distill(client, &entries, call, &result, &shown, &background)
                             .await;
                         // The fork peek reads the shared canonical prefix (sliding
-                        // its TTL), so its usage belongs in the §3 telemetry too.
+                        // its TTL), so its usage belongs in the docs/substrate.md telemetry too.
                         if let Some(u) = distilled.usage {
                             shared.record_request(u);
                         }
@@ -453,7 +454,7 @@ pub async fn run<F: Frontend, D: Distiller>(
                         // `Pin` snapshots the process's current tail into an `Ambient`
                         // and folds a `Pin` disposition into the inbox verdict — so it
                         // projects at the `Triage` position, reusing the notification
-                        // pin path (DESIGN §6). A `Mute` just flags the supervisor.
+                        // pin path (docs/supervisor.md). A `Mute` just flags the supervisor.
                         let mut inbox = distilled.inbox;
                         for (handle, verdict) in distilled.background {
                             match verdict {
@@ -474,8 +475,8 @@ pub async fn run<F: Frontend, D: Distiller>(
                             }
                         }
                         // Append the result, then the fork verdict as a `Triage` audit
-                        // entry keyed by the result's seq (DESIGN §4): the throwaway
-                        // peek's *decision* is logged even though its transcript isn't.
+                        // entry keyed by the result's seq (docs/redaction-fork.md): the
+                        // throwaway peek's *decision* is logged even though its transcript isn't.
                         let result_seq = shared.append(
                             turn,
                             Payload::ToolResult {
@@ -501,7 +502,7 @@ pub async fn run<F: Frontend, D: Distiller>(
                     Approval::Redirect(message) => {
                         // Reject this call but keep the turn alive: the human's
                         // message becomes the next user turn so the model can
-                        // course-correct instead of bailing (DESIGN §10).
+                        // course-correct instead of bailing (docs/README.md).
                         shared.append(turn, rejected(call))?;
                         redirect = Some(message);
                     }

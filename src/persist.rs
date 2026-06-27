@@ -1,4 +1,4 @@
-//! Durable persistence of the log (DESIGN §1, §7).
+//! Durable persistence of the log (docs/README.md).
 //!
 //! Append-only **JSONL**: one [`LogEntry`] per line. Chosen deliberately over a
 //! binary format because the log is an append-only *event journal* we want to
@@ -22,7 +22,7 @@ use crate::log::{LogEntry, Payload, Seq, Timestamp, Turn};
 
 /// The live append-only log: the in-memory entries plus an optional JSONL sink.
 /// Construction is the only place that touches the clock and `seq` allocation,
-/// so those non-deterministic inputs never leak toward the wire (DESIGN §2, §3).
+/// so those non-deterministic inputs never leak toward the wire (docs/substrate.md).
 pub struct Log {
     entries: Vec<LogEntry>,
     sink: Option<BufWriter<File>>,
@@ -75,7 +75,7 @@ impl Log {
     }
 }
 
-/// Replay a persisted log back into memory (the basis for daemon attach, §9).
+/// Replay a persisted log back into memory (the basis for daemon attach — the backlog).
 /// Blank lines are tolerated; a malformed line is a hard error — a corrupt
 /// journal should be loud, not silently truncated.
 pub fn load(path: impl AsRef<Path>) -> io::Result<Vec<LogEntry>> {

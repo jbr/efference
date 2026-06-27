@@ -1,5 +1,5 @@
 //! The input composer — a minimal, dependency-free multiline text editor with
-//! emacs-style key bindings (DESIGN §10.5, M2).
+//! emacs-style key bindings (docs/tui.md, M2).
 //!
 //! This is deliberately self-contained behind a small interface
 //! ([`handle_key`](Composer::handle_key) / [`render`](Composer::render) /
