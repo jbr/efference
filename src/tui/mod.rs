@@ -20,11 +20,11 @@
 
 pub(crate) mod color_scheme;
 pub(crate) mod composer;
+pub(crate) mod document;
+pub(crate) mod events;
 pub(crate) mod gallery;
 #[cfg(test)]
 pub(crate) mod harness;
-pub(crate) mod document;
-pub(crate) mod events;
 pub(crate) mod keyboard;
 pub(crate) mod markdown;
 pub(crate) mod mouse;
@@ -75,6 +75,9 @@ pub(crate) enum TuiEvent {
     /// `/events` entry; the process panel is fed by the poll). TUI-bg-2 will layer
     /// smooth `/stream` `bg_output` deltas on top.
     Processes(Vec<BgProc>),
+    /// The usage statistics changed (polled from `GET /state` alongside the gate
+    /// and processes). Reflects cumulative token counts and cache telemetry.
+    Usage(UsageStats),
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
 }
@@ -97,6 +100,16 @@ pub(crate) struct PendingGate {
     pub call_id: String,
     pub name: String,
     pub input: serde_json::Value,
+}
+/// Usage statistics from the daemon, as surfaced by `GET /state`'s `usage` field.
+/// Polled alongside the gate and processes.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct UsageStats {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub seconds_since_last_request: Option<u64>,
 }
 
 use std::io::{self, stdout};
@@ -139,8 +152,7 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
 
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
     let (submit_tx, mut submit_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let (approve_tx, mut approve_rx) =
-        tokio::sync::mpsc::unbounded_channel::<(String, Approval)>();
+    let (approve_tx, mut approve_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Approval)>();
 
     // The bridge feeds the UI thread; it ends when the streams close or the UI
     // thread drops the receiver.
@@ -153,6 +165,7 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
     let poller = tokio::spawn(async move {
         let mut last: Option<String> = None;
         let mut last_procs = String::new();
+        let mut last_usage = String::new();
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(400)).await;
             let Ok(body) = poll_client.state().await else {
@@ -175,6 +188,16 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
                 last_procs = fp;
                 if gate_tx.send(TuiEvent::Processes(procs)).is_err() {
                     break;
+                }
+            }
+            // Usage statistics from the same poll. Emit only when they change.
+            if let Some(usage) = parse_usage(&body) {
+                let ufp = serde_json::to_string(&usage).unwrap_or_default();
+                if ufp != last_usage {
+                    last_usage = ufp;
+                    if gate_tx.send(TuiEvent::Usage(usage)).is_err() {
+                        break;
+                    }
                 }
             }
         }
@@ -328,7 +351,29 @@ fn parse_pending_gate(body: &str) -> Option<PendingGate> {
     Some(PendingGate {
         call_id: pending.get("call_id")?.as_str()?.to_string(),
         name: pending.get("name")?.as_str()?.to_string(),
-        input: pending.get("input").cloned().unwrap_or(serde_json::Value::Null),
+        input: pending
+            .get("input")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+    })
+}
+
+/// Parse `GET /state`'s `usage` object into a [`UsageStats`].
+fn parse_usage(body: &str) -> Option<UsageStats> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let usage = value.get("usage")?;
+    if usage.is_null() {
+        return None;
+    }
+    let cumulative = usage.get("cumulative")?;
+    Some(UsageStats {
+        input_tokens: cumulative.get("input_tokens")?.as_u64()?,
+        output_tokens: cumulative.get("output_tokens")?.as_u64()?,
+        cache_read_input_tokens: cumulative.get("cache_read_input_tokens")?.as_u64()?,
+        cache_creation_input_tokens: cumulative.get("cache_creation_input_tokens")?.as_u64()?,
+        seconds_since_last_request: usage
+            .get("seconds_since_last_request")
+            .and_then(|v| v.as_u64()),
     })
 }
 
@@ -371,7 +416,10 @@ async fn bridge(client: Client, tx: Sender<TuiEvent>) -> Result<()> {
 }
 
 /// Decode one ephemeral delta event, sending the matching [`TuiEvent`].
-fn decode_delta(event: &trillium_client::sse::Event, tx: &Sender<TuiEvent>) -> std::ops::ControlFlow<()> {
+fn decode_delta(
+    event: &trillium_client::sse::Event,
+    tx: &Sender<TuiEvent>,
+) -> std::ops::ControlFlow<()> {
     let value: serde_json::Value = serde_json::from_str(event.data()).unwrap_or_default();
     // A failed send carries the whole rejected `TuiEvent` back in `SendError`,
     // which makes the `Err` variant large; we only care *that* it failed, so box
@@ -411,7 +459,9 @@ fn ui_loop(
     theme_name: String,
 ) -> io::Result<()> {
     // Build the render context: interactive TTY, sized to the terminal.
-    let width = crossterm::terminal::size().map(|(w, _)| w as usize).unwrap_or(80);
+    let width = crossterm::terminal::size()
+        .map(|(w, _)| w as usize)
+        .unwrap_or(80);
     let mut render_context = RenderContext::new()
         .with_interactive(true)
         .with_output_mode(OutputMode::Tty)
@@ -543,7 +593,11 @@ fn ui_loop(
     if state.ui.supports_cursor {
         set_cursor_shape(terminal.backend_mut(), "default");
     }
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
     result
 }

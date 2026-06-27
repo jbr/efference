@@ -16,11 +16,11 @@ use super::theme::InteractiveTheme;
 use super::utils::supports_cursor_shape;
 use crate::frontend::Approval;
 use crate::log::LogEntry;
-use crate::tui::{BgProc, PendingGate, TuiEvent};
 use crate::tui::composer::Composer;
 use crate::tui::document::{Document, NodePath, TuiAction};
 use crate::tui::projection::{self, LiveTail};
 use crate::tui::render_context::{RenderContext, ThemeError};
+use crate::tui::{BgProc, PendingGate, TuiEvent, UsageStats};
 use crossbeam_channel::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -175,6 +175,9 @@ pub(super) struct InteractiveState<'a> {
     /// as a persistent panel above the composer; empty hides it. Ephemeral chrome —
     /// never part of the transcript document, so it never triggers a reproject.
     pub processes: Vec<BgProc>,
+    /// The cumulative usage statistics (polled from `GET /state`). Rendered in the
+    /// status bar. Ephemeral chrome — reflects API telemetry from the daemon.
+    pub usage: Option<UsageStats>,
 
     /// A daemon-side change (committed entry, stream delta, gate, process list) is
     /// waiting to be painted. The UI loop coalesces these onto the redraw tick
@@ -259,6 +262,7 @@ impl<'a> InteractiveState<'a> {
             pending_gate: None,
             approve_tx,
             processes: Vec::new(),
+            usage: None,
             dirty: false,
             reproject_pending: false,
             render_context,
@@ -336,9 +340,11 @@ impl<'a> InteractiveState<'a> {
                 // A gate is a control-state change, not a log change — no reproject,
                 // but the banner still needs a paint.
                 if let Some(g) = &gate {
-                    self.ui.debug_message =
-                        format!("approval needed: {} — ⏎ approve · type to redirect · .abort", g.name)
-                            .into();
+                    self.ui.debug_message = format!(
+                        "approval needed: {} — ⏎ approve · type to redirect · .abort",
+                        g.name
+                    )
+                    .into();
                 }
                 self.pending_gate = gate;
                 self.dirty = true;
@@ -348,6 +354,12 @@ impl<'a> InteractiveState<'a> {
                 // (the running tail is never in the log, DESIGN §6).
                 self.processes = processes;
                 self.dirty = true;
+            }
+            TuiEvent::Usage(usage) => {
+                // Ephemeral telemetry, not transcript content — update and redraw, no
+                // reproject. Usage stats are rendered in the status bar.
+                self.usage = Some(usage);
+                return false;
             }
             TuiEvent::Disconnected => return true,
         }
@@ -533,7 +545,10 @@ mod tests {
     use tokio::sync::mpsc::UnboundedReceiver;
 
     /// A state with one pending gate, plus the receiver the decision lands on.
-    fn state_with_gate() -> (InteractiveState<'static>, UnboundedReceiver<(String, Approval)>) {
+    fn state_with_gate() -> (
+        InteractiveState<'static>,
+        UnboundedReceiver<(String, Approval)>,
+    ) {
         let rc = RenderContext::new();
         let theme = InteractiveTheme::from_render_context(&rc);
         let (_etx, erx) = crossbeam_channel::unbounded();
