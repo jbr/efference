@@ -161,6 +161,13 @@ pub enum DocumentNode<'a> {
         resting: Option<Span<'a>>,
         nodes: Vec<DocumentNode<'a>>,
         level: TruncationLevel,
+        /// A stable identity for this block that survives re-projection (DESIGN
+        /// §10.5). The transcript re-projects on every streamed token, rebuilding the
+        /// tree, so the *positional* [`NodePath`] is ephemeral — `key` lets
+        /// `tui::state` carry per-block view-state (expand/collapse, raw-vs-wire)
+        /// across rebuilds, keyed by the result's `call_id`. `None` for blocks with
+        /// no durable identity (live tool output, generic truncated bodies).
+        key: Option<Cow<'a, str>>,
     },
 
     /// Conditionally shown content based on render context
@@ -519,7 +526,7 @@ impl<'a> DocumentNode<'a> {
 
     /// Convenience constructor for a header-less truncated block.
     pub fn truncated_block(nodes: Vec<DocumentNode<'a>>, level: TruncationLevel) -> Self {
-        DocumentNode::TruncatedBlock { header: None, resting: None, nodes, level }
+        DocumentNode::TruncatedBlock { header: None, resting: None, nodes, level, key: None }
     }
 
     /// Convenience constructor for a diff node.
@@ -536,7 +543,26 @@ impl<'a> DocumentNode<'a> {
         nodes: Vec<DocumentNode<'a>>,
         level: TruncationLevel,
     ) -> Self {
-        DocumentNode::TruncatedBlock { header: Some(header), resting, nodes, level }
+        DocumentNode::TruncatedBlock { header: Some(header), resting, nodes, level, key: None }
+    }
+
+    /// A collapsible block carrying a stable [`key`](DocumentNode::TruncatedBlock)
+    /// so `tui::state` can persist its view-state across re-projection (DESIGN
+    /// §10.5) — used for tool-result exchanges, keyed by `call_id`.
+    pub fn collapsible_keyed(
+        key: impl Into<Cow<'a, str>>,
+        header: Vec<Span<'a>>,
+        resting: Option<Span<'a>>,
+        nodes: Vec<DocumentNode<'a>>,
+        level: TruncationLevel,
+    ) -> Self {
+        DocumentNode::TruncatedBlock {
+            header: Some(header),
+            resting,
+            nodes,
+            level,
+            key: Some(key.into()),
+        }
     }
 }
 

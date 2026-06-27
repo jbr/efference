@@ -166,10 +166,20 @@ impl Screenplay<'_> {
         for path in paths {
             super::events::handle_action(
                 &mut self.state.document.document,
+                &mut self.state.view,
                 TuiAction::ExpandBlock(path),
             );
         }
         self.state.viewport.cached_layout = None;
+        self
+    }
+
+    /// Flip a tool-result exchange to its raw output (the `r` key, DESIGN §10.5) —
+    /// the view-state toggle that survives re-projection, here driven directly by
+    /// `call_id` rather than through keyboard focus.
+    pub(crate) fn show_raw(&mut self, call_id: &str) -> &mut Self {
+        self.state.view.toggle_raw(call_id);
+        self.state.reproject();
         self
     }
 
@@ -189,6 +199,22 @@ impl Screenplay<'_> {
             },
             wire,
         })
+    }
+
+    /// Mark the agent blocked on approval for `call_id` — the pending gate the
+    /// daemon's `/state` poll surfaces, driven through the real `Gate` event so the
+    /// inline gate renders exactly as in the app (DESIGN §10.5).
+    pub(crate) fn pending_gate(
+        &mut self,
+        call_id: &str,
+        name: &str,
+        input: serde_json::Value,
+    ) -> &mut Self {
+        self.event(TuiEvent::Gate(Some(crate::tui::PendingGate {
+            call_id: call_id.into(),
+            name: name.into(),
+            input,
+        })))
     }
 
     /// Draw the current state to a fresh `TestBackend` and return the resulting
@@ -803,5 +829,84 @@ mod scenarios {
             },
         );
         play.snapshot("transcript_distilled_result");
+    }
+
+    /// The same distilled result after flipping it to raw (`r`, DESIGN §10.5): the
+    /// header gains a `· raw` marker and the body shows the full raw output the
+    /// distillate replaced — the human's escape hatch back to what the tool actually
+    /// returned, a pure client-side re-render (both forms are already local).
+    #[test]
+    fn transcript_raw_view_of_distilled() {
+        let mut play = Screenplay::new(80, 24);
+        play.user("Summarize the dependency tree.");
+        play.assistant(
+            "Pulling the tree, then I'll distill it.",
+            vec![tool_call("bash", "toolu_03", json!({ "command": "cargo tree" }))],
+        );
+        play.tool_result(
+            "toolu_03",
+            "efference v0.1.0\n├── anyhow v1.0.86\n├── clap v4.5.4\n└── tokio v1.38.0",
+            false,
+            WireState::Distilled {
+                keep: Keep::None,
+                note: Some("12 direct deps; tokio + trillium are the heaviest.".into()),
+            },
+        );
+        play.show_raw("toolu_03");
+        play.snapshot("transcript_raw_view_of_distilled");
+    }
+
+    /// A pending approval gate, rendered inline at the tail call rather than as a
+    /// bottom banner (DESIGN §10.5): the exchange shows a `⏸` marker and an
+    /// `awaiting your approval …` affordance where the result will land — the gate
+    /// reads as "after the call, before the result." Resolving it replaces the
+    /// affordance with the real (or error) result.
+    #[test]
+    fn transcript_pending_approval_gate() {
+        let mut play = Screenplay::new(80, 14);
+        play.user("Clean the build directory.");
+        play.assistant(
+            "Sure — I'll remove it.",
+            vec![tool_call("bash", "toolu_1", json!({ "command": "rm -rf ./build" }))],
+        );
+        play.pending_gate("toolu_1", "bash", json!({ "command": "rm -rf ./build" }));
+
+        // The `⏸` marker and the affordance lead-in carry the user-accent (blue)
+        // color — "your turn" — which the character grid can't show.
+        let (mx, my) = play.find("⏸").expect("pending marker on screen");
+        let (r, _g, b) = rgb(play.cell(mx, my).fg);
+        assert!(b > r, "the pending marker should be a blue accent, got ({r},{b})");
+        let (ax, ay) = play.find("awaiting").expect("affordance on screen");
+        let (r, _g, b) = rgb(play.cell(ax, ay).fg);
+        assert!(b > r, "the affordance lead-in should be a blue accent, got ({r},{b})");
+
+        play.snapshot("transcript_pending_approval_gate");
+    }
+
+    /// Redirecting a gate: the call stays in the transcript with a message *instead
+    /// of a result* (DESIGN §10.5). The loop clears the gate, pairs the orphaned
+    /// `tool_use` with an error result ("not run — the user replied…"), and the
+    /// human's words follow as a user turn — so the exchange reads `✗ bash …` over
+    /// the breadcrumb, then the steer.
+    #[test]
+    fn transcript_redirected_gate() {
+        let mut play = Screenplay::new(80, 16);
+        play.user("Clean the build directory.");
+        play.assistant(
+            "Sure — I'll remove it.",
+            vec![tool_call("bash", "toolu_1", json!({ "command": "rm -rf ./build" }))],
+        );
+        play.pending_gate("toolu_1", "bash", json!({ "command": "rm -rf ./build" }));
+        // The human redirects: gate clears, the call gets an error result, the steer
+        // follows as a user turn (the real loop's redirect path).
+        play.event(crate::tui::TuiEvent::Gate(None));
+        play.tool_result(
+            "toolu_1",
+            "Not run — the user replied instead of approving; see their next message.",
+            true,
+            WireState::Raw,
+        );
+        play.user("use `cargo clean` instead");
+        play.snapshot("transcript_redirected_gate");
     }
 }

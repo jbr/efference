@@ -66,14 +66,19 @@ pub(crate) enum TuiEvent {
     AssistantDelta(String),
     /// A fragment of a running tool's output (`/stream` `tool_output`).
     ToolOutput { call_id: String, chunk: String },
+    /// A fragment of a running background process's output (`/stream` `bg_output`,
+    /// TUI-bg-2). Folded into the matching process panel row's tail to smooth it
+    /// between the ~400ms [`Processes`](TuiEvent::Processes) polls; demuxed by
+    /// `handle` exactly as [`ToolOutput`](TuiEvent::ToolOutput) is by `call_id`.
+    BgOutput { handle: String, chunk: String },
     /// The pending tool-approval gate changed (polled from `GET /state`, since the
     /// gate is ephemeral control state with no SSE event — DESIGN §10.0 parks
     /// "pending-approval as synthetic `/events`" for later).
     Gate(Option<PendingGate>),
     /// The live background processes changed (polled from `GET /state` alongside the
     /// gate, DESIGN §6 — the running tail is ephemeral, never logged, so it has no
-    /// `/events` entry; the process panel is fed by the poll). TUI-bg-2 will layer
-    /// smooth `/stream` `bg_output` deltas on top.
+    /// `/events` entry; the process panel is fed by the poll). Smooth `/stream`
+    /// `bg_output` deltas layer on top between polls (TUI-bg-2, [`BgOutput`](TuiEvent::BgOutput)).
     Processes(Vec<BgProc>),
     /// The usage statistics changed (polled from `GET /state` alongside the gate
     /// and processes). Reflects cumulative token counts and cache telemetry.
@@ -432,6 +437,16 @@ fn decode_delta(
             (Some(call_id), Some(chunk)) => Some(
                 tx.send(TuiEvent::ToolOutput {
                     call_id: call_id.to_string(),
+                    chunk: chunk.to_string(),
+                })
+                .map_err(Box::new),
+            ),
+            _ => None,
+        },
+        Some("bg_output") => match (value["handle"].as_str(), value["chunk"].as_str()) {
+            (Some(handle), Some(chunk)) => Some(
+                tx.send(TuiEvent::BgOutput {
+                    handle: handle.to_string(),
                     chunk: chunk.to_string(),
                 })
                 .map_err(Box::new),

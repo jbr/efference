@@ -9,7 +9,7 @@
 //! Unlike the wire projection it does not coalesce or elide — every turn renders,
 //! so the human sees the whole record.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::log::{ContentBlock, LogEntry, MarkKind, Payload, RawResult, ToolCall, WireState};
 use crate::tui::document::{
@@ -52,12 +52,72 @@ impl LiveTail {
     }
 }
 
+/// Per-exchange view-state the human has toggled, carried in `tui::state` so it
+/// survives re-projection (DESIGN §10.5). The transcript rebuilds on every
+/// streamed token, so a block's collapse/raw state can't live in the rebuilt
+/// [`Document`] — it lives here, keyed by the result's `call_id`, and `project`
+/// applies it when building each exchange.
+#[derive(Debug, Default)]
+pub(crate) struct ViewState {
+    /// `call_id`s whose exchange the human expanded (`▼` Full instead of `▶` Brief).
+    expanded: HashSet<String>,
+    /// `call_id`s the human flipped to **raw** output — the wire distillate is the
+    /// default, raw is shown on demand (both are already client-side; this is a
+    /// pure render choice, no round-trip).
+    raw: HashSet<String>,
+}
+
+impl ViewState {
+    fn is_expanded(&self, call_id: &str) -> bool {
+        self.expanded.contains(call_id)
+    }
+
+    fn is_raw(&self, call_id: &str) -> bool {
+        self.raw.contains(call_id)
+    }
+
+    /// Flip the expand state for a `call_id`, returning the new state. The
+    /// [`Document`]'s level is recomputed from this on the next projection.
+    pub(crate) fn toggle_expanded(&mut self, call_id: &str) -> bool {
+        toggle(&mut self.expanded, call_id)
+    }
+
+    /// Flip raw-vs-wire for a `call_id`, returning whether it now shows raw.
+    pub(crate) fn toggle_raw(&mut self, call_id: &str) -> bool {
+        toggle(&mut self.raw, call_id)
+    }
+}
+
+/// Flip a `call_id`'s membership in a set, returning whether it is now present.
+fn toggle(set: &mut HashSet<String>, call_id: &str) -> bool {
+    if set.remove(call_id) {
+        false
+    } else {
+        set.insert(call_id.to_string());
+        true
+    }
+}
+
 /// Fold the log + live tail into a transcript document of conversational
 /// [`Turn`](DocumentNode::Turn)s. Authorship is structural (the renderer draws a
 /// gutter for the user; the assistant is unmarked), and each tool call is paired
 /// with its result into one collapsible *exchange* (`❯ tool · arg` over the
-/// result) rather than two separately-labeled blocks.
-pub(crate) fn project(log: &[LogEntry], live: &LiveTail) -> Document<'static> {
+/// result) rather than two separately-labeled blocks. `view` carries the human's
+/// per-exchange toggles (expand, raw-vs-wire) across this rebuild (DESIGN §10.5).
+///
+/// `pending_call` is the `call_id` the agent is *blocked on for approval* (DESIGN
+/// §10.5). The loop appends the assistant `tool_use` **before** it gates (so the
+/// call is already in the log), and one tool call runs per turn (§8) — so the
+/// pending call is always the tail result-less exchange. That exchange renders
+/// *as if invoked*, with a `⏸` marker and an inline affordance where the result
+/// will land, so the gate reads as "after the call, before the result" rather than
+/// a banner divorced from the call it's gating.
+pub(crate) fn project(
+    log: &[LogEntry],
+    live: &LiveTail,
+    view: &ViewState,
+    pending_call: Option<&str>,
+) -> Document<'static> {
     // A result lands in a later entry than the call it answers; index results by
     // `call_id` up front so a call can be paired with its result in one place.
     let mut result_for_call: HashMap<&str, (&RawResult, &WireState)> = HashMap::new();
@@ -81,7 +141,8 @@ pub(crate) fn project(log: &[LogEntry], live: &LiveTail) -> Document<'static> {
                 }
                 for call in calls {
                     let result = result_for_call.get(call.id.0.as_str()).copied();
-                    blocks.push(exchange(call, result));
+                    let is_pending = result.is_none() && pending_call == Some(call.id.0.as_str());
+                    blocks.push(exchange(call, result, view, is_pending));
                 }
                 if !blocks.is_empty() {
                     nodes.push(turn(Author::Assistant, blocks));
@@ -139,8 +200,14 @@ fn turn(author: Author, blocks: Vec<DocumentNode<'static>>) -> DocumentNode<'sta
 /// the call (`❯ tool · arg`, or `✗ tool …` when the result errored); the body is
 /// the (tool-specifically rendered) result. No `result #N` label — the result is
 /// obviously the response to the call directly above it.
-fn exchange(call: &ToolCall, result: Option<(&RawResult, &WireState)>) -> DocumentNode<'static> {
+fn exchange(
+    call: &ToolCall,
+    result: Option<(&RawResult, &WireState)>,
+    view: &ViewState,
+    is_pending: bool,
+) -> DocumentNode<'static> {
     let is_error = result.is_some_and(|(raw, _)| raw.is_error);
+    let call_id = call.id.0.as_str();
 
     let mut header = vec![inline_code_styled(call.name.clone(), SpanStyle::FunctionName)];
     let (inline, overflow) = call_args(call);
@@ -151,21 +218,75 @@ fn exchange(call: &ToolCall, result: Option<(&RawResult, &WireState)>) -> Docume
 
     let mut body = overflow;
     if let Some((raw, wire)) = result {
-        let content = match wire {
-            WireState::Raw => raw.content.clone(),
-            // Same renderer as the wire projection — re-derive the distillate from
-            // `raw` + the stored verdict (DESIGN §4).
-            WireState::Distilled { keep, note } => {
-                crate::project::render_distilled(&raw.content, keep, note.as_deref())
-            }
-            WireState::Elided => "[elided]".to_string(),
+        // The human can flip a distilled result to its full raw output (DESIGN
+        // §10.5) — both are already client-side, so this is a pure render choice. A
+        // forced-raw view passes a synthetic `Raw` wire so `result_body` gives it the
+        // same rich tool-specific rendering (diff/read) a natural raw result gets.
+        let show_raw = view.is_raw(call_id);
+        let overriding = show_raw && !matches!(wire, WireState::Raw);
+        let (content, effective_wire) = if show_raw {
+            (raw.content.clone(), &WireState::Raw)
+        } else {
+            let content = match wire {
+                WireState::Raw => raw.content.clone(),
+                // Same renderer as the wire projection — re-derive the distillate from
+                // `raw` + the stored verdict (DESIGN §4).
+                WireState::Distilled { keep, note } => {
+                    crate::project::render_distilled(&raw.content, keep, note.as_deref())
+                }
+                WireState::Elided => "[elided]".to_string(),
+            };
+            (content, wire)
         };
-        body.extend(result_body(Some(call.name.as_str()), raw, wire, &content));
+        // Flag that the leaner distilled default is being overridden, so the human
+        // sees they're on raw (`r` to flip back).
+        if overriding {
+            header.push(Span { text: " · raw".into(), style: SpanStyle::Comment, action: None });
+        }
+        body.extend(result_body(Some(call.name.as_str()), raw, effective_wire, &content));
+    } else if is_pending {
+        // No result yet — the agent is blocked here for approval (DESIGN §10.5). The
+        // affordance sits where the result will land, so the gate reads as "after the
+        // call, before the result." Resolving it (approve → result; redirect/abort →
+        // an error result) replaces this with the real exchange body.
+        body.push(gate_affordance());
     }
 
-    // The `❯`/`✗` prompt is the block's resting marker (the renderer swaps in a
-    // ▶/▼ disclosure triangle when the result is long enough to collapse).
-    DocumentNode::collapsible(header, Some(prompt_span(is_error)), body, TruncationLevel::Brief)
+    // The resting marker: `⏸` (accent) when this call is awaiting approval, else the
+    // `❯`/`✗` prompt (the renderer swaps in a ▶/▼ disclosure triangle when the body
+    // is long enough to collapse). The block is keyed by `call_id` so its expand/raw
+    // state survives re-projection.
+    let resting = if is_pending {
+        Span { text: "⏸ ".into(), style: SpanStyle::UserAccent, action: None }
+    } else {
+        prompt_span(is_error)
+    };
+    let level = if view.is_expanded(call_id) {
+        TruncationLevel::Full
+    } else {
+        TruncationLevel::Brief
+    };
+    DocumentNode::collapsible_keyed(call_id.to_string(), header, Some(resting), body, level)
+}
+
+/// The inline affordance shown in a pending exchange's body, in place of the
+/// not-yet-existent result (DESIGN §10.5). The accent-colored lead-in marks "your
+/// turn"; the muted tail spells out how to answer through the composer.
+fn gate_affordance() -> DocumentNode<'static> {
+    DocumentNode::Paragraph {
+        spans: vec![
+            Span {
+                text: "awaiting your approval".into(),
+                style: SpanStyle::UserAccent,
+                action: None,
+            },
+            Span {
+                text: "  ·  ⏎ approve · type to redirect · .abort".into(),
+                style: SpanStyle::Comment,
+                action: None,
+            },
+        ],
+    }
 }
 
 /// The exchange prompt glyph: `❯` for a normal call, `✗` (red) when its result
@@ -444,7 +565,7 @@ mod tests {
 
     #[test]
     fn projects_turns_and_pairs_call_with_result() {
-        let doc = project(&sample_log(), &LiveTail::default());
+        let doc = project(&sample_log(), &LiveTail::default(), &ViewState::default(), None);
 
         // Top level is a sequence of authored turns: user, then assistant.
         let authors: Vec<Author> = doc
@@ -520,11 +641,110 @@ mod tests {
                 },
             ),
         ];
-        let doc = project(&log, &LiveTail::default());
+        let doc = project(&log, &LiveTail::default(), &ViewState::default(), None);
         let code: String = collect_code(&doc.nodes);
         assert!(code.contains("the distilled summary"), "shows the note: {code}");
         assert!(code.contains("the kept line"), "shows the kept line: {code}");
         assert!(!code.contains("RAW-NOISE"), "hides the dropped raw line: {code}");
+    }
+
+    /// The (single) exchange block's expand level, for the view-state tests.
+    fn exchange_level(doc: &Document<'_>) -> TruncationLevel {
+        for node in &doc.nodes {
+            if let DocumentNode::Turn { blocks, .. } = node {
+                for b in blocks {
+                    if let DocumentNode::TruncatedBlock { level, .. } = b {
+                        return *level;
+                    }
+                }
+            }
+        }
+        panic!("no exchange block in the document");
+    }
+
+    /// The (single) exchange block's header text, for the view-state tests.
+    fn exchange_header(doc: &Document<'_>) -> String {
+        for node in &doc.nodes {
+            if let DocumentNode::Turn { blocks, .. } = node {
+                for b in blocks {
+                    if let DocumentNode::TruncatedBlock { header: Some(h), .. } = b {
+                        return h.iter().map(|s| s.text.as_ref()).collect();
+                    }
+                }
+            }
+        }
+        String::new()
+    }
+
+    #[test]
+    fn expand_state_lives_in_the_view_and_survives_reprojection() {
+        // The §10.5 fix: the expand level is read from the view, not stored in the
+        // rebuilt document — so it survives the re-projection a streamed token forces
+        // (where the old in-document level reset to Brief).
+        let log = sample_log(); // one bash exchange, call id toolu_1
+        let mut view = ViewState::default();
+
+        // Default: collapsed.
+        let doc = project(&log, &LiveTail::default(), &view, None);
+        assert_eq!(exchange_level(&doc), TruncationLevel::Brief);
+
+        // Expanding persists in the view.
+        view.toggle_expanded("toolu_1");
+        let doc = project(&log, &LiveTail::default(), &view, None);
+        assert_eq!(exchange_level(&doc), TruncationLevel::Full);
+
+        // A second projection (the streamed-token rebuild) keeps it expanded.
+        let doc = project(&log, &LiveTail::default(), &view, None);
+        assert_eq!(exchange_level(&doc), TruncationLevel::Full, "expand survived reprojection");
+
+        // Toggling back collapses, and that persists too.
+        view.toggle_expanded("toolu_1");
+        let doc = project(&log, &LiveTail::default(), &view, None);
+        assert_eq!(exchange_level(&doc), TruncationLevel::Brief);
+    }
+
+    #[test]
+    fn raw_toggle_shows_full_raw_over_the_distillate() {
+        // A distilled result (the same shape as `distilled_wire_supersedes_raw`).
+        let log = vec![
+            entry(
+                4,
+                Payload::Assistant {
+                    text: vec![],
+                    calls: vec![ToolCall {
+                        id: CallId("toolu_9".into()),
+                        name: "bash".into(),
+                        input: serde_json::json!({ "command": "noise" }),
+                    }],
+                },
+            ),
+            entry(
+                5,
+                Payload::ToolResult {
+                    call_id: CallId("toolu_9".into()),
+                    raw: RawResult { content: "RAW-NOISE\nthe kept line".into(), is_error: false },
+                    wire: WireState::Distilled {
+                        keep: Keep::Ranges(vec![(2, 2)]),
+                        note: Some("the distilled summary".into()),
+                    },
+                },
+            ),
+        ];
+        let mut view = ViewState::default();
+
+        // Default: the distillate, raw hidden, no `· raw` marker on the header.
+        let doc = project(&log, &LiveTail::default(), &view, None);
+        let code = collect_code(&doc.nodes);
+        assert!(code.contains("the kept line"), "distillate shown: {code}");
+        assert!(!code.contains("RAW-NOISE"), "dropped raw line hidden: {code}");
+        assert!(!exchange_header(&doc).contains("raw"), "no raw marker by default");
+
+        // Flip to raw: the full raw content, and the header flags the override.
+        view.toggle_raw("toolu_9");
+        let doc = project(&log, &LiveTail::default(), &view, None);
+        let code = collect_code(&doc.nodes);
+        assert!(code.contains("RAW-NOISE"), "full raw now shown: {code}");
+        assert!(exchange_header(&doc).contains("raw"), "header marks the raw view");
     }
 
     #[test]
@@ -533,7 +753,7 @@ mod tests {
         live.assistant.push_str("streaming…");
         live.push_tool_output("toolu_1", "partial out");
 
-        let doc = project(&sample_log(), &live);
+        let doc = project(&sample_log(), &live, &ViewState::default(), None);
         let code = collect_code(&doc.nodes);
         assert!(code.contains("partial out"), "live tool output renders");
 
@@ -566,7 +786,7 @@ mod tests {
         let (submit_tx, _submit_rx) = tokio::sync::mpsc::unbounded_channel();
         let (approve_tx, _approve_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut state = InteractiveState::new(rx, submit_tx, approve_tx, rc, theme);
-        state.document.document = project(&sample_log(), &LiveTail::default());
+        state.document.document = project(&sample_log(), &LiveTail::default(), &ViewState::default(), None);
 
         let mut terminal = Terminal::new(TestBackend::new(80, 60)).unwrap();
         terminal.draw(|f| state.render_frame(f)).unwrap();

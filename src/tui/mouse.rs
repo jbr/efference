@@ -153,7 +153,7 @@ impl<'a> super::InteractiveState<'a> {
                 } else {
                     // ExpandBlock mutates the document in place; invalidate the
                     // layout cache so the next frame re-measures.
-                    handle_action(&mut self.document.document, action);
+                    handle_action(&mut self.document.document, &mut self.view, action);
                     self.viewport.cached_layout = None;
                 }
             }

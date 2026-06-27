@@ -844,13 +844,105 @@ real 400).
 
 ---
 
+## 2026-06-26 — TUI-bg-2: smooth background-process live tailing
+
+The process panel (TUI-bg-1) was poll-fed at ~400ms; between polls its tail line sat still.
+TUI-bg-2 layers the deferred per-process delta on the existing lossy `/stream`, mirroring
+`ToolOutput { call_id }` one more time — no new endpoint, no per-process channel.
+
+- **Producer** (`src/daemon.rs`) — `StreamDelta::BgOutput { handle, chunk }`; the background
+  drain task (`drain_background`) publishes each chunk (lossy `String::from_utf8_lossy`)
+  alongside the authoritative `supervisor.push_chunk`. `delta_event` encodes it as SSE
+  `event: bg_output` with a `{handle, chunk}` body.
+- **Consumer** (`src/tui/mod.rs`, `src/tui/state.rs`) — `TuiEvent::BgOutput`; `decode_delta`
+  parses `bg_output`; the state handler appends the chunk to the matching `processes` row's
+  tail (repaint-only — it's chrome, never the log), bounded to `BG_TAIL_CAP` (4 KiB) on a
+  **char boundary** so a multibyte burst can't slice a codepoint or grow unbounded before the
+  next poll trims it. An unknown handle (spawned since the last poll) is ignored — it appears
+  within one poll interval. The render path is unchanged: the panel still shows
+  `tail.lines().next_back()`, now refreshed char-by-char.
+
+**Verified (test).** +2 tests (**155 green**), clippy clean. The daemon stream round-trip test
+gained a `bg_output` assertion (handle + chunk over the real socket); state tests cover the
+append-to-matching-row / ignore-unknown-handle path and the char-boundary bound under a
+2×-cap multibyte burst. (End-to-end smoothness rides bg-1's already-live-verified panel; this
+slice only fills the inter-poll gaps.)
+
+## 2026-06-26 — TUI per-exchange view-state: persistent expand + raw↔wire toggle
+
+Two §10.5 items that share one mechanism. The transcript re-projects on every streamed token
+(the §10 "transcript is another `project(log)`"), rebuilding the tree — so any per-block UI
+state stored *in* the `Document` resets mid-stream. M4 flagged this for expand/collapse; it's
+also exactly what a raw↔wire toggle needs. Both now live in `tui::state`, keyed by `call_id`.
+
+- **`projection::ViewState`** (new) — `{ expanded: HashSet<call_id>, raw: HashSet<call_id> }`,
+  held on `InteractiveState`. `project(log, live, view)` reads it: a tool-result exchange is a
+  `collapsible_keyed(call_id, …)` whose level is `Full` iff `view.is_expanded(call_id)`, and
+  whose body is the full raw output (a synthetic `WireState::Raw`, so it gets the same rich
+  diff/read rendering a natural raw result does) iff `view.is_raw(call_id)` — else the wire
+  distillate, as before. `DocumentNode::TruncatedBlock` gained an `Option<Cow> key` +
+  `collapsible_keyed` constructor; the positional `NodePath` stays the in-frame address, `key`
+  is the cross-reprojection identity.
+- **Expand now persists** — `events::handle_action` still flips the level in place for instant,
+  focus-preserving feedback, but for a keyed block it *also* flips `view.expanded`; the next
+  streamed-token reprojection reads the level back from the view instead of resetting to Brief.
+  (They start in sync because every projection seeds the level from the view, so flipping both
+  keeps them in sync.)
+- **Raw↔wire toggle** — the `r` key (`state::toggle_raw_focused`) flips the focused tool-result
+  exchange between its distilled wire form and its full raw output, both already client-side
+  (the `/events` `LogEntry` carries `raw` *and* `wire`) — a pure re-render, no daemon
+  round-trip. The override is marked `· raw` on the exchange header so the leaner default is
+  discoverable. Content source changes, so unlike expand it reprojects rather than mutating in
+  place.
+
+**Verified.** +3 tests (**158 green**), clippy clean. Projection tests: expand level is read
+from the view and survives a second projection (the headline fix), and the raw toggle shows the
+dropped raw line + the `· raw` marker where the default hides them. A new `Screenplay` snapshot
+(`transcript_raw_view_of_distilled`) locks the rendered raw view (`❯ bash · cargo tree · raw`
+over the full tree). All prior snapshots unchanged — the empty-default `ViewState` is
+byte-identical to the old hardcoded `Brief`.
+
+## 2026-06-26 — TUI inline approval gates
+
+The M3 gate was one compressed highlighted row above the composer, divorced from the call it
+gated. Reframed it to render **inline at the pending call** — which fits the loop's grain: the
+loop appends the assistant `tool_use` *before* it gates (verified in `agent.rs`) and one tool
+runs per turn (§8), so the pending call is always the tail **result-less** exchange the
+transcript already renders. The gate metaphor becomes "after the call, before the result."
+
+- **Projection** (`tui/projection.rs`) — `project(log, live, view, pending_call)`. When an
+  exchange's `call_id` matches the pending gate and has no result yet, it renders *as if
+  invoked*: a `⏸` resting marker (accent — `SpanStyle::UserAccent`, "your turn") and a
+  `gate_affordance()` body line — `awaiting your approval · ⏎ approve · type to redirect ·
+  .abort` — sitting where the result will land. Resolving the gate (approve → the real result;
+  redirect/abort → an `is_error` result via `rejected`/`aborted`) replaces the affordance with
+  the real exchange body, so the call **stays in the transcript with a message in place of a
+  result**; a redirect's words follow as a user turn (the loop's existing path).
+- **State** (`tui/state.rs`) — `reproject` threads `pending_gate.call_id` into `project`, and a
+  `Gate` event now `mark_reproject()`s (it changes the transcript, unlike processes/usage
+  chrome). On gate *resolution* the status hint resets to the idle line (extracted as
+  `IDLE_STATUS`) — fixing a stale "approval needed" that lingered after redirect.
+- **Render** (`tui/render_frame.rs`) — the bottom gate banner and `render_gate_banner` are
+  gone; `gate_height` is retired to always-0 (kept so the mouse hit-test math stays uniform).
+  The status bar still mirrors the affordance for the scrolled-away case.
+
+**Verified.** +2 `Screenplay` snapshots (**160 green**), clippy clean. `transcript_pending_
+approval_gate` locks the inline `⏸ bash · rm -rf ./build` over the affordance, with `cell`
+assertions that the marker + lead-in carry the blue accent (the grid drops color);
+`transcript_redirected_gate` locks the resolved form — `✗ bash …` over the "not run"
+breadcrumb, then the steer as a user turn, status bar back to idle. The harness drives the real
+`Gate`/`Entry` event handlers and `render_frame`, so this is the app's actual path; a live
+watch-it-in-the-terminal pass is the user's to do (headless pty TUI capture is unreliable, per
+the M2/M3 note).
+
 ## Current state (2026-06-26)
 
-**148 tests green, clippy clean.** The harness is **dogfooded** over the daemon
+**160 tests green, clippy clean.** The harness is **dogfooded** over the daemon
 (`efference serve` + `turn` / `approve` / `attach`) and now has a **full interactive TUI**
 (`efference tui`): a themed streaming transcript with a **conversational, minimalist**
 render (author-differentiated turns, paired call↔result exchanges, per-tool result
-renderers incl. colored diffs), an emacs-keybind composer, and in-TUI approval gates — a
+renderers incl. colored diffs, per-exchange expand + raw↔wire toggle, inline approval gates),
+an emacs-keybind composer, and in-TUI approval gates — a
 session-grade client comparable to a modern coding-agent TUI. Display work is iterable
 without being blind (`Screenplay` snapshot harness + `cell`/`find` color assertions +
 `efference gallery`). Phase 3 Slices 0–1 are in; the **ambient-notification inbox is complete** (Slices A–C, all

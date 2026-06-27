@@ -13,16 +13,24 @@ use std::borrow::Cow;
 use std::time::Instant;
 
 use super::theme::InteractiveTheme;
-use super::utils::supports_cursor_shape;
+use super::utils::{find_node_at_path_mut, supports_cursor_shape};
 use crate::frontend::Approval;
 use crate::log::LogEntry;
 use crate::tui::composer::Composer;
-use crate::tui::document::{Document, NodePath, TuiAction};
+use crate::tui::document::{Document, DocumentNode, NodePath, TuiAction};
 use crate::tui::projection::{self, LiveTail};
 use crate::tui::render_context::{RenderContext, ThemeError};
 use crate::tui::{BgProc, PendingGate, TuiEvent, UsageStats};
 use crossbeam_channel::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
+
+/// The idle status-bar hint (also restored when an approval gate resolves).
+const IDLE_STATUS: &str = "efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand";
+
+/// Cap on a process-panel row's live tail between `/state` polls (TUI-bg-2). The
+/// panel only renders the last line, and a poll reconciles to the authoritative
+/// snapshot every ~400ms, so this just bounds the gap-filling append.
+const BG_TAIL_CAP: usize = 4096;
 
 /// UI mode — the modal structure of the interface. ferritin's `DevLog` and
 /// `Input` (go-to/search) modes are dropped for the read-only M1 viewer.
@@ -96,8 +104,9 @@ pub(super) struct ViewportState {
     /// Height (rows) the composer occupied last frame, so mouse hit-testing and
     /// scroll clamping agree with `render_frame` on where the transcript ends.
     pub input_height: u16,
-    /// Rows the approval-gate banner occupied last frame (0 when no gate is
-    /// pending). Counted alongside `input_height` as bottom chrome.
+    /// Retired: the approval gate moved inline into the transcript (DESIGN §10.5),
+    /// so it no longer reserves a bottom-chrome row. Kept (always 0) so the mouse
+    /// hit-testing math reads uniformly as `1 + input_height + gate_height`.
     pub gate_height: u16,
 }
 
@@ -155,6 +164,11 @@ pub(super) struct InteractiveState<'a> {
     pub log: Vec<LogEntry>,
     /// In-flight streaming deltas not yet committed to the log.
     pub live: LiveTail,
+    /// Per-exchange view-state the human has toggled (expand/collapse, raw-vs-wire),
+    /// kept here so it survives re-projection (DESIGN §10.5): the transcript rebuilds
+    /// on every streamed token, so a block's toggles can't live in the rebuilt
+    /// `Document`. `project` reads it, keyed by `call_id`.
+    pub view: projection::ViewState,
     /// Inbound events from the SSE bridge (durable entries + ephemeral deltas).
     pub events: Receiver<TuiEvent>,
 
@@ -243,8 +257,7 @@ impl<'a> InteractiveState<'a> {
             ui_mode: UiMode::Normal,
             ui: UiState {
                 mouse_enabled: true,
-                debug_message: "efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand"
-                    .into(),
+                debug_message: IDLE_STATUS.into(),
                 is_hovering: false,
                 supports_cursor: supports_cursor_shape(),
             },
@@ -255,6 +268,7 @@ impl<'a> InteractiveState<'a> {
             },
             log: Vec::new(),
             live: LiveTail::default(),
+            view: projection::ViewState::default(),
             events,
             composer: Composer::new(),
             composing: true,
@@ -337,23 +351,47 @@ impl<'a> InteractiveState<'a> {
                 self.mark_reproject();
             }
             TuiEvent::Gate(gate) => {
-                // A gate is a control-state change, not a log change — no reproject,
-                // but the banner still needs a paint.
-                if let Some(g) = &gate {
-                    self.ui.debug_message = format!(
+                // The gate renders inline in the transcript (the tail exchange shows
+                // `⏸ awaiting approval`, DESIGN §10.5), so a gate change must
+                // reproject — unlike the other ephemeral chrome (processes/usage). The
+                // status bar still mirrors the affordance for the scrolled-away case.
+                self.ui.debug_message = match &gate {
+                    Some(g) => format!(
                         "approval needed: {} — ⏎ approve · type to redirect · .abort",
                         g.name
                     )
-                    .into();
-                }
+                    .into(),
+                    // Gate resolved — drop the stale "approval needed" hint.
+                    None => IDLE_STATUS.into(),
+                };
                 self.pending_gate = gate;
-                self.dirty = true;
+                self.mark_reproject();
             }
             TuiEvent::Processes(processes) => {
                 // Ephemeral chrome, not transcript content — repaint, no reproject
                 // (the running tail is never in the log, DESIGN §6).
                 self.processes = processes;
                 self.dirty = true;
+            }
+            TuiEvent::BgOutput { handle, chunk } => {
+                // Smooth the panel's tail between `/state` polls (TUI-bg-2). Append to
+                // the matching row; the next poll reconciles to the authoritative
+                // snapshot. An unknown handle (process spawned since the last poll) is
+                // ignored — it appears within one poll interval. Bound the appended
+                // tail so a chatty process can't grow it without limit before the next
+                // poll trims it; only the last line is shown anyway.
+                if let Some(p) = self.processes.iter_mut().find(|p| p.handle == handle) {
+                    p.tail.push_str(&chunk);
+                    if p.tail.len() > BG_TAIL_CAP {
+                        let from = p.tail.len() - BG_TAIL_CAP;
+                        // Trim on a char boundary so the panel never slices a codepoint.
+                        let from = (from..=p.tail.len())
+                            .find(|&i| p.tail.is_char_boundary(i))
+                            .unwrap_or(p.tail.len());
+                        p.tail.drain(..from);
+                    }
+                    self.dirty = true;
+                }
             }
             TuiEvent::Usage(usage) => {
                 // Ephemeral telemetry, not transcript content — update and redraw, no
@@ -388,8 +426,38 @@ impl<'a> InteractiveState<'a> {
     /// Prefer [`flush_reproject`](Self::flush_reproject) on the hot path; this is
     /// for callers that must reproject immediately (e.g. tests, an expand action).
     pub(super) fn reproject(&mut self) {
-        self.document.document = projection::project(&self.log, &self.live);
+        let pending = self.pending_gate.as_ref().map(|g| g.call_id.as_str());
+        self.document.document = projection::project(&self.log, &self.live, &self.view, pending);
         self.viewport.cached_layout = None;
+    }
+
+    /// Flip the focused tool-result exchange between its wire (distilled) output and
+    /// its full raw output (DESIGN §10.5). Both are already client-side, so this is a
+    /// pure re-render — the content source changes, so unlike expand it can't mutate
+    /// in place and must reproject. No-op unless a keyed (tool-result) block is
+    /// focused; the focused block is the one `⏎` would expand.
+    pub(super) fn toggle_raw_focused(&mut self) {
+        let path = match self.viewport.keyboard_cursor {
+            KeyboardCursor::Focused { action_index } => {
+                match self.render_cache.actions.get(action_index) {
+                    Some((_, TuiAction::ExpandBlock(p))) => *p,
+                    _ => return,
+                }
+            }
+            _ => return,
+        };
+        let call_id =
+            match find_node_at_path_mut(&mut self.document.document.nodes, path.indices()) {
+                Some(DocumentNode::TruncatedBlock { key: Some(k), .. }) => k.to_string(),
+                _ => return,
+            };
+        let now_raw = self.view.toggle_raw(&call_id);
+        self.ui.debug_message = if now_raw {
+            "showing raw output — r to show the distilled view".into()
+        } else {
+            "showing distilled output — r to show raw".into()
+        };
+        self.reproject();
     }
 
     pub(super) fn set_debug_message(&mut self, message: impl Into<Cow<'static, str>>) {
@@ -589,6 +657,42 @@ mod tests {
             Approval::Redirect(m) => assert_eq!(m, "use rg instead"),
             other => panic!("expected redirect, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn bg_output_smooths_the_matching_process_tail() {
+        let (mut s, _arx) = state_with_gate();
+        s.processes = vec![BgProc {
+            handle: "bg#1".into(),
+            command: "cargo watch".into(),
+            tail: "tick 1\n".into(),
+            running_secs: 3,
+            idle_secs: 0,
+        }];
+        // A delta for the live process appends to its tail (between polls).
+        s.handle_event(TuiEvent::BgOutput { handle: "bg#1".into(), chunk: "tick 2\n".into() });
+        assert_eq!(s.processes[0].tail, "tick 1\ntick 2\n");
+        assert!(s.dirty, "panel repaints");
+        // A delta for an unknown handle is ignored (it appears within one poll).
+        s.handle_event(TuiEvent::BgOutput { handle: "bg#9".into(), chunk: "nope".into() });
+        assert_eq!(s.processes[0].tail, "tick 1\ntick 2\n");
+    }
+
+    #[test]
+    fn bg_output_bounds_the_tail_on_a_char_boundary() {
+        let (mut s, _arx) = state_with_gate();
+        s.processes = vec![BgProc {
+            handle: "bg#1".into(),
+            command: "chatty".into(),
+            tail: String::new(),
+            running_secs: 1,
+            idle_secs: 0,
+        }];
+        // A multibyte burst past the cap must not panic and must stay valid UTF-8.
+        let chunk = "é".repeat(BG_TAIL_CAP); // 2 bytes each → 2× the cap
+        s.handle_event(TuiEvent::BgOutput { handle: "bg#1".into(), chunk });
+        assert!(s.processes[0].tail.len() <= BG_TAIL_CAP);
+        assert!(s.processes[0].tail.chars().all(|c| c == 'é'), "no codepoint sliced");
     }
 
     #[test]

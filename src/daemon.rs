@@ -55,6 +55,12 @@ pub enum StreamDelta {
     AssistantText(String),
     /// A chunk of a running tool's combined output, tagged by its `tool_use` id.
     ToolOutput { call_id: String, chunk: String },
+    /// A chunk of a running background process's output, tagged by its `bg#<n>`
+    /// handle (DESIGN §6, TUI-bg-2). Demuxed by handle exactly like
+    /// [`ToolOutput`](Self::ToolOutput) is by `call_id` — it smooths the live process
+    /// panel's tail between the ~400ms `/state` polls. The poll snapshot stays the
+    /// authoritative tail; these just fill the gaps.
+    BgOutput { handle: String, chunk: String },
 }
 
 /// An in-flight approval surfaced to clients via `GET /state` (the ephemeral
@@ -795,7 +801,7 @@ fn tail_events(
 /// SSE's line-oriented `data:` framing.
 struct DeltaEvent {
     /// The delta kind → the SSE `event:` field, so a client switches without
-    /// parsing the body first (`assistant_delta` / `tool_output`).
+    /// parsing the body first (`assistant_delta` / `tool_output` / `bg_output`).
     kind: &'static str,
     data: String,
 }
@@ -821,6 +827,10 @@ fn delta_event(delta: &StreamDelta) -> DeltaEvent {
         StreamDelta::ToolOutput { call_id, chunk } => DeltaEvent {
             kind: "tool_output",
             data: serde_json::json!({ "call_id": call_id, "chunk": chunk }).to_string(),
+        },
+        StreamDelta::BgOutput { handle, chunk } => DeltaEvent {
+            kind: "bg_output",
+            data: serde_json::json!({ "handle": handle, "chunk": chunk }).to_string(),
         },
     }
 }
@@ -862,6 +872,12 @@ async fn drain_background(
 ) {
     crate::bash::drain_pipes(stdout, stderr, std::future::pending(), |chunk| {
         shared.supervisor.lock().unwrap().push_chunk(&handle, chunk);
+        // Smooth the live process panel between `/state` polls (TUI-bg-2). Lossy
+        // and best-effort — the poll snapshot remains the authoritative tail.
+        shared.publish_delta(StreamDelta::BgOutput {
+            handle: handle.clone(),
+            chunk: String::from_utf8_lossy(chunk).into_owned(),
+        });
     })
     .await;
     let status = child.wait().await.ok();
@@ -1185,6 +1201,10 @@ mod tests {
             call_id: "toolu_5".into(),
             chunk: "line of output\n".into(),
         });
+        shared.publish_delta(StreamDelta::BgOutput {
+            handle: "bg#1".into(),
+            chunk: "tick 3\n".into(),
+        });
 
         // Prose delta: typed, id-less, text in a JSON body.
         let (id, kind, data) = next_event(&mut stream).await;
@@ -1200,6 +1220,14 @@ mod tests {
         let v: Value = serde_json::from_str(&data).unwrap();
         assert_eq!(v["call_id"], "toolu_5");
         assert_eq!(v["chunk"], "line of output\n");
+
+        // Background-process delta: tagged by handle (TUI-bg-2), demuxed like a tool.
+        let (id, kind, data) = next_event(&mut stream).await;
+        assert_eq!(id, None);
+        assert_eq!(kind.as_deref(), Some("bg_output"));
+        let v: Value = serde_json::from_str(&data).unwrap();
+        assert_eq!(v["handle"], "bg#1");
+        assert_eq!(v["chunk"], "tick 3\n");
 
         let _ = std::fs::remove_file(&socket);
         let _ = std::fs::remove_file(&log_path);

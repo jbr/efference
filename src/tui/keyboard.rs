@@ -161,6 +161,12 @@ impl<'a> InteractiveState<'a> {
                 self.handle_activate_focused_link();
             }
 
+            // Flip the focused tool result between its wire (distilled) and raw
+            // output (DESIGN §10.5). No-op unless a tool-result exchange is focused.
+            (KeyCode::Char('r'), _) => {
+                self.toggle_raw_focused();
+            }
+
             // Page down
             (KeyCode::Char('d'), KeyModifiers::CONTROL) | (KeyCode::PageDown, _) => {
                 let page = terminal.size().map(|s| s.height / 2).unwrap_or(10);
@@ -463,7 +469,7 @@ impl<'a> InteractiveState<'a> {
             } else {
                 // ExpandBlock mutates the document in place; invalidate the
                 // layout cache so the next frame re-measures.
-                super::events::handle_action(&mut self.document.document, action);
+                super::events::handle_action(&mut self.document.document, &mut self.view, action);
                 self.viewport.cached_layout = None;
             }
         }

@@ -50,17 +50,17 @@ impl<'a> InteractiveState<'a> {
     pub(super) fn render_frame(&mut self, frame: &mut Frame) {
         let full = frame.area();
 
-        // Bottom chrome, top to bottom: [process panel?] / [gate banner?] / composer
-        // / status. The composer grows with its content (1 row, up to a cap). The
-        // rightmost column of the transcript is the scrollbar. The process panel
-        // (DESIGN §6) is one row per running process, capped, hidden when none run —
-        // an ambient strip between the transcript and the gate/composer.
+        // Bottom chrome, top to bottom: [process panel?] / composer / status. The
+        // composer grows with its content (1 row, up to a cap). The rightmost column
+        // of the transcript is the scrollbar. The process panel (DESIGN §6) is one row
+        // per running process, capped, hidden when none run — an ambient strip between
+        // the transcript and the composer. The approval gate is *not* bottom chrome:
+        // it renders inline in the transcript at the pending call (DESIGN §10.5).
         let input_height = (self.composer.line_count(full.width) as u16).clamp(1, 6);
-        let gate_height: u16 = if self.pending_gate.is_some() { 1 } else { 0 };
         let proc_height: u16 = (self.processes.len() as u16).min(PROC_PANEL_MAX);
         self.viewport.input_height = input_height;
-        self.viewport.gate_height = gate_height;
-        let bottom = 1 + input_height + gate_height + proc_height;
+        self.viewport.gate_height = 0;
+        let bottom = 1 + input_height + proc_height;
 
         let main_area = Rect {
             x: full.x,
@@ -73,12 +73,6 @@ impl<'a> InteractiveState<'a> {
             y: full.height.saturating_sub(bottom),
             width: full.width,
             height: proc_height,
-        };
-        let gate_area = Rect {
-            x: full.x,
-            y: full.height.saturating_sub(1 + input_height + gate_height),
-            width: full.width,
-            height: gate_height,
         };
         let input_area = Rect {
             x: full.x,
@@ -119,11 +113,6 @@ impl<'a> InteractiveState<'a> {
         // Live background-process panel, between the transcript and the gate (§6).
         if proc_height > 0 {
             self.render_processes_panel(frame.buffer_mut(), proc_area);
-        }
-
-        // Approval-gate banner, just above the composer (M3).
-        if gate_height > 0 {
-            self.render_gate_banner(frame.buffer_mut(), gate_area);
         }
 
         // Composer: clear its rows, then draw. Place the terminal cursor in it when
@@ -189,39 +178,4 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// Render the pending approval gate as a single highlighted banner row.
-    fn render_gate_banner(&self, buf: &mut ratatui::buffer::Buffer, area: Rect) {
-        let Some(gate) = &self.pending_gate else {
-            return;
-        };
-        // Prefer a bash `command`; otherwise a compact JSON of the input.
-        let detail = gate
-            .input
-            .get("command")
-            .and_then(|c| c.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| gate.input.to_string());
-        let text = format!(
-            "⛔ approve {}: {}   ⏎ approve · type to redirect · .abort",
-            gate.name, detail
-        );
-        let style = ratatui::style::Style::default()
-            .bg(self.theme.status_loading_bg)
-            .fg(self.theme.status_loading_fg)
-            .add_modifier(ratatui::style::Modifier::BOLD);
-        for x in 0..area.width {
-            if let Some(cell) = buf.cell_mut((area.x + x, area.y)) {
-                cell.reset();
-                cell.set_style(style);
-            }
-        }
-        for (col, ch) in (1..).zip(text.chars()) {
-            if col >= area.width {
-                break;
-            }
-            if let Some(cell) = buf.cell_mut((area.x + col, area.y)) {
-                cell.set_char(ch).set_style(style);
-            }
-        }
-    }
 }
