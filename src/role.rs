@@ -41,6 +41,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::log::Amendment;
+
 /// A role: portable policy describing what a session is for and what it may do
 /// (backlog/permissions/role-config.md). Decoded from a KDL document; every field is
 /// optional so a minimal — or empty — role file is valid, and an absent file yields
@@ -249,7 +251,80 @@ pub fn load(explicit: Option<&Path>) -> Result<LoadedRole, LoadError> {
 /// Parse KDL text into a [`Role`]. The `path` is used only as the diagnostic file name
 /// (it labels spans in the `knus::Error` report).
 fn parse(path: &Path, text: &str) -> Result<Role, LoadError> {
-    knus::parse(&path.display().to_string(), text).map_err(LoadError::Parse)
+    knus::parse(path.display().to_string(), text).map_err(LoadError::Parse)
+}
+
+/// Persist a granted [`Amendment`] to the role config file by **appending** a KDL node
+/// (backlog/permissions/petition-loop.md). Append-only is sound because grants are additive —
+/// we never rewrite or delete, so existing comments and formatting are left untouched. If the
+/// file already covers the amendment it's a no-op (additive grants are idempotent; this keeps
+/// the file tidy across re-grants). knus parses **KDL v1**, so we emit v1 syntax (bare
+/// `read=true` booleans) — the same shapes [`load`] reads back.
+pub fn persist_grant(path: &Path, amendment: &Amendment) -> std::io::Result<()> {
+    let text = std::fs::read_to_string(path)?;
+    // Dedup against the file's current content. A parse failure doesn't block the append (the
+    // node we emit is valid v1); we just can't dedup, so we proceed.
+    if parse(path, &text)
+        .map(|role| role_covers(&role, amendment))
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+    let mut out = text;
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&render_node(amendment));
+    out.push('\n');
+    std::fs::write(path, out)
+}
+
+/// Whether `role` already grants everything `amendment` would add — the persistence dedup.
+/// Exact match for `allow`/`tool`; permission-superset for `path` (an existing grant with at
+/// least the requested perms covers it).
+fn role_covers(role: &Role, amendment: &Amendment) -> bool {
+    match amendment {
+        Amendment::Allow { program, prefix } => role
+            .allow
+            .iter()
+            .any(|a| a.program == *program && a.prefix == *prefix),
+        Amendment::Path { path, read, write } => role
+            .paths
+            .iter()
+            .any(|p| p.path == *path && (p.read || !*read) && (p.write || !*write)),
+        Amendment::Tool { name } => role.tools.iter().any(|t| t.name == *name),
+    }
+}
+
+/// Render an [`Amendment`] as one KDL v1 node line (no trailing newline).
+fn render_node(amendment: &Amendment) -> String {
+    match amendment {
+        Amendment::Allow { program, prefix } => {
+            let mut s = format!("allow {}", kdl_string(program));
+            for token in prefix {
+                s.push(' ');
+                s.push_str(&kdl_string(token));
+            }
+            s
+        }
+        Amendment::Path { path, read, write } => {
+            let mut s = format!("path {}", kdl_string(path));
+            if *read {
+                s.push_str(" read=true");
+            }
+            if *write {
+                s.push_str(" write=true");
+            }
+            s
+        }
+        Amendment::Tool { name } => format!("tool {}", kdl_string(name)),
+    }
+}
+
+/// Quote a string as a KDL v1 string literal (escaping `\` and `"`). Sufficient for the
+/// program names, paths, and arg-prefix tokens an amendment carries.
+fn kdl_string(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 impl Role {
@@ -410,6 +485,69 @@ mod tests {
         let _ = std::fs::remove_file(&missing);
         let err = load(Some(&missing)).unwrap_err();
         assert!(matches!(err, LoadError::Io(_, _)), "explicit path must exist");
+    }
+
+    /// Persisting a grant appends a KDL v1 node that (a) leaves existing comments/content
+    /// intact, (b) round-trips back through knus, and (c) is idempotent on re-grant.
+    #[test]
+    fn persist_grant_appends_dedups_and_round_trips() {
+        let path = std::env::temp_dir()
+            .join(format!("efference-persist-{}.kdl", std::process::id()));
+        std::fs::write(&path, "// my role\nbrief \"do the thing\"\n").unwrap();
+
+        let amendment = Amendment::Allow {
+            program: "cargo".into(),
+            prefix: vec!["nextest".into()],
+        };
+        persist_grant(&path, &amendment).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("// my role"), "comment preserved: {text}");
+        assert!(text.contains("brief \"do the thing\""), "brief preserved: {text}");
+        assert!(text.contains(r#"allow "cargo" "nextest""#), "node appended: {text}");
+
+        // The appended v1 node parses back through knus into the grant we wrote.
+        let role = parse(&path, &text).unwrap();
+        assert!(
+            role.allow
+                .iter()
+                .any(|a| a.program == "cargo" && a.prefix == vec!["nextest".to_string()]),
+            "round-trips through knus"
+        );
+
+        // Re-granting the same amendment is a no-op — no duplicate node.
+        persist_grant(&path, &amendment).unwrap();
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            after.matches(r#"allow "cargo" "nextest""#).count(),
+            1,
+            "idempotent re-grant: {after}"
+        );
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A path grant renders its permissions and dedups on a permission-superset.
+    #[test]
+    fn persist_path_grant_renders_perms() {
+        let path = std::env::temp_dir()
+            .join(format!("efference-persist-path-{}.kdl", std::process::id()));
+        std::fs::write(&path, "").unwrap();
+        persist_grant(
+            &path,
+            &Amendment::Path { path: "../sib".into(), read: true, write: true },
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains(r#"path "../sib" read=true write=true"#), "{text}");
+        // A read-only grant under the same path is already covered → no-op.
+        persist_grant(
+            &path,
+            &Amendment::Path { path: "../sib".into(), read: true, write: false },
+        )
+        .unwrap();
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(after.matches("path \"../sib\"").count(), 1, "{after}");
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

@@ -165,16 +165,37 @@ decision that earns a log line: fast-path clears stay deliberately unlogged. `ef
 spotter --brief … --watch-for … --path … "<cmd>"` runs the exact `assess` path on one move,
 for iterating on the persona and role config against real cases.
 
+## The amendment loop — grants (`src/policy.rs`, `src/agent.rs`, `src/role.rs`)
+
+A deny is not a dead-end: the orchestrator can **amend policy** at a gate. A `Payload::Grant`
+carries one *additive* `Amendment` (`allow` / `path` / `tool`) and a `Lifetime` (`session` or
+`persist`). The **effective role** the cascade consults is `base role + fold(grants)` —
+`policy::effective_role` is the batch fold (startup / resumed log); the daemon then maintains it
+**incrementally** (`policy::apply_amendment` on each `Grant` append) so a gate reads current
+policy in O(1). Grants are additive only — the fold is order-independent and idempotent, so a
+grant replayed (already in the config *and* the log) is harmless.
+
+The human upgrades a gate with a fourth `Approval::Grant` decision. The loop **legislates**
+(`agent::legislate`): append the `Payload::Grant`, optionally append-persist it to the KDL config
+(`role::persist_grant` — v1 syntax, comment-preserving, deduped), then **re-classify this call
+against the new policy**. It runs only if the amended rule now clears it; otherwise it stays
+gated (a redirect). The human changes the *rule*; the mechanism authorizes the *call* — nothing
+rides along unchecked. A `Grant` projects to nothing on the wire (audit-only, like `Spot`); its
+effect reaches the model only through the classifier.
+
+This is the **first initiator** of the amendment loop (the human upgrading a blocking gate). The
+other two — the spotter's non-blocking bash-prefix promotion, and the session's own `revise_brief`
+petition (with the autonomous "gate = stall" mode that makes it necessary) — are not built yet.
+See [`../backlog/permissions/petition-loop.md`](../backlog/permissions/petition-loop.md).
+
 ## What is not built yet
 
-The watch-window, the scope-change petition loop, and the spotter's effect-preview.
-`Stance::Watch` resolves to the human gate today; the watch-window will map it to an
-intervention latency instead. Petition-fed growth of the bash allowlist — a spotter/human
-`clear` promoting a `(program, prefix)` into the role's `allow` list — waits on the petition
-loop (sound because it's program-prefix, never command). The spotter currently judges the raw
-command + role context; a neutral effect-preview is the planned input upgrade. Fleet-wide
-persona caching (a second breakpoint isolating the persona so it's shared across
-differently-briefed sessions) is a deferred optimization — per-session caching works today.
+The watch-window, the spotter's effect-preview, and the rest of the amendment loop (spotter
+prefix-promotion, the `revise_brief` tool, the autonomous mode). `Stance::Watch` resolves to the
+human gate today; the watch-window will map it to an intervention latency instead. The spotter
+currently judges the raw command + role context; a neutral effect-preview is the planned input
+upgrade. Fleet-wide persona caching (a second breakpoint isolating the persona so it's shared
+across differently-briefed sessions) is a deferred optimization — per-session caching works today.
 See [`../backlog/permissions/README.md`](../backlog/permissions/README.md).
 
 [`knus`]: https://docs.rs/knus

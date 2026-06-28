@@ -169,6 +169,9 @@ pub(crate) fn project(
             Payload::Triage(_) => {}
             // A spotter permission verdict (docs/permissions.md) — audit-only, like Triage.
             Payload::Spot(_) => {}
+            // A grant (backlog/permissions/petition-loop.md) — audit-only on the transcript
+            // for now; surfacing scope changes to the human lands with the construction sites.
+            Payload::Grant(_) => {}
         }
     }
 

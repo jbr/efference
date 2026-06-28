@@ -54,8 +54,8 @@ use std::path::{Component, Path, PathBuf};
 use serde_json::Value;
 
 use crate::bash;
-use crate::log::ToolCall;
-use crate::role::Role;
+use crate::log::{Amendment, LogEntry, Payload, ToolCall};
+use crate::role::{Allow, PathGrant, Role, ToolGrant};
 
 /// The fast-path's decision for one tool call. Binary; the extension point for the
 /// spotter rung, which splits `Gate` into a graded `{clear, watch, gate}` stance
@@ -73,6 +73,47 @@ pub enum Verdict {
 enum Perm {
     Read,
     Write,
+}
+
+/// Fold the log's [`Payload::Grant`] amendments onto a base role, yielding the **effective
+/// role** the classifier should consult (backlog/permissions/petition-loop.md). The effective
+/// policy at any point is `base + fold(grants)` — the substrate thesis applied to policy: the
+/// base role is what booted, the grants are the durable record of every amendment since, and
+/// this fold is their deterministic projection (kin to `project(log)`, docs/substrate.md).
+///
+/// Amendments are **additive only** — each pushes onto the role's `allow`/`paths`/`tools` lists,
+/// none can subtract — so the fold is order-independent and idempotent: replaying a grant twice
+/// (e.g. one already persisted to the config *and* still in the log) is harmless, because the
+/// classifier ORs across grants. This batch form rebuilds from the whole log (used at startup to
+/// fold any grants in a resumed log, and in tests); the daemon then maintains its effective role
+/// **incrementally** via [`apply_amendment`], so a gate never re-scans the log.
+pub fn effective_role(base: &Role, log: &[LogEntry]) -> Role {
+    let mut role = base.clone();
+    for entry in log {
+        if let Payload::Grant(grant) = &entry.payload {
+            apply_amendment(&mut role, &grant.amendment);
+        }
+    }
+    role
+}
+
+/// Fold one [`Amendment`] onto a role in place — the per-grant step of [`effective_role`],
+/// exposed so the daemon can update its effective role *incrementally* (folding each grant as
+/// it appends) rather than re-scanning the whole log on every gate (docs/control-channel.md).
+/// Purely additive: each variant pushes onto one of the role's grant lists.
+pub fn apply_amendment(role: &mut Role, amendment: &Amendment) {
+    match amendment {
+        Amendment::Allow { program, prefix } => role.allow.push(Allow {
+            program: program.clone(),
+            prefix: prefix.clone(),
+        }),
+        Amendment::Path { path, read, write } => role.paths.push(PathGrant {
+            path: path.clone(),
+            read: *read,
+            write: *write,
+        }),
+        Amendment::Tool { name } => role.tools.push(ToolGrant { name: name.clone() }),
+    }
 }
 
 /// Classify a tool call against the role (backlog/permissions/prefix-fastpath.md).
@@ -609,5 +650,68 @@ mod tests {
             structured(&role, &call("write", serde_json::json!({ "path": 42 }))),
             Verdict::Gate
         );
+    }
+
+    // --- effective_role: the policy fold over the log's grants ---
+
+    use crate::log::{Amendment, Grant, Lifetime, LogEntry, Payload, Timestamp};
+
+    /// One session-scoped grant as a log entry (seq/turn/at are irrelevant to the fold).
+    fn grant_entry(amendment: Amendment) -> LogEntry {
+        LogEntry {
+            seq: 0,
+            turn: 0,
+            at: Timestamp(0),
+            payload: Payload::Grant(Grant {
+                amendment,
+                lifetime: Lifetime::Session,
+                note: String::new(),
+            }),
+        }
+    }
+
+    /// A log with no grants leaves the policy exactly as the base role decides.
+    #[test]
+    fn effective_role_without_grants_matches_the_base() {
+        let base = sample_role();
+        let eff = effective_role(&base, &[]);
+        // npm is unlisted in the base, so it gates under both the base and the (unchanged) fold.
+        assert_eq!(classify(&base, &bash_call("npm install")), Verdict::Gate);
+        assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Gate);
+    }
+
+    /// An `Allow` grant promotes a program the base gated into the fast-path.
+    #[test]
+    fn an_allow_grant_clears_a_previously_gated_command() {
+        let base = sample_role();
+        assert_eq!(classify(&base, &bash_call("npm install")), Verdict::Gate);
+        let log = [grant_entry(Amendment::Allow { program: "npm".into(), prefix: vec![] })];
+        let eff = effective_role(&base, &log);
+        assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
+    }
+
+    /// A structured write needs *both* a tool-name and a path grant — two amendments fold
+    /// together to clear what an empty base gated.
+    #[test]
+    fn tool_and_path_grants_fold_together_to_clear_a_write() {
+        let base = Role::default(); // gates everything
+        let c = call("write", serde_json::json!({ "path": "src/x.rs" }));
+        assert_eq!(classify_in(&base, &c, Path::new(CWD)), Verdict::Gate);
+        let log = [
+            grant_entry(Amendment::Tool { name: "write".into() }),
+            grant_entry(Amendment::Path { path: ".".into(), read: true, write: true }),
+        ];
+        let eff = effective_role(&base, &log);
+        assert_eq!(classify_in(&eff, &c, Path::new(CWD)), Verdict::Clear);
+    }
+
+    /// The fold is idempotent: replaying the same grant (e.g. one already persisted to the
+    /// config *and* still in the log) still clears — the classifier ORs across grants.
+    #[test]
+    fn folding_a_grant_twice_is_harmless() {
+        let base = sample_role();
+        let g = grant_entry(Amendment::Allow { program: "npm".into(), prefix: vec![] });
+        let eff = effective_role(&base, &[g.clone(), g]);
+        assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
     }
 }

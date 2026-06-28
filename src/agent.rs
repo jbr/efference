@@ -23,8 +23,8 @@ use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::policy::{self, Verdict};
 use crate::log::{
-    ContentBlock, Disposition, Mark, MarkKind, Notification, Payload, RawResult, Spot, Stance,
-    ToolCall, Triage, Turn, WireState,
+    Amendment, ContentBlock, Disposition, Grant, Lifetime, Mark, MarkKind, Notification, Payload,
+    RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
 };
 use crate::project::place_trailing_cache_breakpoint;
 use crate::spotter::Spotter;
@@ -362,10 +362,14 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 // regardless of outcome (the first permission decision that earns a
                 // log line; fast-path clears stay unlogged), and its usage reads the
                 // shared spotter prefix, so it joins the cache telemetry (docs/substrate.md).
-                let approval = match policy::classify(shared.role(), call) {
+                // Classify against the *effective* policy — base role + the fold of every
+                // grant so far (backlog/permissions/petition-loop.md). A prior amendment can
+                // promote this very call into the fast-path; the spotter sees the same scope.
+                let role = shared.effective_role();
+                let approval = match policy::classify(&role, call) {
                     Verdict::Clear => Approval::Approve,
                     Verdict::Gate => {
-                        let spotting = spotter.assess(shared.role(), call).await;
+                        let spotting = spotter.assess(&role, call).await;
                         if let Some(u) = spotting.usage {
                             shared.record_request(u);
                         }
@@ -387,6 +391,16 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                             Stance::Watch | Stance::Gate => frontend.approve(call).await,
                         }
                     }
+                };
+                // A `Grant` is the orchestrator legislating policy (backlog/permissions/petition-loop.md):
+                // append the amendment (which folds into the effective role), then re-classify
+                // *this* call against the new policy. The call runs only if the amended rule now
+                // clears it — it never rides along unchecked.
+                let approval = match approval {
+                    Approval::Grant { amendment, lifetime, note } => {
+                        legislate(&shared, turn, call, amendment, lifetime, note)?
+                    }
+                    other => other,
                 };
                 match approval {
                     // `consolidate` acts on the log, not the world (docs/consolidate.md):
@@ -544,6 +558,8 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         shared.append(turn, rejected(call))?;
                         redirect = Some(message);
                     }
+                    // Resolved into Approve/Redirect by `legislate` above before this match.
+                    Approval::Grant { .. } => unreachable!("grant is legislated above"),
                 }
             }
             if abort_turn {
@@ -563,6 +579,50 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
     Ok(())
 }
 
+/// Legislate a `Grant` (backlog/permissions/petition-loop.md): persist it if asked, append the
+/// `Payload::Grant` (which folds it into the effective policy), then re-classify the gated call
+/// against the *new* policy. Returns `Approve` iff the amended rule now clears the call — the
+/// human changes the rule; the mechanism, not the gesture, authorizes the run. If the grant
+/// doesn't cover this call, it stays gated (a `Redirect` that tells the model why), so nothing
+/// rides along unchecked.
+///
+/// A persist failure degrades the grant to session-only (honest: we log what actually took
+/// effect) rather than failing the turn.
+fn legislate(
+    shared: &Shared,
+    turn: Turn,
+    call: &ToolCall,
+    amendment: Amendment,
+    lifetime: Lifetime,
+    note: String,
+) -> std::io::Result<Approval> {
+    let lifetime = match lifetime {
+        Lifetime::Persist => match shared.config_path() {
+            Some(path) => match crate::role::persist_grant(path, &amendment) {
+                Ok(()) => Lifetime::Persist,
+                Err(e) => {
+                    eprintln!("grant: could not persist to {}: {e}", path.display());
+                    Lifetime::Session
+                }
+            },
+            // The built-in default role has no file to persist to — session-only.
+            None => Lifetime::Session,
+        },
+        Lifetime::Session => Lifetime::Session,
+    };
+    shared.append(turn, Payload::Grant(Grant { amendment, lifetime, note }))?;
+    let role = shared.effective_role();
+    Ok(if policy::classify(&role, call) == Verdict::Clear {
+        Approval::Approve
+    } else {
+        Approval::Redirect(
+            "Scope updated — but that grant doesn't cover this exact call, so it stays gated. \
+             Adjust the call to fit the new scope and retry."
+                .into(),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -574,6 +634,59 @@ mod tests {
             name: name.into(),
             input: serde_json::json!({}),
         }
+    }
+
+    fn bash_call(command: &str) -> ToolCall {
+        ToolCall {
+            id: CallId("toolu_b".into()),
+            name: crate::bash::NAME.into(),
+            input: serde_json::json!({ "command": command }),
+        }
+    }
+
+    /// Legislating a grant that *covers* the gated call amends the policy and approves the
+    /// call (the amended rule clears it on re-classify).
+    #[test]
+    fn legislate_grants_then_approves_a_covered_call() {
+        use crate::log::{Amendment, Lifetime};
+        let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
+        let call = bash_call("npm install");
+        assert_eq!(policy::classify(&shared.effective_role(), &call), Verdict::Gate);
+
+        let approval = legislate(
+            &shared,
+            0,
+            &call,
+            Amendment::Allow { program: "npm".into(), prefix: vec![] },
+            Lifetime::Session,
+            "ok".into(),
+        )
+        .unwrap();
+        assert_eq!(approval, Approval::Approve);
+        // The policy is now amended for any future call too.
+        assert_eq!(policy::classify(&shared.effective_role(), &call), Verdict::Clear);
+    }
+
+    /// The invariant: a grant that does *not* cover the gated call still amends the policy,
+    /// but the call does **not** ride along — it's re-checked and stays gated (a redirect).
+    #[test]
+    fn legislate_does_not_let_an_uncovered_call_ride_along() {
+        use crate::log::{Amendment, Lifetime};
+        let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
+        let call = bash_call("npm install");
+
+        let approval = legislate(
+            &shared,
+            0,
+            &call,
+            Amendment::Tool { name: "read".into() }, // unrelated to the bash call
+            Lifetime::Session,
+            "unrelated".into(),
+        )
+        .unwrap();
+        assert!(matches!(approval, Approval::Redirect(_)), "uncovered call stays gated");
+        // The amendment still landed — legislation happens regardless of the current call.
+        assert!(shared.effective_role().tools.iter().any(|t| t.name == "read"));
     }
 
     #[test]

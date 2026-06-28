@@ -35,7 +35,7 @@ Ephemeral control state — a pending approval, current status, live process tai
 **Writes:**
 
 - `POST /turn {text}` → 202. Enqueues a user turn. Returns immediately; submission is decoupled from inference.
-- `POST /approvals/{call_id} {decision: approve|abort|redirect, message?}` — resolves a pending gate by the tool call's id.
+- `POST /approvals/{call_id} {decision: approve|abort|redirect|grant, message?, amendment?, lifetime?, note?}` — resolves a pending gate by the tool call's id (`grant` carries the amendment + lifetime, see Approval below).
 - `POST /interrupt` — fires the interrupt notifier.
 - `POST /notify {source, body, slot?, replaces?}` → 202, returns `{id}`. Enqueues an ambient notification into the ephemeral inbox (see [the inbox](inbox.md)). A `slot` binds the notification to a logical channel; a later notify on the same slot supersedes the old one (archive-and-replace, not edit — records are immutable). `replaces` supersedes a specific pending id by its queue-local id.
 - `POST /notifications/:id/dismiss` — removes a pending notification from the ephemeral inbox before it reaches a triage gate.
@@ -65,19 +65,20 @@ trait Frontend {
 }
 ```
 
-`read_user_turn` returns the next user turn, or `None` to end the loop. `approve` is a gate on a pending tool call, not a general line-edit surface — it has its own three-valued return and is conceptually separate from turn input. `interrupted` resolves when the user signals interrupt while a tool is running.
+`read_user_turn` returns the next user turn, or `None` to end the loop. `approve` is a gate on a pending tool call, not a general line-edit surface — it has its own four-valued return (approve / abort / redirect / grant) and is conceptually separate from turn input. `interrupted` resolves when the user signals interrupt while a tool is running.
 
 The loop is pull-shaped and stays that way. It blocks at `read_user_turn()` and `approve()`, and these map cleanly onto request/response: the pull resolves when a client pushes. `RemoteFrontend` implements all three against `Shared` — `read_user_turn` awaits the turn inbox, `approve` registers a gate and awaits its oneshot, `interrupted` awaits the interrupt notifier.
 
-## Approval: three-valued, no always-allow
+## Approval: four-valued, no always-allow
 
-`Approval` is `Approve | Abort | Redirect(String)`.
+`Approval` is `Approve | Abort | Redirect(String) | Grant { amendment, lifetime, note }`.
 
-- **Empty line (or `POST /approvals/{id}` with `decision: approve`)** — run the call.
+- **Empty line (or `POST /approvals/{id}` with `decision: approve`)** — run the call, no policy change.
 - **Any other text** — redirect. The call is rejected; the text is sent to the model as the next user turn, steering it without ending the turn.
 - **C-c (or `POST /interrupt`)** — abort. The call is rejected; the turn unwinds.
+- **`decision: grant`** — the orchestrator legislates policy (backlog/permissions/petition-loop.md): an additive `amendment` (`allow`/`path`/`tool`) with a `session` or `persist` `lifetime`. The loop appends a `Payload::Grant` (folding it into the effective role), optionally append-persists it to the KDL config, then **re-classifies this call against the new policy** — it runs only if the amended rule now clears it, otherwise it stays gated as a redirect. The human changes the *rule*; the mechanism, not the gesture, authorizes the *call*.
 
-There is no always-allow mode. The gate exists so every command is seen before it runs. This is a guardrail, not a security posture: the risk of a catastrophic command is low, but the gate stops it before it runs and costs nothing for the normal case.
+There is still no always-allow mode, and `Grant` is not one: it is a **specific, additive, logged, prunable** amendment (a named program-prefix / path / tool), never a blanket "stop asking." A granted call is re-checked against the amended policy, so nothing rides along unchecked. The gate exists so every command is seen before it runs — a guardrail, not a security posture.
 
 **Every tool call that doesn't run still produces a `ToolResult { is_error: true, wire: Raw }`.** This is an API hard requirement: every `tool_use` in the assistant turn must have a paired `tool_result` in the next user turn. Two flavors exist: `aborted()` (from C-c) and `rejected()` (from a redirect). On a redirect, a real `User` turn with the human's steering text is appended after the rejection `tool_result`. The API requires that a `tool_result` response can't be followed by bare user text without being in the same user message, so the two consecutive user-role payloads merge server-side into one turn — the model reads the rejection and the direction together, in the human's own words.
 
@@ -86,6 +87,7 @@ There is no always-allow mode. The gate exists so every command is seen before i
 ```
 project → complete → append Assistant →
   { approve → run → append ToolResult
+  | grant   → append Grant (fold policy) → re-classify → {approve|redirect}
   | abort   → append ToolResult(is_error)
   | redirect → append ToolResult(is_error) + append User turn }
 → repeat

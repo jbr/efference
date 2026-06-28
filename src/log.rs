@@ -82,6 +82,18 @@ pub enum Payload {
     /// only, never on the canonical wire. Fast-path clears are deliberately *not*
     /// logged; the spotter is the first permission rung that earns an entry.
     Spot(Spot),
+    /// A grant — the durable record of an **additive policy amendment**
+    /// (backlog/permissions/petition-loop.md). The amendment loop turns a deny into
+    /// negotiation: an orchestrator (human or coordinating session) extends the session's
+    /// scope, and the extension lands here. Effective policy = base role + the fold of these
+    /// (see [`effective_role`]); the log is the source of truth for what was granted, exactly
+    /// as it is for everything else (docs/substrate.md). Grants are *additive only* (no deny),
+    /// so the fold is order-independent and idempotent. Audit-only on the wire — it projects
+    /// to nothing, like [`Spot`]; the *effect* reaches the model through the classifier, never
+    /// the transcript.
+    ///
+    /// [`effective_role`]: crate::policy::effective_role
+    Grant(Grant),
 }
 
 /// Phase 0 content is text-only; richer blocks (images, …) come later.
@@ -194,6 +206,54 @@ pub enum Stance {
     Watch,
     /// Out of scope or unsanctioned-irreversible: stop and ask the human.
     Gate,
+}
+
+/// A grant: one durable, **additive** policy amendment (backlog/permissions/petition-loop.md).
+/// The amendment vocabulary lives here, in the substrate, deliberately — like [`Stance`] and
+/// [`Origin`], the log owns its own serialized types so the wire format isn't hostage to a
+/// policy struct's layout. [`crate::policy::effective_role`] maps each [`Amendment`] onto the
+/// role it folds into.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Grant {
+    /// What the amendment grants. Additive only — there is no deny amendment, which is what
+    /// makes the fold order-independent and idempotent.
+    pub amendment: Amendment,
+    /// Whether the grant is session-scoped or was also persisted to the role config file. The
+    /// fold ignores this (both take effect this session); it is audit metadata — the answer to
+    /// "did this survive into future boots?".
+    pub lifetime: Lifetime,
+    /// The orchestrator's one-line rationale, addressed to the session (and the corpus byproduct:
+    /// the labeled `(amendment, why)` pair for any future distilled approval model).
+    pub note: String,
+}
+
+/// What a [`Grant`] adds to the role. Each variant mirrors one of the role's grant kinds
+/// (`allow` / `path` / `tool`); [`crate::policy::effective_role`] pushes it onto the matching
+/// list. Additive only — the absence of a deny variant is load-bearing (the fold can't subtract).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Amendment {
+    /// A bash prefix-allowlist entry: a `program` and an optional safe-arg `prefix` (empty =
+    /// blanket-trust the program). The spotter-promotion path's payload.
+    Allow { program: String, prefix: Vec<String> },
+    /// A filesystem subtree grant: `path` and everything beneath it, with the given permissions
+    /// (`write` implies `read`, as in the role config).
+    Path { path: String, read: bool, write: bool },
+    /// A structured-tool name grant.
+    Tool { name: String },
+}
+
+/// How long a [`Grant`] lives (backlog/permissions/petition-loop.md). The MVP carries the two
+/// endpoints; turn/time-TTL is deferred (and time-TTL is a determinism hazard — timestamps are
+/// never projected, so it could only gate the recomputed classifier, never the wire).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Lifetime {
+    /// In effect for this session only: a log entry that dies with the daemon.
+    Session,
+    /// Also written back to the role config file, so it survives into future boots. Sound as an
+    /// append because grants are additive (backlog/permissions/petition-loop.md).
+    Persist,
 }
 
 /// What the agent chose to do with one notification at a triage gate (docs/inbox.md).

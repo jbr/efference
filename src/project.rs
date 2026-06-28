@@ -237,6 +237,11 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // A spotter verdict (docs/permissions.md) is audit-only — the permission
             // decision lives in the log, never on the canonical wire.
             Payload::Spot(_) => {}
+            // A grant (backlog/permissions/petition-loop.md) is audit-only too — its
+            // *effect* reaches the model through the classifier (the policy fold), never
+            // the transcript. So it projects to nothing, and appending one cannot perturb
+            // the cached prefix (docs/substrate.md).
+            Payload::Grant(_) => {}
             // A fork verdict emits a block per **pinned** notification at its own
             // position (docs/inbox.md) — body looked up from the `Ambient` arrival. This
             // tail-ward placement keeps the wire append-only: a notification pinned at
@@ -497,6 +502,32 @@ mod tests {
         let wire = serde_json::to_string(&project(&sample_log())).unwrap();
         let expected = r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] file.txt"}]}]"#;
         assert_eq!(wire, expected);
+    }
+
+    /// A `Grant` is audit-only: appending one anywhere in the log must not change a single
+    /// projected byte (its effect reaches the model through the classifier, not the wire). If
+    /// this ever fails, a grant has leaked onto the cached prefix (docs/substrate.md).
+    #[test]
+    fn grant_projects_to_nothing() {
+        use crate::log::{Amendment, Grant, Lifetime};
+        let without = serde_json::to_string(&project(&sample_log())).unwrap();
+
+        let mut with = sample_log();
+        with.push(entry(
+            3,
+            1,
+            Payload::Grant(Grant {
+                amendment: Amendment::Allow {
+                    program: "cargo".into(),
+                    prefix: vec!["nextest".into()],
+                },
+                lifetime: Lifetime::Persist,
+                note: "promoted: standing-safe in scope".into(),
+            }),
+        ));
+        let with = serde_json::to_string(&project(&with)).unwrap();
+
+        assert_eq!(without, with, "a grant must not perturb the projected wire");
     }
 
     /// `is_error: false` must be omitted (lean wire); a true error must appear.

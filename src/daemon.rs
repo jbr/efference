@@ -146,6 +146,14 @@ pub struct Shared {
     /// is where the cascade rungs (the prefix fast-path and the spotter) read the
     /// allowlist, path grants, brief, and watch-for from. Immutable, so no lock.
     role: LoadedRole,
+    /// The **effective** policy = the base `role` + the fold of every `Grant` appended so
+    /// far (backlog/permissions/petition-loop.md). Maintained incrementally in [`append`]
+    /// as grants land, so a gate reads current policy in O(1) without re-scanning the log.
+    /// Behind a lock because grants mutate it mid-session (unlike the frozen base `role`);
+    /// the gate takes an `Arc` clone, cheap and safe to hold across the spotter's await.
+    ///
+    /// [`append`]: Shared::append
+    effective: Mutex<Arc<crate::role::Role>>,
 }
 
 /// Per-session cache/usage telemetry. `last_request_at` is an [`Instant`] (not
@@ -187,6 +195,10 @@ impl Shared {
         // the durable record, so a dropped delta is only a momentary gap in the
         // live view.
         let (stream_tx, _) = broadcast::channel(1024);
+        // Fold any grants already in the log (a resumed session) into the initial effective
+        // role; from here it's maintained incrementally on append. Computed before `log` is
+        // moved into the struct.
+        let effective = Arc::new(crate::policy::effective_role(&role.role, log.entries()));
         let shared = Arc::new(Self {
             log: Mutex::new(log),
             turns_tx,
@@ -200,6 +212,7 @@ impl Shared {
             inbox: Mutex::new(Inbox::default()),
             supervisor: Mutex::new(Supervisor::new()),
             role,
+            effective: Mutex::new(effective),
         });
         (shared, turns_rx)
     }
@@ -246,7 +259,20 @@ impl Shared {
     /// Append to the log (durably) and wake SSE tailers. The single appender is
     /// the loop; handlers only read.
     pub fn append(&self, turn: Turn, payload: Payload) -> io::Result<Seq> {
+        // A `Grant` amends policy: capture its amendment before the payload moves into the
+        // log, then fold it into the effective role *after* a successful append, so a failed
+        // write never grants (backlog/permissions/petition-loop.md). Cheap clone, grants only.
+        let granted = match &payload {
+            Payload::Grant(grant) => Some(grant.amendment.clone()),
+            _ => None,
+        };
         let seq = self.log.lock().unwrap().append(turn, payload)?;
+        if let Some(amendment) = granted {
+            let mut eff = self.effective.lock().unwrap();
+            let mut role = (**eff).clone();
+            crate::policy::apply_amendment(&mut role, &amendment);
+            *eff = Arc::new(role);
+        }
         self.appended.notify_waiters();
         Ok(seq)
     }
@@ -281,6 +307,24 @@ impl Shared {
     /// is fine — no lock.
     pub fn role(&self) -> &crate::role::Role {
         &self.role.role
+    }
+
+    /// The effective policy the cascade should consult: base role + the fold of every grant
+    /// appended so far (backlog/permissions/petition-loop.md). Returns an `Arc` clone of the
+    /// incrementally-maintained role — O(1), and safe to hold across the spotter's await (a
+    /// lock guard would not be). Falls back to the base if no grants have landed.
+    pub fn effective_role(&self) -> Arc<crate::role::Role> {
+        self.effective.lock().unwrap().clone()
+    }
+
+    /// The role config file path, if the role resolved from one (`None` for the built-in
+    /// default — nothing to persist to). Where a `Lifetime::Persist` grant is appended
+    /// (backlog/permissions/petition-loop.md).
+    pub fn config_path(&self) -> Option<&std::path::Path> {
+        match &self.role.source {
+            RoleSource::Path(p) => Some(p),
+            RoleSource::Default => None,
+        }
     }
 
     /// A clone of the single entry at `seq` (== its index in the log), or `None`
@@ -613,6 +657,14 @@ struct DecisionBody {
     decision: String,
     #[serde(default)]
     message: Option<String>,
+    /// The grant payload (`decision: "grant"` only) — the additive amendment, its lifetime
+    /// (`session`/`persist`, default `session`), and a rationale note (backlog/permissions/petition-loop.md).
+    #[serde(default)]
+    amendment: Option<crate::log::Amendment>,
+    #[serde(default)]
+    lifetime: Option<crate::log::Lifetime>,
+    #[serde(default)]
+    note: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -675,6 +727,18 @@ fn router() -> Router {
                 "approve" => Approval::Approve,
                 "abort" => Approval::Abort,
                 "redirect" => Approval::Redirect(decision.message.unwrap_or_default()),
+                "grant" => match decision.amendment {
+                    Some(amendment) => Approval::Grant {
+                        amendment,
+                        lifetime: decision.lifetime.unwrap_or(crate::log::Lifetime::Session),
+                        note: decision.note.unwrap_or_default(),
+                    },
+                    None => {
+                        return conn.with_status(400).with_body(
+                            r#"{"error":"grant decision requires an amendment"}"#,
+                        );
+                    }
+                },
                 other => {
                     return conn
                         .with_status(400)
@@ -802,6 +866,7 @@ fn log_event(entry: &LogEntry) -> LogEvent {
         Payload::Triage(_) => "triage",
         Payload::Ambient(_) => "ambient",
         Payload::Spot(_) => "spot",
+        Payload::Grant(_) => "grant",
     };
     LogEvent {
         id: entry.seq.to_string(),
@@ -1163,6 +1228,73 @@ mod tests {
         assert_eq!(v["role"]["allow_count"], 2);
         assert_eq!(v["role"]["tool_count"], 1);
         assert_eq!(v["role"]["path_count"], 1);
+    }
+
+    /// One bash `ToolCall`, for exercising the effective-policy cache through `classify`.
+    fn bash_call(command: &str) -> ToolCall {
+        ToolCall {
+            id: CallId("toolu_x".into()),
+            name: crate::bash::NAME.into(),
+            input: serde_json::json!({ "command": command }),
+        }
+    }
+
+    fn allow_grant(program: &str) -> Payload {
+        Payload::Grant(crate::log::Grant {
+            amendment: crate::log::Amendment::Allow { program: program.into(), prefix: vec![] },
+            lifetime: crate::log::Lifetime::Session,
+            note: String::new(),
+        })
+    }
+
+    /// The effective-policy cache updates incrementally: a `Grant` appended mid-session
+    /// promotes a call the base gated into the fast-path, with no log re-scan at the gate
+    /// (backlog/permissions/petition-loop.md).
+    #[test]
+    fn appending_a_grant_updates_the_effective_role() {
+        use crate::policy::{Verdict, classify};
+        let call = bash_call("npm install");
+
+        // Empty base role → npm gates.
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        assert_eq!(classify(&shared.effective_role(), &call), Verdict::Gate);
+
+        // Grant `allow "npm"` → the same call now clears, via the incrementally-folded role.
+        shared.append(0, allow_grant("npm")).unwrap();
+        assert_eq!(classify(&shared.effective_role(), &call), Verdict::Clear);
+    }
+
+    /// A `grant` decision body decodes into its amendment + lifetime (lowercase wire tags),
+    /// the wire shape the orchestrator posts to upgrade a gate (backlog/permissions/petition-loop.md).
+    #[test]
+    fn grant_decision_body_decodes() {
+        let body = r#"{"decision":"grant","lifetime":"persist","note":"in scope",
+                       "amendment":{"allow":{"program":"cargo","prefix":["nextest"]}}}"#;
+        let d: DecisionBody = serde_json::from_str(body).unwrap();
+        assert_eq!(d.decision, "grant");
+        assert_eq!(d.lifetime, Some(crate::log::Lifetime::Persist));
+        assert_eq!(
+            d.amendment,
+            Some(crate::log::Amendment::Allow {
+                program: "cargo".into(),
+                prefix: vec!["nextest".into()],
+            })
+        );
+    }
+
+    /// On resume, grants already in the log fold into the *initial* effective role at
+    /// construction — the policy survives a restart even before any new grant lands.
+    #[test]
+    fn resumed_log_grants_fold_into_the_initial_effective_role() {
+        use crate::policy::{Verdict, classify};
+        let mut log = Log::in_memory();
+        log.append(0, allow_grant("npm")).unwrap();
+
+        let (shared, _rx) = Shared::new(log);
+        assert_eq!(
+            classify(&shared.effective_role(), &bash_call("npm install")),
+            Verdict::Clear
+        );
     }
 
     /// The keepalive's load-bearing invariant (docs/substrate.md): a ping advances the

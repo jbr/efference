@@ -300,6 +300,9 @@ impl<'a> InteractiveState<'a> {
                 Approval::Approve => "approved".to_string(),
                 Approval::Abort => "aborted".to_string(),
                 Approval::Redirect(_) => "redirected".to_string(),
+                // The composer doesn't author grants (that needs a richer surface); kept
+                // exhaustive so a future grant-capable client labels cleanly.
+                Approval::Grant { .. } => "granted".to_string(),
             };
             let _ = self.approve_tx.send((gate.call_id, decision));
             self.composer.clear();

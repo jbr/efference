@@ -57,6 +57,12 @@ impl Client {
             Approval::Redirect(message) => {
                 serde_json::json!({ "decision": "redirect", "message": message })
             }
+            Approval::Grant { amendment, lifetime, note } => serde_json::json!({
+                "decision": "grant",
+                "amendment": amendment,
+                "lifetime": lifetime,
+                "note": note,
+            }),
         }
         .to_string();
         self.post(&format!("/approvals/{call_id}"), body)
