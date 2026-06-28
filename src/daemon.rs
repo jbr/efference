@@ -41,6 +41,7 @@ use crate::log::{CallId, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{ApiMessage, place_trailing_cache_breakpoint, project};
 use crate::role::{LoadedRole, RoleSource};
+use crate::spotter::Spotter;
 use crate::supervisor::{BgView, Supervisor};
 use crate::tools::Toolbox;
 
@@ -142,8 +143,8 @@ pub struct Shared {
     /// The resolved role config and where it came from (backlog/permissions/role-config.md).
     /// Read-only for the session's lifetime — the brief is already frozen into the
     /// cached preamble; this copy backs the `GET /state` report ("which role am I?") and
-    /// is where the not-yet-built cascade rungs (the prefix fast-path, the judge) will
-    /// read the allowlist and thresholds from. Immutable, so no lock.
+    /// is where the cascade rungs (the prefix fast-path and the spotter) read the
+    /// allowlist, path grants, brief, and watch-for from. Immutable, so no lock.
     role: LoadedRole,
 }
 
@@ -800,6 +801,7 @@ fn log_event(entry: &LogEntry) -> LogEvent {
         Payload::Mark(_) => "mark",
         Payload::Triage(_) => "triage",
         Payload::Ambient(_) => "ambient",
+        Payload::Spot(_) => "spot",
     };
     LogEvent {
         id: entry.seq.to_string(),
@@ -990,10 +992,11 @@ fn parse_since(query: &str) -> Option<u64> {
 /// agent loop with a [`RemoteFrontend`]. The loop blocks until a `POST /turn`
 /// arrives, so an idle daemon simply waits — retiring argv-seeding and the
 /// "backgrounded run can't get its opening prompt" problem (docs/README.md).
-pub async fn serve<D: Distiller>(
+pub async fn serve<D: Distiller, S: Spotter>(
     client: Client,
     toolbox: Toolbox,
     distiller: D,
+    spotter: S,
     log: Log,
     socket: PathBuf,
     role: LoadedRole,
@@ -1045,7 +1048,7 @@ pub async fn serve<D: Distiller>(
     // return, after shutdown has already begun.)
     // Keep a handle for teardown — `run` moves the loop's `Arc<Shared>`.
     let teardown = Arc::clone(&shared);
-    let run = agent::run(&client, &mut frontend, shared, distiller, toolbox);
+    let run = agent::run(&client, &mut frontend, shared, distiller, spotter, toolbox);
     let outcome = match server.swansong().interrupt(run).await {
         Some(result) => result,
         None => {

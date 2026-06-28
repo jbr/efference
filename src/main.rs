@@ -18,6 +18,7 @@ use efference::daemon;
 use efference::distill::ForkPeek;
 use efference::frontend::Approval;
 use efference::persist::Log;
+use efference::spotter::{ForkSpot, Spotter};
 use efference::tools::Toolbox;
 use futures_lite::StreamExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -43,6 +44,11 @@ enum Command {
         /// Model to use for the agent. Defaults to claude-haiku-4-5.
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
+        /// Model for the spotter permission rung (docs/permissions.md). Independent
+        /// of the agent model — the spotter is volume work, so it defaults to the
+        /// cheap band (Haiku) regardless of what the agent runs.
+        #[arg(long, default_value = "claude-haiku-4-5")]
+        spotter_model: String,
         /// Path to the role config (KDL, see backlog/permissions/role-config.md). If
         /// omitted, `efference.kdl` in the cwd is probed; absent → the built-in default
         /// role. An explicit path that doesn't exist is an error. The resolved path is
@@ -151,6 +157,29 @@ enum Command {
         #[arg(long)]
         since: Option<u64>,
     },
+    /// Dev tool (like `wire`/`gallery`): run the spotter permission rung
+    /// (docs/permissions.md) on a single (brief, watch-for, command) and print its
+    /// verdict — no daemon, no session. A live API call to the spotter model, for
+    /// iterating on the persona and role config against real cases. Requires
+    /// ANTHROPIC_API_KEY.
+    Spotter {
+        /// The mission brief to judge against. Omit to test the no-brief frame.
+        #[arg(long)]
+        brief: Option<String>,
+        /// The spotter-only "things to watch for" list.
+        #[arg(long)]
+        watch_for: Option<String>,
+        /// An allowed path grant, repeatable. Format: `<path>:rw` (read+write),
+        /// `<path>:r` (read), or bare `<path>` (no access). E.g. `--path .:rw --path /refs:r`.
+        #[arg(long = "path")]
+        paths: Vec<String>,
+        /// Spotter model. Defaults to claude-haiku-4-5.
+        #[arg(long, default_value = "claude-haiku-4-5")]
+        model: String,
+        /// The bash command to judge. Multiple words are joined with spaces.
+        #[arg(required = true, num_args = 1..)]
+        command: Vec<String>,
+    },
 }
 
 /// Output format for the `wire` dev view.
@@ -166,7 +195,11 @@ enum WireFormat {
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Serve { model, config } => serve(cli.socket, &model, config).await,
+        Command::Serve {
+            model,
+            spotter_model,
+            config,
+        } => serve(cli.socket, &model, &spotter_model, config).await,
         Command::Turn { text } => turn(cli.socket, text.join(" ")).await,
         Command::Approve {
             call_id,
@@ -183,6 +216,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::Dismiss { id } => dismiss(cli.socket, id).await,
         Command::State => state(cli.socket).await,
         Command::Log { since } => log(cli.socket, since).await,
+        Command::Spotter {
+            brief,
+            watch_for,
+            paths,
+            model,
+            command,
+        } => spotter_check(brief, watch_for, paths, &model, command.join(" ")).await,
         Command::Attach => attach(cli.socket).await,
         Command::Tui { theme } => tui(cli.socket, theme).await,
         Command::Gallery { theme } => gallery(theme).await,
@@ -563,6 +603,7 @@ fn render_event(kind: Option<&str>, data: &str, state: &mut RenderState) {
 async fn serve(
     socket: PathBuf,
     model: &str,
+    spotter_model: &str,
     config: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Daemon logging: RUST_LOG controls verbosity (default: efference at info, deps
@@ -616,7 +657,12 @@ async fn serve(
     let role_section = loaded.role.preamble_section();
     let system = efference::env::system_prompt(role_section.as_deref());
 
-    let client = Client::new(api_key, model, system);
+    let client = Client::new(api_key.clone(), model, system);
+
+    // The independent permission rung (docs/permissions.md): a fresh-context spotter
+    // on its own Haiku-band client, built from the same key. It re-decides the calls
+    // the deterministic fast-path can't clear, before the human gate.
+    let spotter = ForkSpot::new(api_key, spotter_model);
 
     // The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
     // canonical wire keeps only what the model retains. `Toolbox` is the docs/tools.md tool
@@ -624,5 +670,63 @@ async fn serve(
     // their session cwd seeded to where we're running.
     let cwd = std::env::current_dir()?;
     let toolbox = Toolbox::bash_and_mcps(cwd)?;
-    daemon::serve(client, toolbox, ForkPeek, log, socket, loaded).await
+    daemon::serve(client, toolbox, ForkPeek, spotter, log, socket, loaded).await
+}
+
+/// Dev tool: run the spotter on one `(brief, watch-for, paths, command)` and print
+/// the verdict (docs/permissions.md). No daemon — it builds a throwaway role and a
+/// bash [`ToolCall`] and calls the exact `assess` path a real gate would, so what it
+/// prints is what the loop would see. For iterating on the persona and role config.
+///
+/// [`ToolCall`]: efference::log::ToolCall
+async fn spotter_check(
+    brief: Option<String>,
+    watch_for: Option<String>,
+    paths: Vec<String>,
+    model: &str,
+    command: String,
+) -> CliResult {
+    let api_key = std::env::var("ANTHROPIC_API_KEY")
+        .map_err(|_| "ANTHROPIC_API_KEY is not set in the environment")?;
+    let role = efference::role::Role {
+        brief,
+        watch_for,
+        paths: paths.iter().map(|s| parse_path_grant(s)).collect(),
+        ..Default::default()
+    };
+    let call = efference::log::ToolCall {
+        id: efference::log::CallId("toolu_spotter_check".into()),
+        name: efference::bash::NAME.into(),
+        input: serde_json::json!({ "command": command }),
+    };
+    let spotting = ForkSpot::new(api_key, model).assess(&role, &call).await;
+    println!("stance: {:?}", spotting.read.stance);
+    println!("reason: {}", spotting.read.reason);
+    println!("origin: {:?}", spotting.origin);
+    if let Some(u) = spotting.usage {
+        println!(
+            "usage:  in {} · out {} · cache read {} · cache write {}",
+            u.input_tokens,
+            u.output_tokens,
+            u.cache_read_input_tokens,
+            u.cache_creation_input_tokens
+        );
+    }
+    Ok(())
+}
+
+/// Parse a `--path` grant spec for the spotter tester: `<path>:rw` (read+write),
+/// `<path>:r` (read), or a bare `<path>` (no access — matching [`PathGrant`]'s
+/// honest default). The perm suffix is matched by the letters it contains.
+///
+/// [`PathGrant`]: efference::role::PathGrant
+fn parse_path_grant(spec: &str) -> efference::role::PathGrant {
+    match spec.rsplit_once(':') {
+        Some((path, perms)) => efference::role::PathGrant {
+            path: path.into(),
+            read: perms.contains('r'),
+            write: perms.contains('w'),
+        },
+        None => efference::role::PathGrant { path: spec.into(), read: false, write: false },
+    }
 }

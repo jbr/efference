@@ -17,13 +17,14 @@
 //!
 //! - [`Role::brief`] — the positive scope, **shared with the acting session** for
 //!   self-alignment. It projects into the cached preamble ([`Role::preamble_section`]).
-//! - [`Role::judge_rubric`] — the red-flag rubric, **judge-only**. Kept off the
-//!   session's preamble so the session can't teach to the test. Consumed by the judge
-//!   rung (not built yet).
+//! - [`Role::watch_for`] — the spotter's "things to watch for", **spotter-only**.
+//!   Kept off the session's preamble for attention-division (the focused session
+//!   doesn't carry peripheral hazards; the spotter does). Consumed by the spotter
+//!   rung ([`crate::spotter`]).
 //! - [`Role::allow`] — the prefix-allowlist the deterministic fast-path matches against
-//!   (backlog/permissions/prefix-fastpath.md). Consumed by that rung (not built yet).
+//!   (backlog/permissions/prefix-fastpath.md). Consumed by that rung.
 //! - [`Role::trust_threshold`] — where the watch-window/gate cutoffs sit. Consumed by
-//!   the judge/watch-window rungs (not built yet).
+//!   the watch-window rung (not built yet).
 //!
 //! Per the convention in CLAUDE.md, the schema fields land *before* the rungs that
 //! read them — "wire the seam ahead of the feature".
@@ -51,14 +52,19 @@ pub struct Role {
     #[knus(child, unwrap(argument), default)]
     pub brief: Option<String>,
 
-    /// The judge's red-flag rubric — judge-only, never shown to the acting session (no
-    /// teaching-to-the-test). KDL: `judge-rubric "…"`. Consumed by the judge rung.
+    /// The spotter's "things to watch for" — gotchas specific to this mission,
+    /// **spotter-only**, never shown to the acting session. Held off the session's
+    /// preamble not to stop it teaching to the test (the threat model is error, not
+    /// deception — there is no test to game) but for **attention-division**: the
+    /// focused session shouldn't carry low-probability peripheral hazards in working
+    /// memory; the spotter holds them so the session keeps its attention on the task
+    /// (docs/permissions.md). KDL: `watch-for "…"`. Consumed by the spotter rung.
     #[knus(child, unwrap(argument), default)]
-    pub judge_rubric: Option<String>,
+    pub watch_for: Option<String>,
 
     /// Trust posture → where the watch-window/gate cutoffs sit. `None` = unset (a real
     /// `0` would mean something specific, so absence is kept distinct). KDL:
-    /// `trust-threshold 0.5`. Consumed by the judge/watch-window rungs.
+    /// `trust-threshold 0.5`. Consumed by the watch-window rung.
     #[knus(child, unwrap(argument), default)]
     pub trust_threshold: Option<f64>,
 
@@ -251,7 +257,7 @@ impl Role {
     /// prompt (backlog/permissions/role-config.md), or `None` if there is no brief. The
     /// header is fixed and the body is the brief verbatim (trimmed), so the output is a
     /// pure, deterministic function of the brief — safe for the cached prefix. The
-    /// judge rubric is deliberately *not* projected here: it is judge-only.
+    /// watch-for list is deliberately *not* projected here: it is spotter-only.
     pub fn preamble_section(&self) -> Option<String> {
         let brief = self.brief.as_deref().map(str::trim).filter(|b| !b.is_empty())?;
         Some(format!("Your role for this session:\n\n{brief}"))
@@ -270,7 +276,7 @@ mod tests {
     fn empty_document_is_a_valid_default_role() {
         let role = parse_str("");
         assert!(role.brief.is_none());
-        assert!(role.judge_rubric.is_none());
+        assert!(role.watch_for.is_none());
         assert!(role.trust_threshold.is_none());
         assert!(role.allow.is_empty());
         assert!(role.tools.is_empty());
@@ -279,17 +285,17 @@ mod tests {
     }
 
     #[test]
-    fn parses_brief_judge_rubric_and_trust_threshold() {
+    fn parses_brief_watch_for_and_trust_threshold() {
         let role = parse_str(
             r#"
             brief "Work only inside this repo."
-            judge-rubric "Flag network egress to non-registry hosts."
+            watch-for "Flag network egress to non-registry hosts."
             trust-threshold 0.5
             "#,
         );
         assert_eq!(role.brief.as_deref(), Some("Work only inside this repo."));
         assert_eq!(
-            role.judge_rubric.as_deref(),
+            role.watch_for.as_deref(),
             Some("Flag network egress to non-registry hosts.")
         );
         assert_eq!(role.trust_threshold, Some(0.5));
@@ -384,13 +390,13 @@ mod tests {
         assert!(role.preamble_section().is_none());
     }
 
-    /// The rubric is judge-only — it must never leak into the session's preamble.
+    /// The watch-for list is spotter-only — it must never leak into the session's preamble.
     #[test]
-    fn preamble_section_excludes_the_judge_rubric() {
+    fn preamble_section_excludes_the_watch_for() {
         let role = parse_str(
             r#"
             brief "Do the task."
-            judge-rubric "SECRET RED FLAGS"
+            watch-for "SECRET RED FLAGS"
             "#,
         );
         let section = role.preamble_section().unwrap();

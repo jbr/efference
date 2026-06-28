@@ -21,6 +21,7 @@ pub mod policy;
 pub mod pretty;
 pub mod project;
 pub mod role;
+pub mod spotter;
 pub mod supervisor;
 pub mod tools;
 pub mod tui;

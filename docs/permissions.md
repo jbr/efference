@@ -1,4 +1,4 @@
-# Permissions — role config & the approval fast-path
+# Permissions — role config, the fast-path & the spotter
 
 A session is parameterized by `(role-config, cwd, orchestrator)`. The **role** is the
 portable-policy half: what a session is *for* and what it may do, kept separate from cwd
@@ -7,10 +7,10 @@ role stays portable. Policy is **data the classifier interprets**, never special
 code — there are no privileged program names or directories in the mechanism, only config
 the mechanism reads.
 
-This doc covers what is built now: the role config (`src/role.rs`) and the deterministic
-approval fast-path (`src/policy.rs`), wired into the turn loop's gate (`src/agent.rs`).
-The fuller cascade — an independent judge, a watch-window, a scope-change petition loop —
-is planned; see [`../backlog/permissions/`](../backlog/permissions/).
+This doc covers what is built now: the role config (`src/role.rs`), the deterministic
+approval fast-path (`src/policy.rs`), and the independent spotter (`src/spotter.rs`),
+wired into the turn loop's gate (`src/agent.rs`). The watch-window and the scope-change
+petition loop are planned; see [`../backlog/permissions/`](../backlog/permissions/).
 
 ## Threat model: error, not deception
 
@@ -45,8 +45,10 @@ the role holds:
   [substrate](substrate.md)): it is rendered once at startup from the brief text and
   frozen. Changing roles is a cold cache write, which is fine — roles do not change
   mid-session.
-- **`judge-rubric`** — the red-flag rubric, *judge-only*. Kept off the session's preamble
-  so the session cannot teach to the test. Consumed by the (unbuilt) judge rung.
+- **`watch-for`** — the "things to watch for" list, *spotter-only*. Kept off the session's
+  preamble for **attention-division** (not anti-gaming — the threat model is error, not
+  deception, so there's no test to game): the focused session shouldn't carry low-probability
+  peripheral hazards in working memory; the spotter holds them. Consumed by the spotter rung.
 - **`allow "prog" "arg" …`** — the bash prefix-allowlist (below).
 - **`tool "name"`** and **`path "." read=true write=true`** — the structured-tool and
   filesystem grants the fast-path reads (below).
@@ -56,9 +58,9 @@ the role holds:
 
 `classify(&Role, &ToolCall) -> Verdict` is a **pure function** — no I/O, no model —
 returning `Clear` (auto-approve: no human gate, no model round-trip) or `Gate` (fall
-through to the human gate today, the judge later). The loop consults it just before the
-gate: `Clear` becomes an immediate approve; `Gate` calls `frontend.approve`. It is the
-cheapest rung of the planned cascade, and it only ever *accepts what it is certain about*,
+through to the spotter rung, then the human gate). The loop consults it just before the
+gate: `Clear` becomes an immediate approve; `Gate` hands the call to the spotter (below).
+It is the cheapest rung of the cascade, and it only ever *accepts what it is certain about*,
 erring toward `Gate` on any doubt.
 
 ### bash: a two-stage check, order load-bearing
@@ -82,7 +84,7 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
 
 **Why a POSIX parser is the right choice for a security gate.** yash is POSIX-strict, not
 bash-complete, which costs only *coverage* (a few bash-only forms — `[[ ]]`, `<(…)`,
-`for…do` — gate to the human/judge), never *soundness*: bash's dangerous operators are
+`for…do` — gate to the spotter), never *soundness*: bash's dangerous operators are
 POSIX too, so they parse as operators and gate; bash-only syntax either fails to parse
 (→ gate) or surfaces as inert literal words that match no allowlist entry. A young
 bash-complete parser would improve coverage but put a broad, immature surface on the
@@ -124,14 +126,55 @@ edit-pipeline call that names the file — and `persist_edit` clears on the name
 cohesive fix (an MCP-superset that carries permission/notification metadata alongside the
 schema) is later architectural work; for now the coupling is marked, not hidden.
 
+## The spotter (`src/spotter.rs`)
+
+What the fast-path can't `Clear` falls to the **spotter** before it reaches the human — a
+one-shot, **fresh-context** model call (Haiku band, on its own `Client`, model-independent
+of the acting session) that re-decides the residual. Independence *is* the product: the
+acting session can't check its own folly because it shares its own trajectory; the spotter
+can, precisely because its context is built from scratch — *not* `project(log)`.
+
+**The collaborative frame is load-bearing.** The spotter is the climber's *spotter*, not a
+tribunal: it exists to let the session move fast and commit hard, intervening only on the
+handful of moves it would otherwise regret. The persona (`assets/prompts/spotter.md`,
+`include_str!`d as the spotter client's byte-stable system prompt) carries that frame, and
+the frame leaks into every verdict. The axis is **scope, not danger**: *is this move inside
+the mission?* The brief is the authority — including over how much permanence is sanctioned
+(a teardown brief clears `terraform destroy`). Reversibility/containment is only the default
+heuristic *when the brief is silent*.
+
+**The request layout** is `[persona (system) | scope + brief + watch-for (cached) | the move
+(fresh)]`. The scope block is projected from the role's `path` grants + cwd, so the spotter
+judges "outside scope" without the brief restating the boundaries. The persona is sized to
+clear Haiku's cache floor on its own, so even a minimal role caches; within a session the
+brief is fixed, so every spotter call after the first is a cache read (the move is the only
+fresh tail). The verdict is forced through a `spot` tool: a graded [`Stance`] (`clear` /
+`watch` / `gate`) plus a one-line `reason` addressed to the session as a teammate. `Clear`
+auto-approves; `Watch` and `Gate` both route to the human gate today (the watch-window that
+gives `Watch` its own intervention latency is a later unit).
+
+**Fail closed.** Any failure — transport error, no `spot` call — yields `Gate` with
+`Origin::Fallback`: uncertainty routes to the human, never to auto-clear. (Contrast the
+distiller, which fails *open* to keep-all, because dropping output loses data whereas wrongly
+clearing a move does harm.)
+
+**Each verdict is logged** as a `Payload::Spot` audit entry (the audit answer to "why did
+this get through — or stop?", and the corpus for any future distilled approval model). It
+projects to nothing — audit-only, never on the canonical wire. This is the *first* permission
+decision that earns a log line: fast-path clears stay deliberately unlogged. `efference
+spotter --brief … --watch-for … --path … "<cmd>"` runs the exact `assess` path on one move,
+for iterating on the persona and role config against real cases.
+
 ## What is not built yet
 
-The independent judge, the scope-change petition loop, and the watch-window. The
-fast-path's `Verdict` is binary today precisely as the extension point: the judge will
-split `Gate` into judge → {clear, watch, gate}. Fast-path clears are intentionally **not**
-logged (deterministic, zero-cost; the `tool_use`/result already land in the log); the
-judge's verdicts are what will earn a `Triage`-kin audit entry. Petition-fed growth of the
-bash allowlist waits on the petition loop. See
-[`../backlog/permissions/README.md`](../backlog/permissions/README.md).
+The watch-window, the scope-change petition loop, and the spotter's effect-preview.
+`Stance::Watch` resolves to the human gate today; the watch-window will map it to an
+intervention latency instead. Petition-fed growth of the bash allowlist — a spotter/human
+`clear` promoting a `(program, prefix)` into the role's `allow` list — waits on the petition
+loop (sound because it's program-prefix, never command). The spotter currently judges the raw
+command + role context; a neutral effect-preview is the planned input upgrade. Fleet-wide
+persona caching (a second breakpoint isolating the persona so it's shared across
+differently-briefed sessions) is a deferred optimization — per-session caching works today.
+See [`../backlog/permissions/README.md`](../backlog/permissions/README.md).
 
 [`knus`]: https://docs.rs/knus

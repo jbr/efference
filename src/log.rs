@@ -74,6 +74,14 @@ pub enum Payload {
     /// [`Triage`], at that entry's position. Its `seq` is its durable id (the handle
     /// the `retain` inbox verdict references).
     Ambient(Notification),
+    /// A spotter verdict (docs/permissions.md) — the durable record of the
+    /// independent permission rung's decision on one gated tool call. Like
+    /// [`Triage`], the deciding round-trip is throwaway but its *verdict* is logged:
+    /// the audit answer to "why did this call get through (or stop)?" and the corpus
+    /// for any future distilled approval model. Projects to nothing — it is audit
+    /// only, never on the canonical wire. Fast-path clears are deliberately *not*
+    /// logged; the spotter is the first permission rung that earns an entry.
+    Spot(Spot),
 }
 
 /// Phase 0 content is text-only; richer blocks (images, …) come later.
@@ -153,6 +161,39 @@ pub enum Origin {
     Model,
     /// The keep-all fallback — the peek failed, or a model-free stub distiller ran.
     Fallback,
+}
+
+/// The spotter's verdict on one gated tool call (docs/permissions.md), logged as a
+/// [`Payload::Spot`] audit entry. The `stance` is the graded disposition the
+/// independent rung returned; the `reason` is its one-line rationale, addressed to
+/// the acting session (what it reads to self-correct or petition). `origin` records
+/// whether the verdict was the spotter model's or the fail-closed fallback (the one
+/// signal the stance alone erases — a deliberate `gate` and a failed spotter call
+/// both surface as `Gate`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Spot {
+    /// The `tool_use` id of the call this verdict judged.
+    pub call_id: CallId,
+    pub stance: Stance,
+    pub reason: String,
+    pub origin: Origin,
+}
+
+/// The spotter's graded disposition for one move (docs/permissions.md). It splits
+/// the fast-path's binary `Gate` into three: `Clear` auto-approves with no human,
+/// `Gate` falls through to the human, and `Watch` is the middle setting the
+/// (unbuilt) watch-window will map to an intervention latency — for now it resolves
+/// to the human gate alongside `Gate`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Stance {
+    /// Reversible-and-in-scope (or irreversible-but-brief-sanctioned): auto-approve.
+    Clear,
+    /// Probably fine but uncertain, or a one-way move worth a beat of attention.
+    /// Resolves to the human gate until the watch-window lands.
+    Watch,
+    /// Out of scope or unsanctioned-irreversible: stop and ask the human.
+    Gate,
 }
 
 /// What the agent chose to do with one notification at a triage gate (docs/inbox.md).

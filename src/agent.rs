@@ -23,10 +23,11 @@ use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::policy::{self, Verdict};
 use crate::log::{
-    ContentBlock, Disposition, Mark, MarkKind, Notification, Payload, RawResult, ToolCall, Triage,
-    Turn, WireState,
+    ContentBlock, Disposition, Mark, MarkKind, Notification, Payload, RawResult, Spot, Stance,
+    ToolCall, Triage, Turn, WireState,
 };
 use crate::project::place_trailing_cache_breakpoint;
+use crate::spotter::Spotter;
 use crate::supervisor;
 use crate::tools::Toolbox;
 
@@ -254,11 +255,12 @@ fn rejected(call: &ToolCall) -> Payload {
 
 /// Drive the loop until input ends. The log lives in [`Shared`]; the loop appends
 /// through it.
-pub async fn run<F: Frontend, D: Distiller>(
+pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
     client: &Client,
     frontend: &mut F,
     shared: Arc<Shared>,
     distiller: D,
+    spotter: S,
     toolbox: Toolbox,
 ) -> Result<(), Error> {
     // World-facing tools plus the harness tools (`consolidate`, the
@@ -351,14 +353,40 @@ pub async fn run<F: Frontend, D: Distiller>(
                     shared.append(turn, aborted(call))?;
                     continue;
                 }
-                // Consult the deterministic fast-path before troubling the human
-                // (backlog/permissions/prefix-fastpath.md): a `Clear` verdict
-                // auto-approves with zero model cost and no gate; anything it can't
-                // clear falls through to the human gate (the judge, later). The
-                // classifier is a pure function of the role policy and the call.
+                // The permission cascade (docs/permissions.md). First the
+                // deterministic fast-path (backlog/permissions/prefix-fastpath.md): a
+                // `Clear` verdict auto-approves with zero model cost. What it can't
+                // clear falls to the independent spotter — a fresh-context model rung
+                // that re-decides on the residual before the human does, returning a
+                // graded stance. Its verdict is logged as a `Spot` audit entry
+                // regardless of outcome (the first permission decision that earns a
+                // log line; fast-path clears stay unlogged), and its usage reads the
+                // shared spotter prefix, so it joins the cache telemetry (docs/substrate.md).
                 let approval = match policy::classify(shared.role(), call) {
                     Verdict::Clear => Approval::Approve,
-                    Verdict::Gate => frontend.approve(call).await,
+                    Verdict::Gate => {
+                        let spotting = spotter.assess(shared.role(), call).await;
+                        if let Some(u) = spotting.usage {
+                            shared.record_request(u);
+                        }
+                        let stance = spotting.read.stance;
+                        shared.append(
+                            turn,
+                            Payload::Spot(Spot {
+                                call_id: call.id.clone(),
+                                stance,
+                                reason: spotting.read.reason,
+                                origin: spotting.origin,
+                            }),
+                        )?;
+                        match stance {
+                            // Clear: auto-approve, no human. Watch/Gate both route to
+                            // the human gate for now — the watch-window that gives
+                            // Watch its own intervention latency is a later unit.
+                            Stance::Clear => Approval::Approve,
+                            Stance::Watch | Stance::Gate => frontend.approve(call).await,
+                        }
+                    }
                 };
                 match approval {
                     // `consolidate` acts on the log, not the world (docs/consolidate.md):

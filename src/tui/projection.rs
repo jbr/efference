@@ -167,6 +167,8 @@ pub(crate) fn project(
             }),
             // The verdict is internal — audit-only on the transcript (docs/redaction-fork.md).
             Payload::Triage(_) => {}
+            // A spotter permission verdict (docs/permissions.md) — audit-only, like Triage.
+            Payload::Spot(_) => {}
         }
     }
 

@@ -1,0 +1,381 @@
+//! The spotter — the independent permission rung (docs/permissions.md,
+//! backlog/permissions/spotter.md).
+//!
+//! When the deterministic fast-path ([`crate::policy`]) can't `Clear` a tool call,
+//! it `Gate`s — and the spotter looks at the residual before the human does. It is a
+//! one-shot, **fresh-context** model call (Haiku) that reads the mission and the
+//! proposed move and returns a graded [`Stance`]: `Clear` (auto-approve), `Watch`
+//! (uncertain / one-way — a human beat), or `Gate` (out of scope or
+//! unsanctioned-irreversible — stop and ask). Today `Watch` resolves to the human
+//! gate alongside `Gate`; the watch-window that gives it its own latency is a later
+//! unit.
+//!
+//! ## Independent, not a fork
+//!
+//! The independence *is* the product. The acting session can't check its own folly
+//! because it shares its own trajectory; the spotter can, precisely because it does
+//! not. So its request is **not** `project(log)` — it is built from scratch:
+//!
+//! ```text
+//! [ persona (system, cached) | scope + brief + watch-for (cached) | the move (fresh) ]
+//! ```
+//!
+//! The persona lives in `assets/prompts/spotter.md` (`include_str!`d as the client's
+//! byte-stable system prompt) and is sized to clear Haiku's cache floor on its own,
+//! so even a minimal role caches. The per-role context (the config's path grants +
+//! cwd as the scope, the brief, the spotter-only watch-for) rides one cached block;
+//! only the move is fresh each call. The persona is universal, so when a fleet shares
+//! a process the same cached segment serves every role (docs/permissions.md).
+//!
+//! ## Fail closed
+//!
+//! Any failure — transport error, no `spot` call — yields `Stance::Gate` with
+//! [`Origin::Fallback`]. Uncertainty routes to the human; the spotter never
+//! auto-clears on a failure (contrast the distiller, which fails *open* to keep-all
+//! because dropping output loses data, whereas wrongly clearing a move does harm).
+
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use crate::api::{Client, Usage};
+use crate::bash;
+use crate::log::{Origin, Stance, ToolCall};
+use crate::project::{ApiBlock, ApiMessage, CacheControl, Role as ApiRole};
+use crate::role::Role;
+
+/// The forced tool name.
+const SPOT: &str = "spot";
+
+/// The spotter persona — the universal half of the prompt (docs/permissions.md).
+/// Edited as markdown; `include_str!`d as the spotter client's byte-stable system
+/// prompt so it sits in the cached prefix. Sized to clear Haiku's cache floor alone.
+const PERSONA: &str = include_str!("../assets/prompts/spotter.md");
+
+/// The spotter's verdict on one move: the graded [`Stance`] plus a one-line `reason`
+/// addressed to the acting session (what it reads to self-correct or petition).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Read {
+    pub stance: Stance,
+    pub reason: String,
+}
+
+/// The outcome of one spotter assessment: the [`Read`], its [`Origin`] (model vs the
+/// fail-closed fallback — the audit signal the stance alone erases), and the request
+/// [`Usage`] if a round-trip happened (folded into the docs/substrate.md cache
+/// telemetry, since it reads the shared spotter prefix). `None` usage for a
+/// model-free spotter or a transport error.
+pub struct Spotting {
+    pub read: Read,
+    pub origin: Origin,
+    pub usage: Option<Usage>,
+}
+
+impl Spotting {
+    /// The fail-closed verdict (docs/permissions.md): route to the human gate, never
+    /// auto-clear. `usage` carried separately because a transport error has none.
+    fn fail_closed(usage: Option<Usage>) -> Self {
+        Spotting {
+            read: Read {
+                stance: Stance::Gate,
+                reason: "spotter unavailable — defaulting to the human gate.".into(),
+            },
+            origin: Origin::Fallback,
+            usage,
+        }
+    }
+}
+
+/// The permission-rung seam. Used generically by the loop (`<S: Spotter>`); not
+/// object-safe and needn't be (one mounted rung per session).
+#[allow(async_fn_in_trait)] // single-threaded loop; no Send bound needed, like Distiller.
+pub trait Spotter {
+    /// Assess one gated tool call against the role. The role supplies the mission
+    /// (brief), the scope (path grants + cwd), and the spotter-only watch-for list.
+    async fn assess(&self, role: &Role, call: &ToolCall) -> Spotting;
+}
+
+/// The model spotter — the independent rung realized. Owns a dedicated [`Client`]
+/// whose system prompt is the [`PERSONA`] and whose model is the spotter band
+/// (Haiku), independent of the acting session's model.
+pub struct ForkSpot {
+    client: Client,
+}
+
+impl ForkSpot {
+    /// Build the spotter over a fresh client pinned to the spotter `model` (Haiku)
+    /// with the persona as its byte-stable system prompt.
+    pub fn new(api_key: String, model: impl Into<String>) -> Self {
+        ForkSpot {
+            client: Client::new(api_key, model, PERSONA),
+        }
+    }
+}
+
+impl Spotter for ForkSpot {
+    async fn assess(&self, role: &Role, call: &ToolCall) -> Spotting {
+        // Cached block: the per-session-stable scope + brief + watch-for. Fresh
+        // block: the move. The persona (system) + this cached block are the prefix;
+        // only the move is rewritten each call (docs/permissions.md, docs/substrate.md).
+        let messages = vec![ApiMessage {
+            role: ApiRole::User,
+            content: vec![
+                ApiBlock::Text {
+                    text: render_context(role),
+                    cache_control: Some(CacheControl::Ephemeral),
+                },
+                ApiBlock::Text {
+                    text: render_move(call),
+                    cache_control: None,
+                },
+            ],
+        }];
+
+        // No-op sink: the spotter's tokens are internal and must never surface on
+        // `GET /stream` (mirrors the fork peek).
+        match self
+            .client
+            .complete(&messages, &[spot_tool()], crate::api::ToolChoice::force(SPOT), |_| {})
+            .await
+        {
+            Ok(completion) => {
+                let usage = Some(completion.usage.clone());
+                match parse_spot(&completion) {
+                    Some(read) => Spotting { read, origin: Origin::Model, usage },
+                    None => Spotting::fail_closed(usage),
+                }
+            }
+            Err(_) => Spotting::fail_closed(None),
+        }
+    }
+}
+
+/// A deterministic stub: returns a fixed verdict, ignoring the role and call. For
+/// tests and as a model-free rung.
+pub struct StaticSpotter {
+    pub stance: Stance,
+    pub reason: String,
+}
+
+impl Spotter for StaticSpotter {
+    async fn assess(&self, _role: &Role, _call: &ToolCall) -> Spotting {
+        Spotting {
+            read: Read { stance: self.stance, reason: self.reason.clone() },
+            origin: Origin::Fallback,
+            usage: None,
+        }
+    }
+}
+
+/// Render the per-role context block: the mission (brief), the scope (cwd + the
+/// config's path grants — so the spotter judges "outside scope" without the brief
+/// having to restate the boundaries), and the spotter-only watch-for list. Stable
+/// for the whole session, so it caches.
+fn render_context(role: &Role) -> String {
+    let mut s = String::from("Mission:\n");
+    match role.brief.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
+        Some(brief) => s.push_str(brief),
+        None => s.push_str("(no brief specified — judge by scope and the reversibility default.)"),
+    }
+
+    s.push_str("\n\nScope for this session:\n");
+    let cwd = std::env::current_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "unknown".into());
+    s.push_str(&format!("- working directory: {cwd}\n"));
+    if role.paths.is_empty() {
+        s.push_str("- allowed paths: none configured\n");
+    } else {
+        s.push_str("- allowed paths (and everything beneath them):\n");
+        for grant in &role.paths {
+            let perms = if grant.write {
+                "read, write"
+            } else if grant.read {
+                "read only"
+            } else {
+                "no access"
+            };
+            s.push_str(&format!("  - {} ({perms})\n", grant.path));
+        }
+    }
+
+    if let Some(watch) = role.watch_for.as_deref().map(str::trim).filter(|w| !w.is_empty()) {
+        s.push_str("\nThings to watch for on this mission:\n");
+        s.push_str(watch);
+        s.push('\n');
+    }
+    s
+}
+
+/// Render the move the session is about to make. Bash shows its command verbatim; a
+/// structured tool shows its name and input. The instruction to call `spot` rides
+/// here (the fresh tail), not in the cached context.
+fn render_move(call: &ToolCall) -> String {
+    let body = if call.name == bash::NAME {
+        match call.input.get("command").and_then(Value::as_str) {
+            Some(cmd) => format!("A shell command:\n\n    {cmd}"),
+            None => format!("A `{}` call with no string command (malformed): {}", call.name, call.input),
+        }
+    } else {
+        let input = serde_json::to_string_pretty(&call.input)
+            .unwrap_or_else(|_| call.input.to_string());
+        format!("A `{}` tool call with input:\n\n{input}", call.name)
+    };
+    format!(
+        "---\n\nThe session is about to make this move:\n\n{body}\n\n\
+         Call `spot` with your stance and a one-line reason."
+    )
+}
+
+/// The forced `spot` tool: a `stance` enum and a one-line `reason`, both required.
+fn spot_tool() -> Value {
+    json!({
+        "name": SPOT,
+        "description": "Record your read of the proposed move: a stance and a one-line reason.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "stance": {
+                    "type": "string",
+                    "enum": ["clear", "watch", "gate"],
+                    "description": "clear = reversible and in-scope (or brief-sanctioned) — auto-approve; watch = probably fine but uncertain, or a one-way move worth a human beat; gate = out of scope or unsanctioned-irreversible — stop and ask the human."
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "One sentence to the session as a teammate: what crosses the line (and the in-scope alternative if you see one), or a brief note on a clean clear."
+                }
+            },
+            "required": ["stance", "reason"]
+        }
+    })
+}
+
+/// The `spot` tool input as the model returns it. `stance` is read as a string and
+/// mapped leniently so a capitalized or padded value still parses.
+#[derive(Deserialize)]
+struct SpotInput {
+    stance: String,
+    reason: String,
+}
+
+/// Pull the spotter verdict out of the completion. `None` when the turn didn't call
+/// `spot` (or called something else) — the caller then fails closed.
+fn parse_spot(completion: &crate::api::Completion) -> Option<Read> {
+    let crate::log::Payload::Assistant { calls, .. } = &completion.assistant else {
+        return None;
+    };
+    let call = calls.iter().find(|c| c.name == SPOT)?;
+    let SpotInput { stance, reason } = SpotInput::deserialize(&call.input).ok()?;
+    Some(Read { stance: parse_stance(&stance), reason })
+}
+
+/// Map a stance string to a [`Stance`], leniently. An unrecognized value fails
+/// closed to `Gate` rather than discarding the model's reason.
+fn parse_stance(s: &str) -> Stance {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "clear" => Stance::Clear,
+        "watch" => Stance::Watch,
+        _ => Stance::Gate,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::{Completion, Usage};
+    use crate::log::{CallId, Payload};
+    use crate::role::{PathGrant, Role};
+
+    fn spot_completion(name: &str, input: Value) -> Completion {
+        Completion {
+            assistant: Payload::Assistant {
+                text: vec![],
+                calls: vec![ToolCall { id: CallId("s".into()), name: name.into(), input }],
+            },
+            model: "test".into(),
+            stop_reason: None,
+            usage: Usage {
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn parse_stance_is_lenient_and_fails_closed() {
+        assert_eq!(parse_stance("clear"), Stance::Clear);
+        assert_eq!(parse_stance("  WATCH "), Stance::Watch);
+        assert_eq!(parse_stance("Gate"), Stance::Gate);
+        // Anything unrecognized routes to the human, not to auto-clear.
+        assert_eq!(parse_stance("yolo"), Stance::Gate);
+        assert_eq!(parse_stance(""), Stance::Gate);
+    }
+
+    #[test]
+    fn parse_spot_reads_stance_and_reason() {
+        let read = parse_spot(&spot_completion(
+            SPOT,
+            json!({ "stance": "clear", "reason": "in-scope build, reversible" }),
+        ))
+        .expect("a spot call parses");
+        assert_eq!(read.stance, Stance::Clear);
+        assert_eq!(read.reason, "in-scope build, reversible");
+    }
+
+    #[test]
+    fn parse_spot_is_none_without_a_spot_call() {
+        // A turn that called something else yields no verdict → caller fails closed.
+        assert!(parse_spot(&spot_completion("bash", json!({ "command": "ls" }))).is_none());
+        // Missing required field → no verdict.
+        assert!(parse_spot(&spot_completion(SPOT, json!({ "stance": "clear" }))).is_none());
+    }
+
+    #[test]
+    fn render_move_shows_bash_command_and_structured_input() {
+        let bash_call = ToolCall {
+            id: CallId("x".into()),
+            name: bash::NAME.into(),
+            input: json!({ "command": "git push" }),
+        };
+        let rendered = render_move(&bash_call);
+        assert!(rendered.contains("git push"), "{rendered}");
+        assert!(rendered.contains("spot"), "instruction present: {rendered}");
+
+        let write_call = ToolCall {
+            id: CallId("y".into()),
+            name: "write".into(),
+            input: json!({ "path": "/etc/hosts" }),
+        };
+        let rendered = render_move(&write_call);
+        assert!(rendered.contains("write"), "{rendered}");
+        assert!(rendered.contains("/etc/hosts"), "{rendered}");
+    }
+
+    #[test]
+    fn render_context_includes_brief_scope_and_watch_for() {
+        let role = Role {
+            brief: Some("Fix the build.".into()),
+            watch_for: Some("Don't touch the deploy keys.".into()),
+            paths: vec![
+                PathGrant { path: ".".into(), read: true, write: true },
+                PathGrant { path: "/refs".into(), read: true, write: false },
+            ],
+            ..Default::default()
+        };
+        let ctx = render_context(&role);
+        assert!(ctx.contains("Fix the build."), "{ctx}");
+        assert!(ctx.contains(". (read, write)"), "{ctx}");
+        assert!(ctx.contains("/refs (read only)"), "{ctx}");
+        assert!(ctx.contains("Don't touch the deploy keys."), "{ctx}");
+    }
+
+    #[test]
+    fn render_context_handles_empty_role() {
+        // No brief, no paths, no watch-for: the spotter still gets a usable frame.
+        let ctx = render_context(&Role::default());
+        assert!(ctx.contains("no brief specified"), "{ctx}");
+        assert!(ctx.contains("none configured"), "{ctx}");
+        assert!(!ctx.contains("Things to watch for"), "no empty watch-for section: {ctx}");
+    }
+}

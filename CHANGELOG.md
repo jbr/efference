@@ -23,8 +23,9 @@ behind a change, see [`journal/`](journal/).
 - In-process MCP tools (fs-mcp, semantic-edit-mcp) reusing the generated `mcplease` tool enums.
 - Interactive TUI (`efference tui`): themed streaming transcript, conversational rendering with per-tool result renderers, emacs-keybind composer, inline approval gates, and a live background-process panel.
 - `Screenplay` snapshot harness + `efference gallery` for iterating TUI display without being blind.
-- Role config (KDL via `knus`): `serve --config <path>` / `efference.kdl`, a session brief that folds byte-stably into the cached preamble, a judge-only rubric, `tool`/`path`/`allow` grants, resolved path reported on `GET /state`.
+- Role config (KDL via `knus`): `serve --config <path>` / `efference.kdl`, a session brief that folds byte-stably into the cached preamble, a spotter-only `watch-for` list, `tool`/`path`/`allow` grants, resolved path reported on `GET /state`.
 - Permission fast-path: deterministic, zero-model-cost auto-approval of allowlisted bash — a `yash-syntax` structural-simplicity check (single simple command, no operators/redirection/expansion/glob) then a `(program, arg-prefix)` match; everything else falls through to the gate.
+- Spotter permission rung: an independent, fresh-context model (Haiku band) judges the calls the fast-path can't clear, returning a graded `clear`/`watch`/`gate` stance + one-line reason; verdicts logged as `Spot` audit entries, scope drawn from the config's `path` grants, persona in `assets/prompts/spotter.md`, fail-closed to the human gate. `efference spotter` exercises it on one `(brief, watch-for, command)`.
 
 ### Changed
 - Model selection moved to a per-session `serve --model <id>` flag (default `claude-haiku-4-5` for dev).

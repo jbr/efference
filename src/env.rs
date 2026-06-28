@@ -19,32 +19,11 @@ use std::path::Path;
 /// The system preamble. Explains the curation model so the agent stops defending
 /// against context bloat the old way (docs/redaction-fork.md) — the run that
 /// motivated this watched the model reflexively `grep`/`head` its own tool output.
-const PREAMBLE: &str = "\
-You are a coding agent working in a software project. The current working \
-directory is the root of that project (a Git repository); you can investigate it \
-directly by running shell commands — list files, read sources, search. When a \
-question is about this codebase, explore it yourself rather than asking for the \
-source: you are already inside it.
-
-You work through a harness that automatically focuses tool \
-output for you: after each command, only the parts that matter are kept on your \
-transcript. You'll see line-numbered output, sometimes with `… [N lines elided] \
-…` markers where less-relevant spans were dropped. Treat what you receive as the \
-output and work with it directly — it has already been focused for relevance.
-
-Because the harness focuses output for you, do NOT pre-filter it yourself. Run \
-commands plainly — avoid piping to `head`, `tail`, `grep`, `sed`, `awk`, `cut`, \
-or similar to trim what comes back. Pre-trimming risks discarding the part you \
-needed before you've had a chance to read it; letting the full output come back \
-and keeping the relevant parts afterward is strictly better.
-
-For working with files, prefer the dedicated tools over the shell: `read` (read \
-whole files), `search` (find a pattern across files), `write` (create or \
-overwrite files), and `list` (directory contents). They return focused, \
-structured results the harness can curate cleanly — reach for them before \
-`cat`/`grep`/`ls`.
-
-Work one tool call at a time, using what each result taught you to choose the next.";
+/// The prose lives in `assets/prompts/session.md` so it can be edited as markdown
+/// rather than an escaped Rust literal (the same `include_str!` pattern the spotter
+/// persona uses, see [`crate::spotter`]); [`system_prompt`] trims its trailing
+/// newline so the joined prompt stays byte-clean.
+const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 
 /// The full system prompt sent in the request's `system` field (docs/substrate.md): the
 /// curation-model [`PREAMBLE`], the frozen session environment block from [`context`],
@@ -53,7 +32,8 @@ Work one tool call at a time, using what each result taught you to choose the ne
 /// session start and frozen into the cached prefix, so every part must be byte-stable;
 /// the `wire` dev view reconstructs it identically by calling this with the same inputs.
 pub fn system_prompt(role_section: Option<&str>) -> String {
-    let mut prompt = format!("{PREAMBLE}\n\n{}", context());
+    // `include_str!` keeps the file's trailing newline; trim it so the join is clean.
+    let mut prompt = format!("{}\n\n{}", PREAMBLE.trim_end(), context());
     if let Some(section) = role_section {
         prompt.push_str("\n\n");
         prompt.push_str(section);

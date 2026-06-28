@@ -2,8 +2,8 @@
 //! (backlog/permissions/prefix-fastpath.md, backlog/permissions/README.md).
 //!
 //! [`classify`] is a **pure function** of `(role, tool call)` returning a [`Verdict`]:
-//! `Clear` (auto-approve, no human, no model) or `Gate` (fall through to the human gate
-//! today, the judge later). The classifier is the *mechanism*; the role config is the
+//! `Clear` (auto-approve, no human, no model) or `Gate` (fall through to the spotter
+//! rung, then the human gate). The classifier is the *mechanism*; the role config is the
 //! *policy* — there are no special-cased program names or directories in here.
 //!
 //! ## Why this rung is sound despite being incomplete
@@ -25,7 +25,7 @@
 //!   regex) and accepts only a *single simple command* — no operators (`| & ; && ||`),
 //!   no redirection, no command/arithmetic substitution, no parameter/tilde expansion,
 //!   no env-assignment prefix, no unquoted glob/brace. yash is POSIX-strict, which only
-//!   costs *coverage* (a few bash-only forms gate to the judge), never *soundness* —
+//!   costs *coverage* (a few bash-only forms gate to the spotter), never *soundness* —
 //!   bash's dangerous operators are POSIX too, so they parse as operators and gate;
 //!   bash-only syntax either fails to parse (→ gate) or surfaces as inert literal words
 //!   we still filter. yash parses (does not expand), so `git diff HEAD~1` is fine — we
@@ -57,13 +57,14 @@ use crate::bash;
 use crate::log::ToolCall;
 use crate::role::Role;
 
-/// The fast-path's decision for one tool call. Binary today; the extension point for the
-/// judge/watch-window (which will split `Gate` into judge → {clear, watch, gate}).
+/// The fast-path's decision for one tool call. Binary; the extension point for the
+/// spotter rung, which splits `Gate` into a graded `{clear, watch, gate}` stance
+/// (docs/permissions.md, [`crate::spotter`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
     /// Certain-enough to auto-approve: no human, no model round-trip.
     Clear,
-    /// Not cleared — fall through to the human gate (today) / the judge (later).
+    /// Not cleared — fall through to the spotter rung, then the human gate.
     Gate,
 }
 

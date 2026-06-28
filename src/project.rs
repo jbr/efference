@@ -234,6 +234,9 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // An `Ambient` arrival is audit-only on the wire (docs/inbox.md) — it never
             // itself projects; a *pinned* one is emitted by its `Triage` (below).
             Payload::Ambient(_) => {}
+            // A spotter verdict (docs/permissions.md) is audit-only — the permission
+            // decision lives in the log, never on the canonical wire.
+            Payload::Spot(_) => {}
             // A fork verdict emits a block per **pinned** notification at its own
             // position (docs/inbox.md) — body looked up from the `Ambient` arrival. This
             // tail-ward placement keeps the wire append-only: a notification pinned at
