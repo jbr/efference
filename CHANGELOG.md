@@ -34,6 +34,7 @@ behind a change, see [`journal/`](journal/).
 - Per-session directories: each `serve` runs in `.efference/<id>/` (`--name`, else a timestamp id) holding a colocated control socket, log, and config; client verbs find the daemon by `--name` or by scanning for the single live socket.
 - `/settle` long-poll (+ `turn --wait` / `approve --wait`): block until the daemon reaches a decision point — a gate, or idle — then return `/state`, so a client drives it synchronously instead of polling.
 - `GET /state` reports the full *effective* policy in force (scope, watch-for, commands, tools, paths), not the boot config — an orchestrator reads a subordinate's live perimeter from it.
+- Autonomous mode (`serve --autonomous`): with no synchronous human at the gate, a spotter `watch`/`gate` becomes a redirect that hands the call back to the model (pointing it at its config file to request access) instead of blocking; a config-file write still gates, held for the orchestrator-above. `autonomous` reported on `GET /state`.
 
 ### Changed
 - Model selection moved to a per-session `serve --model <id>` flag (default `claude-haiku-4-5` for dev).

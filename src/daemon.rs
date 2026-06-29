@@ -192,6 +192,14 @@ pub struct Shared {
     ///
     /// [`append`]: Shared::append
     effective: Mutex<Arc<crate::config::Config>>,
+    /// **Autonomous mode** (backlog/permissions/session-dir-and-config-as-reviewed-file.md): no
+    /// synchronous human sits at the gate. Set once at boot from `serve --autonomous`; the gate
+    /// reads it ([`Shared::autonomous`]) to turn a spotter `Watch`/`Gate` into a *redirect* —
+    /// handing the decision back to the model, pointing it at its own config file — instead of
+    /// blocking on an absent human. The **config-write** gate is deliberately *not* flipped: a
+    /// session's edit to its config is held for the orchestrator-above to review over the control
+    /// channel, which is the very channel the redirect points at.
+    autonomous: AtomicBool,
 }
 
 /// Per-session cache/usage telemetry. `last_request_at` is an [`Instant`] (not
@@ -252,6 +260,7 @@ impl Shared {
             supervisor: Mutex::new(Supervisor::new()),
             role,
             effective: Mutex::new(effective),
+            autonomous: AtomicBool::new(false),
         });
         (shared, turns_rx)
     }
@@ -431,6 +440,18 @@ impl Shared {
             ConfigSource::Path(p) => Some(p),
             ConfigSource::Default => None,
         }
+    }
+
+    /// Whether the daemon is in **autonomous mode** — no synchronous human at the gate, so a
+    /// spotter `Watch`/`Gate` redirects the model instead of blocking (the `autonomous` field).
+    /// Relaxed: written once at boot before the loop starts, read on the loop's thread.
+    pub fn autonomous(&self) -> bool {
+        self.autonomous.load(Ordering::Relaxed)
+    }
+
+    /// Set autonomous mode. Called once by `serve` at boot, before the loop is spawned.
+    pub fn set_autonomous(&self, on: bool) {
+        self.autonomous.store(on, Ordering::Relaxed);
     }
 
     /// A clone of the single entry at `seq` (== its index in the log), or `None`
@@ -756,6 +777,9 @@ impl Shared {
         serde_json::json!({
             "last_seq": last_seq,
             "pending_approval": pending,
+            // Autonomous = no synchronous human at the gate (the orchestrator-above wants to know
+            // a subordinate runs unsupervised before it trusts the perimeter it reads below).
+            "autonomous": self.autonomous(),
             "role": self.role_json(),
             "pending_notifications": self.pending_notifications(),
             // The live background processes (docs/supervisor.md) — the same `views()` snapshot
@@ -1447,8 +1471,12 @@ pub async fn serve<D: Distiller, S: Spotter>(
     log: Log,
     socket: PathBuf,
     role: LoadedConfig,
+    autonomous: bool,
 ) -> Result<(), Error> {
     let (shared, turns) = Shared::with_role(log, role);
+    // Set before the loop spawns: the gate reads it on the loop's thread (backlog/permissions/
+    // session-dir-and-config-as-reviewed-file.md — the autonomous flip).
+    shared.set_autonomous(autonomous);
     // Share the client between the loop and the keepalive task. `tools` is computed
     // once here for the ping; `agent::run` recomputes the same (byte-stable, docs/substrate.md)
     // definitions internally, so both send an identical prefix.
@@ -1637,6 +1665,21 @@ mod tests {
             v["role"]["commands"],
             serde_json::json!(["cargo", "git diff", "npm"])
         );
+    }
+
+    /// Autonomous mode defaults off and `/state` reports it both ways — the orchestrator-above
+    /// reads this to know whether a subordinate runs unsupervised (the autonomous flip).
+    #[test]
+    fn state_reports_autonomous_mode() {
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        assert!(!shared.autonomous());
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert_eq!(v["autonomous"], false);
+
+        shared.set_autonomous(true);
+        assert!(shared.autonomous());
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert_eq!(v["autonomous"], true);
     }
 
     /// One bash `ToolCall`, for exercising the effective-policy cache through `classify`.

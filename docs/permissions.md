@@ -254,18 +254,33 @@ of the config file (the operator editing it externally takes effect live — `co
 diffs the file and emits `Committed` edits); and the **session editing its own config file**, the
 config-as-reviewed-file mechanism that *replaced* the planned `propose_scope` tool — a session
 `write`/`preview_edit` to its `config.toml` is forced to the operator gate (`is_config_write`,
-bypassing fast-path and spotter), and on approval fs-watch folds it. Still to come: the
-**autonomous flip** (a gate becomes a redirect inviting a config edit when there's no synchronous
-reviewer) and the **spotter's prefix-promotion** (the one remaining `Proposed`-lifecycle user — the
-spotter is fresh-context with no file tools, so it files a `Proposed(Command)`). See
+bypassing fast-path and spotter), and on approval fs-watch folds it; and the **autonomous flip**
+(`serve --autonomous`), below. Still to come: the **spotter's prefix-promotion** (the one remaining
+`Proposed`-lifecycle user — the spotter is fresh-context with no file tools, so it files a
+`Proposed(Command)`). See
 [`../backlog/permissions/session-dir-and-config-as-reviewed-file.md`](../backlog/permissions/session-dir-and-config-as-reviewed-file.md)
 and [`../backlog/permissions/proposal-lifecycle.md`](../backlog/permissions/proposal-lifecycle.md).
 
+## The autonomous flip (`src/agent.rs`, `src/daemon.rs`)
+
+`serve --autonomous` sets a flag on `Shared` (read at the gate as `shared.autonomous()`, reported on
+`GET /state`) that changes what a *gate* means when there is **no synchronous human** to consult.
+The spotter still runs and can `Clear`; what changes is the residual: a spotter `Watch`/`Gate` no
+longer blocks on an absent human — it becomes an `Approval::Redirect` (`agent::autonomous_gate_message`)
+that hands the call back to the model with the spotter's reason and a pointer to its own per-session
+`config.toml`, the one policy interface it has. The model may then *edit that file* to request the
+access — but that write hits the `is_config_write` carve-out and **still gates**, held for the
+orchestrator-above to review over the control channel. So autonomous mode relocates the human, it
+doesn't remove it: routine gated calls self-resolve (the model finds another path or asks via a config
+edit), and the operator's attention is spent only on the genuine policy-change requests. Enactment
+still requires an operator — the model only gets to *ask*. (With no orchestrator connected, that
+config-write gate simply waits; watcher-escalation is the watch-window's job.)
+
 ## What is not built yet
 
-The watch-window, the spotter's effect-preview, and the last two config-edit initiators (the
-autonomous flip and the spotter's prefix-promotion). `Stance::Watch` resolves to the human gate
-today; the watch-window will map it to an intervention latency instead. The spotter currently judges
+The watch-window, the spotter's effect-preview, and the last config-edit initiator (the spotter's
+prefix-promotion). `Stance::Watch` resolves to the human gate (or, autonomous, the redirect) today;
+the watch-window will map it to an intervention latency instead. The spotter currently judges
 the raw command + config context; a neutral effect-preview is the planned input upgrade. Fleet-wide
 persona caching (a second breakpoint isolating the persona so it's shared across differently-scoped
 sessions) is a deferred optimization — per-session caching works today. See

@@ -10,6 +10,7 @@
 //! shared daemon state ([`Shared`]); the loop appends through it, which both
 //! persists the JSONL line and wakes any SSE tailers.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -406,12 +407,13 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                                 shared.record_request(u);
                             }
                             let stance = spotting.read.stance;
+                            let reason = spotting.read.reason;
                             shared.append(
                                 turn,
                                 Payload::Spot(Spot {
                                     call_id: call.id.clone(),
                                     stance,
-                                    reason: spotting.read.reason,
+                                    reason: reason.clone(),
                                     origin: spotting.origin,
                                 }),
                             )?;
@@ -420,7 +422,21 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                                 // the human gate for now — the watch-window that gives
                                 // Watch its own intervention latency is a later unit.
                                 Stance::Clear => Approval::Approve,
-                                Stance::Watch | Stance::Gate => frontend.approve(call).await,
+                                // The autonomous flip (backlog/permissions/session-dir-and-config-as-reviewed-file.md):
+                                // with no synchronous human, don't block on an absent gate — redirect the
+                                // model to its config file, the one policy interface it has. (The config
+                                // write itself still gates for the orchestrator-above, above.) Supervised:
+                                // route to the human gate as before.
+                                Stance::Watch | Stance::Gate => {
+                                    if shared.autonomous() {
+                                        Approval::Redirect(autonomous_gate_message(
+                                            shared.config_path(),
+                                            &reason,
+                                        ))
+                                    } else {
+                                        frontend.approve(call).await
+                                    }
+                                }
                             }
                         }
                     }
@@ -620,6 +636,34 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
     Ok(())
 }
 
+/// The redirect a gated call gets in **autonomous mode**
+/// (backlog/permissions/session-dir-and-config-as-reviewed-file.md). No synchronous human is
+/// present to approve, so rather than block the loop forever the gate hands the decision back to
+/// the model — pointing it at its own per-session config file, the single policy interface it has.
+/// The session may *edit* that file to request the permission, but that write itself gates for the
+/// orchestrator-above to review over the control channel (it can never auto-apply), so enactment
+/// still requires an operator: the model only gets to *ask*. The spotter's `reason` carries why the
+/// call was out of scope so the model can judge whether it's worth requesting at all.
+fn autonomous_gate_message(config_path: Option<&Path>, reason: &str) -> String {
+    let request = match config_path {
+        Some(p) => format!(
+            "If it's essential to your task, edit your config at `{}` to request the access you \
+             need — a `[commands]`/`[paths]`/`tools` entry, or a wider `scope`. That edit is held \
+             for the orchestrator to review over the control channel; it won't auto-apply.",
+            p.display()
+        ),
+        None => {
+            "If it's essential to your task, request the access you need from the orchestrator."
+                .to_string()
+        }
+    };
+    format!(
+        "Gated, and no synchronous reviewer is available (autonomous mode), so this call did not \
+         run.\n\nSpotter: {reason}\n\n{request} Otherwise, find another approach within your \
+         current scope."
+    )
+}
+
 /// Legislate a `ConfigEdit` (backlog/permissions/config-edit.md): persist it if asked, append the
 /// `Payload::ConfigEdit` (which folds it into the effective policy), then re-classify the gated call
 /// against the *new* policy. Returns `Approve` iff the amended rule now clears the call — the
@@ -752,6 +796,37 @@ mod tests {
         );
         // The change still landed — legislation happens regardless of the current call.
         assert!(shared.effective_config().tools.contains("read"));
+    }
+
+    /// The autonomous redirect names the config file (the policy interface the model edits to
+    /// request access), carries the spotter's reason, and makes the held-for-review property
+    /// explicit — so the model knows asking is possible but enactment isn't automatic.
+    #[test]
+    fn autonomous_gate_message_points_at_the_config_and_carries_the_reason() {
+        let msg = autonomous_gate_message(
+            Some(Path::new(".efference/x/config.toml")),
+            "writes outside the repo",
+        );
+        assert!(
+            msg.contains(".efference/x/config.toml"),
+            "names the config file"
+        );
+        assert!(
+            msg.contains("writes outside the repo"),
+            "carries the spotter reason"
+        );
+        assert!(msg.contains("autonomous mode"), "says why it didn't run");
+        assert!(msg.contains("review"), "states the edit is held for review");
+    }
+
+    /// With no config file (the built-in default), the redirect still tells the model to ask the
+    /// orchestrator — it just can't name a file to edit.
+    #[test]
+    fn autonomous_gate_message_without_a_config_file_still_redirects() {
+        let msg = autonomous_gate_message(None, "network egress");
+        assert!(msg.contains("orchestrator"));
+        assert!(msg.contains("network egress"));
+        assert!(!msg.contains("config.toml"));
     }
 
     #[test]

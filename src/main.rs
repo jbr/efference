@@ -140,6 +140,13 @@ enum Command {
         /// reported on `GET /state`.
         #[arg(long, short = 'c')]
         config: Option<PathBuf>,
+        /// Run **autonomous** (no synchronous human at the gate): a spotter `Watch`/`Gate`
+        /// becomes a redirect that hands the call back to the model, pointing it at its config
+        /// file to request access, instead of blocking on an absent human. A config-file write
+        /// still gates — held for the orchestrator-above to review over the control channel
+        /// (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+        #[arg(long)]
+        autonomous: bool,
     },
     /// Send a user turn to a running daemon (`POST /turn`). Seeds turn 1 on an
     /// idle daemon. Returns immediately — watch `state`/`log` for the response,
@@ -302,11 +309,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             model,
             spotter_model,
             config,
+            autonomous,
         } => {
             // `serve` owns the session dir: `--name` or a generated timestamp id → `.efference/<id>/`,
             // with the socket/log/config colocated inside.
             let id = cli.name.unwrap_or_else(default_session_id);
-            serve(session_dir(&id), &model, &spotter_model, config).await
+            serve(session_dir(&id), &model, &spotter_model, config, autonomous).await
         }
         Command::Turn { text, wait } => turn(client_socket()?, text.join(" "), wait).await,
         Command::Approve {
@@ -740,6 +748,7 @@ async fn serve(
     model: &str,
     spotter_model: &str,
     config: Option<PathBuf>,
+    autonomous: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Daemon logging: RUST_LOG controls verbosity (default: efference at info, deps
     // quiet). The transport (request sizes, full API error bodies), the agent loop
@@ -835,7 +844,16 @@ async fn serve(
     // their session cwd seeded to where we're running.
     let cwd = std::env::current_dir()?;
     let toolbox = Toolbox::bash_and_mcps(cwd)?;
-    daemon::serve(client, toolbox, ForkPeek, spotter, log, socket, loaded).await
+    if autonomous {
+        eprintln!(
+            "autonomous: no synchronous gate — spotter Watch/Gate redirects the model to its \
+             config file; config writes still gate for the orchestrator-above"
+        );
+    }
+    daemon::serve(
+        client, toolbox, ForkPeek, spotter, log, socket, loaded, autonomous,
+    )
+    .await
 }
 
 /// Dev tool: run the spotter on one `(scope, watch-for, paths, command)` and print
