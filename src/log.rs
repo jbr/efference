@@ -219,6 +219,18 @@ pub enum Stance {
 /// the config it folds into.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigEdit {
+    /// Where this edit sits in the propose→commit/cancel lifecycle
+    /// (backlog/permissions/proposal-lifecycle.md). The fold gates on it: only [`EditState::Committed`]
+    /// takes effect (and, for session-visible keys, notifies); a [`EditState::Proposed`] entry is
+    /// inert in the effective config — it sits in the daemon's pending-proposals queue awaiting an
+    /// orchestrator's commit. The synchronous human-gate path appends `Committed` directly.
+    pub state: EditState,
+    /// Which pending proposal this entry resolves, by the `Proposed` entry's `seq` — the foreign
+    /// key from a `Committed`/`Cancelled` decision back to its proposal (the audit link, and how
+    /// the daemon drops the right entry from its pending-proposals queue). `None` for a *direct*
+    /// commit that had no prior proposal (the synchronous human gate, fs-watch) and for a
+    /// `Proposed` entry itself (a proposal resolves nothing).
+    pub resolves: Option<Seq>,
     /// What changed: which slot, and its new value. Replace-at-key — the fold sets the addressed
     /// key, last-write-wins, so replaying a log in order materializes the table deterministically.
     pub change: ConfigChange,
@@ -229,6 +241,26 @@ pub struct ConfigEdit {
     /// The orchestrator's one-line rationale, addressed to the session (and the corpus byproduct:
     /// the labeled `(change, why)` pair for any future distilled approval model).
     pub note: String,
+}
+
+/// Where a [`ConfigEdit`] sits in the propose→commit/cancel lifecycle
+/// (backlog/permissions/proposal-lifecycle.md). Append-only means the three states are **distinct
+/// entries sharing the proposal's `seq`**, not a mutated record: an async initiator (the session's
+/// `propose_scope`, the spotter's prefix-promotion) appends a `Proposed`, and the orchestrator later
+/// appends a `Committed` or `Cancelled`. The synchronous human-gate path and fs-watch append
+/// `Committed` directly (the human's gesture / file edit *is* the commit). The fold applies only
+/// `Committed`; `Proposed` and `Cancelled` are audit-only and never reach the effective config.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EditState {
+    /// Filed by an async initiator, awaiting an orchestrator decision. Inert in the effective
+    /// config; lives in the daemon's pending-proposals queue, addressed by its `seq`.
+    Proposed,
+    /// In effect: the fold applies its `change` (and, for `scope`/`paths`, notifies the session).
+    Committed,
+    /// The orchestrator declined a `Proposed` edit. Audit-only — drops the proposal from the queue,
+    /// never touches the effective config.
+    Cancelled,
 }
 
 /// What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape

@@ -21,11 +21,14 @@ use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_lite::Stream;
 use serde::{Deserialize, Serialize};
+use notify_debouncer_full::notify::RecursiveMode;
+use notify_debouncer_full::{DebounceEventResult, new_debouncer};
 use serde_json::Value;
 use tokio::process::Command;
 use tokio::sync::{Notify, broadcast, mpsc, oneshot};
@@ -37,7 +40,7 @@ use crate::agent;
 use crate::api::{Client, Error, ToolChoice, Usage};
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
-use crate::log::{CallId, LogEntry, Payload, Seq, ToolCall, Turn};
+use crate::log::{CallId, EditState, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{ApiMessage, place_trailing_cache_breakpoint, project};
 use crate::config::{LoadedConfig, ConfigSource};
@@ -95,6 +98,21 @@ struct PendingNotification {
     slot: Option<String>,
 }
 
+/// One async config edit awaiting an orchestrator decision
+/// (backlog/permissions/proposal-lifecycle.md). Filed by a `Proposed` [`ConfigEdit`] append (the
+/// session's `propose_scope`, the spotter's prefix-promotion); the orchestrator-above commits or
+/// cancels it, which drops it from the queue. Unlike [`PendingNotification`], the proposal **already
+/// has a durable `seq`** (the `Proposed` entry's), so that *is* its id — no queue-local counter.
+#[derive(Clone, Debug, Serialize)]
+struct PendingProposal {
+    /// The `seq` of the `Proposed` log entry — the proposal's id, which the orchestrator's
+    /// commit/cancel references.
+    seq: Seq,
+    /// The change being proposed; the committing entry copies it self-contained so the fold stays a
+    /// pure per-entry filter (backlog/permissions/proposal-lifecycle.md).
+    change: crate::log::ConfigChange,
+}
+
 /// Daemon state shared between the loop task and the HTTP handlers. Held as
 /// `Arc<Shared>` in both the loop and trillium's server-global `shared_state`
 /// (read in handlers via `conn.shared_state::<Arc<Shared>>()`). Per-conn state is
@@ -116,6 +134,21 @@ pub struct Shared {
     interrupt: Notify,
     /// Pinged on each log append; the SSE tail (next slice) will wake on it.
     appended: Notify,
+    /// Whether the loop is **executing a turn** (vs. parked awaiting one). Together with
+    /// `queued`, this drives the `/settle` long-poll's "at a decision point?" predicate
+    /// ([`Shared::is_settled`], backlog/permissions/proposal-lifecycle.md). The loop owns it:
+    /// set true when it dequeues a turn, false when it parks.
+    running: AtomicBool,
+    /// Turns submitted (`POST /turn`) but not yet dequeued by the loop — the submit→dequeue
+    /// handoff counter that closes the cross-task race in [`Shared::is_settled`] (a turn exists
+    /// even in the instant before the loop marks itself `running`).
+    queued: AtomicUsize,
+    /// Pinged whenever the daemon may have reached a **settled** state — a gate appeared
+    /// ([`register_pending`]) or the loop parked ([`parking`]). The `/settle` long-poll waits on it.
+    ///
+    /// [`register_pending`]: Shared::register_pending
+    /// [`parking`]: Shared::parking
+    settle_changed: Notify,
     /// Pinged when a notification is enqueued (docs/inbox.md — `notify`). The agent loop's
     /// idle path awaits this to wake an idle agent for a standalone triage (the
     /// wake-on-notification model that replaced blocking `wait`).
@@ -134,6 +167,11 @@ pub struct Shared {
     /// shows it (Slice C). Superseded/dismissed-while-pending entries are dropped here
     /// (the "never-happened" case); only shown ones reach the audit log.
     inbox: Mutex<Inbox>,
+    /// The pending-proposals queue: async `ConfigEdit`s (the session's `propose_scope`, the
+    /// spotter's prefix-promotion) awaiting an orchestrator's commit/cancel
+    /// (backlog/permissions/proposal-lifecycle.md). Ephemeral control state like `inbox` — a
+    /// `Proposed` entry is durable in the log, but its *pending* status lives here until resolved.
+    proposals: Mutex<Vec<PendingProposal>>,
     /// The background-process registry (docs/supervisor.md): live children whose running tail
     /// is re-sampled fresh each triage gate. Ephemeral control state like `inbox` /
     /// `metrics` — never logged, never projected (a running tail forced through the
@@ -206,10 +244,14 @@ impl Shared {
             pending: Mutex::new(None),
             interrupt: Notify::new(),
             appended: Notify::new(),
+            running: AtomicBool::new(false),
+            queued: AtomicUsize::new(0),
+            settle_changed: Notify::new(),
             notified: Notify::new(),
             stream_tx,
             metrics: Mutex::new(Metrics::default()),
             inbox: Mutex::new(Inbox::default()),
+            proposals: Mutex::new(Vec::new()),
             supervisor: Mutex::new(Supervisor::new()),
             role,
             effective: Mutex::new(effective),
@@ -259,33 +301,77 @@ impl Shared {
     /// Append to the log (durably) and wake SSE tailers. The single appender is
     /// the loop; handlers only read.
     pub fn append(&self, turn: Turn, payload: Payload) -> io::Result<Seq> {
-        // A `ConfigEdit` amends policy: capture its change before the payload moves into the
-        // log, then fold it into the effective config *after* a successful append, so a failed
-        // write never edits (backlog/permissions/config-edit.md). Cheap clone, edits only.
+        // A `ConfigEdit` drives the proposal lifecycle (backlog/permissions/proposal-lifecycle.md):
+        // capture its `(state, change)` before the payload moves into the log, then act on it
+        // *after* a successful append, so a failed write never edits state. Cheap clone, edits only.
         let edit = match &payload {
-            Payload::ConfigEdit(edit) => Some(edit.change.clone()),
+            Payload::ConfigEdit(edit) => {
+                Some((edit.state, edit.change.clone(), edit.resolves))
+            }
             _ => None,
         };
         let seq = self.log.lock().unwrap().append(turn, payload)?;
-        if let Some(change) = edit {
-            {
-                let mut eff = self.effective.lock().unwrap();
-                let mut role = (**eff).clone();
-                crate::policy::apply_config_change(&mut role, &change);
-                *eff = Arc::new(role);
-            }
-            // Session-visible edits (`scope`, `paths`) surface as an `Ambient` notification so
-            // the session learns its perimeter moved — an optional tail append that never
-            // re-renders the cached preamble (backlog/permissions/config-edit.md). It rides the
-            // same inbox/triage machinery as any notification, and fires for *every* config-edit
-            // initiator because this is the single appender. `commands`/`tools` notify nothing —
-            // their effect reaches the model only through the classifier.
-            if let Some((body, slot)) = session_visible_notice(&change) {
-                self.notify("config".to_string(), body, Some(slot), None);
+        if let Some((state, change, resolves)) = edit {
+            match state {
+                // A committed edit takes effect: fold it into the effective policy so a gate reads
+                // current policy in O(1) (no log re-scan), and — for session-visible keys — notify.
+                EditState::Committed => {
+                    {
+                        let mut eff = self.effective.lock().unwrap();
+                        let mut role = (**eff).clone();
+                        crate::policy::apply_config_change(&mut role, &change);
+                        *eff = Arc::new(role);
+                    }
+                    // Resolving a proposal: drop the referenced proposal from the pending queue.
+                    // `None` for a direct synchronous/fs-watch commit, which had no queued proposal.
+                    if let Some(proposal) = resolves {
+                        self.resolve_proposal(proposal);
+                    }
+                    // Session-visible edits (`scope`, `paths`) surface as an `Ambient` notification
+                    // so the session learns its perimeter moved — an optional tail append that never
+                    // re-renders the cached preamble (backlog/permissions/config-edit.md). It rides
+                    // the same inbox/triage machinery as any notification, and fires for *every*
+                    // committing initiator because this is the single appender. `commands`/`tools`
+                    // notify nothing — their effect reaches the model only through the classifier.
+                    if let Some((body, slot)) = session_visible_notice(&change) {
+                        self.notify("config".to_string(), body, Some(slot), None);
+                    }
+                }
+                // A proposal is inert in the effective config: it joins the pending-proposals queue,
+                // addressed by its own `seq`, awaiting an orchestrator's commit/cancel.
+                EditState::Proposed => {
+                    self.proposals.lock().unwrap().push(PendingProposal {
+                        seq,
+                        change,
+                    });
+                }
+                // A cancel drops the referenced proposal from the queue; the effective config
+                // never moved.
+                EditState::Cancelled => {
+                    if let Some(proposal) = resolves {
+                        self.resolve_proposal(proposal);
+                    }
+                }
             }
         }
         self.appended.notify_waiters();
         Ok(seq)
+    }
+
+    /// Drop a pending proposal from the queue once an orchestrator resolves it (commit or cancel).
+    /// The committing/cancelling entry references the proposal by its `seq`; a direct commit (the
+    /// synchronous human gate, fs-watch) has no queued proposal, so this is a no-op there.
+    fn resolve_proposal(&self, seq: Seq) {
+        self.proposals.lock().unwrap().retain(|p| p.seq != seq);
+    }
+
+    /// The current pending-proposals queue — async config edits awaiting an orchestrator decision
+    /// (backlog/permissions/proposal-lifecycle.md). Surfaced to the orchestrator-above by the HTTP
+    /// layer (the API shape is the next ring out); for now this backs tests and the commit/cancel
+    /// verbs. `allow(dead_code)`: the reader seam is wired ahead of the HTTP surface that consumes it.
+    #[allow(dead_code)]
+    fn pending_proposals(&self) -> Vec<PendingProposal> {
+        self.proposals.lock().unwrap().clone()
     }
 
     /// Publish an ephemeral pre-commit output delta to `GET /stream` subscribers
@@ -328,6 +414,14 @@ impl Shared {
         self.effective.lock().unwrap().clone()
     }
 
+    /// The turn of the most recent log entry (`0` if empty) — the turn an **out-of-band** append
+    /// attaches to (the fs-watch initiator, which has no loop-turn context,
+    /// backlog/permissions/proposal-lifecycle.md). A `ConfigEdit` projects to nothing, so its turn
+    /// is pure audit grouping; attaching it to the in-flight turn is the honest placement.
+    fn latest_turn(&self) -> Turn {
+        self.log.lock().unwrap().entries().last().map(|e| e.turn).unwrap_or(0)
+    }
+
     /// The role config file path, if the role resolved from one (`None` for the built-in
     /// default — nothing to persist to). Where a `Lifetime::Persist` grant is appended
     /// (backlog/permissions/config-edit.md).
@@ -346,9 +440,59 @@ impl Shared {
     }
 
     fn submit_turn(&self, text: String) {
+        // Count the turn as queued *before* sending, so `is_settled` reads "busy" the instant
+        // the turn is accepted — even before the loop dequeues it (the `/settle` submit race,
+        // backlog/permissions/proposal-lifecycle.md).
+        self.queued.fetch_add(1, Ordering::SeqCst);
         // The receiver lives in the loop's `RemoteFrontend`; a send fails only if
         // the loop has exited, in which case the daemon is shutting down anyway.
         let _ = self.turns_tx.send(text);
+    }
+
+    /// The loop dequeued a turn: mark running, then consume the queued count — `running` set
+    /// *before* the decrement so [`is_settled`] never sees both clear while a turn is in flight.
+    ///
+    /// [`is_settled`]: Shared::is_settled
+    fn dequeued_turn(&self) {
+        self.running.store(true, Ordering::SeqCst);
+        self.queued.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    /// The loop is parking (about to await the next user turn): mark not-running and wake any
+    /// `/settle` waiter. If a turn is already queued, `recv` resolves at once and [`dequeued_turn`]
+    /// re-sets running, so a transient `running == false` with `queued > 0` still reads as busy.
+    ///
+    /// [`dequeued_turn`]: Shared::dequeued_turn
+    fn parking(&self) {
+        self.running.store(false, Ordering::SeqCst);
+        self.settle_changed.notify_waiters();
+    }
+
+    /// Whether the daemon is at a **decision point** a client can act on: a gate is pending, or the
+    /// loop is idle (parked with nothing queued). Mid-turn — running, no gate — is *not* settled.
+    /// The predicate behind `/settle` and the `?wait` flag (backlog/permissions/proposal-lifecycle.md).
+    fn is_settled(&self) -> bool {
+        self.pending.lock().unwrap().is_some()
+            || (!self.running.load(Ordering::SeqCst) && self.queued.load(Ordering::SeqCst) == 0)
+    }
+
+    /// Block until [`is_settled`]. Uses `Notified::enable` to register the waiter **before** the
+    /// condition check: `settle_changed` is a `notify_waiters` (no stored permit), so a
+    /// `parking`/`register_pending` that fires between the check and the await would otherwise be
+    /// lost. With the waiter pre-registered, the wake is delivered to the pending future.
+    ///
+    /// [`is_settled`]: Shared::is_settled
+    async fn await_settled(&self) {
+        loop {
+            let notified = self.settle_changed.notified();
+            tokio::pin!(notified);
+            // Register on the waiter queue now, so a notify racing the check below isn't missed.
+            notified.as_mut().enable();
+            if self.is_settled() {
+                return;
+            }
+            notified.await;
+        }
     }
 
     /// Register an approval gate and surface it to `GET /state`. Returns the
@@ -361,6 +505,8 @@ impl Shared {
             name: call.name.clone(),
             input: call.input.clone(),
         });
+        // A gate is a settled state — wake any `/settle` waiter (the `?wait` on `/turn` returns here).
+        self.settle_changed.notify_waiters();
         rx
     }
 
@@ -641,9 +787,16 @@ pub struct RemoteFrontend {
 
 impl Frontend for RemoteFrontend {
     async fn read_user_turn(&mut self) -> Option<String> {
+        // Mark the loop parked so `/settle` reports idle while we wait (and wake any waiter).
+        self.shared.parking();
         // Blocks until a `POST /turn` arrives. `None` (all senders dropped) only
         // happens once the daemon is tearing down, which ends the loop cleanly.
-        self.turns.recv().await
+        let turn = self.turns.recv().await;
+        if turn.is_some() {
+            // Back to busy: mark running and consume the queued count.
+            self.shared.dequeued_turn();
+        }
+        turn
     }
 
     async fn approve(&mut self, call: &ToolCall) -> Approval {
@@ -736,11 +889,19 @@ fn router() -> Router {
             let Some(shared) = shared_of(&conn) else {
                 return conn.with_status(500).with_body(MISSING_STATE);
             };
+            let wait = wants_wait(conn.querystring());
             let body = conn.request_body_string().await.unwrap_or_default();
             match serde_json::from_str::<TurnBody>(&body) {
                 Ok(TurnBody { text }) => {
                     shared.submit_turn(text);
-                    conn.with_status(202).with_body(r#"{"status":"accepted"}"#)
+                    // `?wait`: hold the connection until the turn reaches a gate or completes,
+                    // then answer with the resulting state — "act → read state" in one round-trip
+                    // (backlog/permissions/proposal-lifecycle.md).
+                    if wait {
+                        settle_and_state(&shared, conn).await
+                    } else {
+                        conn.with_status(202).with_body(r#"{"status":"accepted"}"#)
+                    }
                 }
                 Err(e) => conn
                     .with_status(400)
@@ -753,6 +914,7 @@ fn router() -> Router {
                 return conn.with_status(500).with_body(MISSING_STATE);
             };
             let id = CallId(conn.param("call_id").unwrap_or_default().to_string());
+            let wait = wants_wait(conn.querystring());
             let body = conn.request_body_string().await.unwrap_or_default();
             let decision = match serde_json::from_str::<DecisionBody>(&body) {
                 Ok(d) => d,
@@ -785,7 +947,13 @@ fn router() -> Router {
                 }
             };
             if shared.resolve_approval(&id, approval) {
-                conn.with_status(200).with_body(r#"{"status":"resolved"}"#)
+                // `?wait`: hold until the turn reaches its *next* gate or completes — so a
+                // multi-gate turn is driven as a clean "approve → read state" loop.
+                if wait {
+                    settle_and_state(&shared, conn).await
+                } else {
+                    conn.with_status(200).with_body(r#"{"status":"resolved"}"#)
+                }
             } else {
                 conn.with_status(404)
                     .with_body(r#"{"error":"no pending approval with that id"}"#)
@@ -837,6 +1005,16 @@ fn router() -> Router {
                 return conn.with_status(500).with_body(MISSING_STATE);
             };
             conn.with_status(200).with_body(shared.state_json())
+        })
+        // Long-poll: block until the daemon reaches a decision point (a gate is pending, or the
+        // loop is idle), then return the `/state` snapshot. Lets a client drive the daemon
+        // synchronously — "act, read state, act" — instead of polling `/state` in a wall-clock
+        // loop (backlog/permissions/proposal-lifecycle.md). Returns immediately if already settled.
+        .get("/settle", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            settle_and_state(&shared, conn).await
         })
         .get("/log", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
@@ -1041,6 +1219,101 @@ async fn drain_background(
 
 const MISSING_STATE: &str = r#"{"error":"missing shared state"}"#;
 
+/// The fs-watch initiator (backlog/permissions/proposal-lifecycle.md): watch the config file and
+/// turn external edits into **committed** `ConfigEdit`s. A human editing the file *is* the
+/// orchestrator committing, so each diff lands directly as `Committed` (not a proposal) and folds
+/// into the effective policy live — no restart.
+///
+/// We watch the **parent directory** and filter to the filename, not the file inode: editors
+/// save-via-rename (write a temp, rename over the original), which orphans an inode-level watch.
+/// Events are debounced (one save fires several raw events). The harness's own auto-persist
+/// write-back echoes back through here harmlessly — [`config::diff_changes`] is additive and the
+/// file already matches the effective config, so the echo diffs to nothing.
+///
+/// The debouncer runs `notify` on its own thread and invokes the handler there; we forward each
+/// batch into this async task over a channel, and the task **owns** the debouncer so watching lives
+/// exactly as long as the task (the `Debouncer` guard stops on drop).
+async fn config_watch_loop(shared: Arc<Shared>, path: PathBuf) {
+    // A relative `efference.toml` has an empty parent; watch cwd in that case.
+    let dir = match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    let target = path.file_name().map(|n| n.to_os_string());
+
+    let (tx, mut rx) = mpsc::unbounded_channel::<DebounceEventResult>();
+    let mut debouncer = match new_debouncer(Duration::from_millis(400), None, move |res| {
+        // The handler runs on notify's thread — just hand the batch to the async side.
+        let _ = tx.send(res);
+    }) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("[config-watch: could not start watcher for {}: {e}]", path.display());
+            return;
+        }
+    };
+    if let Err(e) = debouncer.watch(&dir, RecursiveMode::NonRecursive) {
+        eprintln!("[config-watch: could not watch {}: {e}]", dir.display());
+        return;
+    }
+    eprintln!("watching config: {}", path.display());
+
+    while let Some(result) = rx.recv().await {
+        let events = match result {
+            Ok(events) => events,
+            Err(errors) => {
+                for e in errors {
+                    eprintln!("[config-watch error: {e}]");
+                }
+                continue;
+            }
+        };
+        // We watch the whole dir; react only to events that touch our file. Compare by file name —
+        // robust to relative/absolute path differences in how the backend reports the event path.
+        let touches = events.iter().any(|ev| {
+            ev.event.paths.iter().any(|p| p.file_name().map(|n| n.to_os_string()) == target)
+        });
+        if touches {
+            reload_and_emit(&shared, &path);
+        }
+    }
+}
+
+/// Reload the config file and emit a `Committed` `ConfigEdit` per additive/replace delta against the
+/// current effective policy (backlog/permissions/proposal-lifecycle.md). A reload failure (malformed
+/// edit mid-save, a transient delete during rename) is logged and skipped — we keep the last good
+/// policy rather than failing the daemon. Diffing against *effective* means only genuinely-new
+/// deltas surface, so the harness's own persist write-back is a no-op echo.
+fn reload_and_emit(shared: &Shared, path: &std::path::Path) {
+    let file_config = match crate::config::load(Some(path)) {
+        Ok(loaded) => loaded.role,
+        Err(e) => {
+            eprintln!("[config-watch: reload failed, keeping current policy: {e}]");
+            return;
+        }
+    };
+    let changes = crate::config::diff_changes(&shared.effective_config(), &file_config);
+    if changes.is_empty() {
+        return;
+    }
+    let turn = shared.latest_turn();
+    for change in changes {
+        // The file edit *is* the commit, and it lives in the file by definition → `Persist` (the
+        // audit answer to "survives a reboot?" is yes). It does not go through `commit_config_edit`,
+        // so it is *not* written back — that would loop against the very write that triggered us.
+        let edit = crate::log::ConfigEdit {
+            state: EditState::Committed,
+            resolves: None,
+            change,
+            lifetime: crate::log::Lifetime::Persist,
+            note: "config file edited".into(),
+        };
+        if let Err(e) = shared.append(turn, Payload::ConfigEdit(edit)) {
+            eprintln!("[config-watch: append failed: {e}]");
+        }
+    }
+}
+
 /// The cache keepalive (docs/substrate.md): a daemon-side timer that fires a
 /// `max_tokens: 0` ping when the canonical prefix nears its 5-minute cache TTL
 /// during idle, refreshing it so the next real turn resumes hot instead of cold.
@@ -1092,6 +1365,26 @@ fn parse_since(query: &str) -> Option<u64> {
         .and_then(|v| v.parse().ok())
 }
 
+/// Whether a request asked to block until settled (`?wait`, `?wait=1`, `?wait=true`) — the
+/// long-poll opt-in on `/turn` and `/approvals` (backlog/permissions/proposal-lifecycle.md).
+fn wants_wait(query: &str) -> bool {
+    query.split('&').any(|kv| matches!(kv, "wait" | "wait=1" | "wait=true"))
+}
+
+/// Cap on a `/settle` (or `?wait`) long-poll: past this, return the current state regardless, so a
+/// wedged loop can never hold a client forever. Far longer than any real turn — a clean settle wins
+/// the race in practice; this is only the backstop.
+const SETTLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Block until the daemon settles (capped by [`SETTLE_TIMEOUT`]), then answer with the `/state`
+/// snapshot — the shared tail of `GET /settle` and the `?wait` paths. The body is exactly `/state`'s,
+/// so a settled response is just a fresh state read; the client inspects `pending_approval` to tell a
+/// gate from idle.
+async fn settle_and_state(shared: &Arc<Shared>, conn: Conn) -> Conn {
+    let _ = tokio::time::timeout(SETTLE_TIMEOUT, shared.await_settled()).await;
+    conn.with_status(200).with_body(shared.state_json())
+}
+
 /// Run the daemon: bind the control socket, spawn the HTTP server, and drive the
 /// agent loop with a [`RemoteFrontend`]. The loop blocks until a `POST /turn`
 /// arrives, so an idle daemon simply waits — retiring argv-seeding and the
@@ -1140,6 +1433,13 @@ pub async fn serve<D: Distiller, S: Spotter>(
         Arc::clone(&shared),
         tools,
     ));
+
+    // The fs-watch initiator (backlog/permissions/proposal-lifecycle.md): if the config resolved
+    // from a file, watch it so external edits take effect live as committed `ConfigEdit`s. The
+    // built-in default has no file to watch.
+    if let Some(config_path) = shared.config_path().map(|p| p.to_path_buf()) {
+        tokio::spawn(config_watch_loop(Arc::clone(&shared), config_path));
+    }
 
     // Trillium owns the signal registry: by default it registers SIGINT/SIGTERM and
     // drives graceful shutdown through its `Swansong`. But the future `serve` awaits
@@ -1271,8 +1571,16 @@ mod tests {
     }
 
     fn allow_grant(program: &str) -> Payload {
+        committed_edit(crate::log::ConfigChange::Command { command: program.into() })
+    }
+
+    /// A committed config edit (the synchronous/direct commit path) as a `Payload` — no prior
+    /// proposal to resolve.
+    fn committed_edit(change: crate::log::ConfigChange) -> Payload {
         Payload::ConfigEdit(crate::log::ConfigEdit {
-            change: crate::log::ConfigChange::Command { command: program.into() },
+            state: EditState::Committed,
+            resolves: None,
+            change,
             lifetime: crate::log::Lifetime::Session,
             note: String::new(),
         })
@@ -1300,13 +1608,7 @@ mod tests {
     /// (backlog/permissions/config-edit.md).
     #[test]
     fn session_visible_config_edit_enqueues_a_notification() {
-        fn edit(change: crate::log::ConfigChange) -> Payload {
-            Payload::ConfigEdit(crate::log::ConfigEdit {
-                change,
-                lifetime: crate::log::Lifetime::Session,
-                note: String::new(),
-            })
-        }
+        let edit = committed_edit;
 
         // A scope edit notifies.
         let (shared, _rx) = Shared::new(Log::in_memory());
@@ -1330,6 +1632,171 @@ mod tests {
         let (shared, _rx) = Shared::new(Log::in_memory());
         shared.append(0, allow_grant("npm")).unwrap();
         assert!(!shared.has_pending_notifications(), "command edit is classifier-only");
+    }
+
+    /// A `Proposed` edit as a `Payload`, for driving the lifecycle in tests.
+    fn proposed_edit(change: crate::log::ConfigChange) -> Payload {
+        Payload::ConfigEdit(crate::log::ConfigEdit {
+            state: EditState::Proposed,
+            resolves: None,
+            change,
+            lifetime: crate::log::Lifetime::Session,
+            note: String::new(),
+        })
+    }
+
+    /// The proposal lifecycle (backlog/permissions/proposal-lifecycle.md): a `Proposed` edit is
+    /// **inert** in the effective config but lands in the pending-proposals queue, addressed by its
+    /// own `seq`; an orchestrator's `Committed` decision (referencing that `seq` via `resolves`)
+    /// both applies the change *and* drains the proposal from the queue.
+    #[test]
+    fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
+        use crate::policy::{Verdict, classify};
+        let call = bash_call("npm install");
+        let (shared, _rx) = Shared::new(Log::in_memory());
+
+        // Propose: inert in policy, but queued.
+        let proposal_seq = shared
+            .append(0, proposed_edit(crate::log::ConfigChange::Command { command: "npm".into() }))
+            .unwrap();
+        assert_eq!(
+            classify(&shared.effective_config(), &call),
+            Verdict::Gate,
+            "a proposal must not take effect",
+        );
+        let queued = shared.pending_proposals();
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].seq, proposal_seq, "the proposal is addressed by its own seq");
+
+        // Commit it (referencing the proposal): the change applies and the queue drains.
+        shared
+            .append(
+                0,
+                Payload::ConfigEdit(crate::log::ConfigEdit {
+                    state: EditState::Committed,
+                    resolves: Some(proposal_seq),
+                    change: crate::log::ConfigChange::Command { command: "npm".into() },
+                    lifetime: crate::log::Lifetime::Session,
+                    note: String::new(),
+                }),
+            )
+            .unwrap();
+        assert_eq!(classify(&shared.effective_config(), &call), Verdict::Clear);
+        assert!(shared.pending_proposals().is_empty(), "commit drains the proposal");
+    }
+
+    /// The fs-watch initiator's core (backlog/permissions/proposal-lifecycle.md): reloading an
+    /// edited config file emits a `Committed` edit per delta against effective policy, folding it
+    /// in live; a session-visible delta (`scope`) also notifies; re-running against the *same* file
+    /// is a no-op echo (the diff is empty). Tests `reload_and_emit` directly — the synchronous core
+    /// the notify thread drives — so there's no filesystem-event timing in the test.
+    #[test]
+    fn reload_emits_committed_edits_for_file_deltas() {
+        use crate::policy::{Verdict, classify};
+        let path = std::env::temp_dir().join(format!("efference-watch-{}.toml", std::process::id()));
+        std::fs::write(&path, "scope = \"stay in src/\"\n[commands]\ncargo = true\n").unwrap();
+
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        assert_eq!(classify(&shared.effective_config(), &bash_call("cargo build")), Verdict::Gate);
+
+        // First reload folds the file's grants into effective policy and notifies on the scope.
+        reload_and_emit(&shared, &path);
+        assert_eq!(classify(&shared.effective_config(), &bash_call("cargo build")), Verdict::Clear);
+        assert_eq!(shared.effective_config().scope.as_deref(), Some("stay in src/"));
+        assert!(shared.has_pending_notifications(), "scope delta is session-visible");
+
+        // A second reload against the unchanged file diffs to nothing — the idempotent echo.
+        let before = shared.log.lock().unwrap().entries().len();
+        reload_and_emit(&shared, &path);
+        assert_eq!(shared.log.lock().unwrap().entries().len(), before, "no-op echo appends nothing");
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A `Cancelled` decision drains the proposal from the queue and never touches policy.
+    #[test]
+    fn cancelling_a_proposal_drains_the_queue_without_applying() {
+        use crate::policy::{Verdict, classify};
+        let call = bash_call("npm install");
+        let (shared, _rx) = Shared::new(Log::in_memory());
+
+        let proposal_seq = shared
+            .append(0, proposed_edit(crate::log::ConfigChange::Command { command: "npm".into() }))
+            .unwrap();
+        assert_eq!(shared.pending_proposals().len(), 1);
+
+        shared
+            .append(
+                0,
+                Payload::ConfigEdit(crate::log::ConfigEdit {
+                    state: EditState::Cancelled,
+                    resolves: Some(proposal_seq),
+                    change: crate::log::ConfigChange::Command { command: "npm".into() },
+                    lifetime: crate::log::Lifetime::Session,
+                    note: String::new(),
+                }),
+            )
+            .unwrap();
+        assert!(shared.pending_proposals().is_empty(), "cancel drains the proposal");
+        assert_eq!(
+            classify(&shared.effective_config(), &call),
+            Verdict::Gate,
+            "a cancelled proposal never takes effect",
+        );
+    }
+
+    /// The `/settle` predicate (backlog/permissions/proposal-lifecycle.md) tracks the loop's
+    /// lifecycle: idle → busy on submit (even before dequeue) → busy mid-turn → *settled* at a gate
+    /// → busy after the gate resolves → settled again when the loop parks.
+    #[test]
+    fn settle_predicate_tracks_the_loop_lifecycle() {
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        assert!(shared.is_settled(), "a fresh daemon is idle");
+
+        // Submitted but not yet dequeued — busy (the submit-race guard via the queued count).
+        shared.submit_turn("hi".into());
+        assert!(!shared.is_settled(), "a queued turn is busy before the loop sees it");
+
+        // Dequeued, running mid-turn — still busy.
+        shared.dequeued_turn();
+        assert!(!shared.is_settled(), "mid-turn is busy");
+
+        // A gate is a decision point — settled.
+        let call = bash_call("npm install");
+        let _gate = shared.register_pending(&call);
+        assert!(shared.is_settled(), "a pending gate is a settled decision point");
+
+        // Resolving the gate while the turn continues — busy again.
+        shared.resolve_approval(&call.id, Approval::Approve);
+        assert!(!shared.is_settled(), "post-gate, mid-turn is busy");
+
+        // The loop parks — idle, settled.
+        shared.parking();
+        assert!(shared.is_settled(), "a parked loop with nothing queued is settled");
+    }
+
+    /// `await_settled` blocks while the loop is busy and returns the moment it parks — and the
+    /// `enable()`-before-check ordering means a `parking()` racing the registration isn't lost.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn await_settled_returns_when_the_loop_parks() {
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        shared.submit_turn("hi".into());
+        shared.dequeued_turn(); // busy, mid-turn
+
+        let waiter = {
+            let shared = Arc::clone(&shared);
+            tokio::spawn(async move { shared.await_settled().await })
+        };
+        // Give the waiter a chance to register and confirm it's still blocked on a busy loop.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!waiter.is_finished(), "await_settled must block while the loop is busy");
+
+        // Parking settles it; the waiter wakes and returns.
+        shared.parking();
+        tokio::time::timeout(Duration::from_secs(2), waiter)
+            .await
+            .expect("await_settled should return promptly after parking")
+            .expect("waiter task panicked");
     }
 
     /// A `config_edit` decision body decodes into its change + lifetime (lowercase wire tags),

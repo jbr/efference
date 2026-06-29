@@ -504,27 +504,31 @@ mod tests {
         assert_eq!(wire, expected);
     }
 
-    /// A `ConfigEdit` is audit-only: appending one anywhere in the log must not change a single
-    /// projected byte (its effect reaches the model through the classifier, not the wire). If
-    /// this ever fails, a grant has leaked onto the cached prefix (docs/substrate.md).
+    /// A `ConfigEdit` is audit-only **in every lifecycle state**: appending a `Proposed`,
+    /// `Committed`, or `Cancelled` entry anywhere in the log must not change a single projected
+    /// byte (its effect reaches the model through the classifier, not the wire). If this ever
+    /// fails, a config edit has leaked onto the cached prefix (docs/substrate.md).
     #[test]
     fn config_edit_projects_to_nothing() {
-        use crate::log::{ConfigChange, ConfigEdit, Lifetime};
+        use crate::log::{ConfigChange, ConfigEdit, EditState, Lifetime};
         let without = serde_json::to_string(&project(&sample_log())).unwrap();
 
-        let mut with = sample_log();
-        with.push(entry(
-            3,
-            1,
-            Payload::ConfigEdit(ConfigEdit {
-                change: ConfigChange::Command { command: "cargo nextest".into() },
-                lifetime: Lifetime::Persist,
-                note: "promoted: standing-safe in scope".into(),
-            }),
-        ));
-        let with = serde_json::to_string(&project(&with)).unwrap();
-
-        assert_eq!(without, with, "a config edit must not perturb the projected wire");
+        for state in [EditState::Proposed, EditState::Committed, EditState::Cancelled] {
+            let mut with = sample_log();
+            with.push(entry(
+                3,
+                1,
+                Payload::ConfigEdit(ConfigEdit {
+                    state,
+                    resolves: None,
+                    change: ConfigChange::Command { command: "cargo nextest".into() },
+                    lifetime: Lifetime::Persist,
+                    note: "promoted: standing-safe in scope".into(),
+                }),
+            ));
+            let with = serde_json::to_string(&project(&with)).unwrap();
+            assert_eq!(without, with, "a {state:?} config edit must not perturb the projected wire");
+        }
     }
 
     /// `is_error: false` must be omitted (lean wire); a true error must appear.

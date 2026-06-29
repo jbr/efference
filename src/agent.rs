@@ -23,8 +23,8 @@ use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::policy::{self, Verdict};
 use crate::log::{
-    ConfigChange, ContentBlock, Disposition, ConfigEdit, Lifetime, Mark, MarkKind, Notification, Payload,
-    RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
+    ConfigChange, ContentBlock, Disposition, ConfigEdit, EditState, Lifetime, Mark, MarkKind,
+    Notification, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
 };
 use crate::project::place_trailing_cache_breakpoint;
 use crate::spotter::Spotter;
@@ -610,7 +610,18 @@ fn commit_config_edit(
         },
         Lifetime::Session => Lifetime::Session,
     };
-    shared.append(turn, Payload::ConfigEdit(ConfigEdit { change, lifetime, note }))?;
+    // The human upgrading a gate is a *direct* commit — the gesture is the commit, no prior
+    // proposal to resolve (backlog/permissions/proposal-lifecycle.md).
+    shared.append(
+        turn,
+        Payload::ConfigEdit(ConfigEdit {
+            state: EditState::Committed,
+            resolves: None,
+            change,
+            lifetime,
+            note,
+        }),
+    )?;
     let role = shared.effective_config();
     Ok(if policy::classify(&role, call) == Verdict::Clear {
         Approval::Approve

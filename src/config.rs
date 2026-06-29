@@ -332,6 +332,42 @@ fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
     })
 }
 
+/// The additive/replace deltas that carry `from` to `to`, as [`ConfigChange`]s — the diff the
+/// fs-watch initiator emits when the config file changes (backlog/permissions/proposal-lifecycle.md).
+/// `from` is the current effective config, `to` the freshly-reloaded file, so only genuinely-new
+/// deltas surface (the harness's own auto-persist write-back diffs to nothing — the idempotent echo).
+///
+/// **Additive only**, by the shape of [`apply_config_change`]: it can add a command/tool, set a
+/// path's perms, or replace the scope text — it cannot *remove* a set member or clear scope. So a
+/// key deleted from the file is **not** propagated live (the effective config keeps it); tightening
+/// by file edit takes effect on the next boot, which reloads the file as the base. This is the
+/// honest frontier of the additive fold, not a bug to paper over. `watch-for` is likewise skipped —
+/// it has no [`ConfigChange`] variant yet (see [`crate::log::ConfigChange`]). Emission order is
+/// deterministic: the `BTreeSet`/`BTreeMap` slots iterate sorted.
+pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {
+    let mut out = Vec::new();
+    // Scope: a scalar replace — emit when the file's scope differs (and is set; `None` can't clear).
+    if let Some(text) = &to.scope
+        && from.scope.as_ref() != Some(text)
+    {
+        out.push(ConfigChange::Scope { text: text.clone() });
+    }
+    // Commands / tools: additive set membership — emit each key the file has that effective lacks.
+    for command in to.commands.difference(&from.commands) {
+        out.push(ConfigChange::Command { command: command.clone() });
+    }
+    for name in to.tools.difference(&from.tools) {
+        out.push(ConfigChange::Tool { name: name.clone() });
+    }
+    // Paths: a perms map — emit each path whose perms are new or changed in the file.
+    for (path, perms) in &to.paths {
+        if from.paths.get(path) != Some(perms) {
+            out.push(ConfigChange::Path { path: path.clone(), read: perms.read, write: perms.write });
+        }
+    }
+    out
+}
+
 /// Persist a committed [`ConfigChange`] to the config file by editing it in place via
 /// [`toml_edit`] (backlog/permissions/config-edit.md). Unlike the old append-only KDL render,
 /// this **replaces at a key** while preserving every comment and unrelated line — the property
@@ -677,5 +713,50 @@ mod tests {
         assert_eq!(parse(&path, &text).unwrap().scope.as_deref(), Some("fresh"), "{text}");
 
         std::fs::remove_file(&path).unwrap();
+    }
+
+    // --- diff_changes: the fs-watch initiator's file-vs-effective delta ---
+
+    /// New keys the file adds over the effective config surface as additive changes — one per slot,
+    /// in deterministic (sorted) order; a scope change replaces the scalar.
+    #[test]
+    fn diff_emits_additive_changes_for_what_the_file_adds() {
+        let from = parse_str("scope = \"old\"\n[commands]\ncargo = true\n");
+        let to = parse_str(
+            "scope = \"new\"\ntools = [\"read\"]\n\
+             [commands]\ncargo = true\n\"git diff\" = true\n[paths]\n\".\" = true\n",
+        );
+        let changes = diff_changes(&from, &to);
+        assert_eq!(
+            changes,
+            vec![
+                ConfigChange::Scope { text: "new".into() },
+                ConfigChange::Command { command: "git diff".into() },
+                ConfigChange::Tool { name: "read".into() },
+                ConfigChange::Path { path: ".".into(), read: true, write: true },
+            ],
+        );
+    }
+
+    /// Diffing a config against itself is empty — the property that makes the harness's own
+    /// auto-persist write-back a harmless no-op echo (the file already matches effective).
+    #[test]
+    fn diff_against_self_is_empty() {
+        let cfg = parse_str("scope = \"s\"\ntools = [\"read\"]\n[commands]\ncargo = true\n");
+        assert!(diff_changes(&cfg, &cfg).is_empty());
+    }
+
+    /// A *changed* path perm surfaces (write added); a removed key does **not** (the additive fold
+    /// can't express removal — tightening waits for the next boot, which reloads the file as base).
+    #[test]
+    fn diff_emits_perm_changes_but_not_removals() {
+        let from = parse_str("[commands]\ncargo = true\nnpm = true\n[paths]\n\".\" = { read = true }\n");
+        let to = parse_str("[commands]\ncargo = true\n[paths]\n\".\" = true\n");
+        let changes = diff_changes(&from, &to);
+        // `.` gained write — emitted. `npm` was removed — not emitted (additive only).
+        assert_eq!(
+            changes,
+            vec![ConfigChange::Path { path: ".".into(), read: true, write: true }],
+        );
     }
 }

@@ -92,7 +92,11 @@ enum Perm {
 pub fn effective_config(base: &Config, log: &[LogEntry]) -> Config {
     let mut role = base.clone();
     for entry in log {
-        if let Payload::ConfigEdit(edit) = &entry.payload {
+        // Only a committed edit takes effect; a `Proposed`/`Cancelled` entry is audit-only and
+        // inert in the effective config (backlog/permissions/proposal-lifecycle.md).
+        if let Payload::ConfigEdit(edit) = &entry.payload
+            && edit.state == crate::log::EditState::Committed
+        {
             apply_config_change(&mut role, &edit.change);
         }
     }
@@ -660,20 +664,28 @@ mod tests {
 
     // --- effective_config: the policy fold over the log's changes ---
 
-    use crate::log::{ConfigChange, ConfigEdit, Lifetime, LogEntry, Payload, Timestamp};
+    use crate::log::{ConfigChange, ConfigEdit, EditState, Lifetime, LogEntry, Payload, Timestamp};
 
-    /// One session-scoped change as a log entry (seq/turn/at are irrelevant to the fold).
-    fn change_entry(change: ConfigChange) -> LogEntry {
+    /// One config edit in a given lifecycle state, as a log entry (seq/turn/at are irrelevant to
+    /// the fold — only `state` gates whether the change takes effect).
+    fn edit_entry(state: EditState, change: ConfigChange) -> LogEntry {
         LogEntry {
             seq: 0,
             turn: 0,
             at: Timestamp(0),
             payload: Payload::ConfigEdit(ConfigEdit {
+                state,
+                resolves: None,
                 change,
                 lifetime: Lifetime::Session,
                 note: String::new(),
             }),
         }
+    }
+
+    /// The common case: a committed change (the fold applies it).
+    fn change_entry(change: ConfigChange) -> LogEntry {
+        edit_entry(EditState::Committed, change)
     }
 
     /// A log with no changes leaves the policy exactly as the base config decides.
@@ -693,6 +705,26 @@ mod tests {
         assert_eq!(classify(&base, &bash_call("npm install")), Verdict::Gate);
         let log = [change_entry(ConfigChange::Command { command: "npm".into() })];
         let eff = effective_config(&base, &log);
+        assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
+    }
+
+    /// The lifecycle gate: only a `Committed` edit takes effect. A `Proposed` or `Cancelled`
+    /// entry with the *same* change is inert in the fold — it stays out of the effective config
+    /// until an orchestrator commits it (backlog/permissions/proposal-lifecycle.md).
+    #[test]
+    fn only_committed_edits_fold_into_the_effective_config() {
+        let base = sample_role();
+        let change = ConfigChange::Command { command: "npm".into() };
+        for state in [EditState::Proposed, EditState::Cancelled] {
+            let eff = effective_config(&base, &[edit_entry(state, change.clone())]);
+            assert_eq!(
+                classify(&eff, &bash_call("npm install")),
+                Verdict::Gate,
+                "{state:?} must not take effect",
+            );
+        }
+        // The same change, committed, does clear it — proving the gate, not an unrelated miss.
+        let eff = effective_config(&base, &[edit_entry(EditState::Committed, change)]);
         assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
     }
 

@@ -47,27 +47,36 @@ impl Client {
         self.post("/turn", body).await.map(drop)
     }
 
+    /// Submit a turn and **block until the daemon settles** (`POST /turn?wait`) — the turn
+    /// reaches a gate or completes — returning the resulting `/state` JSON. Collapses
+    /// "act → poll `/state` in a loop → read" into one round-trip
+    /// (backlog/permissions/proposal-lifecycle.md).
+    pub async fn turn_wait(&self, text: &str) -> Result<String> {
+        let body = serde_json::json!({ "text": text }).to_string();
+        self.post("/turn?wait", body).await
+    }
+
     /// Resolve a pending approval gate (`POST /approvals/{call_id}`). The decision
     /// maps the same three-valued [`Approval`] the loop consumes: empty/approve,
     /// abort, or redirect-with-message.
     pub async fn approve(&self, call_id: &str, decision: &Approval) -> Result<()> {
-        let body = match decision {
-            Approval::Approve => serde_json::json!({ "decision": "approve" }),
-            Approval::Abort => serde_json::json!({ "decision": "abort" }),
-            Approval::Redirect(message) => {
-                serde_json::json!({ "decision": "redirect", "message": message })
-            }
-            Approval::ConfigEdit { change, lifetime, note } => serde_json::json!({
-                "decision": "config_edit",
-                "change": change,
-                "lifetime": lifetime,
-                "note": note,
-            }),
-        }
-        .to_string();
-        self.post(&format!("/approvals/{call_id}"), body)
+        self.post(&format!("/approvals/{call_id}"), approval_body(decision))
             .await
             .map(drop)
+    }
+
+    /// Resolve a gate and **block until the daemon settles** (`POST /approvals/{id}?wait`) — the
+    /// turn reaches its next gate or completes — returning the resulting `/state` JSON. The
+    /// "approve → read state" half of synchronous driving (backlog/permissions/proposal-lifecycle.md).
+    pub async fn approve_wait(&self, call_id: &str, decision: &Approval) -> Result<String> {
+        self.post(&format!("/approvals/{call_id}?wait"), approval_body(decision)).await
+    }
+
+    /// Block until the daemon next reaches a decision point — a gate is pending, or the loop is
+    /// idle — and return the `/state` snapshot (`GET /settle`). Returns immediately if already
+    /// settled (backlog/permissions/proposal-lifecycle.md).
+    pub async fn settle(&self) -> Result<String> {
+        self.get("/settle").await
     }
 
     /// Interrupt a running tool (`POST /interrupt`) — the SIGINT equivalent that
@@ -176,6 +185,26 @@ impl Client {
             .with_context(|| format!("GET {path} from the control socket"))?;
         read_2xx(conn, "GET", path).await
     }
+}
+
+/// The JSON body for an approval decision — the same three-valued [`Approval`] the loop consumes
+/// (empty/approve, abort, redirect-with-message) plus the config-edit transaction. Shared by the
+/// blocking and non-blocking `approve` verbs.
+fn approval_body(decision: &Approval) -> String {
+    match decision {
+        Approval::Approve => serde_json::json!({ "decision": "approve" }),
+        Approval::Abort => serde_json::json!({ "decision": "abort" }),
+        Approval::Redirect(message) => {
+            serde_json::json!({ "decision": "redirect", "message": message })
+        }
+        Approval::ConfigEdit { change, lifetime, note } => serde_json::json!({
+            "decision": "config_edit",
+            "change": change,
+            "lifetime": lifetime,
+            "note": note,
+        }),
+    }
+    .to_string()
 }
 
 /// Read a finished client conn's body, mapping a non-2xx status into an error that

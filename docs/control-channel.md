@@ -34,8 +34,8 @@ Ephemeral control state — a pending approval, current status, live process tai
 
 **Writes:**
 
-- `POST /turn {text}` → 202. Enqueues a user turn. Returns immediately; submission is decoupled from inference.
-- `POST /approvals/{call_id} {decision: approve|abort|redirect|config_edit, message?, change?, lifetime?, note?}` — resolves a pending gate by the tool call's id (`config_edit` carries the `change` + lifetime, see Approval below).
+- `POST /turn {text}` → 202. Enqueues a user turn. Returns immediately; submission is decoupled from inference. With `?wait`, the connection is held until the daemon **settles** (the turn reaches a gate or completes) and the response is the resulting `/state` snapshot instead of the 202 — synchronous "submit, read what happened" with no `/state` poll loop.
+- `POST /approvals/{call_id} {decision: approve|abort|redirect|config_edit, message?, change?, lifetime?, note?}` — resolves a pending gate by the tool call's id (`config_edit` carries the `change` + lifetime, see Approval below). With `?wait`, holds until the daemon settles again (the turn's *next* gate or completion) and returns that `/state` — so a multi-gate turn is driven as a clean approve→read loop.
 - `POST /interrupt` — fires the interrupt notifier.
 - `POST /notify {source, body, slot?, replaces?}` → 202, returns `{id}`. Enqueues an ambient notification into the ephemeral inbox (see [the inbox](inbox.md)). A `slot` binds the notification to a logical channel; a later notify on the same slot supersedes the old one (archive-and-replace, not edit — records are immutable). `replaces` supersedes a specific pending id by its queue-local id.
 - `POST /notifications/:id/dismiss` — removes a pending notification from the ephemeral inbox before it reaches a triage gate.
@@ -46,6 +46,7 @@ Ephemeral control state — a pending approval, current status, live process tai
 - `GET /stream` — lossy SSE stream of ephemeral output deltas. Event types: `assistant_delta` (prose fragment), `tool_output` (tagged by `call_id`), `bg_output` (tagged by background process handle). No `id` field — these carry no `seq` and are not durable.
 - `GET /log?since=<seq>` — JSON array of log entries from `seq` onward. The catch-up read for a reconnecting client.
 - `GET /state` — JSON snapshot of ephemeral control state: `last_seq`, `pending_approval` (if any), `pending_notifications`, `processes` (live background process views), and `usage` (last request's token counts, running totals, seconds since last request).
+- `GET /settle` — long-poll: blocks until the daemon reaches a **decision point** — a gate is pending, or the loop is idle (parked with nothing queued) — then returns the `/state` snapshot (returns at once if already settled). The wait-without-acting verb; the same predicate backs the `?wait` flags above. The predicate is `pending_approval.is_some() || (!running && queued == 0)`, where `running`/`queued` track the loop's turn lifecycle (a submitted-but-not-yet-dequeued turn still reads as busy, closing the submit race). Capped by a server-side timeout so a wedged loop can't hold a client forever; on timeout it returns the current state and the client re-polls.
 
 ## Transport and binding
 
@@ -101,4 +102,4 @@ A redirect does not break the loop. The model receives the rejection and the ste
 
 `efference attach` is the interactive client: a background task tails `/events` and `/stream` and renders, while the foreground reads stdin and per line either resolves the pending gate (Enter approves, `.abort` aborts, any other text redirects) or sends a new turn. It is spartan by design — the full TUI (see [the TUI](tui.md)) is a later client that co-evolves the API.
 
-Scriptable verbs share one `client.rs` over the socket: `efference turn <text>`, `efference approve [call_id] [--abort | --redirect <msg>]`, `efference interrupt`, `efference log [--since N]`, `efference state`. A bare `efference approve` defaults to the one pending gate. These replaced the earlier SIGUSR1 hack.
+Scriptable verbs share one `client.rs` over the socket: `efference turn <text> [--wait]`, `efference approve [call_id] [--abort | --redirect <msg>] [--wait]`, `efference settle`, `efference interrupt`, `efference log [--since N]`, `efference state`. A bare `efference approve` defaults to the one pending gate. `--wait` (and the standalone `settle`) block until the daemon settles and print the resulting `/state`, so a script drives the daemon synchronously — *act, read state, act* — instead of polling in a wall-clock loop. These replaced the earlier SIGUSR1 hack.

@@ -57,11 +57,16 @@ enum Command {
         config: Option<PathBuf>,
     },
     /// Send a user turn to a running daemon (`POST /turn`). Seeds turn 1 on an
-    /// idle daemon. Returns immediately — watch `state`/`log` for the response.
+    /// idle daemon. Returns immediately — watch `state`/`log` for the response,
+    /// or pass `--wait` to block until the turn reaches a gate or completes.
     Turn {
         /// The turn text. Multiple words are joined with spaces.
         #[arg(required = true, num_args = 1..)]
         text: Vec<String>,
+        /// Block until the daemon settles (a gate, or the turn completes), then print the
+        /// resulting `/state` — synchronous "send a turn, read what happened" with no poll loop.
+        #[arg(long)]
+        wait: bool,
     },
     /// Resolve the pending tool-approval gate (`POST /approvals/{id}`). With no
     /// flags, approves. The call id defaults to the one pending approval.
@@ -75,7 +80,14 @@ enum Command {
         /// user turn) instead of approving.
         #[arg(long)]
         redirect: Option<String>,
+        /// Block until the daemon settles (the next gate, or the turn completes), then print
+        /// the resulting `/state` — drive a multi-gate turn as a clean approve→read loop.
+        #[arg(long)]
+        wait: bool,
     },
+    /// Block until the daemon reaches a decision point — a gate is pending, or the loop is
+    /// idle — then print its `/state` (`GET /settle`). The wait-without-acting verb.
+    Settle,
     /// Interrupt a running tool (`POST /interrupt`) — kills its process group.
     Interrupt,
     /// Post an ambient notification into the daemon's inbox (`POST /notify`, docs/inbox.md).
@@ -200,12 +212,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             spotter_model,
             config,
         } => serve(cli.socket, &model, &spotter_model, config).await,
-        Command::Turn { text } => turn(cli.socket, text.join(" ")).await,
+        Command::Turn { text, wait } => turn(cli.socket, text.join(" "), wait).await,
         Command::Approve {
             call_id,
             abort,
             redirect,
-        } => approve(cli.socket, call_id, abort, redirect).await,
+            wait,
+        } => approve(cli.socket, call_id, abort, redirect, wait).await,
+        Command::Settle => settle(cli.socket).await,
         Command::Interrupt => interrupt(cli.socket).await,
         Command::Notify {
             source,
@@ -305,9 +319,15 @@ async fn tui(socket: PathBuf, theme: Option<String>) -> CliResult {
 
 type CliResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
-async fn turn(socket: PathBuf, text: String) -> CliResult {
-    ControlClient::new(socket).turn(&text).await?;
-    println!("accepted");
+async fn turn(socket: PathBuf, text: String, wait: bool) -> CliResult {
+    let client = ControlClient::new(socket);
+    if wait {
+        // Block until the turn settles, then print the resulting state (one synchronous step).
+        println!("{}", client.turn_wait(&text).await?);
+    } else {
+        client.turn(&text).await?;
+        println!("accepted");
+    }
     Ok(())
 }
 
@@ -316,6 +336,7 @@ async fn approve(
     call_id: Option<String>,
     abort: bool,
     redirect: Option<String>,
+    wait: bool,
 ) -> CliResult {
     let client = ControlClient::new(socket);
     // Default to the one pending gate (the loop is sequential, docs/README.md) so the
@@ -329,8 +350,20 @@ async fn approve(
         (false, Some(message)) => Approval::Redirect(message),
         (false, None) => Approval::Approve,
     };
-    client.approve(&call_id, &decision).await?;
-    println!("resolved {call_id}");
+    if wait {
+        // Resolve, then block until the daemon settles again — print where it landed.
+        println!("{}", client.approve_wait(&call_id, &decision).await?);
+    } else {
+        client.approve(&call_id, &decision).await?;
+        println!("resolved {call_id}");
+    }
+    Ok(())
+}
+
+/// Block until the daemon settles (a gate, or idle) and print its `/state` — the wait-only verb,
+/// for watching where an in-flight turn lands without submitting anything.
+async fn settle(socket: PathBuf) -> CliResult {
+    println!("{}", ControlClient::new(socket).settle().await?);
     Ok(())
 }
 
