@@ -747,22 +747,37 @@ impl Shared {
         .to_string()
     }
 
-    /// The role report for `GET /state` (backlog/permissions/README.md): the
-    /// resolved config `source` (the path, or `null` for the built-in default) so
-    /// "which role am I running?" is never ambiguous, plus a terse summary of what is in
-    /// effect. The scope itself isn't surfaced here — it's already on the wire in the
-    /// preamble; this is the provenance, not the content.
+    /// The **effective** policy report for `GET /state` — the base config plus every committed
+    /// config edit folded in, i.e. the *live* perimeter, not the boot config
+    /// (backlog/permissions/proposal-lifecycle.md). It carries full **contents**, not counts: an
+    /// orchestrator inspecting a subordinate (or a human checking "what am I running?") needs the
+    /// actual commands/paths/scope in force — and the config is bounded-small by design, never
+    /// projected, with no secret to withhold. `scope` and `watch-for` are surfaced here because the
+    /// effective scope can drift from the frozen boot preamble (a live scope edit) and `watch-for`
+    /// is on no other wire. `source` is the base config's provenance (path, or `null` for the
+    /// built-in default).
     fn role_json(&self) -> Value {
         let source = match &self.role.source {
             ConfigSource::Default => Value::Null,
             ConfigSource::Path(p) => Value::String(p.display().to_string()),
         };
+        // The live policy, not the frozen base — this is the fix for `/state` reporting the boot
+        // config while a session grant / fs-watch edit had already moved the real perimeter.
+        let role = self.effective_config();
+        let paths: serde_json::Map<String, Value> = role
+            .paths
+            .iter()
+            .map(|(p, perms)| {
+                (p.clone(), serde_json::json!({ "read": perms.read, "write": perms.write }))
+            })
+            .collect();
         serde_json::json!({
             "source": source,
-            "has_brief": self.role.role.preamble_section().is_some(),
-            "command_count": self.role.role.commands.len(),
-            "tool_count": self.role.role.tools.len(),
-            "path_count": self.role.role.paths.len(),
+            "scope": role.scope,
+            "watch_for": role.watch_for,
+            "commands": role.commands,
+            "tools": role.tools,
+            "paths": paths,
         })
     }
 
@@ -1525,24 +1540,24 @@ mod tests {
     }
 
     /// `GET /state` reports the resolved role (backlog/permissions/README.md): a
-    /// `null` source for the built-in default, and the path plus a content summary
-    /// (`has_brief`, `allow_count`) when a config is in effect — so "which role am I
-    /// running?" is never ambiguous.
+    /// `null` source for the built-in default, and the path plus the **effective** config's full
+    /// contents (scope, watch-for, commands, tools, paths) when a config is in effect — so "what is
+    /// my live perimeter?" is answerable, not just "which file?". The contents track the *effective*
+    /// policy, so a folded config edit shows up (backlog/permissions/proposal-lifecycle.md).
     #[test]
-    fn state_reports_role_source() {
-        // Default role (no config file) → null source, no scope, empty allowlist.
+    fn state_reports_effective_role_contents() {
+        // Default role (no config file) → null source, empty everywhere.
         let (shared, _rx) = Shared::new(Log::in_memory());
         let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
         assert!(v["role"]["source"].is_null());
-        assert_eq!(v["role"]["has_brief"], false);
-        assert_eq!(v["role"]["command_count"], 0);
-        assert_eq!(v["role"]["tool_count"], 0);
-        assert_eq!(v["role"]["path_count"], 0);
+        assert!(v["role"]["scope"].is_null());
+        assert_eq!(v["role"]["commands"], serde_json::json!([]));
 
-        // A loaded config surfaces its resolved path and a content summary.
+        // A loaded config surfaces its resolved path and full contents (sorted, by BTree order).
         let loaded = LoadedConfig {
             role: crate::config::Config {
                 scope: Some("stay in the repo".into()),
+                watch_for: vec!["network egress".into()],
                 commands: ["cargo", "git diff"].iter().map(|s| s.to_string()).collect(),
                 tools: ["read"].iter().map(|s| s.to_string()).collect(),
                 paths: [(".".to_string(), crate::config::Perms { read: true, write: true })]
@@ -1555,10 +1570,17 @@ mod tests {
         let (shared, _rx) = Shared::with_role(Log::in_memory(), loaded);
         let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
         assert_eq!(v["role"]["source"], "efference.toml");
-        assert_eq!(v["role"]["has_brief"], true);
-        assert_eq!(v["role"]["command_count"], 2);
-        assert_eq!(v["role"]["tool_count"], 1);
-        assert_eq!(v["role"]["path_count"], 1);
+        assert_eq!(v["role"]["scope"], "stay in the repo");
+        assert_eq!(v["role"]["watch_for"], serde_json::json!(["network egress"]));
+        assert_eq!(v["role"]["commands"], serde_json::json!(["cargo", "git diff"]));
+        assert_eq!(v["role"]["tools"], serde_json::json!(["read"]));
+        assert_eq!(v["role"]["paths"]["."], serde_json::json!({ "read": true, "write": true }));
+
+        // The fix: a *committed* config edit moves the reported perimeter (the boot config did not
+        // list `npm`; after the edit, `/state` does) — `/state` reflects effective, not base.
+        shared.append(0, allow_grant("npm")).unwrap();
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert_eq!(v["role"]["commands"], serde_json::json!(["cargo", "git diff", "npm"]));
     }
 
     /// One bash `ToolCall`, for exercising the effective-policy cache through `classify`.

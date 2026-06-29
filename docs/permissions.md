@@ -33,8 +33,10 @@ load-time diagnostic that stands in for KDL's old editor tooling. The same crate
 file in place ([`DocumentMut`]) for the auto-persist write-back (below), so one dependency
 both reads the config and writes the harness's edits back with comments intact. Resolution:
 an explicit `serve --config <path>` (which must exist), else the `efference.toml` probe
-(absent → the empty default config, so nothing auto-clears — safe). The resolved source is
-reported on `GET /state`.
+(absent → the empty default config, so nothing auto-clears — safe). `GET /state` reports the
+resolved source *and the full effective policy in force* (scope, watch-for, commands, tools, paths) —
+effective, not boot, so a live config edit (a session grant, an fs-watch file change) is visible
+there; an orchestrator reads a subordinate's live perimeter from it.
 
 The schema is **string-keyed maps**, not lists — because the policy is a *table* the
 config-edit loop mutates by key (below). The config is a materialized projection of the
