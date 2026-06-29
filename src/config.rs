@@ -560,3 +560,84 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
     }
 }
+
+/// 1b groundwork — prove `toml_edit` does what the config-edit format switch needs *before*
+/// the cutover (backlog/permissions/toml-config.md). Two gates: (1) serde decodes the planned
+/// string-keyed schema (`scope` / `watch-for` / `[commands]` / `[paths]`), quoted sub-verb keys
+/// and all; (2) a `DocumentMut` edit preserves comments and unrelated formatting — the property
+/// that makes "yes, always" auto-persist sound (the harness writes the file; the user's comments
+/// survive). These exercise the crate, not the real [`Config`] (which still decodes KDL until 1b).
+#[cfg(test)]
+mod toml_edit_gating {
+    /// Gate 1: `toml_edit::de` round-trips the keyed-map schema, quoted keys and all.
+    #[test]
+    fn de_round_trips_the_keyed_map_schema() {
+        use std::collections::BTreeMap;
+        #[derive(serde::Deserialize)]
+        struct Sample {
+            scope: String,
+            #[serde(rename = "watch-for", default)]
+            watch_for: Vec<String>,
+            #[serde(default)]
+            commands: BTreeMap<String, bool>,
+            #[serde(default)]
+            paths: BTreeMap<String, bool>,
+        }
+        let src = r#"
+scope = "Develop this Rust harness"
+watch-for = ["network egress", "writes outside the repo"]
+
+[commands]
+cargo = true
+"git diff" = true
+
+[paths]
+"." = true
+"#;
+        let cfg: Sample = toml_edit::de::from_str(src).expect("decode keyed-map schema");
+        assert_eq!(cfg.scope, "Develop this Rust harness");
+        assert_eq!(cfg.watch_for, ["network egress", "writes outside the repo"]);
+        assert_eq!(cfg.commands.get("cargo"), Some(&true));
+        // The quoted sub-verb key decodes as one map key — the `git diff` prefix case.
+        assert_eq!(cfg.commands.get("git diff"), Some(&true));
+        assert_eq!(cfg.paths.get("."), Some(&true));
+    }
+
+    /// Gate 2: editing a `DocumentMut` preserves comments + unrelated formatting, and can
+    /// replace a scalar in place keeping its inline comment (the `scope` replace that
+    /// append-only KDL could not do) — the auto-persist guarantee.
+    #[test]
+    fn document_mut_edits_preserve_comments_and_formatting() {
+        use toml_edit::{DocumentMut, Value, value};
+
+        let src = r#"# my efference config
+scope = "old scope"  # the perimeter
+
+[commands]
+cargo = true  # blanket
+"#;
+        let mut doc: DocumentMut = src.parse().expect("parse");
+
+        // Replace the `scope` scalar, preserving its decor (the inline comment) — the
+        // narrowing edit append couldn't express.
+        {
+            let v = doc["scope"].as_value_mut().expect("scope is a value");
+            let decor = v.decor().clone();
+            *v = Value::from("new scope");
+            *v.decor_mut() = decor;
+        }
+        // Add a new command key (the common auto-persist case): a fresh insert.
+        doc["commands"]["git diff"] = value(true);
+
+        let out = doc.to_string();
+
+        // Unrelated comments + structure survive untouched.
+        assert!(out.contains("# my efference config"), "top comment lost: {out}");
+        assert!(out.contains("# blanket"), "unrelated inline comment lost: {out}");
+        // The scalar replace kept its own inline comment via decor preservation.
+        assert!(out.contains("# the perimeter"), "edited-line comment lost: {out}");
+        // The edits applied.
+        assert!(out.contains(r#"scope = "new scope""#), "scope not replaced: {out}");
+        assert!(out.contains(r#""git diff" = true"#), "command key not added: {out}");
+    }
+}
