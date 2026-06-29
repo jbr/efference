@@ -242,20 +242,33 @@ inbox/triage machinery: the session learns its perimeter moved without the boot 
 being re-rendered (live truth = `preamble + fold(notifications)`, the substrate thesis). The
 spotter, fresh-context each call, just reads the effective scope directly.
 
-This is the **first initiator** of the config-edit loop (the human upgrading a blocking gate),
-plus the session-visible-edit notification. The others — the spotter's non-blocking bash-prefix
-promotion, the session's own `propose_scope`, and fs-watch of the config file — are not built
-yet. See [`../backlog/permissions/config-edit.md`](../backlog/permissions/config-edit.md).
+**The edit lifecycle.** A `ConfigEdit` carries a `state` (`Proposed` / `Committed` / `Cancelled`)
+and a `resolves: Option<Seq>`. Only a **committed** edit folds into the effective config; a
+`Proposed` entry is inert and parks in the daemon's pending-proposals queue until an orchestrator
+commits or cancels it (referencing the proposal's `seq` via `resolves`). The synchronous paths —
+the human gate, fs-watch, and an approved session edit — append `Committed` directly; the
+asynchronous proposers go `Proposed → commit/cancel`.
+
+**The initiators built so far:** the human upgrading a gate (`Approval::ConfigEdit`); **fs-watch**
+of the config file (the operator editing it externally takes effect live — `config_watch_loop`
+diffs the file and emits `Committed` edits); and the **session editing its own config file**, the
+config-as-reviewed-file mechanism that *replaced* the planned `propose_scope` tool — a session
+`write`/`preview_edit` to its `config.toml` is forced to the operator gate (`is_config_write`,
+bypassing fast-path and spotter), and on approval fs-watch folds it. Still to come: the
+**autonomous flip** (a gate becomes a redirect inviting a config edit when there's no synchronous
+reviewer) and the **spotter's prefix-promotion** (the one remaining `Proposed`-lifecycle user — the
+spotter is fresh-context with no file tools, so it files a `Proposed(Command)`). See
+[`../backlog/permissions/session-dir-and-config-as-reviewed-file.md`](../backlog/permissions/session-dir-and-config-as-reviewed-file.md)
+and [`../backlog/permissions/proposal-lifecycle.md`](../backlog/permissions/proposal-lifecycle.md).
 
 ## What is not built yet
 
-The watch-window, the spotter's effect-preview, and the rest of the config-edit loop (spotter
-prefix-promotion, the `propose_scope` tool, the autonomous mode, fs-watch). `Stance::Watch`
-resolves to the human gate today; the watch-window will map it to an intervention latency
-instead. The spotter currently judges the raw command + config context; a neutral
-effect-preview is the planned input upgrade. Fleet-wide persona caching (a second breakpoint
-isolating the persona so it's shared across differently-scoped sessions) is a deferred
-optimization — per-session caching works today. See
+The watch-window, the spotter's effect-preview, and the last two config-edit initiators (the
+autonomous flip and the spotter's prefix-promotion). `Stance::Watch` resolves to the human gate
+today; the watch-window will map it to an intervention latency instead. The spotter currently judges
+the raw command + config context; a neutral effect-preview is the planned input upgrade. Fleet-wide
+persona caching (a second breakpoint isolating the persona so it's shared across differently-scoped
+sessions) is a deferred optimization — per-session caching works today. See
 [`../backlog/permissions/README.md`](../backlog/permissions/README.md).
 
 [`toml_edit`]: https://docs.rs/toml_edit
