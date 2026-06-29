@@ -50,7 +50,7 @@ Ephemeral control state — a pending approval, current status, live process tai
 
 ## Transport and binding
 
-The daemon binds with trillium's `bind_uds(path)`, placing the socket at `.efference/control.sock` (overridable with `--socket`). Clients dial via `UnixClientConfig`, which routes requests to a fixed path — the URL host is a placeholder; only path and headers matter.
+The daemon binds with trillium's `bind_uds(path)`. Each session lives in its own directory — `.efference/<id>/` (the id is `serve --name <id>`, or a generated timestamp) — holding standard-named files: `control.sock`, `log.jsonl`, and (the snapshot) `config.toml` (see [permissions](permissions.md), backlog/permissions/session-dir-and-config-as-reviewed-file.md). A client verb finds the socket by `--name`, or by scanning the session dirs for the single **live** (connectable) one — liveness, not mere existence, so a stale dir from a dead daemon doesn't shadow the running one; `--socket <path>` is an explicit override. Clients dial via `UnixClientConfig`, which routes requests to a fixed path — the URL host is a placeholder; only path and headers matter.
 
 The cross-host TCP+TLS case (see [transport](transport.md)) is the same code path: `bind_tcp` or `bind_env` instead of `bind_uds`, a configuration switch rather than a new abstraction.
 

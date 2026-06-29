@@ -8,7 +8,7 @@
 //!
 //! [`RemoteFrontend`]: efference::daemon::RemoteFrontend
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
@@ -23,18 +23,83 @@ use efference::tools::Toolbox;
 use futures_lite::StreamExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-/// The default control-socket path, under the gitignored `.efference/`.
-const DEFAULT_SOCKET: &str = ".efference/control.sock";
+/// The base directory for all session dirs (gitignored). Each session is `.efference/<id>/`,
+/// holding its standard-named socket, log, and config (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+const BASE_DIR: &str = ".efference";
+const SOCKET_NAME: &str = "control.sock";
+const LOG_NAME: &str = "log.jsonl";
 
 #[derive(Parser)]
 #[command(name = "efference", about = "An API-backed agentic coding harness.")]
 struct Cli {
-    /// Path to the control socket — shared by the daemon and every client verb.
-    #[arg(long, global = true, default_value = DEFAULT_SOCKET)]
-    socket: PathBuf,
+    /// Session name. `serve` creates `.efference/<name>/`; a client verb locates that session's
+    /// socket. Omitted: `serve` generates a timestamp id; a client uses the single live daemon
+    /// (discovered by scanning the session dirs), erroring if several are live.
+    #[arg(long, global = true)]
+    name: Option<String>,
+    /// Explicit control-socket path — an escape hatch that overrides `--name` and discovery.
+    #[arg(long, global = true)]
+    socket: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
+
+/// The directory for a session id (`.efference/<id>`).
+fn session_dir(id: &str) -> PathBuf {
+    Path::new(BASE_DIR).join(id)
+}
+
+/// A default session id when `--name` is omitted: timestamp millis — sortable, human-meaningful,
+/// and matching the old flat `session-<millis>` naming.
+fn default_session_id() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before Unix epoch")
+        .as_millis()
+        .to_string()
+}
+
+/// Resolve the control socket a *client* verb should talk to: an explicit `--socket`, else the
+/// named session's socket, else the single **live** daemon discovered by scanning the session dirs
+/// (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+fn resolve_client_socket(name: Option<&str>, socket: Option<PathBuf>) -> Result<PathBuf, CliError> {
+    if let Some(socket) = socket {
+        return Ok(socket);
+    }
+    if let Some(name) = name {
+        return Ok(session_dir(name).join(SOCKET_NAME));
+    }
+    discover_live_socket()
+}
+
+/// Scan `.efference/*/control.sock` for a **live** (connectable) socket — liveness, not mere
+/// existence, so a stale dir from a dead daemon never shadows the running one. A successful
+/// `UnixStream::connect` means a listener is bound; a leftover socket file with no listener refuses
+/// the connection. Exactly one live daemon → use it; zero or several → a helpful error.
+fn discover_live_socket() -> Result<PathBuf, CliError> {
+    let base = Path::new(BASE_DIR);
+    let mut live = Vec::new();
+    if base.is_dir() {
+        for entry in std::fs::read_dir(base)? {
+            let sock = entry?.path().join(SOCKET_NAME);
+            if std::os::unix::net::UnixStream::connect(&sock).is_ok() {
+                live.push(sock);
+            }
+        }
+    }
+    match live.len() {
+        0 => Err("no live efference daemon found — start one with `serve`, or pass --name/--socket"
+            .into()),
+        1 => Ok(live.pop().unwrap()),
+        _ => {
+            live.sort();
+            let names: Vec<String> = live.iter().map(|p| p.display().to_string()).collect();
+            Err(format!("multiple live daemons ({}); pass --name to choose", names.join(", ")).into())
+        }
+    }
+}
+
+type CliError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Subcommand)]
 enum Command {
@@ -206,30 +271,41 @@ enum WireFormat {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cli = Cli::parse();
+    // Client verbs talk to a daemon over a socket resolved from `--name`/discovery; the daemon and
+    // the offline verbs (spotter/gallery/wire) don't. Resolve lazily, per arm, so an offline verb
+    // never triggers discovery.
+    let name = cli.name.clone();
+    let socket_override = cli.socket.clone();
+    let client_socket = || resolve_client_socket(name.as_deref(), socket_override.clone());
     match cli.command {
         Command::Serve {
             model,
             spotter_model,
             config,
-        } => serve(cli.socket, &model, &spotter_model, config).await,
-        Command::Turn { text, wait } => turn(cli.socket, text.join(" "), wait).await,
+        } => {
+            // `serve` owns the session dir: `--name` or a generated timestamp id → `.efference/<id>/`,
+            // with the socket/log/config colocated inside.
+            let id = cli.name.unwrap_or_else(default_session_id);
+            serve(session_dir(&id), &model, &spotter_model, config).await
+        }
+        Command::Turn { text, wait } => turn(client_socket()?, text.join(" "), wait).await,
         Command::Approve {
             call_id,
             abort,
             redirect,
             wait,
-        } => approve(cli.socket, call_id, abort, redirect, wait).await,
-        Command::Settle => settle(cli.socket).await,
-        Command::Interrupt => interrupt(cli.socket).await,
+        } => approve(client_socket()?, call_id, abort, redirect, wait).await,
+        Command::Settle => settle(client_socket()?).await,
+        Command::Interrupt => interrupt(client_socket()?).await,
         Command::Notify {
             source,
             body,
             slot,
             replaces,
-        } => notify(cli.socket, source, body.join(" "), slot, replaces).await,
-        Command::Dismiss { id } => dismiss(cli.socket, id).await,
-        Command::State => state(cli.socket).await,
-        Command::Log { since } => log(cli.socket, since).await,
+        } => notify(client_socket()?, source, body.join(" "), slot, replaces).await,
+        Command::Dismiss { id } => dismiss(client_socket()?, id).await,
+        Command::State => state(client_socket()?).await,
+        Command::Log { since } => log(client_socket()?, since).await,
         Command::Spotter {
             scope,
             watch_for,
@@ -237,8 +313,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             model,
             command,
         } => spotter_check(scope, watch_for, paths, &model, command.join(" ")).await,
-        Command::Attach => attach(cli.socket).await,
-        Command::Tui { theme } => tui(cli.socket, theme).await,
+        Command::Attach => attach(client_socket()?).await,
+        Command::Tui { theme } => tui(client_socket()?, theme).await,
         Command::Gallery { theme } => gallery(theme).await,
         Command::Wire {
             path,
@@ -634,7 +710,7 @@ fn render_event(kind: Option<&str>, data: &str, state: &mut RenderState) {
 }
 
 async fn serve(
-    socket: PathBuf,
+    session_dir: PathBuf,
     model: &str,
     spotter_model: &str,
     config: Option<PathBuf>,
@@ -667,16 +743,16 @@ async fn serve(
         efference::config::ConfigSource::Default => eprintln!("role config: (default — no file)"),
     }
 
-    // One JSONL file per session under .efference/ (gitignored). The socket lives
-    // alongside it; clear any stale socket from a prior run before binding.
-    std::fs::create_dir_all(".efference")?;
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before Unix epoch")
-        .as_millis();
-    let log_path = format!(".efference/session-{millis}.jsonl");
+    // Everything for this session is colocated in its own dir (gitignored): the log, the control
+    // socket, and (Phase B) the snapshot config — standard-named, since the dir is the unique unit
+    // (backlog/permissions/session-dir-and-config-as-reviewed-file.md). Re-`serve`ing an existing
+    // `--name` reuses the dir; `Log::create` appends. Clear any stale socket before binding.
+    std::fs::create_dir_all(&session_dir)?;
+    let log_path = session_dir.join(LOG_NAME);
     let log = Log::create(&log_path)?;
-    eprintln!("logging to {log_path}");
+    eprintln!("session dir: {}", session_dir.display());
+    eprintln!("logging to {}", log_path.display());
+    let socket = session_dir.join(SOCKET_NAME);
     let _ = std::fs::remove_file(&socket); // ignore if absent.
 
     // Append the session environment block once, here at startup, and freeze it
@@ -758,5 +834,30 @@ fn parse_path_grant(spec: &str) -> (String, efference::config::Perms) {
             efference::config::Perms { read: perms.contains('r'), write: perms.contains('w') },
         ),
         None => (spec.into(), efference::config::Perms { read: false, write: false }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Socket resolution precedence (backlog/permissions/session-dir-and-config-as-reviewed-file.md):
+    /// an explicit `--socket` wins over everything; a `--name` resolves to that session's colocated
+    /// socket. (The no-name discovery branch scans the filesystem and is exercised live.)
+    #[test]
+    fn socket_override_beats_name() {
+        let got = resolve_client_socket(Some("foo"), Some(PathBuf::from("/tmp/x.sock"))).unwrap();
+        assert_eq!(got, PathBuf::from("/tmp/x.sock"));
+    }
+
+    #[test]
+    fn name_resolves_to_its_colocated_socket() {
+        let got = resolve_client_socket(Some("foo"), None).unwrap();
+        assert_eq!(got, Path::new(".efference/foo/control.sock"));
+    }
+
+    #[test]
+    fn session_dir_is_under_the_base() {
+        assert_eq!(session_dir("abc"), Path::new(".efference/abc"));
     }
 }
