@@ -28,6 +28,20 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 const BASE_DIR: &str = ".efference";
 const SOCKET_NAME: &str = "control.sock";
 const LOG_NAME: &str = "log.jsonl";
+const CONFIG_NAME: &str = "config.toml";
+
+/// Written into a fresh session's `config.toml` when there's no origin to snapshot — an empty config
+/// (parses to the default) with a header that teaches the schema, so a session that `cat`s it sees
+/// what it can edit (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+const CONFIG_SCAFFOLD: &str = "\
+# Your session's permissions config. Edit it to request changes — edits are reviewed before they
+# take effect. Schema:
+#   scope = \"...\"                      # what this session is for (shown to you in your preamble)
+#   watch-for = [\"...\"]                # hazards the permission spotter should watch for
+#   tools = [\"read\", \"list\", \"search\"]  # structured tools you may use
+#   [commands]                         # bash prefixes that auto-clear, e.g. cargo = true
+#   [paths]                            # filesystem grants, e.g. \".\" = true or \"../x\" = { read = true }
+";
 
 #[derive(Parser)]
 #[command(name = "efference", about = "An API-backed agentic coding harness.")]
@@ -88,13 +102,19 @@ fn discover_live_socket() -> Result<PathBuf, CliError> {
         }
     }
     match live.len() {
-        0 => Err("no live efference daemon found — start one with `serve`, or pass --name/--socket"
-            .into()),
+        0 => Err(
+            "no live efference daemon found — start one with `serve`, or pass --name/--socket"
+                .into(),
+        ),
         1 => Ok(live.pop().unwrap()),
         _ => {
             live.sort();
             let names: Vec<String> = live.iter().map(|p| p.display().to_string()).collect();
-            Err(format!("multiple live daemons ({}); pass --name to choose", names.join(", ")).into())
+            Err(format!(
+                "multiple live daemons ({}); pass --name to choose",
+                names.join(", ")
+            )
+            .into())
         }
     }
 }
@@ -353,7 +373,13 @@ async fn wire(
         }
     };
     let role_section = loaded.role.preamble_section();
-    let system = efference::env::system_prompt(role_section.as_deref());
+    // The dev view rebuilds the envelope from current code/cwd, not the recorded run, so it passes
+    // the *resolved* config path (or none) — close enough for inspection; the note on stderr warns.
+    let config_path = match &loaded.source {
+        efference::config::ConfigSource::Path(p) => Some(p.as_path()),
+        efference::config::ConfigSource::Default => None,
+    };
+    let system = efference::env::system_prompt(role_section.as_deref(), config_path);
     let cwd = std::env::current_dir()?;
     // The full tools[] a real turn sends — world tools + the harness tools
     // (`consolidate`, the docs/supervisor.md and docs/inbox.md tools) — so the dev view matches.
@@ -727,27 +753,56 @@ async fn serve(
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| "ANTHROPIC_API_KEY is not set in the environment")?;
 
-    // Resolve the role *before* anything else: a malformed config should fail fast with
-    // a source-span report, not after a socket is bound (backlog/permissions/README.md).
-    // The brief folds into the frozen preamble below; the rest of the role rides on
-    // `Shared` for `/state` and the (not-yet-built) cascade rungs.
-    let loaded = match efference::config::load(config.as_deref()) {
+    // Everything for this session is colocated in its own dir (gitignored), standard-named since
+    // the dir is the unique unit (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+    // Create it first; a re-`serve` of an existing `--name` reuses it.
+    std::fs::create_dir_all(&session_dir)?;
+
+    // Snapshot the origin config into the session's own `config.toml` *once* (a fresh session). The
+    // origin (`--config`/the `efference.toml` probe) is a template consumed at boot; thereafter the
+    // per-session snapshot is the live, editable, watched policy — so two sessions sharing an origin
+    // diverge freely, and the session can `cat` its config to see its perimeter and edit it to
+    // request changes. On resume the snapshot already exists and is kept verbatim.
+    let session_config = session_dir.join(CONFIG_NAME);
+    if !session_config.exists() {
+        // Validate the origin first (fail fast on a malformed template, before binding anything),
+        // then copy it verbatim (comments intact) — or scaffold an empty config when there's none.
+        let origin = match efference::config::load(config.as_deref()) {
+            Ok(l) => l,
+            Err(e) => {
+                e.eprint();
+                return Err("could not load role config".into());
+            }
+        };
+        match &origin.source {
+            efference::config::ConfigSource::Path(p) => {
+                std::fs::copy(p, &session_config)?;
+                eprintln!(
+                    "config: snapshot of {} → {}",
+                    p.display(),
+                    session_config.display()
+                );
+            }
+            efference::config::ConfigSource::Default => {
+                std::fs::write(&session_config, CONFIG_SCAFFOLD)?;
+                eprintln!("config: scaffolded {}", session_config.display());
+            }
+        }
+    } else {
+        eprintln!("config: reusing {}", session_config.display());
+    }
+
+    // The per-session snapshot *is* the live config now (a malformed hand-edit on resume fails fast
+    // here). Everything downstream — the preamble, fs-watch, `/state`, persisted config-edits — keys
+    // off this path, not the origin.
+    let loaded = match efference::config::load(Some(&session_config)) {
         Ok(l) => l,
         Err(e) => {
             e.eprint();
-            return Err("could not load role config".into());
+            return Err("could not load session config".into());
         }
     };
-    match &loaded.source {
-        efference::config::ConfigSource::Path(p) => eprintln!("role config: {}", p.display()),
-        efference::config::ConfigSource::Default => eprintln!("role config: (default — no file)"),
-    }
 
-    // Everything for this session is colocated in its own dir (gitignored): the log, the control
-    // socket, and (Phase B) the snapshot config — standard-named, since the dir is the unique unit
-    // (backlog/permissions/session-dir-and-config-as-reviewed-file.md). Re-`serve`ing an existing
-    // `--name` reuses the dir; `Log::create` appends. Clear any stale socket before binding.
-    std::fs::create_dir_all(&session_dir)?;
     let log_path = session_dir.join(LOG_NAME);
     let log = Log::create(&log_path)?;
     eprintln!("session dir: {}", session_dir.display());
@@ -764,7 +819,8 @@ async fn serve(
     // exactly like the env block (backlog/permissions/README.md — the
     // config→preamble projection must be byte-stable).
     let role_section = loaded.role.preamble_section();
-    let system = efference::env::system_prompt(role_section.as_deref());
+    let system =
+        efference::env::system_prompt(role_section.as_deref(), Some(session_config.as_path()));
 
     let client = Client::new(api_key.clone(), model, system);
 
@@ -831,9 +887,18 @@ fn parse_path_grant(spec: &str) -> (String, efference::config::Perms) {
     match spec.rsplit_once(':') {
         Some((path, perms)) => (
             path.into(),
-            efference::config::Perms { read: perms.contains('r'), write: perms.contains('w') },
+            efference::config::Perms {
+                read: perms.contains('r'),
+                write: perms.contains('w'),
+            },
         ),
-        None => (spec.into(), efference::config::Perms { read: false, write: false }),
+        None => (
+            spec.into(),
+            efference::config::Perms {
+                read: false,
+                write: false,
+            },
+        ),
     }
 }
 

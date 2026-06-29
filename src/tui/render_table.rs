@@ -5,8 +5,8 @@ use ratatui::{
 };
 
 use super::state::InteractiveState;
-use crate::tui::table_layout::{self, LaidOutCell, span_display_width};
 use crate::tui::document::{Span, TableCell};
+use crate::tui::table_layout::{self, LaidOutCell, span_display_width};
 
 impl<'a> InteractiveState<'a> {
     /// Render a table with unicode borders. Long cells wrap onto multiple lines

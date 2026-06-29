@@ -13,7 +13,11 @@ use crate::tui::projection::ViewState;
 /// state survives the next streamed-token re-projection (docs/tui.md) — the two
 /// start in sync (every projection sets the level from `view`), so flipping both
 /// keeps them in sync.
-pub(super) fn handle_action(document: &mut Document<'_>, view: &mut ViewState, action: TuiAction<'_>) {
+pub(super) fn handle_action(
+    document: &mut Document<'_>,
+    view: &mut ViewState,
+    action: TuiAction<'_>,
+) {
     match action {
         TuiAction::ExpandBlock(path) => {
             if let Some(DocumentNode::TruncatedBlock { level, key, .. }) =

@@ -47,11 +47,7 @@ impl<'a> InteractiveState<'a> {
                 // them to the replacement glyph so rendering is total. We keep one
                 // cell per char (matching `display_width`) so column accounting in
                 // the caller's wrap math stays exact.
-                let glyph = if ch.is_control() {
-                    '\u{fffd}'
-                } else {
-                    ch
-                };
+                let glyph = if ch.is_control() { '\u{fffd}' } else { ch };
                 if let Some(cell) = buf.cell_mut((current_col, screen_row)) {
                     cell.set_char(glyph);
                     cell.set_style(style);

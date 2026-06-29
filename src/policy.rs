@@ -54,8 +54,8 @@ use std::path::{Component, Path, PathBuf};
 use serde_json::Value;
 
 use crate::bash;
-use crate::log::{ConfigChange, LogEntry, Payload, ToolCall};
 use crate::config::{Config, Perms};
+use crate::log::{ConfigChange, LogEntry, Payload, ToolCall};
 
 /// The fast-path's decision for one tool call. Binary; the extension point for the
 /// spotter rung, which splits `Gate` into a graded `{clear, watch, gate}` stance
@@ -113,7 +113,13 @@ pub fn apply_config_change(role: &mut Config, change: &ConfigChange) {
             role.commands.insert(command.clone());
         }
         ConfigChange::Path { path, read, write } => {
-            role.paths.insert(path.clone(), Perms { read: *read, write: *write });
+            role.paths.insert(
+                path.clone(),
+                Perms {
+                    read: *read,
+                    write: *write,
+                },
+            );
         }
         ConfigChange::Tool { name } => {
             role.tools.insert(name.clone());
@@ -131,6 +137,39 @@ pub fn apply_config_change(role: &mut Config, change: &ConfigChange) {
 pub fn classify(role: &Config, call: &ToolCall) -> Verdict {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     classify_in(role, call, &cwd)
+}
+
+/// Whether `call` is a write whose target resolves (lexically, against the process cwd) to
+/// `protected` — the session's own config file. A write to the policy file is a **proposal** that
+/// must always reach the operator, so the loop forces the human gate on it, **bypassing both the
+/// fast-path and the spotter** — neither may auto-clear a permission change
+/// (backlog/permissions/session-dir-and-config-as-reviewed-file.md). This is the one named-meta-file
+/// exception to "no deny carve-out inside an allowed subtree": `.` may grant the tree, but this file
+/// still gates.
+///
+/// Only the write-class tools that *name* a path qualify (`write`→`path`, `preview_edit`→`file_path`).
+/// `persist_edit` carries no path, but it can only persist a previously-`preview_edit`ed target — and
+/// a `preview_edit` of the config is caught here — so the review point is the naming step, exactly
+/// where write permission is already enforced (the acknowledged per-tool wart in `path_check`).
+pub fn is_config_write(call: &ToolCall, protected: &Path) -> bool {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    is_config_write_in(call, protected, &cwd)
+}
+
+/// The cwd-injected core of [`is_config_write`], for deterministic tests.
+fn is_config_write_in(call: &ToolCall, protected: &Path, cwd: &Path) -> bool {
+    let key = match call.name.as_str() {
+        "write" => "path",
+        "preview_edit" => "file_path",
+        _ => return false,
+    };
+    let Some(target) = call.input.get(key).and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(protected) = protected.to_str() else {
+        return false;
+    };
+    lexical_normalize(&absolutize(target, cwd)) == lexical_normalize(&absolutize(protected, cwd))
 }
 
 /// The cwd-injected core, for deterministic tests. `bash` ignores `cwd`.
@@ -301,7 +340,9 @@ pub(crate) fn simple_command_tokens(command: &str) -> Option<Vec<String>> {
 
     let list: List = command.parse().ok()?;
     // Exactly one item (no `;`-separated list), not backgrounded (`&`).
-    let [item] = list.0.as_slice() else { return None };
+    let [item] = list.0.as_slice() else {
+        return None;
+    };
     if item.async_flag.is_some() {
         return None;
     }
@@ -444,7 +485,11 @@ mod tests {
             "echo `rm x`",
             "echo $((1+1))",
         ] {
-            assert_eq!(simple_command_tokens(complex), None, "{complex:?} must gate");
+            assert_eq!(
+                simple_command_tokens(complex),
+                None,
+                "{complex:?} must gate"
+            );
         }
     }
 
@@ -459,7 +504,11 @@ mod tests {
             "cp {a,b} dest",       // brace expansion
             "CORPUS=x cargo test", // env-assignment prefix (the trillium cruft entry)
         ] {
-            assert_eq!(simple_command_tokens(complex), None, "{complex:?} must gate");
+            assert_eq!(
+                simple_command_tokens(complex),
+                None,
+                "{complex:?} must gate"
+            );
         }
     }
 
@@ -470,7 +519,12 @@ mod tests {
     fn quoted_metacharacters_stay_literal() {
         assert_eq!(
             simple_command_tokens("rg -n 'fn foo|fn bar' src/"),
-            Some(vec!["rg".into(), "-n".into(), "fn foo|fn bar".into(), "src/".into()])
+            Some(vec![
+                "rg".into(),
+                "-n".into(),
+                "fn foo|fn bar".into(),
+                "src/".into()
+            ])
         );
         assert_eq!(verdict("rg -n 'fn foo|fn bar' src/"), Verdict::Clear);
     }
@@ -511,11 +565,73 @@ mod tests {
     use crate::config::Perms;
 
     fn call(name: &str, input: Value) -> ToolCall {
-        ToolCall { id: CallId("toolu_s".into()), name: name.into(), input }
+        ToolCall {
+            id: CallId("toolu_s".into()),
+            name: name.into(),
+            input,
+        }
     }
 
     /// A fixed cwd so path resolution is deterministic in tests (no real filesystem).
     const CWD: &str = "/work";
+
+    /// The config-write carve-out (backlog/permissions/session-dir-and-config-as-reviewed-file.md):
+    /// a `write`/`preview_edit` whose target resolves to the protected config file is detected (so
+    /// the loop forces the operator gate), whether the target is relative or absolute; a write
+    /// elsewhere, a *read* of the config, and the path-less `persist_edit` are not.
+    #[test]
+    fn config_write_carve_out_detects_writes_to_the_protected_file() {
+        let cwd = Path::new(CWD);
+        let protected = Path::new(".efference/foo/config.toml");
+
+        let rel = call(
+            "write",
+            serde_json::json!({ "path": ".efference/foo/config.toml" }),
+        );
+        assert!(
+            is_config_write_in(&rel, protected, cwd),
+            "relative write to config"
+        );
+
+        let abs = call(
+            "write",
+            serde_json::json!({ "path": "/work/.efference/foo/config.toml" }),
+        );
+        assert!(
+            is_config_write_in(&abs, protected, cwd),
+            "absolute write to config"
+        );
+
+        let preview = call(
+            "preview_edit",
+            serde_json::json!({ "file_path": ".efference/foo/config.toml" }),
+        );
+        assert!(
+            is_config_write_in(&preview, protected, cwd),
+            "preview_edit names the config"
+        );
+
+        let elsewhere = call("write", serde_json::json!({ "path": "src/main.rs" }));
+        assert!(
+            !is_config_write_in(&elsewhere, protected, cwd),
+            "a write elsewhere is not it"
+        );
+
+        let read = call(
+            "read",
+            serde_json::json!({ "paths": ".efference/foo/config.toml" }),
+        );
+        assert!(
+            !is_config_write_in(&read, protected, cwd),
+            "reading the config is not a write"
+        );
+
+        let persist = call("persist_edit", serde_json::json!({}));
+        assert!(
+            !is_config_write_in(&persist, protected, cwd),
+            "persist_edit carries no path"
+        );
+    }
 
     /// A config granting the read/write/daemon tools, with cwd read+write and a **disjoint**
     /// read-only zone outside cwd (`/refs`). Disjoint on purpose: grants are additive with
@@ -523,13 +639,33 @@ mod tests {
     /// doesn't already reach (see [`path_granted`]).
     fn fs_role() -> Config {
         Config {
-            tools: ["read", "list", "search", "write", "preview_edit", "persist_edit", "kill_process"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            tools: [
+                "read",
+                "list",
+                "search",
+                "write",
+                "preview_edit",
+                "persist_edit",
+                "kill_process",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             paths: [
-                (".".to_string(), Perms { read: true, write: true }),
-                ("/refs".to_string(), Perms { read: true, write: false }),
+                (
+                    ".".to_string(),
+                    Perms {
+                        read: true,
+                        write: true,
+                    },
+                ),
+                (
+                    "/refs".to_string(),
+                    Perms {
+                        read: true,
+                        write: false,
+                    },
+                ),
             ]
             .into_iter()
             .collect(),
@@ -548,7 +684,15 @@ mod tests {
         assert_eq!(structured(&Config::default(), &c), Verdict::Gate);
         // Even with a path grant, an un-granted *name* gates.
         let role = Config {
-            paths: [(".".to_string(), Perms { read: true, write: true })].into_iter().collect(),
+            paths: [(
+                ".".to_string(),
+                Perms {
+                    read: true,
+                    write: true,
+                },
+            )]
+            .into_iter()
+            .collect(),
             ..Default::default()
         };
         assert_eq!(structured(&role, &c), Verdict::Gate);
@@ -559,17 +703,26 @@ mod tests {
         let role = fs_role();
         // Under cwd → granted.
         assert_eq!(
-            structured(&role, &call("read", serde_json::json!({ "paths": ["src/main.rs"] }))),
+            structured(
+                &role,
+                &call("read", serde_json::json!({ "paths": ["src/main.rs"] }))
+            ),
             Verdict::Clear
         );
         // Absolute path outside any grant → gated.
         assert_eq!(
-            structured(&role, &call("read", serde_json::json!({ "paths": ["/etc/passwd"] }))),
+            structured(
+                &role,
+                &call("read", serde_json::json!({ "paths": ["/etc/passwd"] }))
+            ),
             Verdict::Gate
         );
         // `..` escaping the cwd grant → gated (lexical normalization catches it).
         assert_eq!(
-            structured(&role, &call("read", serde_json::json!({ "paths": ["../../etc/passwd"] }))),
+            structured(
+                &role,
+                &call("read", serde_json::json!({ "paths": ["../../etc/passwd"] }))
+            ),
             Verdict::Gate
         );
     }
@@ -578,14 +731,20 @@ mod tests {
     fn read_with_multiple_paths_needs_all_granted() {
         let role = fs_role();
         // One in-tree, one out-of-tree → the whole call gates.
-        let c = call("read", serde_json::json!({ "paths": ["src/a.rs", "/etc/hosts"] }));
+        let c = call(
+            "read",
+            serde_json::json!({ "paths": ["src/a.rs", "/etc/hosts"] }),
+        );
         assert_eq!(structured(&role, &c), Verdict::Gate);
     }
 
     #[test]
     fn list_defaults_to_cwd_when_path_omitted() {
         let role = fs_role();
-        assert_eq!(structured(&role, &call("list", serde_json::json!({}))), Verdict::Clear);
+        assert_eq!(
+            structured(&role, &call("list", serde_json::json!({}))),
+            Verdict::Clear
+        );
     }
 
     #[test]
@@ -593,16 +752,25 @@ mod tests {
         let role = fs_role();
         // cwd is read+write → a write under it clears.
         assert_eq!(
-            structured(&role, &call("write", serde_json::json!({ "path": "src/new.rs" }))),
+            structured(
+                &role,
+                &call("write", serde_json::json!({ "path": "src/new.rs" }))
+            ),
             Verdict::Clear
         );
         // `/refs` is read-only → a write there gates even though reads clear.
         assert_eq!(
-            structured(&role, &call("write", serde_json::json!({ "path": "/refs/x.rs" }))),
+            structured(
+                &role,
+                &call("write", serde_json::json!({ "path": "/refs/x.rs" }))
+            ),
             Verdict::Gate
         );
         assert_eq!(
-            structured(&role, &call("read", serde_json::json!({ "paths": ["/refs/x.rs"] }))),
+            structured(
+                &role,
+                &call("read", serde_json::json!({ "paths": ["/refs/x.rs"] }))
+            ),
             Verdict::Clear
         );
     }
@@ -614,7 +782,10 @@ mod tests {
         assert_eq!(
             structured(
                 &role,
-                &call("preview_edit", serde_json::json!({ "file_path": "src/x.rs", "operation": "replace", "anchor": "fn x" }))
+                &call(
+                    "preview_edit",
+                    serde_json::json!({ "file_path": "src/x.rs", "operation": "replace", "anchor": "fn x" })
+                )
             ),
             Verdict::Clear
         );
@@ -622,12 +793,18 @@ mod tests {
         assert_eq!(
             structured(
                 &role,
-                &call("preview_edit", serde_json::json!({ "file_path": "/refs/x.rs", "operation": "replace", "anchor": "fn x" }))
+                &call(
+                    "preview_edit",
+                    serde_json::json!({ "file_path": "/refs/x.rs", "operation": "replace", "anchor": "fn x" })
+                )
             ),
             Verdict::Gate
         );
         // persist_edit carries no path; the name grant suffices (write was authorized at preview).
-        assert_eq!(structured(&role, &call("persist_edit", serde_json::json!({}))), Verdict::Clear);
+        assert_eq!(
+            structured(&role, &call("persist_edit", serde_json::json!({}))),
+            Verdict::Clear
+        );
     }
 
     #[test]
@@ -635,7 +812,10 @@ mod tests {
         let role = fs_role();
         // kill_process has no path; being in the tool grants is enough.
         assert_eq!(
-            structured(&role, &call("kill_process", serde_json::json!({ "handle": "bg-1" }))),
+            structured(
+                &role,
+                &call("kill_process", serde_json::json!({ "handle": "bg-1" }))
+            ),
             Verdict::Clear
         );
         // An un-granted daemon tool still gates.
@@ -649,7 +829,10 @@ mod tests {
     fn missing_or_malformed_required_path_gates() {
         let role = fs_role();
         // `read` requires `paths`; absent → gate.
-        assert_eq!(structured(&role, &call("read", serde_json::json!({}))), Verdict::Gate);
+        assert_eq!(
+            structured(&role, &call("read", serde_json::json!({}))),
+            Verdict::Gate
+        );
         // Empty array → gate (a no-target read shouldn't auto-clear).
         assert_eq!(
             structured(&role, &call("read", serde_json::json!({ "paths": [] }))),
@@ -703,7 +886,9 @@ mod tests {
     fn a_command_change_clears_a_previously_gated_command() {
         let base = sample_role();
         assert_eq!(classify(&base, &bash_call("npm install")), Verdict::Gate);
-        let log = [change_entry(ConfigChange::Command { command: "npm".into() })];
+        let log = [change_entry(ConfigChange::Command {
+            command: "npm".into(),
+        })];
         let eff = effective_config(&base, &log);
         assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
     }
@@ -714,7 +899,9 @@ mod tests {
     #[test]
     fn only_committed_edits_fold_into_the_effective_config() {
         let base = sample_role();
-        let change = ConfigChange::Command { command: "npm".into() };
+        let change = ConfigChange::Command {
+            command: "npm".into(),
+        };
         for state in [EditState::Proposed, EditState::Cancelled] {
             let eff = effective_config(&base, &[edit_entry(state, change.clone())]);
             assert_eq!(
@@ -736,8 +923,14 @@ mod tests {
         let c = call("write", serde_json::json!({ "path": "src/x.rs" }));
         assert_eq!(classify_in(&base, &c, Path::new(CWD)), Verdict::Gate);
         let log = [
-            change_entry(ConfigChange::Tool { name: "write".into() }),
-            change_entry(ConfigChange::Path { path: ".".into(), read: true, write: true }),
+            change_entry(ConfigChange::Tool {
+                name: "write".into(),
+            }),
+            change_entry(ConfigChange::Path {
+                path: ".".into(),
+                read: true,
+                write: true,
+            }),
         ];
         let eff = effective_config(&base, &log);
         assert_eq!(classify_in(&eff, &c, Path::new(CWD)), Verdict::Clear);
@@ -749,7 +942,9 @@ mod tests {
     #[test]
     fn folding_a_change_twice_is_harmless() {
         let base = sample_role();
-        let g = change_entry(ConfigChange::Command { command: "npm".into() });
+        let g = change_entry(ConfigChange::Command {
+            command: "npm".into(),
+        });
         let eff = effective_config(&base, &[g.clone(), g]);
         assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
     }
@@ -760,7 +955,9 @@ mod tests {
     fn a_scope_change_updates_the_effective_scope() {
         let base = Config::default();
         assert!(base.scope.is_none());
-        let log = [change_entry(ConfigChange::Scope { text: "new perimeter".into() })];
+        let log = [change_entry(ConfigChange::Scope {
+            text: "new perimeter".into(),
+        })];
         let eff = effective_config(&base, &log);
         assert_eq!(eff.scope.as_deref(), Some("new perimeter"));
     }

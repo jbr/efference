@@ -27,7 +27,11 @@ impl<'a> InteractiveState<'a> {
             ("  Ctrl+d, PgDn", "Page down", key_style),
             ("  Ctrl+u, PgUp", "Page up", key_style),
             ("  g, Home", "Jump to top", key_style),
-            ("  Shift+G, End", "Jump to bottom (follow stream)", key_style),
+            (
+                "  Shift+G, End",
+                "Jump to bottom (follow stream)",
+                key_style,
+            ),
             ("", "", bg_style),
             ("Content:", "", title_style),
             ("  Tab, Shift+Tab", "Move focus between blocks", key_style),

@@ -39,9 +39,9 @@ use serde_json::{Value, json};
 
 use crate::api::{Client, Usage};
 use crate::bash;
+use crate::config::Config;
 use crate::log::{Origin, Stance, ToolCall};
 use crate::project::{ApiBlock, ApiMessage, CacheControl, Role as ApiRole};
-use crate::config::Config;
 
 /// The forced tool name.
 const SPOT: &str = "spot";
@@ -134,13 +134,22 @@ impl Spotter for ForkSpot {
         // `GET /stream` (mirrors the fork peek).
         match self
             .client
-            .complete(&messages, &[spot_tool()], crate::api::ToolChoice::force(SPOT), |_| {})
+            .complete(
+                &messages,
+                &[spot_tool()],
+                crate::api::ToolChoice::force(SPOT),
+                |_| {},
+            )
             .await
         {
             Ok(completion) => {
                 let usage = Some(completion.usage.clone());
                 match parse_spot(&completion) {
-                    Some(read) => Spotting { read, origin: Origin::Model, usage },
+                    Some(read) => Spotting {
+                        read,
+                        origin: Origin::Model,
+                        usage,
+                    },
                     None => Spotting::fail_closed(usage),
                 }
             }
@@ -159,7 +168,10 @@ pub struct StaticSpotter {
 impl Spotter for StaticSpotter {
     async fn assess(&self, _role: &Config, _call: &ToolCall) -> Spotting {
         Spotting {
-            read: Read { stance: self.stance, reason: self.reason.clone() },
+            read: Read {
+                stance: self.stance,
+                reason: self.reason.clone(),
+            },
             origin: Origin::Fallback,
             usage: None,
         }
@@ -172,7 +184,12 @@ impl Spotter for StaticSpotter {
 /// for the whole session, so it caches.
 fn render_context(role: &Config) -> String {
     let mut s = String::from("Mission:\n");
-    match role.scope.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
+    match role
+        .scope
+        .as_deref()
+        .map(str::trim)
+        .filter(|b| !b.is_empty())
+    {
         Some(scope) => s.push_str(scope),
         None => s.push_str("(no scope specified — judge by the reversibility default.)"),
     }
@@ -220,11 +237,14 @@ fn render_move(call: &ToolCall) -> String {
     let body = if call.name == bash::NAME {
         match call.input.get("command").and_then(Value::as_str) {
             Some(cmd) => format!("A shell command:\n\n    {cmd}"),
-            None => format!("A `{}` call with no string command (malformed): {}", call.name, call.input),
+            None => format!(
+                "A `{}` call with no string command (malformed): {}",
+                call.name, call.input
+            ),
         }
     } else {
-        let input = serde_json::to_string_pretty(&call.input)
-            .unwrap_or_else(|_| call.input.to_string());
+        let input =
+            serde_json::to_string_pretty(&call.input).unwrap_or_else(|_| call.input.to_string());
         format!("A `{}` tool call with input:\n\n{input}", call.name)
     };
     format!(
@@ -272,7 +292,10 @@ fn parse_spot(completion: &crate::api::Completion) -> Option<Read> {
     };
     let call = calls.iter().find(|c| c.name == SPOT)?;
     let SpotInput { stance, reason } = SpotInput::deserialize(&call.input).ok()?;
-    Some(Read { stance: parse_stance(&stance), reason })
+    Some(Read {
+        stance: parse_stance(&stance),
+        reason,
+    })
 }
 
 /// Map a stance string to a [`Stance`], leniently. An unrecognized value fails
@@ -289,14 +312,18 @@ fn parse_stance(s: &str) -> Stance {
 mod tests {
     use super::*;
     use crate::api::{Completion, Usage};
-    use crate::log::{CallId, Payload};
     use crate::config::{Config, Perms};
+    use crate::log::{CallId, Payload};
 
     fn spot_completion(name: &str, input: Value) -> Completion {
         Completion {
             assistant: Payload::Assistant {
                 text: vec![],
-                calls: vec![ToolCall { id: CallId("s".into()), name: name.into(), input }],
+                calls: vec![ToolCall {
+                    id: CallId("s".into()),
+                    name: name.into(),
+                    input,
+                }],
             },
             model: "test".into(),
             stop_reason: None,
@@ -365,8 +392,20 @@ mod tests {
             scope: Some("Fix the build.".into()),
             watch_for: vec!["Don't touch the deploy keys.".into()],
             paths: [
-                (".".to_string(), Perms { read: true, write: true }),
-                ("/refs".to_string(), Perms { read: true, write: false }),
+                (
+                    ".".to_string(),
+                    Perms {
+                        read: true,
+                        write: true,
+                    },
+                ),
+                (
+                    "/refs".to_string(),
+                    Perms {
+                        read: true,
+                        write: false,
+                    },
+                ),
             ]
             .into_iter()
             .collect(),
@@ -385,6 +424,9 @@ mod tests {
         let ctx = render_context(&Config::default());
         assert!(ctx.contains("no scope specified"), "{ctx}");
         assert!(ctx.contains("none configured"), "{ctx}");
-        assert!(!ctx.contains("Things to watch for"), "no empty watch-for section: {ctx}");
+        assert!(
+            !ctx.contains("Things to watch for"),
+            "no empty watch-for section: {ctx}"
+        );
     }
 }

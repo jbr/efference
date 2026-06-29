@@ -267,7 +267,10 @@ impl Supervisor {
         };
         let now = Instant::now();
         let status = if p.running {
-            format!("running · idle {}", humanize(now.saturating_duration_since(p.last_chunk_at)))
+            format!(
+                "running · idle {}",
+                humanize(now.saturating_duration_since(p.last_chunk_at))
+            )
         } else {
             "exited".to_string()
         };
@@ -279,9 +282,13 @@ impl Supervisor {
         let slice = &p.buffer[(from - dropped) as usize..];
         let mut out = String::new();
         if lost > 0 {
-            out.push_str(&format!("… [{lost} bytes before your cursor were dropped at the cap]\n"));
+            out.push_str(&format!(
+                "… [{lost} bytes before your cursor were dropped at the cap]\n"
+            ));
         }
-        out.push_str(&format!("{handle} output [bytes {from}–{total}] ({status}):\n"));
+        out.push_str(&format!(
+            "{handle} output [bytes {from}–{total}] ({status}):\n"
+        ));
         out.push_str(&String::from_utf8_lossy(slice));
         out.push_str(&format!("\ncursor: {total}"));
         Some(out)
@@ -383,7 +390,11 @@ mod tests {
         let h = s.register("x".into(), Some(7));
         s.mute(&h);
         assert!(s.views().is_empty(), "muted → off the ambient show");
-        assert_eq!(s.running_pgids(), vec![7], "muted ≠ killed: still in the teardown set");
+        assert_eq!(
+            s.running_pgids(),
+            vec![7],
+            "muted ≠ killed: still in the teardown set"
+        );
     }
 
     #[test]
@@ -395,7 +406,10 @@ mod tests {
         assert_eq!(source, "bg#1");
         assert!(body.contains("done"), "exit carries the final tail: {body}");
         assert!(s.views().is_empty(), "exited → off the ambient show");
-        assert!(s.running_pgids().is_empty(), "exited → out of the teardown set");
+        assert!(
+            s.running_pgids().is_empty(),
+            "exited → out of the teardown set"
+        );
     }
 
     #[test]
@@ -436,7 +450,10 @@ mod tests {
         s.mute(&b);
         let text = s.list_text();
         assert!(text.contains("[bg#1] cargo watch"), "{text}");
-        assert!(text.contains("[bg#2] sleep 9") && text.contains("(muted)"), "{text}");
+        assert!(
+            text.contains("[bg#2] sleep 9") && text.contains("(muted)"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -447,12 +464,25 @@ mod tests {
         let first = s.read_since(&h, None).unwrap();
         assert!(first.contains("hello world"), "{first}");
         // Pull the cursor out of the footer and read again — nothing new.
-        let cursor: u64 = first.rsplit("cursor: ").next().unwrap().trim().parse().unwrap();
-        assert!(s.read_since(&h, Some(cursor)).unwrap().contains("no new output"));
+        let cursor: u64 = first
+            .rsplit("cursor: ")
+            .next()
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(
+            s.read_since(&h, Some(cursor))
+                .unwrap()
+                .contains("no new output")
+        );
         // More output → only the delta comes back from that cursor.
         s.push_chunk(&h, b"more\n");
         let third = s.read_since(&h, Some(cursor)).unwrap();
-        assert!(third.contains("more") && !third.contains("hello"), "{third}");
+        assert!(
+            third.contains("more") && !third.contains("hello"),
+            "{third}"
+        );
     }
 
     #[test]

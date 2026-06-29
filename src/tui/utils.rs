@@ -96,6 +96,6 @@ pub(super) fn estimate_node_lines(node: &DocumentNode) -> u16 {
             blocks.iter().map(estimate_node_lines).sum::<u16>()
                 + blocks.len().saturating_sub(1) as u16
         }
-        _ => 2,                                             // Default estimate for other nodes
+        _ => 2, // Default estimate for other nodes
     }
 }

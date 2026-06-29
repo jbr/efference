@@ -8,8 +8,8 @@ use ratatui::{
 use std::borrow::Cow;
 
 use super::state::InteractiveState;
-use crate::tui::render_context::RenderContext;
 use crate::tui::document::TuiAction;
+use crate::tui::render_context::RenderContext;
 
 impl<'a> InteractiveState<'a> {
     /// Render theme picker modal overlay

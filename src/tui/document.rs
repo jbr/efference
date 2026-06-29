@@ -288,7 +288,7 @@ pub enum SpanStyle {
 
     // Diagnostics
     Error, // a failed tool result / error label (red) — distinct from Strikethrough,
-           // which means deletion/redaction, not failure
+    // which means deletion/redaction, not failure
 
     // Conversation
     UserAccent, // the user turn's gutter / accent — distinguishes the human's voice
@@ -526,7 +526,13 @@ impl<'a> DocumentNode<'a> {
 
     /// Convenience constructor for a header-less truncated block.
     pub fn truncated_block(nodes: Vec<DocumentNode<'a>>, level: TruncationLevel) -> Self {
-        DocumentNode::TruncatedBlock { header: None, resting: None, nodes, level, key: None }
+        DocumentNode::TruncatedBlock {
+            header: None,
+            resting: None,
+            nodes,
+            level,
+            key: None,
+        }
     }
 
     /// Convenience constructor for a diff node.
@@ -543,7 +549,13 @@ impl<'a> DocumentNode<'a> {
         nodes: Vec<DocumentNode<'a>>,
         level: TruncationLevel,
     ) -> Self {
-        DocumentNode::TruncatedBlock { header: Some(header), resting, nodes, level, key: None }
+        DocumentNode::TruncatedBlock {
+            header: Some(header),
+            resting,
+            nodes,
+            level,
+            key: None,
+        }
     }
 
     /// A collapsible block carrying a stable [`key`](DocumentNode::TruncatedBlock)

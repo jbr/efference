@@ -139,8 +139,14 @@ where
             }
         };
         match McpTool::execute(tool, &mut self.state.borrow_mut()) {
-            Ok(content) => RawResult { content, is_error: false },
-            Err(e) => RawResult { content: e.to_string(), is_error: true },
+            Ok(content) => RawResult {
+                content,
+                is_error: false,
+            },
+            Err(e) => RawResult {
+                content: e.to_string(),
+                is_error: true,
+            },
         }
     }
 }
@@ -153,7 +159,10 @@ fn anthropic_def(schema: &ToolSchema) -> Value {
     let mut def = serde_json::Map::new();
     def.insert("name".to_string(), Value::String(schema.name.clone()));
     if let Some(description) = &schema.description {
-        def.insert("description".to_string(), Value::String(description.clone()));
+        def.insert(
+            "description".to_string(),
+            Value::String(description.clone()),
+        );
     }
     def.insert(
         "input_schema".to_string(),
@@ -209,7 +218,10 @@ impl Toolbox {
 
     /// All tool definitions, in mount order — the request's `tools[]`.
     pub fn definitions(&self) -> Vec<Value> {
-        self.providers.iter().flat_map(Provider::definitions).collect()
+        self.providers
+            .iter()
+            .flat_map(Provider::definitions)
+            .collect()
     }
 
     /// Route a call to the backend that handles its name. An unknown name comes
@@ -256,9 +268,19 @@ mod tests {
     #[tokio::test]
     async fn routes_a_bash_call_to_the_bash_backend() {
         let box_ = Toolbox::bash_only();
-        let result = box_.run(&call(bash::NAME, json!({"command": "echo routed"})), pending(), |_| {}).await;
+        let result = box_
+            .run(
+                &call(bash::NAME, json!({"command": "echo routed"})),
+                pending(),
+                |_| {},
+            )
+            .await;
         assert!(!result.is_error);
-        assert!(result.content.contains("routed"), "got {:?}", result.content);
+        assert!(
+            result.content.contains("routed"),
+            "got {:?}",
+            result.content
+        );
     }
 
     #[tokio::test]
@@ -267,7 +289,11 @@ mod tests {
         // An already-resolved abort proves the unknown path never touches it.
         let result = box_.run(&call("nope", json!({})), ready(()), |_| {}).await;
         assert!(result.is_error);
-        assert!(result.content.contains("unknown tool: nope"), "got {:?}", result.content);
+        assert!(
+            result.content.contains("unknown tool: nope"),
+            "got {:?}",
+            result.content
+        );
     }
 
     fn fs_server(cwd: PathBuf) -> McpServer<FsTools, fs_mcp::Tools> {
@@ -308,7 +334,11 @@ mod tests {
         // `read` resolves the relative path against the seeded session cwd.
         let read = server.run_call("read", &json!({ "paths": ["hello.txt"] }));
         assert!(!read.is_error, "read errored: {:?}", read.content);
-        assert!(read.content.contains("fs-mcp lives"), "got {:?}", read.content);
+        assert!(
+            read.content.contains("fs-mcp lives"),
+            "got {:?}",
+            read.content
+        );
 
         // `list` finds the file in the seeded directory.
         let list = server.run_call("list", &json!({ "path": "." }));
@@ -332,14 +362,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        let server: McpServer<SemanticEditTools, semantic_edit_mcp::Tools> =
-            McpServer::from_state(
-                SemanticEditTools::embedded(dir.clone()).unwrap(),
-                &["set_working_directory"],
-            );
+        let server: McpServer<SemanticEditTools, semantic_edit_mcp::Tools> = McpServer::from_state(
+            SemanticEditTools::embedded(dir.clone()).unwrap(),
+            &["set_working_directory"],
+        );
 
         for expected in ["preview_edit", "retarget_edit", "persist_edit"] {
-            assert!(server.handles(expected), "missing {expected} in {:?}", server.names);
+            assert!(
+                server.handles(expected),
+                "missing {expected} in {:?}",
+                server.names
+            );
         }
         let bad = server.run_call("preview_edit", &json!({ "nonsense": true }));
         assert!(bad.is_error, "bad input should error: {:?}", bad.content);
@@ -368,7 +401,15 @@ mod tests {
         for hidden in ["set_working_directory", "move", "delete"] {
             assert!(!names.contains(&hidden), "should be filtered: {names:?}");
         }
-        for tool in ["bash", "read", "search", "write", "list", "preview_edit", "persist_edit"] {
+        for tool in [
+            "bash",
+            "read",
+            "search",
+            "write",
+            "list",
+            "preview_edit",
+            "persist_edit",
+        ] {
             assert!(names.contains(&tool), "missing {tool} in {names:?}");
         }
 

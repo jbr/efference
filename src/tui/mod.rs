@@ -430,9 +430,10 @@ fn decode_delta(
     // which makes the `Err` variant large; we only care *that* it failed, so box
     // it to keep the result small (clippy `result_large_err`).
     let sent = match event.event_type() {
-        Some("assistant_delta") => value["text"]
-            .as_str()
-            .map(|text| tx.send(TuiEvent::AssistantDelta(text.to_string())).map_err(Box::new)),
+        Some("assistant_delta") => value["text"].as_str().map(|text| {
+            tx.send(TuiEvent::AssistantDelta(text.to_string()))
+                .map_err(Box::new)
+        }),
         Some("tool_output") => match (value["call_id"].as_str(), value["chunk"].as_str()) {
             (Some(call_id), Some(chunk)) => Some(
                 tx.send(TuiEvent::ToolOutput {

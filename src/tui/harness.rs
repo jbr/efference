@@ -162,7 +162,11 @@ impl Screenplay<'_> {
         // document so the collapsed blocks we expand actually exist.
         self.state.flush_reproject();
         let mut paths = Vec::new();
-        collect(&self.state.document.document.nodes, NodePath::new(), &mut paths);
+        collect(
+            &self.state.document.document.nodes,
+            NodePath::new(),
+            &mut paths,
+        );
         for path in paths {
             super::events::handle_action(
                 &mut self.state.document.document,
@@ -393,14 +397,15 @@ fn frame_grid(buf: &Buffer, width: u16, cursor: Option<(u16, u16)>) -> String {
         out.push_str("│\n");
 
         if let Some((cx, cy)) = cursor
-            && cy as usize == y {
-                let col = (cx as usize).min(w.saturating_sub(1));
-                out.push_str("   │");
-                out.push_str(&" ".repeat(col));
-                out.push('^');
-                out.push_str(&" ".repeat(w - col - 1));
-                out.push_str("│\n");
-            }
+            && cy as usize == y
+        {
+            let col = (cx as usize).min(w.saturating_sub(1));
+            out.push_str("   │");
+            out.push_str(&" ".repeat(col));
+            out.push('^');
+            out.push_str(&" ".repeat(w - col - 1));
+            out.push_str("│\n");
+        }
     }
 
     // Bottom border.
@@ -469,15 +474,25 @@ mod scenarios {
     fn diff_lines_are_colored() {
         let mut play = edit_scenario(80, 32);
 
-        let (ax, ay) = play.find("+        self.lines").expect("added line on screen");
+        let (ax, ay) = play
+            .find("+        self.lines")
+            .expect("added line on screen");
         let added = play.cell(ax + 1, ay); // a glyph past the '+' prefix
-        let (rx, ry) = play.find("-        self.lines").expect("removed line on screen");
+        let (rx, ry) = play
+            .find("-        self.lines")
+            .expect("removed line on screen");
         let removed = play.cell(rx + 1, ry);
 
         let (ar, ag, ab) = rgb(added.fg);
-        assert!(ag > ar && ag > ab, "added line should be green, got {added:?}");
+        assert!(
+            ag > ar && ag > ab,
+            "added line should be green, got {added:?}"
+        );
         let (rr, rg, rb) = rgb(removed.fg);
-        assert!(rr > rg && rr > rb, "removed line should be red, got {removed:?}");
+        assert!(
+            rr > rg && rr > rb,
+            "removed line should be red, got {removed:?}"
+        );
     }
 
     /// The live background-process panel (docs/supervisor.md): a `Processes` event renders a
@@ -547,7 +562,10 @@ mod scenarios {
         let screen = play.render();
         // It renders (no panic) and the token's tail survives the hard cuts.
         assert!(screen.contains("xxxx"), "the long token is on screen");
-        assert!(screen.contains("done"), "text after the token still renders");
+        assert!(
+            screen.contains("done"),
+            "text after the token still renders"
+        );
     }
 
     /// Unpack an (asserted) RGB cell color into channels.
@@ -682,7 +700,10 @@ mod scenarios {
     fn markdown_strikethrough_is_crossed_out() {
         let mut play = Screenplay::new(60, 8);
         play.assistant("keep ~~gone~~ stay", vec![]);
-        assert!(play.find("~~").is_none(), "the ~~ markers should be consumed");
+        assert!(
+            play.find("~~").is_none(),
+            "the ~~ markers should be consumed"
+        );
         let (x, y) = play.find("gone").expect("strikethrough text renders");
         assert!(
             play.cell(x, y).has(Modifier::CROSSED_OUT),
@@ -701,7 +722,10 @@ mod scenarios {
         let gutter = play.cell(1, y); // the reserved left-margin gutter column
         assert_eq!(gutter.symbol, "┃", "user turn carries a gutter glyph");
         let (r, _g, b) = rgb(gutter.fg);
-        assert!(b > r, "the user gutter should be a blue accent, got {gutter:?}");
+        assert!(
+            b > r,
+            "the user gutter should be a blue accent, got {gutter:?}"
+        );
     }
 
     /// A failed exchange reads as an error via a red `✗` prompt (replacing the
@@ -711,7 +735,10 @@ mod scenarios {
     fn error_exchange_prompt_is_red() {
         let mut play = Screenplay::new(80, 16);
         play.user("Run it.");
-        play.assistant("", vec![tool_call("bash", "toolu_07", json!({ "command": "false" }))]);
+        play.assistant(
+            "",
+            vec![tool_call("bash", "toolu_07", json!({ "command": "false" }))],
+        );
         play.tool_result("toolu_07", "command failed", true, WireState::Raw);
 
         let (x, y) = play.find("✗").expect("error prompt is on screen");
@@ -733,7 +760,11 @@ mod scenarios {
         play.user("Open state.rs, then search and list.");
         play.assistant(
             "Reading the file:",
-            vec![tool_call("read", "toolu_r1", json!({ "paths": ["src/tui/state.rs"] }))],
+            vec![tool_call(
+                "read",
+                "toolu_r1",
+                json!({ "paths": ["src/tui/state.rs"] }),
+            )],
         );
         play.tool_result(
             "toolu_r1",
@@ -748,7 +779,11 @@ mod scenarios {
         );
         play.assistant(
             "Now searching:",
-            vec![tool_call("search", "toolu_r2", json!({ "pattern": "fn project", "path": "src" }))],
+            vec![tool_call(
+                "search",
+                "toolu_r2",
+                json!({ "pattern": "fn project", "path": "src" }),
+            )],
         );
         play.tool_result(
             "toolu_r2",
@@ -760,7 +795,12 @@ mod scenarios {
             "And listing:",
             vec![tool_call("list", "toolu_r3", json!({ "path": "src/tui" }))],
         );
-        play.tool_result("toolu_r3", "All paths relative to src/tui:\n\n\ncomposer.rs\ndocument.rs\nprojection.rs", false, WireState::Raw);
+        play.tool_result(
+            "toolu_r3",
+            "All paths relative to src/tui:\n\n\ncomposer.rs\ndocument.rs\nprojection.rs",
+            false,
+            WireState::Raw,
+        );
         play.snapshot("transcript_file_tools");
     }
 
@@ -773,7 +813,11 @@ mod scenarios {
         play.user("List the tui module.");
         play.assistant(
             "Here's the directory.",
-            vec![tool_call("bash", "toolu_05", json!({ "command": "ls src/tui" }))],
+            vec![tool_call(
+                "bash",
+                "toolu_05",
+                json!({ "command": "ls src/tui" }),
+            )],
         );
         let listing = (1..=20)
             .map(|n| format!("render_module_{n:02}.rs"))
@@ -791,7 +835,11 @@ mod scenarios {
         play.user("List the tui module.");
         play.assistant(
             "Here's the directory.",
-            vec![tool_call("bash", "toolu_05", json!({ "command": "ls src/tui" }))],
+            vec![tool_call(
+                "bash",
+                "toolu_05",
+                json!({ "command": "ls src/tui" }),
+            )],
         );
         let listing = (1..=20)
             .map(|n| format!("render_module_{n:02}.rs"))
@@ -841,7 +889,11 @@ mod scenarios {
         play.user("Summarize the dependency tree.");
         play.assistant(
             "Pulling the tree, then I'll distill it.",
-            vec![tool_call("bash", "toolu_03", json!({ "command": "cargo tree" }))],
+            vec![tool_call(
+                "bash",
+                "toolu_03",
+                json!({ "command": "cargo tree" }),
+            )],
         );
         play.tool_result(
             "toolu_03",
@@ -867,7 +919,11 @@ mod scenarios {
         play.user("Clean the build directory.");
         play.assistant(
             "Sure — I'll remove it.",
-            vec![tool_call("bash", "toolu_1", json!({ "command": "rm -rf ./build" }))],
+            vec![tool_call(
+                "bash",
+                "toolu_1",
+                json!({ "command": "rm -rf ./build" }),
+            )],
         );
         play.pending_gate("toolu_1", "bash", json!({ "command": "rm -rf ./build" }));
 
@@ -875,10 +931,16 @@ mod scenarios {
         // color — "your turn" — which the character grid can't show.
         let (mx, my) = play.find("⏸").expect("pending marker on screen");
         let (r, _g, b) = rgb(play.cell(mx, my).fg);
-        assert!(b > r, "the pending marker should be a blue accent, got ({r},{b})");
+        assert!(
+            b > r,
+            "the pending marker should be a blue accent, got ({r},{b})"
+        );
         let (ax, ay) = play.find("awaiting").expect("affordance on screen");
         let (r, _g, b) = rgb(play.cell(ax, ay).fg);
-        assert!(b > r, "the affordance lead-in should be a blue accent, got ({r},{b})");
+        assert!(
+            b > r,
+            "the affordance lead-in should be a blue accent, got ({r},{b})"
+        );
 
         play.snapshot("transcript_pending_approval_gate");
     }
@@ -894,7 +956,11 @@ mod scenarios {
         play.user("Clean the build directory.");
         play.assistant(
             "Sure — I'll remove it.",
-            vec![tool_call("bash", "toolu_1", json!({ "command": "rm -rf ./build" }))],
+            vec![tool_call(
+                "bash",
+                "toolu_1",
+                json!({ "command": "rm -rf ./build" }),
+            )],
         );
         play.pending_gate("toolu_1", "bash", json!({ "command": "rm -rf ./build" }));
         // The human redirects: gate clears, the call gets an error result, the steer

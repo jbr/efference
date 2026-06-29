@@ -31,11 +31,13 @@ use serde_json::{Value, json};
 
 use crate::api::{Client, Completion, ToolChoice, Usage};
 use crate::inbox::ShownNotification;
-use crate::log::{Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall, WireState};
-use crate::supervisor::BgView;
+use crate::log::{
+    Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall, WireState,
+};
 use crate::project::{
     ApiBlock, ApiMessage, PEEK_LINE_CAP, Role, place_trailing_cache_breakpoint, project,
 };
+use crate::supervisor::BgView;
 
 const RETAIN: &str = "retain";
 
@@ -247,7 +249,10 @@ impl Distiller for ForkPeek {
                     is_error: raw.is_error,
                     cache_control: None,
                 },
-                ApiBlock::Text { text: instruction, cache_control: None },
+                ApiBlock::Text {
+                    text: instruction,
+                    cache_control: None,
+                },
             ],
         });
 
@@ -257,7 +262,12 @@ impl Distiller for ForkPeek {
         let (parsed, usage) = match client
             // No-op sink: the fork peek's triage tokens are internal and must never
             // surface on `GET /stream` — only the main thread's prose streams.
-            .complete(&messages, &[retain_tool(inbox, background)], ToolChoice::force(RETAIN), |_| {})
+            .complete(
+                &messages,
+                &[retain_tool(inbox, background)],
+                ToolChoice::force(RETAIN),
+                |_| {},
+            )
             .await
         {
             Ok(completion) => (parse_retain(&completion), Some(completion.usage)),
@@ -276,14 +286,18 @@ impl Distiller for ForkPeek {
                     .collect();
                 // Same guard for background handles: only verdicts on processes we
                 // actually showed (drop any handle the model invented).
-                let shown_bg: HashSet<&str> = background.iter().map(|b| b.handle.as_str()).collect();
+                let shown_bg: HashSet<&str> =
+                    background.iter().map(|b| b.handle.as_str()).collect();
                 let bg = p
                     .background
                     .into_iter()
                     .filter(|(h, _)| shown_bg.contains(h.as_str()))
                     .collect();
                 Distillation {
-                    wire: WireState::Distilled { keep: p.keep, note: p.note },
+                    wire: WireState::Distilled {
+                        keep: p.keep,
+                        note: p.note,
+                    },
                     origin: Origin::Model,
                     raw_keep: p.raw_keep,
                     inbox: dispositions,
@@ -305,7 +319,10 @@ impl Distiller for ForkPeek {
                     call.name
                 );
                 Distillation {
-                    wire: WireState::Distilled { keep: Keep::All, note: None },
+                    wire: WireState::Distilled {
+                        keep: Keep::All,
+                        note: None,
+                    },
                     origin: Origin::Fallback,
                     raw_keep: String::new(),
                     inbox: Vec::new(),
@@ -338,24 +355,39 @@ impl Distiller for ForkPeek {
         place_trailing_cache_breakpoint(&mut messages);
         messages.push(ApiMessage {
             role: Role::User,
-            content: vec![ApiBlock::Text { text: view, cache_control: None }],
+            content: vec![ApiBlock::Text {
+                text: view,
+                cache_control: None,
+            }],
         });
 
         let (parsed, usage) = match client
-            .complete(&messages, &[triage_tool(inbox, background)], ToolChoice::force(TRIAGE), |_| {})
+            .complete(
+                &messages,
+                &[triage_tool(inbox, background)],
+                ToolChoice::force(TRIAGE),
+                |_| {},
+            )
             .await
         {
-            Ok(completion) => (parse_dispositions(&completion, TRIAGE), Some(completion.usage)),
+            Ok(completion) => (
+                parse_dispositions(&completion, TRIAGE),
+                Some(completion.usage),
+            ),
             Err(_) => (None, None),
         };
 
         match parsed {
             Some((ibx, bg)) => {
                 let shown: HashSet<Seq> = inbox.iter().map(|n| n.seq).collect();
-                let shown_bg: HashSet<&str> = background.iter().map(|b| b.handle.as_str()).collect();
+                let shown_bg: HashSet<&str> =
+                    background.iter().map(|b| b.handle.as_str()).collect();
                 InboxTriage {
                     inbox: ibx.into_iter().filter(|(s, _)| shown.contains(s)).collect(),
-                    background: bg.into_iter().filter(|(h, _)| shown_bg.contains(h.as_str())).collect(),
+                    background: bg
+                        .into_iter()
+                        .filter(|(h, _)| shown_bg.contains(h.as_str()))
+                        .collect(),
                     origin: Origin::Model,
                     usage,
                 }
@@ -476,7 +508,10 @@ fn append_inbox_and_background(
         }
     }
     if !background.is_empty() {
-        view.push_str(&format!("\n\n═══ background · {} running ═══", background.len()));
+        view.push_str(&format!(
+            "\n\n═══ background · {} running ═══",
+            background.len()
+        ));
         for b in background {
             view.push_str(&format!(
                 "\n[{}] {} · running {}s · idle {}s",
@@ -571,11 +606,21 @@ fn parse_retain(completion: &Completion) -> Option<ParsedRetain> {
         return None;
     };
     let retain = calls.iter().find(|c| c.name == RETAIN)?;
-    let RetainInput { keep, note, inbox, background } =
-        RetainInput::deserialize(&retain.input).ok()?;
+    let RetainInput {
+        keep,
+        note,
+        inbox,
+        background,
+    } = RetainInput::deserialize(&retain.input).ok()?;
     let parsed_keep = parse_keep(&keep);
     let (dispositions, bg) = collect_dispositions(inbox, background);
-    Some(ParsedRetain { keep: parsed_keep, note, raw_keep: keep, inbox: dispositions, background: bg })
+    Some(ParsedRetain {
+        keep: parsed_keep,
+        note,
+        raw_keep: keep,
+        inbox: dispositions,
+        background: bg,
+    })
 }
 
 /// Pull the inbox/background dispositions from a `triage`-tool completion (the
@@ -686,17 +731,26 @@ mod tests {
         assert_eq!(parse_keep("none"), Keep::None);
         assert_eq!(parse_keep(""), Keep::None);
         assert_eq!(parse_keep("7"), Keep::Ranges(vec![(7, 7)]));
-        assert_eq!(parse_keep(" 40-52 , 310-318 "), Keep::Ranges(vec![(40, 52), (310, 318)]));
+        assert_eq!(
+            parse_keep(" 40-52 , 310-318 "),
+            Keep::Ranges(vec![(40, 52), (310, 318)])
+        );
         assert_eq!(parse_keep("just words"), Keep::None);
     }
 
     #[test]
     fn parse_retain_reads_keep_note_and_raw_keep() {
-        let p = parse_retain(&retain_completion(RETAIN, json!({"keep": "all", "note": "the gist"})))
-            .expect("a retain call parses");
+        let p = parse_retain(&retain_completion(
+            RETAIN,
+            json!({"keep": "all", "note": "the gist"}),
+        ))
+        .expect("a retain call parses");
         assert_eq!(p.keep, Keep::All);
         assert_eq!(p.note.as_deref(), Some("the gist"));
-        assert_eq!(p.raw_keep, "all", "the model's exact string is kept for audit");
+        assert_eq!(
+            p.raw_keep, "all",
+            "the model's exact string is kept for audit"
+        );
         assert!(p.inbox.is_empty(), "no inbox field → no dispositions");
 
         let p = parse_retain(&retain_completion(RETAIN, json!({"keep": "40-52,310-318"})))
@@ -715,7 +769,11 @@ mod tests {
         .expect("parses");
         assert_eq!(
             p.inbox,
-            vec![(5, Disposition::Pin), (7, Disposition::Pin), (6, Disposition::Dismiss)]
+            vec![
+                (5, Disposition::Pin),
+                (7, Disposition::Pin),
+                (6, Disposition::Dismiss)
+            ]
         );
     }
 
@@ -733,7 +791,10 @@ mod tests {
         assert_eq!(ibx, vec![(5, Disposition::Pin), (6, Disposition::Dismiss)]);
         assert_eq!(
             bg,
-            vec![("bg#1".to_string(), BgVerdict::Pin), ("bg#2".to_string(), BgVerdict::Mute)]
+            vec![
+                ("bg#1".to_string(), BgVerdict::Pin),
+                ("bg#2".to_string(), BgVerdict::Mute)
+            ]
         );
         // A call by a different name yields nothing.
         assert!(parse_dispositions(&c, "something_else").is_none());

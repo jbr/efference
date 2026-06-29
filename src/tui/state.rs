@@ -449,11 +449,11 @@ impl<'a> InteractiveState<'a> {
             }
             _ => return,
         };
-        let call_id =
-            match find_node_at_path_mut(&mut self.document.document.nodes, path.indices()) {
-                Some(DocumentNode::TruncatedBlock { key: Some(k), .. }) => k.to_string(),
-                _ => return,
-            };
+        let call_id = match find_node_at_path_mut(&mut self.document.document.nodes, path.indices())
+        {
+            Some(DocumentNode::TruncatedBlock { key: Some(k), .. }) => k.to_string(),
+            _ => return,
+        };
         let now_raw = self.view.toggle_raw(&call_id);
         self.ui.debug_message = if now_raw {
             "showing raw output — r to show the distilled view".into()
@@ -673,11 +673,17 @@ mod tests {
             idle_secs: 0,
         }];
         // A delta for the live process appends to its tail (between polls).
-        s.handle_event(TuiEvent::BgOutput { handle: "bg#1".into(), chunk: "tick 2\n".into() });
+        s.handle_event(TuiEvent::BgOutput {
+            handle: "bg#1".into(),
+            chunk: "tick 2\n".into(),
+        });
         assert_eq!(s.processes[0].tail, "tick 1\ntick 2\n");
         assert!(s.dirty, "panel repaints");
         // A delta for an unknown handle is ignored (it appears within one poll).
-        s.handle_event(TuiEvent::BgOutput { handle: "bg#9".into(), chunk: "nope".into() });
+        s.handle_event(TuiEvent::BgOutput {
+            handle: "bg#9".into(),
+            chunk: "nope".into(),
+        });
         assert_eq!(s.processes[0].tail, "tick 1\ntick 2\n");
     }
 
@@ -693,9 +699,15 @@ mod tests {
         }];
         // A multibyte burst past the cap must not panic and must stay valid UTF-8.
         let chunk = "é".repeat(BG_TAIL_CAP); // 2 bytes each → 2× the cap
-        s.handle_event(TuiEvent::BgOutput { handle: "bg#1".into(), chunk });
+        s.handle_event(TuiEvent::BgOutput {
+            handle: "bg#1".into(),
+            chunk,
+        });
         assert!(s.processes[0].tail.len() <= BG_TAIL_CAP);
-        assert!(s.processes[0].tail.chars().all(|c| c == 'é'), "no codepoint sliced");
+        assert!(
+            s.processes[0].tail.chars().all(|c| c == 'é'),
+            "no codepoint sliced"
+        );
     }
 
     #[test]

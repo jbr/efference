@@ -214,10 +214,17 @@ fn exchange(
     let is_error = result.is_some_and(|(raw, _)| raw.is_error);
     let call_id = call.id.0.as_str();
 
-    let mut header = vec![inline_code_styled(call.name.clone(), SpanStyle::FunctionName)];
+    let mut header = vec![inline_code_styled(
+        call.name.clone(),
+        SpanStyle::FunctionName,
+    )];
     let (inline, overflow) = call_args(call);
     if let Some(arg_spans) = inline {
-        header.push(Span { text: " · ".into(), style: SpanStyle::Comment, action: None });
+        header.push(Span {
+            text: " · ".into(),
+            style: SpanStyle::Comment,
+            action: None,
+        });
         header.extend(arg_spans);
     }
 
@@ -246,9 +253,18 @@ fn exchange(
         // Flag that the leaner distilled default is being overridden, so the human
         // sees they're on raw (`r` to flip back).
         if overriding {
-            header.push(Span { text: " · raw".into(), style: SpanStyle::Comment, action: None });
+            header.push(Span {
+                text: " · raw".into(),
+                style: SpanStyle::Comment,
+                action: None,
+            });
         }
-        body.extend(result_body(Some(call.name.as_str()), raw, effective_wire, &content));
+        body.extend(result_body(
+            Some(call.name.as_str()),
+            raw,
+            effective_wire,
+            &content,
+        ));
     } else if is_pending {
         // No result yet — the agent is blocked here for approval (docs/tui.md). The
         // affordance sits where the result will land, so the gate reads as "after the
@@ -262,7 +278,11 @@ fn exchange(
     // is long enough to collapse). The block is keyed by `call_id` so its expand/raw
     // state survives re-projection.
     let resting = if is_pending {
-        Span { text: "⏸ ".into(), style: SpanStyle::UserAccent, action: None }
+        Span {
+            text: "⏸ ".into(),
+            style: SpanStyle::UserAccent,
+            action: None,
+        }
     } else {
         prompt_span(is_error)
     };
@@ -298,9 +318,17 @@ fn gate_affordance() -> DocumentNode<'static> {
 /// failed — so an error reads as an error without a `[error]` word.
 fn prompt_span(is_error: bool) -> Span<'static> {
     if is_error {
-        Span { text: "✗ ".into(), style: SpanStyle::Error, action: None }
+        Span {
+            text: "✗ ".into(),
+            style: SpanStyle::Error,
+            action: None,
+        }
     } else {
-        Span { text: "❯ ".into(), style: SpanStyle::Comment, action: None }
+        Span {
+            text: "❯ ".into(),
+            style: SpanStyle::Comment,
+            action: None,
+        }
     }
 }
 
@@ -337,7 +365,11 @@ fn call_args(call: &ToolCall) -> (Option<Vec<Span<'static>>>, Vec<DocumentNode<'
         }
         "read" => {
             if let Some(paths) = call.input.get("paths").and_then(|v| v.as_array()) {
-                let joined = paths.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", ");
+                let joined = paths
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 return (Some(vec![inline_code(joined)]), vec![]);
             }
         }
@@ -360,14 +392,21 @@ fn call_args(call: &ToolCall) -> (Option<Vec<Span<'static>>>, Vec<DocumentNode<'
             // The diff result is the representation — never dump the (verbose) edit
             // input. Show a concise anchor hint inline if present, else just the name.
             let inline = input("anchor").map(|anchor| {
-                let snippet: String = anchor.lines().next().unwrap_or(anchor).chars().take(48).collect();
+                let snippet: String = anchor
+                    .lines()
+                    .next()
+                    .unwrap_or(anchor)
+                    .chars()
+                    .take(48)
+                    .collect();
                 vec![inline_code(snippet)]
             });
             return (inline, vec![]);
         }
         _ => {}
     }
-    let pretty = serde_json::to_string_pretty(&call.input).unwrap_or_else(|_| call.input.to_string());
+    let pretty =
+        serde_json::to_string_pretty(&call.input).unwrap_or_else(|_| call.input.to_string());
     (None, vec![code_block(Some("json"), &pretty)])
 }
 
@@ -378,7 +417,11 @@ fn inline_code(text: impl Into<String>) -> Span<'static> {
 
 /// A span with an explicit style (header tool name, inline args).
 fn inline_code_styled(text: impl Into<String>, style: SpanStyle) -> Span<'static> {
-    Span { text: text.into().into(), style, action: None }
+    Span {
+        text: text.into().into(),
+        style,
+        action: None,
+    }
 }
 
 /// The body shown under a tool-result header. Known tools get a tool-specific
@@ -491,7 +534,10 @@ fn parse_diff(content: &str) -> Option<DocumentNode<'static>> {
                 Some('@') => DiffLineKind::Hunk,
                 _ => DiffLineKind::Context,
             };
-            DiffLine { kind, text: line.to_string() }
+            DiffLine {
+                kind,
+                text: line.to_string(),
+            }
         })
         .collect();
     Some(DocumentNode::diff(lines))
@@ -542,7 +588,10 @@ mod tests {
     /// result — the three shapes the transcript is built from.
     fn sample_log() -> Vec<LogEntry> {
         vec![
-            entry(1, Payload::User(vec![ContentBlock::Text("hello there".into())])),
+            entry(
+                1,
+                Payload::User(vec![ContentBlock::Text("hello there".into())]),
+            ),
             entry(
                 2,
                 Payload::Assistant {
@@ -570,7 +619,12 @@ mod tests {
 
     #[test]
     fn projects_turns_and_pairs_call_with_result() {
-        let doc = project(&sample_log(), &LiveTail::default(), &ViewState::default(), None);
+        let doc = project(
+            &sample_log(),
+            &LiveTail::default(),
+            &ViewState::default(),
+            None,
+        );
 
         // Top level is a sequence of authored turns: user, then assistant.
         let authors: Vec<Author> = doc
@@ -589,7 +643,10 @@ mod tests {
             .nodes
             .iter()
             .find_map(|n| match n {
-                DocumentNode::Turn { author: Author::Assistant, blocks } => Some(blocks),
+                DocumentNode::Turn {
+                    author: Author::Assistant,
+                    blocks,
+                } => Some(blocks),
                 _ => None,
             })
             .expect("assistant turn");
@@ -597,7 +654,10 @@ mod tests {
             .iter()
             .filter(|n| matches!(n, DocumentNode::TruncatedBlock { .. }))
             .count();
-        assert_eq!(exchanges, 1, "one exchange, not separate call + result blocks");
+        assert_eq!(
+            exchanges, 1,
+            "one exchange, not separate call + result blocks"
+        );
 
         // The exchange header names the tool, with no role/seq label.
         let header_text: String = assistant_blocks
@@ -609,8 +669,14 @@ mod tests {
             .flatten()
             .map(|s| s.text.as_ref())
             .collect();
-        assert!(header_text.contains("bash"), "tool name in header: {header_text}");
-        assert!(!header_text.contains("result #"), "no result label: {header_text}");
+        assert!(
+            header_text.contains("bash"),
+            "tool name in header: {header_text}"
+        );
+        assert!(
+            !header_text.contains("result #"),
+            "no result label: {header_text}"
+        );
         assert!(!header_text.contains("wants to run"), "call already ran");
 
         // The result content lives in the exchange body.
@@ -638,7 +704,10 @@ mod tests {
                 5,
                 Payload::ToolResult {
                     call_id: CallId("toolu_9".into()),
-                    raw: RawResult { content: "RAW-NOISE\nthe kept line".into(), is_error: false },
+                    raw: RawResult {
+                        content: "RAW-NOISE\nthe kept line".into(),
+                        is_error: false,
+                    },
                     wire: WireState::Distilled {
                         keep: Keep::Ranges(vec![(2, 2)]),
                         note: Some("the distilled summary".into()),
@@ -648,9 +717,18 @@ mod tests {
         ];
         let doc = project(&log, &LiveTail::default(), &ViewState::default(), None);
         let code: String = collect_code(&doc.nodes);
-        assert!(code.contains("the distilled summary"), "shows the note: {code}");
-        assert!(code.contains("the kept line"), "shows the kept line: {code}");
-        assert!(!code.contains("RAW-NOISE"), "hides the dropped raw line: {code}");
+        assert!(
+            code.contains("the distilled summary"),
+            "shows the note: {code}"
+        );
+        assert!(
+            code.contains("the kept line"),
+            "shows the kept line: {code}"
+        );
+        assert!(
+            !code.contains("RAW-NOISE"),
+            "hides the dropped raw line: {code}"
+        );
     }
 
     /// The (single) exchange block's expand level, for the view-state tests.
@@ -672,7 +750,10 @@ mod tests {
         for node in &doc.nodes {
             if let DocumentNode::Turn { blocks, .. } = node {
                 for b in blocks {
-                    if let DocumentNode::TruncatedBlock { header: Some(h), .. } = b {
+                    if let DocumentNode::TruncatedBlock {
+                        header: Some(h), ..
+                    } = b
+                    {
                         return h.iter().map(|s| s.text.as_ref()).collect();
                     }
                 }
@@ -700,7 +781,11 @@ mod tests {
 
         // A second projection (the streamed-token rebuild) keeps it expanded.
         let doc = project(&log, &LiveTail::default(), &view, None);
-        assert_eq!(exchange_level(&doc), TruncationLevel::Full, "expand survived reprojection");
+        assert_eq!(
+            exchange_level(&doc),
+            TruncationLevel::Full,
+            "expand survived reprojection"
+        );
 
         // Toggling back collapses, and that persists too.
         view.toggle_expanded("toolu_1");
@@ -727,7 +812,10 @@ mod tests {
                 5,
                 Payload::ToolResult {
                     call_id: CallId("toolu_9".into()),
-                    raw: RawResult { content: "RAW-NOISE\nthe kept line".into(), is_error: false },
+                    raw: RawResult {
+                        content: "RAW-NOISE\nthe kept line".into(),
+                        is_error: false,
+                    },
                     wire: WireState::Distilled {
                         keep: Keep::Ranges(vec![(2, 2)]),
                         note: Some("the distilled summary".into()),
@@ -741,15 +829,24 @@ mod tests {
         let doc = project(&log, &LiveTail::default(), &view, None);
         let code = collect_code(&doc.nodes);
         assert!(code.contains("the kept line"), "distillate shown: {code}");
-        assert!(!code.contains("RAW-NOISE"), "dropped raw line hidden: {code}");
-        assert!(!exchange_header(&doc).contains("raw"), "no raw marker by default");
+        assert!(
+            !code.contains("RAW-NOISE"),
+            "dropped raw line hidden: {code}"
+        );
+        assert!(
+            !exchange_header(&doc).contains("raw"),
+            "no raw marker by default"
+        );
 
         // Flip to raw: the full raw content, and the header flags the override.
         view.toggle_raw("toolu_9");
         let doc = project(&log, &LiveTail::default(), &view, None);
         let code = collect_code(&doc.nodes);
         assert!(code.contains("RAW-NOISE"), "full raw now shown: {code}");
-        assert!(exchange_header(&doc).contains("raw"), "header marks the raw view");
+        assert!(
+            exchange_header(&doc).contains("raw"),
+            "header marks the raw view"
+        );
     }
 
     #[test]
@@ -770,7 +867,10 @@ mod tests {
                 calls: vec![],
             },
         ));
-        assert!(live.assistant.is_empty(), "assistant buffer cleared on commit");
+        assert!(
+            live.assistant.is_empty(),
+            "assistant buffer cleared on commit"
+        );
     }
 
     /// Render the projection to a ratatui TestBackend and confirm the transcript
@@ -791,7 +891,12 @@ mod tests {
         let (submit_tx, _submit_rx) = tokio::sync::mpsc::unbounded_channel();
         let (approve_tx, _approve_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut state = InteractiveState::new(rx, submit_tx, approve_tx, rc, theme);
-        state.document.document = project(&sample_log(), &LiveTail::default(), &ViewState::default(), None);
+        state.document.document = project(
+            &sample_log(),
+            &LiveTail::default(),
+            &ViewState::default(),
+            None,
+        );
 
         let mut terminal = Terminal::new(TestBackend::new(80, 60)).unwrap();
         terminal.draw(|f| state.render_frame(f)).unwrap();

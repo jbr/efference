@@ -54,22 +54,33 @@ mod tests {
     use crate::log::{Disposition, MarkKind, Notification, Timestamp, Triage};
 
     fn entry(seq: Seq, payload: Payload) -> LogEntry {
-        LogEntry { seq, turn: 0, at: Timestamp(seq), payload }
+        LogEntry {
+            seq,
+            turn: 0,
+            at: Timestamp(seq),
+            payload,
+        }
     }
     fn ambient(seq: Seq, body: &str) -> LogEntry {
-        entry(seq, Payload::Ambient(Notification {
-            source: "src".into(),
-            body: body.into(),
-            slot: None,
-        }))
+        entry(
+            seq,
+            Payload::Ambient(Notification {
+                source: "src".into(),
+                body: body.into(),
+                slot: None,
+            }),
+        )
     }
     fn triage(seq: Seq, inbox: Vec<(Seq, Disposition)>) -> LogEntry {
-        entry(seq, Payload::Triage(Triage {
-            for_result: None,
-            origin: crate::log::Origin::Model,
-            raw_keep: "all".into(),
-            inbox,
-        }))
+        entry(
+            seq,
+            Payload::Triage(Triage {
+                for_result: None,
+                origin: crate::log::Origin::Model,
+                raw_keep: "all".into(),
+                inbox,
+            }),
+        )
     }
 
     #[test]
@@ -92,10 +103,13 @@ mod tests {
     fn active_shown_ignores_non_ambient_and_unresolved_stay() {
         // A mark and a fresh ambient with no verdict yet: the ambient is active.
         let log = vec![
-            entry(0, Payload::Mark(crate::log::Mark {
-                kind: MarkKind::Boundary { upto: 0 },
-                note: "x".into(),
-            })),
+            entry(
+                0,
+                Payload::Mark(crate::log::Mark {
+                    kind: MarkKind::Boundary { upto: 0 },
+                    note: "x".into(),
+                }),
+            ),
             ambient(1, "still pending"),
         ];
         let active = active_shown(&log);

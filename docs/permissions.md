@@ -31,12 +31,23 @@ A TOML document, decoded through [`toml_edit`]'s serde layer into a raw shape an
 surfaces a `toml_edit::de::Error` whose `Display` renders the offending line — the
 load-time diagnostic that stands in for KDL's old editor tooling. The same crate edits the
 file in place ([`DocumentMut`]) for the auto-persist write-back (below), so one dependency
-both reads the config and writes the harness's edits back with comments intact. Resolution:
-an explicit `serve --config <path>` (which must exist), else the `efference.toml` probe
-(absent → the empty default config, so nothing auto-clears — safe). `GET /state` reports the
-resolved source *and the full effective policy in force* (scope, watch-for, commands, tools, paths) —
-effective, not boot, so a live config edit (a session grant, an fs-watch file change) is visible
-there; an orchestrator reads a subordinate's live perimeter from it.
+both reads the config and writes the harness's edits back with comments intact.
+
+**Per-session snapshot (the config is a reviewed file).** At boot the origin (`serve --config <path>`,
+which must exist; else the `efference.toml` probe; else a scaffolded empty file) is **snapshotted once**
+into the session's own `.efference/<id>/config.toml`. That snapshot — not the origin — is the live,
+watched, editable policy: two sessions sharing an origin diverge freely (the origin is an inert
+template). The session is told its config path in the preamble and may **edit the file to request a
+permission change** — but a `write`/`preview_edit` to the config file is forced to the operator gate
+(`policy::is_config_write`), bypassing both the fast-path and the spotter, so a permission change can
+never auto-apply; on approval the write lands and fs-watch folds the diff into effective policy. A
+malformed edit fail-closes (the loader rejects it, the last-good policy stands). "Session-only" is thus
+a matter of geography, not a flag. See
+[`../backlog/permissions/session-dir-and-config-as-reviewed-file.md`](../backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+
+`GET /state` reports the resolved source *and the full effective policy in force* (scope, watch-for,
+commands, tools, paths) — effective, not boot, so a live config edit (a session grant, an fs-watch
+file change) is visible there; an orchestrator reads a subordinate's live perimeter from it.
 
 The schema is **string-keyed maps**, not lists — because the policy is a *table* the
 config-edit loop mutates by key (below). The config is a materialized projection of the

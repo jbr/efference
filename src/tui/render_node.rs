@@ -288,14 +288,24 @@ impl<'a> InteractiveState<'a> {
                         DiffLineKind::Context => SpanStyle::Plain,
                     };
                     self.render_span(
-                        &Span { text: line.text.clone().into(), style, action: None },
+                        &Span {
+                            text: line.text.clone().into(),
+                            style,
+                            action: None,
+                        },
                         buf,
                     );
                     self.layout.pos.y += 1;
                 }
             }
 
-            DocumentNode::TruncatedBlock { header, resting, nodes, level, .. } => {
+            DocumentNode::TruncatedBlock {
+                header,
+                resting,
+                nodes,
+                level,
+                ..
+            } => {
                 // Source lines the body would occupy fully expanded. The transcript's
                 // collapsible body is a single CodeBlock, so this is its line count;
                 // counting newlines (not wrapped rows) keeps the collapse decision

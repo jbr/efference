@@ -80,8 +80,7 @@ impl MarkdownRenderer {
                         in_strikethrough = true;
                     }
                     Tag::Link { dest_url, .. } => {
-                        current_link_action =
-                            Some(TuiAction::OpenUrl(dest_url.to_string().into()));
+                        current_link_action = Some(TuiAction::OpenUrl(dest_url.to_string().into()));
                     }
                     Tag::Heading { level, .. } => {
                         in_heading = true;
@@ -102,7 +101,10 @@ impl MarkdownRenderer {
                         // `start` is `Some(n)` for an ordered list (numbered from n),
                         // `None` for a bulleted one — carried through so the renderer
                         // can number ordered items instead of bulleting them.
-                        stack.push(StackItem::Node(DocumentNode::List { items: vec![], start }));
+                        stack.push(StackItem::Node(DocumentNode::List {
+                            items: vec![],
+                            start,
+                        }));
                     }
                     Tag::Item => {
                         stack.push(StackItem::Item(ListItem::new(vec![])));

@@ -27,18 +27,38 @@ const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 
 /// The full system prompt sent in the request's `system` field (docs/substrate.md): the
 /// curation-model [`PREAMBLE`], the frozen session environment block from [`context`],
-/// and — when the session runs under a config with a scope — the config's preamble section
-/// (`role_section`, rendered by [`crate::config::Config::preamble_section`]). Built once at
-/// session start and frozen into the cached prefix, so every part must be byte-stable;
-/// the `wire` dev view reconstructs it identically by calling this with the same inputs.
-pub fn system_prompt(role_section: Option<&str>) -> String {
+/// the config's preamble section when the session has a scope (`role_section`, rendered by
+/// [`crate::config::Config::preamble_section`]), and — when the session has a config file — a note
+/// naming its path so the session can read its perimeter and **edit the file to request changes**
+/// (backlog/permissions/session-dir-and-config-as-reviewed-file.md). Built once at session start and
+/// frozen into the cached prefix, so every part must be byte-stable — `config_path` is the
+/// session-stable per-session `config.toml`, like cwd. The `wire` dev view reconstructs it
+/// identically by calling this with the same inputs.
+pub fn system_prompt(role_section: Option<&str>, config_path: Option<&Path>) -> String {
     // `include_str!` keeps the file's trailing newline; trim it so the join is clean.
     let mut prompt = format!("{}\n\n{}", PREAMBLE.trim_end(), context());
     if let Some(section) = role_section {
         prompt.push_str("\n\n");
         prompt.push_str(section);
     }
+    if let Some(path) = config_path {
+        prompt.push_str("\n\n");
+        prompt.push_str(&config_note(path));
+    }
     prompt
+}
+
+/// The preamble note naming the session's config file (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+/// Editing the file is how the session *requests* a permission change; the edit is reviewed before
+/// it takes effect, so the session can propose freely without being able to self-authorize.
+fn config_note(path: &Path) -> String {
+    format!(
+        "Your permissions for this session are configured in `{}`. You may read that file to see \
+         your current scope, allowed commands, tools, and path grants. To request a change to your \
+         permissions, edit the file — your edits are reviewed before they take effect, so propose \
+         whatever you genuinely need and explain why.",
+        path.display()
+    )
 }
 
 /// Build the environment block appended to the system preamble. Call **once** at
@@ -137,13 +157,25 @@ mod tests {
 
     #[test]
     fn system_prompt_appends_role_section_when_present() {
-        let without = system_prompt(None);
-        let with = system_prompt(Some("Your role for this session:\n\nStay put."));
+        let without = system_prompt(None, None);
+        let with = system_prompt(Some("Your role for this session:\n\nStay put."), None);
         // The role section is appended verbatim after the env block; without a role the
         // prompt is exactly the preamble + env (no trailing role text).
         assert!(with.starts_with(&without));
         assert!(with.ends_with("Your role for this session:\n\nStay put."));
         assert!(!without.contains("Your role for this session"));
+    }
+
+    /// A config path appends the editable-config note (the session's request channel), naming the
+    /// path so the session knows where to propose edits (session-dir-and-config-as-reviewed-file.md).
+    #[test]
+    fn system_prompt_appends_config_note_with_the_path() {
+        let plain = system_prompt(None, None);
+        let with = system_prompt(None, Some(Path::new(".efference/foo/config.toml")));
+        assert!(with.starts_with(&plain));
+        assert!(with.contains(".efference/foo/config.toml"));
+        assert!(with.contains("reviewed before they take effect"));
+        assert!(!plain.contains("config.toml"));
     }
 
     #[test]

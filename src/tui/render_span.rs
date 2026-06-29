@@ -384,7 +384,7 @@ pub(super) fn find_wrap_position(text: &str, max_width: usize) -> Option<usize> 
 
 #[cfg(test)]
 mod tests {
-    use super::{wrap_points, display_width};
+    use super::{display_width, wrap_points};
 
     /// Split `text` at the byte boundaries `wrap_points` reports, for legible
     /// assertions on the visual rows.

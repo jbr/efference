@@ -129,7 +129,10 @@ impl Bash {
             let mut content = String::from_utf8_lossy(&combined).into_owned();
             push_line_break(&mut content);
             content.push_str("[aborted by user — process group killed]");
-            return RawResult { content, is_error: true };
+            return RawResult {
+                content,
+                is_error: true,
+            };
         }
 
         // Both pipes are at EOF, so the child has finished writing; reap its status.
@@ -241,28 +244,40 @@ mod tests {
 
     #[tokio::test]
     async fn runs_command_and_captures_stdout() {
-        let result = Bash.run(&json!({ "command": "echo hello" }), never(), sink()).await;
+        let result = Bash
+            .run(&json!({ "command": "echo hello" }), never(), sink())
+            .await;
         assert!(!result.is_error);
         assert!(result.content.contains("hello"), "got {:?}", result.content);
     }
 
     #[tokio::test]
     async fn captures_stderr_without_marking_error() {
-        let result = Bash.run(&json!({ "command": "echo oops 1>&2" }), never(), sink()).await;
+        let result = Bash
+            .run(&json!({ "command": "echo oops 1>&2" }), never(), sink())
+            .await;
         assert!(!result.is_error, "exit 0 even though it wrote to stderr");
         assert!(result.content.contains("oops"));
     }
 
     #[tokio::test]
     async fn nonzero_exit_is_error_and_surfaces_status() {
-        let result = Bash.run(&json!({ "command": "exit 7" }), never(), sink()).await;
+        let result = Bash
+            .run(&json!({ "command": "exit 7" }), never(), sink())
+            .await;
         assert!(result.is_error);
-        assert!(result.content.contains('7'), "status should surface: {:?}", result.content);
+        assert!(
+            result.content.contains('7'),
+            "status should surface: {:?}",
+            result.content
+        );
     }
 
     #[tokio::test]
     async fn malformed_input_is_an_error_result_not_a_panic() {
-        let result = Bash.run(&json!({ "not_command": true }), never(), sink()).await;
+        let result = Bash
+            .run(&json!({ "not_command": true }), never(), sink())
+            .await;
         assert!(result.is_error);
         assert!(result.content.contains("invalid bash input"));
     }
@@ -272,7 +287,9 @@ mod tests {
     #[tokio::test]
     async fn abort_kills_a_running_command_promptly() {
         let start = Instant::now();
-        let result = Bash.run(&json!({ "command": "sleep 30" }), now(), sink()).await;
+        let result = Bash
+            .run(&json!({ "command": "sleep 30" }), now(), sink())
+            .await;
         assert!(result.is_error);
         assert!(result.content.contains("aborted"));
         assert!(start.elapsed().as_secs() < 5, "must not wait out the sleep");
@@ -293,9 +310,19 @@ mod tests {
             .await;
         assert!(!result.is_error);
         for line in ["one", "two", "three"] {
-            assert!(streamed.contains(line), "live stream missing {line}: {streamed:?}");
-            assert!(result.content.contains(line), "result missing {line}: {:?}", result.content);
+            assert!(
+                streamed.contains(line),
+                "live stream missing {line}: {streamed:?}"
+            );
+            assert!(
+                result.content.contains(line),
+                "result missing {line}: {:?}",
+                result.content
+            );
         }
-        assert_eq!(streamed, result.content, "streamed bytes must equal the canonical output");
+        assert_eq!(
+            streamed, result.content,
+            "streamed bytes must equal the canonical output"
+        );
     }
 }

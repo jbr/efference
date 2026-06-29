@@ -316,9 +316,10 @@ fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireSta
         WireState::Raw => (raw.content.clone(), raw.is_error),
         // Re-render the distillate from `raw` + the stored verdict each turn
         // (docs/redaction-fork.md) — the kept bytes are never persisted twice.
-        WireState::Distilled { keep, note } => {
-            (render_distilled(&raw.content, keep, note.as_deref()), raw.is_error)
-        }
+        WireState::Distilled { keep, note } => (
+            render_distilled(&raw.content, keep, note.as_deref()),
+            raw.is_error,
+        ),
         // Project a placeholder rather than nothing: dropping the block entirely
         // would orphan the assistant `tool_use` it answers, which the API
         // rejects. Phase 1 (which actually constructs `Elided`) must decide
@@ -513,7 +514,11 @@ mod tests {
         use crate::log::{ConfigChange, ConfigEdit, EditState, Lifetime};
         let without = serde_json::to_string(&project(&sample_log())).unwrap();
 
-        for state in [EditState::Proposed, EditState::Committed, EditState::Cancelled] {
+        for state in [
+            EditState::Proposed,
+            EditState::Committed,
+            EditState::Cancelled,
+        ] {
             let mut with = sample_log();
             with.push(entry(
                 3,
@@ -521,13 +526,18 @@ mod tests {
                 Payload::ConfigEdit(ConfigEdit {
                     state,
                     resolves: None,
-                    change: ConfigChange::Command { command: "cargo nextest".into() },
+                    change: ConfigChange::Command {
+                        command: "cargo nextest".into(),
+                    },
                     lifetime: Lifetime::Persist,
                     note: "promoted: standing-safe in scope".into(),
                 }),
             ));
             let with = serde_json::to_string(&project(&with)).unwrap();
-            assert_eq!(without, with, "a {state:?} config edit must not perturb the projected wire");
+            assert_eq!(
+                without, with,
+                "a {state:?} config edit must not perturb the projected wire"
+            );
         }
     }
 
@@ -666,7 +676,10 @@ mod tests {
             ),
         ];
         let wire = serde_json::to_string(&project(&log)).unwrap();
-        assert!(wire.contains("the gist line"), "kept line projected: {wire}");
+        assert!(
+            wire.contains("the gist line"),
+            "kept line projected: {wire}"
+        );
         assert!(wire.contains("summary"), "note projected: {wire}");
         assert!(
             !wire.contains("ten thousand lines"),
@@ -1001,7 +1014,11 @@ mod tests {
     }
 
     fn notification(source: &str, body: &str) -> Payload {
-        Payload::Ambient(Notification { source: source.into(), body: body.into(), slot: None })
+        Payload::Ambient(Notification {
+            source: source.into(),
+            body: body.into(),
+            slot: None,
+        })
     }
 
     /// A pinned notification projects as a `⟢ source: body` user block **at its
@@ -1030,7 +1047,10 @@ mod tests {
                 0,
                 Payload::ToolResult {
                     call_id: CallId("t".into()),
-                    raw: RawResult { content: "out".into(), is_error: false },
+                    raw: RawResult {
+                        content: "out".into(),
+                        is_error: false,
+                    },
                     wire: WireState::Raw,
                 },
             ),
@@ -1055,7 +1075,10 @@ mod tests {
             matches!(&messages[2].content[0], ApiBlock::Text { text, .. } if text == "⟢ test-watch: 3 failures")
         );
         let wire = serde_json::to_string(&messages).unwrap();
-        assert!(!wire.contains("reviewer") && !wire.contains("a nit"), "dismissed off wire: {wire}");
+        assert!(
+            !wire.contains("reviewer") && !wire.contains("a nit"),
+            "dismissed off wire: {wire}"
+        );
     }
 
     /// An `Ambient` arrival with no resolving verdict (left / un-pinned) is audit-only
@@ -1068,7 +1091,11 @@ mod tests {
         ];
         let messages = project(&log);
         assert_eq!(messages.len(), 1, "only the user message: {messages:#?}");
-        assert!(!serde_json::to_string(&messages).unwrap().contains("left notice"));
+        assert!(
+            !serde_json::to_string(&messages)
+                .unwrap()
+                .contains("left notice")
+        );
     }
 
     fn lines(s: &str) -> Vec<&str> {
@@ -1082,15 +1109,24 @@ mod tests {
         let c = "a\nb\nc\nd\ne";
         let all = render_distilled(c, &Keep::All, None);
         assert!(all.contains("@@ lines 1-5 @@"), "{all}");
-        assert!(all.lines().any(|l| l == "a") && all.lines().any(|l| l == "e"), "{all}");
+        assert!(
+            all.lines().any(|l| l == "a") && all.lines().any(|l| l == "e"),
+            "{all}"
+        );
 
         let none = render_distilled(c, &Keep::None, Some("nothing useful here"));
         assert_eq!(none, "— nothing useful here");
 
         let ranges = render_distilled(c, &Keep::Ranges(vec![(2, 3)]), None);
         assert!(ranges.contains("@@ lines 2-3 @@"), "{ranges}");
-        assert!(ranges.lines().any(|l| l == "b") && ranges.lines().any(|l| l == "c"), "{ranges}");
-        assert!(!ranges.contains("@@ lines 1") && !ranges.contains("@@ line 1 "), "line 1 dropped: {ranges}");
+        assert!(
+            ranges.lines().any(|l| l == "b") && ranges.lines().any(|l| l == "c"),
+            "{ranges}"
+        );
+        assert!(
+            !ranges.contains("@@ lines 1") && !ranges.contains("@@ line 1 "),
+            "line 1 dropped: {ranges}"
+        );
     }
 
     /// Past `PEEK_LINE_CAP` the render appends a truncation breadcrumb and a range
@@ -1104,10 +1140,16 @@ mod tests {
             .join("\n");
         let out = render_distilled(&body, &Keep::Ranges(vec![(1, 1)]), None);
         assert!(out.lines().any(|l| l == "line1"), "kept line present");
-        assert!(out.contains("5 more lines truncated"), "truncation noted: {out}");
+        assert!(
+            out.contains("5 more lines truncated"),
+            "truncation noted: {out}"
+        );
 
-        let past =
-            render_distilled(&body, &Keep::Ranges(vec![(PEEK_LINE_CAP + 2, PEEK_LINE_CAP + 4)]), None);
+        let past = render_distilled(
+            &body,
+            &Keep::Ranges(vec![(PEEK_LINE_CAP + 2, PEEK_LINE_CAP + 4)]),
+            None,
+        );
         assert!(
             !past.contains(&format!("line{}", PEEK_LINE_CAP + 3)),
             "beyond-cap line unreachable: {past}"
@@ -1119,16 +1161,28 @@ mod tests {
         let ls = lines("alpha\nbeta\ngamma");
         let wire = render_hunks(&ls, &[(1, 3)], None);
         assert!(wire.contains("@@ lines 1-3 @@"), "{wire}");
-        assert!(wire.lines().any(|l| l == "alpha") && wire.lines().any(|l| l == "gamma"), "{wire}");
-        assert!(!wire.contains("     1\talpha"), "no per-line numbering on the wire: {wire}");
+        assert!(
+            wire.lines().any(|l| l == "alpha") && wire.lines().any(|l| l == "gamma"),
+            "{wire}"
+        );
+        assert!(
+            !wire.contains("     1\talpha"),
+            "no per-line numbering on the wire: {wire}"
+        );
     }
 
     #[test]
     fn gapped_hunks_get_a_header_each_and_drop_the_gap() {
-        let body = (1..=100).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n");
+        let body = (1..=100)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let ls = lines(&body);
         let wire = render_hunks(&ls, &[(1, 3), (99, 100)], None);
-        assert!(wire.contains("@@ lines 1-3 @@") && wire.contains("@@ lines 99-100 @@"), "{wire}");
+        assert!(
+            wire.contains("@@ lines 1-3 @@") && wire.contains("@@ lines 99-100 @@"),
+            "{wire}"
+        );
         assert!(!wire.contains("line50"), "middle dropped");
         assert!(wire.len() < body.len(), "leaner than raw");
     }
@@ -1153,7 +1207,10 @@ mod tests {
     fn normalize_clamps_sorts_and_merges() {
         assert_eq!(normalize(&[(1, 3), (2, 5)], 100), vec![(1, 5)]);
         assert_eq!(normalize(&[(1, 3), (4, 6)], 100), vec![(1, 6)]);
-        assert_eq!(normalize(&[(310, 318), (40, 52)], 400), vec![(40, 52), (310, 318)]);
+        assert_eq!(
+            normalize(&[(310, 318), (40, 52)], 400),
+            vec![(40, 52), (310, 318)]
+        );
         assert_eq!(normalize(&[(1, 1000)], 100), vec![(1, 100)]);
         assert!(normalize(&[(0, 0)], 100).is_empty());
         assert!(normalize(&[(50, 60)], 10).is_empty());

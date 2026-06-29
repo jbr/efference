@@ -230,13 +230,19 @@ impl Assembler {
                     delta: Value,
                 }
                 let Env { index, delta } = serde_json::from_str(data)?;
-                let kind = delta.get("type").and_then(Value::as_str).unwrap_or_default();
+                let kind = delta
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 let block = self.blocks.get_mut(index).ok_or_else(|| -> Error {
                     format!("content_block_delta for unknown index {index}").into()
                 })?;
                 match (kind, block) {
                     ("text_delta", BlockAccum::Text(buf)) => {
-                        let frag = delta.get("text").and_then(Value::as_str).unwrap_or_default();
+                        let frag = delta
+                            .get("text")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
                         buf.push_str(frag);
                         streamed = Some(frag.to_string());
                     }
@@ -636,10 +642,19 @@ mod tests {
     #[test]
     fn empty_tool_input_is_empty_object() {
         let completion = feed(&[
-            ("message_start", r#"{"message":{"model":"m","usage":{"input_tokens":1,"output_tokens":1}}}"#),
-            ("content_block_start", r#"{"index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"now"}}"#),
+            (
+                "message_start",
+                r#"{"message":{"model":"m","usage":{"input_tokens":1,"output_tokens":1}}}"#,
+            ),
+            (
+                "content_block_start",
+                r#"{"index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"now"}}"#,
+            ),
             ("content_block_stop", r#"{"index":0}"#),
-            ("message_delta", r#"{"delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":2}}"#),
+            (
+                "message_delta",
+                r#"{"delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":2}}"#,
+            ),
         ])
         .unwrap();
         match completion.assistant {

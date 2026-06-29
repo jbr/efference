@@ -39,7 +39,8 @@ impl<'a> super::InteractiveState<'a> {
 
                 let terminal_height = size.height;
                 let terminal_width = size.width;
-                let content_height = terminal_height.saturating_sub(1 + self.viewport.input_height + self.viewport.gate_height); // status row + composer
+                let content_height = terminal_height
+                    .saturating_sub(1 + self.viewport.input_height + self.viewport.gate_height); // status row + composer
                 let content_width = terminal_width.saturating_sub(1); // Exclude scrollbar column
 
                 // Check if hovering over scrollbar
@@ -83,7 +84,8 @@ impl<'a> super::InteractiveState<'a> {
                 };
 
                 let terminal_height = size.height;
-                let content_height = terminal_height.saturating_sub(1 + self.viewport.input_height + self.viewport.gate_height); // status row + composer
+                let content_height = terminal_height
+                    .saturating_sub(1 + self.viewport.input_height + self.viewport.gate_height); // status row + composer
                 let content_width = size.width.saturating_sub(1); // Exclude scrollbar column
 
                 // Check if click is in scrollbar column
@@ -107,7 +109,9 @@ impl<'a> super::InteractiveState<'a> {
                 let Ok(size) = terminal.size() else {
                     return;
                 };
-                let content_height = size.height.saturating_sub(1 + self.viewport.input_height + self.viewport.gate_height);
+                let content_height = size
+                    .height
+                    .saturating_sub(1 + self.viewport.input_height + self.viewport.gate_height);
                 self.handle_scrollbar_drag(row, content_height);
             }
 
@@ -190,20 +194,20 @@ impl<'a> super::InteractiveState<'a> {
         // No keyboard focus (or invalid focus) - show mouse hover or default message
         if self.ui.mouse_enabled
             && let Some(pos) = self.viewport.cursor_pos
-                && let Some((_, action)) = self
-                    .render_cache
-                    .actions
-                    .iter()
-                    .find(|(rect, _)| rect.contains(pos))
-                {
-                    self.ui.debug_message = match action {
-                        TuiAction::ExpandBlock(_) => "Expand block".into(),
-                        TuiAction::OpenUrl(url) => format!("Open: {}", url).into(),
-                        TuiAction::SelectTheme(theme_name) => {
-                            format!("Preview theme: {}", theme_name).into()
-                        }
-                    };
+            && let Some((_, action)) = self
+                .render_cache
+                .actions
+                .iter()
+                .find(|(rect, _)| rect.contains(pos))
+        {
+            self.ui.debug_message = match action {
+                TuiAction::ExpandBlock(_) => "Expand block".into(),
+                TuiAction::OpenUrl(url) => format!("Open: {}", url).into(),
+                TuiAction::SelectTheme(theme_name) => {
+                    format!("Preview theme: {}", theme_name).into()
                 }
+            };
+        }
     }
 
     /// Handle scrollbar drag by calculating scroll position from mouse Y

@@ -140,10 +140,8 @@ mod tests {
     /// byte-stability guarantee as its oracle.
     #[tokio::test]
     async fn disk_roundtrip_projects_identically() {
-        let path = std::env::temp_dir().join(format!(
-            "efference-roundtrip-{}.jsonl",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("efference-roundtrip-{}.jsonl", std::process::id()));
         let _ = std::fs::remove_file(&path);
 
         let mut log = Log::create(&path).unwrap();
@@ -162,7 +160,8 @@ mod tests {
     /// Blank lines tolerated; entry count survives.
     #[test]
     fn load_tolerates_blank_lines() {
-        let path = std::env::temp_dir().join(format!("efference-blank-{}.jsonl", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("efference-blank-{}.jsonl", std::process::id()));
         std::fs::write(
             &path,
             "{\"seq\":0,\"turn\":0,\"at\":1,\"payload\":{\"User\":[{\"Text\":\"hi\"}]}}\n\n",

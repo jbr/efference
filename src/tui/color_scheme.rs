@@ -144,7 +144,12 @@ impl ColorScheme {
                 &highlighter,
                 &["markup.inserted", "markup.inserted.diff"],
                 default_style.foreground,
-                Color { r: 0xa6, g: 0xd1, b: 0x89, a: 0xff },
+                Color {
+                    r: 0xa6,
+                    g: 0xd1,
+                    b: 0x89,
+                    a: 0xff,
+                },
             ),
         );
         colors.insert(
@@ -153,7 +158,12 @@ impl ColorScheme {
                 &highlighter,
                 &["markup.deleted", "markup.deleted.diff"],
                 default_style.foreground,
-                Color { r: 0xe7, g: 0x82, b: 0x84, a: 0xff },
+                Color {
+                    r: 0xe7,
+                    g: 0x82,
+                    b: 0x84,
+                    a: 0xff,
+                },
             ),
         );
 
@@ -165,7 +175,12 @@ impl ColorScheme {
                 &highlighter,
                 &["invalid.illegal", "invalid", "message.error"],
                 default_style.foreground,
-                Color { r: 0xe7, g: 0x82, b: 0x84, a: 0xff },
+                Color {
+                    r: 0xe7,
+                    g: 0x82,
+                    b: 0x84,
+                    a: 0xff,
+                },
             ),
         );
 
@@ -178,7 +193,12 @@ impl ColorScheme {
                 &highlighter,
                 &["markup.heading", "entity.name.function"],
                 default_style.foreground,
-                Color { r: 0x8c, g: 0xaa, b: 0xee, a: 0xff },
+                Color {
+                    r: 0x8c,
+                    g: 0xaa,
+                    b: 0xee,
+                    a: 0xff,
+                },
             ),
         );
 

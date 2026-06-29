@@ -169,8 +169,14 @@ enum RawPathValue {
 impl RawPathValue {
     fn into_perms(self) -> Perms {
         match self {
-            RawPathValue::Sugar(true) => Perms { read: true, write: true },
-            RawPathValue::Sugar(false) => Perms { read: false, write: false },
+            RawPathValue::Sugar(true) => Perms {
+                read: true,
+                write: true,
+            },
+            RawPathValue::Sugar(false) => Perms {
+                read: false,
+                write: false,
+            },
             RawPathValue::Perms { read, write } => Perms { read, write },
         }
     }
@@ -272,8 +278,8 @@ impl LoadError {
 pub fn load(explicit: Option<&Path>) -> Result<LoadedConfig, LoadError> {
     match explicit {
         Some(path) => {
-            let text = std::fs::read_to_string(path)
-                .map_err(|e| LoadError::Io(path.to_path_buf(), e))?;
+            let text =
+                std::fs::read_to_string(path).map_err(|e| LoadError::Io(path.to_path_buf(), e))?;
             Ok(LoadedConfig {
                 role: parse(path, &text)?,
                 source: ConfigSource::Path(path.to_path_buf()),
@@ -296,8 +302,8 @@ pub fn load(explicit: Option<&Path>) -> Result<LoadedConfig, LoadError> {
 
 /// Parse TOML text into a [`Config`] (decode → validate). The `path` labels diagnostics only.
 fn parse(path: &Path, text: &str) -> Result<Config, LoadError> {
-    let raw: RawConfig = toml_edit::de::from_str(text)
-        .map_err(|e| LoadError::Parse(path.to_path_buf(), e))?;
+    let raw: RawConfig =
+        toml_edit::de::from_str(text).map_err(|e| LoadError::Parse(path.to_path_buf(), e))?;
     validate(raw).map_err(|e| LoadError::Validate(path.to_path_buf(), e))
 }
 
@@ -354,7 +360,9 @@ pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {
     }
     // Commands / tools: additive set membership — emit each key the file has that effective lacks.
     for command in to.commands.difference(&from.commands) {
-        out.push(ConfigChange::Command { command: command.clone() });
+        out.push(ConfigChange::Command {
+            command: command.clone(),
+        });
     }
     for name in to.tools.difference(&from.tools) {
         out.push(ConfigChange::Tool { name: name.clone() });
@@ -362,7 +370,11 @@ pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {
     // Paths: a perms map — emit each path whose perms are new or changed in the file.
     for (path, perms) in &to.paths {
         if from.paths.get(path) != Some(perms) {
-            out.push(ConfigChange::Path { path: path.clone(), read: perms.read, write: perms.write });
+            out.push(ConfigChange::Path {
+                path: path.clone(),
+                read: perms.read,
+                write: perms.write,
+            });
         }
     }
     out
@@ -386,7 +398,11 @@ pub fn persist_config_change(path: &Path, change: &ConfigChange) -> std::io::Res
             doc["commands"][command.as_str()] = value(true);
         }
         // A filesystem grant: set `[paths][path]` to the sugar or an inline `{ read, write }`.
-        ConfigChange::Path { path: p, read, write } => {
+        ConfigChange::Path {
+            path: p,
+            read,
+            write,
+        } => {
             doc["paths"][p.as_str()] = path_value(*read, *write);
         }
         // A tool-name grant: append to the `tools` array if absent (the array is set-shaped, so
@@ -405,16 +421,14 @@ pub fn persist_config_change(path: &Path, change: &ConfigChange) -> std::io::Res
         // A scope replace: set the `scope` scalar in place. When it already exists, carry its
         // decor over so the author's inline comment survives the narrowing (the auto-persist
         // guarantee; cf. backlog/permissions/config-edit.md).
-        ConfigChange::Scope { text } => {
-            match doc.get_mut("scope").and_then(Item::as_value_mut) {
-                Some(existing) => {
-                    let decor = existing.decor().clone();
-                    *existing = Value::from(text.as_str());
-                    *existing.decor_mut() = decor;
-                }
-                None => doc["scope"] = value(text.as_str()),
+        ConfigChange::Scope { text } => match doc.get_mut("scope").and_then(Item::as_value_mut) {
+            Some(existing) => {
+                let decor = existing.decor().clone();
+                *existing = Value::from(text.as_str());
+                *existing.decor_mut() = decor;
             }
-        }
+            None => doc["scope"] = value(text.as_str()),
+        },
     }
     std::fs::write(path, doc.to_string())
 }
@@ -445,7 +459,11 @@ impl Config {
     /// function of the scope — safe for the cached prefix. The watch-for list is deliberately
     /// *not* projected here: it is spotter-only.
     pub fn preamble_section(&self) -> Option<String> {
-        let scope = self.scope.as_deref().map(str::trim).filter(|b| !b.is_empty())?;
+        let scope = self
+            .scope
+            .as_deref()
+            .map(str::trim)
+            .filter(|b| !b.is_empty())?;
         Some(format!("Your role for this session:\n\n{scope}"))
     }
 }
@@ -480,7 +498,10 @@ mod tests {
             "#,
         );
         assert_eq!(role.scope.as_deref(), Some("Work only inside this repo."));
-        assert_eq!(role.watch_for, ["Flag network egress to non-registry hosts."]);
+        assert_eq!(
+            role.watch_for,
+            ["Flag network egress to non-registry hosts."]
+        );
         assert_eq!(role.trust_threshold, Some(0.5));
     }
 
@@ -520,11 +541,29 @@ mod tests {
         );
         assert_eq!(role.paths.len(), 3);
         // cwd sugar → full access.
-        assert_eq!(role.paths["."], Perms { read: true, write: true });
+        assert_eq!(
+            role.paths["."],
+            Perms {
+                read: true,
+                write: true
+            }
+        );
         // /tmp: read-only (write defaults false).
-        assert_eq!(role.paths["/tmp"], Perms { read: true, write: false });
+        assert_eq!(
+            role.paths["/tmp"],
+            Perms {
+                read: true,
+                write: false
+            }
+        );
         // `false` grants nothing until you say what you're granting.
-        assert_eq!(role.paths["vendor"], Perms { read: false, write: false });
+        assert_eq!(
+            role.paths["vendor"],
+            Perms {
+                read: false,
+                write: false
+            }
+        );
     }
 
     #[test]
@@ -551,11 +590,8 @@ mod tests {
     /// whole file — no silent skip, no partial recovery.
     #[test]
     fn non_simple_command_key_fails_the_file() {
-        let err = super::parse(
-            Path::new("bad.toml"),
-            "[commands]\n\"git | rm\" = true\n",
-        )
-        .unwrap_err();
+        let err =
+            super::parse(Path::new("bad.toml"), "[commands]\n\"git | rm\" = true\n").unwrap_err();
         assert!(matches!(
             err,
             LoadError::Validate(_, ValidationError::CommandNotSimple(_))
@@ -565,8 +601,7 @@ mod tests {
     /// A `false` command value is rejected (additive-only can't deny).
     #[test]
     fn command_deny_is_rejected() {
-        let err =
-            super::parse(Path::new("bad.toml"), "[commands]\ncargo = false\n").unwrap_err();
+        let err = super::parse(Path::new("bad.toml"), "[commands]\ncargo = false\n").unwrap_err();
         assert!(matches!(
             err,
             LoadError::Validate(_, ValidationError::CommandDeny(_))
@@ -610,7 +645,10 @@ mod tests {
             std::env::temp_dir().join(format!("efference-no-such-{}.toml", std::process::id()));
         let _ = std::fs::remove_file(&missing);
         let err = load(Some(&missing)).unwrap_err();
-        assert!(matches!(err, LoadError::Io(_, _)), "explicit path must exist");
+        assert!(
+            matches!(err, LoadError::Io(_, _)),
+            "explicit path must exist"
+        );
     }
 
     #[test]
@@ -636,11 +674,16 @@ mod tests {
         )
         .unwrap();
 
-        let change = ConfigChange::Command { command: "git diff".into() };
+        let change = ConfigChange::Command {
+            command: "git diff".into(),
+        };
         persist_config_change(&path, &change).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("# my config"), "comment preserved: {text}");
-        assert!(text.contains("# the mission"), "inline comment preserved: {text}");
+        assert!(
+            text.contains("# the mission"),
+            "inline comment preserved: {text}"
+        );
         assert!(text.contains(r#""git diff" = true"#), "key set: {text}");
 
         // Round-trips back through the loader into the command set.
@@ -651,7 +694,11 @@ mod tests {
         // Re-persisting the same change is a no-op — no duplicate key.
         persist_config_change(&path, &change).unwrap();
         let after = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(after.matches(r#""git diff" = true"#).count(), 1, "idempotent: {after}");
+        assert_eq!(
+            after.matches(r#""git diff" = true"#).count(),
+            1,
+            "idempotent: {after}"
+        );
 
         std::fs::remove_file(&path).unwrap();
     }
@@ -661,30 +708,70 @@ mod tests {
     /// `tools` array and dedup on membership; path grants render the sugar / inline perms.
     #[test]
     fn persist_into_empty_file_vivifies_sections() {
-        let path = std::env::temp_dir()
-            .join(format!("efference-persist-empty-{}.toml", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "efference-persist-empty-{}.toml",
+            std::process::id()
+        ));
         std::fs::write(&path, "").unwrap();
 
-        persist_config_change(&path, &ConfigChange::Tool { name: "read".into() }).unwrap();
-        persist_config_change(&path, &ConfigChange::Tool { name: "read".into() }).unwrap();
         persist_config_change(
             &path,
-            &ConfigChange::Path { path: "/refs".into(), read: true, write: false },
+            &ConfigChange::Tool {
+                name: "read".into(),
+            },
         )
         .unwrap();
         persist_config_change(
             &path,
-            &ConfigChange::Path { path: ".".into(), read: true, write: true },
+            &ConfigChange::Tool {
+                name: "read".into(),
+            },
+        )
+        .unwrap();
+        persist_config_change(
+            &path,
+            &ConfigChange::Path {
+                path: "/refs".into(),
+                read: true,
+                write: false,
+            },
+        )
+        .unwrap();
+        persist_config_change(
+            &path,
+            &ConfigChange::Path {
+                path: ".".into(),
+                read: true,
+                write: true,
+            },
         )
         .unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
         let role = parse(&path, &text).unwrap();
         // The tool grant landed once (membership dedup, not last-write-wins).
-        assert_eq!(role.tools.iter().filter(|t| *t == "read").count(), 1, "{text}");
+        assert_eq!(
+            role.tools.iter().filter(|t| *t == "read").count(),
+            1,
+            "{text}"
+        );
         // Path sugar + inline perms both decode back.
-        assert_eq!(role.paths["."], Perms { read: true, write: true }, "{text}");
-        assert_eq!(role.paths["/refs"], Perms { read: true, write: false }, "{text}");
+        assert_eq!(
+            role.paths["."],
+            Perms {
+                read: true,
+                write: true
+            },
+            "{text}"
+        );
+        assert_eq!(
+            role.paths["/refs"],
+            Perms {
+                read: true,
+                write: false
+            },
+            "{text}"
+        );
 
         std::fs::remove_file(&path).unwrap();
     }
@@ -693,24 +780,57 @@ mod tests {
     /// and inserts it when absent — the narrowing edit append-only KDL couldn't express.
     #[test]
     fn persist_scope_replaces_in_place_then_inserts_when_absent() {
-        let path = std::env::temp_dir()
-            .join(format!("efference-persist-scope-{}.toml", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "efference-persist-scope-{}.toml",
+            std::process::id()
+        ));
 
         // Replace in place: the inline comment on the scope line survives.
-        std::fs::write(&path, "scope = \"old\"  # the perimeter\n[commands]\ncargo = true\n")
-            .unwrap();
-        persist_config_change(&path, &ConfigChange::Scope { text: "narrowed".into() }).unwrap();
+        std::fs::write(
+            &path,
+            "scope = \"old\"  # the perimeter\n[commands]\ncargo = true\n",
+        )
+        .unwrap();
+        persist_config_change(
+            &path,
+            &ConfigChange::Scope {
+                text: "narrowed".into(),
+            },
+        )
+        .unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.contains(r#"scope = "narrowed""#), "scope replaced: {text}");
-        assert!(text.contains("# the perimeter"), "inline comment preserved: {text}");
-        assert!(text.contains("cargo = true"), "unrelated section intact: {text}");
-        assert_eq!(parse(&path, &text).unwrap().scope.as_deref(), Some("narrowed"));
+        assert!(
+            text.contains(r#"scope = "narrowed""#),
+            "scope replaced: {text}"
+        );
+        assert!(
+            text.contains("# the perimeter"),
+            "inline comment preserved: {text}"
+        );
+        assert!(
+            text.contains("cargo = true"),
+            "unrelated section intact: {text}"
+        );
+        assert_eq!(
+            parse(&path, &text).unwrap().scope.as_deref(),
+            Some("narrowed")
+        );
 
         // Insert when absent: a file with no scope gains one.
         std::fs::write(&path, "[commands]\ncargo = true\n").unwrap();
-        persist_config_change(&path, &ConfigChange::Scope { text: "fresh".into() }).unwrap();
+        persist_config_change(
+            &path,
+            &ConfigChange::Scope {
+                text: "fresh".into(),
+            },
+        )
+        .unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(parse(&path, &text).unwrap().scope.as_deref(), Some("fresh"), "{text}");
+        assert_eq!(
+            parse(&path, &text).unwrap().scope.as_deref(),
+            Some("fresh"),
+            "{text}"
+        );
 
         std::fs::remove_file(&path).unwrap();
     }
@@ -731,9 +851,17 @@ mod tests {
             changes,
             vec![
                 ConfigChange::Scope { text: "new".into() },
-                ConfigChange::Command { command: "git diff".into() },
-                ConfigChange::Tool { name: "read".into() },
-                ConfigChange::Path { path: ".".into(), read: true, write: true },
+                ConfigChange::Command {
+                    command: "git diff".into()
+                },
+                ConfigChange::Tool {
+                    name: "read".into()
+                },
+                ConfigChange::Path {
+                    path: ".".into(),
+                    read: true,
+                    write: true
+                },
             ],
         );
     }
@@ -750,13 +878,18 @@ mod tests {
     /// can't express removal — tightening waits for the next boot, which reloads the file as base).
     #[test]
     fn diff_emits_perm_changes_but_not_removals() {
-        let from = parse_str("[commands]\ncargo = true\nnpm = true\n[paths]\n\".\" = { read = true }\n");
+        let from =
+            parse_str("[commands]\ncargo = true\nnpm = true\n[paths]\n\".\" = { read = true }\n");
         let to = parse_str("[commands]\ncargo = true\n[paths]\n\".\" = true\n");
         let changes = diff_changes(&from, &to);
         // `.` gained write — emitted. `npm` was removed — not emitted (additive only).
         assert_eq!(
             changes,
-            vec![ConfigChange::Path { path: ".".into(), read: true, write: true }],
+            vec![ConfigChange::Path {
+                path: ".".into(),
+                read: true,
+                write: true
+            }],
         );
     }
 }

@@ -69,7 +69,11 @@ impl Client {
     /// turn reaches its next gate or completes — returning the resulting `/state` JSON. The
     /// "approve → read state" half of synchronous driving (backlog/permissions/proposal-lifecycle.md).
     pub async fn approve_wait(&self, call_id: &str, decision: &Approval) -> Result<String> {
-        self.post(&format!("/approvals/{call_id}?wait"), approval_body(decision)).await
+        self.post(
+            &format!("/approvals/{call_id}?wait"),
+            approval_body(decision),
+        )
+        .await
     }
 
     /// Block until the daemon next reaches a decision point — a gate is pending, or the loop is
@@ -197,7 +201,11 @@ fn approval_body(decision: &Approval) -> String {
         Approval::Redirect(message) => {
             serde_json::json!({ "decision": "redirect", "message": message })
         }
-        Approval::ConfigEdit { change, lifetime, note } => serde_json::json!({
+        Approval::ConfigEdit {
+            change,
+            lifetime,
+            note,
+        } => serde_json::json!({
             "decision": "config_edit",
             "change": change,
             "lifetime": lifetime,
@@ -212,7 +220,10 @@ fn approval_body(decision: &Approval) -> String {
 /// surfaces verbatim at the CLI).
 async fn read_2xx(mut conn: trillium_client::Conn, method: &str, path: &str) -> Result<String> {
     let ok = conn.status().is_some_and(|s| s.is_success());
-    let code = conn.status().map(|s| s.code().to_string()).unwrap_or_else(|| "no status".into());
+    let code = conn
+        .status()
+        .map(|s| s.code().to_string())
+        .unwrap_or_else(|| "no status".into());
     let body = conn
         .response_body()
         .read_string()
@@ -271,7 +282,8 @@ mod tests {
             })
             .post("/interrupt", |conn: Conn| async move {
                 *rec_of(&conn).interrupts.lock().unwrap() += 1;
-                conn.with_status(200).with_body(r#"{"status":"interrupted"}"#)
+                conn.with_status(200)
+                    .with_body(r#"{"status":"interrupted"}"#)
             })
             .get("/state", |conn: Conn| async move {
                 conn.with_status(200)
@@ -318,7 +330,10 @@ mod tests {
         assert!(state.contains(r#""last_seq":3"#));
 
         let log = client.log(Some(12)).await.unwrap();
-        assert!(log.contains("since=12"), "since should reach the daemon: {log}");
+        assert!(
+            log.contains("since=12"),
+            "since should reach the daemon: {log}"
+        );
 
         // The stub saw exactly what the client claims to have sent.
         let turns = rec.turns.lock().unwrap();

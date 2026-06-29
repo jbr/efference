@@ -66,7 +66,9 @@ impl Composer {
 
     /// True when the buffer holds no non-whitespace text.
     pub(super) fn is_empty(&self) -> bool {
-        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))
+        self.lines
+            .iter()
+            .all(|l| l.iter().all(|c| c.is_whitespace()))
     }
 
     /// The number of *visual* rows the buffer occupies once wrapped to the input
@@ -75,7 +77,9 @@ impl Composer {
     /// so sizing and painting can never disagree (the bug that panicked: an area
     /// sized to logical lines while render drew more wrapped rows).
     pub(super) fn line_count(&self, area_width: u16) -> usize {
-        self.visual_rows(Self::content_width(area_width)).len().max(1)
+        self.visual_rows(Self::content_width(area_width))
+            .len()
+            .max(1)
     }
 
     /// Columns available for text after the gutter chrome. Centralized so a future
@@ -99,17 +103,29 @@ impl Composer {
         let mut rows = Vec::new();
         for (line_idx, line) in self.lines.iter().enumerate() {
             if line.is_empty() || content_width == 0 {
-                rows.push(VisualRow { line: line_idx, start: 0, end: 0 });
+                rows.push(VisualRow {
+                    line: line_idx,
+                    start: 0,
+                    end: 0,
+                });
                 continue;
             }
             let text: String = line.iter().collect();
             let mut start = 0;
             for byte_break in wrap_points(&text, content_width) {
                 let char_break = text[..byte_break].chars().count();
-                rows.push(VisualRow { line: line_idx, start, end: char_break });
+                rows.push(VisualRow {
+                    line: line_idx,
+                    start,
+                    end: char_break,
+                });
                 start = char_break;
             }
-            rows.push(VisualRow { line: line_idx, start, end: line.len() });
+            rows.push(VisualRow {
+                line: line_idx,
+                start,
+                end: line.len(),
+            });
         }
         rows
     }
@@ -129,7 +145,11 @@ impl Composer {
             }
         }
         let i = rows.len().saturating_sub(1);
-        (i, rows.get(i).map_or(0, |vr| self.col.saturating_sub(vr.start)))
+        (
+            i,
+            rows.get(i)
+                .map_or(0, |vr| self.col.saturating_sub(vr.start)),
+        )
     }
 
     /// The current text (lines joined with `\n`).
@@ -394,7 +414,10 @@ impl Composer {
         for &ch in &self.lines[vr.line][vr.start..vr.start + cursor_off] {
             cursor_x += ch.width().unwrap_or(0).max(1) as u16;
         }
-        Position::new(cursor_x.min(area.right().saturating_sub(1)), area.y + cursor_screen_row)
+        Position::new(
+            cursor_x.min(area.right().saturating_sub(1)),
+            area.y + cursor_screen_row,
+        )
     }
 }
 

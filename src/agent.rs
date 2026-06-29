@@ -21,11 +21,11 @@ use crate::daemon::{Shared, StreamDelta};
 use crate::distill::{BgVerdict, Distiller};
 use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
-use crate::policy::{self, Verdict};
 use crate::log::{
-    ConfigChange, ContentBlock, Disposition, ConfigEdit, EditState, Lifetime, Mark, MarkKind,
+    ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Lifetime, Mark, MarkKind,
     Notification, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
 };
+use crate::policy::{self, Verdict};
 use crate::project::place_trailing_cache_breakpoint;
 use crate::spotter::Spotter;
 use crate::supervisor;
@@ -53,10 +53,12 @@ fn supervisor_tool_result(shared: &Arc<Shared>, call: &ToolCall) -> Option<RawRe
         supervisor::LIST => Some(ok(shared.bg_list_text())),
         supervisor::CHECK_INBOX => Some(ok(shared.inbox_summary())),
         supervisor::READ => Some(match handle() {
-            Some(h) => match shared.bg_read_since(h, call.input.get("cursor").and_then(Value::as_u64)) {
-                Some(text) => ok(text),
-                None => err(format!("no background process {h}")),
-            },
+            Some(h) => {
+                match shared.bg_read_since(h, call.input.get("cursor").and_then(Value::as_u64)) {
+                    Some(text) => ok(text),
+                    None => err(format!("no background process {h}")),
+                }
+            }
             None => err("read_process requires a `handle`".into()),
         }),
         supervisor::KILL => Some(match handle() {
@@ -71,10 +73,16 @@ fn supervisor_tool_result(shared: &Arc<Shared>, call: &ToolCall) -> Option<RawRe
 }
 
 fn ok(content: String) -> RawResult {
-    RawResult { content, is_error: false }
+    RawResult {
+        content,
+        is_error: false,
+    }
 }
 fn err(content: String) -> RawResult {
-    RawResult { content, is_error: true }
+    RawResult {
+        content,
+        is_error: true,
+    }
 }
 
 /// Hard cap on a single tool result's bytes (defense in depth). The fork peek caps
@@ -170,7 +178,9 @@ async fn run_idle_triage<D: Distiller>(
         return Ok(false);
     }
 
-    let triage = distiller.triage(client, &entries, &shown, &background).await;
+    let triage = distiller
+        .triage(client, &entries, &shown, &background)
+        .await;
     if let Some(u) = triage.usage {
         shared.record_request(u);
     }
@@ -185,7 +195,11 @@ async fn run_idle_triage<D: Distiller>(
                 if let Some((source, body)) = shared.bg_pin_snapshot(&handle) {
                     let seq = shared.append(
                         *turn,
-                        Payload::Ambient(Notification { source, body, slot: Some(handle) }),
+                        Payload::Ambient(Notification {
+                            source,
+                            body,
+                            slot: Some(handle),
+                        }),
                     )?;
                     inbox.push((seq, Disposition::Pin));
                     escalate = true;
@@ -220,7 +234,10 @@ fn is_background_bash(call: &ToolCall) -> bool {
 
 /// The `command` of a background-bash call, if present.
 fn background_command(call: &ToolCall) -> Option<String> {
-    call.input.get("command").and_then(Value::as_str).map(str::to_string)
+    call.input
+        .get("command")
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 /// A `tool_result` standing in for a call that didn't run (aborted). Every
@@ -246,7 +263,8 @@ fn rejected(call: &ToolCall) -> Payload {
     Payload::ToolResult {
         call_id: call.id.clone(),
         raw: RawResult {
-            content: "Not run — the user replied instead of approving; see their next message.".into(),
+            content: "Not run — the user replied instead of approving; see their next message."
+                .into(),
             is_error: true,
         },
         wire: WireState::Raw,
@@ -334,7 +352,10 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             let u = &completion.usage;
             eprintln!(
                 "[usage: in {} · out {} · cache read {} · cache write {}]",
-                u.input_tokens, u.output_tokens, u.cache_read_input_tokens, u.cache_creation_input_tokens
+                u.input_tokens,
+                u.output_tokens,
+                u.cache_read_input_tokens,
+                u.cache_creation_input_tokens
             );
             shared.record_request(completion.usage.clone());
             shared.append(turn, completion.assistant)?;
@@ -366,29 +387,41 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 // grant so far (backlog/permissions/config-edit.md). A prior amendment can
                 // promote this very call into the fast-path; the spotter sees the same scope.
                 let role = shared.effective_config();
-                let approval = match policy::classify(&role, call) {
-                    Verdict::Clear => Approval::Approve,
-                    Verdict::Gate => {
-                        let spotting = spotter.assess(&role, call).await;
-                        if let Some(u) = spotting.usage {
-                            shared.record_request(u);
-                        }
-                        let stance = spotting.read.stance;
-                        shared.append(
-                            turn,
-                            Payload::Spot(Spot {
-                                call_id: call.id.clone(),
-                                stance,
-                                reason: spotting.read.reason,
-                                origin: spotting.origin,
-                            }),
-                        )?;
-                        match stance {
-                            // Clear: auto-approve, no human. Watch/Gate both route to
-                            // the human gate for now — the watch-window that gives
-                            // Watch its own intervention latency is a later unit.
-                            Stance::Clear => Approval::Approve,
-                            Stance::Watch | Stance::Gate => frontend.approve(call).await,
+                // The session's own config file is its policy *interface*: a write to it is a
+                // proposal that must always reach the operator — never auto-cleared by a path grant,
+                // never spotter-cleared (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+                // It bypasses the whole cascade straight to the human gate; on approval the write
+                // lands and fs-watch folds the diff into effective policy.
+                let config_write = shared
+                    .config_path()
+                    .is_some_and(|cfg| policy::is_config_write(call, cfg));
+                let approval = if config_write {
+                    frontend.approve(call).await
+                } else {
+                    match policy::classify(&role, call) {
+                        Verdict::Clear => Approval::Approve,
+                        Verdict::Gate => {
+                            let spotting = spotter.assess(&role, call).await;
+                            if let Some(u) = spotting.usage {
+                                shared.record_request(u);
+                            }
+                            let stance = spotting.read.stance;
+                            shared.append(
+                                turn,
+                                Payload::Spot(Spot {
+                                    call_id: call.id.clone(),
+                                    stance,
+                                    reason: spotting.read.reason,
+                                    origin: spotting.origin,
+                                }),
+                            )?;
+                            match stance {
+                                // Clear: auto-approve, no human. Watch/Gate both route to
+                                // the human gate for now — the watch-window that gives
+                                // Watch its own intervention latency is a later unit.
+                                Stance::Clear => Approval::Approve,
+                                Stance::Watch | Stance::Gate => frontend.approve(call).await,
+                            }
                         }
                     }
                 };
@@ -397,9 +430,11 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 // *this* call against the new policy. The call runs only if the changed rule now
                 // clears it — it never rides along unchecked.
                 let approval = match approval {
-                    Approval::ConfigEdit { change, lifetime, note } => {
-                        commit_config_edit(&shared, turn, call, change, lifetime, note)?
-                    }
+                    Approval::ConfigEdit {
+                        change,
+                        lifetime,
+                        note,
+                    } => commit_config_edit(&shared, turn, call, change, lifetime, note)?,
                     other => other,
                 };
                 match approval {
@@ -412,13 +447,19 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         let upto = consolidate::extent(&shared.snapshot());
                         shared.append(
                             turn,
-                            Payload::Mark(Mark { kind: MarkKind::Boundary { upto }, note }),
+                            Payload::Mark(Mark {
+                                kind: MarkKind::Boundary { upto },
+                                note,
+                            }),
                         )?;
                         shared.append(
                             turn,
                             Payload::ToolResult {
                                 call_id: call.id.clone(),
-                                raw: RawResult { content: "consolidated".into(), is_error: false },
+                                raw: RawResult {
+                                    content: "consolidated".into(),
+                                    is_error: false,
+                                },
                                 wire: WireState::Raw,
                             },
                         )?;
@@ -662,20 +703,28 @@ mod tests {
         use crate::log::{ConfigChange, Lifetime};
         let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
         let call = bash_call("npm install");
-        assert_eq!(policy::classify(&shared.effective_config(), &call), Verdict::Gate);
+        assert_eq!(
+            policy::classify(&shared.effective_config(), &call),
+            Verdict::Gate
+        );
 
         let approval = commit_config_edit(
             &shared,
             0,
             &call,
-            ConfigChange::Command { command: "npm".into() },
+            ConfigChange::Command {
+                command: "npm".into(),
+            },
             Lifetime::Session,
             "ok".into(),
         )
         .unwrap();
         assert_eq!(approval, Approval::Approve);
         // The policy is now amended for any future call too.
-        assert_eq!(policy::classify(&shared.effective_config(), &call), Verdict::Clear);
+        assert_eq!(
+            policy::classify(&shared.effective_config(), &call),
+            Verdict::Clear
+        );
     }
 
     /// The invariant: a grant that does *not* cover the gated call still amends the policy,
@@ -690,12 +739,17 @@ mod tests {
             &shared,
             0,
             &call,
-            ConfigChange::Tool { name: "read".into() }, // unrelated to the bash call
+            ConfigChange::Tool {
+                name: "read".into(),
+            }, // unrelated to the bash call
             Lifetime::Session,
             "unrelated".into(),
         )
         .unwrap();
-        assert!(matches!(approval, Approval::Redirect(_)), "uncovered call stays gated");
+        assert!(
+            matches!(approval, Approval::Redirect(_)),
+            "uncovered call stays gated"
+        );
         // The change still landed — legislation happens regardless of the current call.
         assert!(shared.effective_config().tools.contains("read"));
     }
@@ -714,9 +768,18 @@ mod tests {
         let capped = cap_tool_result(&call("search"), ok(huge));
         assert!(capped.is_error, "over-cap result must be a hard error");
         // The result no longer carries the megabytes; it carries the explanation + head.
-        assert!(capped.content.len() < 4096, "the error is small, not the raw payload");
-        assert!(capped.content.contains("search"), "names the offending tool");
-        assert!(capped.content.contains("over the"), "states it crossed the limit");
+        assert!(
+            capped.content.len() < 4096,
+            "the error is small, not the raw payload"
+        );
+        assert!(
+            capped.content.contains("search"),
+            "names the offending tool"
+        );
+        assert!(
+            capped.content.contains("over the"),
+            "states it crossed the limit"
+        );
     }
 
     /// The head is cut on a char boundary, never mid-codepoint (it would panic / produce

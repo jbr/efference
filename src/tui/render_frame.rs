@@ -119,7 +119,10 @@ impl<'a> InteractiveState<'a> {
         // composing so the user sees where they're typing.
         for y in 0..input_area.height {
             for x in 0..input_area.width {
-                if let Some(cell) = frame.buffer_mut().cell_mut((input_area.x + x, input_area.y + y)) {
+                if let Some(cell) = frame
+                    .buffer_mut()
+                    .cell_mut((input_area.x + x, input_area.y + y))
+                {
                     cell.reset();
                     cell.set_style(self.theme.document_bg_style);
                 }
@@ -173,9 +176,15 @@ impl<'a> InteractiveState<'a> {
                 fmt_secs(p.idle_secs)
             );
             let last_line = p.tail.lines().next_back().unwrap_or("");
-            let col = put_cols(buf, area, y, 1, &header, self.theme.breadcrumb_current_style);
+            let col = put_cols(
+                buf,
+                area,
+                y,
+                1,
+                &header,
+                self.theme.breadcrumb_current_style,
+            );
             put_cols(buf, area, y, col, last_line, self.theme.muted_style);
         }
     }
-
 }

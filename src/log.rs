@@ -281,7 +281,11 @@ pub enum ConfigChange {
     Command { command: String },
     /// Set a filesystem subtree's perms: `path` and everything beneath it (`write` implies
     /// `read`, as in the config). **Session-visible** — moving the spatial perimeter notifies.
-    Path { path: String, read: bool, write: bool },
+    Path {
+        path: String,
+        read: bool,
+        write: bool,
+    },
     /// Grant a structured-tool name: add `name` to the `tools` set.
     Tool { name: String },
     /// Replace the session **scope** (the perimeter prose). **Session-visible** — the boot

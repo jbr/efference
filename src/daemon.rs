@@ -26,9 +26,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_lite::Stream;
-use serde::{Deserialize, Serialize};
 use notify_debouncer_full::notify::RecursiveMode;
 use notify_debouncer_full::{DebounceEventResult, new_debouncer};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::process::Command;
 use tokio::sync::{Notify, broadcast, mpsc, oneshot};
@@ -38,12 +38,12 @@ use trillium_sse::{Eventable, SseConnExt};
 
 use crate::agent;
 use crate::api::{Client, Error, ToolChoice, Usage};
+use crate::config::{ConfigSource, LoadedConfig};
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
 use crate::log::{CallId, EditState, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{ApiMessage, place_trailing_cache_breakpoint, project};
-use crate::config::{LoadedConfig, ConfigSource};
 use crate::spotter::Spotter;
 use crate::supervisor::{BgView, Supervisor};
 use crate::tools::Toolbox;
@@ -223,10 +223,7 @@ impl Shared {
 
     /// Build the shared state under a resolved role and hand back the turn-inbox
     /// receiver for the loop.
-    pub fn with_role(
-        log: Log,
-        role: LoadedConfig,
-    ) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
+    pub fn with_role(log: Log, role: LoadedConfig) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
         let (turns_tx, turns_rx) = mpsc::unbounded_channel();
         // Bounded ring: a consumer that falls this far behind drops the oldest
         // deltas (a `Lagged` on `recv`) rather than stalling the loop — the log is
@@ -305,9 +302,7 @@ impl Shared {
         // capture its `(state, change)` before the payload moves into the log, then act on it
         // *after* a successful append, so a failed write never edits state. Cheap clone, edits only.
         let edit = match &payload {
-            Payload::ConfigEdit(edit) => {
-                Some((edit.state, edit.change.clone(), edit.resolves))
-            }
+            Payload::ConfigEdit(edit) => Some((edit.state, edit.change.clone(), edit.resolves)),
             _ => None,
         };
         let seq = self.log.lock().unwrap().append(turn, payload)?;
@@ -340,10 +335,10 @@ impl Shared {
                 // A proposal is inert in the effective config: it joins the pending-proposals queue,
                 // addressed by its own `seq`, awaiting an orchestrator's commit/cancel.
                 EditState::Proposed => {
-                    self.proposals.lock().unwrap().push(PendingProposal {
-                        seq,
-                        change,
-                    });
+                    self.proposals
+                        .lock()
+                        .unwrap()
+                        .push(PendingProposal { seq, change });
                 }
                 // A cancel drops the referenced proposal from the queue; the effective config
                 // never moved.
@@ -419,7 +414,13 @@ impl Shared {
     /// backlog/permissions/proposal-lifecycle.md). A `ConfigEdit` projects to nothing, so its turn
     /// is pure audit grouping; attaching it to the in-flight turn is the honest placement.
     fn latest_turn(&self) -> Turn {
-        self.log.lock().unwrap().entries().last().map(|e| e.turn).unwrap_or(0)
+        self.log
+            .lock()
+            .unwrap()
+            .entries()
+            .last()
+            .map(|e| e.turn)
+            .unwrap_or(0)
     }
 
     /// The role config file path, if the role resolved from one (`None` for the built-in
@@ -436,7 +437,12 @@ impl Shared {
     /// if the log hasn't reached it yet. The `/events` tail reads one entry at a
     /// time, so it never clones the whole log.
     fn entry_at(&self, seq: u64) -> Option<LogEntry> {
-        self.log.lock().unwrap().entries().get(seq as usize).cloned()
+        self.log
+            .lock()
+            .unwrap()
+            .entries()
+            .get(seq as usize)
+            .cloned()
     }
 
     fn submit_turn(&self, text: String) {
@@ -544,11 +550,18 @@ impl Shared {
             inbox.pending.retain(|n| n.id != old);
         }
         if let Some(s) = &slot {
-            inbox.pending.retain(|n| n.slot.as_deref() != Some(s.as_str()));
+            inbox
+                .pending
+                .retain(|n| n.slot.as_deref() != Some(s.as_str()));
         }
         let id = inbox.next_id;
         inbox.next_id += 1;
-        inbox.pending.push(PendingNotification { id, source, body, slot });
+        inbox.pending.push(PendingNotification {
+            id,
+            source,
+            body,
+            slot,
+        });
         drop(inbox);
         // Wake an idle agent for a standalone triage (docs/inbox.md — wake-on-notification).
         self.notified.notify_waiters();
@@ -600,7 +613,11 @@ impl Shared {
         inbox
             .pending
             .drain(..)
-            .map(|p| crate::log::Notification { source: p.source, body: p.body, slot: p.slot })
+            .map(|p| crate::log::Notification {
+                source: p.source,
+                body: p.body,
+                slot: p.slot,
+            })
             .collect()
     }
 
@@ -689,7 +706,10 @@ impl Shared {
         if pending.is_empty() && active.is_empty() {
             return "Inbox empty — no pending notifications.".to_string();
         }
-        let mut out = format!("Inbox: {} pending notification(s).", pending.len() + active.len());
+        let mut out = format!(
+            "Inbox: {} pending notification(s).",
+            pending.len() + active.len()
+        );
         for n in &active {
             out.push_str(&format!("\n[{}] {} · {}", n.seq, n.source, n.body));
         }
@@ -768,7 +788,10 @@ impl Shared {
             .paths
             .iter()
             .map(|(p, perms)| {
-                (p.clone(), serde_json::json!({ "read": perms.read, "write": perms.write }))
+                (
+                    p.clone(),
+                    serde_json::json!({ "read": perms.read, "write": perms.write }),
+                )
             })
             .collect();
         serde_json::json!({
@@ -950,9 +973,9 @@ fn router() -> Router {
                         note: decision.note.unwrap_or_default(),
                     },
                     None => {
-                        return conn.with_status(400).with_body(
-                            r#"{"error":"config_edit decision requires a change"}"#,
-                        );
+                        return conn
+                            .with_status(400)
+                            .with_body(r#"{"error":"config_edit decision requires a change"}"#);
                     }
                 },
                 other => {
@@ -979,7 +1002,8 @@ fn router() -> Router {
                 return conn.with_status(500).with_body(MISSING_STATE);
             };
             shared.interrupt();
-            conn.with_status(200).with_body(r#"{"status":"interrupted"}"#)
+            conn.with_status(200)
+                .with_body(r#"{"status":"interrupted"}"#)
         })
         // Enqueue an ambient notification into the inbox (docs/inbox.md). 202 — it waits
         // for the next triage gate (Slice C); a client watches /state for the inbox.
@@ -1263,7 +1287,10 @@ async fn config_watch_loop(shared: Arc<Shared>, path: PathBuf) {
     }) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("[config-watch: could not start watcher for {}: {e}]", path.display());
+            eprintln!(
+                "[config-watch: could not start watcher for {}: {e}]",
+                path.display()
+            );
             return;
         }
     };
@@ -1286,7 +1313,10 @@ async fn config_watch_loop(shared: Arc<Shared>, path: PathBuf) {
         // We watch the whole dir; react only to events that touch our file. Compare by file name —
         // robust to relative/absolute path differences in how the backend reports the event path.
         let touches = events.iter().any(|ev| {
-            ev.event.paths.iter().any(|p| p.file_name().map(|n| n.to_os_string()) == target)
+            ev.event
+                .paths
+                .iter()
+                .any(|p| p.file_name().map(|n| n.to_os_string()) == target)
         });
         if touches {
             reload_and_emit(&shared, &path);
@@ -1359,7 +1389,10 @@ async fn keepalive_loop(client: Arc<Client>, shared: Arc<Shared>, tools: Vec<Val
         // entry instead of refreshing the live one); `max_tokens: 0` reads it.
         let mut messages = shared.project_messages();
         place_trailing_cache_breakpoint(&mut messages);
-        match client.keepalive(&messages, &tools, ToolChoice::auto()).await {
+        match client
+            .keepalive(&messages, &tools, ToolChoice::auto())
+            .await
+        {
             Ok(usage) => {
                 eprintln!(
                     "[keepalive: cache read {} — TTL refreshed]",
@@ -1383,7 +1416,9 @@ fn parse_since(query: &str) -> Option<u64> {
 /// Whether a request asked to block until settled (`?wait`, `?wait=1`, `?wait=true`) — the
 /// long-poll opt-in on `/turn` and `/approvals` (backlog/permissions/proposal-lifecycle.md).
 fn wants_wait(query: &str) -> bool {
-    query.split('&').any(|kv| matches!(kv, "wait" | "wait=1" | "wait=true"))
+    query
+        .split('&')
+        .any(|kv| matches!(kv, "wait" | "wait=1" | "wait=true"))
 }
 
 /// Cap on a `/settle` (or `?wait`) long-poll: past this, return the current state regardless, so a
@@ -1558,11 +1593,20 @@ mod tests {
             role: crate::config::Config {
                 scope: Some("stay in the repo".into()),
                 watch_for: vec!["network egress".into()],
-                commands: ["cargo", "git diff"].iter().map(|s| s.to_string()).collect(),
-                tools: ["read"].iter().map(|s| s.to_string()).collect(),
-                paths: [(".".to_string(), crate::config::Perms { read: true, write: true })]
-                    .into_iter()
+                commands: ["cargo", "git diff"]
+                    .iter()
+                    .map(|s| s.to_string())
                     .collect(),
+                tools: ["read"].iter().map(|s| s.to_string()).collect(),
+                paths: [(
+                    ".".to_string(),
+                    crate::config::Perms {
+                        read: true,
+                        write: true,
+                    },
+                )]
+                .into_iter()
+                .collect(),
                 ..Default::default()
             },
             source: ConfigSource::Path("efference.toml".into()),
@@ -1571,16 +1615,28 @@ mod tests {
         let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
         assert_eq!(v["role"]["source"], "efference.toml");
         assert_eq!(v["role"]["scope"], "stay in the repo");
-        assert_eq!(v["role"]["watch_for"], serde_json::json!(["network egress"]));
-        assert_eq!(v["role"]["commands"], serde_json::json!(["cargo", "git diff"]));
+        assert_eq!(
+            v["role"]["watch_for"],
+            serde_json::json!(["network egress"])
+        );
+        assert_eq!(
+            v["role"]["commands"],
+            serde_json::json!(["cargo", "git diff"])
+        );
         assert_eq!(v["role"]["tools"], serde_json::json!(["read"]));
-        assert_eq!(v["role"]["paths"]["."], serde_json::json!({ "read": true, "write": true }));
+        assert_eq!(
+            v["role"]["paths"]["."],
+            serde_json::json!({ "read": true, "write": true })
+        );
 
         // The fix: a *committed* config edit moves the reported perimeter (the boot config did not
         // list `npm`; after the edit, `/state` does) — `/state` reflects effective, not base.
         shared.append(0, allow_grant("npm")).unwrap();
         let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
-        assert_eq!(v["role"]["commands"], serde_json::json!(["cargo", "git diff", "npm"]));
+        assert_eq!(
+            v["role"]["commands"],
+            serde_json::json!(["cargo", "git diff", "npm"])
+        );
     }
 
     /// One bash `ToolCall`, for exercising the effective-policy cache through `classify`.
@@ -1593,7 +1649,9 @@ mod tests {
     }
 
     fn allow_grant(program: &str) -> Payload {
-        committed_edit(crate::log::ConfigChange::Command { command: program.into() })
+        committed_edit(crate::log::ConfigChange::Command {
+            command: program.into(),
+        })
     }
 
     /// A committed config edit (the synchronous/direct commit path) as a `Payload` — no prior
@@ -1636,24 +1694,42 @@ mod tests {
         let (shared, _rx) = Shared::new(Log::in_memory());
         assert!(!shared.has_pending_notifications());
         shared
-            .append(0, edit(crate::log::ConfigChange::Scope { text: "stay in src/".into() }))
+            .append(
+                0,
+                edit(crate::log::ConfigChange::Scope {
+                    text: "stay in src/".into(),
+                }),
+            )
             .unwrap();
-        assert!(shared.has_pending_notifications(), "scope edit is session-visible");
+        assert!(
+            shared.has_pending_notifications(),
+            "scope edit is session-visible"
+        );
 
         // A path edit notifies.
         let (shared, _rx) = Shared::new(Log::in_memory());
         shared
             .append(
                 0,
-                edit(crate::log::ConfigChange::Path { path: ".".into(), read: true, write: true }),
+                edit(crate::log::ConfigChange::Path {
+                    path: ".".into(),
+                    read: true,
+                    write: true,
+                }),
             )
             .unwrap();
-        assert!(shared.has_pending_notifications(), "path edit is session-visible");
+        assert!(
+            shared.has_pending_notifications(),
+            "path edit is session-visible"
+        );
 
         // A command edit does not — its effect reaches the model only through the classifier.
         let (shared, _rx) = Shared::new(Log::in_memory());
         shared.append(0, allow_grant("npm")).unwrap();
-        assert!(!shared.has_pending_notifications(), "command edit is classifier-only");
+        assert!(
+            !shared.has_pending_notifications(),
+            "command edit is classifier-only"
+        );
     }
 
     /// A `Proposed` edit as a `Payload`, for driving the lifecycle in tests.
@@ -1679,7 +1755,12 @@ mod tests {
 
         // Propose: inert in policy, but queued.
         let proposal_seq = shared
-            .append(0, proposed_edit(crate::log::ConfigChange::Command { command: "npm".into() }))
+            .append(
+                0,
+                proposed_edit(crate::log::ConfigChange::Command {
+                    command: "npm".into(),
+                }),
+            )
             .unwrap();
         assert_eq!(
             classify(&shared.effective_config(), &call),
@@ -1688,7 +1769,10 @@ mod tests {
         );
         let queued = shared.pending_proposals();
         assert_eq!(queued.len(), 1);
-        assert_eq!(queued[0].seq, proposal_seq, "the proposal is addressed by its own seq");
+        assert_eq!(
+            queued[0].seq, proposal_seq,
+            "the proposal is addressed by its own seq"
+        );
 
         // Commit it (referencing the proposal): the change applies and the queue drains.
         shared
@@ -1697,14 +1781,19 @@ mod tests {
                 Payload::ConfigEdit(crate::log::ConfigEdit {
                     state: EditState::Committed,
                     resolves: Some(proposal_seq),
-                    change: crate::log::ConfigChange::Command { command: "npm".into() },
+                    change: crate::log::ConfigChange::Command {
+                        command: "npm".into(),
+                    },
                     lifetime: crate::log::Lifetime::Session,
                     note: String::new(),
                 }),
             )
             .unwrap();
         assert_eq!(classify(&shared.effective_config(), &call), Verdict::Clear);
-        assert!(shared.pending_proposals().is_empty(), "commit drains the proposal");
+        assert!(
+            shared.pending_proposals().is_empty(),
+            "commit drains the proposal"
+        );
     }
 
     /// The fs-watch initiator's core (backlog/permissions/proposal-lifecycle.md): reloading an
@@ -1715,22 +1804,43 @@ mod tests {
     #[test]
     fn reload_emits_committed_edits_for_file_deltas() {
         use crate::policy::{Verdict, classify};
-        let path = std::env::temp_dir().join(format!("efference-watch-{}.toml", std::process::id()));
-        std::fs::write(&path, "scope = \"stay in src/\"\n[commands]\ncargo = true\n").unwrap();
+        let path =
+            std::env::temp_dir().join(format!("efference-watch-{}.toml", std::process::id()));
+        std::fs::write(
+            &path,
+            "scope = \"stay in src/\"\n[commands]\ncargo = true\n",
+        )
+        .unwrap();
 
         let (shared, _rx) = Shared::new(Log::in_memory());
-        assert_eq!(classify(&shared.effective_config(), &bash_call("cargo build")), Verdict::Gate);
+        assert_eq!(
+            classify(&shared.effective_config(), &bash_call("cargo build")),
+            Verdict::Gate
+        );
 
         // First reload folds the file's grants into effective policy and notifies on the scope.
         reload_and_emit(&shared, &path);
-        assert_eq!(classify(&shared.effective_config(), &bash_call("cargo build")), Verdict::Clear);
-        assert_eq!(shared.effective_config().scope.as_deref(), Some("stay in src/"));
-        assert!(shared.has_pending_notifications(), "scope delta is session-visible");
+        assert_eq!(
+            classify(&shared.effective_config(), &bash_call("cargo build")),
+            Verdict::Clear
+        );
+        assert_eq!(
+            shared.effective_config().scope.as_deref(),
+            Some("stay in src/")
+        );
+        assert!(
+            shared.has_pending_notifications(),
+            "scope delta is session-visible"
+        );
 
         // A second reload against the unchanged file diffs to nothing — the idempotent echo.
         let before = shared.log.lock().unwrap().entries().len();
         reload_and_emit(&shared, &path);
-        assert_eq!(shared.log.lock().unwrap().entries().len(), before, "no-op echo appends nothing");
+        assert_eq!(
+            shared.log.lock().unwrap().entries().len(),
+            before,
+            "no-op echo appends nothing"
+        );
 
         std::fs::remove_file(&path).unwrap();
     }
@@ -1743,7 +1853,12 @@ mod tests {
         let (shared, _rx) = Shared::new(Log::in_memory());
 
         let proposal_seq = shared
-            .append(0, proposed_edit(crate::log::ConfigChange::Command { command: "npm".into() }))
+            .append(
+                0,
+                proposed_edit(crate::log::ConfigChange::Command {
+                    command: "npm".into(),
+                }),
+            )
             .unwrap();
         assert_eq!(shared.pending_proposals().len(), 1);
 
@@ -1753,13 +1868,18 @@ mod tests {
                 Payload::ConfigEdit(crate::log::ConfigEdit {
                     state: EditState::Cancelled,
                     resolves: Some(proposal_seq),
-                    change: crate::log::ConfigChange::Command { command: "npm".into() },
+                    change: crate::log::ConfigChange::Command {
+                        command: "npm".into(),
+                    },
                     lifetime: crate::log::Lifetime::Session,
                     note: String::new(),
                 }),
             )
             .unwrap();
-        assert!(shared.pending_proposals().is_empty(), "cancel drains the proposal");
+        assert!(
+            shared.pending_proposals().is_empty(),
+            "cancel drains the proposal"
+        );
         assert_eq!(
             classify(&shared.effective_config(), &call),
             Verdict::Gate,
@@ -1777,7 +1897,10 @@ mod tests {
 
         // Submitted but not yet dequeued — busy (the submit-race guard via the queued count).
         shared.submit_turn("hi".into());
-        assert!(!shared.is_settled(), "a queued turn is busy before the loop sees it");
+        assert!(
+            !shared.is_settled(),
+            "a queued turn is busy before the loop sees it"
+        );
 
         // Dequeued, running mid-turn — still busy.
         shared.dequeued_turn();
@@ -1786,7 +1909,10 @@ mod tests {
         // A gate is a decision point — settled.
         let call = bash_call("npm install");
         let _gate = shared.register_pending(&call);
-        assert!(shared.is_settled(), "a pending gate is a settled decision point");
+        assert!(
+            shared.is_settled(),
+            "a pending gate is a settled decision point"
+        );
 
         // Resolving the gate while the turn continues — busy again.
         shared.resolve_approval(&call.id, Approval::Approve);
@@ -1794,7 +1920,10 @@ mod tests {
 
         // The loop parks — idle, settled.
         shared.parking();
-        assert!(shared.is_settled(), "a parked loop with nothing queued is settled");
+        assert!(
+            shared.is_settled(),
+            "a parked loop with nothing queued is settled"
+        );
     }
 
     /// `await_settled` blocks while the loop is busy and returns the moment it parks — and the
@@ -1811,7 +1940,10 @@ mod tests {
         };
         // Give the waiter a chance to register and confirm it's still blocked on a busy loop.
         tokio::time::sleep(Duration::from_millis(50)).await;
-        assert!(!waiter.is_finished(), "await_settled must block while the loop is busy");
+        assert!(
+            !waiter.is_finished(),
+            "await_settled must block while the loop is busy"
+        );
 
         // Parking settles it; the waiter wakes and returns.
         shared.parking();
@@ -1832,7 +1964,9 @@ mod tests {
         assert_eq!(d.lifetime, Some(crate::log::Lifetime::Persist));
         assert_eq!(
             d.change,
-            Some(crate::log::ConfigChange::Command { command: "cargo nextest".into() })
+            Some(crate::log::ConfigChange::Command {
+                command: "cargo nextest".into()
+            })
         );
     }
 
@@ -2019,16 +2153,29 @@ mod tests {
     #[test]
     fn inbox_supersedes_by_slot_and_dismisses() {
         let (shared, _turns_rx) = Shared::new(Log::in_memory());
-        let _a = shared.notify("test-watch".into(), "running 5min".into(), Some("bash#7".into()), None);
+        let _a = shared.notify(
+            "test-watch".into(),
+            "running 5min".into(),
+            Some("bash#7".into()),
+            None,
+        );
         let b = shared.notify("reviewer".into(), "nit at L40".into(), None, None);
         assert_eq!(shared.pending_notifications().len(), 2);
 
         // Same slot → replace, not append (the "running 5min" → "finished" case).
-        let _c = shared.notify("test-watch".into(), "finished".into(), Some("bash#7".into()), None);
+        let _c = shared.notify(
+            "test-watch".into(),
+            "finished".into(),
+            Some("bash#7".into()),
+            None,
+        );
         let pending = shared.pending_notifications();
         assert_eq!(pending.len(), 2, "slot supersession replaced, didn't add");
         assert!(pending.iter().any(|n| n.body == "finished"));
-        assert!(!pending.iter().any(|n| n.body == "running 5min"), "superseded entry gone");
+        assert!(
+            !pending.iter().any(|n| n.body == "running 5min"),
+            "superseded entry gone"
+        );
 
         // Explicit dismiss by id; a second dismiss of the same id is a no-op.
         assert!(shared.dismiss_notification(b));
@@ -2057,7 +2204,11 @@ mod tests {
         loop {
             let pending = shared.pending_notifications();
             if let Some(n) = pending.iter().find(|n| n.source == "bg#1") {
-                assert!(n.body.contains("exited 0"), "exit status in body: {}", n.body);
+                assert!(
+                    n.body.contains("exited 0"),
+                    "exit status in body: {}",
+                    n.body
+                );
                 assert!(
                     n.body.contains("hello") || n.body.contains("world"),
                     "final tail carried: {}",
@@ -2071,7 +2222,10 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         // Exited → no longer in the ambient show or the teardown set.
-        assert!(shared.bg_snapshot().is_empty(), "exited process off the peek");
+        assert!(
+            shared.bg_snapshot().is_empty(),
+            "exited process off the peek"
+        );
         shared.kill_all_bg(); // no-op (nothing running) — must not panic.
     }
 
@@ -2083,11 +2237,16 @@ mod tests {
         let (shared, _turns_rx) = Shared::new(Log::in_memory());
         shared.spawn_background("sleep 5".into()).expect("spawn");
         let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
-        let procs = v["processes"].as_array().expect("processes array on /state");
+        let procs = v["processes"]
+            .as_array()
+            .expect("processes array on /state");
         assert_eq!(procs.len(), 1);
         assert_eq!(procs[0]["handle"], "bg#1");
         assert_eq!(procs[0]["command"], "sleep 5");
-        assert!(procs[0]["running_secs"].is_u64(), "timing present: {procs:?}");
+        assert!(
+            procs[0]["running_secs"].is_u64(),
+            "timing present: {procs:?}"
+        );
         shared.kill_all_bg();
     }
 
@@ -2107,7 +2266,9 @@ mod tests {
         // Drain it (now "shown") → the queue is empty, so the wake blocks…
         let _ = shared.drain_inbox();
         assert!(
-            tokio::time::timeout(Duration::from_millis(150), shared.inbox_wake()).await.is_err(),
+            tokio::time::timeout(Duration::from_millis(150), shared.inbox_wake())
+                .await
+                .is_err(),
             "a drained notification must not keep waking the idle loop"
         );
 
@@ -2133,10 +2294,17 @@ mod tests {
         assert!(shared.kill_bg(&h), "kills a running process");
 
         // Inbox read: empty, then surfaces a posted notification.
-        assert!(shared.inbox_summary().contains("empty"), "{}", shared.inbox_summary());
+        assert!(
+            shared.inbox_summary().contains("empty"),
+            "{}",
+            shared.inbox_summary()
+        );
         shared.notify("ci".into(), "build failed".into(), None, None);
         let summary = shared.inbox_summary();
-        assert!(summary.contains("ci") && summary.contains("build failed"), "{summary}");
+        assert!(
+            summary.contains("ci") && summary.contains("build failed"),
+            "{summary}"
+        );
 
         shared.kill_all_bg();
     }
@@ -2180,7 +2348,12 @@ mod tests {
         // Dismissing the live one empties the inbox; dismissing the superseded id 404s.
         client.dismiss_notification(live_id).await.unwrap();
         let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
-        assert!(state["pending_notifications"].as_array().unwrap().is_empty());
+        assert!(
+            state["pending_notifications"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
         assert!(
             client.dismiss_notification(gone).await.is_err(),
             "the superseded id is gone → 404"
