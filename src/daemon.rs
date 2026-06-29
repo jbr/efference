@@ -40,7 +40,7 @@ use crate::frontend::{Approval, Frontend};
 use crate::log::{CallId, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{ApiMessage, place_trailing_cache_breakpoint, project};
-use crate::role::{LoadedRole, RoleSource};
+use crate::config::{LoadedConfig, ConfigSource};
 use crate::spotter::Spotter;
 use crate::supervisor::{BgView, Supervisor};
 use crate::tools::Toolbox;
@@ -140,20 +140,20 @@ pub struct Shared {
     /// immutable notification model would pile up stale snapshots). Pinned tails and
     /// exits *do* reach the durable log, but as `Ambient` notifications, not from here.
     supervisor: Mutex<Supervisor>,
-    /// The resolved role config and where it came from (backlog/permissions/role-config.md).
-    /// Read-only for the session's lifetime — the brief is already frozen into the
+    /// The resolved role config and where it came from (backlog/permissions/README.md).
+    /// Read-only for the session's lifetime — the scope is already frozen into the
     /// cached preamble; this copy backs the `GET /state` report ("which role am I?") and
     /// is where the cascade rungs (the prefix fast-path and the spotter) read the
-    /// allowlist, path grants, brief, and watch-for from. Immutable, so no lock.
-    role: LoadedRole,
-    /// The **effective** policy = the base `role` + the fold of every `Grant` appended so
-    /// far (backlog/permissions/petition-loop.md). Maintained incrementally in [`append`]
+    /// allowlist, path grants, scope, and watch-for from. Immutable, so no lock.
+    role: LoadedConfig,
+    /// The **effective** policy = the base `role` + the fold of every `ConfigEdit` appended so
+    /// far (backlog/permissions/config-edit.md). Maintained incrementally in [`append`]
     /// as grants land, so a gate reads current policy in O(1) without re-scanning the log.
     /// Behind a lock because grants mutate it mid-session (unlike the frozen base `role`);
     /// the gate takes an `Arc` clone, cheap and safe to hold across the spotter's await.
     ///
     /// [`append`]: Shared::append
-    effective: Mutex<Arc<crate::role::Role>>,
+    effective: Mutex<Arc<crate::config::Config>>,
 }
 
 /// Per-session cache/usage telemetry. `last_request_at` is an [`Instant`] (not
@@ -180,14 +180,14 @@ impl Shared {
     /// daemon uses [`Shared::with_role`]; this convenience keeps the many tests that
     /// don't exercise role config terse.
     pub fn new(log: Log) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
-        Self::with_role(log, LoadedRole::default())
+        Self::with_role(log, LoadedConfig::default())
     }
 
     /// Build the shared state under a resolved role and hand back the turn-inbox
     /// receiver for the loop.
     pub fn with_role(
         log: Log,
-        role: LoadedRole,
+        role: LoadedConfig,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
         let (turns_tx, turns_rx) = mpsc::unbounded_channel();
         // Bounded ring: a consumer that falls this far behind drops the oldest
@@ -198,7 +198,7 @@ impl Shared {
         // Fold any grants already in the log (a resumed session) into the initial effective
         // role; from here it's maintained incrementally on append. Computed before `log` is
         // moved into the struct.
-        let effective = Arc::new(crate::policy::effective_role(&role.role, log.entries()));
+        let effective = Arc::new(crate::policy::effective_config(&role.role, log.entries()));
         let shared = Arc::new(Self {
             log: Mutex::new(log),
             turns_tx,
@@ -259,18 +259,18 @@ impl Shared {
     /// Append to the log (durably) and wake SSE tailers. The single appender is
     /// the loop; handlers only read.
     pub fn append(&self, turn: Turn, payload: Payload) -> io::Result<Seq> {
-        // A `Grant` amends policy: capture its amendment before the payload moves into the
+        // A `ConfigEdit` amends policy: capture its amendment before the payload moves into the
         // log, then fold it into the effective role *after* a successful append, so a failed
-        // write never grants (backlog/permissions/petition-loop.md). Cheap clone, grants only.
+        // write never grants (backlog/permissions/config-edit.md). Cheap clone, grants only.
         let granted = match &payload {
-            Payload::Grant(grant) => Some(grant.amendment.clone()),
+            Payload::ConfigEdit(grant) => Some(grant.amendment.clone()),
             _ => None,
         };
         let seq = self.log.lock().unwrap().append(turn, payload)?;
         if let Some(amendment) = granted {
             let mut eff = self.effective.lock().unwrap();
             let mut role = (**eff).clone();
-            crate::policy::apply_amendment(&mut role, &amendment);
+            crate::policy::apply_config_edit(&mut role, &amendment);
             *eff = Arc::new(role);
         }
         self.appended.notify_waiters();
@@ -305,25 +305,25 @@ impl Shared {
     /// The resolved role's policy, for the loop's fast-path classifier
     /// (backlog/permissions/prefix-fastpath.md). Immutable for the session, so a borrow
     /// is fine — no lock.
-    pub fn role(&self) -> &crate::role::Role {
+    pub fn role(&self) -> &crate::config::Config {
         &self.role.role
     }
 
     /// The effective policy the cascade should consult: base role + the fold of every grant
-    /// appended so far (backlog/permissions/petition-loop.md). Returns an `Arc` clone of the
+    /// appended so far (backlog/permissions/config-edit.md). Returns an `Arc` clone of the
     /// incrementally-maintained role — O(1), and safe to hold across the spotter's await (a
     /// lock guard would not be). Falls back to the base if no grants have landed.
-    pub fn effective_role(&self) -> Arc<crate::role::Role> {
+    pub fn effective_config(&self) -> Arc<crate::config::Config> {
         self.effective.lock().unwrap().clone()
     }
 
     /// The role config file path, if the role resolved from one (`None` for the built-in
     /// default — nothing to persist to). Where a `Lifetime::Persist` grant is appended
-    /// (backlog/permissions/petition-loop.md).
+    /// (backlog/permissions/config-edit.md).
     pub fn config_path(&self) -> Option<&std::path::Path> {
         match &self.role.source {
-            RoleSource::Path(p) => Some(p),
-            RoleSource::Default => None,
+            ConfigSource::Path(p) => Some(p),
+            ConfigSource::Default => None,
         }
     }
 
@@ -590,15 +590,15 @@ impl Shared {
         .to_string()
     }
 
-    /// The role report for `GET /state` (backlog/permissions/role-config.md): the
+    /// The role report for `GET /state` (backlog/permissions/README.md): the
     /// resolved config `source` (the path, or `null` for the built-in default) so
     /// "which role am I running?" is never ambiguous, plus a terse summary of what is in
-    /// effect. The brief itself isn't surfaced here — it's already on the wire in the
+    /// effect. The scope itself isn't surfaced here — it's already on the wire in the
     /// preamble; this is the provenance, not the content.
     fn role_json(&self) -> Value {
         let source = match &self.role.source {
-            RoleSource::Default => Value::Null,
-            RoleSource::Path(p) => Value::String(p.display().to_string()),
+            ConfigSource::Default => Value::Null,
+            ConfigSource::Path(p) => Value::String(p.display().to_string()),
         };
         serde_json::json!({
             "source": source,
@@ -657,8 +657,8 @@ struct DecisionBody {
     decision: String,
     #[serde(default)]
     message: Option<String>,
-    /// The grant payload (`decision: "grant"` only) — the additive amendment, its lifetime
-    /// (`session`/`persist`, default `session`), and a rationale note (backlog/permissions/petition-loop.md).
+    /// The grant payload (`decision: "config_edit"` only) — the additive amendment, its lifetime
+    /// (`session`/`persist`, default `session`), and a rationale note (backlog/permissions/config-edit.md).
     #[serde(default)]
     amendment: Option<crate::log::Amendment>,
     #[serde(default)]
@@ -727,15 +727,15 @@ fn router() -> Router {
                 "approve" => Approval::Approve,
                 "abort" => Approval::Abort,
                 "redirect" => Approval::Redirect(decision.message.unwrap_or_default()),
-                "grant" => match decision.amendment {
-                    Some(amendment) => Approval::Grant {
+                "config_edit" => match decision.amendment {
+                    Some(amendment) => Approval::ConfigEdit {
                         amendment,
                         lifetime: decision.lifetime.unwrap_or(crate::log::Lifetime::Session),
                         note: decision.note.unwrap_or_default(),
                     },
                     None => {
                         return conn.with_status(400).with_body(
-                            r#"{"error":"grant decision requires an amendment"}"#,
+                            r#"{"error":"config_edit decision requires an amendment"}"#,
                         );
                     }
                 },
@@ -866,7 +866,7 @@ fn log_event(entry: &LogEntry) -> LogEvent {
         Payload::Triage(_) => "triage",
         Payload::Ambient(_) => "ambient",
         Payload::Spot(_) => "spot",
-        Payload::Grant(_) => "grant",
+        Payload::ConfigEdit(_) => "config_edit",
     };
     LogEvent {
         id: entry.seq.to_string(),
@@ -1064,7 +1064,7 @@ pub async fn serve<D: Distiller, S: Spotter>(
     spotter: S,
     log: Log,
     socket: PathBuf,
-    role: LoadedRole,
+    role: LoadedConfig,
 ) -> Result<(), Error> {
     let (shared, turns) = Shared::with_role(log, role);
     // Share the client between the loop and the keepalive task. `tools` is computed
@@ -1185,13 +1185,13 @@ mod tests {
         assert!(v["usage"]["seconds_since_last_request"].is_u64());
     }
 
-    /// `GET /state` reports the resolved role (backlog/permissions/role-config.md): a
+    /// `GET /state` reports the resolved role (backlog/permissions/README.md): a
     /// `null` source for the built-in default, and the path plus a content summary
     /// (`has_brief`, `allow_count`) when a config is in effect — so "which role am I
     /// running?" is never ambiguous.
     #[test]
     fn state_reports_role_source() {
-        // Default role (no config file) → null source, no brief, empty allowlist.
+        // Default role (no config file) → null source, no scope, empty allowlist.
         let (shared, _rx) = Shared::new(Log::in_memory());
         let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
         assert!(v["role"]["source"].is_null());
@@ -1201,25 +1201,25 @@ mod tests {
         assert_eq!(v["role"]["path_count"], 0);
 
         // A loaded role surfaces its resolved path and a content summary.
-        let loaded = LoadedRole {
-            role: crate::role::Role {
-                brief: Some("stay in the repo".into()),
+        let loaded = LoadedConfig {
+            role: crate::config::Config {
+                scope: Some("stay in the repo".into()),
                 allow: vec![
-                    crate::role::Allow { program: "cargo".into(), prefix: vec![] },
-                    crate::role::Allow {
+                    crate::config::Allow { program: "cargo".into(), prefix: vec![] },
+                    crate::config::Allow {
                         program: "git".into(),
                         prefix: vec!["diff".into()],
                     },
                 ],
-                tools: vec![crate::role::ToolGrant { name: "read".into() }],
-                paths: vec![crate::role::PathGrant {
+                tools: vec![crate::config::ToolGrant { name: "read".into() }],
+                paths: vec![crate::config::PathGrant {
                     path: ".".into(),
                     read: true,
                     write: true,
                 }],
                 ..Default::default()
             },
-            source: RoleSource::Path("roles/dev.kdl".into()),
+            source: ConfigSource::Path("roles/dev.kdl".into()),
         };
         let (shared, _rx) = Shared::with_role(Log::in_memory(), loaded);
         let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
@@ -1240,38 +1240,38 @@ mod tests {
     }
 
     fn allow_grant(program: &str) -> Payload {
-        Payload::Grant(crate::log::Grant {
+        Payload::ConfigEdit(crate::log::ConfigEdit {
             amendment: crate::log::Amendment::Allow { program: program.into(), prefix: vec![] },
             lifetime: crate::log::Lifetime::Session,
             note: String::new(),
         })
     }
 
-    /// The effective-policy cache updates incrementally: a `Grant` appended mid-session
+    /// The effective-policy cache updates incrementally: a `ConfigEdit` appended mid-session
     /// promotes a call the base gated into the fast-path, with no log re-scan at the gate
-    /// (backlog/permissions/petition-loop.md).
+    /// (backlog/permissions/config-edit.md).
     #[test]
-    fn appending_a_grant_updates_the_effective_role() {
+    fn appending_a_config_edit_updates_the_effective_config() {
         use crate::policy::{Verdict, classify};
         let call = bash_call("npm install");
 
         // Empty base role → npm gates.
         let (shared, _rx) = Shared::new(Log::in_memory());
-        assert_eq!(classify(&shared.effective_role(), &call), Verdict::Gate);
+        assert_eq!(classify(&shared.effective_config(), &call), Verdict::Gate);
 
-        // Grant `allow "npm"` → the same call now clears, via the incrementally-folded role.
+        // ConfigEdit `allow "npm"` → the same call now clears, via the incrementally-folded role.
         shared.append(0, allow_grant("npm")).unwrap();
-        assert_eq!(classify(&shared.effective_role(), &call), Verdict::Clear);
+        assert_eq!(classify(&shared.effective_config(), &call), Verdict::Clear);
     }
 
     /// A `grant` decision body decodes into its amendment + lifetime (lowercase wire tags),
-    /// the wire shape the orchestrator posts to upgrade a gate (backlog/permissions/petition-loop.md).
+    /// the wire shape the orchestrator posts to upgrade a gate (backlog/permissions/config-edit.md).
     #[test]
     fn grant_decision_body_decodes() {
-        let body = r#"{"decision":"grant","lifetime":"persist","note":"in scope",
+        let body = r#"{"decision":"config_edit","lifetime":"persist","note":"in scope",
                        "amendment":{"allow":{"program":"cargo","prefix":["nextest"]}}}"#;
         let d: DecisionBody = serde_json::from_str(body).unwrap();
-        assert_eq!(d.decision, "grant");
+        assert_eq!(d.decision, "config_edit");
         assert_eq!(d.lifetime, Some(crate::log::Lifetime::Persist));
         assert_eq!(
             d.amendment,
@@ -1285,14 +1285,14 @@ mod tests {
     /// On resume, grants already in the log fold into the *initial* effective role at
     /// construction — the policy survives a restart even before any new grant lands.
     #[test]
-    fn resumed_log_grants_fold_into_the_initial_effective_role() {
+    fn resumed_log_edits_fold_into_the_initial_effective_config() {
         use crate::policy::{Verdict, classify};
         let mut log = Log::in_memory();
         log.append(0, allow_grant("npm")).unwrap();
 
         let (shared, _rx) = Shared::new(log);
         assert_eq!(
-            classify(&shared.effective_role(), &bash_call("npm install")),
+            classify(&shared.effective_config(), &bash_call("npm install")),
             Verdict::Clear
         );
     }

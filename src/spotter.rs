@@ -17,13 +17,13 @@
 //! not. So its request is **not** `project(log)` — it is built from scratch:
 //!
 //! ```text
-//! [ persona (system, cached) | scope + brief + watch-for (cached) | the move (fresh) ]
+//! [ persona (system, cached) | scope + watch-for (cached) | the move (fresh) ]
 //! ```
 //!
 //! The persona lives in `assets/prompts/spotter.md` (`include_str!`d as the client's
 //! byte-stable system prompt) and is sized to clear Haiku's cache floor on its own,
 //! so even a minimal role caches. The per-role context (the config's path grants +
-//! cwd as the scope, the brief, the spotter-only watch-for) rides one cached block;
+//! cwd, the scope prose, the spotter-only watch-for) rides one cached block;
 //! only the move is fresh each call. The persona is universal, so when a fleet shares
 //! a process the same cached segment serves every role (docs/permissions.md).
 //!
@@ -41,7 +41,7 @@ use crate::api::{Client, Usage};
 use crate::bash;
 use crate::log::{Origin, Stance, ToolCall};
 use crate::project::{ApiBlock, ApiMessage, CacheControl, Role as ApiRole};
-use crate::role::Role;
+use crate::config::Config;
 
 /// The forced tool name.
 const SPOT: &str = "spot";
@@ -89,9 +89,9 @@ impl Spotting {
 /// object-safe and needn't be (one mounted rung per session).
 #[allow(async_fn_in_trait)] // single-threaded loop; no Send bound needed, like Distiller.
 pub trait Spotter {
-    /// Assess one gated tool call against the role. The role supplies the mission
-    /// (brief), the scope (path grants + cwd), and the spotter-only watch-for list.
-    async fn assess(&self, role: &Role, call: &ToolCall) -> Spotting;
+    /// Assess one gated tool call against the config. The config supplies the mission
+    /// (scope), the boundaries (path grants + cwd), and the spotter-only watch-for list.
+    async fn assess(&self, role: &Config, call: &ToolCall) -> Spotting;
 }
 
 /// The model spotter — the independent rung realized. Owns a dedicated [`Client`]
@@ -112,8 +112,8 @@ impl ForkSpot {
 }
 
 impl Spotter for ForkSpot {
-    async fn assess(&self, role: &Role, call: &ToolCall) -> Spotting {
-        // Cached block: the per-session-stable scope + brief + watch-for. Fresh
+    async fn assess(&self, role: &Config, call: &ToolCall) -> Spotting {
+        // Cached block: the per-session-stable scope + watch-for. Fresh
         // block: the move. The persona (system) + this cached block are the prefix;
         // only the move is rewritten each call (docs/permissions.md, docs/substrate.md).
         let messages = vec![ApiMessage {
@@ -157,7 +157,7 @@ pub struct StaticSpotter {
 }
 
 impl Spotter for StaticSpotter {
-    async fn assess(&self, _role: &Role, _call: &ToolCall) -> Spotting {
+    async fn assess(&self, _role: &Config, _call: &ToolCall) -> Spotting {
         Spotting {
             read: Read { stance: self.stance, reason: self.reason.clone() },
             origin: Origin::Fallback,
@@ -166,15 +166,15 @@ impl Spotter for StaticSpotter {
     }
 }
 
-/// Render the per-role context block: the mission (brief), the scope (cwd + the
-/// config's path grants — so the spotter judges "outside scope" without the brief
-/// having to restate the boundaries), and the spotter-only watch-for list. Stable
+/// Render the per-config context block: the mission (scope), the boundaries (cwd + the
+/// config's path grants — so the spotter judges "outside scope" without the scope prose
+/// having to restate them), and the spotter-only watch-for list. Stable
 /// for the whole session, so it caches.
-fn render_context(role: &Role) -> String {
+fn render_context(role: &Config) -> String {
     let mut s = String::from("Mission:\n");
-    match role.brief.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
-        Some(brief) => s.push_str(brief),
-        None => s.push_str("(no brief specified — judge by scope and the reversibility default.)"),
+    match role.scope.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
+        Some(scope) => s.push_str(scope),
+        None => s.push_str("(no scope specified — judge by the reversibility default.)"),
     }
 
     s.push_str("\n\nScope for this session:\n");
@@ -237,7 +237,7 @@ fn spot_tool() -> Value {
                 "stance": {
                     "type": "string",
                     "enum": ["clear", "watch", "gate"],
-                    "description": "clear = reversible and in-scope (or brief-sanctioned) — auto-approve; watch = probably fine but uncertain, or a one-way move worth a human beat; gate = out of scope or unsanctioned-irreversible — stop and ask the human."
+                    "description": "clear = reversible and in-scope (or scope-sanctioned) — auto-approve; watch = probably fine but uncertain, or a one-way move worth a human beat; gate = out of scope or unsanctioned-irreversible — stop and ask the human."
                 },
                 "reason": {
                     "type": "string",
@@ -283,7 +283,7 @@ mod tests {
     use super::*;
     use crate::api::{Completion, Usage};
     use crate::log::{CallId, Payload};
-    use crate::role::{PathGrant, Role};
+    use crate::config::{PathGrant, Config};
 
     fn spot_completion(name: &str, input: Value) -> Completion {
         Completion {
@@ -353,9 +353,9 @@ mod tests {
     }
 
     #[test]
-    fn render_context_includes_brief_scope_and_watch_for() {
-        let role = Role {
-            brief: Some("Fix the build.".into()),
+    fn render_context_includes_scope_and_watch_for() {
+        let role = Config {
+            scope: Some("Fix the build.".into()),
             watch_for: Some("Don't touch the deploy keys.".into()),
             paths: vec![
                 PathGrant { path: ".".into(), read: true, write: true },
@@ -372,9 +372,9 @@ mod tests {
 
     #[test]
     fn render_context_handles_empty_role() {
-        // No brief, no paths, no watch-for: the spotter still gets a usable frame.
-        let ctx = render_context(&Role::default());
-        assert!(ctx.contains("no brief specified"), "{ctx}");
+        // No scope, no paths, no watch-for: the spotter still gets a usable frame.
+        let ctx = render_context(&Config::default());
+        assert!(ctx.contains("no scope specified"), "{ctx}");
         assert!(ctx.contains("none configured"), "{ctx}");
         assert!(!ctx.contains("Things to watch for"), "no empty watch-for section: {ctx}");
     }

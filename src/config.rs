@@ -1,4 +1,4 @@
-//! Role config — the cascade's foundational unit (backlog/permissions/role-config.md).
+//! Config — the cascade's foundational unit (backlog/permissions/README.md).
 //!
 //! A session is parameterized by `(role-config, cwd, orchestrator)`. The **role** is
 //! the portable-policy half: what a session is *for* and what it may do, reusable
@@ -15,15 +15,15 @@
 //!
 //! One artifact configures every cascade rung (backlog/permissions/README.md):
 //!
-//! - [`Role::brief`] — the positive scope, **shared with the acting session** for
-//!   self-alignment. It projects into the cached preamble ([`Role::preamble_section`]).
-//! - [`Role::watch_for`] — the spotter's "things to watch for", **spotter-only**.
+//! - [`Config::scope`] — the positive scope, **shared with the acting session** for
+//!   self-alignment. It projects into the cached preamble ([`Config::preamble_section`]).
+//! - [`Config::watch_for`] — the spotter's "things to watch for", **spotter-only**.
 //!   Kept off the session's preamble for attention-division (the focused session
 //!   doesn't carry peripheral hazards; the spotter does). Consumed by the spotter
 //!   rung ([`crate::spotter`]).
-//! - [`Role::allow`] — the prefix-allowlist the deterministic fast-path matches against
+//! - [`Config::allow`] — the prefix-allowlist the deterministic fast-path matches against
 //!   (backlog/permissions/prefix-fastpath.md). Consumed by that rung.
-//! - [`Role::trust_threshold`] — where the watch-window/gate cutoffs sit. Consumed by
+//! - [`Config::trust_threshold`] — where the watch-window/gate cutoffs sit. Consumed by
 //!   the watch-window rung (not built yet).
 //!
 //! Per the convention in CLAUDE.md, the schema fields land *before* the rungs that
@@ -31,12 +31,12 @@
 //!
 //! ## Caching discipline (load-bearing)
 //!
-//! The brief projects into the system preamble, which sits in the cached prefix
-//! (`tools → system → messages`). [`Role::preamble_section`] must therefore be
+//! The scope projects into the system preamble, which sits in the cached prefix
+//! (`tools → system → messages`). [`Config::preamble_section`] must therefore be
 //! **byte-stable for the whole session** (see the invariant in
 //! backlog/permissions/README.md, kin to `project(log)` in docs/substrate.md). It is —
 //! the role is loaded once at startup and frozen, and the rendering is a pure function
-//! of the brief text. Changing roles is a cold cache write, which is fine: roles do not
+//! of the scope text. Changing roles is a cold cache write, which is fine: roles do not
 //! change mid-session.
 
 use std::path::{Path, PathBuf};
@@ -44,15 +44,15 @@ use std::path::{Path, PathBuf};
 use crate::log::Amendment;
 
 /// A role: portable policy describing what a session is for and what it may do
-/// (backlog/permissions/role-config.md). Decoded from a KDL document; every field is
+/// (backlog/permissions/README.md). Decoded from a KDL document; every field is
 /// optional so a minimal — or empty — role file is valid, and an absent file yields
-/// [`Role::default`].
+/// [`Config::default`].
 #[derive(knus::Decode, Debug, Default, Clone)]
-pub struct Role {
+pub struct Config {
     /// Positive scope, shared with the acting session (self-alignment). Projects into
-    /// the cached preamble via [`Role::preamble_section`]. KDL: `brief "…"`.
+    /// the cached preamble via [`Config::preamble_section`]. KDL: `scope "…"`.
     #[knus(child, unwrap(argument), default)]
-    pub brief: Option<String>,
+    pub scope: Option<String>,
 
     /// The spotter's "things to watch for" — gotchas specific to this mission,
     /// **spotter-only**, never shown to the acting session. Held off the session's
@@ -78,13 +78,13 @@ pub struct Role {
 
     /// Structured tools the fast-path clears by name. The path-bearing ones
     /// (`read`/`write`/`search`/edit) additionally require their target to fall under a
-    /// [`Role::paths`] grant; the daemon-internal ones (`consolidate`, `kill_process`, …)
+    /// [`Config::paths`] grant; the daemon-internal ones (`consolidate`, `kill_process`, …)
     /// clear on the name alone. KDL: `tool "read"`. Nothing is sanctioned in code — even
     /// `kill_process` is just a config entry, so it's removable by editing the file.
     #[knus(children(name = "tool"))]
     pub tools: Vec<ToolGrant>,
 
-    /// Filesystem permission grants (backlog/permissions/role-config.md). Each grants
+    /// Filesystem permission grants (backlog/permissions/README.md). Each grants
     /// read and/or write over a subtree; the fast-path clears a path-bearing tool only
     /// when its target resolves under a grant carrying the needed permission. cwd is not
     /// special in code — it is special only because the config says `path "." …`. KDL:
@@ -116,7 +116,7 @@ pub struct Allow {
 }
 
 /// A structured tool the fast-path clears by name (backlog/permissions/prefix-fastpath.md).
-/// Just a name; the read/write semantics live with [`Role::paths`] and the per-tool
+/// Just a name; the read/write semantics live with [`Config::paths`] and the per-tool
 /// classifier (the not-yet-built rung), not here.
 #[derive(knus::Decode, Debug, Clone)]
 pub struct ToolGrant {
@@ -125,7 +125,7 @@ pub struct ToolGrant {
 }
 
 /// A filesystem permission grant over a subtree — the `path` and everything beneath it
-/// (backlog/permissions/role-config.md). `write` implies `read`. Both permissions
+/// (backlog/permissions/README.md). `write` implies `read`. Both permissions
 /// default to `false` when the property is omitted, so a bare `path "x"` grants nothing
 /// (honest: you must say what you're granting). KDL: `path "." read=true write=true`.
 #[derive(knus::Decode, Debug, Clone)]
@@ -139,18 +139,18 @@ pub struct PathGrant {
 }
 
 /// A reserved `extends` ancestor pointer. Carries the path only; resolution/merge is
-/// future work (see [`Role::extends`]).
+/// future work (see [`Config::extends`]).
 #[derive(knus::Decode, Debug, Clone)]
 pub struct Extends {
     #[knus(argument)]
     pub path: String,
 }
 
-/// Where a [`Role`] was resolved from, reported on `GET /state` so "which role am I
-/// running?" is never ambiguous (backlog/permissions/role-config.md).
+/// Where a [`Config`] was resolved from, reported on `GET /state` so "which role am I
+/// running?" is never ambiguous (backlog/permissions/README.md).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum RoleSource {
-    /// No config file found — the built-in [`Role::default`] is in effect.
+pub enum ConfigSource {
+    /// No config file found — the built-in [`Config::default`] is in effect.
     #[default]
     Default,
     /// Resolved from this path (an explicit `--config`, or the default path).
@@ -160,9 +160,9 @@ pub enum RoleSource {
 /// A resolved role plus where it came from. Stored on the daemon's shared state and
 /// reported by `/state`.
 #[derive(Debug, Clone, Default)]
-pub struct LoadedRole {
-    pub role: Role,
-    pub source: RoleSource,
+pub struct LoadedConfig {
+    pub role: Config,
+    pub source: ConfigSource,
 }
 
 /// The default role-config path, relative to cwd. Visible and committable (not under
@@ -177,7 +177,7 @@ pub const DEFAULT_PATH: &str = "efference.kdl";
 #[derive(Debug)]
 pub enum LoadError {
     /// Reading the file failed (an explicit `--config` that doesn't exist, a permission
-    /// error, …). A *missing default* path is not an error — it yields [`RoleSource::Default`].
+    /// error, …). A *missing default* path is not an error — it yields [`ConfigSource::Default`].
     Io(PathBuf, std::io::Error),
     /// The file is not valid KDL / does not match the schema.
     Parse(knus::Error),
@@ -222,40 +222,40 @@ impl LoadError {
 
 /// Resolve and load the role. With `explicit` (a `--config` path) the file *must*
 /// exist — a missing one is an error. Without it, the [`DEFAULT_PATH`] is probed: if
-/// present it loads, if absent the built-in [`Role::default`] is used ([`RoleSource::Default`]).
-pub fn load(explicit: Option<&Path>) -> Result<LoadedRole, LoadError> {
+/// present it loads, if absent the built-in [`Config::default`] is used ([`ConfigSource::Default`]).
+pub fn load(explicit: Option<&Path>) -> Result<LoadedConfig, LoadError> {
     match explicit {
         Some(path) => {
             let text = std::fs::read_to_string(path)
                 .map_err(|e| LoadError::Io(path.to_path_buf(), e))?;
-            Ok(LoadedRole {
+            Ok(LoadedConfig {
                 role: parse(path, &text)?,
-                source: RoleSource::Path(path.to_path_buf()),
+                source: ConfigSource::Path(path.to_path_buf()),
             })
         }
         None => {
             let path = Path::new(DEFAULT_PATH);
             match std::fs::read_to_string(path) {
-                Ok(text) => Ok(LoadedRole {
+                Ok(text) => Ok(LoadedConfig {
                     role: parse(path, &text)?,
-                    source: RoleSource::Path(path.to_path_buf()),
+                    source: ConfigSource::Path(path.to_path_buf()),
                 }),
                 // The default path is optional: absent → the built-in default role.
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(LoadedRole::default()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(LoadedConfig::default()),
                 Err(e) => Err(LoadError::Io(path.to_path_buf(), e)),
             }
         }
     }
 }
 
-/// Parse KDL text into a [`Role`]. The `path` is used only as the diagnostic file name
+/// Parse KDL text into a [`Config`]. The `path` is used only as the diagnostic file name
 /// (it labels spans in the `knus::Error` report).
-fn parse(path: &Path, text: &str) -> Result<Role, LoadError> {
+fn parse(path: &Path, text: &str) -> Result<Config, LoadError> {
     knus::parse(path.display().to_string(), text).map_err(LoadError::Parse)
 }
 
 /// Persist a granted [`Amendment`] to the role config file by **appending** a KDL node
-/// (backlog/permissions/petition-loop.md). Append-only is sound because grants are additive —
+/// (backlog/permissions/config-edit.md). Append-only is sound because grants are additive —
 /// we never rewrite or delete, so existing comments and formatting are left untouched. If the
 /// file already covers the amendment it's a no-op (additive grants are idempotent; this keeps
 /// the file tidy across re-grants). knus parses **KDL v1**, so we emit v1 syntax (bare
@@ -282,7 +282,7 @@ pub fn persist_grant(path: &Path, amendment: &Amendment) -> std::io::Result<()> 
 /// Whether `role` already grants everything `amendment` would add — the persistence dedup.
 /// Exact match for `allow`/`tool`; permission-superset for `path` (an existing grant with at
 /// least the requested perms covers it).
-fn role_covers(role: &Role, amendment: &Amendment) -> bool {
+fn role_covers(role: &Config, amendment: &Amendment) -> bool {
     match amendment {
         Amendment::Allow { program, prefix } => role
             .allow
@@ -327,15 +327,15 @@ fn kdl_string(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-impl Role {
-    /// Render the brief into the byte-stable preamble section appended to the system
-    /// prompt (backlog/permissions/role-config.md), or `None` if there is no brief. The
-    /// header is fixed and the body is the brief verbatim (trimmed), so the output is a
-    /// pure, deterministic function of the brief — safe for the cached prefix. The
+impl Config {
+    /// Render the scope into the byte-stable preamble section appended to the system
+    /// prompt (backlog/permissions/README.md), or `None` if there is no scope. The
+    /// header is fixed and the body is the scope verbatim (trimmed), so the output is a
+    /// pure, deterministic function of the scope — safe for the cached prefix. The
     /// watch-for list is deliberately *not* projected here: it is spotter-only.
     pub fn preamble_section(&self) -> Option<String> {
-        let brief = self.brief.as_deref().map(str::trim).filter(|b| !b.is_empty())?;
-        Some(format!("Your role for this session:\n\n{brief}"))
+        let scope = self.scope.as_deref().map(str::trim).filter(|b| !b.is_empty())?;
+        Some(format!("Your role for this session:\n\n{scope}"))
     }
 }
 
@@ -343,14 +343,14 @@ impl Role {
 mod tests {
     use super::*;
 
-    fn parse_str(text: &str) -> Role {
+    fn parse_str(text: &str) -> Config {
         super::parse(Path::new("test.kdl"), text).expect("valid role")
     }
 
     #[test]
     fn empty_document_is_a_valid_default_role() {
         let role = parse_str("");
-        assert!(role.brief.is_none());
+        assert!(role.scope.is_none());
         assert!(role.watch_for.is_none());
         assert!(role.trust_threshold.is_none());
         assert!(role.allow.is_empty());
@@ -360,15 +360,15 @@ mod tests {
     }
 
     #[test]
-    fn parses_brief_watch_for_and_trust_threshold() {
+    fn parses_scope_watch_for_and_trust_threshold() {
         let role = parse_str(
             r#"
-            brief "Work only inside this repo."
+            scope "Work only inside this repo."
             watch-for "Flag network egress to non-registry hosts."
             trust-threshold 0.5
             "#,
         );
-        assert_eq!(role.brief.as_deref(), Some("Work only inside this repo."));
+        assert_eq!(role.scope.as_deref(), Some("Work only inside this repo."));
         assert_eq!(
             role.watch_for.as_deref(),
             Some("Flag network egress to non-registry hosts.")
@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn malformed_kdl_is_a_parse_error_not_a_panic() {
-        let err = super::parse(Path::new("bad.kdl"), "brief = oops").unwrap_err();
+        let err = super::parse(Path::new("bad.kdl"), "scope = oops").unwrap_err();
         assert!(matches!(err, LoadError::Parse(_)));
     }
 
@@ -449,8 +449,8 @@ mod tests {
     }
 
     #[test]
-    fn preamble_section_renders_the_brief_byte_for_byte() {
-        let role = parse_str(r#"brief "Stay in the repo.""#);
+    fn preamble_section_renders_the_scope_byte_for_byte() {
+        let role = parse_str(r#"scope "Stay in the repo.""#);
         assert_eq!(
             role.preamble_section().as_deref(),
             Some("Your role for this session:\n\nStay in the repo.")
@@ -458,10 +458,10 @@ mod tests {
     }
 
     #[test]
-    fn preamble_section_is_none_without_a_brief() {
-        assert!(Role::default().preamble_section().is_none());
-        // A whitespace-only brief is treated as no brief (no empty section on the wire).
-        let role = parse_str("brief \"   \"");
+    fn preamble_section_is_none_without_a_scope() {
+        assert!(Config::default().preamble_section().is_none());
+        // A whitespace-only scope is treated as no scope (no empty section on the wire).
+        let role = parse_str("scope \"   \"");
         assert!(role.preamble_section().is_none());
     }
 
@@ -470,7 +470,7 @@ mod tests {
     fn preamble_section_excludes_the_watch_for() {
         let role = parse_str(
             r#"
-            brief "Do the task."
+            scope "Do the task."
             watch-for "SECRET RED FLAGS"
             "#,
         );
@@ -493,7 +493,7 @@ mod tests {
     fn persist_grant_appends_dedups_and_round_trips() {
         let path = std::env::temp_dir()
             .join(format!("efference-persist-{}.kdl", std::process::id()));
-        std::fs::write(&path, "// my role\nbrief \"do the thing\"\n").unwrap();
+        std::fs::write(&path, "// my role\nscope \"do the thing\"\n").unwrap();
 
         let amendment = Amendment::Allow {
             program: "cargo".into(),
@@ -502,7 +502,7 @@ mod tests {
         persist_grant(&path, &amendment).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("// my role"), "comment preserved: {text}");
-        assert!(text.contains("brief \"do the thing\""), "brief preserved: {text}");
+        assert!(text.contains("scope \"do the thing\""), "scope preserved: {text}");
         assert!(text.contains(r#"allow "cargo" "nextest""#), "node appended: {text}");
 
         // The appended v1 node parses back through knus into the grant we wrote.
@@ -553,10 +553,10 @@ mod tests {
     #[test]
     fn explicit_present_config_resolves_with_its_path() {
         let path = std::env::temp_dir().join(format!("efference-role-{}.kdl", std::process::id()));
-        std::fs::write(&path, r#"brief "hi""#).unwrap();
+        std::fs::write(&path, r#"scope "hi""#).unwrap();
         let loaded = load(Some(&path)).unwrap();
-        assert_eq!(loaded.role.brief.as_deref(), Some("hi"));
-        assert_eq!(loaded.source, RoleSource::Path(path.clone()));
+        assert_eq!(loaded.role.scope.as_deref(), Some("hi"));
+        assert_eq!(loaded.source, ConfigSource::Path(path.clone()));
         std::fs::remove_file(&path).unwrap();
     }
 }

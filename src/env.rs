@@ -27,8 +27,8 @@ const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 
 /// The full system prompt sent in the request's `system` field (docs/substrate.md): the
 /// curation-model [`PREAMBLE`], the frozen session environment block from [`context`],
-/// and — when the session runs under a role with a brief — the role's preamble section
-/// (`role_section`, rendered by [`crate::role::Role::preamble_section`]). Built once at
+/// and — when the session runs under a config with a scope — the config's preamble section
+/// (`role_section`, rendered by [`crate::config::Config::preamble_section`]). Built once at
 /// session start and frozen into the cached prefix, so every part must be byte-stable;
 /// the `wire` dev view reconstructs it identically by calling this with the same inputs.
 pub fn system_prompt(role_section: Option<&str>) -> String {

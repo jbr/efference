@@ -55,7 +55,7 @@ use serde_json::Value;
 
 use crate::bash;
 use crate::log::{Amendment, LogEntry, Payload, ToolCall};
-use crate::role::{Allow, PathGrant, Role, ToolGrant};
+use crate::config::{Allow, PathGrant, Config, ToolGrant};
 
 /// The fast-path's decision for one tool call. Binary; the extension point for the
 /// spotter rung, which splits `Gate` into a graded `{clear, watch, gate}` stance
@@ -75,8 +75,8 @@ enum Perm {
     Write,
 }
 
-/// Fold the log's [`Payload::Grant`] amendments onto a base role, yielding the **effective
-/// role** the classifier should consult (backlog/permissions/petition-loop.md). The effective
+/// Fold the log's [`Payload::ConfigEdit`] amendments onto a base role, yielding the **effective
+/// role** the classifier should consult (backlog/permissions/config-edit.md). The effective
 /// policy at any point is `base + fold(grants)` — the substrate thesis applied to policy: the
 /// base role is what booted, the grants are the durable record of every amendment since, and
 /// this fold is their deterministic projection (kin to `project(log)`, docs/substrate.md).
@@ -86,22 +86,22 @@ enum Perm {
 /// (e.g. one already persisted to the config *and* still in the log) is harmless, because the
 /// classifier ORs across grants. This batch form rebuilds from the whole log (used at startup to
 /// fold any grants in a resumed log, and in tests); the daemon then maintains its effective role
-/// **incrementally** via [`apply_amendment`], so a gate never re-scans the log.
-pub fn effective_role(base: &Role, log: &[LogEntry]) -> Role {
+/// **incrementally** via [`apply_config_edit`], so a gate never re-scans the log.
+pub fn effective_config(base: &Config, log: &[LogEntry]) -> Config {
     let mut role = base.clone();
     for entry in log {
-        if let Payload::Grant(grant) = &entry.payload {
-            apply_amendment(&mut role, &grant.amendment);
+        if let Payload::ConfigEdit(grant) = &entry.payload {
+            apply_config_edit(&mut role, &grant.amendment);
         }
     }
     role
 }
 
-/// Fold one [`Amendment`] onto a role in place — the per-grant step of [`effective_role`],
+/// Fold one [`Amendment`] onto a role in place — the per-grant step of [`effective_config`],
 /// exposed so the daemon can update its effective role *incrementally* (folding each grant as
 /// it appends) rather than re-scanning the whole log on every gate (docs/control-channel.md).
 /// Purely additive: each variant pushes onto one of the role's grant lists.
-pub fn apply_amendment(role: &mut Role, amendment: &Amendment) {
+pub fn apply_config_edit(role: &mut Config, amendment: &Amendment) {
     match amendment {
         Amendment::Allow { program, prefix } => role.allow.push(Allow {
             program: program.clone(),
@@ -120,13 +120,13 @@ pub fn apply_amendment(role: &mut Role, amendment: &Amendment) {
 /// `bash` runs the two-stage check; a structured tool clears on its `tool` grant plus any
 /// `path` grant its target needs. Resolves grants against the process cwd (session-stable,
 /// the fixed root the built-in tools also resolve relative paths against).
-pub fn classify(role: &Role, call: &ToolCall) -> Verdict {
+pub fn classify(role: &Config, call: &ToolCall) -> Verdict {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     classify_in(role, call, &cwd)
 }
 
 /// The cwd-injected core, for deterministic tests. `bash` ignores `cwd`.
-fn classify_in(role: &Role, call: &ToolCall, cwd: &Path) -> Verdict {
+fn classify_in(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
     if call.name == bash::NAME {
         match call.input.get("command").and_then(Value::as_str) {
             Some(command) => classify_bash(role, command),
@@ -141,7 +141,7 @@ fn classify_in(role: &Role, call: &ToolCall, cwd: &Path) -> Verdict {
 /// A structured (non-bash) tool clears iff its name is in the role's `tool` grants and,
 /// for the path-bearing ones, its target is covered by a `path` grant with the right
 /// permission. Anything not granted gates.
-fn classify_structured(role: &Role, call: &ToolCall, cwd: &Path) -> Verdict {
+fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
     // Nothing clears in code — the name must be granted in config first.
     if !role.tools.iter().any(|t| t.name == call.name) {
         return Verdict::Gate;
@@ -158,7 +158,7 @@ fn classify_structured(role: &Role, call: &ToolCall, cwd: &Path) -> Verdict {
 /// path here (`persist_edit`, `retarget_edit`, `consolidate`, the supervisor/inbox tools)
 /// clear on the name grant alone. Returns `true` when the path requirement is satisfied
 /// (or there is none), `false` when a required path is missing, malformed, or ungranted.
-fn path_check(role: &Role, call: &ToolCall, cwd: &Path) -> bool {
+fn path_check(role: &Config, call: &ToolCall, cwd: &Path) -> bool {
     let input = &call.input;
     match call.name.as_str() {
         // Reads: the target must be under a read-or-write grant.
@@ -182,7 +182,7 @@ fn path_check(role: &Role, call: &ToolCall, cwd: &Path) -> bool {
 /// to cwd `"."`); `None` means the path is required, so an absent/empty/malformed value
 /// fails. Empty array → fail (a no-target call shouldn't auto-clear).
 fn paths_granted(
-    role: &Role,
+    role: &Config,
     input: &Value,
     key: &str,
     perm: Perm,
@@ -219,7 +219,7 @@ fn paths_granted(
 /// matching is lexical (`..`/`.` collapsed without touching the filesystem), so a symlink
 /// inside a grant that points outside is treated as inside — acceptable under the
 /// error-not-deception threat model (backlog/permissions/README.md).
-fn path_granted(role: &Role, path: &str, perm: Perm, cwd: &Path) -> bool {
+fn path_granted(role: &Config, path: &str, perm: Perm, cwd: &Path) -> bool {
     let target = lexical_normalize(&absolutize(path, cwd));
     role.paths.iter().any(|grant| {
         let granted = match perm {
@@ -264,7 +264,7 @@ fn lexical_normalize(path: &Path) -> PathBuf {
 
 /// Stage 1 + stage 2 for a bash command string. `Clear` only if it is structurally
 /// simple *and* its program/args match an allowlist entry.
-fn classify_bash(role: &Role, command: &str) -> Verdict {
+fn classify_bash(role: &Config, command: &str) -> Verdict {
     let Some(tokens) = simple_command_tokens(command) else {
         return Verdict::Gate; // stage 1 rejected (complex, expanded, or unparseable)
     };
@@ -373,13 +373,13 @@ fn literal_word(word: &yash_syntax::syntax::Word) -> Option<String> {
 mod tests {
     use super::*;
     use crate::log::CallId;
-    use crate::role::Allow;
+    use crate::config::Allow;
 
     /// A role whose allowlist mirrors the curation rule: blanket for whole-arg-space-
     /// recoverable programs (`cargo`, `rg`), sub-verb for the irreversible frontier
     /// (`git diff`/`status`, never `git push`).
-    fn sample_role() -> Role {
-        Role {
+    fn sample_role() -> Config {
+        Config {
             allow: vec![
                 Allow { program: "cargo".into(), prefix: vec![] },
                 Allow { program: "rg".into(), prefix: vec![] },
@@ -495,7 +495,7 @@ mod tests {
 
     // --- Structured tools: name grant + path-perm, interpreted from config ---
 
-    use crate::role::{PathGrant, ToolGrant};
+    use crate::config::{PathGrant, ToolGrant};
 
     fn tool(name: &str) -> ToolGrant {
         ToolGrant { name: name.into() }
@@ -514,8 +514,8 @@ mod tests {
     /// read-only zone outside cwd (`/refs`). Disjoint on purpose: grants are additive with
     /// no sub-deny, so a read-only grant can only restrict where the writable cwd grant
     /// doesn't already reach (see [`path_granted`]).
-    fn fs_role() -> Role {
-        Role {
+    fn fs_role() -> Config {
+        Config {
             tools: vec![
                 tool("read"),
                 tool("list"),
@@ -530,7 +530,7 @@ mod tests {
         }
     }
 
-    fn structured(role: &Role, c: &ToolCall) -> Verdict {
+    fn structured(role: &Config, c: &ToolCall) -> Verdict {
         classify_in(role, c, Path::new(CWD))
     }
 
@@ -538,9 +538,9 @@ mod tests {
     fn structured_tool_gates_without_a_name_grant() {
         // An empty role grants nothing — every structured tool gates (today's behavior).
         let c = call("read", serde_json::json!({ "paths": ["src/main.rs"] }));
-        assert_eq!(structured(&Role::default(), &c), Verdict::Gate);
+        assert_eq!(structured(&Config::default(), &c), Verdict::Gate);
         // Even with a path grant, an un-granted *name* gates.
-        let role = Role { paths: vec![grant(".", true, true)], ..Default::default() };
+        let role = Config { paths: vec![grant(".", true, true)], ..Default::default() };
         assert_eq!(structured(&role, &c), Verdict::Gate);
     }
 
@@ -652,9 +652,9 @@ mod tests {
         );
     }
 
-    // --- effective_role: the policy fold over the log's grants ---
+    // --- effective_config: the policy fold over the log's grants ---
 
-    use crate::log::{Amendment, Grant, Lifetime, LogEntry, Payload, Timestamp};
+    use crate::log::{Amendment, ConfigEdit, Lifetime, LogEntry, Payload, Timestamp};
 
     /// One session-scoped grant as a log entry (seq/turn/at are irrelevant to the fold).
     fn grant_entry(amendment: Amendment) -> LogEntry {
@@ -662,7 +662,7 @@ mod tests {
             seq: 0,
             turn: 0,
             at: Timestamp(0),
-            payload: Payload::Grant(Grant {
+            payload: Payload::ConfigEdit(ConfigEdit {
                 amendment,
                 lifetime: Lifetime::Session,
                 note: String::new(),
@@ -672,9 +672,9 @@ mod tests {
 
     /// A log with no grants leaves the policy exactly as the base role decides.
     #[test]
-    fn effective_role_without_grants_matches_the_base() {
+    fn effective_config_without_edits_matches_the_base() {
         let base = sample_role();
-        let eff = effective_role(&base, &[]);
+        let eff = effective_config(&base, &[]);
         // npm is unlisted in the base, so it gates under both the base and the (unchanged) fold.
         assert_eq!(classify(&base, &bash_call("npm install")), Verdict::Gate);
         assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Gate);
@@ -686,7 +686,7 @@ mod tests {
         let base = sample_role();
         assert_eq!(classify(&base, &bash_call("npm install")), Verdict::Gate);
         let log = [grant_entry(Amendment::Allow { program: "npm".into(), prefix: vec![] })];
-        let eff = effective_role(&base, &log);
+        let eff = effective_config(&base, &log);
         assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
     }
 
@@ -694,14 +694,14 @@ mod tests {
     /// together to clear what an empty base gated.
     #[test]
     fn tool_and_path_grants_fold_together_to_clear_a_write() {
-        let base = Role::default(); // gates everything
+        let base = Config::default(); // gates everything
         let c = call("write", serde_json::json!({ "path": "src/x.rs" }));
         assert_eq!(classify_in(&base, &c, Path::new(CWD)), Verdict::Gate);
         let log = [
             grant_entry(Amendment::Tool { name: "write".into() }),
             grant_entry(Amendment::Path { path: ".".into(), read: true, write: true }),
         ];
-        let eff = effective_role(&base, &log);
+        let eff = effective_config(&base, &log);
         assert_eq!(classify_in(&eff, &c, Path::new(CWD)), Verdict::Clear);
     }
 
@@ -711,7 +711,7 @@ mod tests {
     fn folding_a_grant_twice_is_harmless() {
         let base = sample_role();
         let g = grant_entry(Amendment::Allow { program: "npm".into(), prefix: vec![] });
-        let eff = effective_role(&base, &[g.clone(), g]);
+        let eff = effective_config(&base, &[g.clone(), g]);
         assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
     }
 }

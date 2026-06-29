@@ -57,8 +57,8 @@ impl Client {
             Approval::Redirect(message) => {
                 serde_json::json!({ "decision": "redirect", "message": message })
             }
-            Approval::Grant { amendment, lifetime, note } => serde_json::json!({
-                "decision": "grant",
+            Approval::ConfigEdit { amendment, lifetime, note } => serde_json::json!({
+                "decision": "config_edit",
                 "amendment": amendment,
                 "lifetime": lifetime,
                 "note": note,

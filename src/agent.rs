@@ -23,7 +23,7 @@ use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::policy::{self, Verdict};
 use crate::log::{
-    Amendment, ContentBlock, Disposition, Grant, Lifetime, Mark, MarkKind, Notification, Payload,
+    Amendment, ContentBlock, Disposition, ConfigEdit, Lifetime, Mark, MarkKind, Notification, Payload,
     RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
 };
 use crate::project::place_trailing_cache_breakpoint;
@@ -363,9 +363,9 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 // log line; fast-path clears stay unlogged), and its usage reads the
                 // shared spotter prefix, so it joins the cache telemetry (docs/substrate.md).
                 // Classify against the *effective* policy — base role + the fold of every
-                // grant so far (backlog/permissions/petition-loop.md). A prior amendment can
+                // grant so far (backlog/permissions/config-edit.md). A prior amendment can
                 // promote this very call into the fast-path; the spotter sees the same scope.
-                let role = shared.effective_role();
+                let role = shared.effective_config();
                 let approval = match policy::classify(&role, call) {
                     Verdict::Clear => Approval::Approve,
                     Verdict::Gate => {
@@ -392,13 +392,13 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         }
                     }
                 };
-                // A `Grant` is the orchestrator legislating policy (backlog/permissions/petition-loop.md):
+                // A `ConfigEdit` is the orchestrator legislating policy (backlog/permissions/config-edit.md):
                 // append the amendment (which folds into the effective role), then re-classify
                 // *this* call against the new policy. The call runs only if the amended rule now
                 // clears it — it never rides along unchecked.
                 let approval = match approval {
-                    Approval::Grant { amendment, lifetime, note } => {
-                        legislate(&shared, turn, call, amendment, lifetime, note)?
+                    Approval::ConfigEdit { amendment, lifetime, note } => {
+                        commit_config_edit(&shared, turn, call, amendment, lifetime, note)?
                     }
                     other => other,
                 };
@@ -558,8 +558,8 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         shared.append(turn, rejected(call))?;
                         redirect = Some(message);
                     }
-                    // Resolved into Approve/Redirect by `legislate` above before this match.
-                    Approval::Grant { .. } => unreachable!("grant is legislated above"),
+                    // Resolved into Approve/Redirect by `commit_config_edit` above before this match.
+                    Approval::ConfigEdit { .. } => unreachable!("grant is legislated above"),
                 }
             }
             if abort_turn {
@@ -579,8 +579,8 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
     Ok(())
 }
 
-/// Legislate a `Grant` (backlog/permissions/petition-loop.md): persist it if asked, append the
-/// `Payload::Grant` (which folds it into the effective policy), then re-classify the gated call
+/// Legislate a `ConfigEdit` (backlog/permissions/config-edit.md): persist it if asked, append the
+/// `Payload::ConfigEdit` (which folds it into the effective policy), then re-classify the gated call
 /// against the *new* policy. Returns `Approve` iff the amended rule now clears the call — the
 /// human changes the rule; the mechanism, not the gesture, authorizes the run. If the grant
 /// doesn't cover this call, it stays gated (a `Redirect` that tells the model why), so nothing
@@ -588,7 +588,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
 ///
 /// A persist failure degrades the grant to session-only (honest: we log what actually took
 /// effect) rather than failing the turn.
-fn legislate(
+fn commit_config_edit(
     shared: &Shared,
     turn: Turn,
     call: &ToolCall,
@@ -598,7 +598,7 @@ fn legislate(
 ) -> std::io::Result<Approval> {
     let lifetime = match lifetime {
         Lifetime::Persist => match shared.config_path() {
-            Some(path) => match crate::role::persist_grant(path, &amendment) {
+            Some(path) => match crate::config::persist_grant(path, &amendment) {
                 Ok(()) => Lifetime::Persist,
                 Err(e) => {
                     eprintln!("grant: could not persist to {}: {e}", path.display());
@@ -610,8 +610,8 @@ fn legislate(
         },
         Lifetime::Session => Lifetime::Session,
     };
-    shared.append(turn, Payload::Grant(Grant { amendment, lifetime, note }))?;
-    let role = shared.effective_role();
+    shared.append(turn, Payload::ConfigEdit(ConfigEdit { amendment, lifetime, note }))?;
+    let role = shared.effective_config();
     Ok(if policy::classify(&role, call) == Verdict::Clear {
         Approval::Approve
     } else {
@@ -651,9 +651,9 @@ mod tests {
         use crate::log::{Amendment, Lifetime};
         let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
         let call = bash_call("npm install");
-        assert_eq!(policy::classify(&shared.effective_role(), &call), Verdict::Gate);
+        assert_eq!(policy::classify(&shared.effective_config(), &call), Verdict::Gate);
 
-        let approval = legislate(
+        let approval = commit_config_edit(
             &shared,
             0,
             &call,
@@ -664,7 +664,7 @@ mod tests {
         .unwrap();
         assert_eq!(approval, Approval::Approve);
         // The policy is now amended for any future call too.
-        assert_eq!(policy::classify(&shared.effective_role(), &call), Verdict::Clear);
+        assert_eq!(policy::classify(&shared.effective_config(), &call), Verdict::Clear);
     }
 
     /// The invariant: a grant that does *not* cover the gated call still amends the policy,
@@ -675,7 +675,7 @@ mod tests {
         let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
         let call = bash_call("npm install");
 
-        let approval = legislate(
+        let approval = commit_config_edit(
             &shared,
             0,
             &call,
@@ -686,7 +686,7 @@ mod tests {
         .unwrap();
         assert!(matches!(approval, Approval::Redirect(_)), "uncovered call stays gated");
         // The amendment still landed — legislation happens regardless of the current call.
-        assert!(shared.effective_role().tools.iter().any(|t| t.name == "read"));
+        assert!(shared.effective_config().tools.iter().any(|t| t.name == "read"));
     }
 
     #[test]

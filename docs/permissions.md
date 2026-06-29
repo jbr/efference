@@ -1,16 +1,16 @@
-# Permissions — role config, the fast-path & the spotter
+# Permissions — config, the fast-path & the spotter
 
-A session is parameterized by `(role-config, cwd, orchestrator)`. The **role** is the
+A session is parameterized by `(config, cwd, orchestrator)`. The **config** is the
 portable-policy half: what a session is *for* and what it may do, kept separate from cwd
 (the per-invocation spatial scope, see [env](../env.rs) / the system preamble) so the
-role stays portable. Policy is **data the classifier interprets**, never special-cased in
+config stays portable. Policy is **data the classifier interprets**, never special-cased in
 code — there are no privileged program names or directories in the mechanism, only config
 the mechanism reads.
 
-This doc covers what is built now: the role config (`src/role.rs`), the deterministic
+This doc covers what is built now: the config (`src/config.rs`), the deterministic
 approval fast-path (`src/policy.rs`), and the independent spotter (`src/spotter.rs`),
-wired into the turn loop's gate (`src/agent.rs`). The watch-window and the scope-change
-petition loop are planned; see [`../backlog/permissions/`](../backlog/permissions/).
+wired into the turn loop's gate (`src/agent.rs`). The watch-window and the rest of the
+config-edit loop are planned; see [`../backlog/permissions/`](../backlog/permissions/).
 
 ## Threat model: error, not deception
 
@@ -24,27 +24,28 @@ obfuscates, and obfuscation is out of scope. The axis the policy decides on is t
 question often decidable from observable facts, not "is this command dangerous?", which is
 undecidable from a bash string.
 
-## The role config (`src/role.rs`)
+## The config (`src/config.rs`)
 
 A KDL document, parsed into typed structs by [`knus`]; the types *are* the schema. A
 malformed file surfaces a `knus::Error` (a `miette::Diagnostic`) rendered with a
 source-span underline — the load-time diagnostic that stands in for KDL's thin editor
 tooling. Resolution: an explicit `serve --config <path>` (which must exist), else the
-`efference.kdl` probe (absent → the empty default role, so nothing auto-clears — safe).
-The resolved source is reported on `GET /state` so "which role am I running?" is never
+`efference.kdl` probe (absent → the empty default config, so nothing auto-clears — safe).
+The resolved source is reported on `GET /state` so "which config am I running?" is never
 ambiguous.
 
 For now there is **exactly one config file per session** — no built-in base, no merge.
 "Merge by copy-and-edit" holds until usage patterns settle the real merge semantics; the
 `extends` ancestor pointer is parsed but the merge engine is deliberately unbuilt. What
-the role holds:
+the config holds:
 
-- **`brief`** — positive scope, *shared with the session*. It projects into the cached
-  preamble (`Role::preamble_section` → `env::system_prompt`). The projection must be
-  **byte-stable for the session** (the same caching invariant as `project(log)`, see
-  [substrate](substrate.md)): it is rendered once at startup from the brief text and
-  frozen. Changing roles is a cold cache write, which is fine — roles do not change
-  mid-session.
+- **`scope`** — the positive perimeter, *shared with the session*. It projects into the
+  cached preamble (`Config::preamble_section` → `env::system_prompt`). The projection must
+  be **byte-stable for the session** (the same caching invariant as `project(log)`, see
+  [substrate](substrate.md)): it is rendered once at startup from the scope text and
+  frozen. Changing the config is a cold cache write, which is fine — the config does not
+  change mid-session. (Live, mid-session scope edits surface as notifications instead of
+  re-rendering the preamble; that's planned, not built — see config-edit.md.)
 - **`watch-for`** — the "things to watch for" list, *spotter-only*. Kept off the session's
   preamble for **attention-division** (not anti-gaming — the threat model is error, not
   deception, so there's no test to game): the focused session shouldn't carry low-probability
@@ -56,7 +57,7 @@ the role holds:
 
 ## The fast-path (`src/policy.rs`)
 
-`classify(&Role, &ToolCall) -> Verdict` is a **pure function** — no I/O, no model —
+`classify(&Config, &ToolCall) -> Verdict` is a **pure function** — no I/O, no model —
 returning `Clear` (auto-approve: no human gate, no model round-trip) or `Gate` (fall
 through to the spotter rung, then the human gate). The loop consults it just before the
 gate: `Clear` becomes an immediate approve; `Gate` hands the call to the spotter (below).
@@ -78,7 +79,7 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
   not a pipe. yash *parses* without *expanding*, so we inspect word units ourselves for
   the expansion metacharacters bash would act on at runtime (`* ? [ {` anywhere; a leading
   `~`) — which is why `git diff HEAD~1` clears but `~/x` and `cp {a,b}` gate.
-- **Stage 2** matches the lexed `[program, args…]` against the role's
+- **Stage 2** matches the lexed `[program, args…]` against the config's
   `(program, safe-arg-prefix)` allowlist: a token-wise prefix match, empty prefix =
   blanket-trust the program.
 
@@ -97,18 +98,18 @@ want — we parse, bash executes.
 The allowlist is curated along the reversibility axis: blanket `allow "cargo"` only for
 programs whose *whole* arg-space is recoverable; sub-verb prefixes (`allow "git" "diff"`,
 `allow "git" "status"`) for programs with an irreversible sub-space, letting the dangerous
-verbs (`git push`, `git reset`) fall through. Memoization (the eventual petition-fed
+verbs (`git push`, `git reset`) fall through. Memoization (the eventual config-edit-fed
 growth of this list) is sound only at **program-prefix granularity, never command
 granularity** — safety is discontinuous in the command string (`./build` vs `/build`), so
 exact-command memoization is what strands dead entries and is anti-correlated with safety.
 
 ### structured tools: name grant + path permission
 
-A structured (non-bash) tool clears only if its name is in the role's `tool` grants
+A structured (non-bash) tool clears only if its name is in the config's `tool` grants
 **and**, for the path-bearing ones, its target resolves under a `path` grant with the
 needed permission — reads (`read`/`list`/`search`/`read_node`) need `read`, writes
 (`write`/`preview_edit`) need `write` (`write` implies `read`). Nothing clears in code; an
-empty role gates every tool, exactly as before.
+empty config gates every tool, exactly as before.
 
 Two properties are load-bearing. **Grants are additive subtrees with no deny.** A `path`
 grant trusts its *entire* subtree; there is no carve-out to deny a sensitive subdir within
@@ -139,19 +140,19 @@ tribunal: it exists to let the session move fast and commit hard, intervening on
 handful of moves it would otherwise regret. The persona (`assets/prompts/spotter.md`,
 `include_str!`d as the spotter client's byte-stable system prompt) carries that frame, and
 the frame leaks into every verdict. The axis is **scope, not danger**: *is this move inside
-the mission?* The brief is the authority — including over how much permanence is sanctioned
-(a teardown brief clears `terraform destroy`). Reversibility/containment is only the default
-heuristic *when the brief is silent*.
+the mission?* The scope is the authority — including over how much permanence is sanctioned
+(a teardown scope clears `terraform destroy`). Reversibility/containment is only the default
+heuristic *when the scope is silent*.
 
-**The request layout** is `[persona (system) | scope + brief + watch-for (cached) | the move
-(fresh)]`. The scope block is projected from the role's `path` grants + cwd, so the spotter
-judges "outside scope" without the brief restating the boundaries. The persona is sized to
-clear Haiku's cache floor on its own, so even a minimal role caches; within a session the
-brief is fixed, so every spotter call after the first is a cache read (the move is the only
-fresh tail). The verdict is forced through a `spot` tool: a graded [`Stance`] (`clear` /
-`watch` / `gate`) plus a one-line `reason` addressed to the session as a teammate. `Clear`
-auto-approves; `Watch` and `Gate` both route to the human gate today (the watch-window that
-gives `Watch` its own intervention latency is a later unit).
+**The request layout** is `[persona (system) | scope + watch-for (cached) | the move
+(fresh)]`. The scope block is the config's scope prose plus the `path` grants + cwd, so the
+spotter judges "outside scope" against a fixed, external authority — never the session's own
+narration. The persona is sized to clear Haiku's cache floor on its own, so even a minimal
+config caches; within a session the scope is fixed, so every spotter call after the first is
+a cache read (the move is the only fresh tail). The verdict is forced through a `spot` tool:
+a graded [`Stance`] (`clear` / `watch` / `gate`) plus a one-line `reason` addressed to the
+session as a teammate. `Clear` auto-approves; `Watch` and `Gate` both route to the human
+gate today (the watch-window that gives `Watch` its own intervention latency is a later unit).
 
 **Fail closed.** Any failure — transport error, no `spot` call — yields `Gate` with
 `Origin::Fallback`: uncertainty routes to the human, never to auto-clear. (Contrast the
@@ -163,39 +164,42 @@ this get through — or stop?", and the corpus for any future distilled approval
 projects to nothing — audit-only, never on the canonical wire. This is the *first* permission
 decision that earns a log line: fast-path clears stay deliberately unlogged. `efference
 spotter --brief … --watch-for … --path … "<cmd>"` runs the exact `assess` path on one move,
-for iterating on the persona and role config against real cases.
+for iterating on the persona and config against real cases (the `--brief` flag feeds the
+`scope` field; its rename to `--scope` rides with the TOML migration — see config-edit.md).
 
-## The amendment loop — grants (`src/policy.rs`, `src/agent.rs`, `src/role.rs`)
+## The config-edit loop (`src/policy.rs`, `src/agent.rs`, `src/config.rs`)
 
-A deny is not a dead-end: the orchestrator can **amend policy** at a gate. A `Payload::Grant`
-carries one *additive* `Amendment` (`allow` / `path` / `tool`) and a `Lifetime` (`session` or
-`persist`). The **effective role** the cascade consults is `base role + fold(grants)` —
-`policy::effective_role` is the batch fold (startup / resumed log); the daemon then maintains it
-**incrementally** (`policy::apply_amendment` on each `Grant` append) so a gate reads current
-policy in O(1). Grants are additive only — the fold is order-independent and idempotent, so a
-grant replayed (already in the config *and* the log) is harmless.
+A deny is not a dead-end: the orchestrator can **edit the config** at a gate. A
+`Payload::ConfigEdit` carries one *additive* `Amendment` (`allow` / `path` / `tool`) and a
+`Lifetime` (`session` or `persist`). The **effective config** the cascade consults is
+`base config + fold(config-edits)` — `policy::effective_config` is the batch fold (startup /
+resumed log); the daemon then maintains it **incrementally** (`policy::apply_config_edit` on
+each `ConfigEdit` append) so a gate reads current policy in O(1). Amendments are additive
+only — the fold is order-independent and idempotent, so a config edit replayed (already in
+the config file *and* the log) is harmless.
 
-The human upgrades a gate with a fourth `Approval::Grant` decision. The loop **legislates**
-(`agent::legislate`): append the `Payload::Grant`, optionally append-persist it to the KDL config
-(`role::persist_grant` — v1 syntax, comment-preserving, deduped), then **re-classify this call
-against the new policy**. It runs only if the amended rule now clears it; otherwise it stays
-gated (a redirect). The human changes the *rule*; the mechanism authorizes the *call* — nothing
-rides along unchecked. A `Grant` projects to nothing on the wire (audit-only, like `Spot`); its
-effect reaches the model only through the classifier.
+The human upgrades a gate with a fourth `Approval::ConfigEdit` decision. The loop **commits**
+(`agent::commit_config_edit`): append the `Payload::ConfigEdit`, optionally append-persist it
+to the KDL config (`config::persist_grant` — v1 syntax, comment-preserving, deduped), then
+**re-classify this call against the new policy**. It runs only if the amended rule now clears
+it; otherwise it stays gated (a redirect). The orchestrator changes the *rule*; the mechanism
+authorizes the *call* — nothing rides along unchecked. A `ConfigEdit` projects to nothing on
+the wire (audit-only, like `Spot`); its effect reaches the model only through the classifier.
 
-This is the **first initiator** of the amendment loop (the human upgrading a blocking gate). The
-other two — the spotter's non-blocking bash-prefix promotion, and the session's own `revise_brief`
-petition (with the autonomous "gate = stall" mode that makes it necessary) — are not built yet.
-See [`../backlog/permissions/petition-loop.md`](../backlog/permissions/petition-loop.md).
+This is the **first initiator** of the config-edit loop (the human upgrading a blocking gate).
+The others — the spotter's non-blocking bash-prefix promotion, the session's own
+`propose_scope`, and fs-watch of the config file — are not built yet. See
+[`../backlog/permissions/config-edit.md`](../backlog/permissions/config-edit.md).
 
 ## What is not built yet
 
-The watch-window, the spotter's effect-preview, and the rest of the amendment loop (spotter
-prefix-promotion, the `revise_brief` tool, the autonomous mode). `Stance::Watch` resolves to the
-human gate today; the watch-window will map it to an intervention latency instead. The spotter
-currently judges the raw command + role context; a neutral effect-preview is the planned input
-upgrade. Fleet-wide persona caching (a second breakpoint isolating the persona so it's shared
-across differently-briefed sessions) is a deferred optimization — per-session caching works today.
-See [`../backlog/permissions/README.md`](../backlog/permissions/README.md).
+The watch-window, the spotter's effect-preview, and the rest of the config-edit loop (spotter
+prefix-promotion, the `propose_scope` tool, the autonomous mode, fs-watch). `Stance::Watch`
+resolves to the human gate today; the watch-window will map it to an intervention latency
+instead. The spotter currently judges the raw command + config context; a neutral
+effect-preview is the planned input upgrade. Fleet-wide persona caching (a second breakpoint
+isolating the persona so it's shared across differently-scoped sessions) is a deferred
+optimization — per-session caching works today. See
+[`../backlog/permissions/README.md`](../backlog/permissions/README.md).
 
 [`knus`]: https://docs.rs/knus

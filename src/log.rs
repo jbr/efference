@@ -83,17 +83,17 @@ pub enum Payload {
     /// logged; the spotter is the first permission rung that earns an entry.
     Spot(Spot),
     /// A grant — the durable record of an **additive policy amendment**
-    /// (backlog/permissions/petition-loop.md). The amendment loop turns a deny into
+    /// (backlog/permissions/config-edit.md). The amendment loop turns a deny into
     /// negotiation: an orchestrator (human or coordinating session) extends the session's
     /// scope, and the extension lands here. Effective policy = base role + the fold of these
-    /// (see [`effective_role`]); the log is the source of truth for what was granted, exactly
+    /// (see [`effective_config`]); the log is the source of truth for what was granted, exactly
     /// as it is for everything else (docs/substrate.md). Grants are *additive only* (no deny),
     /// so the fold is order-independent and idempotent. Audit-only on the wire — it projects
     /// to nothing, like [`Spot`]; the *effect* reaches the model through the classifier, never
     /// the transcript.
     ///
-    /// [`effective_role`]: crate::policy::effective_role
-    Grant(Grant),
+    /// [`effective_config`]: crate::policy::effective_config
+    ConfigEdit(ConfigEdit),
 }
 
 /// Phase 0 content is text-only; richer blocks (images, …) come later.
@@ -199,7 +199,7 @@ pub struct Spot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Stance {
-    /// Reversible-and-in-scope (or irreversible-but-brief-sanctioned): auto-approve.
+    /// Reversible-and-in-scope (or irreversible-but-scope-sanctioned): auto-approve.
     Clear,
     /// Probably fine but uncertain, or a one-way move worth a beat of attention.
     /// Resolves to the human gate until the watch-window lands.
@@ -208,13 +208,13 @@ pub enum Stance {
     Gate,
 }
 
-/// A grant: one durable, **additive** policy amendment (backlog/permissions/petition-loop.md).
+/// A grant: one durable, **additive** policy amendment (backlog/permissions/config-edit.md).
 /// The amendment vocabulary lives here, in the substrate, deliberately — like [`Stance`] and
 /// [`Origin`], the log owns its own serialized types so the wire format isn't hostage to a
-/// policy struct's layout. [`crate::policy::effective_role`] maps each [`Amendment`] onto the
+/// policy struct's layout. [`crate::policy::effective_config`] maps each [`Amendment`] onto the
 /// role it folds into.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Grant {
+pub struct ConfigEdit {
     /// What the amendment grants. Additive only — there is no deny amendment, which is what
     /// makes the fold order-independent and idempotent.
     pub amendment: Amendment,
@@ -227,8 +227,8 @@ pub struct Grant {
     pub note: String,
 }
 
-/// What a [`Grant`] adds to the role. Each variant mirrors one of the role's grant kinds
-/// (`allow` / `path` / `tool`); [`crate::policy::effective_role`] pushes it onto the matching
+/// What a [`ConfigEdit`] adds to the role. Each variant mirrors one of the role's grant kinds
+/// (`allow` / `path` / `tool`); [`crate::policy::effective_config`] pushes it onto the matching
 /// list. Additive only — the absence of a deny variant is load-bearing (the fold can't subtract).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -243,7 +243,7 @@ pub enum Amendment {
     Tool { name: String },
 }
 
-/// How long a [`Grant`] lives (backlog/permissions/petition-loop.md). The MVP carries the two
+/// How long a [`ConfigEdit`] lives (backlog/permissions/config-edit.md). The MVP carries the two
 /// endpoints; turn/time-TTL is deferred (and time-TTL is a determinism hazard — timestamps are
 /// never projected, so it could only gate the recomputed classifier, never the wire).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -252,7 +252,7 @@ pub enum Lifetime {
     /// In effect for this session only: a log entry that dies with the daemon.
     Session,
     /// Also written back to the role config file, so it survives into future boots. Sound as an
-    /// append because grants are additive (backlog/permissions/petition-loop.md).
+    /// append because grants are additive (backlog/permissions/config-edit.md).
     Persist,
 }
 

@@ -49,7 +49,7 @@ enum Command {
         /// cheap band (Haiku) regardless of what the agent runs.
         #[arg(long, default_value = "claude-haiku-4-5")]
         spotter_model: String,
-        /// Path to the role config (KDL, see backlog/permissions/role-config.md). If
+        /// Path to the role config (KDL, see backlog/permissions/README.md). If
         /// omitted, `efference.kdl` in the cwd is probed; absent → the built-in default
         /// role. An explicit path that doesn't exist is an error. The resolved path is
         /// reported on `GET /state`.
@@ -142,8 +142,8 @@ enum Command {
         /// cosmetic here (the request isn't sent).
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
-        /// Role config to fold into the reconstructed preamble, same resolution as
-        /// `serve` (defaults to probing `efference.kdl`). The role file isn't recorded
+        /// Config file to fold into the reconstructed preamble, same resolution as
+        /// `serve` (defaults to probing `efference.kdl`). The config file isn't recorded
         /// in the log, so — like `system`/`tools[]` — it's rebuilt from the current
         /// environment; pass `--config` to match the session that produced the log.
         #[arg(long, short = 'c')]
@@ -255,7 +255,7 @@ async fn wire(
     // The envelope's system + tools aren't recorded in the log — rebuild them the
     // same way `serve` does (current cwd seeds both the env block and the MCP
     // servers' session roots; the role config folds its brief into the preamble).
-    let loaded = match efference::role::load(config.as_deref()) {
+    let loaded = match efference::config::load(config.as_deref()) {
         Ok(l) => l,
         Err(e) => {
             e.eprint();
@@ -619,10 +619,10 @@ async fn serve(
         .map_err(|_| "ANTHROPIC_API_KEY is not set in the environment")?;
 
     // Resolve the role *before* anything else: a malformed config should fail fast with
-    // a source-span report, not after a socket is bound (backlog/permissions/role-config.md).
+    // a source-span report, not after a socket is bound (backlog/permissions/README.md).
     // The brief folds into the frozen preamble below; the rest of the role rides on
     // `Shared` for `/state` and the (not-yet-built) cascade rungs.
-    let loaded = match efference::role::load(config.as_deref()) {
+    let loaded = match efference::config::load(config.as_deref()) {
         Ok(l) => l,
         Err(e) => {
             e.eprint();
@@ -630,8 +630,8 @@ async fn serve(
         }
     };
     match &loaded.source {
-        efference::role::RoleSource::Path(p) => eprintln!("role config: {}", p.display()),
-        efference::role::RoleSource::Default => eprintln!("role config: (default — no file)"),
+        efference::config::ConfigSource::Path(p) => eprintln!("role config: {}", p.display()),
+        efference::config::ConfigSource::Default => eprintln!("role config: (default — no file)"),
     }
 
     // One JSONL file per session under .efference/ (gitignored). The socket lives
@@ -652,7 +652,7 @@ async fn serve(
     // only session-stable facts (cwd, platform, project type), never volatile state
     // like git status. See `env::system_prompt`. The `wire` dev view reconstructs
     // the same string. The role's brief (if any) folds in here, frozen for the session
-    // exactly like the env block (backlog/permissions/role-config.md — the
+    // exactly like the env block (backlog/permissions/README.md — the
     // config→preamble projection must be byte-stable).
     let role_section = loaded.role.preamble_section();
     let system = efference::env::system_prompt(role_section.as_deref());
@@ -688,8 +688,8 @@ async fn spotter_check(
 ) -> CliResult {
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| "ANTHROPIC_API_KEY is not set in the environment")?;
-    let role = efference::role::Role {
-        brief,
+    let role = efference::config::Config {
+        scope: brief,
         watch_for,
         paths: paths.iter().map(|s| parse_path_grant(s)).collect(),
         ..Default::default()
@@ -719,14 +719,14 @@ async fn spotter_check(
 /// `<path>:r` (read), or a bare `<path>` (no access — matching [`PathGrant`]'s
 /// honest default). The perm suffix is matched by the letters it contains.
 ///
-/// [`PathGrant`]: efference::role::PathGrant
-fn parse_path_grant(spec: &str) -> efference::role::PathGrant {
+/// [`PathGrant`]: efference::config::PathGrant
+fn parse_path_grant(spec: &str) -> efference::config::PathGrant {
     match spec.rsplit_once(':') {
-        Some((path, perms)) => efference::role::PathGrant {
+        Some((path, perms)) => efference::config::PathGrant {
             path: path.into(),
             read: perms.contains('r'),
             write: perms.contains('w'),
         },
-        None => efference::role::PathGrant { path: spec.into(), read: false, write: false },
+        None => efference::config::PathGrant { path: spec.into(), read: false, write: false },
     }
 }

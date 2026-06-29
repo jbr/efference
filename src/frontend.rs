@@ -36,12 +36,12 @@ pub enum Approval {
     /// not tool output.
     Redirect(String),
     /// **Amend policy**, then run this call iff the amended policy now clears it
-    /// (backlog/permissions/petition-loop.md). The orchestrator's reply at a gate: extend
+    /// (backlog/permissions/config-edit.md). The orchestrator's reply at a gate: extend
     /// the role with an additive [`Amendment`] (session-only or persisted), logged as a
-    /// `Payload::Grant`. The current call does not "ride along" — the loop re-classifies it
+    /// `Payload::ConfigEdit`. The current call does not "ride along" — the loop re-classifies it
     /// against the new policy and only runs it if it clears, so the mechanism (not the
     /// human's gesture) authorizes the run. `note` is the rationale, for the audit corpus.
-    Grant {
+    ConfigEdit {
         amendment: Amendment,
         lifetime: Lifetime,
         note: String,

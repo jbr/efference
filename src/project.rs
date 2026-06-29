@@ -237,11 +237,11 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // A spotter verdict (docs/permissions.md) is audit-only — the permission
             // decision lives in the log, never on the canonical wire.
             Payload::Spot(_) => {}
-            // A grant (backlog/permissions/petition-loop.md) is audit-only too — its
+            // A grant (backlog/permissions/config-edit.md) is audit-only too — its
             // *effect* reaches the model through the classifier (the policy fold), never
             // the transcript. So it projects to nothing, and appending one cannot perturb
             // the cached prefix (docs/substrate.md).
-            Payload::Grant(_) => {}
+            Payload::ConfigEdit(_) => {}
             // A fork verdict emits a block per **pinned** notification at its own
             // position (docs/inbox.md) — body looked up from the `Ambient` arrival. This
             // tail-ward placement keeps the wire append-only: a notification pinned at
@@ -504,19 +504,19 @@ mod tests {
         assert_eq!(wire, expected);
     }
 
-    /// A `Grant` is audit-only: appending one anywhere in the log must not change a single
+    /// A `ConfigEdit` is audit-only: appending one anywhere in the log must not change a single
     /// projected byte (its effect reaches the model through the classifier, not the wire). If
     /// this ever fails, a grant has leaked onto the cached prefix (docs/substrate.md).
     #[test]
     fn grant_projects_to_nothing() {
-        use crate::log::{Amendment, Grant, Lifetime};
+        use crate::log::{Amendment, ConfigEdit, Lifetime};
         let without = serde_json::to_string(&project(&sample_log())).unwrap();
 
         let mut with = sample_log();
         with.push(entry(
             3,
             1,
-            Payload::Grant(Grant {
+            Payload::ConfigEdit(ConfigEdit {
                 amendment: Amendment::Allow {
                     program: "cargo".into(),
                     prefix: vec!["nextest".into()],
