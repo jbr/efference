@@ -280,6 +280,11 @@ enum Command {
         /// Spotter model. Defaults to claude-haiku-4-5.
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
+        /// Simulate a prefix-promotion probe riding this call: ask whether `<prefix>` is safe for all
+        /// arguments (backlog/permissions/prefix-promotion.md). The verdict's `clear_always` stance is
+        /// the safe-vote; the tester reports whether it would queue a promotion.
+        #[arg(long)]
+        probe: Option<String>,
         /// The bash command to judge. Multiple words are joined with spaces.
         #[arg(required = true, num_args = 1..)]
         command: Vec<String>,
@@ -339,8 +344,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             watch_for,
             paths,
             model,
+            probe,
             command,
-        } => spotter_check(scope, watch_for, paths, &model, command.join(" ")).await,
+        } => spotter_check(scope, watch_for, paths, &model, probe, command.join(" ")).await,
         Command::Attach => attach(client_socket()?).await,
         Command::Tui { theme } => tui(client_socket()?, theme).await,
         Command::Gallery { theme } => gallery(theme).await,
@@ -867,6 +873,7 @@ async fn spotter_check(
     watch_for: Vec<String>,
     paths: Vec<String>,
     model: &str,
+    probe: Option<String>,
     command: String,
 ) -> CliResult {
     let api_key = std::env::var("ANTHROPIC_API_KEY")
@@ -882,9 +889,24 @@ async fn spotter_check(
         name: efference::bash::NAME.into(),
         input: serde_json::json!({ "command": command }),
     };
-    let spotting = ForkSpot::new(api_key, model).assess(&role, &call).await;
+    let spotting = ForkSpot::new(api_key, model)
+        .assess(&role, &call, probe.as_deref())
+        .await;
     println!("stance: {:?}", spotting.read.stance);
     println!("reason: {}", spotting.read.reason);
+    if let Some(prefix) = &probe {
+        // The probe's answer is the stance: `clear_always` (from a real model verdict) is the safe-vote.
+        let safe = spotting.origin == efference::log::Origin::Model
+            && spotting.read.stance == efference::log::Stance::ClearAlways;
+        let verdict = if !safe {
+            "not a safe-vote (stance wasn't clear_always) — no promotion".to_string()
+        } else if let Some(key) = efference::policy::promotable_command(&role, prefix) {
+            format!("safe-vote → would queue `{key}` as a Proposed(Command) at K=1")
+        } else {
+            "safe-vote, but already covered by the allowlist — nothing to queue".to_string()
+        };
+        println!("probe `{prefix}`: {verdict}");
+    }
     println!("origin: {:?}", spotting.origin);
     if let Some(u) = spotting.usage {
         println!(

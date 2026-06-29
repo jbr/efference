@@ -192,6 +192,12 @@ pub struct Shared {
     ///
     /// [`append`]: Shared::append
     effective: Mutex<Arc<crate::config::Config>>,
+    /// The prefix-promotion probe ledger (backlog/permissions/prefix-promotion.md): per-prefix
+    /// seen-counts + probe votes, the state the descent reads to decide which prefix (if any) to ask
+    /// the spotter to vouch for. Derived from the log's `Spot` entries (folded at startup via
+    /// [`crate::policy::probe_ledger`], maintained incrementally as the loop assesses moves), never on
+    /// the wire — like `effective`, behind a lock because the loop mutates it mid-session.
+    probes: Mutex<crate::policy::ProbeLedger>,
     /// **Autonomous mode** (backlog/permissions/session-dir-and-config-as-reviewed-file.md): no
     /// synchronous human sits at the gate. Set once at boot from `serve --autonomous`; the gate
     /// reads it ([`Shared::autonomous`]) to turn a spotter `Watch`/`Gate` into a *redirect* —
@@ -242,6 +248,9 @@ impl Shared {
         // role; from here it's maintained incrementally on append. Computed before `log` is
         // moved into the struct.
         let effective = Arc::new(crate::policy::effective_config(&role.role, log.entries()));
+        // Fold the probe ledger from a resumed log (no-op for a fresh one), then maintain it
+        // incrementally as the loop assesses moves (backlog/permissions/prefix-promotion.md).
+        let probes = crate::policy::probe_ledger(log.entries());
         let shared = Arc::new(Self {
             log: Mutex::new(log),
             turns_tx,
@@ -260,6 +269,7 @@ impl Shared {
             supervisor: Mutex::new(Supervisor::new()),
             role,
             effective: Mutex::new(effective),
+            probes: Mutex::new(probes),
             autonomous: AtomicBool::new(false),
         });
         (shared, turns_rx)
@@ -452,6 +462,28 @@ impl Shared {
     /// Set autonomous mode. Called once by `serve` at boot, before the loop is spawned.
     pub fn set_autonomous(&self, on: bool) {
         self.autonomous.store(on, Ordering::Relaxed);
+    }
+
+    /// Observe one spotter-assessed bash command and pick the prefix to probe for promotion, if any
+    /// (backlog/permissions/prefix-promotion.md). Bumps the seen-counts for the command's token-prefixes,
+    /// then runs the descent against the current effective policy — one lock acquisition.
+    pub fn observe_and_pick_probe(
+        &self,
+        role: &crate::config::Config,
+        tokens: &[String],
+    ) -> Option<String> {
+        let mut probes = self.probes.lock().unwrap();
+        probes.observe(tokens);
+        probes.next_probe(role, tokens)
+    }
+
+    /// Record a probe's vote (`safe` iff the spotter answered `clear_always`) and report whether the
+    /// prefix has now reached the promotion threshold `K` — the loop's signal to file a
+    /// `Proposed(Command)` (backlog/permissions/prefix-promotion.md).
+    pub fn record_probe_vote(&self, prefix: &str, safe: bool) -> bool {
+        let mut probes = self.probes.lock().unwrap();
+        probes.vote(prefix, safe);
+        probes.ready_to_promote(prefix)
     }
 
     /// A clone of the single entry at `seq` (== its index in the log), or `None`

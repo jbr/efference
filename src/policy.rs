@@ -49,13 +49,14 @@
 //! `preview_edit`), so write permission is enforced at `preview_edit` — the only
 //! edit-pipeline call that names the file — and `persist_edit` clears on the name grant.
 
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Component, Path, PathBuf};
 
 use serde_json::Value;
 
 use crate::bash;
 use crate::config::{Config, Perms};
-use crate::log::{ConfigChange, LogEntry, Payload, ToolCall};
+use crate::log::{ConfigChange, LogEntry, Origin, Payload, Stance, ToolCall};
 
 /// The fast-path's decision for one tool call. Binary; the extension point for the
 /// spotter rung, which splits `Gate` into a graded `{clear, watch, gate}` stance
@@ -128,6 +129,125 @@ pub fn apply_config_change(role: &mut Config, change: &ConfigChange) {
             role.scope = Some(text.clone());
         }
     }
+}
+
+/// How many sightings of a command-prefix before a prefix-promotion probe rides along — the
+/// frequency gate (backlog/permissions/prefix-promotion.md). `2` = probe on the *second* time we see
+/// the prefix; "we don't propose promoting a shape we've seen only once." Tuneable — the decay curve
+/// sets the real value.
+pub const MIN_SIGHTINGS_TO_PROBE: u32 = 2;
+
+/// How many independent safe-votes promote a prefix — the consensus threshold `K`. `1` = the first
+/// `clear_always` files a proposal for an orchestrator to confirm. Raising it (and tolerating a few
+/// dissenting not-safe votes) is the path to evidence-only, human-out-of-the-loop promotion; the
+/// vote ledger already records the evidence, so it's a threshold change, not a substrate one.
+pub const PROMOTE_AFTER_SAFE_VOTES: u32 = 1;
+
+/// The per-prefix tally the prefix-promotion descent reads (backlog/permissions/prefix-promotion.md).
+/// Derived state, like the effective config: folded from the log's `Spot` entries at startup
+/// ([`probe_ledger`]) and maintained incrementally by the daemon as the loop runs. Never on the wire.
+#[derive(Clone, Debug, Default)]
+pub struct ProbeLedger {
+    /// prefix (joined tokens, e.g. `"git log"`) → how many spotter-assessed bash commands had it as
+    /// a token-prefix. The recurrence signal the frequency gate reads.
+    seen: BTreeMap<String, u32>,
+    /// prefix → (safe votes, not-safe votes). A safe vote is a `clear_always` stance on a call that
+    /// probed this prefix; not-safe is any other stance there. The promotion evidence base.
+    votes: BTreeMap<String, (u32, u32)>,
+}
+
+impl ProbeLedger {
+    /// Count one spotter-assessed bash command: bump `seen` for every token-prefix of it. Called
+    /// once per assessed command — incrementally in the loop, and replayed by [`probe_ledger`] on
+    /// resume — so the two agree (exactly one `Spot` per assessed command).
+    pub fn observe(&mut self, tokens: &[String]) {
+        for len in 1..=tokens.len() {
+            *self.seen.entry(tokens[..len].join(" ")).or_default() += 1;
+        }
+    }
+
+    /// Record a probe vote for `prefix`: `safe` iff the stance was `clear_always`.
+    pub fn vote(&mut self, prefix: &str, safe: bool) {
+        let entry = self.votes.entry(prefix.to_string()).or_default();
+        if safe {
+            entry.0 += 1;
+        } else {
+            entry.1 += 1;
+        }
+    }
+
+    /// Whether `prefix` is **resolved** and so must not be re-probed. At today's `K = 1` a single
+    /// vote resolves it (one safe → promoted/pending; one not-safe → declined). When `K` grows this
+    /// becomes "≥ K safe, or any not-safe (dissent breaks consensus)".
+    fn resolved(&self, prefix: &str) -> bool {
+        self.votes
+            .get(prefix)
+            .is_some_and(|(safe, not_safe)| *safe >= PROMOTE_AFTER_SAFE_VOTES || *not_safe > 0)
+    }
+
+    /// Whether `prefix`'s safe-votes have reached the promotion threshold `K` — the loop's signal to
+    /// file a `Proposed(Command)` for it.
+    pub fn ready_to_promote(&self, prefix: &str) -> bool {
+        self.votes
+            .get(prefix)
+            .is_some_and(|(safe, _)| *safe >= PROMOTE_AFTER_SAFE_VOTES)
+    }
+
+    /// The prefix to probe on the current bash command, or `None`. The descent
+    /// (backlog/permissions/prefix-promotion.md): the **shortest** token-prefix of `tokens` that is
+    /// promotable (lexes + not already covered by `[commands]`), seen at least
+    /// [`MIN_SIGHTINGS_TO_PROBE`] times, and not yet [`resolved`]. Shortest-first, so the broadest
+    /// (most valuable) promotion is tried before descending to a sub-verb; the descent self-terminates
+    /// at the first safe prefix because promoting it stops its subtree from reaching the spotter.
+    ///
+    /// [`resolved`]: ProbeLedger::resolved
+    pub fn next_probe(&self, role: &Config, tokens: &[String]) -> Option<String> {
+        (1..=tokens.len())
+            .map(|len| tokens[..len].join(" "))
+            .find(|prefix| {
+                promotable_command(role, prefix).is_some() // not already covered by the allowlist
+                    && self.seen.get(prefix).copied().unwrap_or(0) >= MIN_SIGHTINGS_TO_PROBE
+                    && !self.resolved(prefix)
+            })
+    }
+}
+
+/// Fold the probe ledger from a whole log (startup / resume) — the batch form of the incremental
+/// updates the daemon makes as the loop runs (backlog/permissions/prefix-promotion.md). Mirrors
+/// [`effective_config`]. Seen-counts come from each `Spot`'s bash command (recovered by `call_id`);
+/// votes from each `Spot` that probed a prefix, counted only when the verdict was the model's — a
+/// fail-closed `Fallback` didn't actually judge, so it casts no vote.
+pub fn probe_ledger(log: &[LogEntry]) -> ProbeLedger {
+    // call_id → the bash command it ran, so a `Spot` can recover the command it judged.
+    let mut command_of: HashMap<&crate::log::CallId, &str> = HashMap::new();
+    for entry in log {
+        if let Payload::Assistant { calls, .. } = &entry.payload {
+            for call in calls {
+                if call.name == bash::NAME
+                    && let Some(cmd) = call.input.get("command").and_then(Value::as_str)
+                {
+                    command_of.insert(&call.id, cmd);
+                }
+            }
+        }
+    }
+    let mut ledger = ProbeLedger::default();
+    for entry in log {
+        let Payload::Spot(spot) = &entry.payload else {
+            continue;
+        };
+        if let Some(cmd) = command_of.get(&spot.call_id)
+            && let Some(tokens) = simple_command_tokens(cmd)
+        {
+            ledger.observe(&tokens);
+        }
+        if let Some(prefix) = &spot.probed_prefix
+            && spot.origin == Origin::Model
+        {
+            ledger.vote(prefix, spot.stance == Stance::ClearAlways);
+        }
+    }
+    ledger
 }
 
 /// Classify a tool call against the role (backlog/permissions/prefix-fastpath.md).
@@ -328,6 +448,34 @@ fn classify_bash(role: &Config, command: &str) -> Verdict {
     }
 }
 
+/// Validate a spotter-proposed command prefix for **promotion** into the `[commands]` allowlist
+/// (backlog/permissions/prefix-fastpath.md, spotter.md). The spotter, fresh-context, judges a
+/// program-prefix *standing-safe* (reversible/in-scope regardless of args) and suggests adding it;
+/// this is the soundness gate before that suggestion becomes a `Proposed(Command)`:
+///
+/// - It must **lex to a simple-command token vector** with the fast-path's own lexer — the same
+///   requirement config-load enforces on `[commands]` keys, so the stored key and any command it's
+///   matched against agree token-for-token. A prefix that doesn't lex (`"git | rm"`, an expansion)
+///   is rejected, never queued. This is what holds the **program-prefix-granularity** invariant
+///   (safety is discontinuous in the command string, so only program-prefixes are soundly
+///   memoizable, never exact commands).
+/// - It must not be **already covered** by an existing key — if some current key's tokens are a
+///   prefix of the proposed prefix's tokens, any command it would clear already clears, so the
+///   promotion is redundant and dropped (keeps the proposal queue free of no-ops; the spotter is
+///   blind to the allowlist, so it can't dedup itself).
+///
+/// Returns the normalized key (the trimmed prefix) to store, or `None` if it fails either check.
+pub fn promotable_command(role: &Config, prefix: &str) -> Option<String> {
+    let tokens = simple_command_tokens(prefix)?;
+    let already_covered = role.commands.iter().any(|key| {
+        simple_command_tokens(key).is_some_and(|key_tokens| tokens.starts_with(&key_tokens))
+    });
+    if already_covered {
+        return None;
+    }
+    Some(prefix.trim().to_string())
+}
+
 /// **Stage 1 — structural simplicity.** Parse `command` and return its literal token
 /// vector (`[program, args…]`) iff it is exactly one simple command with no operators,
 /// redirections, assignments, or expansions, and whose every word is wholly literal.
@@ -491,6 +639,35 @@ mod tests {
                 "{complex:?} must gate"
             );
         }
+    }
+
+    #[test]
+    fn promotable_command_accepts_a_lexable_novel_prefix() {
+        let role = sample_role(); // cargo, rg, git diff, git status
+        // A program not yet listed, structurally simple → promotable, stored trimmed.
+        assert_eq!(
+            promotable_command(&role, "  npm  "),
+            Some("npm".to_string())
+        );
+        // A sub-verb prefix the allowlist doesn't cover (only `git diff`/`git status` are listed).
+        assert_eq!(
+            promotable_command(&role, "git log"),
+            Some("git log".to_string())
+        );
+    }
+
+    #[test]
+    fn promotable_command_rejects_unlexable_or_redundant_prefixes() {
+        let role = sample_role();
+        // Doesn't lex to a simple command (operator) → never queued: program-prefix granularity.
+        assert_eq!(promotable_command(&role, "npm | sh"), None);
+        // Already a listed program → redundant.
+        assert_eq!(promotable_command(&role, "cargo"), None);
+        // Covered by a broader listed key: `git diff` is already cleared by... no — `git` is NOT
+        // listed, only `git diff`/`git status`, so `git diff --stat` IS covered by `git diff`.
+        assert_eq!(promotable_command(&role, "git diff --stat"), None);
+        // But promoting the *broader* `git` is a real broadening, not redundant.
+        assert_eq!(promotable_command(&role, "git"), Some("git".to_string()));
     }
 
     #[test]
@@ -960,5 +1137,148 @@ mod tests {
         })];
         let eff = effective_config(&base, &log);
         assert_eq!(eff.scope.as_deref(), Some("new perimeter"));
+    }
+
+    // --- prefix-promotion: the probe ledger + descent (backlog/permissions/prefix-promotion.md) ---
+
+    fn toks(command: &str) -> Vec<String> {
+        simple_command_tokens(command).expect("lexes")
+    }
+
+    /// The frequency gate: a prefix isn't probed until it's been seen `MIN_SIGHTINGS_TO_PROBE` times.
+    #[test]
+    fn descent_waits_for_the_frequency_gate() {
+        let role = Config::default(); // empty allowlist → every prefix is promotable
+        let mut ledger = ProbeLedger::default();
+        let t = toks("npm install");
+        ledger.observe(&t); // 1st sighting
+        assert_eq!(
+            ledger.next_probe(&role, &t),
+            None,
+            "one sighting is too few"
+        );
+        ledger.observe(&t); // 2nd sighting → now eligible
+        assert_eq!(ledger.next_probe(&role, &t).as_deref(), Some("npm"));
+    }
+
+    /// The descent picks the shortest unresolved prefix, then descends past a not-safe vote.
+    #[test]
+    fn descent_picks_shortest_then_descends_past_a_vote() {
+        let role = Config::default();
+        let mut ledger = ProbeLedger::default();
+        let t = toks("git log --oneline");
+        // Warm all prefixes past the gate.
+        ledger.observe(&t);
+        ledger.observe(&t);
+        // Shortest first: `git`.
+        assert_eq!(ledger.next_probe(&role, &t).as_deref(), Some("git"));
+        // A not-safe vote resolves `git`; the descent moves to the next prefix, `git log`.
+        ledger.vote("git", false);
+        assert_eq!(ledger.next_probe(&role, &t).as_deref(), Some("git log"));
+        // A safe vote on `git log` resolves it too (and flags it ready to promote).
+        ledger.vote("git log", true);
+        assert!(ledger.ready_to_promote("git log"));
+        assert!(!ledger.ready_to_promote("git"));
+        // `git log --oneline` was never warmed on its own past the gate independently... it was
+        // (every observe bumps all prefixes), so it's the last eligible one.
+        assert_eq!(
+            ledger.next_probe(&role, &t).as_deref(),
+            Some("git log --oneline")
+        );
+    }
+
+    /// Coverage is monotonic by token-prefix: if `cargo` is allowlisted, every `cargo …` prefix is
+    /// covered too (and the command would fast-path clear, never reaching the spotter). The descent's
+    /// coverage check is a defensive guard — when all prefixes are covered it probes nothing.
+    #[test]
+    fn descent_probes_nothing_when_every_prefix_is_covered() {
+        let role = Config {
+            commands: commands(&["cargo"]),
+            ..Default::default()
+        };
+        let mut ledger = ProbeLedger::default();
+        let t = toks("cargo test --workspace");
+        ledger.observe(&t);
+        ledger.observe(&t);
+        assert_eq!(ledger.next_probe(&role, &t), None);
+    }
+
+    /// The fold reconstructs seen-counts (from each `Spot`'s command) and votes (from probed `Spot`s,
+    /// model verdicts only) so a resumed daemon picks up exactly where it left off.
+    #[test]
+    fn probe_ledger_folds_seen_and_votes_from_the_log() {
+        use crate::log::{CallId, Origin, Spot, Stance};
+
+        // Two `cargo test` invocations, the second carrying a `clear_always` probe vote for `cargo`.
+        fn assistant(id: &str, command: &str) -> LogEntry {
+            LogEntry {
+                seq: 0,
+                turn: 0,
+                at: Timestamp(0),
+                payload: Payload::Assistant {
+                    text: vec![],
+                    calls: vec![ToolCall {
+                        id: CallId(id.into()),
+                        name: bash::NAME.into(),
+                        input: serde_json::json!({ "command": command }),
+                    }],
+                },
+            }
+        }
+        fn spot(id: &str, stance: Stance, probed: Option<&str>) -> LogEntry {
+            LogEntry {
+                seq: 0,
+                turn: 0,
+                at: Timestamp(0),
+                payload: Payload::Spot(Spot {
+                    call_id: CallId(id.into()),
+                    stance,
+                    reason: String::new(),
+                    origin: Origin::Model,
+                    probed_prefix: probed.map(str::to_string),
+                }),
+            }
+        }
+
+        let log = [
+            assistant("a", "cargo test"),
+            spot("a", Stance::Clear, Some("cargo")), // 1st sighting, not-safe-yet vote? no — clear, not clear_always
+            assistant("b", "cargo test"),
+            spot("b", Stance::ClearAlways, Some("cargo")), // 2nd sighting + safe vote
+        ];
+        let ledger = probe_ledger(&log);
+        // Two sightings of `cargo` and `cargo test`.
+        let role = Config::default();
+        // `cargo` got one not-safe (Clear) and one safe (ClearAlways) vote → resolved either way;
+        // and it reached the safe threshold, so it's ready to promote.
+        assert!(ledger.ready_to_promote("cargo"));
+        // Resolved → not re-probed even though seen ≥ 2.
+        assert_eq!(
+            ledger.next_probe(&role, &toks("cargo test")).as_deref(),
+            Some("cargo test")
+        );
+    }
+
+    /// A fail-closed (`Fallback`) spotter verdict casts no vote — it didn't actually judge.
+    #[test]
+    fn probe_ledger_ignores_fallback_verdicts() {
+        use crate::log::{CallId, Origin, Spot, Stance};
+        let log = [LogEntry {
+            seq: 0,
+            turn: 0,
+            at: Timestamp(0),
+            payload: Payload::Spot(Spot {
+                call_id: CallId("x".into()),
+                stance: Stance::ClearAlways, // would be a safe vote — but origin is Fallback
+                reason: String::new(),
+                origin: Origin::Fallback,
+                probed_prefix: Some("cargo".into()),
+            }),
+        }];
+        let ledger = probe_ledger(&log);
+        assert!(
+            !ledger.ready_to_promote("cargo"),
+            "a fallback casts no vote"
+        );
     }
 }

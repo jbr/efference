@@ -193,18 +193,35 @@ pub struct Spot {
     pub stance: Stance,
     pub reason: String,
     pub origin: Origin,
+    /// The command prefix this spotter call was also asked to judge for **promotion**, if a
+    /// prefix-promotion probe rode along (backlog/permissions/prefix-promotion.md). The probe's
+    /// answer *is* the stance — `ClearAlways` is the safe-vote for this prefix, any other stance is
+    /// not-safe — so the ledger that decides promotion folds from these `Spot` entries: a
+    /// `probed_prefix = Some(p)` with `origin = Model` contributes a vote for `p`. `None` when no
+    /// probe rode (most calls), so old logs and unprobed calls fold to nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probed_prefix: Option<String>,
 }
 
 /// The spotter's graded disposition for one move (docs/permissions.md). It splits
-/// the fast-path's binary `Gate` into three: `Clear` auto-approves with no human,
-/// `Gate` falls through to the human, and `Watch` is the middle setting the
-/// (unbuilt) watch-window will map to an intervention latency — for now it resolves
-/// to the human gate alongside `Gate`.
+/// the fast-path's binary `Gate` into `Clear` (auto-approve, no human), `Watch` (the
+/// middle setting the unbuilt watch-window will map to an intervention latency — for now
+/// it resolves to the human gate alongside `Gate`), and `Gate`. [`Stance::ClearAlways`]
+/// is a *refinement of `Clear`* the prefix-promotion probe adds: it clears the move **and**
+/// votes the probed prefix blanket-safe (backlog/permissions/prefix-promotion.md). Folding the
+/// promotion answer into the stance — rather than a separate flag — makes the contradictory
+/// combinations (`watch`/`gate` + "always safe") unrepresentable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Stance {
     /// Reversible-and-in-scope (or irreversible-but-scope-sanctioned): auto-approve.
     Clear,
+    /// Like [`Stance::Clear`] (auto-approve the move) **and** the probe's prefix is safe for *every*
+    /// argument under this mission — the safe-vote that drives prefix promotion. Only meaningful when
+    /// a probe rode the call (`Spot::probed_prefix` is `Some`); the move-approval path treats it
+    /// identically to `Clear`.
+    #[serde(rename = "clear_always")]
+    ClearAlways,
     /// Probably fine but uncertain, or a one-way move worth a beat of attention.
     /// Resolves to the human gate until the watch-window lands.
     Watch,

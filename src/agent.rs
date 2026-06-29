@@ -24,7 +24,7 @@ use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
     ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Lifetime, Mark, MarkKind,
-    Notification, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
+    Notification, Origin, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
 };
 use crate::policy::{self, Verdict};
 use crate::project::place_trailing_cache_breakpoint;
@@ -402,26 +402,69 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                     match policy::classify(&role, call) {
                         Verdict::Clear => Approval::Approve,
                         Verdict::Gate => {
-                            let spotting = spotter.assess(&role, call).await;
+                            // Prefix-promotion probe (backlog/permissions/prefix-promotion.md): on a
+                            // bash move, observe its recurrence and pick the shortest prefix worth
+                            // asking the spotter to vouch for *for all arguments*. The spotter answers
+                            // via the stance (`clear_always`), so the probe rides the one spot call.
+                            let probe = if call.name == bash::NAME {
+                                call.input
+                                    .get("command")
+                                    .and_then(Value::as_str)
+                                    .and_then(policy::simple_command_tokens)
+                                    .and_then(|tokens| {
+                                        shared.observe_and_pick_probe(&role, &tokens)
+                                    })
+                            } else {
+                                None
+                            };
+                            let spotting = spotter.assess(&role, call, probe.as_deref()).await;
                             if let Some(u) = spotting.usage {
                                 shared.record_request(u);
                             }
                             let stance = spotting.read.stance;
                             let reason = spotting.read.reason;
+                            let origin = spotting.origin;
                             shared.append(
                                 turn,
                                 Payload::Spot(Spot {
                                     call_id: call.id.clone(),
                                     stance,
                                     reason: reason.clone(),
-                                    origin: spotting.origin,
+                                    origin,
+                                    probed_prefix: probe.clone(),
                                 }),
                             )?;
+                            // The probe's answer *is* the stance: `clear_always` is the safe-vote for
+                            // the probed prefix, any other stance is not-safe (a fail-closed fallback
+                            // didn't judge, so it casts no vote). When the safe-votes cross the
+                            // consensus threshold, file a non-blocking `Proposed(Command)` — inert
+                            // until an orchestrator-above commits it; `promotable_command` re-checks it
+                            // lexes and isn't already covered. Nothing rides along: the proposal can't
+                            // clear anything until committed, and this very call is still decided below.
+                            if let Some(prefix) = &probe
+                                && origin == Origin::Model
+                                && shared.record_probe_vote(prefix, stance == Stance::ClearAlways)
+                                && let Some(command) = policy::promotable_command(&role, prefix)
+                            {
+                                shared.append(
+                                    turn,
+                                    Payload::ConfigEdit(ConfigEdit {
+                                        state: EditState::Proposed,
+                                        resolves: None,
+                                        change: ConfigChange::Command { command },
+                                        lifetime: Lifetime::Session,
+                                        note: format!(
+                                            "spotter: `{prefix}` judged safe for all arguments — \
+                                             proposed for the allowlist"
+                                        ),
+                                    }),
+                                )?;
+                            }
                             match stance {
-                                // Clear: auto-approve, no human. Watch/Gate both route to
-                                // the human gate for now — the watch-window that gives
-                                // Watch its own intervention latency is a later unit.
-                                Stance::Clear => Approval::Approve,
+                                // Clear (and its promotion refinement) auto-approve the move, no human.
+                                // Watch/Gate route to the human gate (or, autonomous, the redirect) —
+                                // the watch-window that gives Watch its own latency is a later unit.
+                                Stance::Clear | Stance::ClearAlways => Approval::Approve,
                                 // The autonomous flip (backlog/permissions/session-dir-and-config-as-reviewed-file.md):
                                 // with no synchronous human, don't block on an absent gate — redirect the
                                 // model to its config file, the one policy interface it has. (The config

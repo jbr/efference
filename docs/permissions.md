@@ -140,10 +140,15 @@ want — we parse, bash executes.
 The allowlist is curated along the reversibility axis: blanket `cargo = true` only for
 programs whose *whole* arg-space is recoverable; sub-verb prefixes (`"git diff" = true`,
 `"git status" = true`) for programs with an irreversible sub-space, letting the dangerous
-verbs (`git push`, `git reset`) fall through. Memoization (the eventual config-edit-fed
-growth of this list) is sound only at **program-prefix granularity, never command
-granularity** — safety is discontinuous in the command string (`./build` vs `/build`), so
-exact-command memoization is what strands dead entries and is anti-correlated with safety.
+verbs (`git push`, `git reset`) fall through. Memoization (the prefix-promotion growth of this
+list, below) keeps the list sound through **exact token-prefix matching (never fuzzy) +
+recurrence + judge-consensus**, not a granularity cap. Earlier this doc said "program-prefix
+granularity, never command granularity"; prefix-promotion revises that deliberately. The two
+original fears both dissolve: *dead entries* (exact commands rarely recur) — the frequency gate
+only promotes shapes that actually recur; *discontinuity* (`./build` vs `/build`) — that only bites
+*fuzzy* matching, and promotion is exact token-prefix (promoting `./build` clears `./build …`,
+never `/build`). So depth is unbounded; the descent self-terminates at the shortest safe prefix.
+See the prefix-promotion section below.
 
 ### structured tools: name grant + path permission
 
@@ -192,9 +197,10 @@ spotter judges "outside scope" against a fixed, external authority — never the
 narration. The persona is sized to clear Haiku's cache floor on its own, so even a minimal
 config caches; within a session the scope is fixed, so every spotter call after the first is
 a cache read (the move is the only fresh tail). The verdict is forced through a `spot` tool:
-a graded [`Stance`] (`clear` / `watch` / `gate`) plus a one-line `reason` addressed to the
-session as a teammate. `Clear` auto-approves; `Watch` and `Gate` both route to the human
-gate today (the watch-window that gives `Watch` its own intervention latency is a later unit).
+a graded [`Stance`] (`clear` / `clear_always` / `watch` / `gate`) plus a one-line `reason`
+addressed to the session as a teammate. `Clear` (and `ClearAlways`) auto-approve; `Watch` and
+`Gate` both route to the human gate today (the watch-window that gives `Watch` its own
+intervention latency is a later unit). `ClearAlways` is the prefix-promotion safe-vote, below.
 
 **Fail closed.** Any failure — transport error, no `spot` call — yields `Gate` with
 `Origin::Fallback`: uncertainty routes to the human, never to auto-clear. (Contrast the
@@ -254,10 +260,9 @@ of the config file (the operator editing it externally takes effect live — `co
 diffs the file and emits `Committed` edits); and the **session editing its own config file**, the
 config-as-reviewed-file mechanism that *replaced* the planned `propose_scope` tool — a session
 `write`/`preview_edit` to its `config.toml` is forced to the operator gate (`is_config_write`,
-bypassing fast-path and spotter), and on approval fs-watch folds it; and the **autonomous flip**
-(`serve --autonomous`), below. Still to come: the **spotter's prefix-promotion** (the one remaining
-`Proposed`-lifecycle user — the spotter is fresh-context with no file tools, so it files a
-`Proposed(Command)`). See
+bypassing fast-path and spotter), and on approval fs-watch folds it; the **autonomous flip**
+(`serve --autonomous`), below; and **prefix-promotion** (the spotter files a `Proposed(Command)`),
+below — the last `Proposed`-lifecycle user. See
 [`../backlog/permissions/session-dir-and-config-as-reviewed-file.md`](../backlog/permissions/session-dir-and-config-as-reviewed-file.md)
 and [`../backlog/permissions/proposal-lifecycle.md`](../backlog/permissions/proposal-lifecycle.md).
 
@@ -276,10 +281,36 @@ edit), and the operator's attention is spent only on the genuine policy-change r
 still requires an operator — the model only gets to *ask*. (With no orchestrator connected, that
 config-write gate simply waits; watcher-escalation is the watch-window's job.)
 
+## Prefix-promotion: the harness learns its allowlist (`src/policy.rs`, `src/agent.rs`, `src/spotter.rs`)
+
+The allowlist grows by *probing*, so the spotter-call rate decays as a session's real toolchain
+saturates. The cognitive load on the spotter stays a single extra yes/no, and the "learning" is
+deterministic, exact, and auditable — a vote ledger, not a fuzzy model.
+
+When a bash move reaches the spotter, the loop runs a **descent** (`policy::ProbeLedger`): it bumps a
+`seen_count` for each of the command's token-prefixes, then picks the **shortest** prefix that is
+uncovered, seen at least `MIN_SIGHTINGS_TO_PROBE` times, and not yet resolved. That prefix rides the
+*same* spot call — the move prompt names it, and the answer **is the stance**: `clear_always` =
+clear the move *and* vote the prefix blanket-safe; any other stance is a not-safe vote. Folding the
+answer into the stance (rather than a separate flag) makes the contradictions — `watch`/`gate` +
+"always safe" — unrepresentable. Each call records a `Spot { stance, probed_prefix }` (still
+audit-only, projects to nothing), and the ledger **folds from those `Spot` entries** (`probe_ledger`,
+mirroring `effective_config`), so a resumed daemon recovers its counts and votes. When a prefix's
+safe-votes reach `PROMOTE_AFTER_SAFE_VOTES` (`K`), the loop files a non-blocking `Proposed(Command)`
+— inert until an orchestrator-above commits it, exactly the existing proposal sink.
+
+The descent self-terminates: `git`→not-safe, then `git log`→safe promotes `git log`, whose subtree
+then fast-path clears and never reaches the spotter again. `K`/`N` are the dials toward evidence-only,
+human-out-of-the-loop promotion (each probe is a *fresh* spotter, so probing a prefix across its
+recurrences is independent-judge consensus accruing in the ledger). `efference spotter --probe
+<prefix> …` exercises one probe. See
+[`../backlog/permissions/prefix-promotion.md`](../backlog/permissions/prefix-promotion.md).
+
 ## What is not built yet
 
-The watch-window, the spotter's effect-preview, and the last config-edit initiator (the spotter's
-prefix-promotion). `Stance::Watch` resolves to the human gate (or, autonomous, the redirect) today;
+The watch-window and the spotter's effect-preview. Prefix-promotion ships at `K = 1` (the first
+`clear_always` files a proposal); the consensus thresholds (`K > 1`, dissent-tolerance) and
+evidence-only auto-commit are dials over the same ledger, not yet turned. `Stance::Watch` resolves to the human gate (or, autonomous, the redirect) today;
 the watch-window will map it to an intervention latency instead. The spotter currently judges
 the raw command + config context; a neutral effect-preview is the planned input upgrade. Fleet-wide
 persona caching (a second breakpoint isolating the persona so it's shared across differently-scoped

@@ -51,8 +51,12 @@ const SPOT: &str = "spot";
 /// prompt so it sits in the cached prefix. Sized to clear Haiku's cache floor alone.
 const PERSONA: &str = include_str!("../assets/prompts/spotter.md");
 
-/// The spotter's verdict on one move: the graded [`Stance`] plus a one-line `reason`
-/// addressed to the acting session (what it reads to self-correct or petition).
+/// The spotter's verdict on one move: the graded [`Stance`] plus a one-line `reason` addressed to
+/// the acting session (what it reads to self-correct or petition). When a prefix-promotion probe
+/// rode the call (the loop passed a candidate prefix to [`Spotter::assess`]), the **stance itself**
+/// is the probe's answer: [`Stance::ClearAlways`] = clear the move *and* vote that prefix blanket-safe
+/// (backlog/permissions/prefix-promotion.md). Folding the answer into the stance — not a separate
+/// field — makes the contradictory combinations (`watch`/`gate` + "always safe") unrepresentable.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Read {
     pub stance: Stance,
@@ -91,7 +95,12 @@ impl Spotting {
 pub trait Spotter {
     /// Assess one gated tool call against the config. The config supplies the mission
     /// (scope), the boundaries (path grants + cwd), and the spotter-only watch-for list.
-    async fn assess(&self, role: &Config, call: &ToolCall) -> Spotting;
+    ///
+    /// `probe` is an optional command prefix the prefix-promotion descent
+    /// (backlog/permissions/prefix-promotion.md) wants judged *for promotion* alongside this move:
+    /// when `Some`, the move prompt asks whether that prefix is safe for **every** argument, and a
+    /// [`Stance::ClearAlways`] is the safe-vote. `None` on most calls (no probe rides along).
+    async fn assess(&self, role: &Config, call: &ToolCall, probe: Option<&str>) -> Spotting;
 }
 
 /// The model spotter — the independent rung realized. Owns a dedicated [`Client`]
@@ -112,10 +121,11 @@ impl ForkSpot {
 }
 
 impl Spotter for ForkSpot {
-    async fn assess(&self, role: &Config, call: &ToolCall) -> Spotting {
+    async fn assess(&self, role: &Config, call: &ToolCall, probe: Option<&str>) -> Spotting {
         // Cached block: the per-session-stable scope + watch-for. Fresh
-        // block: the move. The persona (system) + this cached block are the prefix;
-        // only the move is rewritten each call (docs/permissions.md, docs/substrate.md).
+        // block: the move (plus the optional promotion probe — it rides the fresh tail, so it never
+        // perturbs the cached prefix, docs/substrate.md). The persona (system) + the cached block are
+        // the prefix; only the move is rewritten each call (docs/permissions.md).
         let messages = vec![ApiMessage {
             role: ApiRole::User,
             content: vec![
@@ -124,7 +134,7 @@ impl Spotter for ForkSpot {
                     cache_control: Some(CacheControl::Ephemeral),
                 },
                 ApiBlock::Text {
-                    text: render_move(call),
+                    text: render_move(call, probe),
                     cache_control: None,
                 },
             ],
@@ -166,7 +176,7 @@ pub struct StaticSpotter {
 }
 
 impl Spotter for StaticSpotter {
-    async fn assess(&self, _role: &Config, _call: &ToolCall) -> Spotting {
+    async fn assess(&self, _role: &Config, _call: &ToolCall, _probe: Option<&str>) -> Spotting {
         Spotting {
             read: Read {
                 stance: self.stance,
@@ -232,8 +242,10 @@ fn render_context(role: &Config) -> String {
 
 /// Render the move the session is about to make. Bash shows its command verbatim; a
 /// structured tool shows its name and input. The instruction to call `spot` rides
-/// here (the fresh tail), not in the cached context.
-fn render_move(call: &ToolCall) -> String {
+/// here (the fresh tail), not in the cached context. When `probe` is `Some`, a
+/// promotion question for that prefix rides along too (backlog/permissions/prefix-promotion.md) —
+/// the harness names the prefix; the model answers it via the `clear_always` stance.
+fn render_move(call: &ToolCall, probe: Option<&str>) -> String {
     let body = if call.name == bash::NAME {
         match call.input.get("command").and_then(Value::as_str) {
             Some(cmd) => format!("A shell command:\n\n    {cmd}"),
@@ -247,13 +259,26 @@ fn render_move(call: &ToolCall) -> String {
             serde_json::to_string_pretty(&call.input).unwrap_or_else(|_| call.input.to_string());
         format!("A `{}` tool call with input:\n\n{input}", call.name)
     };
+    let promotion = match probe {
+        Some(prefix) => format!(
+            "\n\nAlso being considered for promotion: the command prefix `{prefix}`. If — and only if \
+             — you'd clear this move AND `{prefix}` is safe for *every* argument it could take under \
+             this mission (not just this one), use the `clear_always` stance to vouch for the whole \
+             prefix. If the prefix could take a dangerous argument, or you're unsure, use plain \
+             `clear` (or `watch`/`gate`) — being asked again is cheap; a bad promotion is not."
+        ),
+        None => String::new(),
+    };
     format!(
-        "---\n\nThe session is about to make this move:\n\n{body}\n\n\
+        "---\n\nThe session is about to make this move:\n\n{body}{promotion}\n\n\
          Call `spot` with your stance and a one-line reason."
     )
 }
 
-/// The forced `spot` tool: a `stance` enum and a one-line `reason`, both required.
+/// The forced `spot` tool: a required `stance` enum + one-line `reason`. The stance is 4-valued —
+/// `clear_always` is the promotion safe-vote, meaningful only when a probe rode the call
+/// (backlog/permissions/prefix-promotion.md); the enum is fixed (never varied per call) so the tool
+/// schema stays byte-stable and the spotter's cache holds.
 fn spot_tool() -> Value {
     json!({
         "name": SPOT,
@@ -263,8 +288,8 @@ fn spot_tool() -> Value {
             "properties": {
                 "stance": {
                     "type": "string",
-                    "enum": ["clear", "watch", "gate"],
-                    "description": "clear = reversible and in-scope (or scope-sanctioned) — auto-approve; watch = probably fine but uncertain, or a one-way move worth a human beat; gate = out of scope or unsanctioned-irreversible — stop and ask the human."
+                    "enum": ["clear", "clear_always", "watch", "gate"],
+                    "description": "clear = reversible and in-scope (or scope-sanctioned) — auto-approve; clear_always = clear AND (only when a prefix is offered for promotion) that prefix is safe for every argument under this mission, vouching to add it to the allowlist; watch = probably fine but uncertain, or a one-way move worth a human beat; gate = out of scope or unsanctioned-irreversible — stop and ask the human."
                 },
                 "reason": {
                     "type": "string",
@@ -303,6 +328,9 @@ fn parse_spot(completion: &crate::api::Completion) -> Option<Read> {
 fn parse_stance(s: &str) -> Stance {
     match s.trim().to_ascii_lowercase().as_str() {
         "clear" => Stance::Clear,
+        // Accept a couple of spellings for the promotion safe-vote — the model occasionally drops
+        // the underscore or rewords it; all unambiguously mean "clear and vouch for the prefix".
+        "clear_always" | "clear always" | "always" => Stance::ClearAlways,
         "watch" => Stance::Watch,
         _ => Stance::Gate,
     }
@@ -341,6 +369,10 @@ mod tests {
         assert_eq!(parse_stance("clear"), Stance::Clear);
         assert_eq!(parse_stance("  WATCH "), Stance::Watch);
         assert_eq!(parse_stance("Gate"), Stance::Gate);
+        // The promotion safe-vote, in its accepted spellings.
+        assert_eq!(parse_stance("clear_always"), Stance::ClearAlways);
+        assert_eq!(parse_stance("Clear Always"), Stance::ClearAlways);
+        assert_eq!(parse_stance("always"), Stance::ClearAlways);
         // Anything unrecognized routes to the human, not to auto-clear.
         assert_eq!(parse_stance("yolo"), Stance::Gate);
         assert_eq!(parse_stance(""), Stance::Gate);
@@ -358,6 +390,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_spot_reads_the_promotion_safe_vote() {
+        let read = parse_spot(&spot_completion(
+            SPOT,
+            json!({ "stance": "clear_always", "reason": "every cargo subcommand is reversible" }),
+        ))
+        .expect("a spot call parses");
+        assert_eq!(read.stance, Stance::ClearAlways);
+    }
+
+    #[test]
+    fn render_move_asks_the_promotion_question_only_when_a_prefix_is_probed() {
+        let call = ToolCall {
+            id: CallId("x".into()),
+            name: bash::NAME.into(),
+            input: json!({ "command": "git log --oneline" }),
+        };
+        // No probe → no promotion question.
+        let plain = render_move(&call, None);
+        assert!(!plain.contains("clear_always"), "{plain}");
+        assert!(!plain.contains("promotion"), "{plain}");
+        // Probe → the named prefix and the clear_always instruction ride the move.
+        let probed = render_move(&call, Some("git log"));
+        assert!(probed.contains("git log"), "{probed}");
+        assert!(probed.contains("clear_always"), "{probed}");
+    }
+
+    #[test]
     fn parse_spot_is_none_without_a_spot_call() {
         // A turn that called something else yields no verdict → caller fails closed.
         assert!(parse_spot(&spot_completion("bash", json!({ "command": "ls" }))).is_none());
@@ -372,7 +431,7 @@ mod tests {
             name: bash::NAME.into(),
             input: json!({ "command": "git push" }),
         };
-        let rendered = render_move(&bash_call);
+        let rendered = render_move(&bash_call, None);
         assert!(rendered.contains("git push"), "{rendered}");
         assert!(rendered.contains("spot"), "instruction present: {rendered}");
 
@@ -381,7 +440,7 @@ mod tests {
             name: "write".into(),
             input: json!({ "path": "/etc/hosts" }),
         };
-        let rendered = render_move(&write_call);
+        let rendered = render_move(&write_call, None);
         assert!(rendered.contains("write"), "{rendered}");
         assert!(rendered.contains("/etc/hosts"), "{rendered}");
     }
