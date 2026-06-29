@@ -23,7 +23,7 @@ use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::policy::{self, Verdict};
 use crate::log::{
-    Amendment, ContentBlock, Disposition, ConfigEdit, Lifetime, Mark, MarkKind, Notification, Payload,
+    ConfigChange, ContentBlock, Disposition, ConfigEdit, Lifetime, Mark, MarkKind, Notification, Payload,
     RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
 };
 use crate::project::place_trailing_cache_breakpoint;
@@ -393,12 +393,12 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                     }
                 };
                 // A `ConfigEdit` is the orchestrator legislating policy (backlog/permissions/config-edit.md):
-                // append the amendment (which folds into the effective role), then re-classify
-                // *this* call against the new policy. The call runs only if the amended rule now
+                // append the change (which folds into the effective config), then re-classify
+                // *this* call against the new policy. The call runs only if the changed rule now
                 // clears it — it never rides along unchecked.
                 let approval = match approval {
-                    Approval::ConfigEdit { amendment, lifetime, note } => {
-                        commit_config_edit(&shared, turn, call, amendment, lifetime, note)?
+                    Approval::ConfigEdit { change, lifetime, note } => {
+                        commit_config_edit(&shared, turn, call, change, lifetime, note)?
                     }
                     other => other,
                 };
@@ -592,25 +592,25 @@ fn commit_config_edit(
     shared: &Shared,
     turn: Turn,
     call: &ToolCall,
-    amendment: Amendment,
+    change: ConfigChange,
     lifetime: Lifetime,
     note: String,
 ) -> std::io::Result<Approval> {
     let lifetime = match lifetime {
         Lifetime::Persist => match shared.config_path() {
-            Some(path) => match crate::config::persist_grant(path, &amendment) {
+            Some(path) => match crate::config::persist_config_change(path, &change) {
                 Ok(()) => Lifetime::Persist,
                 Err(e) => {
-                    eprintln!("grant: could not persist to {}: {e}", path.display());
+                    eprintln!("config edit: could not persist to {}: {e}", path.display());
                     Lifetime::Session
                 }
             },
-            // The built-in default role has no file to persist to — session-only.
+            // The built-in default config has no file to persist to — session-only.
             None => Lifetime::Session,
         },
         Lifetime::Session => Lifetime::Session,
     };
-    shared.append(turn, Payload::ConfigEdit(ConfigEdit { amendment, lifetime, note }))?;
+    shared.append(turn, Payload::ConfigEdit(ConfigEdit { change, lifetime, note }))?;
     let role = shared.effective_config();
     Ok(if policy::classify(&role, call) == Verdict::Clear {
         Approval::Approve
@@ -648,7 +648,7 @@ mod tests {
     /// call (the amended rule clears it on re-classify).
     #[test]
     fn legislate_grants_then_approves_a_covered_call() {
-        use crate::log::{Amendment, Lifetime};
+        use crate::log::{ConfigChange, Lifetime};
         let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
         let call = bash_call("npm install");
         assert_eq!(policy::classify(&shared.effective_config(), &call), Verdict::Gate);
@@ -657,7 +657,7 @@ mod tests {
             &shared,
             0,
             &call,
-            Amendment::Allow { program: "npm".into(), prefix: vec![] },
+            ConfigChange::Command { command: "npm".into() },
             Lifetime::Session,
             "ok".into(),
         )
@@ -671,7 +671,7 @@ mod tests {
     /// but the call does **not** ride along — it's re-checked and stays gated (a redirect).
     #[test]
     fn legislate_does_not_let_an_uncovered_call_ride_along() {
-        use crate::log::{Amendment, Lifetime};
+        use crate::log::{ConfigChange, Lifetime};
         let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
         let call = bash_call("npm install");
 
@@ -679,14 +679,14 @@ mod tests {
             &shared,
             0,
             &call,
-            Amendment::Tool { name: "read".into() }, // unrelated to the bash call
+            ConfigChange::Tool { name: "read".into() }, // unrelated to the bash call
             Lifetime::Session,
             "unrelated".into(),
         )
         .unwrap();
         assert!(matches!(approval, Approval::Redirect(_)), "uncovered call stays gated");
-        // The amendment still landed — legislation happens regardless of the current call.
-        assert!(shared.effective_config().tools.iter().any(|t| t.name == "read"));
+        // The change still landed — legislation happens regardless of the current call.
+        assert!(shared.effective_config().tools.contains("read"));
     }
 
     #[test]

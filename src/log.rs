@@ -82,17 +82,21 @@ pub enum Payload {
     /// only, never on the canonical wire. Fast-path clears are deliberately *not*
     /// logged; the spotter is the first permission rung that earns an entry.
     Spot(Spot),
-    /// A grant — the durable record of an **additive policy amendment**
-    /// (backlog/permissions/config-edit.md). The amendment loop turns a deny into
-    /// negotiation: an orchestrator (human or coordinating session) extends the session's
-    /// scope, and the extension lands here. Effective policy = base role + the fold of these
-    /// (see [`effective_config`]); the log is the source of truth for what was granted, exactly
-    /// as it is for everything else (docs/substrate.md). Grants are *additive only* (no deny),
-    /// so the fold is order-independent and idempotent. Audit-only on the wire — it projects
-    /// to nothing, like [`Spot`]; the *effect* reaches the model through the classifier, never
-    /// the transcript.
+    /// A config edit — the durable record of one change to the policy table
+    /// (backlog/permissions/config-edit.md). The config-edit loop turns a deny into
+    /// negotiation: an orchestrator (human or coordinating session) edits the session's
+    /// config, and the change lands here. Effective policy = base config + the fold of these
+    /// (see [`effective_config`]); the log is the source of truth for what changed, exactly as
+    /// it is for everything else (docs/substrate.md). The fold is **replace-at-key**
+    /// (last-write-wins, order-defined) — materializing a table from an ordered log, like a
+    /// database replaying its write-ahead log. Audit-only on the wire — it projects to nothing,
+    /// like [`Spot`]; its effect reaches the model *by key*: a `commands`/`tools` edit only
+    /// through the classifier, while a **session-visible** edit (`scope`, `paths`) *also*
+    /// surfaces as an [`Ambient`] notification (an optional tail append — never a re-render of
+    /// the cached preamble; see [`crate::daemon`]) so the session learns its perimeter moved.
     ///
     /// [`effective_config`]: crate::policy::effective_config
+    /// [`Ambient`]: Payload::Ambient
     ConfigEdit(ConfigEdit),
 }
 
@@ -208,39 +212,51 @@ pub enum Stance {
     Gate,
 }
 
-/// A grant: one durable, **additive** policy amendment (backlog/permissions/config-edit.md).
-/// The amendment vocabulary lives here, in the substrate, deliberately — like [`Stance`] and
+/// One config edit: a single, durable change to the policy table (backlog/permissions/config-edit.md).
+/// The change vocabulary lives here, in the substrate, deliberately — like [`Stance`] and
 /// [`Origin`], the log owns its own serialized types so the wire format isn't hostage to a
-/// policy struct's layout. [`crate::policy::effective_config`] maps each [`Amendment`] onto the
-/// role it folds into.
+/// config struct's layout. [`crate::policy::apply_config_change`] applies each [`ConfigChange`] to
+/// the config it folds into.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigEdit {
-    /// What the amendment grants. Additive only — there is no deny amendment, which is what
-    /// makes the fold order-independent and idempotent.
-    pub amendment: Amendment,
-    /// Whether the grant is session-scoped or was also persisted to the role config file. The
-    /// fold ignores this (both take effect this session); it is audit metadata — the answer to
-    /// "did this survive into future boots?".
+    /// What changed: which slot, and its new value. Replace-at-key — the fold sets the addressed
+    /// key, last-write-wins, so replaying a log in order materializes the table deterministically.
+    pub change: ConfigChange,
+    /// Whether the edit is session-scoped or was also persisted to the config file. The fold
+    /// ignores this (both take effect this session); it is audit metadata — the answer to "did
+    /// this survive into future boots?".
     pub lifetime: Lifetime,
     /// The orchestrator's one-line rationale, addressed to the session (and the corpus byproduct:
-    /// the labeled `(amendment, why)` pair for any future distilled approval model).
+    /// the labeled `(change, why)` pair for any future distilled approval model).
     pub note: String,
 }
 
-/// What a [`ConfigEdit`] adds to the role. Each variant mirrors one of the role's grant kinds
-/// (`allow` / `path` / `tool`); [`crate::policy::effective_config`] pushes it onto the matching
-/// list. Additive only — the absence of a deny variant is load-bearing (the fold can't subtract).
+/// What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape
+/// (backlog/permissions/config-edit.md). Each variant addresses one section of the config table;
+/// [`crate::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).
+/// Most variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the
+/// narrowing edit append-only KDL couldn't do. The `watch-for` slot is unbuilt (its replace
+/// semantics over a list are an unsettled question; add it when an initiator needs it).
+///
+/// **Session-visibility** (which edits notify the session) is decided by variant in
+/// [`crate::daemon`]: `Scope` and `Path` are the perimeter the session should learn moved;
+/// `Command` and `Tool` reach the model only through the classifier.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Amendment {
-    /// A bash prefix-allowlist entry: a `program` and an optional safe-arg `prefix` (empty =
-    /// blanket-trust the program). The spotter-promotion path's payload.
-    Allow { program: String, prefix: Vec<String> },
-    /// A filesystem subtree grant: `path` and everything beneath it, with the given permissions
-    /// (`write` implies `read`, as in the role config).
+pub enum ConfigChange {
+    /// Clear a bash command-prefix: add `command` to the `[commands]` set. The string is the
+    /// key itself (a re-lexable command prefix); empty-args = blanket-trust the program.
+    Command { command: String },
+    /// Set a filesystem subtree's perms: `path` and everything beneath it (`write` implies
+    /// `read`, as in the config). **Session-visible** — moving the spatial perimeter notifies.
     Path { path: String, read: bool, write: bool },
-    /// A structured-tool name grant.
+    /// Grant a structured-tool name: add `name` to the `tools` set.
     Tool { name: String },
+    /// Replace the session **scope** (the perimeter prose). **Session-visible** — the boot
+    /// preamble stays frozen (re-rendering it would mutate behind the cache breakpoint), so a
+    /// live scope edit reaches the session as a notification, not a preamble rewrite
+    /// (backlog/permissions/config-edit.md).
+    Scope { text: String },
 }
 
 /// How long a [`ConfigEdit`] lives (backlog/permissions/config-edit.md). The MVP carries the two

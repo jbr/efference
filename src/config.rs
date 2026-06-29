@@ -1,17 +1,39 @@
 //! Config — the cascade's foundational unit (backlog/permissions/README.md).
 //!
-//! A session is parameterized by `(role-config, cwd, orchestrator)`. The **role** is
-//! the portable-policy half: what a session is *for* and what it may do, reusable
-//! across projects and sessions. It is deliberately kept separate from `cwd` (the
-//! per-invocation spatial scope, see [`crate::env`]) so the role stays portable —
-//! tweak in place or fork by copy.
+//! A session is parameterized by `(config, cwd, orchestrator)`. The **config** is the
+//! portable-policy half: what a session is *for* and what it may do, reusable across
+//! projects and sessions. It is deliberately kept separate from `cwd` (the per-invocation
+//! spatial scope, see [`crate::env`]) so the config stays portable — tweak in place or
+//! fork by copy.
 //!
-//! The file is KDL, parsed into the typed structs below by [`knus`]. The types *are*
-//! the schema; a malformed file surfaces a `knus::Error` (a `miette::Diagnostic`),
-//! which the binary renders with a source-span underline — the load-time diagnostic
-//! that stands in for KDL's thin editor tooling.
+//! ## The file is TOML, and it is a materialized table
 //!
-//! ## What the role holds
+//! The file is TOML, parsed by [`toml_edit`]. We decode through a two-layer path: serde
+//! deserializes the file into a [`RawConfig`] (the literal TOML shape), then [`validate`]
+//! folds it into the [`Config`] the cascade actually consults — lexing every command key,
+//! expanding the path sugar, and failing the whole file on any unsound entry.
+//!
+//! The schema is **string-keyed maps**, not lists, because the policy is a *table* the
+//! config-edit loop mutates by key (backlog/permissions/config-edit.md): a later edit
+//! **replaces at a key** (last-write-wins) rather than appending. That is why the persist
+//! path can use [`toml_edit`]'s format-preserving writes — the harness edits the file *for*
+//! the user at a gate, narrowing a single key while leaving every comment and unrelated
+//! line untouched (the "yes, always" auto-persist append-only KDL couldn't express).
+//!
+//! ```toml
+//! scope = "Work only inside this repo."
+//! watch-for = ["network egress to non-registry hosts"]
+//!
+//! [commands]
+//! cargo = true          # blanket — key lexes to ["cargo"]
+//! "git diff" = true     # sub-verb — key lexes to ["git", "diff"]
+//!
+//! [paths]
+//! "." = true            # sugar for { read = true, write = true }
+//! "/refs" = { read = true }
+//! ```
+//!
+//! ## What the config holds
 //!
 //! One artifact configures every cascade rung (backlog/permissions/README.md):
 //!
@@ -21,8 +43,12 @@
 //!   Kept off the session's preamble for attention-division (the focused session
 //!   doesn't carry peripheral hazards; the spotter does). Consumed by the spotter
 //!   rung ([`crate::spotter`]).
-//! - [`Config::allow`] — the prefix-allowlist the deterministic fast-path matches against
-//!   (backlog/permissions/prefix-fastpath.md). Consumed by that rung.
+//! - [`Config::commands`] — the bash prefix-allowlist the deterministic fast-path matches
+//!   against (backlog/permissions/prefix-fastpath.md). A **set** of command-prefix keys;
+//!   membership *is* "clear" (the value will grow into a graded stance later — see
+//!   backlog/permissions/config-edit.md). Consumed by that rung.
+//! - [`Config::tools`] — structured tools the fast-path clears by name (also a set).
+//! - [`Config::paths`] — filesystem subtree grants, the one genuine value-bearing map.
 //! - [`Config::trust_threshold`] — where the watch-window/gate cutoffs sit. Consumed by
 //!   the watch-window rung (not built yet).
 //!
@@ -35,118 +61,153 @@
 //! (`tools → system → messages`). [`Config::preamble_section`] must therefore be
 //! **byte-stable for the whole session** (see the invariant in
 //! backlog/permissions/README.md, kin to `project(log)` in docs/substrate.md). It is —
-//! the role is loaded once at startup and frozen, and the rendering is a pure function
-//! of the scope text. Changing roles is a cold cache write, which is fine: roles do not
-//! change mid-session.
+//! the config is loaded once at startup and frozen, and the rendering is a pure function
+//! of the scope text. Changing configs is a cold cache write, which is fine: configs do
+//! not change mid-session.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::log::Amendment;
+use serde::Deserialize;
+use toml_edit::{Array, DocumentMut, InlineTable, Item, Value, value};
 
-/// A role: portable policy describing what a session is for and what it may do
-/// (backlog/permissions/README.md). Decoded from a KDL document; every field is
-/// optional so a minimal — or empty — role file is valid, and an absent file yields
-/// [`Config::default`].
-#[derive(knus::Decode, Debug, Default, Clone)]
+use crate::log::ConfigChange;
+
+/// The materialized policy table (backlog/permissions/config-edit.md). Built from the TOML
+/// file by [`validate`]-ing a [`RawConfig`]; every field is optional/empty so a minimal — or
+/// absent — file yields [`Config::default`]. This is what the cascade consults; the config-edit
+/// fold mutates it by key ([`crate::policy::apply_config_change`]).
+#[derive(Debug, Default, Clone)]
 pub struct Config {
-    /// Positive scope, shared with the acting session (self-alignment). Projects into
-    /// the cached preamble via [`Config::preamble_section`]. KDL: `scope "…"`.
-    #[knus(child, unwrap(argument), default)]
+    /// Positive scope, shared with the acting session (self-alignment). Projects into the
+    /// cached preamble via [`Config::preamble_section`]. TOML: `scope = "…"`.
     pub scope: Option<String>,
 
     /// The spotter's "things to watch for" — gotchas specific to this mission,
-    /// **spotter-only**, never shown to the acting session. Held off the session's
-    /// preamble not to stop it teaching to the test (the threat model is error, not
-    /// deception — there is no test to game) but for **attention-division**: the
-    /// focused session shouldn't carry low-probability peripheral hazards in working
-    /// memory; the spotter holds them so the session keeps its attention on the task
-    /// (docs/permissions.md). KDL: `watch-for "…"`. Consumed by the spotter rung.
-    #[knus(child, unwrap(argument), default)]
-    pub watch_for: Option<String>,
+    /// **spotter-only**, never shown to the acting session (attention-division, not
+    /// teach-to-the-test; the threat model is error, not deception). TOML:
+    /// `watch-for = ["…", "…"]`. Consumed by the spotter rung.
+    pub watch_for: Vec<String>,
 
-    /// Trust posture → where the watch-window/gate cutoffs sit. `None` = unset (a real
-    /// `0` would mean something specific, so absence is kept distinct). KDL:
-    /// `trust-threshold 0.5`. Consumed by the watch-window rung.
-    #[knus(child, unwrap(argument), default)]
+    /// Trust posture → where the watch-window/gate cutoffs sit. `None` = unset (a real `0`
+    /// would mean something specific, so absence is kept distinct). TOML:
+    /// `trust-threshold = 0.5`. Consumed by the watch-window rung.
     pub trust_threshold: Option<f64>,
 
-    /// The prefix-allowlist: `(program, safe-arg-prefix)` entries the deterministic
-    /// fast-path clears with zero model cost (backlog/permissions/prefix-fastpath.md).
-    /// KDL: `allow "cargo"` (blanket) or `allow "git" "diff"` (sub-verb prefix).
-    #[knus(children(name = "allow"))]
-    pub allow: Vec<Allow>,
+    /// The bash prefix-allowlist as a **set** of command-prefix keys
+    /// (backlog/permissions/prefix-fastpath.md). Membership is the grant — `cargo` blanket-
+    /// trusts the program, `git diff` trusts only that sub-verb. Each key is guaranteed (at
+    /// [`validate`] time) to lex to a single simple-command token vector; [`crate::policy`]
+    /// re-lexes at match time to compare token-prefixes. TOML `[commands]` table, all `true`.
+    pub commands: BTreeSet<String>,
 
-    /// Structured tools the fast-path clears by name. The path-bearing ones
-    /// (`read`/`write`/`search`/edit) additionally require their target to fall under a
-    /// [`Config::paths`] grant; the daemon-internal ones (`consolidate`, `kill_process`, …)
-    /// clear on the name alone. KDL: `tool "read"`. Nothing is sanctioned in code — even
-    /// `kill_process` is just a config entry, so it's removable by editing the file.
-    #[knus(children(name = "tool"))]
-    pub tools: Vec<ToolGrant>,
+    /// Structured tools the fast-path clears by name, as a **set**. The path-bearing ones
+    /// (`read`/`write`/`search`/edit) additionally require their target under a
+    /// [`Config::paths`] grant; the daemon-internal ones clear on the name alone. Nothing is
+    /// sanctioned in code — even `kill_process` is just an entry here. TOML: `tools = ["read"]`.
+    pub tools: BTreeSet<String>,
 
-    /// Filesystem permission grants (backlog/permissions/README.md). Each grants
-    /// read and/or write over a subtree; the fast-path clears a path-bearing tool only
-    /// when its target resolves under a grant carrying the needed permission. cwd is not
-    /// special in code — it is special only because the config says `path "." …`. KDL:
-    /// `path "." read=true write=true`.
-    #[knus(children(name = "path"))]
-    pub paths: Vec<PathGrant>,
+    /// Filesystem permission grants — the one value-bearing map (backlog/permissions/README.md).
+    /// Each key is a subtree, its [`Perms`] the read/write it grants; the fast-path clears a
+    /// path-bearing tool only when its target resolves under a grant carrying the needed
+    /// permission. cwd is not special in code — it is special only because the config says
+    /// `"." = true`. TOML `[paths]` table; `"." = true` is sugar for `{ read = true, write = true }`.
+    pub paths: BTreeMap<String, Perms>,
 
-    /// Reserved ancestor pointers (tsconfig/eslint-style explicit inheritance). Parsed
-    /// so a file can declare them, but the merge engine is **not built** — build it only
-    /// when a second file needs it, and make it deterministic (the resolved config feeds
-    /// the cached preamble). KDL: `extends "base.kdl"`.
-    #[knus(children(name = "extends"))]
-    pub extends: Vec<Extends>,
+    /// Reserved ancestor pointers (tsconfig/eslint-style explicit inheritance). Parsed so a
+    /// file can declare them, but the merge engine is **not built**. TOML: `extends = ["base.toml"]`.
+    pub extends: Vec<String>,
 }
 
-/// One prefix-allowlist entry: a `program` and an optional `safe-arg-prefix`
-/// (backlog/permissions/prefix-fastpath.md). An empty prefix blanket-trusts the whole
-/// arg-space of `program` (sound only for programs whose entire arg-space is
-/// recoverable, e.g. `cargo`); a non-empty prefix trusts only invocations whose leading
-/// argument tokens match (e.g. `git diff`, leaving `git push`/`reset` to fall through).
-/// The match is exact token-prefix — safety is discontinuous in the command string, so
-/// only exact prefixes are soundly memoizable.
-#[derive(knus::Decode, Debug, Clone)]
-pub struct Allow {
-    #[knus(argument)]
-    pub program: String,
-    #[knus(arguments)]
-    pub prefix: Vec<String>,
-}
-
-/// A structured tool the fast-path clears by name (backlog/permissions/prefix-fastpath.md).
-/// Just a name; the read/write semantics live with [`Config::paths`] and the per-tool
-/// classifier (the not-yet-built rung), not here.
-#[derive(knus::Decode, Debug, Clone)]
-pub struct ToolGrant {
-    #[knus(argument)]
-    pub name: String,
-}
-
-/// A filesystem permission grant over a subtree — the `path` and everything beneath it
-/// (backlog/permissions/README.md). `write` implies `read`. Both permissions
-/// default to `false` when the property is omitted, so a bare `path "x"` grants nothing
-/// (honest: you must say what you're granting). KDL: `path "." read=true write=true`.
-#[derive(knus::Decode, Debug, Clone)]
-pub struct PathGrant {
-    #[knus(argument)]
-    pub path: String,
-    #[knus(property, default)]
+/// Read/write permission a [`Config::paths`] grant carries. `write` implies `read` at check
+/// time (see [`crate::policy`]); both default `false`, so a bare `{ }` / `false` grants nothing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Perms {
     pub read: bool,
-    #[knus(property, default)]
     pub write: bool,
 }
 
-/// A reserved `extends` ancestor pointer. Carries the path only; resolution/merge is
-/// future work (see [`Config::extends`]).
-#[derive(knus::Decode, Debug, Clone)]
-pub struct Extends {
-    #[knus(argument)]
-    pub path: String,
+/// The literal TOML shape, before validation. `deny_unknown_fields` makes a typo'd key fail
+/// loudly — the schema is the contract. [`validate`] folds this into a [`Config`].
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawConfig {
+    #[serde(default)]
+    scope: Option<String>,
+    #[serde(rename = "watch-for", default)]
+    watch_for: Vec<String>,
+    #[serde(rename = "trust-threshold", default)]
+    trust_threshold: Option<f64>,
+    /// `[commands]` table: each value is `true` (clear). `false` is rejected in [`validate`]
+    /// (deny is unimplemented and the fold is additive-only — it can't subtract).
+    #[serde(default)]
+    commands: BTreeMap<String, bool>,
+    #[serde(default)]
+    tools: Vec<String>,
+    #[serde(default)]
+    paths: BTreeMap<String, RawPathValue>,
+    #[serde(default)]
+    extends: Vec<String>,
 }
 
-/// Where a [`Config`] was resolved from, reported on `GET /state` so "which role am I
+/// A `[paths]` value: either the `true`/`false` sugar (`true` = read+write) or an explicit
+/// `{ read = …, write = … }` inline table.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawPathValue {
+    /// `"." = true` → read+write; `false` → no access.
+    Sugar(bool),
+    /// `"/refs" = { read = true }` — omitted perms default `false`.
+    Perms {
+        #[serde(default)]
+        read: bool,
+        #[serde(default)]
+        write: bool,
+    },
+}
+
+impl RawPathValue {
+    fn into_perms(self) -> Perms {
+        match self {
+            RawPathValue::Sugar(true) => Perms { read: true, write: true },
+            RawPathValue::Sugar(false) => Perms { read: false, write: false },
+            RawPathValue::Perms { read, write } => Perms { read, write },
+        }
+    }
+}
+
+/// A failed validation of an otherwise-parseable TOML file — semantically wrong, not
+/// syntactically. Carried by [`LoadError::Validate`].
+#[derive(Debug)]
+pub enum ValidationError {
+    /// A `[commands]` key set to `false`. Additive-only policy can't subtract, so a deny would
+    /// silently do nothing — we reject it instead of surprising the author.
+    CommandDeny(String),
+    /// A `[commands]` key that does not lex to a single simple command (it has operators,
+    /// redirections, expansions, or an env-assignment prefix). The fast-path can only soundly
+    /// prefix-match simple commands, so an un-lexable key fails the whole file — no silent skip.
+    CommandNotSimple(String),
+}
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidationError::CommandDeny(key) => write!(
+                f,
+                "command `{key}` is set to false, but command-deny is not implemented \
+                 (config is additive-only); remove the entry instead"
+            ),
+            ValidationError::CommandNotSimple(key) => write!(
+                f,
+                "command key `{key}` is not a single simple command (no operators, \
+                 redirections, expansions, or env-assignments) — the fast-path can only \
+                 prefix-match simple commands"
+            ),
+        }
+    }
+}
+
+/// Where a [`Config`] was resolved from, reported on `GET /state` so "which config am I
 /// running?" is never ambiguous (backlog/permissions/README.md).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum ConfigSource {
@@ -157,7 +218,7 @@ pub enum ConfigSource {
     Path(PathBuf),
 }
 
-/// A resolved role plus where it came from. Stored on the daemon's shared state and
+/// A resolved config plus where it came from. Stored on the daemon's shared state and
 /// reported by `/state`.
 #[derive(Debug, Clone, Default)]
 pub struct LoadedConfig {
@@ -165,31 +226,31 @@ pub struct LoadedConfig {
     pub source: ConfigSource,
 }
 
-/// The default role-config path, relative to cwd. Visible and committable (not under
-/// the gitignored session dir) — a role is portable, shareable config, not session
-/// state. The config is *pointed-at*, not a magic scanned tree: only this one path is
-/// probed when `--config` is absent.
-pub const DEFAULT_PATH: &str = "efference.kdl";
+/// The default config path, relative to cwd. Visible and committable (not under the
+/// gitignored session dir) — a config is portable, shareable, not session state. The config
+/// is *pointed-at*, not a magic scanned tree: only this one path is probed when `--config`
+/// is absent.
+pub const DEFAULT_PATH: &str = "efference.toml";
 
-/// Failure to load a role file. The `Parse` arm carries the `knus::Error`, a
-/// `miette::Diagnostic` that embeds the source so the binary can render the span
-/// underline (see [`crate::role`] module docs).
+/// Failure to load a config file.
 #[derive(Debug)]
 pub enum LoadError {
     /// Reading the file failed (an explicit `--config` that doesn't exist, a permission
     /// error, …). A *missing default* path is not an error — it yields [`ConfigSource::Default`].
     Io(PathBuf, std::io::Error),
-    /// The file is not valid KDL / does not match the schema.
-    Parse(knus::Error),
+    /// The file is not valid TOML / does not match the schema. The [`toml_edit`] error carries
+    /// the source span; its `Display` renders the offending line and a pointer.
+    Parse(PathBuf, toml_edit::de::Error),
+    /// The file parsed but is semantically unsound (see [`ValidationError`]).
+    Validate(PathBuf, ValidationError),
 }
 
 impl std::fmt::Display for LoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LoadError::Io(path, e) => write!(f, "reading role config {}: {e}", path.display()),
-            // Display only the message; the binary renders the full miette report
-            // (with the source-span underline) out of the embedded `knus::Error`.
-            LoadError::Parse(e) => write!(f, "invalid role config: {e}"),
+            LoadError::Io(path, e) => write!(f, "reading config {}: {e}", path.display()),
+            LoadError::Parse(path, e) => write!(f, "invalid config {}: {e}", path.display()),
+            LoadError::Validate(path, e) => write!(f, "invalid config {}: {e}", path.display()),
         }
     }
 }
@@ -197,32 +258,17 @@ impl std::fmt::Display for LoadError {
 impl std::error::Error for LoadError {}
 
 impl LoadError {
-    /// Print this error to stderr in its richest form. A parse error renders through
-    /// miette's graphical handler — the source-span underline that points at the
-    /// offending node — by reference (the handler takes `&dyn Diagnostic`, so no clone
-    /// or ownership of the embedded `knus::Error` is needed). An IO error has no source
-    /// to point at, so it prints its message.
+    /// Print this error to stderr. TOML parse errors render their own line/column context
+    /// (the source-span pointer that stands in for KDL's old miette report); the others print
+    /// their message. The leading `error:` keeps the shape the binary used before.
     pub fn eprint(&self) {
-        match self {
-            LoadError::Parse(e) => {
-                let mut rendered = String::new();
-                if miette::GraphicalReportHandler::new()
-                    .render_report(&mut rendered, e)
-                    .is_ok()
-                {
-                    eprintln!("{rendered}");
-                } else {
-                    eprintln!("{self}");
-                }
-            }
-            LoadError::Io(..) => eprintln!("{self}"),
-        }
+        eprintln!("error: {self}");
     }
 }
 
-/// Resolve and load the role. With `explicit` (a `--config` path) the file *must*
-/// exist — a missing one is an error. Without it, the [`DEFAULT_PATH`] is probed: if
-/// present it loads, if absent the built-in [`Config::default`] is used ([`ConfigSource::Default`]).
+/// Resolve and load the config. With `explicit` (a `--config` path) the file *must* exist —
+/// a missing one is an error. Without it, the [`DEFAULT_PATH`] is probed: if present it loads,
+/// if absent the built-in [`Config::default`] is used ([`ConfigSource::Default`]).
 pub fn load(explicit: Option<&Path>) -> Result<LoadedConfig, LoadError> {
     match explicit {
         Some(path) => {
@@ -240,7 +286,7 @@ pub fn load(explicit: Option<&Path>) -> Result<LoadedConfig, LoadError> {
                     role: parse(path, &text)?,
                     source: ConfigSource::Path(path.to_path_buf()),
                 }),
-                // The default path is optional: absent → the built-in default role.
+                // The default path is optional: absent → the built-in default config.
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(LoadedConfig::default()),
                 Err(e) => Err(LoadError::Io(path.to_path_buf(), e)),
             }
@@ -248,91 +294,120 @@ pub fn load(explicit: Option<&Path>) -> Result<LoadedConfig, LoadError> {
     }
 }
 
-/// Parse KDL text into a [`Config`]. The `path` is used only as the diagnostic file name
-/// (it labels spans in the `knus::Error` report).
+/// Parse TOML text into a [`Config`] (decode → validate). The `path` labels diagnostics only.
 fn parse(path: &Path, text: &str) -> Result<Config, LoadError> {
-    knus::parse(path.display().to_string(), text).map_err(LoadError::Parse)
+    let raw: RawConfig = toml_edit::de::from_str(text)
+        .map_err(|e| LoadError::Parse(path.to_path_buf(), e))?;
+    validate(raw).map_err(|e| LoadError::Validate(path.to_path_buf(), e))
 }
 
-/// Persist a granted [`Amendment`] to the role config file by **appending** a KDL node
-/// (backlog/permissions/config-edit.md). Append-only is sound because grants are additive —
-/// we never rewrite or delete, so existing comments and formatting are left untouched. If the
-/// file already covers the amendment it's a no-op (additive grants are idempotent; this keeps
-/// the file tidy across re-grants). knus parses **KDL v1**, so we emit v1 syntax (bare
-/// `read=true` booleans) — the same shapes [`load`] reads back.
-pub fn persist_grant(path: &Path, amendment: &Amendment) -> std::io::Result<()> {
+/// Fold a [`RawConfig`] into the materialized [`Config`], failing closed on any unsound entry.
+/// The two soundness gates live here: every `[commands]` key must lex to a simple command
+/// (reusing the fast-path's own lexer so the key and the checked command agree token-for-token),
+/// and a `false` command value is rejected (additive-only can't deny).
+fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
+    let mut commands = BTreeSet::new();
+    for (key, granted) in raw.commands {
+        if !granted {
+            return Err(ValidationError::CommandDeny(key));
+        }
+        if crate::policy::simple_command_tokens(&key).is_none() {
+            return Err(ValidationError::CommandNotSimple(key));
+        }
+        commands.insert(key);
+    }
+    let paths = raw
+        .paths
+        .into_iter()
+        .map(|(k, v)| (k, v.into_perms()))
+        .collect();
+    Ok(Config {
+        scope: raw.scope,
+        watch_for: raw.watch_for,
+        trust_threshold: raw.trust_threshold,
+        commands,
+        tools: raw.tools.into_iter().collect(),
+        paths,
+        extends: raw.extends,
+    })
+}
+
+/// Persist a committed [`ConfigChange`] to the config file by editing it in place via
+/// [`toml_edit`] (backlog/permissions/config-edit.md). Unlike the old append-only KDL render,
+/// this **replaces at a key** while preserving every comment and unrelated line — the property
+/// that makes "yes, always" auto-persist sound for *every* slot, including a single `scope`
+/// narrowing. Idempotent by construction: setting a key/array-member that already holds the
+/// value is a no-op on the wire.
+pub fn persist_config_change(path: &Path, change: &ConfigChange) -> std::io::Result<()> {
     let text = std::fs::read_to_string(path)?;
-    // Dedup against the file's current content. A parse failure doesn't block the append (the
-    // node we emit is valid v1); we just can't dedup, so we proceed.
-    if parse(path, &text)
-        .map(|role| role_covers(&role, amendment))
-        .unwrap_or(false)
-    {
-        return Ok(());
-    }
-    let mut out = text;
-    if !out.is_empty() && !out.ends_with('\n') {
-        out.push('\n');
-    }
-    out.push_str(&render_node(amendment));
-    out.push('\n');
-    std::fs::write(path, out)
-}
-
-/// Whether `role` already grants everything `amendment` would add — the persistence dedup.
-/// Exact match for `allow`/`tool`; permission-superset for `path` (an existing grant with at
-/// least the requested perms covers it).
-fn role_covers(role: &Config, amendment: &Amendment) -> bool {
-    match amendment {
-        Amendment::Allow { program, prefix } => role
-            .allow
-            .iter()
-            .any(|a| a.program == *program && a.prefix == *prefix),
-        Amendment::Path { path, read, write } => role
-            .paths
-            .iter()
-            .any(|p| p.path == *path && (p.read || !*read) && (p.write || !*write)),
-        Amendment::Tool { name } => role.tools.iter().any(|t| t.name == *name),
-    }
-}
-
-/// Render an [`Amendment`] as one KDL v1 node line (no trailing newline).
-fn render_node(amendment: &Amendment) -> String {
-    match amendment {
-        Amendment::Allow { program, prefix } => {
-            let mut s = format!("allow {}", kdl_string(program));
-            for token in prefix {
-                s.push(' ');
-                s.push_str(&kdl_string(token));
-            }
-            s
+    let mut doc: DocumentMut = text
+        .parse()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    match change {
+        // A command-prefix grant: set `[commands][key] = true`. The key is the command string
+        // itself (already re-lexable), so there is no token-join to undo.
+        ConfigChange::Command { command } => {
+            doc["commands"][command.as_str()] = value(true);
         }
-        Amendment::Path { path, read, write } => {
-            let mut s = format!("path {}", kdl_string(path));
-            if *read {
-                s.push_str(" read=true");
-            }
-            if *write {
-                s.push_str(" write=true");
-            }
-            s
+        // A filesystem grant: set `[paths][path]` to the sugar or an inline `{ read, write }`.
+        ConfigChange::Path { path: p, read, write } => {
+            doc["paths"][p.as_str()] = path_value(*read, *write);
         }
-        Amendment::Tool { name } => format!("tool {}", kdl_string(name)),
+        // A tool-name grant: append to the `tools` array if absent (the array is set-shaped, so
+        // dedup is membership, not last-write-wins).
+        ConfigChange::Tool { name } => {
+            let entry = doc
+                .as_table_mut()
+                .entry("tools")
+                .or_insert(Item::Value(Value::Array(Array::new())));
+            if let Some(arr) = entry.as_array_mut() {
+                if !arr.iter().any(|v| v.as_str() == Some(name.as_str())) {
+                    arr.push(name.as_str());
+                }
+            }
+        }
+        // A scope replace: set the `scope` scalar in place. When it already exists, carry its
+        // decor over so the author's inline comment survives the narrowing (the auto-persist
+        // guarantee; cf. backlog/permissions/config-edit.md).
+        ConfigChange::Scope { text } => {
+            match doc.get_mut("scope").and_then(Item::as_value_mut) {
+                Some(existing) => {
+                    let decor = existing.decor().clone();
+                    *existing = Value::from(text.as_str());
+                    *existing.decor_mut() = decor;
+                }
+                None => doc["scope"] = value(text.as_str()),
+            }
+        }
     }
+    std::fs::write(path, doc.to_string())
 }
 
-/// Quote a string as a KDL v1 string literal (escaping `\` and `"`). Sufficient for the
-/// program names, paths, and arg-prefix tokens an amendment carries.
-fn kdl_string(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+/// Render a `[paths]` value: the `true` sugar when read+write, otherwise an inline table
+/// carrying exactly the granted perms (`{ read = true }`), or `false` when nothing is granted.
+fn path_value(read: bool, write: bool) -> Item {
+    if read && write {
+        return value(true);
+    }
+    if !read && !write {
+        return value(false);
+    }
+    let mut table = InlineTable::new();
+    if read {
+        table.insert("read", Value::from(true));
+    }
+    if write {
+        table.insert("write", Value::from(true));
+    }
+    value(table)
 }
 
 impl Config {
-    /// Render the scope into the byte-stable preamble section appended to the system
-    /// prompt (backlog/permissions/README.md), or `None` if there is no scope. The
-    /// header is fixed and the body is the scope verbatim (trimmed), so the output is a
-    /// pure, deterministic function of the scope — safe for the cached prefix. The
-    /// watch-for list is deliberately *not* projected here: it is spotter-only.
+    /// Render the scope into the byte-stable preamble section appended to the system prompt
+    /// (backlog/permissions/README.md), or `None` if there is no scope. The header is fixed
+    /// and the body is the scope verbatim (trimmed), so the output is a pure, deterministic
+    /// function of the scope — safe for the cached prefix. The watch-for list is deliberately
+    /// *not* projected here: it is spotter-only.
     pub fn preamble_section(&self) -> Option<String> {
         let scope = self.scope.as_deref().map(str::trim).filter(|b| !b.is_empty())?;
         Some(format!("Your role for this session:\n\n{scope}"))
@@ -344,16 +419,16 @@ mod tests {
     use super::*;
 
     fn parse_str(text: &str) -> Config {
-        super::parse(Path::new("test.kdl"), text).expect("valid role")
+        super::parse(Path::new("test.toml"), text).expect("valid config")
     }
 
     #[test]
-    fn empty_document_is_a_valid_default_role() {
+    fn empty_document_is_a_valid_default_config() {
         let role = parse_str("");
         assert!(role.scope.is_none());
-        assert!(role.watch_for.is_none());
+        assert!(role.watch_for.is_empty());
         assert!(role.trust_threshold.is_none());
-        assert!(role.allow.is_empty());
+        assert!(role.commands.is_empty());
         assert!(role.tools.is_empty());
         assert!(role.paths.is_empty());
         assert!(role.extends.is_empty());
@@ -363,94 +438,108 @@ mod tests {
     fn parses_scope_watch_for_and_trust_threshold() {
         let role = parse_str(
             r#"
-            scope "Work only inside this repo."
-            watch-for "Flag network egress to non-registry hosts."
-            trust-threshold 0.5
+            scope = "Work only inside this repo."
+            watch-for = ["Flag network egress to non-registry hosts."]
+            trust-threshold = 0.5
             "#,
         );
         assert_eq!(role.scope.as_deref(), Some("Work only inside this repo."));
-        assert_eq!(
-            role.watch_for.as_deref(),
-            Some("Flag network egress to non-registry hosts.")
-        );
+        assert_eq!(role.watch_for, ["Flag network egress to non-registry hosts."]);
         assert_eq!(role.trust_threshold, Some(0.5));
     }
 
     #[test]
-    fn parses_blanket_and_sub_verb_allow_entries() {
+    fn parses_blanket_and_sub_verb_command_keys() {
         let role = parse_str(
             r#"
-            allow "cargo"
-            allow "git" "diff"
-            allow "git" "status"
+            [commands]
+            cargo = true
+            "git diff" = true
+            "git status" = true
             "#,
         );
-        assert_eq!(role.allow.len(), 3);
-        // Blanket: program with no prefix tokens.
-        assert_eq!(role.allow[0].program, "cargo");
-        assert!(role.allow[0].prefix.is_empty());
-        // Sub-verb: program plus a leading-arg prefix.
-        assert_eq!(role.allow[1].program, "git");
-        assert_eq!(role.allow[1].prefix, vec!["diff"]);
-        assert_eq!(role.allow[2].prefix, vec!["status"]);
+        assert!(role.commands.contains("cargo"));
+        assert!(role.commands.contains("git diff"));
+        assert!(role.commands.contains("git status"));
+        assert_eq!(role.commands.len(), 3);
     }
 
     #[test]
     fn parses_tool_grants() {
-        let role = parse_str(
-            r#"
-            tool "read"
-            tool "write"
-            tool "kill_process"
-            "#,
-        );
-        let names: Vec<&str> = role.tools.iter().map(|t| t.name.as_str()).collect();
-        assert_eq!(names, ["read", "write", "kill_process"]);
+        let role = parse_str(r#"tools = ["read", "write", "kill_process"]"#);
+        assert!(role.tools.contains("read"));
+        assert!(role.tools.contains("write"));
+        assert!(role.tools.contains("kill_process"));
     }
 
     #[test]
-    fn parses_path_grants_with_perms() {
+    fn parses_path_grants_with_sugar_and_explicit_perms() {
         let role = parse_str(
             r#"
-            path "." read=true write=true
-            path "/tmp" read=true
-            path "vendor"
+            [paths]
+            "." = true
+            "/tmp" = { read = true }
+            "vendor" = false
             "#,
         );
         assert_eq!(role.paths.len(), 3);
-        // cwd: full access.
-        assert_eq!(role.paths[0].path, ".");
-        assert!(role.paths[0].read && role.paths[0].write);
+        // cwd sugar → full access.
+        assert_eq!(role.paths["."], Perms { read: true, write: true });
         // /tmp: read-only (write defaults false).
-        assert!(role.paths[1].read && !role.paths[1].write);
-        // bare path grants nothing until you say what you're granting.
-        assert!(!role.paths[2].read && !role.paths[2].write);
+        assert_eq!(role.paths["/tmp"], Perms { read: true, write: false });
+        // `false` grants nothing until you say what you're granting.
+        assert_eq!(role.paths["vendor"], Perms { read: false, write: false });
     }
 
     #[test]
     fn parses_reserved_extends_pointer() {
-        let role = parse_str(r#"extends "base.kdl""#);
-        assert_eq!(role.extends.len(), 1);
-        assert_eq!(role.extends[0].path, "base.kdl");
+        let role = parse_str(r#"extends = ["base.toml"]"#);
+        assert_eq!(role.extends, ["base.toml"]);
     }
 
     #[test]
-    fn malformed_kdl_is_a_parse_error_not_a_panic() {
-        let err = super::parse(Path::new("bad.kdl"), "scope = oops").unwrap_err();
-        assert!(matches!(err, LoadError::Parse(_)));
+    fn malformed_toml_is_a_parse_error_not_a_panic() {
+        let err = super::parse(Path::new("bad.toml"), "scope = ").unwrap_err();
+        assert!(matches!(err, LoadError::Parse(..)));
     }
 
     #[test]
-    fn unknown_node_is_rejected() {
-        // A typo'd node name should fail loudly rather than be silently ignored — the
-        // typed schema is the contract.
-        let err = super::parse(Path::new("bad.kdl"), r#"breif "typo""#).unwrap_err();
-        assert!(matches!(err, LoadError::Parse(_)));
+    fn unknown_key_is_rejected() {
+        // A typo'd key should fail loudly rather than be silently ignored — the typed schema
+        // is the contract (deny_unknown_fields).
+        let err = super::parse(Path::new("bad.toml"), r#"breif = "typo""#).unwrap_err();
+        assert!(matches!(err, LoadError::Parse(..)));
+    }
+
+    /// The soundness gate: a `[commands]` key that isn't a single simple command fails the
+    /// whole file — no silent skip, no partial recovery.
+    #[test]
+    fn non_simple_command_key_fails_the_file() {
+        let err = super::parse(
+            Path::new("bad.toml"),
+            "[commands]\n\"git | rm\" = true\n",
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            LoadError::Validate(_, ValidationError::CommandNotSimple(_))
+        ));
+    }
+
+    /// A `false` command value is rejected (additive-only can't deny).
+    #[test]
+    fn command_deny_is_rejected() {
+        let err =
+            super::parse(Path::new("bad.toml"), "[commands]\ncargo = false\n").unwrap_err();
+        assert!(matches!(
+            err,
+            LoadError::Validate(_, ValidationError::CommandDeny(_))
+        ));
     }
 
     #[test]
     fn preamble_section_renders_the_scope_byte_for_byte() {
-        let role = parse_str(r#"scope "Stay in the repo.""#);
+        let role = parse_str(r#"scope = "Stay in the repo.""#);
         assert_eq!(
             role.preamble_section().as_deref(),
             Some("Your role for this session:\n\nStay in the repo.")
@@ -461,7 +550,7 @@ mod tests {
     fn preamble_section_is_none_without_a_scope() {
         assert!(Config::default().preamble_section().is_none());
         // A whitespace-only scope is treated as no scope (no empty section on the wire).
-        let role = parse_str("scope \"   \"");
+        let role = parse_str(r#"scope = "   ""#);
         assert!(role.preamble_section().is_none());
     }
 
@@ -470,8 +559,8 @@ mod tests {
     fn preamble_section_excludes_the_watch_for() {
         let role = parse_str(
             r#"
-            scope "Do the task."
-            watch-for "SECRET RED FLAGS"
+            scope = "Do the task."
+            watch-for = ["SECRET RED FLAGS"]
             "#,
         );
         let section = role.preamble_section().unwrap();
@@ -481,163 +570,112 @@ mod tests {
 
     #[test]
     fn explicit_missing_config_is_an_io_error() {
-        let missing = std::env::temp_dir().join(format!("efference-no-such-{}.kdl", std::process::id()));
+        let missing =
+            std::env::temp_dir().join(format!("efference-no-such-{}.toml", std::process::id()));
         let _ = std::fs::remove_file(&missing);
         let err = load(Some(&missing)).unwrap_err();
         assert!(matches!(err, LoadError::Io(_, _)), "explicit path must exist");
     }
 
-    /// Persisting a grant appends a KDL v1 node that (a) leaves existing comments/content
-    /// intact, (b) round-trips back through knus, and (c) is idempotent on re-grant.
-    #[test]
-    fn persist_grant_appends_dedups_and_round_trips() {
-        let path = std::env::temp_dir()
-            .join(format!("efference-persist-{}.kdl", std::process::id()));
-        std::fs::write(&path, "// my role\nscope \"do the thing\"\n").unwrap();
-
-        let amendment = Amendment::Allow {
-            program: "cargo".into(),
-            prefix: vec!["nextest".into()],
-        };
-        persist_grant(&path, &amendment).unwrap();
-        let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.contains("// my role"), "comment preserved: {text}");
-        assert!(text.contains("scope \"do the thing\""), "scope preserved: {text}");
-        assert!(text.contains(r#"allow "cargo" "nextest""#), "node appended: {text}");
-
-        // The appended v1 node parses back through knus into the grant we wrote.
-        let role = parse(&path, &text).unwrap();
-        assert!(
-            role.allow
-                .iter()
-                .any(|a| a.program == "cargo" && a.prefix == vec!["nextest".to_string()]),
-            "round-trips through knus"
-        );
-
-        // Re-granting the same amendment is a no-op — no duplicate node.
-        persist_grant(&path, &amendment).unwrap();
-        let after = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(
-            after.matches(r#"allow "cargo" "nextest""#).count(),
-            1,
-            "idempotent re-grant: {after}"
-        );
-
-        std::fs::remove_file(&path).unwrap();
-    }
-
-    /// A path grant renders its permissions and dedups on a permission-superset.
-    #[test]
-    fn persist_path_grant_renders_perms() {
-        let path = std::env::temp_dir()
-            .join(format!("efference-persist-path-{}.kdl", std::process::id()));
-        std::fs::write(&path, "").unwrap();
-        persist_grant(
-            &path,
-            &Amendment::Path { path: "../sib".into(), read: true, write: true },
-        )
-        .unwrap();
-        let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.contains(r#"path "../sib" read=true write=true"#), "{text}");
-        // A read-only grant under the same path is already covered → no-op.
-        persist_grant(
-            &path,
-            &Amendment::Path { path: "../sib".into(), read: true, write: false },
-        )
-        .unwrap();
-        let after = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(after.matches("path \"../sib\"").count(), 1, "{after}");
-        std::fs::remove_file(&path).unwrap();
-    }
-
     #[test]
     fn explicit_present_config_resolves_with_its_path() {
-        let path = std::env::temp_dir().join(format!("efference-role-{}.kdl", std::process::id()));
-        std::fs::write(&path, r#"scope "hi""#).unwrap();
+        let path =
+            std::env::temp_dir().join(format!("efference-config-{}.toml", std::process::id()));
+        std::fs::write(&path, r#"scope = "hi""#).unwrap();
         let loaded = load(Some(&path)).unwrap();
         assert_eq!(loaded.role.scope.as_deref(), Some("hi"));
         assert_eq!(loaded.source, ConfigSource::Path(path.clone()));
         std::fs::remove_file(&path).unwrap();
     }
-}
 
-/// 1b groundwork — prove `toml_edit` does what the config-edit format switch needs *before*
-/// the cutover (backlog/permissions/toml-config.md). Two gates: (1) serde decodes the planned
-/// string-keyed schema (`scope` / `watch-for` / `[commands]` / `[paths]`), quoted sub-verb keys
-/// and all; (2) a `DocumentMut` edit preserves comments and unrelated formatting — the property
-/// that makes "yes, always" auto-persist sound (the harness writes the file; the user's comments
-/// survive). These exercise the crate, not the real [`Config`] (which still decodes KDL until 1b).
-#[cfg(test)]
-mod toml_edit_gating {
-    /// Gate 1: `toml_edit::de` round-trips the keyed-map schema, quoted keys and all.
+    /// Persisting a command change sets `[commands][key] = true`, preserves unrelated comments
+    /// and formatting, round-trips back through the loader, and is idempotent on re-persist.
     #[test]
-    fn de_round_trips_the_keyed_map_schema() {
-        use std::collections::BTreeMap;
-        #[derive(serde::Deserialize)]
-        struct Sample {
-            scope: String,
-            #[serde(rename = "watch-for", default)]
-            watch_for: Vec<String>,
-            #[serde(default)]
-            commands: BTreeMap<String, bool>,
-            #[serde(default)]
-            paths: BTreeMap<String, bool>,
-        }
-        let src = r#"
-scope = "Develop this Rust harness"
-watch-for = ["network egress", "writes outside the repo"]
+    fn persist_command_sets_key_preserves_comments_and_round_trips() {
+        let path =
+            std::env::temp_dir().join(format!("efference-persist-{}.toml", std::process::id()));
+        std::fs::write(
+            &path,
+            "# my config\nscope = \"do the thing\"  # the mission\n\n[commands]\ncargo = true\n",
+        )
+        .unwrap();
 
-[commands]
-cargo = true
-"git diff" = true
+        let change = ConfigChange::Command { command: "git diff".into() };
+        persist_config_change(&path, &change).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("# my config"), "comment preserved: {text}");
+        assert!(text.contains("# the mission"), "inline comment preserved: {text}");
+        assert!(text.contains(r#""git diff" = true"#), "key set: {text}");
 
-[paths]
-"." = true
-"#;
-        let cfg: Sample = toml_edit::de::from_str(src).expect("decode keyed-map schema");
-        assert_eq!(cfg.scope, "Develop this Rust harness");
-        assert_eq!(cfg.watch_for, ["network egress", "writes outside the repo"]);
-        assert_eq!(cfg.commands.get("cargo"), Some(&true));
-        // The quoted sub-verb key decodes as one map key — the `git diff` prefix case.
-        assert_eq!(cfg.commands.get("git diff"), Some(&true));
-        assert_eq!(cfg.paths.get("."), Some(&true));
+        // Round-trips back through the loader into the command set.
+        let role = parse(&path, &text).unwrap();
+        assert!(role.commands.contains("git diff"));
+        assert!(role.commands.contains("cargo"));
+
+        // Re-persisting the same change is a no-op — no duplicate key.
+        persist_config_change(&path, &change).unwrap();
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(after.matches(r#""git diff" = true"#).count(), 1, "idempotent: {after}");
+
+        std::fs::remove_file(&path).unwrap();
     }
 
-    /// Gate 2: editing a `DocumentMut` preserves comments + unrelated formatting, and can
-    /// replace a scalar in place keeping its inline comment (the `scope` replace that
-    /// append-only KDL could not do) — the auto-persist guarantee.
+    /// Persisting into an **empty** file vivifies the missing sections — the case the gating
+    /// test (which edited an existing `[commands]`) didn't cover. Tool grants append to the
+    /// `tools` array and dedup on membership; path grants render the sugar / inline perms.
     #[test]
-    fn document_mut_edits_preserve_comments_and_formatting() {
-        use toml_edit::{DocumentMut, Value, value};
+    fn persist_into_empty_file_vivifies_sections() {
+        let path = std::env::temp_dir()
+            .join(format!("efference-persist-empty-{}.toml", std::process::id()));
+        std::fs::write(&path, "").unwrap();
 
-        let src = r#"# my efference config
-scope = "old scope"  # the perimeter
+        persist_config_change(&path, &ConfigChange::Tool { name: "read".into() }).unwrap();
+        persist_config_change(&path, &ConfigChange::Tool { name: "read".into() }).unwrap();
+        persist_config_change(
+            &path,
+            &ConfigChange::Path { path: "/refs".into(), read: true, write: false },
+        )
+        .unwrap();
+        persist_config_change(
+            &path,
+            &ConfigChange::Path { path: ".".into(), read: true, write: true },
+        )
+        .unwrap();
 
-[commands]
-cargo = true  # blanket
-"#;
-        let mut doc: DocumentMut = src.parse().expect("parse");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let role = parse(&path, &text).unwrap();
+        // The tool grant landed once (membership dedup, not last-write-wins).
+        assert_eq!(role.tools.iter().filter(|t| *t == "read").count(), 1, "{text}");
+        // Path sugar + inline perms both decode back.
+        assert_eq!(role.paths["."], Perms { read: true, write: true }, "{text}");
+        assert_eq!(role.paths["/refs"], Perms { read: true, write: false }, "{text}");
 
-        // Replace the `scope` scalar, preserving its decor (the inline comment) — the
-        // narrowing edit append couldn't express.
-        {
-            let v = doc["scope"].as_value_mut().expect("scope is a value");
-            let decor = v.decor().clone();
-            *v = Value::from("new scope");
-            *v.decor_mut() = decor;
-        }
-        // Add a new command key (the common auto-persist case): a fresh insert.
-        doc["commands"]["git diff"] = value(true);
+        std::fs::remove_file(&path).unwrap();
+    }
 
-        let out = doc.to_string();
+    /// A `Scope` change replaces the scalar in place (preserving its inline comment) when present,
+    /// and inserts it when absent — the narrowing edit append-only KDL couldn't express.
+    #[test]
+    fn persist_scope_replaces_in_place_then_inserts_when_absent() {
+        let path = std::env::temp_dir()
+            .join(format!("efference-persist-scope-{}.toml", std::process::id()));
 
-        // Unrelated comments + structure survive untouched.
-        assert!(out.contains("# my efference config"), "top comment lost: {out}");
-        assert!(out.contains("# blanket"), "unrelated inline comment lost: {out}");
-        // The scalar replace kept its own inline comment via decor preservation.
-        assert!(out.contains("# the perimeter"), "edited-line comment lost: {out}");
-        // The edits applied.
-        assert!(out.contains(r#"scope = "new scope""#), "scope not replaced: {out}");
-        assert!(out.contains(r#""git diff" = true"#), "command key not added: {out}");
+        // Replace in place: the inline comment on the scope line survives.
+        std::fs::write(&path, "scope = \"old\"  # the perimeter\n[commands]\ncargo = true\n")
+            .unwrap();
+        persist_config_change(&path, &ConfigChange::Scope { text: "narrowed".into() }).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains(r#"scope = "narrowed""#), "scope replaced: {text}");
+        assert!(text.contains("# the perimeter"), "inline comment preserved: {text}");
+        assert!(text.contains("cargo = true"), "unrelated section intact: {text}");
+        assert_eq!(parse(&path, &text).unwrap().scope.as_deref(), Some("narrowed"));
+
+        // Insert when absent: a file with no scope gains one.
+        std::fs::write(&path, "[commands]\ncargo = true\n").unwrap();
+        persist_config_change(&path, &ConfigChange::Scope { text: "fresh".into() }).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(parse(&path, &text).unwrap().scope.as_deref(), Some("fresh"), "{text}");
+
+        std::fs::remove_file(&path).unwrap();
     }
 }

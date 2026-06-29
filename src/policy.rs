@@ -54,8 +54,8 @@ use std::path::{Component, Path, PathBuf};
 use serde_json::Value;
 
 use crate::bash;
-use crate::log::{Amendment, LogEntry, Payload, ToolCall};
-use crate::config::{Allow, PathGrant, Config, ToolGrant};
+use crate::log::{ConfigChange, LogEntry, Payload, ToolCall};
+use crate::config::{Config, Perms};
 
 /// The fast-path's decision for one tool call. Binary; the extension point for the
 /// spotter rung, which splits `Gate` into a graded `{clear, watch, gate}` stance
@@ -75,44 +75,48 @@ enum Perm {
     Write,
 }
 
-/// Fold the log's [`Payload::ConfigEdit`] amendments onto a base role, yielding the **effective
-/// role** the classifier should consult (backlog/permissions/config-edit.md). The effective
-/// policy at any point is `base + fold(grants)` — the substrate thesis applied to policy: the
-/// base role is what booted, the grants are the durable record of every amendment since, and
-/// this fold is their deterministic projection (kin to `project(log)`, docs/substrate.md).
+/// Fold the log's [`Payload::ConfigEdit`] changes onto a base config, yielding the **effective
+/// config** the classifier should consult (backlog/permissions/config-edit.md). The effective
+/// policy at any point is `base + fold(changes)` — the substrate thesis applied to policy: this
+/// is materializing a table from an ordered log, exactly as a database replays its write-ahead
+/// log (kin to `project(log)`, docs/substrate.md). The base config is the table's initial state;
+/// each change is a `set key = value` the replay applies in order.
 ///
-/// Amendments are **additive only** — each pushes onto the role's `allow`/`paths`/`tools` lists,
-/// none can subtract — so the fold is order-independent and idempotent: replaying a grant twice
-/// (e.g. one already persisted to the config *and* still in the log) is harmless, because the
-/// classifier ORs across grants. This batch form rebuilds from the whole log (used at startup to
-/// fold any grants in a resumed log, and in tests); the daemon then maintains its effective role
-/// **incrementally** via [`apply_config_edit`], so a gate never re-scans the log.
+/// Each change is **replace-at-key** (last-write-wins). Today's changes happen to be additive
+/// (membership in a set, a perm on a path), so the fold is also idempotent — replaying a change
+/// already persisted to the file *and* still in the log lands the same value. But order now
+/// matters in general (the table is materialized by replaying in sequence), where the previous
+/// list-append fold was order-independent. This batch form rebuilds from the whole log (used at
+/// startup to fold a resumed log, and in tests); the daemon then maintains its effective config
+/// **incrementally** via [`apply_config_change`], so a gate never re-scans the log.
 pub fn effective_config(base: &Config, log: &[LogEntry]) -> Config {
     let mut role = base.clone();
     for entry in log {
-        if let Payload::ConfigEdit(grant) = &entry.payload {
-            apply_config_edit(&mut role, &grant.amendment);
+        if let Payload::ConfigEdit(edit) = &entry.payload {
+            apply_config_change(&mut role, &edit.change);
         }
     }
     role
 }
 
-/// Fold one [`Amendment`] onto a role in place — the per-grant step of [`effective_config`],
-/// exposed so the daemon can update its effective role *incrementally* (folding each grant as
+/// Apply one [`ConfigChange`] to a config in place — the per-change step of [`effective_config`],
+/// exposed so the daemon can update its effective config *incrementally* (applying each change as
 /// it appends) rather than re-scanning the whole log on every gate (docs/control-channel.md).
-/// Purely additive: each variant pushes onto one of the role's grant lists.
-pub fn apply_config_edit(role: &mut Config, amendment: &Amendment) {
-    match amendment {
-        Amendment::Allow { program, prefix } => role.allow.push(Allow {
-            program: program.clone(),
-            prefix: prefix.clone(),
-        }),
-        Amendment::Path { path, read, write } => role.paths.push(PathGrant {
-            path: path.clone(),
-            read: *read,
-            write: *write,
-        }),
-        Amendment::Tool { name } => role.tools.push(ToolGrant { name: name.clone() }),
+/// Replace-at-key: each variant sets the addressed key in the matching set/map.
+pub fn apply_config_change(role: &mut Config, change: &ConfigChange) {
+    match change {
+        ConfigChange::Command { command } => {
+            role.commands.insert(command.clone());
+        }
+        ConfigChange::Path { path, read, write } => {
+            role.paths.insert(path.clone(), Perms { read: *read, write: *write });
+        }
+        ConfigChange::Tool { name } => {
+            role.tools.insert(name.clone());
+        }
+        ConfigChange::Scope { text } => {
+            role.scope = Some(text.clone());
+        }
     }
 }
 
@@ -143,7 +147,7 @@ fn classify_in(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
 /// permission. Anything not granted gates.
 fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
     // Nothing clears in code — the name must be granted in config first.
-    if !role.tools.iter().any(|t| t.name == call.name) {
+    if !role.tools.contains(&call.name) {
         return Verdict::Gate;
     }
     if path_check(role, call, cwd) {
@@ -221,12 +225,12 @@ fn paths_granted(
 /// error-not-deception threat model (backlog/permissions/README.md).
 fn path_granted(role: &Config, path: &str, perm: Perm, cwd: &Path) -> bool {
     let target = lexical_normalize(&absolutize(path, cwd));
-    role.paths.iter().any(|grant| {
+    role.paths.iter().any(|(grant_path, perms)| {
         let granted = match perm {
-            Perm::Read => grant.read || grant.write, // write implies read
-            Perm::Write => grant.write,
+            Perm::Read => perms.read || perms.write, // write implies read
+            Perm::Write => perms.write,
         };
-        granted && target.starts_with(lexical_normalize(&absolutize(&grant.path, cwd)))
+        granted && target.starts_with(lexical_normalize(&absolutize(grant_path, cwd)))
     })
 }
 
@@ -268,21 +272,27 @@ fn classify_bash(role: &Config, command: &str) -> Verdict {
     let Some(tokens) = simple_command_tokens(command) else {
         return Verdict::Gate; // stage 1 rejected (complex, expanded, or unparseable)
     };
-    // A simple command always has at least the program word.
-    let (program, args) = tokens.split_first().expect("simple command has a program");
-    for entry in &role.allow {
-        if entry.program == *program && args.starts_with(&entry.prefix) {
-            return Verdict::Clear;
-        }
+    // Stage 2: token-wise prefix match against the command-prefix set. Each key is re-lexed with
+    // the *same* lexer as the command, so `"git diff"` compares as `["git", "diff"]`, not by
+    // string — and a key that fails to lex (can't happen post-validation) is simply skipped.
+    // Re-lexing a handful of keys is free next to parsing the command itself.
+    if role.commands.iter().any(|key| {
+        simple_command_tokens(key).is_some_and(|key_tokens| tokens.starts_with(&key_tokens))
+    }) {
+        Verdict::Clear
+    } else {
+        Verdict::Gate
     }
-    Verdict::Gate
 }
 
 /// **Stage 1 — structural simplicity.** Parse `command` and return its literal token
 /// vector (`[program, args…]`) iff it is exactly one simple command with no operators,
 /// redirections, assignments, or expansions, and whose every word is wholly literal.
 /// `None` for anything else (including a parse error) — the caller gates it.
-fn simple_command_tokens(command: &str) -> Option<Vec<String>> {
+///
+/// `pub(crate)` because config-load reuses it to validate `[commands]` keys (the soundness
+/// requirement that a key lexes to the same token vector the command is checked against).
+pub(crate) fn simple_command_tokens(command: &str) -> Option<Vec<String>> {
     use yash_syntax::syntax::{Command, List};
 
     let list: List = command.parse().ok()?;
@@ -373,19 +383,18 @@ fn literal_word(word: &yash_syntax::syntax::Word) -> Option<String> {
 mod tests {
     use super::*;
     use crate::log::CallId;
-    use crate::config::Allow;
 
-    /// A role whose allowlist mirrors the curation rule: blanket for whole-arg-space-
+    /// Build a [`Config`] whose `commands` set holds the given command-prefix keys.
+    fn commands(keys: &[&str]) -> std::collections::BTreeSet<String> {
+        keys.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// A config whose command-allowlist mirrors the curation rule: blanket for whole-arg-space-
     /// recoverable programs (`cargo`, `rg`), sub-verb for the irreversible frontier
     /// (`git diff`/`status`, never `git push`).
     fn sample_role() -> Config {
         Config {
-            allow: vec![
-                Allow { program: "cargo".into(), prefix: vec![] },
-                Allow { program: "rg".into(), prefix: vec![] },
-                Allow { program: "git".into(), prefix: vec!["diff".into()] },
-                Allow { program: "git".into(), prefix: vec!["status".into()] },
-            ],
+            commands: commands(&["cargo", "rg", "git diff", "git status"]),
             ..Default::default()
         }
     }
@@ -495,14 +504,8 @@ mod tests {
 
     // --- Structured tools: name grant + path-perm, interpreted from config ---
 
-    use crate::config::{PathGrant, ToolGrant};
+    use crate::config::Perms;
 
-    fn tool(name: &str) -> ToolGrant {
-        ToolGrant { name: name.into() }
-    }
-    fn grant(path: &str, read: bool, write: bool) -> PathGrant {
-        PathGrant { path: path.into(), read, write }
-    }
     fn call(name: &str, input: Value) -> ToolCall {
         ToolCall { id: CallId("toolu_s".into()), name: name.into(), input }
     }
@@ -510,22 +513,22 @@ mod tests {
     /// A fixed cwd so path resolution is deterministic in tests (no real filesystem).
     const CWD: &str = "/work";
 
-    /// A role granting the read/write/daemon tools, with cwd read+write and a **disjoint**
+    /// A config granting the read/write/daemon tools, with cwd read+write and a **disjoint**
     /// read-only zone outside cwd (`/refs`). Disjoint on purpose: grants are additive with
     /// no sub-deny, so a read-only grant can only restrict where the writable cwd grant
     /// doesn't already reach (see [`path_granted`]).
     fn fs_role() -> Config {
         Config {
-            tools: vec![
-                tool("read"),
-                tool("list"),
-                tool("search"),
-                tool("write"),
-                tool("preview_edit"),
-                tool("persist_edit"),
-                tool("kill_process"),
-            ],
-            paths: vec![grant(".", true, true), grant("/refs", true, false)],
+            tools: ["read", "list", "search", "write", "preview_edit", "persist_edit", "kill_process"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            paths: [
+                (".".to_string(), Perms { read: true, write: true }),
+                ("/refs".to_string(), Perms { read: true, write: false }),
+            ]
+            .into_iter()
+            .collect(),
             ..Default::default()
         }
     }
@@ -540,7 +543,10 @@ mod tests {
         let c = call("read", serde_json::json!({ "paths": ["src/main.rs"] }));
         assert_eq!(structured(&Config::default(), &c), Verdict::Gate);
         // Even with a path grant, an un-granted *name* gates.
-        let role = Config { paths: vec![grant(".", true, true)], ..Default::default() };
+        let role = Config {
+            paths: [(".".to_string(), Perms { read: true, write: true })].into_iter().collect(),
+            ..Default::default()
+        };
         assert_eq!(structured(&role, &c), Verdict::Gate);
     }
 
@@ -652,25 +658,25 @@ mod tests {
         );
     }
 
-    // --- effective_config: the policy fold over the log's grants ---
+    // --- effective_config: the policy fold over the log's changes ---
 
-    use crate::log::{Amendment, ConfigEdit, Lifetime, LogEntry, Payload, Timestamp};
+    use crate::log::{ConfigChange, ConfigEdit, Lifetime, LogEntry, Payload, Timestamp};
 
-    /// One session-scoped grant as a log entry (seq/turn/at are irrelevant to the fold).
-    fn grant_entry(amendment: Amendment) -> LogEntry {
+    /// One session-scoped change as a log entry (seq/turn/at are irrelevant to the fold).
+    fn change_entry(change: ConfigChange) -> LogEntry {
         LogEntry {
             seq: 0,
             turn: 0,
             at: Timestamp(0),
             payload: Payload::ConfigEdit(ConfigEdit {
-                amendment,
+                change,
                 lifetime: Lifetime::Session,
                 note: String::new(),
             }),
         }
     }
 
-    /// A log with no grants leaves the policy exactly as the base role decides.
+    /// A log with no changes leaves the policy exactly as the base config decides.
     #[test]
     fn effective_config_without_edits_matches_the_base() {
         let base = sample_role();
@@ -680,38 +686,50 @@ mod tests {
         assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Gate);
     }
 
-    /// An `Allow` grant promotes a program the base gated into the fast-path.
+    /// A `Command` change promotes a program the base gated into the fast-path.
     #[test]
-    fn an_allow_grant_clears_a_previously_gated_command() {
+    fn a_command_change_clears_a_previously_gated_command() {
         let base = sample_role();
         assert_eq!(classify(&base, &bash_call("npm install")), Verdict::Gate);
-        let log = [grant_entry(Amendment::Allow { program: "npm".into(), prefix: vec![] })];
+        let log = [change_entry(ConfigChange::Command { command: "npm".into() })];
         let eff = effective_config(&base, &log);
         assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
     }
 
-    /// A structured write needs *both* a tool-name and a path grant — two amendments fold
+    /// A structured write needs *both* a tool-name and a path change — two changes fold
     /// together to clear what an empty base gated.
     #[test]
-    fn tool_and_path_grants_fold_together_to_clear_a_write() {
+    fn tool_and_path_changes_fold_together_to_clear_a_write() {
         let base = Config::default(); // gates everything
         let c = call("write", serde_json::json!({ "path": "src/x.rs" }));
         assert_eq!(classify_in(&base, &c, Path::new(CWD)), Verdict::Gate);
         let log = [
-            grant_entry(Amendment::Tool { name: "write".into() }),
-            grant_entry(Amendment::Path { path: ".".into(), read: true, write: true }),
+            change_entry(ConfigChange::Tool { name: "write".into() }),
+            change_entry(ConfigChange::Path { path: ".".into(), read: true, write: true }),
         ];
         let eff = effective_config(&base, &log);
         assert_eq!(classify_in(&eff, &c, Path::new(CWD)), Verdict::Clear);
     }
 
-    /// The fold is idempotent: replaying the same grant (e.g. one already persisted to the
-    /// config *and* still in the log) still clears — the classifier ORs across grants.
+    /// The fold stays idempotent under replace-at-key: replaying the same change (e.g. one
+    /// already persisted to the config *and* still in the log) lands the same value — setting a
+    /// set-member or a path-perm twice is a no-op.
     #[test]
-    fn folding_a_grant_twice_is_harmless() {
+    fn folding_a_change_twice_is_harmless() {
         let base = sample_role();
-        let g = grant_entry(Amendment::Allow { program: "npm".into(), prefix: vec![] });
+        let g = change_entry(ConfigChange::Command { command: "npm".into() });
         let eff = effective_config(&base, &[g.clone(), g]);
         assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
+    }
+
+    /// A `Scope` change replaces the effective scope (the slot a session-visible edit moves —
+    /// the classifier ignores it, but the spotter reads effective scope directly).
+    #[test]
+    fn a_scope_change_updates_the_effective_scope() {
+        let base = Config::default();
+        assert!(base.scope.is_none());
+        let log = [change_entry(ConfigChange::Scope { text: "new perimeter".into() })];
+        let eff = effective_config(&base, &log);
+        assert_eq!(eff.scope.as_deref(), Some("new perimeter"));
     }
 }

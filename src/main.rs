@@ -49,9 +49,9 @@ enum Command {
         /// cheap band (Haiku) regardless of what the agent runs.
         #[arg(long, default_value = "claude-haiku-4-5")]
         spotter_model: String,
-        /// Path to the role config (KDL, see backlog/permissions/README.md). If
-        /// omitted, `efference.kdl` in the cwd is probed; absent → the built-in default
-        /// role. An explicit path that doesn't exist is an error. The resolved path is
+        /// Path to the config (TOML, see backlog/permissions/README.md). If omitted,
+        /// `efference.toml` in the cwd is probed; absent → the built-in default config.
+        /// An explicit path that doesn't exist is an error. The resolved path is
         /// reported on `GET /state`.
         #[arg(long, short = 'c')]
         config: Option<PathBuf>,
@@ -143,7 +143,7 @@ enum Command {
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
         /// Config file to fold into the reconstructed preamble, same resolution as
-        /// `serve` (defaults to probing `efference.kdl`). The config file isn't recorded
+        /// `serve` (defaults to probing `efference.toml`). The config file isn't recorded
         /// in the log, so — like `system`/`tools[]` — it's rebuilt from the current
         /// environment; pass `--config` to match the session that produced the log.
         #[arg(long, short = 'c')]
@@ -158,17 +158,17 @@ enum Command {
         since: Option<u64>,
     },
     /// Dev tool (like `wire`/`gallery`): run the spotter permission rung
-    /// (docs/permissions.md) on a single (brief, watch-for, command) and print its
+    /// (docs/permissions.md) on a single (scope, watch-for, command) and print its
     /// verdict — no daemon, no session. A live API call to the spotter model, for
-    /// iterating on the persona and role config against real cases. Requires
+    /// iterating on the persona and config against real cases. Requires
     /// ANTHROPIC_API_KEY.
     Spotter {
-        /// The mission brief to judge against. Omit to test the no-brief frame.
+        /// The scope (perimeter prose) to judge against. Omit to test the no-scope frame.
         #[arg(long)]
-        brief: Option<String>,
-        /// The spotter-only "things to watch for" list.
-        #[arg(long)]
-        watch_for: Option<String>,
+        scope: Option<String>,
+        /// A spotter-only "thing to watch for". Repeatable.
+        #[arg(long = "watch-for")]
+        watch_for: Vec<String>,
         /// An allowed path grant, repeatable. Format: `<path>:rw` (read+write),
         /// `<path>:r` (read), or bare `<path>` (no access). E.g. `--path .:rw --path /refs:r`.
         #[arg(long = "path")]
@@ -217,12 +217,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::State => state(cli.socket).await,
         Command::Log { since } => log(cli.socket, since).await,
         Command::Spotter {
-            brief,
+            scope,
             watch_for,
             paths,
             model,
             command,
-        } => spotter_check(brief, watch_for, paths, &model, command.join(" ")).await,
+        } => spotter_check(scope, watch_for, paths, &model, command.join(" ")).await,
         Command::Attach => attach(cli.socket).await,
         Command::Tui { theme } => tui(cli.socket, theme).await,
         Command::Gallery { theme } => gallery(theme).await,
@@ -673,15 +673,15 @@ async fn serve(
     daemon::serve(client, toolbox, ForkPeek, spotter, log, socket, loaded).await
 }
 
-/// Dev tool: run the spotter on one `(brief, watch-for, paths, command)` and print
-/// the verdict (docs/permissions.md). No daemon — it builds a throwaway role and a
+/// Dev tool: run the spotter on one `(scope, watch-for, paths, command)` and print
+/// the verdict (docs/permissions.md). No daemon — it builds a throwaway config and a
 /// bash [`ToolCall`] and calls the exact `assess` path a real gate would, so what it
-/// prints is what the loop would see. For iterating on the persona and role config.
+/// prints is what the loop would see. For iterating on the persona and config.
 ///
 /// [`ToolCall`]: efference::log::ToolCall
 async fn spotter_check(
-    brief: Option<String>,
-    watch_for: Option<String>,
+    scope: Option<String>,
+    watch_for: Vec<String>,
     paths: Vec<String>,
     model: &str,
     command: String,
@@ -689,7 +689,7 @@ async fn spotter_check(
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| "ANTHROPIC_API_KEY is not set in the environment")?;
     let role = efference::config::Config {
-        scope: brief,
+        scope,
         watch_for,
         paths: paths.iter().map(|s| parse_path_grant(s)).collect(),
         ..Default::default()
@@ -715,18 +715,15 @@ async fn spotter_check(
     Ok(())
 }
 
-/// Parse a `--path` grant spec for the spotter tester: `<path>:rw` (read+write),
-/// `<path>:r` (read), or a bare `<path>` (no access — matching [`PathGrant`]'s
-/// honest default). The perm suffix is matched by the letters it contains.
-///
-/// [`PathGrant`]: efference::config::PathGrant
-fn parse_path_grant(spec: &str) -> efference::config::PathGrant {
+/// Parse a `--path` grant spec for the spotter tester into a `[paths]` map entry: `<path>:rw`
+/// (read+write), `<path>:r` (read), or a bare `<path>` (no access — the honest default). The
+/// perm suffix is matched by the letters it contains.
+fn parse_path_grant(spec: &str) -> (String, efference::config::Perms) {
     match spec.rsplit_once(':') {
-        Some((path, perms)) => efference::config::PathGrant {
-            path: path.into(),
-            read: perms.contains('r'),
-            write: perms.contains('w'),
-        },
-        None => efference::config::PathGrant { path: spec.into(), read: false, write: false },
+        Some((path, perms)) => (
+            path.into(),
+            efference::config::Perms { read: perms.contains('r'), write: perms.contains('w') },
+        ),
+        None => (spec.into(), efference::config::Perms { read: false, write: false }),
     }
 }

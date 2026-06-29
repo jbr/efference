@@ -259,19 +259,30 @@ impl Shared {
     /// Append to the log (durably) and wake SSE tailers. The single appender is
     /// the loop; handlers only read.
     pub fn append(&self, turn: Turn, payload: Payload) -> io::Result<Seq> {
-        // A `ConfigEdit` amends policy: capture its amendment before the payload moves into the
-        // log, then fold it into the effective role *after* a successful append, so a failed
-        // write never grants (backlog/permissions/config-edit.md). Cheap clone, grants only.
-        let granted = match &payload {
-            Payload::ConfigEdit(grant) => Some(grant.amendment.clone()),
+        // A `ConfigEdit` amends policy: capture its change before the payload moves into the
+        // log, then fold it into the effective config *after* a successful append, so a failed
+        // write never edits (backlog/permissions/config-edit.md). Cheap clone, edits only.
+        let edit = match &payload {
+            Payload::ConfigEdit(edit) => Some(edit.change.clone()),
             _ => None,
         };
         let seq = self.log.lock().unwrap().append(turn, payload)?;
-        if let Some(amendment) = granted {
-            let mut eff = self.effective.lock().unwrap();
-            let mut role = (**eff).clone();
-            crate::policy::apply_config_edit(&mut role, &amendment);
-            *eff = Arc::new(role);
+        if let Some(change) = edit {
+            {
+                let mut eff = self.effective.lock().unwrap();
+                let mut role = (**eff).clone();
+                crate::policy::apply_config_change(&mut role, &change);
+                *eff = Arc::new(role);
+            }
+            // Session-visible edits (`scope`, `paths`) surface as an `Ambient` notification so
+            // the session learns its perimeter moved — an optional tail append that never
+            // re-renders the cached preamble (backlog/permissions/config-edit.md). It rides the
+            // same inbox/triage machinery as any notification, and fires for *every* config-edit
+            // initiator because this is the single appender. `commands`/`tools` notify nothing —
+            // their effect reaches the model only through the classifier.
+            if let Some((body, slot)) = session_visible_notice(&change) {
+                self.notify("config".to_string(), body, Some(slot), None);
+            }
         }
         self.appended.notify_waiters();
         Ok(seq)
@@ -603,7 +614,7 @@ impl Shared {
         serde_json::json!({
             "source": source,
             "has_brief": self.role.role.preamble_section().is_some(),
-            "allow_count": self.role.role.allow.len(),
+            "command_count": self.role.role.commands.len(),
             "tool_count": self.role.role.tools.len(),
             "path_count": self.role.role.paths.len(),
         })
@@ -647,6 +658,34 @@ impl Frontend for RemoteFrontend {
     }
 }
 
+/// The notification a **session-visible** config edit raises (backlog/permissions/config-edit.md),
+/// as `(body, slot)`, or `None` for an edit the session need not hear about. `scope` and `paths`
+/// are the perimeter the acting session should learn moved; `commands`/`tools` are classifier-only.
+/// The `slot` lets a later edit of the same key supersede a still-pending notice.
+fn session_visible_notice(change: &crate::log::ConfigChange) -> Option<(String, String)> {
+    use crate::log::ConfigChange;
+    match change {
+        ConfigChange::Scope { text } => Some((
+            format!("Your session scope was updated by the orchestrator:\n\n{text}"),
+            "config:scope".to_string(),
+        )),
+        ConfigChange::Path { path, read, write } => {
+            let perms = match (*read, *write) {
+                (_, true) => "read + write",
+                (true, false) => "read only",
+                (false, false) => "no access",
+            };
+            Some((
+                format!(
+                    "Filesystem access changed: `{path}` (and everything beneath it) is now {perms}."
+                ),
+                format!("config:path:{path}"),
+            ))
+        }
+        ConfigChange::Command { .. } | ConfigChange::Tool { .. } => None,
+    }
+}
+
 #[derive(Deserialize)]
 struct TurnBody {
     text: String,
@@ -657,10 +696,10 @@ struct DecisionBody {
     decision: String,
     #[serde(default)]
     message: Option<String>,
-    /// The grant payload (`decision: "config_edit"` only) — the additive amendment, its lifetime
+    /// The config-edit payload (`decision: "config_edit"` only) — the change, its lifetime
     /// (`session`/`persist`, default `session`), and a rationale note (backlog/permissions/config-edit.md).
     #[serde(default)]
-    amendment: Option<crate::log::Amendment>,
+    change: Option<crate::log::ConfigChange>,
     #[serde(default)]
     lifetime: Option<crate::log::Lifetime>,
     #[serde(default)]
@@ -727,15 +766,15 @@ fn router() -> Router {
                 "approve" => Approval::Approve,
                 "abort" => Approval::Abort,
                 "redirect" => Approval::Redirect(decision.message.unwrap_or_default()),
-                "config_edit" => match decision.amendment {
-                    Some(amendment) => Approval::ConfigEdit {
-                        amendment,
+                "config_edit" => match decision.change {
+                    Some(change) => Approval::ConfigEdit {
+                        change,
                         lifetime: decision.lifetime.unwrap_or(crate::log::Lifetime::Session),
                         note: decision.note.unwrap_or_default(),
                     },
                     None => {
                         return conn.with_status(400).with_body(
-                            r#"{"error":"config_edit decision requires an amendment"}"#,
+                            r#"{"error":"config_edit decision requires a change"}"#,
                         );
                     }
                 },
@@ -1196,36 +1235,28 @@ mod tests {
         let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
         assert!(v["role"]["source"].is_null());
         assert_eq!(v["role"]["has_brief"], false);
-        assert_eq!(v["role"]["allow_count"], 0);
+        assert_eq!(v["role"]["command_count"], 0);
         assert_eq!(v["role"]["tool_count"], 0);
         assert_eq!(v["role"]["path_count"], 0);
 
-        // A loaded role surfaces its resolved path and a content summary.
+        // A loaded config surfaces its resolved path and a content summary.
         let loaded = LoadedConfig {
             role: crate::config::Config {
                 scope: Some("stay in the repo".into()),
-                allow: vec![
-                    crate::config::Allow { program: "cargo".into(), prefix: vec![] },
-                    crate::config::Allow {
-                        program: "git".into(),
-                        prefix: vec!["diff".into()],
-                    },
-                ],
-                tools: vec![crate::config::ToolGrant { name: "read".into() }],
-                paths: vec![crate::config::PathGrant {
-                    path: ".".into(),
-                    read: true,
-                    write: true,
-                }],
+                commands: ["cargo", "git diff"].iter().map(|s| s.to_string()).collect(),
+                tools: ["read"].iter().map(|s| s.to_string()).collect(),
+                paths: [(".".to_string(), crate::config::Perms { read: true, write: true })]
+                    .into_iter()
+                    .collect(),
                 ..Default::default()
             },
-            source: ConfigSource::Path("roles/dev.kdl".into()),
+            source: ConfigSource::Path("efference.toml".into()),
         };
         let (shared, _rx) = Shared::with_role(Log::in_memory(), loaded);
         let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
-        assert_eq!(v["role"]["source"], "roles/dev.kdl");
+        assert_eq!(v["role"]["source"], "efference.toml");
         assert_eq!(v["role"]["has_brief"], true);
-        assert_eq!(v["role"]["allow_count"], 2);
+        assert_eq!(v["role"]["command_count"], 2);
         assert_eq!(v["role"]["tool_count"], 1);
         assert_eq!(v["role"]["path_count"], 1);
     }
@@ -1241,7 +1272,7 @@ mod tests {
 
     fn allow_grant(program: &str) -> Payload {
         Payload::ConfigEdit(crate::log::ConfigEdit {
-            amendment: crate::log::Amendment::Allow { program: program.into(), prefix: vec![] },
+            change: crate::log::ConfigChange::Command { command: program.into() },
             lifetime: crate::log::Lifetime::Session,
             note: String::new(),
         })
@@ -1264,21 +1295,55 @@ mod tests {
         assert_eq!(classify(&shared.effective_config(), &call), Verdict::Clear);
     }
 
-    /// A `grant` decision body decodes into its amendment + lifetime (lowercase wire tags),
+    /// A session-visible config edit (`scope`, `paths`) also raises a pending notification so the
+    /// session learns its perimeter moved; a classifier-only edit (`commands`/`tools`) does not
+    /// (backlog/permissions/config-edit.md).
+    #[test]
+    fn session_visible_config_edit_enqueues_a_notification() {
+        fn edit(change: crate::log::ConfigChange) -> Payload {
+            Payload::ConfigEdit(crate::log::ConfigEdit {
+                change,
+                lifetime: crate::log::Lifetime::Session,
+                note: String::new(),
+            })
+        }
+
+        // A scope edit notifies.
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        assert!(!shared.has_pending_notifications());
+        shared
+            .append(0, edit(crate::log::ConfigChange::Scope { text: "stay in src/".into() }))
+            .unwrap();
+        assert!(shared.has_pending_notifications(), "scope edit is session-visible");
+
+        // A path edit notifies.
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        shared
+            .append(
+                0,
+                edit(crate::log::ConfigChange::Path { path: ".".into(), read: true, write: true }),
+            )
+            .unwrap();
+        assert!(shared.has_pending_notifications(), "path edit is session-visible");
+
+        // A command edit does not — its effect reaches the model only through the classifier.
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        shared.append(0, allow_grant("npm")).unwrap();
+        assert!(!shared.has_pending_notifications(), "command edit is classifier-only");
+    }
+
+    /// A `config_edit` decision body decodes into its change + lifetime (lowercase wire tags),
     /// the wire shape the orchestrator posts to upgrade a gate (backlog/permissions/config-edit.md).
     #[test]
-    fn grant_decision_body_decodes() {
+    fn config_edit_decision_body_decodes() {
         let body = r#"{"decision":"config_edit","lifetime":"persist","note":"in scope",
-                       "amendment":{"allow":{"program":"cargo","prefix":["nextest"]}}}"#;
+                       "change":{"command":{"command":"cargo nextest"}}}"#;
         let d: DecisionBody = serde_json::from_str(body).unwrap();
         assert_eq!(d.decision, "config_edit");
         assert_eq!(d.lifetime, Some(crate::log::Lifetime::Persist));
         assert_eq!(
-            d.amendment,
-            Some(crate::log::Amendment::Allow {
-                program: "cargo".into(),
-                prefix: vec!["nextest".into()],
-            })
+            d.change,
+            Some(crate::log::ConfigChange::Command { command: "cargo nextest".into() })
         );
     }
 

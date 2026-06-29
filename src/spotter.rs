@@ -186,22 +186,29 @@ fn render_context(role: &Config) -> String {
         s.push_str("- allowed paths: none configured\n");
     } else {
         s.push_str("- allowed paths (and everything beneath them):\n");
-        for grant in &role.paths {
-            let perms = if grant.write {
+        for (path, perms) in &role.paths {
+            let label = if perms.write {
                 "read, write"
-            } else if grant.read {
+            } else if perms.read {
                 "read only"
             } else {
                 "no access"
             };
-            s.push_str(&format!("  - {} ({perms})\n", grant.path));
+            s.push_str(&format!("  - {path} ({label})\n"));
         }
     }
 
-    if let Some(watch) = role.watch_for.as_deref().map(str::trim).filter(|w| !w.is_empty()) {
+    let watch: Vec<&str> = role
+        .watch_for
+        .iter()
+        .map(|w| w.trim())
+        .filter(|w| !w.is_empty())
+        .collect();
+    if !watch.is_empty() {
         s.push_str("\nThings to watch for on this mission:\n");
-        s.push_str(watch);
-        s.push('\n');
+        for item in watch {
+            s.push_str(&format!("- {item}\n"));
+        }
     }
     s
 }
@@ -283,7 +290,7 @@ mod tests {
     use super::*;
     use crate::api::{Completion, Usage};
     use crate::log::{CallId, Payload};
-    use crate::config::{PathGrant, Config};
+    use crate::config::{Config, Perms};
 
     fn spot_completion(name: &str, input: Value) -> Completion {
         Completion {
@@ -356,11 +363,13 @@ mod tests {
     fn render_context_includes_scope_and_watch_for() {
         let role = Config {
             scope: Some("Fix the build.".into()),
-            watch_for: Some("Don't touch the deploy keys.".into()),
-            paths: vec![
-                PathGrant { path: ".".into(), read: true, write: true },
-                PathGrant { path: "/refs".into(), read: true, write: false },
-            ],
+            watch_for: vec!["Don't touch the deploy keys.".into()],
+            paths: [
+                (".".to_string(), Perms { read: true, write: true }),
+                ("/refs".to_string(), Perms { read: true, write: false }),
+            ]
+            .into_iter()
+            .collect(),
             ..Default::default()
         };
         let ctx = render_context(&role);

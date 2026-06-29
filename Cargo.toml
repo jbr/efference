@@ -55,15 +55,12 @@ syntect = { version = "5.3", default-features = false, features = ["parsing", "d
 fieldwork = "0.5.2"
 thiserror = "2"
 unicode-width = "0.2.2"
-# Role config (backlog/permissions/role-config.md): KDL parsed into typed structs via
-# knus's derive. Pinned exact — the schema is the contract. knus::Error is a
-# miette::Diagnostic, so a malformed role file renders with a source-span underline
-# (the load-time diagnostic that substitutes for KDL's thin LSP). miette is pinned to
-# knus's exact version so the Diagnostic trait is the same one; `fancy` is the
-# graphical reporter the CLI prints the load error through.
-knus = "=3.4.0"
-miette = { version = "=7.6.0", features = ["fancy"] }
 yash-syntax = "=0.14.1"
+# Config (backlog/permissions/config-edit.md): the file is TOML, decoded via `toml_edit`'s
+# serde layer and edited in place via its format-preserving `DocumentMut` — the same crate both
+# reads the config and writes the harness's auto-persisted edits back, comments intact. A parse
+# error carries a source span; its `Display` renders the offending line (the load-time diagnostic
+# that stands in for KDL's miette report).
 toml_edit = { version = "0.25.12", features = ["serde"] }
 
 [dev-dependencies]
