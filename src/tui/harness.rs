@@ -816,6 +816,32 @@ mod scenarios {
         );
     }
 
+    /// The right-docked sidebar (docs/tui.md): on a wide terminal, PROCESSES and STATS
+    /// render in the right column (no bottom strip), with a `│` divider from the
+    /// transcript. A glanceable readout — focus + proposals come later.
+    #[test]
+    fn sidebar_shows_processes_and_stats() {
+        use super::super::{BgProc, TuiEvent, UsageStats};
+        let mut play = Screenplay::new(110, 20);
+        play.user("Watch the build.");
+        play.assistant("Started it — I'll keep working.", vec![]);
+        play.event(TuiEvent::Processes(vec![BgProc {
+            handle: "bg#1".into(),
+            command: "cargo watch -x test".into(),
+            tail: "test result: ok. 12 passed".into(),
+            running_secs: 252,
+            idle_secs: 8,
+        }]));
+        play.event(TuiEvent::Usage(UsageStats {
+            input_tokens: 12400,
+            output_tokens: 3100,
+            cache_read_input_tokens: 8900,
+            cache_creation_input_tokens: 5200,
+            seconds_since_last_request: Some(8),
+        }));
+        play.snapshot("sidebar_processes_and_stats");
+    }
+
     /// The live `Ctrl+S` dev screenshot path must produce byte-identical output to
     /// the committed-snapshot `render` path (both go through `frame_grid`). This is
     /// what lets a live capture diff directly against a `.snap` — if it ever drifts,

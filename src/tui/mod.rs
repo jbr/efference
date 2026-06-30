@@ -38,6 +38,7 @@ pub(crate) mod render_help_screen;
 pub(crate) mod render_loading_bar;
 pub(crate) mod render_node;
 pub(crate) mod render_scrollbar;
+pub(crate) mod render_sidebar;
 pub(crate) mod render_span;
 pub(crate) mod render_status_bar;
 pub(crate) mod render_table;

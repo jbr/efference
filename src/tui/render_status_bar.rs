@@ -36,8 +36,12 @@ impl<'a> InteractiveState<'a> {
             }
         }
 
-        // Render usage statistics on the right side, if available.
-        if let Some(usage) = &self.usage {
+        // Render usage statistics on the right side, if available — but only when the
+        // sidebar isn't docked. When it is, STATS lives there (docs/tui.md); the status
+        // bar carries usage solely as the narrow-terminal fallback.
+        if self.viewport.sidebar_area.is_none()
+            && let Some(usage) = &self.usage
+        {
             let fn_format_num = |n: u64| -> String {
                 if n >= 1_000_000 {
                     format!("{}m", n / 1_000_000)

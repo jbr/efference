@@ -10,8 +10,14 @@ use crate::tui::document::NodePath;
 /// running and tracked, just not all shown (Slice 2's `list()` surfaces all).
 const PROC_PANEL_MAX: u16 = 6;
 
+/// Minimum total terminal width at which the sidebar docks; below it the sidebar is
+/// hidden (the narrow-mode drawer is a later step), and the process strip returns.
+pub(super) const SIDEBAR_MIN_TOTAL: u16 = 90;
+/// Docked sidebar column width, including its 1-col left divider (docs/tui.md).
+pub(super) const SIDEBAR_WIDTH: u16 = 30;
+
 /// Compact seconds → `8s` / `4m12s` / `1h3m`, for the process-panel timing.
-fn fmt_secs(secs: u64) -> String {
+pub(super) fn fmt_secs(secs: u64) -> String {
     let (h, m, s) = (secs / 3600, (secs % 3600) / 60, secs % 60);
     if h > 0 {
         format!("{h}h{m}m")
@@ -56,8 +62,24 @@ impl<'a> InteractiveState<'a> {
         // per running process, capped, hidden when none run — an ambient strip between
         // the transcript and the composer. The approval gate is *not* bottom chrome:
         // it renders inline in the transcript at the pending call (docs/tui.md).
-        let input_height = (self.composer.line_count(full.width) as u16).clamp(1, 6);
-        let proc_height: u16 = (self.processes.len() as u16).min(PROC_PANEL_MAX);
+        // Right-docked sidebar when the terminal is wide enough (docs/tui.md). It takes
+        // the rightmost columns for the full height above the status bar; the transcript
+        // and composer share the remaining left column. Processes move *into* the sidebar,
+        // so the bottom process strip only appears in the narrow (no-sidebar) fallback
+        // until the drawer lands.
+        let sidebar_width: u16 = if full.width >= SIDEBAR_MIN_TOTAL {
+            SIDEBAR_WIDTH
+        } else {
+            0
+        };
+        let content_width = full.width.saturating_sub(sidebar_width);
+
+        let input_height = (self.composer.line_count(content_width) as u16).clamp(1, 6);
+        let proc_height: u16 = if sidebar_width > 0 {
+            0
+        } else {
+            (self.processes.len() as u16).min(PROC_PANEL_MAX)
+        };
         self.viewport.input_height = input_height;
         self.viewport.gate_height = 0;
         let bottom = 1 + input_height + proc_height;
@@ -65,19 +87,19 @@ impl<'a> InteractiveState<'a> {
         let main_area = Rect {
             x: full.x,
             y: full.y,
-            width: full.width.saturating_sub(1),
+            width: content_width.saturating_sub(1),
             height: full.height.saturating_sub(bottom),
         };
         let proc_area = Rect {
             x: full.x,
             y: full.height.saturating_sub(bottom),
-            width: full.width,
+            width: content_width,
             height: proc_height,
         };
         let input_area = Rect {
             x: full.x,
             y: full.height.saturating_sub(1 + input_height),
-            width: full.width,
+            width: content_width,
             height: input_height,
         };
         let status_area = Rect {
@@ -86,6 +108,14 @@ impl<'a> InteractiveState<'a> {
             width: full.width,
             height: 1,
         };
+        let sidebar_area = (sidebar_width > 0).then(|| Rect {
+            x: full.x + content_width,
+            y: full.y,
+            width: sidebar_width,
+            height: full.height.saturating_sub(1),
+        });
+        // Remembered for the sidebar-only dev screenshot slice (docs/tui.md).
+        self.viewport.sidebar_area = sidebar_area;
 
         if matches!(self.ui_mode, UiMode::Help) {
             // Help covers the entire area (including the composer/status rows).
@@ -147,6 +177,10 @@ impl<'a> InteractiveState<'a> {
 
         if let Some(layout_cache) = self.viewport.cached_layout {
             self.render_scrollbar(frame.buffer_mut(), main_area, layout_cache.document_height);
+        }
+
+        if let Some(sb) = sidebar_area {
+            self.render_sidebar(frame.buffer_mut(), sb);
         }
 
         if let UiMode::ThemePicker { selected_index, .. } = self.ui_mode {

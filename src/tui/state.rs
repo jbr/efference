@@ -108,6 +108,10 @@ pub(super) struct ViewportState {
     /// so it no longer reserves a bottom-chrome row. Kept (always 0) so the mouse
     /// hit-testing math reads uniformly as `1 + input_height + gate_height`.
     pub gate_height: u16,
+    /// The right-docked sidebar's rectangle as of the last frame, or `None` when it's
+    /// hidden (narrow terminal). Remembered so the sidebar-only dev screenshot can
+    /// slice exactly those columns (docs/tui.md).
+    pub sidebar_area: Option<Rect>,
 }
 
 /// Rendering state computed each frame
@@ -243,6 +247,7 @@ impl<'a> InteractiveState<'a> {
                 stuck_to_bottom: true,
                 input_height: 1,
                 gate_height: 0,
+                sidebar_area: None,
             },
             render_cache: RenderCache {
                 actions: Vec::new(),

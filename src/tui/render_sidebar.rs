@@ -1,0 +1,143 @@
+//! The right-docked sidebar (docs/tui.md): glanceable ambient widgets that used to
+//! be crammed elsewhere — `PROCESSES` (the bottom strip), `STATS` (the status bar),
+//! and `POLICY` (the live perimeter + its pending proposals). It is chrome, not
+//! transcript: rendered directly into its `Rect` at absolute coordinates, fed by the
+//! `/state` poll. A 1-column `│` divides it from the transcript on its left edge.
+//!
+//! Sections render top-down until they run out of room; this first cut is a pure
+//! readout (focus into the sidebar + proposal commit/cancel are later steps).
+
+use ratatui::{buffer::Buffer, layout::Rect, style::Style};
+
+use super::render_frame::fmt_secs;
+use super::state::InteractiveState;
+
+/// Write `text` at absolute `(x, y)`, clipped to `max_w` columns. One cell per char
+/// (wide glyphs occupy one cell, as elsewhere in this TUI's chrome).
+fn put(buf: &mut Buffer, x: u16, y: u16, max_w: u16, text: &str, style: Style) {
+    for (i, ch) in text.chars().take(max_w as usize).enumerate() {
+        if let Some(cell) = buf.cell_mut((x + i as u16, y)) {
+            cell.set_char(ch).set_style(style);
+        }
+    }
+}
+
+impl<'a> InteractiveState<'a> {
+    pub(super) fn render_sidebar(&self, buf: &mut Buffer, area: Rect) {
+        let bg = self.theme.document_bg_style;
+        let header = self.theme.breadcrumb_current_style;
+        let muted = self.theme.muted_style;
+        let text = self.theme.status_style;
+
+        // Clear the panel and paint the left divider column.
+        for dy in 0..area.height {
+            for dx in 0..area.width {
+                if let Some(cell) = buf.cell_mut((area.x + dx, area.y + dy)) {
+                    cell.reset();
+                    cell.set_style(bg);
+                }
+            }
+            if let Some(cell) = buf.cell_mut((area.x, area.y + dy)) {
+                cell.set_char('│').set_style(muted);
+            }
+        }
+
+        let x0 = area.x + 2; // content start: past the divider + one space
+        let max_w = area.width.saturating_sub(3); // trailing pad
+        let bottom = area.y + area.height;
+        let mut y = area.y;
+
+        // PROCESSES — one running process per two lines (handle/command, then timing).
+        if y < bottom {
+            put(
+                buf,
+                x0,
+                y,
+                max_w,
+                &format!("▾ PROCESSES  {}", self.processes.len()),
+                header,
+            );
+            y += 1;
+            for p in &self.processes {
+                if y >= bottom {
+                    break;
+                }
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &format!("{}  {}", p.handle, p.command),
+                    text,
+                );
+                y += 1;
+                if y >= bottom {
+                    break;
+                }
+                put(
+                    buf,
+                    x0 + 3,
+                    y,
+                    max_w.saturating_sub(3),
+                    &format!("{} · idle {}", fmt_secs(p.running_secs), fmt_secs(p.idle_secs)),
+                    muted,
+                );
+                y += 1;
+            }
+            y += 1; // section gap
+        }
+
+        // STATS — cumulative token + cache telemetry, moved off the status bar.
+        if let Some(u) = &self.usage
+            && y < bottom
+        {
+            put(buf, x0, y, max_w, "▾ STATS", header);
+            y += 1;
+            if y < bottom {
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &format!("in {} · out {}", num(u.input_tokens), num(u.output_tokens)),
+                    text,
+                );
+                y += 1;
+            }
+            if u.cache_read_input_tokens > 0 && y < bottom {
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &format!("cache read {}", num(u.cache_read_input_tokens)),
+                    muted,
+                );
+                y += 1;
+            }
+            if let Some(secs) = u.seconds_since_last_request
+                && y < bottom
+            {
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &format!("idle {}s", secs),
+                    muted,
+                );
+            }
+        }
+    }
+}
+
+/// Compact a token count: `12k` / `1m` / `486`.
+fn num(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{}m", n / 1_000_000)
+    } else if n >= 1_000 {
+        format!("{}k", n / 1_000)
+    } else {
+        n.to_string()
+    }
+}
