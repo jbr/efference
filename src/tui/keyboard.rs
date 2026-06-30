@@ -17,8 +17,10 @@ impl<'a> InteractiveState<'a> {
         terminal: &mut Terminal<impl Backend + Write>,
     ) -> bool {
         // Escape closes help, reverts the theme picker, or — in Normal mode —
-        // toggles between composing (keys go to the composer) and command mode
-        // (M1's single-key transcript commands).
+        // returns home to the composer. Esc is *one-directional* (docs/tui.md):
+        // always back toward the keyboard entry, never out into navigation. Entry
+        // into transcript navigation is the composer's `↑`-spill, not a toggle, so
+        // jamming Esc always lands at the composer.
         if key.code == KeyCode::Esc {
             match std::mem::replace(&mut self.ui_mode, UiMode::Normal) {
                 UiMode::Help => {}
@@ -28,12 +30,9 @@ impl<'a> InteractiveState<'a> {
                     let _ = self.apply_theme(&saved_theme_name);
                 }
                 UiMode::Normal => {
-                    self.composing = !self.composing;
-                    self.ui.debug_message = if self.composing {
-                        "compose — ⏎ send · ^J newline · esc command".into()
-                    } else {
-                        "command — i compose · j/k scroll · t theme · ? help · q quit".into()
-                    };
+                    self.composing = true;
+                    self.viewport.keyboard_cursor = super::state::KeyboardCursor::VirtualTop;
+                    self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
                 }
             }
             return false;
@@ -42,6 +41,18 @@ impl<'a> InteractiveState<'a> {
         // Ctrl+C quits from anywhere.
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             return true;
+        }
+
+        // Dev-only (gated by EFFERENCE_DEV): Ctrl+S dumps the current screen to a
+        // timestamped framed grid under `.efference/screenshots/` — the live cousin
+        // of a committed snapshot, so reachable states can be eyeballed/shown without
+        // a recording (docs/tui.md). Works from any mode.
+        if key.code == KeyCode::Char('s')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && std::env::var_os("EFFERENCE_DEV").is_some()
+        {
+            self.dev_screenshot(terminal);
+            return false;
         }
 
         if matches!(self.ui_mode, UiMode::Help) {
@@ -86,6 +97,16 @@ impl<'a> InteractiveState<'a> {
         // Compose mode: keys go to the composer. A key the composer doesn't want
         // (PgUp/PgDn) still scrolls the transcript so you can read while typing.
         if self.composing {
+            // C-d on an empty composer quits, shell/REPL EOF style (the composer
+            // otherwise binds C-d to delete-forward, so the empty-buffer guard is
+            // what disambiguates "delete the char ahead" from "nothing left — exit").
+            if key.code == KeyCode::Char('d')
+                && key.modifiers.contains(KeyModifiers::CONTROL)
+                && self.composer.is_empty()
+            {
+                return true;
+            }
+
             // While a gate is pending, Enter always resolves it — even on an empty
             // buffer (= approve), which the composer would otherwise swallow.
             if self.pending_gate.is_some()
@@ -99,12 +120,50 @@ impl<'a> InteractiveState<'a> {
             match self.composer.handle_key(key) {
                 ComposerAction::Submit(text) => self.submit_composer(text),
                 ComposerAction::Consumed => {}
+                ComposerAction::SpillUp => self.focus_transcript_from_composer(),
                 ComposerAction::Ignored => self.handle_scroll_key(key, terminal),
             }
             return false;
         }
 
         self.handle_command_key(key, terminal)
+    }
+
+    /// Cross the composer's top edge into transcript navigation (docs/tui.md):
+    /// leave compose mode and focus the bottom-most transcript unit (the one
+    /// nearest the composer), driven by the composer's `↑`-spill at `0,0`. Entering
+    /// from `VirtualBottom` and navigating up reuses ferritin's cursor/auto-scroll
+    /// interaction to land on the last visible unit (or scroll if none is focusable
+    /// yet). Esc returns home.
+    fn focus_transcript_from_composer(&mut self) {
+        use super::state::KeyboardCursor;
+        self.composing = false;
+        self.viewport.keyboard_cursor = KeyboardCursor::VirtualBottom;
+        self.handle_navigate_up();
+        self.ui.debug_message = "navigate — ↑/↓ move · ⏎ expand · esc compose".into();
+    }
+
+    /// Capture the live screen to a timestamped framed-grid file under
+    /// `.efference/screenshots/` and report the path in the status bar. The dev
+    /// screenshot keybind (`Ctrl+S`, gated by `EFFERENCE_DEV`); see
+    /// [`capture_screenshot_grid`](InteractiveState::capture_screenshot_grid).
+    fn dev_screenshot(&mut self, terminal: &mut Terminal<impl Backend + Write>) {
+        let (w, h) = terminal
+            .size()
+            .map(|s| (s.width, s.height))
+            .unwrap_or((80, 24));
+        let grid = self.capture_screenshot_grid(w, h);
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let dir = std::path::Path::new(".efference/screenshots");
+        let path = dir.join(format!("tui-{millis}.txt"));
+        self.ui.debug_message =
+            match std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&path, &grid)) {
+                Ok(()) => format!("screenshot → {}", path.display()).into(),
+                Err(e) => format!("screenshot failed: {e}").into(),
+            };
     }
 
     /// While composing, the few transcript-scroll keys the composer passes through.
@@ -135,26 +194,37 @@ impl<'a> InteractiveState<'a> {
                 return true;
             }
 
-            // Line scroll down
+            // Move focus *down a unit* (docs/tui.md) — the y-axis of the focus model,
+            // reusing ferritin's cursor + auto-scroll. `↓` past the last unit falls
+            // back into the composer, the symmetric counterpart of the `↑`-spill, so
+            // the transcript and composer read as one continuous vertical space. j /
+            // Ctrl-n / Tab alias the arrow.
             (KeyCode::Char('j'), _)
             | (KeyCode::Down, _)
-            | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-                self.set_scroll_offset(self.viewport.scroll_offset.saturating_add(1));
+            | (KeyCode::Char('n'), KeyModifiers::CONTROL)
+            | (KeyCode::Tab, _) => {
+                self.handle_navigate_down();
+                // Navigation owns scrolling now, so it must also re-arm/detach
+                // stream-following — else the `ui_loop`'s bottom re-pin (mod.rs)
+                // snaps the viewport back every frame and up-navigation can't take.
                 self.sync_stuck_to_bottom();
+                if matches!(
+                    self.viewport.keyboard_cursor,
+                    super::state::KeyboardCursor::VirtualBottom
+                ) {
+                    self.composing = true;
+                    self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
+                }
             }
 
-            // Line scroll up
+            // Move focus *up a unit*. k / Ctrl-p / BackTab alias the arrow.
             (KeyCode::Char('k'), _)
             | (KeyCode::Up, _)
-            | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
-                self.set_scroll_offset(self.viewport.scroll_offset.saturating_sub(1));
+            | (KeyCode::Char('p'), KeyModifiers::CONTROL)
+            | (KeyCode::BackTab, _) => {
+                self.handle_navigate_up();
                 self.sync_stuck_to_bottom();
             }
-
-            // Move focus between collapsible blocks (the only "links" in a
-            // transcript). Reuses ferritin's link cursor + auto-scroll.
-            (KeyCode::Tab, _) => self.handle_navigate_down(),
-            (KeyCode::BackTab, _) => self.handle_navigate_up(),
 
             // Expand the focused block
             (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => {
@@ -228,20 +298,10 @@ impl<'a> InteractiveState<'a> {
                 self.ui_mode = UiMode::Help;
             }
 
-            // Return to compose mode.
-            (KeyCode::Char('i'), _) | (KeyCode::Char('a'), _) => {
-                self.composing = true;
-                self.ui.debug_message = "compose — ⏎ send · ^J newline · esc command".into();
-            }
-
-            // Any other printable key re-enters compose and types itself.
-            (KeyCode::Char(c), m)
-                if !m.contains(KeyModifiers::CONTROL) && !m.contains(KeyModifiers::ALT) =>
-            {
-                self.composing = true;
-                let _ = self.composer.handle_key(KeyEvent::new(KeyCode::Char(c), m));
-            }
-
+            // Clean contextual modes (docs/tui.md): the transcript owns its keymap, so
+            // an unbound key is a no-op here — typing does *not* leak into the composer.
+            // Return to the composer deliberately: Esc, `↓` off the bottom, or the
+            // composer's own `↑`-spill in reverse.
             _ => {}
         }
         false

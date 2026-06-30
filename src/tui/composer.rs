@@ -27,6 +27,12 @@ pub(super) enum ComposerAction {
     Ignored,
     /// The user submitted this text (Enter on a non-empty buffer).
     Submit(String),
+    /// `↑` at the very top of the buffer (`0,0`, or an empty buffer): focus should
+    /// spill out the composer's top edge into the transcript (docs/tui.md). The
+    /// caller crosses the boundary; the composer keeps its text. The `0,0` detent
+    /// (one keypress lands at the start of the first line before the *next* `↑`
+    /// spills) is handled inside the composer — see [`move_up_or_spill`](Composer::move_up_or_spill).
+    SpillUp,
 }
 
 /// The left-gutter prompt, drawn on every visual row. Its width is the chrome
@@ -193,11 +199,19 @@ impl Composer {
             KeyCode::Char('e') if ctrl => self.col = self.line_len(),
             KeyCode::Char('b') if ctrl => self.move_left(),
             KeyCode::Char('f') if ctrl => self.move_right(),
-            KeyCode::Char('p') if ctrl => self.move_up(),
+            KeyCode::Char('p') if ctrl => {
+                if !self.move_up_or_spill() {
+                    return ComposerAction::SpillUp;
+                }
+            }
             KeyCode::Char('n') if ctrl => self.move_down(),
             KeyCode::Left => self.move_left(),
             KeyCode::Right => self.move_right(),
-            KeyCode::Up => self.move_up(),
+            KeyCode::Up => {
+                if !self.move_up_or_spill() {
+                    return ComposerAction::SpillUp;
+                }
+            }
             KeyCode::Down => self.move_down(),
             KeyCode::Home => self.col = 0,
             KeyCode::End => self.col = self.line_len(),
@@ -267,10 +281,22 @@ impl Composer {
         }
     }
 
-    fn move_up(&mut self) {
+    /// Vertical `↑` with the spill detent (docs/tui.md). Returns `true` if the
+    /// motion stayed inside the buffer, `false` if focus should spill into the
+    /// transcript. From a lower row it climbs one line preserving the goal column;
+    /// on the first line with the caret mid-line it snaps to the start (the `0,0`
+    /// detent); only at `0,0` (or empty) does it report a spill.
+    fn move_up_or_spill(&mut self) -> bool {
         if self.row > 0 {
             self.row -= 1;
             self.col = self.goal_col.min(self.line_len());
+            true
+        } else if self.col > 0 {
+            self.col = 0;
+            self.goal_col = 0;
+            true
+        } else {
+            false
         }
     }
 

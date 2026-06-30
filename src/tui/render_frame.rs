@@ -154,6 +154,24 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
+    /// Render the current state to an off-screen [`TestBackend`] and encode it as
+    /// the same framed character grid the snapshot harness commits (docs/tui.md) —
+    /// the live "dev screenshot" capture (`Ctrl+S`). It draws a *fresh* frame
+    /// rather than reading the real backend's buffer, so the capture is independent
+    /// of draw timing; the next real draw overwrites the layout fields it touches.
+    /// Reuses [`crate::tui::grid::frame_grid`], so a live capture is byte-comparable
+    /// to a committed `.snap`.
+    pub(super) fn capture_screenshot_grid(&mut self, width: u16, height: u16) -> String {
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let mut term = Terminal::new(TestBackend::new(width, height))
+            .expect("TestBackend construction is infallible");
+        self.flush_reproject();
+        let _ = term.draw(|frame| self.render_frame(frame));
+        let cursor = term.get_cursor_position().ok().map(|p| (p.x, p.y));
+        crate::tui::grid::frame_grid(term.backend().buffer(), width, cursor)
+    }
+
     /// Render the live background-process panel (docs/supervisor.md): one row per running
     /// process — `▶ bg#3  cargo watch · 4m12s · idle 8s │ <last output line>` — the
     /// handle/header in the accent style, the last tail line muted. Fed by the

@@ -306,6 +306,14 @@ impl<'a> InteractiveState<'a> {
                 level,
                 ..
             } => {
+                // First row of this unit and the index its focus action will take —
+                // captured before any rendering so the focus bar (below) can span the
+                // whole block and match the keyboard cursor. Only a block with a header
+                // pushes a focus action (and so can be focused).
+                let block_start = self.layout.pos.y;
+                let my_action_index = self.render_cache.actions.len();
+                let has_action = header.is_some();
+
                 // Source lines the body would occupy fully expanded. The transcript's
                 // collapsible body is a single CodeBlock, so this is its line count;
                 // counting newlines (not wrapped rows) keeps the collapse decision
@@ -339,9 +347,14 @@ impl<'a> InteractiveState<'a> {
                     }
                     self.layout.pos.y += 1;
 
-                    if collapsible {
-                        // The whole header line toggles the block (mouse click /
-                        // keyboard activate), targeting this TruncatedBlock's path.
+                    {
+                        // Every exchange is a focus unit (docs/tui.md), whether or not
+                        // it's long enough to collapse — so `↑/↓` moves between *all*
+                        // of them, not just the collapsible ones (the bug where focus
+                        // got stuck on the only long block). `Enter` still only
+                        // *expands* the collapsible ones; on a short block it's a
+                        // harmless no-op (the render ignores the level when nothing is
+                        // hidden). The whole header line is the click/activate target.
                         let rect = Rect::new(0, header_row, self.layout.area.width, 1);
                         self.render_cache
                             .actions
@@ -365,10 +378,55 @@ impl<'a> InteractiveState<'a> {
 
                     self.layout.node_path = saved_path;
                 }
+
+                // Focus bar: an obvious glyph marker down the focused unit's full
+                // height (docs/tui.md), painted after the body so it spans every row.
+                // Glyph-based, not reversed-video — the latter is invisible on themes
+                // whose fg/bg are close, and never shows in the no-color snapshot grid.
+                // Only collapsible blocks carry a focus action today (the per-turn
+                // focusability is a later step), so only they can be focused.
+                let is_focused = has_action
+                    && matches!(
+                        self.viewport.keyboard_cursor,
+                        super::state::KeyboardCursor::Focused { action_index }
+                            if action_index == my_action_index
+                    );
+                if is_focused {
+                    let style = self.style(SpanStyle::UserAccent);
+                    for row in block_start..self.layout.pos.y {
+                        if row >= self.viewport.scroll_offset
+                            && row < self.viewport.scroll_offset + self.layout.area.height
+                        {
+                            self.write_text(buf, row, 0, "▌", self.layout.area, style);
+                        }
+                    }
+                }
             }
 
             DocumentNode::Turn { author, blocks } => {
                 let start_row = self.layout.pos.y;
+
+                // Every block is a focus unit (docs/tui.md), in the flat model: a
+                // turn's *leading prose run* (the blocks before its first exchange) is
+                // one unit, and each exchange is its own. So `↑/↓` stops on the prose
+                // ("Let me check…") and on the bash/search/list calls alike, instead of
+                // skipping prose. The prose unit's action is pushed *before* the blocks
+                // render, so its index precedes the exchanges' — keeping navigation
+                // order equal to visual order. Activating it is a no-op (prose has
+                // nothing to expand); it exists purely to be a focus target.
+                let prose_len = blocks
+                    .iter()
+                    .take_while(|b| !matches!(b, DocumentNode::TruncatedBlock { .. }))
+                    .count();
+                let prose_action_index = self.render_cache.actions.len();
+                if prose_len > 0 {
+                    let rect = Rect::new(0, start_row, self.layout.area.width, 1);
+                    self.render_cache
+                        .actions
+                        .push((rect, TuiAction::ExpandBlock(self.layout.node_path)));
+                }
+
+                let mut prose_end = start_row;
                 for (idx, block) in blocks.iter().enumerate() {
                     // Blank line between blocks, mirroring the top-level spacing.
                     if idx > 0 {
@@ -378,6 +436,27 @@ impl<'a> InteractiveState<'a> {
                     self.layout.node_path.push(idx);
                     self.render_node(block, buf);
                     self.layout.node_path = saved_path;
+                    if idx + 1 == prose_len {
+                        prose_end = self.layout.pos.y;
+                    }
+                }
+
+                // Focus bar for the prose unit (the exchanges paint their own, above).
+                if prose_len > 0
+                    && matches!(
+                        self.viewport.keyboard_cursor,
+                        super::state::KeyboardCursor::Focused { action_index }
+                            if action_index == prose_action_index
+                    )
+                {
+                    let style = self.style(SpanStyle::UserAccent);
+                    for row in start_row..prose_end {
+                        if row >= self.viewport.scroll_offset
+                            && row < self.viewport.scroll_offset + self.layout.area.height
+                        {
+                            self.write_text(buf, row, 0, "▌", self.layout.area, style);
+                        }
+                    }
                 }
 
                 // Authorship is structural: the user's turn carries an accent gutter

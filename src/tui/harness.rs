@@ -24,9 +24,9 @@ use ratatui::{
     style::{Color, Modifier},
 };
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
-use unicode_width::UnicodeWidthStr;
 
 use super::TuiEvent;
+use super::grid::frame_grid;
 use super::render_context::{OutputMode, RenderContext};
 use super::state::InteractiveState;
 use super::theme::InteractiveTheme;
@@ -103,6 +103,44 @@ impl Screenplay<'_> {
         self
     }
 
+    /// Route a key through the *full* [`InteractiveState::handle_key_event`] — mode
+    /// routing, the composer `↑`-spill, Esc-home, unit navigation — exactly as the
+    /// `ui_loop` drives it, against an off-screen `TestBackend` terminal. Use this
+    /// (not [`key`](Self::key), which talks straight to the composer) to exercise
+    /// focus transitions.
+    pub(crate) fn route_key(&mut self, code: KeyCode, mods: KeyModifiers) -> &mut Self {
+        let _ = self.route_key_inner(code, mods);
+        self
+    }
+
+    /// Like [`route_key`](Self::route_key) but returns `handle_key_event`'s quit
+    /// signal — for asserting a key exits (e.g. C-d on an empty composer).
+    pub(crate) fn key_quits(&mut self, code: KeyCode, mods: KeyModifiers) -> bool {
+        self.route_key_inner(code, mods)
+    }
+
+    fn route_key_inner(&mut self, code: KeyCode, mods: KeyModifiers) -> bool {
+        // `handle_key_event` needs `Backend + Write` (the mouse/theme `execute!`s);
+        // `TestBackend` isn't `Write`, so back it with a `CrosstermBackend` over a
+        // `Vec<u8>` sink. A *fixed* viewport avoids querying a real tty at
+        // construction (there is none under `cargo test`).
+        use ratatui::{TerminalOptions, Viewport, backend::CrosstermBackend, layout::Rect};
+        // The `ui_loop` always paints a fresh frame before handling a key, which is
+        // what populates `render_cache.actions` + the layout cache the navigation
+        // logic reads. Mirror that here, or focus has nothing to land on.
+        let _ = self.draw();
+        let backend = CrosstermBackend::new(Vec::<u8>::new());
+        let mut term = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Fixed(Rect::new(0, 0, self.width, self.height)),
+            },
+        )
+        .unwrap();
+        self.state
+            .handle_key_event(KeyEvent::new(code, mods), &mut term)
+    }
+
     /// Feed a [`TuiEvent`] through the real handler — committed entries, streaming
     /// deltas, gate changes — exactly as the daemon bridge would.
     pub(crate) fn event(&mut self, event: TuiEvent) -> &mut Self {
@@ -122,6 +160,20 @@ impl Screenplay<'_> {
             at: Timestamp(0),
             payload,
         }))
+    }
+
+    /// Replay recorded log entries through the production event handler — the
+    /// reachability harness (docs/tui.md). Each entry is fed exactly as the durable
+    /// `/events` tail delivers it, carrying its own `seq` (unlike [`commit`](Self::commit),
+    /// which auto-assigns one). Pair with `persist::load` of a real `.efference/*.jsonl`
+    /// and slice `&entries[..=n]` to snapshot a *provably reachable* state at index
+    /// `n` — one recording becomes a filmstrip, which is the guarantee a hand-authored
+    /// scenario can't give.
+    pub(crate) fn replay(&mut self, entries: &[LogEntry]) -> &mut Self {
+        for entry in entries {
+            self.event(TuiEvent::Entry(entry.clone()));
+        }
+        self
     }
 
     /// A committed user turn (markdown prose).
@@ -245,6 +297,24 @@ impl Screenplay<'_> {
         frame_grid(&buf, self.width, cursor)
     }
 
+    /// The live "dev screenshot" capture path (`Ctrl+S`), exercised headlessly: it
+    /// renders through [`InteractiveState::capture_screenshot_grid`] exactly as the
+    /// keybind does. Must equal [`render`](Self::render) byte-for-byte — that
+    /// equality is what makes a live screenshot diffable against a committed `.snap`.
+    pub(crate) fn screenshot_grid(&mut self) -> String {
+        self.state.capture_screenshot_grid(self.width, self.height)
+    }
+
+    /// Pin the viewport to the bottom — the way a stream-following TUI sits while a
+    /// session is live (`stuck_to_bottom`). Bottom-pinning normally happens in the
+    /// `ui_loop` after a reproject; the harness has no loop, so this draws once to
+    /// populate the cached layout, then scrolls to the computed max.
+    pub(crate) fn to_bottom(&mut self) -> &mut Self {
+        let _ = self.draw();
+        self.state.scroll_to_bottom();
+        self
+    }
+
     /// The symbol **and style** of the cell at buffer coords `(x, y)` — the same
     /// column/row the snapshot's ruler and gutter label. The character grid drops
     /// color by design (see [`frame_grid`]); this is the escape hatch to *view or
@@ -320,100 +390,6 @@ pub(crate) fn tool_call(name: &str, call_id: &str, input: serde_json::Value) -> 
         name: name.into(),
         input,
     }
-}
-
-/// Format a ratatui [`Buffer`] as a bordered, ruled character grid:
-///
-/// ```text
-///      0         1
-///      0123456789012345     <- column ruler (tens row shown when width > 9)
-///    ┌────────────────┐
-///  0 │› hello world   │     <- row gutter | content padded to width | border
-///  1 │                │
-///    └────────────────┘
-/// ```
-///
-/// The ruler + border make wrap/overflow bugs legible: you can see precisely
-/// which column a break lands on. Colors are intentionally dropped — only the
-/// cell symbols are captured. Trailing all-blank rows are trimmed for focus.
-///
-/// When `cursor` is given, a caret line is drawn directly beneath its row with a
-/// `^` under the exact column — non-destructive (never hides the cell under the
-/// cursor) and unambiguous about where the insertion point sits.
-fn frame_grid(buf: &Buffer, width: u16, cursor: Option<(u16, u16)>) -> String {
-    let w = width as usize;
-
-    let mut rows: Vec<String> = Vec::with_capacity(buf.area.height as usize);
-    for y in 0..buf.area.height {
-        let mut s = String::new();
-        for x in 0..buf.area.width {
-            s.push_str(buf[(x, y)].symbol());
-        }
-        rows.push(s.trim_end().to_string());
-    }
-    while rows.last().is_some_and(|r| r.is_empty()) {
-        rows.pop();
-    }
-
-    let gutter = "   "; // two-digit row index + space
-    let mut out = String::new();
-
-    // Tens ruler (only meaningful once the width crosses a tens boundary).
-    if w > 9 {
-        out.push_str(gutter);
-        out.push(' '); // skip the left border column
-        for x in 0..w {
-            out.push(if x % 10 == 0 {
-                char::from_digit((x / 10 % 10) as u32, 10).unwrap()
-            } else {
-                ' '
-            });
-        }
-        out.push('\n');
-    }
-    // Units ruler.
-    out.push_str(gutter);
-    out.push(' ');
-    for x in 0..w {
-        out.push(char::from_digit((x % 10) as u32, 10).unwrap());
-    }
-    out.push('\n');
-
-    // Top border.
-    out.push_str(gutter);
-    out.push('┌');
-    out.push_str(&"─".repeat(w));
-    out.push_str("┐\n");
-
-    // Content rows, padded to the true display width so the right border aligns
-    // even across wide (CJK/emoji) glyphs. A caret line follows the cursor's row.
-    for (y, row) in rows.iter().enumerate() {
-        out.push_str(&format!("{y:>2} │"));
-        out.push_str(row);
-        let used = UnicodeWidthStr::width(row.as_str());
-        if used < w {
-            out.push_str(&" ".repeat(w - used));
-        }
-        out.push_str("│\n");
-
-        if let Some((cx, cy)) = cursor
-            && cy as usize == y
-        {
-            let col = (cx as usize).min(w.saturating_sub(1));
-            out.push_str("   │");
-            out.push_str(&" ".repeat(col));
-            out.push('^');
-            out.push_str(&" ".repeat(w - col - 1));
-            out.push_str("│\n");
-        }
-    }
-
-    // Bottom border.
-    out.push_str(gutter);
-    out.push('└');
-    out.push_str(&"─".repeat(w));
-    out.push_str("┘\n");
-    out
 }
 
 /// Baseline transcript scenarios — realistic user / assistant / tool blocks
@@ -587,6 +563,286 @@ mod scenarios {
             play.event(TuiEvent::Entry(entry));
         }
         play.snapshot("gallery");
+    }
+
+    /// Load the checked-in replay fixture (`fixtures/replay_session.jsonl`, lifted
+    /// verbatim from a real `.efference/` session) through the same `persist::load`
+    /// a live attach uses. Every state a replay of it produces is reachable *by
+    /// construction* — it came off a real daemon, not a test author's hand.
+    fn replay_fixture() -> Vec<crate::log::LogEntry> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/tui/fixtures/replay_session.jsonl");
+        crate::persist::load(&path).expect("the replay fixture loads")
+    }
+
+    /// Filmstrip frame 1: the first user turn, the assistant's `bash ls`, its
+    /// result, and the assistant's prose answer (entries 0–4 of the real session).
+    #[test]
+    fn replay_real_session_first_turn() {
+        let entries = replay_fixture();
+        let mut play = Screenplay::new(80, 30);
+        play.replay(&entries[..=4]);
+        play.snapshot("replay_real_session_first_turn");
+    }
+
+    /// Filmstrip frame 2: the tail of the whole real session, stream-followed to the
+    /// bottom. The session carried a spotter `gate` verdict and `ConfigEdit`s (both
+    /// audit-only — they project to nothing on the transcript) plus an `Ambient`
+    /// notification (which *does* project). This pins how the permission-bearing tail
+    /// of a real session renders, and that the audit-only payloads stay invisible.
+    #[test]
+    fn replay_real_session_tail() {
+        let entries = replay_fixture();
+        let mut play = Screenplay::new(80, 24);
+        play.replay(&entries).to_bottom();
+        play.snapshot("replay_real_session_tail");
+    }
+
+    /// The composer's top edge spills into the transcript (docs/tui.md): `↑` climbs
+    /// the buffer, snaps to `0,0` (the detent), and only the *next* `↑` crosses into
+    /// navigation. Esc returns home from any depth, preserving the draft. Driven
+    /// through the real `handle_key_event` routing.
+    #[test]
+    fn up_arrow_spills_from_composer_then_esc_returns_home() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let none = KeyModifiers::NONE;
+
+        let mut play = Screenplay::new(80, 24);
+        play.user("List the tui module.");
+        play.assistant(
+            "Here.",
+            vec![tool_call("bash", "toolu_nav", json!({ "command": "ls src/tui" }))],
+        );
+        let listing = (1..=20)
+            .map(|n| format!("render_module_{n:02}.rs"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        play.tool_result("toolu_nav", &listing, false, WireState::Raw);
+
+        // A two-line draft; cursor ends on line two.
+        play.type_str("draft line one\nline two");
+        assert!(play.state.composing, "starts in compose mode");
+
+        play.route_key(KeyCode::Up, none); // climb to line one (goal column kept)
+        play.route_key(KeyCode::Up, none); // snap to 0,0 — the detent
+        assert!(
+            play.state.composing,
+            "still composing at the 0,0 detent — one more ↑ spills"
+        );
+
+        play.route_key(KeyCode::Up, none); // spill across the top edge
+        assert!(
+            !play.state.composing,
+            "↑ at 0,0 spilled focus into the transcript"
+        );
+
+        play.route_key(KeyCode::Esc, none);
+        assert!(play.state.composing, "Esc returns home to the composer");
+        assert_eq!(
+            play.state.composer.text(),
+            "draft line one\nline two",
+            "the draft survives the round trip into navigation and back"
+        );
+    }
+
+    /// A focused unit shows an obvious left-edge `▌` bar down its full height — a
+    /// *glyph* marker, so it renders in any theme and in this no-color grid (the
+    /// prior reversed-video highlight showed in neither). The bar sits in column 0,
+    /// left of any authorship gutter.
+    #[test]
+    fn focused_unit_shows_a_left_bar() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let mut play = Screenplay::new(80, 30);
+        play.user("List the tui module.");
+        play.assistant(
+            "Here.",
+            vec![tool_call("bash", "toolu_fb", json!({ "command": "ls src/tui" }))],
+        );
+        let listing = (1..=20)
+            .map(|n| format!("render_module_{n:02}.rs"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        play.tool_result("toolu_fb", &listing, false, WireState::Raw);
+
+        play.route_key(KeyCode::Up, KeyModifiers::NONE); // spill → focus the exchange
+        let bar = play.find("▌").expect("the focused unit shows a left bar");
+        assert_eq!(bar.0, 0, "the focus bar sits in column 0");
+        play.snapshot("transcript_focused_unit");
+    }
+
+    /// Focus moves between *short* exchanges too, not just long collapsible ones —
+    /// the fix for focus getting stuck on the only block long enough to collapse.
+    /// Three one-line bash exchanges; `↑` walks the focus bar up through them.
+    #[test]
+    fn focus_moves_between_short_exchanges() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let none = KeyModifiers::NONE;
+        let mut play = Screenplay::new(80, 30);
+        play.user("Run three quick commands.");
+        play.assistant(
+            "First.",
+            vec![tool_call("bash", "t1", json!({ "command": "pwd" }))],
+        );
+        play.tool_result("t1", "/repo", false, WireState::Raw);
+        play.assistant(
+            "Next.",
+            vec![tool_call("bash", "t2", json!({ "command": "whoami" }))],
+        );
+        play.tool_result("t2", "jbr", false, WireState::Raw);
+        play.assistant(
+            "Last.",
+            vec![tool_call("bash", "t3", json!({ "command": "date" }))],
+        );
+        play.tool_result("t3", "today", false, WireState::Raw);
+
+        play.route_key(KeyCode::Up, none); // spill → focus the last exchange
+        let low = play.find("▌").expect("a unit is focused on spill");
+        play.route_key(KeyCode::Up, none); // → previous (higher) exchange
+        let high = play.find("▌").expect("a unit is still focused");
+        assert!(
+            high.1 < low.1,
+            "↑ moved the focus bar to a higher exchange (short exchanges are focusable now): \
+             {high:?} should be above {low:?}",
+        );
+    }
+
+    /// Prose turns are focus units too (the flat model): `↑` walks the bar up from
+    /// an exchange, onto the assistant's prose, then onto the user's prose — no block
+    /// is skipped.
+    #[test]
+    fn focus_includes_prose_turns() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let none = KeyModifiers::NONE;
+        let mut play = Screenplay::new(80, 30);
+        play.user("What does project() do?");
+        play.assistant(
+            "It folds the log into the wire.",
+            vec![tool_call("bash", "p1", json!({ "command": "grep -n fold src" }))],
+        );
+        play.tool_result("p1", "src/project.rs:12: fold", false, WireState::Raw);
+
+        play.route_key(KeyCode::Up, none); // focus the exchange (last unit)
+        let at_exchange = play.find("▌").expect("exchange focused");
+        play.route_key(KeyCode::Up, none); // focus the assistant prose
+        let at_assistant = play.find("▌").expect("assistant prose focused");
+        play.route_key(KeyCode::Up, none); // focus the user prose
+        let at_user = play.find("▌").expect("user prose focused");
+
+        assert!(
+            at_assistant.1 < at_exchange.1 && at_user.1 < at_assistant.1,
+            "focus walks up exchange → assistant prose → user prose without skipping: \
+             {at_user:?} < {at_assistant:?} < {at_exchange:?}",
+        );
+    }
+
+    /// The symmetric counterpart: once focus is in the transcript, `↓` past the
+    /// bottom-most unit falls back into the composer (docs/tui.md), so the two read
+    /// as one continuous vertical space.
+    #[test]
+    fn down_past_the_last_unit_falls_back_to_the_composer() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let none = KeyModifiers::NONE;
+
+        let mut play = Screenplay::new(80, 30);
+        play.user("List the tui module.");
+        play.assistant(
+            "Here.",
+            vec![tool_call("bash", "toolu_nav2", json!({ "command": "ls src/tui" }))],
+        );
+        let listing = (1..=20)
+            .map(|n| format!("render_module_{n:02}.rs"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        play.tool_result("toolu_nav2", &listing, false, WireState::Raw);
+
+        // Spill into the transcript (empty buffer → one ↑ crosses immediately).
+        play.route_key(KeyCode::Up, none);
+        assert!(!play.state.composing, "spilled into the transcript");
+
+        // ↓ off the bottom unit returns to the composer.
+        play.route_key(KeyCode::Down, none);
+        assert!(
+            play.state.composing,
+            "↓ past the last unit fell back to the composer"
+        );
+    }
+
+    /// `C-d` on an *empty* composer quits (shell/REPL EOF); with text in the buffer
+    /// it's delete-forward and does not quit.
+    #[test]
+    fn ctrl_d_quits_only_on_empty_composer() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let ctrl = KeyModifiers::CONTROL;
+
+        let mut empty = Screenplay::new(80, 10);
+        assert!(
+            empty.key_quits(KeyCode::Char('d'), ctrl),
+            "C-d on an empty composer quits"
+        );
+
+        let mut typed = Screenplay::new(80, 10);
+        typed.type_str("draft");
+        assert!(
+            !typed.key_quits(KeyCode::Char('d'), ctrl),
+            "C-d with text in the buffer deletes forward, it does not quit"
+        );
+    }
+
+    /// In the transcript (navigation context), an unbound key is a clean no-op — it
+    /// does not leak into the composer. You return to the composer deliberately
+    /// (Esc / `↓` off the bottom / the spill), not by typing.
+    #[test]
+    fn unbound_key_is_a_noop_in_navigation() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let none = KeyModifiers::NONE;
+        let mut play = Screenplay::new(80, 20);
+        play.user("hi");
+        play.assistant(
+            "yo",
+            vec![tool_call("bash", "z", json!({ "command": "ls" }))],
+        );
+        play.tool_result("z", "out", false, WireState::Raw);
+
+        play.route_key(KeyCode::Up, none); // into navigation
+        assert!(!play.state.composing, "spilled into navigation");
+        play.route_key(KeyCode::Char('x'), none); // an unbound letter
+        assert!(
+            !play.state.composing,
+            "an unbound letter does not return focus to the composer"
+        );
+        assert!(
+            play.state.composer.text().is_empty(),
+            "and nothing was typed into the composer"
+        );
+    }
+
+    /// The live `Ctrl+S` dev screenshot path must produce byte-identical output to
+    /// the committed-snapshot `render` path (both go through `frame_grid`). This is
+    /// what lets a live capture diff directly against a `.snap` — if it ever drifts,
+    /// a screenshot would silently stop being comparable to the fixtures.
+    #[test]
+    fn dev_screenshot_matches_snapshot_render() {
+        let mut play = Screenplay::new(80, 24);
+        play.user("Show me the project signature.");
+        play.assistant(
+            "On it.",
+            vec![tool_call(
+                "bash",
+                "toolu_ss",
+                json!({ "command": "grep -n 'fn project' src/project.rs" }),
+            )],
+        );
+        play.tool_result(
+            "toolu_ss",
+            "12:pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {",
+            false,
+            WireState::Raw,
+        );
+        assert_eq!(
+            play.screenshot_grid(),
+            play.render(),
+            "the live screenshot path must equal the committed-snapshot render",
+        );
     }
 
     /// The bread-and-butter shape: a user question, an assistant turn with

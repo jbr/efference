@@ -1,0 +1,33 @@
+---
+source: src/tui/harness.rs
+expression: self.render()
+---
+    0         1         2         3         4         5         6         7         
+    01234567890123456789012345678901234567890123456789012345678901234567890123456789
+   ┌────────────────────────────────────────────────────────────────────────────────┐
+ 0 │ │  20191 total                                          │                      │
+ 1 │ │ —   20,191 total lines of Rust code in src/ directory │                      │
+ 2 │ ╰───────────────────────────────────────────────────────╯                      │
+ 3 │                                                                                │
+ 4 │                                                                                │
+ 5 │   There are 20,191 total lines of Rust code in the src/ directory.             │
+ 6 │                                                                                │
+ 7 │ ┃ Create an empty file at /tmp/efference-smoke-test using the touch command.   │
+ 8 │                                                                                │
+ 9 │   ❯ bash · touch /tmp/efference-smoke-test                                     │
+10 │ ╭───────────────────────────────────────────────────────────────────❬rust❭─╮   │
+11 │ │ — touch command succeeded with no output  ; file created at /tmp/efferen │-s │
+12 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
+13 │                                                                                │
+14 │                                                                                │
+15 │   Done! I've created an empty file at /tmp/efference-smoke-test using the     ╻│
+16 │   touch command.                                                              ┃│
+17 │                                                                               ┃│
+18 │   ⟢ config · Your session scope was updated by the orchestrator:              ┃│
+19 │                                                                               ┃│
+20 │   Develop the efference Rust harness in this repository: read and edit its    ┃│
+21 │   source, run its tests and build. (Scope edited live during the smoke test.) ╹│
+22 │›                                                                               │
+   │  ^                                                                             │
+23 │   efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand                │
+   └────────────────────────────────────────────────────────────────────────────────┘

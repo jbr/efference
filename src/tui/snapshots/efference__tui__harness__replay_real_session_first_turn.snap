@@ -1,0 +1,39 @@
+---
+source: src/tui/harness.rs
+expression: self.render()
+---
+    0         1         2         3         4         5         6         7         
+    01234567890123456789012345678901234567890123456789012345678901234567890123456789
+   ┌────────────────────────────────────────────────────────────────────────────────┐
+ 0 │ ┃ Please run ls to list the files in the current directory, then tell me how  ╻│
+ 1 │ ┃ many entries there are.                                                     ┃│
+ 2 │                                                                               ┃│
+ 3 │   ▶ bash · ls  (+7 lines)                                                     ┃│
+ 4 │ ╭───────────❬rust❭─╮                                                          ┃│
+ 5 │ │ @@ lines 1-13 @@ │                                                          ┃│
+ 6 │ │ assets           │                                                          ┃│
+ 7 │ │ backlog          │                                                          ┃│
+ 8 │ │ build.rs         │                                                          ┃│
+ 9 │ │ Cargo.lock       │                                                          ┃│
+10 │ │ Cargo.toml       │                                                          ┃│
+11 │ │ CHANGELOG.md     │                                                          ┃│
+12 │ │ CLAUDE.md        │                                                          ┃│
+13 │ ╰──────────────────╯                                                          ┃│
+14 │                                                                               ┃│
+15 │                                                                               ┃│
+16 │   There are 13 entries in the current directory:                              ┃│
+17 │                                                                               ┃│
+18 │     1. assets                                                                 ╹│
+19 │                                                                                │
+20 │     2. backlog                                                                 │
+21 │                                                                                │
+22 │     3. build.rs                                                                │
+23 │                                                                                │
+24 │     4. Cargo.lock                                                              │
+25 │                                                                                │
+26 │     5. Cargo.toml                                                              │
+27 │                                                                                │
+28 │›                                                                               │
+   │  ^                                                                             │
+29 │   efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand                │
+   └────────────────────────────────────────────────────────────────────────────────┘

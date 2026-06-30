@@ -23,6 +23,7 @@ pub(crate) mod composer;
 pub(crate) mod document;
 pub(crate) mod events;
 pub(crate) mod gallery;
+pub(crate) mod grid;
 #[cfg(test)]
 pub(crate) mod harness;
 pub(crate) mod keyboard;
