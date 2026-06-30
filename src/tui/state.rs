@@ -196,6 +196,9 @@ pub(super) struct InteractiveState<'a> {
     /// The cumulative usage statistics (polled from `GET /state`). Rendered in the
     /// status bar. Ephemeral chrome — reflects API telemetry from the daemon.
     pub usage: Option<UsageStats>,
+    /// The effective policy + pending proposals (polled from `GET /state`). Drives the
+    /// sidebar's POLICY section (docs/permissions.md). Ephemeral chrome.
+    pub policy: Option<super::PolicyView>,
 
     /// A daemon-side change (committed entry, stream delta, gate, process list) is
     /// waiting to be painted. The UI loop coalesces these onto the redraw tick
@@ -282,6 +285,7 @@ impl<'a> InteractiveState<'a> {
             approve_tx,
             processes: Vec::new(),
             usage: None,
+            policy: None,
             dirty: false,
             reproject_pending: false,
             render_context,
@@ -406,6 +410,12 @@ impl<'a> InteractiveState<'a> {
                 // reproject. Usage stats are rendered in the status bar.
                 self.usage = Some(usage);
                 return false;
+            }
+            TuiEvent::Policy(policy) => {
+                // Ephemeral chrome (the sidebar POLICY section), not transcript content —
+                // update and repaint, no reproject.
+                self.policy = Some(policy);
+                self.dirty = true;
             }
             TuiEvent::Disconnected => return true,
         }

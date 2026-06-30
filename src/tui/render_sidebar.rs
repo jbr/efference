@@ -9,6 +9,7 @@
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 
+use super::PolicyEntry;
 use super::render_frame::fmt_secs;
 use super::state::InteractiveState;
 
@@ -126,7 +127,75 @@ impl<'a> InteractiveState<'a> {
                     &format!("idle {}s", secs),
                     muted,
                 );
+                y += 1;
             }
+            y += 1; // section gap
+        }
+
+        // POLICY — the effective perimeter + its pending proposals. A proposed grant
+        // renders in its committed position with a trailing `⊕` and a muted style
+        // (docs/permissions.md); committing it drops the marker in place.
+        if let Some(policy) = &self.policy {
+            if y < bottom {
+                put(buf, x0, y, max_w, "▾ POLICY", header);
+                y += 1;
+            }
+            if let Some(scope) = &policy.scope
+                && y < bottom
+            {
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &format!("scope  {scope}"),
+                    text,
+                );
+                y += 1;
+            }
+            if let Some((_, t)) = &policy.scope_proposal
+                && y < bottom
+            {
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &format!("scope  {t}  ⊕"),
+                    muted,
+                );
+                y += 1;
+            }
+
+            let mut section = |buf: &mut Buffer, y: &mut u16, name: &str, entries: &[PolicyEntry]| {
+                if entries.is_empty() || *y >= bottom {
+                    return;
+                }
+                put(buf, x0 + 1, *y, max_w.saturating_sub(1), name, muted);
+                *y += 1;
+                for e in entries {
+                    if *y >= bottom {
+                        break;
+                    }
+                    let (style, suffix) = if e.proposed {
+                        (muted, "  ⊕")
+                    } else {
+                        (text, "")
+                    };
+                    put(
+                        buf,
+                        x0 + 3,
+                        *y,
+                        max_w.saturating_sub(3),
+                        &format!("{}{}", e.label, suffix),
+                        style,
+                    );
+                    *y += 1;
+                }
+            };
+            section(buf, &mut y, "commands", &policy.commands);
+            section(buf, &mut y, "paths", &policy.paths);
+            section(buf, &mut y, "tools", &policy.tools);
         }
     }
 }

@@ -85,6 +85,9 @@ pub(crate) enum TuiEvent {
     /// The usage statistics changed (polled from `GET /state` alongside the gate
     /// and processes). Reflects cumulative token counts and cache telemetry.
     Usage(UsageStats),
+    /// The effective policy + its pending proposals changed (polled from `GET /state`'s
+    /// `role` + `proposals`). Drives the sidebar's POLICY section (docs/permissions.md).
+    Policy(PolicyView),
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
 }
@@ -117,6 +120,31 @@ pub(crate) struct UsageStats {
     pub cache_read_input_tokens: u64,
     pub cache_creation_input_tokens: u64,
     pub seconds_since_last_request: Option<u64>,
+}
+
+/// One line in the sidebar's POLICY section: a committed grant, or a *proposed* one
+/// (rendered tentatively — see [`PolicyView`]). A proposed entry carries the proposal's
+/// `seq` so the sidebar can commit/cancel it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PolicyEntry {
+    pub label: String,
+    pub proposed: bool,
+    pub seq: Option<u64>,
+}
+
+/// The effective policy and its pending proposals, from `GET /state`'s `role` +
+/// `proposals` (docs/permissions.md). On-thesis: a proposal is a projection of its
+/// committed self, so it's merged into its section *in sorted position* and flagged
+/// `proposed` — committing it drops the flag in place, no reflow.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct PolicyView {
+    pub scope: Option<String>,
+    /// A proposed *replacement* scope (a `Scope` proposal), shown tentatively under the
+    /// committed one; `(seq, text)`.
+    pub scope_proposal: Option<(u64, String)>,
+    pub commands: Vec<PolicyEntry>,
+    pub paths: Vec<PolicyEntry>,
+    pub tools: Vec<PolicyEntry>,
 }
 
 use std::io::{self, stdout};
@@ -173,6 +201,7 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
         let mut last: Option<String> = None;
         let mut last_procs = String::new();
         let mut last_usage = String::new();
+        let mut last_policy = String::new();
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(400)).await;
             let Ok(body) = poll_client.state().await else {
@@ -203,6 +232,17 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
                 if ufp != last_usage {
                     last_usage = ufp;
                     if gate_tx.send(TuiEvent::Usage(usage)).is_err() {
+                        break;
+                    }
+                }
+            }
+            // The effective policy + proposals from the same poll. Emit on change
+            // (fingerprinted via Debug — PolicyView isn't Serialize).
+            if let Some(policy) = parse_policy(&body) {
+                let pfp = format!("{policy:?}");
+                if pfp != last_policy {
+                    last_policy = pfp;
+                    if gate_tx.send(TuiEvent::Policy(policy)).is_err() {
                         break;
                     }
                 }
@@ -366,6 +406,121 @@ fn parse_pending_gate(body: &str) -> Option<PendingGate> {
 }
 
 /// Parse `GET /state`'s `usage` object into a [`UsageStats`].
+/// Filesystem perms → a compact tag for the POLICY readout.
+fn perm_str(read: bool, write: bool) -> &'static str {
+    match (read, write) {
+        (_, true) => "rw",
+        (true, false) => "r",
+        (false, false) => "-",
+    }
+}
+
+/// Decode `GET /state`'s `role` (the effective policy) + `proposals` into a [`PolicyView`]
+/// for the sidebar (docs/permissions.md). Proposals are merged into their section and
+/// sorted alongside the committed grants, flagged `proposed`, so a commit drops the flag
+/// in place without reflow. `ConfigChange` is externally tagged
+/// (`{"Command":{"command":…}}`, `{"Path":{…}}`, `{"Tool":{"name":…}}`, `{"Scope":{"text":…}}`).
+fn parse_policy(body: &str) -> Option<PolicyView> {
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    let role = v.get("role")?;
+
+    let str_entries = |key: &str| -> Vec<PolicyEntry> {
+        role.get(key)
+            .and_then(|a| a.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str())
+                    .map(|s| PolicyEntry {
+                        label: s.to_string(),
+                        proposed: false,
+                        seq: None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut commands = str_entries("commands");
+    let mut tools = str_entries("tools");
+    let mut paths: Vec<PolicyEntry> = role
+        .get("paths")
+        .and_then(|p| p.as_object())
+        .map(|m| {
+            m.iter()
+                .map(|(path, perms)| {
+                    let r = perms.get("read").and_then(|b| b.as_bool()).unwrap_or(false);
+                    let w = perms.get("write").and_then(|b| b.as_bool()).unwrap_or(false);
+                    PolicyEntry {
+                        label: format!("{path}  {}", perm_str(r, w)),
+                        proposed: false,
+                        seq: None,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut scope_proposal = None;
+    if let Some(arr) = v.get("proposals").and_then(|p| p.as_array()) {
+        for prop in arr {
+            let (Some(seq), Some(change)) = (
+                prop.get("seq").and_then(|s| s.as_u64()),
+                prop.get("change"),
+            ) else {
+                continue;
+            };
+            if let Some(c) = change
+                .get("Command")
+                .and_then(|c| c.get("command"))
+                .and_then(|s| s.as_str())
+            {
+                commands.push(PolicyEntry {
+                    label: c.to_string(),
+                    proposed: true,
+                    seq: Some(seq),
+                });
+            } else if let Some(p) = change.get("Path") {
+                let path = p.get("path").and_then(|s| s.as_str()).unwrap_or("");
+                let r = p.get("read").and_then(|b| b.as_bool()).unwrap_or(false);
+                let w = p.get("write").and_then(|b| b.as_bool()).unwrap_or(false);
+                paths.push(PolicyEntry {
+                    label: format!("{path}  {}", perm_str(r, w)),
+                    proposed: true,
+                    seq: Some(seq),
+                });
+            } else if let Some(n) = change
+                .get("Tool")
+                .and_then(|t| t.get("name"))
+                .and_then(|s| s.as_str())
+            {
+                tools.push(PolicyEntry {
+                    label: n.to_string(),
+                    proposed: true,
+                    seq: Some(seq),
+                });
+            } else if let Some(t) = change
+                .get("Scope")
+                .and_then(|s| s.get("text"))
+                .and_then(|s| s.as_str())
+            {
+                scope_proposal = Some((seq, t.to_string()));
+            }
+        }
+    }
+
+    // Sort each section so a proposed entry sits in its committed position (no reflow on commit).
+    commands.sort_by(|a, b| a.label.cmp(&b.label));
+    paths.sort_by(|a, b| a.label.cmp(&b.label));
+    tools.sort_by(|a, b| a.label.cmp(&b.label));
+
+    Some(PolicyView {
+        scope: role.get("scope").and_then(|s| s.as_str()).map(String::from),
+        scope_proposal,
+        commands,
+        paths,
+        tools,
+    })
+}
+
 fn parse_usage(body: &str) -> Option<UsageStats> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
     let usage = value.get("usage")?;

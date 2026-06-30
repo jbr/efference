@@ -842,6 +842,38 @@ mod scenarios {
         play.snapshot("sidebar_processes_and_stats");
     }
 
+    /// The POLICY sidebar section: committed grants plus a *proposed* one rendered in
+    /// its sorted position with a trailing `⊕` (docs/permissions.md) — `git log` among
+    /// the commands, `/refs` among the paths. Committing would drop the `⊕` in place.
+    #[test]
+    fn sidebar_policy_with_a_tentative_proposal() {
+        use super::super::{PolicyEntry, PolicyView, TuiEvent};
+        let committed = |label: &str| PolicyEntry {
+            label: label.into(),
+            proposed: false,
+            seq: None,
+        };
+        let proposed = |label: &str, seq: u64| PolicyEntry {
+            label: label.into(),
+            proposed: true,
+            seq: Some(seq),
+        };
+        let mut play = Screenplay::new(110, 28);
+        play.user("Work on the repo.");
+        play.assistant("On it.", vec![]);
+        play.event(TuiEvent::Policy(PolicyView {
+            scope: Some("work only in this repo".into()),
+            scope_proposal: None,
+            commands: vec![committed("cargo"), committed("git diff"), proposed("git log", 7)],
+            paths: vec![committed(".  rw"), proposed("/refs  r", 9)],
+            tools: vec![committed("read"), committed("write")],
+        }));
+
+        let bar = play.find("⊕").expect("the proposed grant shows a ⊕ marker");
+        assert!(bar.0 > 80, "the proposal marker is in the right-docked sidebar");
+        play.snapshot("sidebar_policy_with_proposal");
+    }
+
     /// The sidebar docks only at/above the width threshold; below it the layout falls
     /// back to no sidebar (the drawer is a later step). Guards the render-side
     /// width-responsiveness the resize handler relies on.
