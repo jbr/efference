@@ -298,12 +298,57 @@ impl<'a> InteractiveState<'a> {
     /// with the same three-valued semantics as the `attach` REPL — empty approves,
     /// `.abort` aborts, anything else redirects the model. Otherwise it's a normal
     /// user turn (`POST /turn`).
+    /// The `ConfigChange` a `.allow` at the gate proposes (docs/permissions.md). An
+    /// explicit `spec` is taken as a bash command-prefix to allow; bare `.allow`
+    /// derives it from the gated call — the program for a `bash` call, else the tool's
+    /// own name. `None` when nothing sensible can be formed (the caller falls back to a
+    /// redirect). Path/scope grants need the richer surface; this is the common case.
+    fn allow_change_impl(gate: &PendingGate, spec: &str) -> Option<crate::log::ConfigChange> {
+        use crate::log::ConfigChange;
+        if !spec.is_empty() {
+            return Some(ConfigChange::Command {
+                command: spec.to_string(),
+            });
+        }
+        if gate.name == "bash" {
+            let cmd = gate.input.get("command").and_then(|c| c.as_str())?;
+            let program = cmd.split_whitespace().next()?;
+            Some(ConfigChange::Command {
+                command: program.to_string(),
+            })
+        } else {
+            Some(ConfigChange::Tool {
+                name: gate.name.clone(),
+            })
+        }
+    }
+
     pub(super) fn submit_composer(&mut self, text: String) {
         if let Some(gate) = self.pending_gate.take() {
-            let decision = match text.trim() {
-                "" => Approval::Approve,
-                ".abort" => Approval::Abort,
-                other => Approval::Redirect(other.to_string()),
+            let trimmed = text.trim();
+            let decision = if trimmed.is_empty() {
+                Approval::Approve
+            } else if trimmed == ".abort" {
+                Approval::Abort
+            } else if trimmed == ".allow" || trimmed.starts_with(".allow ") {
+                // Add a rule, then run the call iff it now clears (docs/permissions.md).
+                // An explicit prefix (`.allow git log`) grants that bash command prefix;
+                // bare `.allow` derives the grant from the gated call (the bash program,
+                // or a structured tool's name). The mechanism re-checks — nothing rides
+                // along unchecked. Session-scoped by default.
+                let spec = trimmed.strip_prefix(".allow").unwrap_or("").trim();
+                match Self::allow_change_impl(&gate, spec) {
+                    Some(change) => Approval::ConfigEdit {
+                        change,
+                        lifetime: crate::log::Lifetime::Session,
+                        note: "allowed at the gate".into(),
+                    },
+                    // Couldn't form a grant (e.g. bare `.allow` on a path-only tool) —
+                    // fall back to steering the model rather than guessing a rule.
+                    None => Approval::Redirect(trimmed.to_string()),
+                }
+            } else {
+                Approval::Redirect(trimmed.to_string())
             };
             let label = match &decision {
                 Approval::Approve => "approved".to_string(),
@@ -444,8 +489,18 @@ impl<'a> InteractiveState<'a> {
     /// Prefer [`flush_reproject`](Self::flush_reproject) on the hot path; this is
     /// for callers that must reproject immediately (e.g. tests, an expand action).
     pub(super) fn reproject(&mut self) {
-        let pending = self.pending_gate.as_ref().map(|g| g.call_id.as_str());
-        self.document.document = projection::project(&self.log, &self.live, &self.view, pending);
+        let pending_call = self.pending_gate.as_ref().map(|g| g.call_id.as_str());
+        let pending_reason = self
+            .pending_gate
+            .as_ref()
+            .and_then(|g| g.reason.as_deref());
+        self.document.document = projection::project(
+            &self.log,
+            &self.live,
+            &self.view,
+            pending_call,
+            pending_reason,
+        );
         self.viewport.cached_layout = None;
     }
 
@@ -645,6 +700,7 @@ mod tests {
             call_id: "toolu_1".into(),
             name: "bash".into(),
             input: serde_json::json!({ "command": "ls" }),
+            reason: None,
         });
         (s, arx)
     }
@@ -674,6 +730,39 @@ mod tests {
         match arx.try_recv().unwrap().1 {
             Approval::Redirect(m) => assert_eq!(m, "use rg instead"),
             other => panic!("expected redirect, got {other:?}"),
+        }
+    }
+
+    /// `.allow <prefix>` at the gate proposes a Command grant for that prefix; the
+    /// mechanism (not shown here) re-classifies the call against it (docs/permissions.md).
+    #[test]
+    fn allow_with_a_prefix_proposes_a_command_grant() {
+        let (mut s, mut arx) = state_with_gate();
+        s.submit_composer(".allow git log".into());
+        match arx.try_recv().unwrap().1 {
+            Approval::ConfigEdit { change, .. } => assert_eq!(
+                change,
+                crate::log::ConfigChange::Command {
+                    command: "git log".into()
+                }
+            ),
+            other => panic!("expected a config edit, got {other:?}"),
+        }
+    }
+
+    /// Bare `.allow` on a `bash` gate derives the grant from the command's program.
+    #[test]
+    fn bare_allow_grants_the_bash_program() {
+        let (mut s, mut arx) = state_with_gate(); // gate is `ls`
+        s.submit_composer(".allow".into());
+        match arx.try_recv().unwrap().1 {
+            Approval::ConfigEdit { change, .. } => assert_eq!(
+                change,
+                crate::log::ConfigChange::Command {
+                    command: "ls".into()
+                }
+            ),
+            other => panic!("expected a config edit, got {other:?}"),
         }
     }
 

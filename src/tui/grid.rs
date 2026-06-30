@@ -8,36 +8,34 @@
 //! `.snap` (the harness) and a live screenshot dumped to disk (`Ctrl+S` in the
 //! TUI). Keeping one encoder means a live capture is byte-comparable to a test
 //! snapshot: if a hand-authored fixture drifts from a real reachable state, the
-//! diff shows it.
+//! diff shows it. [`frame_grid_region`] frames just a sub-rectangle (the sidebar),
+//! so a wide-terminal capture isn't ruinously verbose (`Alt+S`).
 
-use ratatui::buffer::Buffer;
+use ratatui::{buffer::Buffer, layout::Rect};
 use unicode_width::UnicodeWidthStr;
 
-/// Format a ratatui [`Buffer`] as a bordered, ruled character grid:
-///
-/// ```text
-///      0         1
-///      0123456789012345     <- column ruler (tens row shown when width > 9)
-///    ┌────────────────┐
-///  0 │› hello world   │     <- row gutter | content padded to width | border
-///  1 │                │
-///    └────────────────┘
-/// ```
-///
-/// The ruler + border make wrap/overflow bugs legible: you can see precisely
-/// which column a break lands on. Colors are intentionally dropped — only the
-/// cell symbols are captured. Trailing all-blank rows are trimmed for focus.
-///
-/// When `cursor` is given, a caret line is drawn directly beneath its row with a
-/// `^` under the exact column — non-destructive (never hides the cell under the
-/// cursor) and unambiguous about where the insertion point sits.
+/// Frame the whole buffer (columns `0..width`) as a ruled character grid; see the
+/// module docs. `cursor`, if given, draws a `^` caret line under that position.
 pub(crate) fn frame_grid(buf: &Buffer, width: u16, cursor: Option<(u16, u16)>) -> String {
-    let w = width as usize;
+    let rows = collect_rows(buf, Rect::new(0, 0, width, buf.area.height));
+    render_framed(&rows, width as usize, cursor)
+}
 
-    let mut rows: Vec<String> = Vec::with_capacity(buf.area.height as usize);
-    for y in 0..buf.area.height {
+/// Frame only a sub-rectangle of the buffer — e.g. the docked sidebar's columns — so
+/// a capture of a wide terminal stays narrow. Columns are numbered from the region's
+/// left edge; no cursor caret (the slice is chrome, not the composer).
+pub(crate) fn frame_grid_region(buf: &Buffer, region: Rect) -> String {
+    let rows = collect_rows(buf, region);
+    render_framed(&rows, region.width as usize, None)
+}
+
+/// Collect the cell symbols of `region`, one `String` per row, right-trimmed; drop
+/// trailing all-blank rows.
+fn collect_rows(buf: &Buffer, region: Rect) -> Vec<String> {
+    let mut rows: Vec<String> = Vec::with_capacity(region.height as usize);
+    for y in region.y..region.y.saturating_add(region.height).min(buf.area.height) {
         let mut s = String::new();
-        for x in 0..buf.area.width {
+        for x in region.x..region.x.saturating_add(region.width).min(buf.area.width) {
             s.push_str(buf[(x, y)].symbol());
         }
         rows.push(s.trim_end().to_string());
@@ -45,7 +43,22 @@ pub(crate) fn frame_grid(buf: &Buffer, width: u16, cursor: Option<(u16, u16)>) -
     while rows.last().is_some_and(|r| r.is_empty()) {
         rows.pop();
     }
+    rows
+}
 
+/// Render collected `rows` (each ≤ `w` display columns) as a bordered, ruled grid:
+///
+/// ```text
+///      0         1
+///      0123456789012345     <- column ruler (tens row shown when width > 9)
+///    ┌────────────────┐
+///  0 │› hello world   │     <- row gutter | content padded to width | border
+///    └────────────────┘
+/// ```
+///
+/// When `cursor` is given, a caret line is drawn beneath its row with a `^` under the
+/// exact column.
+fn render_framed(rows: &[String], w: usize, cursor: Option<(u16, u16)>) -> String {
     let gutter = "   "; // two-digit row index + space
     let mut out = String::new();
 

@@ -117,6 +117,7 @@ pub(crate) fn project(
     live: &LiveTail,
     view: &ViewState,
     pending_call: Option<&str>,
+    pending_reason: Option<&str>,
 ) -> Document<'static> {
     // A result lands in a later entry than the call it answers; index results by
     // `call_id` up front so a call can be paired with its result in one place.
@@ -142,7 +143,8 @@ pub(crate) fn project(
                 for call in calls {
                     let result = result_for_call.get(call.id.0.as_str()).copied();
                     let is_pending = result.is_none() && pending_call == Some(call.id.0.as_str());
-                    blocks.push(exchange(call, result, view, is_pending));
+                    let reason = if is_pending { pending_reason } else { None };
+                    blocks.push(exchange(call, result, view, is_pending, reason));
                 }
                 if !blocks.is_empty() {
                     nodes.push(turn(Author::Assistant, blocks));
@@ -210,6 +212,7 @@ fn exchange(
     result: Option<(&RawResult, &WireState)>,
     view: &ViewState,
     is_pending: bool,
+    pending_reason: Option<&str>,
 ) -> DocumentNode<'static> {
     let is_error = result.is_some_and(|(raw, _)| raw.is_error);
     let call_id = call.id.0.as_str();
@@ -269,7 +272,11 @@ fn exchange(
         // No result yet — the agent is blocked here for approval (docs/tui.md). The
         // affordance sits where the result will land, so the gate reads as "after the
         // call, before the result." Resolving it (approve → result; redirect/abort →
-        // an error result) replaces this with the real exchange body.
+        // an error result) replaces this with the real exchange body. The spotter's
+        // reason (docs/permissions.md), if any, renders just above it — *why* it gated.
+        if let Some(reason) = pending_reason {
+            body.push(spotter_reason_line(reason));
+        }
         body.push(gate_affordance());
     }
 
@@ -306,7 +313,27 @@ fn gate_affordance() -> DocumentNode<'static> {
                 action: None,
             },
             Span {
-                text: "  ·  ⏎ approve · type to redirect · .abort".into(),
+                text: "  ·  ⏎ approve · type to redirect · .allow to add a rule · .abort".into(),
+                style: SpanStyle::Comment,
+                action: None,
+            },
+        ],
+    }
+}
+
+/// The spotter's reason for holding a call, rendered just above the gate affordance
+/// (docs/permissions.md) so the human sees *why* before deciding. Muted — context, not
+/// a command.
+fn spotter_reason_line(reason: &str) -> DocumentNode<'static> {
+    DocumentNode::Paragraph {
+        spans: vec![
+            Span {
+                text: "spotter: ".into(),
+                style: SpanStyle::Comment,
+                action: None,
+            },
+            Span {
+                text: reason.to_string().into(),
                 style: SpanStyle::Comment,
                 action: None,
             },
@@ -624,6 +651,7 @@ mod tests {
             &LiveTail::default(),
             &ViewState::default(),
             None,
+            None,
         );
 
         // Top level is a sequence of authored turns: user, then assistant.
@@ -715,7 +743,7 @@ mod tests {
                 },
             ),
         ];
-        let doc = project(&log, &LiveTail::default(), &ViewState::default(), None);
+        let doc = project(&log, &LiveTail::default(), &ViewState::default(), None, None);
         let code: String = collect_code(&doc.nodes);
         assert!(
             code.contains("the distilled summary"),
@@ -771,16 +799,16 @@ mod tests {
         let mut view = ViewState::default();
 
         // Default: collapsed.
-        let doc = project(&log, &LiveTail::default(), &view, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None);
         assert_eq!(exchange_level(&doc), TruncationLevel::Brief);
 
         // Expanding persists in the view.
         view.toggle_expanded("toolu_1");
-        let doc = project(&log, &LiveTail::default(), &view, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None);
         assert_eq!(exchange_level(&doc), TruncationLevel::Full);
 
         // A second projection (the streamed-token rebuild) keeps it expanded.
-        let doc = project(&log, &LiveTail::default(), &view, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None);
         assert_eq!(
             exchange_level(&doc),
             TruncationLevel::Full,
@@ -789,7 +817,7 @@ mod tests {
 
         // Toggling back collapses, and that persists too.
         view.toggle_expanded("toolu_1");
-        let doc = project(&log, &LiveTail::default(), &view, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None);
         assert_eq!(exchange_level(&doc), TruncationLevel::Brief);
     }
 
@@ -826,7 +854,7 @@ mod tests {
         let mut view = ViewState::default();
 
         // Default: the distillate, raw hidden, no `· raw` marker on the header.
-        let doc = project(&log, &LiveTail::default(), &view, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None);
         let code = collect_code(&doc.nodes);
         assert!(code.contains("the kept line"), "distillate shown: {code}");
         assert!(
@@ -840,7 +868,7 @@ mod tests {
 
         // Flip to raw: the full raw content, and the header flags the override.
         view.toggle_raw("toolu_9");
-        let doc = project(&log, &LiveTail::default(), &view, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None);
         let code = collect_code(&doc.nodes);
         assert!(code.contains("RAW-NOISE"), "full raw now shown: {code}");
         assert!(
@@ -855,7 +883,7 @@ mod tests {
         live.assistant.push_str("streaming…");
         live.push_tool_output("toolu_1", "partial out");
 
-        let doc = project(&sample_log(), &live, &ViewState::default(), None);
+        let doc = project(&sample_log(), &live, &ViewState::default(), None, None);
         let code = collect_code(&doc.nodes);
         assert!(code.contains("partial out"), "live tool output renders");
 
@@ -895,6 +923,7 @@ mod tests {
             &sample_log(),
             &LiveTail::default(),
             &ViewState::default(),
+            None,
             None,
         );
 

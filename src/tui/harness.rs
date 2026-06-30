@@ -266,10 +266,23 @@ impl Screenplay<'_> {
         name: &str,
         input: serde_json::Value,
     ) -> &mut Self {
+        self.pending_gate_reason(call_id, name, input, None)
+    }
+
+    /// A pending gate carrying the spotter's reason — the spotter-routed case, where
+    /// the gate renders the reason inline (docs/permissions.md).
+    pub(crate) fn pending_gate_reason(
+        &mut self,
+        call_id: &str,
+        name: &str,
+        input: serde_json::Value,
+        reason: Option<&str>,
+    ) -> &mut Self {
         self.event(TuiEvent::Gate(Some(crate::tui::PendingGate {
             call_id: call_id.into(),
             name: name.into(),
             input,
+            reason: reason.map(String::from),
         })))
     }
 
@@ -303,6 +316,12 @@ impl Screenplay<'_> {
     /// equality is what makes a live screenshot diffable against a committed `.snap`.
     pub(crate) fn screenshot_grid(&mut self) -> String {
         self.state.capture_screenshot_grid(self.width, self.height)
+    }
+
+    /// The `Alt-S` sidebar-only capture path, headless — frames just the sidebar
+    /// columns (docs/tui.md).
+    pub(crate) fn sidebar_grid(&mut self) -> String {
+        self.state.capture_sidebar_grid(self.width, self.height)
     }
 
     /// Pin the viewport to the bottom — the way a stream-following TUI sits while a
@@ -840,6 +859,66 @@ mod scenarios {
             seconds_since_last_request: Some(8),
         }));
         play.snapshot("sidebar_processes_and_stats");
+    }
+
+    /// The sidebar-only screenshot slice (`Alt-S`) frames just the sidebar columns:
+    /// narrow, and excluding the transcript — so a wide-terminal capture isn't verbose.
+    #[test]
+    fn sidebar_slice_excludes_the_transcript() {
+        use super::super::{PolicyEntry, PolicyView, TuiEvent};
+        let mut play = Screenplay::new(110, 16);
+        play.user("A long transcript line that must NOT appear in a sidebar-only slice.");
+        play.assistant("ok", vec![]);
+        play.event(TuiEvent::Policy(PolicyView {
+            scope: Some("this repo".into()),
+            scope_proposal: None,
+            commands: vec![PolicyEntry {
+                label: "cargo".into(),
+                proposed: false,
+                seq: None,
+            }],
+            paths: vec![],
+            tools: vec![],
+        }));
+
+        let slice = play.sidebar_grid();
+        assert!(slice.contains("POLICY"), "the slice shows the sidebar:\n{slice}");
+        assert!(
+            !slice.contains("must NOT appear"),
+            "the slice excludes the transcript:\n{slice}"
+        );
+        let widest = slice.lines().map(|l| l.chars().count()).max().unwrap_or(0);
+        assert!(
+            widest < 60,
+            "the slice is narrow (≈sidebar width), not the full 110 cols; got {widest}"
+        );
+    }
+
+    /// A spotter-routed gate renders the spotter's reason inline (docs/permissions.md),
+    /// just above the affordance, and offers `.allow` to add a rule.
+    #[test]
+    fn gate_shows_spotter_reason_inline() {
+        let mut play = Screenplay::new(80, 14);
+        play.user("Clean the build directory.");
+        play.assistant(
+            "Sure — I'll remove it.",
+            vec![tool_call("bash", "toolu_g", json!({ "command": "rm -rf ./build" }))],
+        );
+        play.pending_gate_reason(
+            "toolu_g",
+            "bash",
+            json!({ "command": "rm -rf ./build" }),
+            Some("deletes outside the git tree — not reversible"),
+        );
+        let screen = play.render();
+        assert!(
+            screen.contains("spotter:") && screen.contains("deletes outside the git tree"),
+            "the gate shows the spotter's reason inline:\n{screen}"
+        );
+        assert!(
+            screen.contains(".allow"),
+            "the gate offers the .allow affordance"
+        );
     }
 
     /// The POLICY sidebar section: committed grants plus a *proposed* one rendered in

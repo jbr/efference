@@ -167,7 +167,7 @@ impl<'a> InteractiveState<'a> {
                 y += 1;
             }
 
-            let mut section = |buf: &mut Buffer, y: &mut u16, name: &str, entries: &[PolicyEntry]| {
+            let section = |buf: &mut Buffer, y: &mut u16, name: &str, entries: &[PolicyEntry]| {
                 if entries.is_empty() || *y >= bottom {
                     return;
                 }

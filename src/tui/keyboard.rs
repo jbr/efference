@@ -48,10 +48,13 @@ impl<'a> InteractiveState<'a> {
         // of a committed snapshot, so reachable states can be eyeballed/shown without
         // a recording (docs/tui.md). Works from any mode.
         if key.code == KeyCode::Char('s')
-            && key.modifiers.contains(KeyModifiers::CONTROL)
             && std::env::var_os("EFFERENCE_DEV").is_some()
+            && (key.modifiers.contains(KeyModifiers::CONTROL)
+                || key.modifiers.contains(KeyModifiers::ALT))
         {
-            self.dev_screenshot(terminal);
+            // Ctrl+S = full screen; Alt+S = the sidebar columns only (a narrow capture).
+            let sidebar_only = key.modifiers.contains(KeyModifiers::ALT);
+            self.dev_screenshot(terminal, sidebar_only);
             return false;
         }
 
@@ -147,18 +150,23 @@ impl<'a> InteractiveState<'a> {
     /// `.efference/screenshots/` and report the path in the status bar. The dev
     /// screenshot keybind (`Ctrl+S`, gated by `EFFERENCE_DEV`); see
     /// [`capture_screenshot_grid`](InteractiveState::capture_screenshot_grid).
-    fn dev_screenshot(&mut self, terminal: &mut Terminal<impl Backend + Write>) {
+    fn dev_screenshot(&mut self, terminal: &mut Terminal<impl Backend + Write>, sidebar_only: bool) {
         let (w, h) = terminal
             .size()
             .map(|s| (s.width, s.height))
             .unwrap_or((80, 24));
-        let grid = self.capture_screenshot_grid(w, h);
+        let grid = if sidebar_only {
+            self.capture_sidebar_grid(w, h)
+        } else {
+            self.capture_screenshot_grid(w, h)
+        };
         let millis = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or(0);
         let dir = std::path::Path::new(".efference/screenshots");
-        let path = dir.join(format!("tui-{millis}.txt"));
+        let kind = if sidebar_only { "sidebar" } else { "tui" };
+        let path = dir.join(format!("{kind}-{millis}.txt"));
         self.ui.debug_message =
             match std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&path, &grid)) {
                 Ok(()) => format!("screenshot → {}", path.display()).into(),

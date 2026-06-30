@@ -90,11 +90,12 @@ ratatui is immediate-mode, so "streaming" is just mutate-and-redraw: there is no
 
 The approval gate is ephemeral control state: the daemon gates *after* appending the `tool_use` to the log and *before* running the tool, but there is no SSE event for this transition. A poll task watches `GET /state`'s `pending_approval` field and emits a `TuiEvent::Gate` when it appears or resolves.
 
-The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail result-less exchange. `project` receives the `pending_call: Option<&str>` and marks that exchange with `⏸` and an inline affordance in place of the result:
+The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail result-less exchange. `project` receives `pending_call` + `pending_reason` and marks that exchange with `⏸`, the spotter's reason (when it gated via the spotter — read from the `Spot` audit entry, see [permissions](permissions.md)), and an inline affordance in place of the result:
 
 ```
 ⏸ bash · rm -rf /tmp/scratch
-awaiting your approval  ·  ⏎ approve · type to redirect · .abort
+spotter: deletes outside the git tree — not reversible
+awaiting your approval  ·  ⏎ approve · type to redirect · .allow to add a rule · .abort
 ```
 
 The status bar mirrors this affordance for the scrolled-away case.
@@ -103,16 +104,23 @@ Submitting from the composer while a gate is pending resolves it with the same t
 
 - empty → `Approval::Approve`
 - `.abort` → `Approval::Abort`
+- `.allow [prefix]` → `Approval::ConfigEdit` — add a rule, then run the call iff it now clears (the mechanism re-checks; nothing rides along unchecked, see [permissions](permissions.md)). An explicit prefix grants that bash command-prefix; bare `.allow` derives the grant from the gated call (the bash program, or a structured tool's name). Session-scoped.
 - any other text → `Approval::Redirect(text)`
 
 Resolving replaces the inline affordance with the real result (or, on redirect/abort, an error result), and the call stays in the transcript with that outcome in place of output.
+
+## The sidebar
+
+When the terminal is wide enough (≥ a threshold), a **right-docked sidebar** carries the glanceable, self-contained widgets that don't belong in the transcript: `PROCESSES` (the live background processes, off the old bottom strip), `STATS` (token/cache telemetry, off the status bar), and `POLICY`. It is chrome, fed by the `/state` poll (`tui/render_sidebar.rs`), with a `│` dividing it from the transcript; the composer spans the transcript column only, and below the dock threshold the sidebar is hidden (a narrow-mode drawer is future work). Its `Rect` is remembered so `Alt-S` can screenshot just those columns.
+
+`POLICY` renders the effective perimeter — scope, commands, paths, tools — read from `/state`'s `role`. Pending **proposals** (from `/state`'s `proposals`: prefix-promotion, a session's config-write) render *in the same section, in their committed sort position*, flagged with a trailing `⊕` in a muted style — a proposal is a projection of its committed self, so committing it (over `POST /proposals/:seq`) drops the `⊕` in place without reflow. This is the human/orchestrator surface for the config-edit loop (see [permissions](permissions.md)).
 
 
 ## Iterating the display without being blind
 
 `tui/harness.rs`'s `Screenplay` (test-only) scripts a transcript through the *real* event and input handlers, renders to a ratatui `TestBackend`, and frames the buffer as a ruled character grid pinned by an `insta` snapshot — so a wrap or layout change is a legible diff. The grid drops color by design so that `cell(x, y)` / `find(needle)` assertions can check foreground styles and modifiers (diff green/red, error red, the user's blue accent gutter) that a snapshot alone cannot show. Keys route through the full `handle_key_event` (`Screenplay::route_key`), so focus transitions — the spill, Esc-home, unit navigation — are exercised as production code, not a synthetic shortcut.
 
-Two facilities close the gap between *what a snapshot shows* and *what is actually reachable*. The grid encoder is one shared function (`tui/grid.rs::frame_grid`); a **dev screenshot keybind** (`Ctrl-S`, gated by `EFFERENCE_DEV`) runs it against the *live* `InteractiveState` and writes the result to `.efference/screenshots/`, so a live capture is byte-comparable to a committed `.snap`. And `Screenplay::replay` feeds a real recorded log (`persist::load` of an `.efference/*.jsonl`) through the same handler, so a snapshot taken at index *n* is a state the daemon actually produced — reachable by construction, not hand-authored. A trimmed real session lives in `tui/fixtures/`.
+Two facilities close the gap between *what a snapshot shows* and *what is actually reachable*. The grid encoder is one shared module (`tui/grid.rs`: `frame_grid`, and `frame_grid_region` for a sub-rectangle); a **dev screenshot keybind** (gated by `EFFERENCE_DEV`) runs it against the *live* `InteractiveState` and writes to `.efference/screenshots/` — `Ctrl-S` captures the full screen, `Alt-S` just the sidebar columns (a narrow capture of a wide terminal) — so a live capture is byte-comparable to a committed `.snap`. And `Screenplay::replay` feeds a real recorded log (`persist::load` of an `.efference/*.jsonl`) through the same handler, so a snapshot taken at index *n* is a state the daemon actually produced — reachable by construction, not hand-authored. A trimmed real session lives in `tui/fixtures/`.
 
 
 ## Lifetimes
@@ -122,4 +130,4 @@ The IR keeps ferritin's `Cow<'a>` borrowing, used as `Document<'static>` over ow
 
 ## Backlog
 
-Remaining polish — the box→`│` connector refinement for result bodies, integrated focus/click-to-position between the transcript and the composer, a custom editor pass (typeahead, goal-column spill-to-scroll), and gates-as-synthetic-`/events` to drop the poll task — is tracked in the backlog.
+Remaining polish — the box→`│` connector refinement for result bodies, focus *into* the sidebar (x/y/z navigation, committing a proposal in place), the narrow-mode scrimmed drawer, the at-rest unit boundary, refreshing the help-screen keymap text, and gates-as-synthetic-`/events` to drop the poll task — is tracked in the backlog.

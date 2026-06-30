@@ -110,6 +110,9 @@ pub(crate) struct PendingGate {
     pub call_id: String,
     pub name: String,
     pub input: serde_json::Value,
+    /// The spotter's one-line reason for holding this call, if it gated via the spotter
+    /// (docs/permissions.md) — surfaced inline at the gate so the human sees *why*.
+    pub reason: Option<String>,
 }
 /// Usage statistics from the daemon, as surfaced by `GET /state`'s `usage` field.
 /// Polled alongside the gate and processes.
@@ -402,6 +405,10 @@ fn parse_pending_gate(body: &str) -> Option<PendingGate> {
             .get("input")
             .cloned()
             .unwrap_or(serde_json::Value::Null),
+        reason: pending
+            .get("reason")
+            .and_then(|r| r.as_str())
+            .map(String::from),
     })
 }
 

@@ -206,6 +206,23 @@ impl<'a> InteractiveState<'a> {
         crate::tui::grid::frame_grid(term.backend().buffer(), width, cursor)
     }
 
+    /// Like [`capture_screenshot_grid`](Self::capture_screenshot_grid) but frames only
+    /// the docked sidebar's columns (`Alt+S`) — so a wide-terminal capture of just the
+    /// sidebar stays ~30 columns wide instead of the full screen. Falls back to the
+    /// whole grid when the sidebar is hidden (narrow terminal).
+    pub(super) fn capture_sidebar_grid(&mut self, width: u16, height: u16) -> String {
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let mut term = Terminal::new(TestBackend::new(width, height))
+            .expect("TestBackend construction is infallible");
+        self.flush_reproject();
+        let _ = term.draw(|frame| self.render_frame(frame));
+        match self.viewport.sidebar_area {
+            Some(rect) => crate::tui::grid::frame_grid_region(term.backend().buffer(), rect),
+            None => crate::tui::grid::frame_grid(term.backend().buffer(), width, None),
+        }
+    }
+
     /// Render the live background-process panel (docs/supervisor.md): one row per running
     /// process — `▶ bg#3  cargo watch · 4m12s · idle 8s │ <last output line>` — the
     /// handle/header in the accent style, the last tail line muted. Fed by the
