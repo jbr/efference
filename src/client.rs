@@ -128,6 +128,26 @@ impl Client {
         self.get("/state").await
     }
 
+    /// List pending config-edit proposals (`GET /proposals`) — async edits awaiting an
+    /// orchestrator decision (backlog/permissions/proposal-lifecycle.md). Raw JSON array body.
+    pub async fn proposals(&self) -> Result<String> {
+        self.get("/proposals").await
+    }
+
+    /// Commit a pending proposal by its `seq` (`POST /proposals/:seq`), folding its change into
+    /// the effective config. `note` is the rationale for the audit record.
+    pub async fn commit_proposal(&self, seq: u64, note: &str) -> Result<()> {
+        let body = serde_json::json!({ "decision": "commit", "note": note }).to_string();
+        self.post(&format!("/proposals/{seq}"), body).await.map(drop)
+    }
+
+    /// Cancel a pending proposal by its `seq` (`POST /proposals/:seq`) — audit-only, drops it
+    /// from the queue without touching the effective config.
+    pub async fn cancel_proposal(&self, seq: u64, note: &str) -> Result<()> {
+        let body = serde_json::json!({ "decision": "cancel", "note": note }).to_string();
+        self.post(&format!("/proposals/{seq}"), body).await.map(drop)
+    }
+
     /// The durable log (`GET /log?since=<seq>`), the append-only event store
     /// (docs/README.md). Returned as the raw JSON array body.
     pub async fn log(&self, since: Option<u64>) -> Result<String> {

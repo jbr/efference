@@ -75,6 +75,12 @@ struct Pending {
     call_id: String,
     name: String,
     input: Value,
+    /// The spotter's one-line reason for routing this call to the human, if it gated via the
+    /// spotter (docs/permissions.md) — read from the `Spot` audit entry the spotter logs *before*
+    /// the gate. Lets the client show *why* a call is held without a new side channel. `None` when
+    /// no spotter verdict preceded the gate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
 }
 
 /// The pending-notification queue + its id counter (docs/inbox.md). Ids are
@@ -380,12 +386,44 @@ impl Shared {
     }
 
     /// The current pending-proposals queue — async config edits awaiting an orchestrator decision
-    /// (backlog/permissions/proposal-lifecycle.md). Surfaced to the orchestrator-above by the HTTP
-    /// layer (the API shape is the next ring out); for now this backs tests and the commit/cancel
-    /// verbs. `allow(dead_code)`: the reader seam is wired ahead of the HTTP surface that consumes it.
-    #[allow(dead_code)]
+    /// (backlog/permissions/proposal-lifecycle.md). Surfaced to the orchestrator-above on `GET
+    /// /proposals` and in `/state`, and consumed by the commit/cancel verbs.
     fn pending_proposals(&self) -> Vec<PendingProposal> {
         self.proposals.lock().unwrap().clone()
+    }
+
+    /// Resolve a pending proposal by `seq` — the orchestrator-above's commit/cancel decision over
+    /// `POST /proposals/:seq` (backlog/permissions/proposal-lifecycle.md). **Commit** appends a
+    /// `Committed` [`ConfigEdit`] carrying the proposal's `change`, which `append`'s fold applies to
+    /// the effective config (and notifies the session for `scope`/`paths`); **cancel** appends a
+    /// `Cancelled` entry (audit-only). Both reference the proposal by `seq`, so the fold drops it
+    /// from the pending queue. Returns `false` if no pending proposal has that `seq`. The commit is
+    /// session-effective — not written back to the config file (that persistence is a later
+    /// refinement, like the gate's persist option).
+    fn resolve_proposal_decision(&self, seq: Seq, commit: bool, note: String) -> io::Result<bool> {
+        let Some(change) = self
+            .proposals
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|p| p.seq == seq)
+            .map(|p| p.change.clone())
+        else {
+            return Ok(false);
+        };
+        let edit = crate::log::ConfigEdit {
+            state: if commit {
+                EditState::Committed
+            } else {
+                EditState::Cancelled
+            },
+            resolves: Some(seq),
+            change,
+            lifetime: crate::log::Lifetime::Session,
+            note,
+        };
+        self.append(self.latest_turn(), Payload::ConfigEdit(edit))?;
+        Ok(true)
     }
 
     /// Publish an ephemeral pre-commit output delta to `GET /stream` subscribers
@@ -554,15 +592,34 @@ impl Shared {
         }
     }
 
+    /// The spotter's reason for the most recent verdict on `call_id`, read from the log's `Spot`
+    /// audit entries (docs/permissions.md). The spotter logs its verdict *before* routing the call
+    /// to the human gate, so by the time the gate registers, the reason is already durably in the
+    /// log — no side channel needed. The log is the source of truth, here too.
+    fn latest_spot_reason(&self, call_id: &CallId) -> Option<String> {
+        self.log
+            .lock()
+            .unwrap()
+            .entries()
+            .iter()
+            .rev()
+            .find_map(|e| match &e.payload {
+                Payload::Spot(s) if &s.call_id == call_id => Some(s.reason.clone()),
+                _ => None,
+            })
+    }
+
     /// Register an approval gate and surface it to `GET /state`. Returns the
     /// receiver the loop awaits.
     fn register_pending(&self, call: &ToolCall) -> oneshot::Receiver<Approval> {
         let (tx, rx) = oneshot::channel();
         self.approvals.lock().unwrap().insert(call.id.clone(), tx);
+        let reason = self.latest_spot_reason(&call.id);
         *self.pending.lock().unwrap() = Some(Pending {
             call_id: call.id.0.clone(),
             name: call.name.clone(),
             input: call.input.clone(),
+            reason,
         });
         // A gate is a settled state — wake any `/settle` waiter (the `?wait` on `/turn` returns here).
         self.settle_changed.notify_waiters();
@@ -814,6 +871,10 @@ impl Shared {
             "autonomous": self.autonomous(),
             "role": self.role_json(),
             "pending_notifications": self.pending_notifications(),
+            // Async config edits awaiting an orchestrator decision (the prefix-promotion
+            // proposal, the session's config-write) — polled by the client's policy surface
+            // alongside the gate; resolved over `POST /proposals/:seq`.
+            "proposals": self.pending_proposals(),
             // The live background processes (docs/supervisor.md) — the same `views()` snapshot
             // the peek auto-shows the model, surfaced here for the human clients (the
             // TUI process panel, docs/tui.md). Ephemeral, like the rest of `/state`.
@@ -936,6 +997,15 @@ fn session_visible_notice(change: &crate::log::ConfigChange) -> Option<(String, 
 #[derive(Deserialize)]
 struct TurnBody {
     text: String,
+}
+
+/// Body of `POST /proposals/:seq`: the orchestrator's commit/cancel decision on a pending
+/// proposal, with an optional rationale note (backlog/permissions/proposal-lifecycle.md).
+#[derive(Deserialize)]
+struct ProposalDecisionBody {
+    decision: String,
+    #[serde(default)]
+    note: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1093,6 +1163,63 @@ fn router() -> Router {
                 None => conn
                     .with_status(400)
                     .with_body(r#"{"error":"notification id must be an integer"}"#),
+            }
+        })
+        // List async config-edit proposals awaiting an orchestrator decision
+        // (backlog/permissions/proposal-lifecycle.md). The same array `/state` carries; a
+        // dedicated GET lets a client poll just this without the rest of the snapshot.
+        .get("/proposals", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            let body =
+                serde_json::to_string(&shared.pending_proposals()).unwrap_or_else(|_| "[]".into());
+            conn.with_status(200).with_body(body)
+        })
+        // Commit or cancel a proposal by its `seq` (the `Proposed` entry's id). Body:
+        // `{"decision":"commit"|"cancel","note":"…"}`. Commit folds the proposed change into
+        // the effective config (and notifies the session for scope/paths); cancel is
+        // audit-only. Either way the proposal leaves the pending queue. The orchestrator-above
+        // legislates here — the session can only *file* a proposal, never resolve its own.
+        .post("/proposals/:seq", |mut conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            let Some(seq) = conn.param("seq").and_then(|s| s.parse::<u64>().ok()) else {
+                return conn
+                    .with_status(400)
+                    .with_body(r#"{"error":"proposal seq must be an integer"}"#);
+            };
+            let raw = conn.request_body_string().await.unwrap_or_default();
+            let decision = match serde_json::from_str::<ProposalDecisionBody>(&raw) {
+                Ok(d) => d,
+                Err(e) => {
+                    return conn
+                        .with_status(400)
+                        .with_body(format!(r#"{{"error":"bad /proposals body: {e}"}}"#));
+                }
+            };
+            let commit = match decision.decision.as_str() {
+                "commit" => true,
+                "cancel" => false,
+                other => {
+                    return conn.with_status(400).with_body(format!(
+                        r#"{{"error":"decision must be \"commit\" or \"cancel\", got {other:?}"}}"#
+                    ));
+                }
+            };
+            match shared.resolve_proposal_decision(seq, commit, decision.note.unwrap_or_default()) {
+                Ok(true) => conn.with_status(200).with_body(if commit {
+                    r#"{"status":"committed"}"#
+                } else {
+                    r#"{"status":"cancelled"}"#
+                }),
+                Ok(false) => conn
+                    .with_status(404)
+                    .with_body(r#"{"error":"no pending proposal with that seq"}"#),
+                Err(e) => conn
+                    .with_status(500)
+                    .with_body(format!(r#"{{"error":"append failed: {e}"}}"#)),
             }
         })
         .get("/state", |conn: Conn| async move {
@@ -1960,6 +2087,95 @@ mod tests {
             Verdict::Gate,
             "a cancelled proposal never takes effect",
         );
+    }
+
+    /// A gate surfaces the spotter's reason on `/state` (docs/permissions.md): the spotter logs
+    /// its verdict as a `Spot` *before* routing to the human, so `register_pending` reads the
+    /// reason from the log — no side channel. The client renders it inline at the gate.
+    #[test]
+    fn the_gate_carries_the_spotter_reason() {
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        let call = bash_call("rm -rf build");
+        shared
+            .append(
+                0,
+                Payload::Spot(crate::log::Spot {
+                    call_id: call.id.clone(),
+                    stance: crate::log::Stance::Gate,
+                    reason: "deletes outside the git tree — not reversible".into(),
+                    origin: crate::log::Origin::Model,
+                    probed_prefix: None,
+                }),
+            )
+            .unwrap();
+        let _gate = shared.register_pending(&call);
+        assert!(
+            shared
+                .state_json()
+                .contains("deletes outside the git tree — not reversible"),
+            "the gate's /state should carry the spotter's reason",
+        );
+    }
+
+    /// The client-facing resolution path (`POST /proposals/:seq` → `resolve_proposal_decision`):
+    /// commit folds the change and drains the queue; cancel drains without applying; an unknown
+    /// `seq` resolves nothing.
+    #[test]
+    fn resolve_proposal_decision_commits_and_cancels() {
+        use crate::policy::{Verdict, classify};
+        let (shared, _rx) = Shared::new(Log::in_memory());
+
+        assert!(
+            !shared
+                .resolve_proposal_decision(999, true, String::new())
+                .unwrap(),
+            "an unknown seq resolves nothing",
+        );
+
+        // Commit: a proposed npm grant takes effect and drains.
+        let npm = bash_call("npm install");
+        let seq = shared
+            .append(
+                0,
+                proposed_edit(crate::log::ConfigChange::Command {
+                    command: "npm".into(),
+                }),
+            )
+            .unwrap();
+        assert_eq!(classify(&shared.effective_config(), &npm), Verdict::Gate);
+        assert!(
+            shared
+                .resolve_proposal_decision(seq, true, "looks safe".into())
+                .unwrap()
+        );
+        assert_eq!(
+            classify(&shared.effective_config(), &npm),
+            Verdict::Clear,
+            "commit folds the proposed change",
+        );
+        assert!(shared.pending_proposals().is_empty(), "commit drains the queue");
+
+        // Cancel: a proposed cargo grant is dropped without taking effect.
+        let cargo = bash_call("cargo build");
+        let seq2 = shared
+            .append(
+                0,
+                proposed_edit(crate::log::ConfigChange::Command {
+                    command: "cargo".into(),
+                }),
+            )
+            .unwrap();
+        assert!(
+            shared
+                .resolve_proposal_decision(seq2, false, "not now".into())
+                .unwrap()
+        );
+        assert_eq!(
+            classify(&shared.effective_config(), &cargo),
+            Verdict::Gate,
+            "cancel does not apply the change",
+        );
+        assert!(shared.pending_proposals().is_empty(), "cancel drains the queue");
     }
 
     /// The `/settle` predicate (backlog/permissions/proposal-lifecycle.md) tracks the loop's
