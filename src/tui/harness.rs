@@ -842,6 +842,26 @@ mod scenarios {
         play.snapshot("sidebar_processes_and_stats");
     }
 
+    /// The sidebar docks only at/above the width threshold; below it the layout falls
+    /// back to no sidebar (the drawer is a later step). Guards the render-side
+    /// width-responsiveness the resize handler relies on.
+    #[test]
+    fn sidebar_docks_only_above_the_width_threshold() {
+        let mut narrow = Screenplay::new(80, 10);
+        narrow.user("hi");
+        assert!(
+            narrow.find("PROCESSES").is_none(),
+            "no sidebar below the dock threshold (80 cols)"
+        );
+
+        let mut wide = Screenplay::new(110, 10);
+        wide.user("hi");
+        assert!(
+            wide.find("PROCESSES").is_some(),
+            "the sidebar docks at/above the threshold (110 cols)"
+        );
+    }
+
     /// The live `Ctrl+S` dev screenshot path must produce byte-identical output to
     /// the committed-snapshot `render` path (both go through `frame_grid`). This is
     /// what lets a live capture diff directly against a `.snap` — if it ever drifts,

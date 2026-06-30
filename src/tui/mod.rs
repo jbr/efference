@@ -574,6 +574,15 @@ fn ui_loop(
                     state.handle_mouse_event(mouse_event, &terminal);
                     redraw = true;
                 }
+                Ok(Event::Resize(_, _)) => {
+                    // The terminal changed size: the cached layout (wrap + document
+                    // height) is width-dependent, so drop it and repaint now. Without
+                    // this the resize only takes on the *next* unrelated event (a mouse
+                    // re-enter), which read as "resize does nothing until I wiggle the
+                    // mouse." The sidebar dock threshold makes this especially visible.
+                    state.viewport.cached_layout = None;
+                    redraw = true;
+                }
                 Ok(_) => {}
                 Err(_) => exit = true,
             },
