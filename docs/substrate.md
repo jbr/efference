@@ -25,11 +25,14 @@ non-determinism cannot touch the wire and cannot break caching.
 ```rust
 enum Payload {
     User(Vec<ContentBlock>),
-    Assistant { text: Vec<ContentBlock>, calls: Vec<ToolCall> },
+    Assistant { thinking: Vec<ContentBlock>, text: Vec<ContentBlock>, calls: Vec<ToolCall> },
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
     Mark(Mark),        // a salience annotation
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
     Triage(Triage),    // a fork verdict — the audit record (see redaction-fork.md)
+    Spot(Spot),        // a spotter permission verdict — audit only (see permissions.md)
+    ConfigEdit(ConfigEdit),  // one durable policy change — folded by the classifier (see permissions.md)
+    Preamble { system: String },  // the boot preamble snapshot — replay/audit only (see context.md)
     // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)
     // for compaction. Kept here as a forward marker — "wire the seam ahead of
     // the feature" — not present in the code today.
@@ -38,6 +41,16 @@ enum Payload {
 
 `Commit` is a load-bearing placeholder. When compaction needs an explicit
 freeze primitive it slots in here without touching any other type.
+
+`Preamble` records the full rendered `system` string once at boot, exactly as
+this session's requests carry it. It exists because the `[context]` preamble
+builder ([context.md](context.md)) folds file *contents* into the system
+prompt, and those files drift on disk between boots — so the preamble is no
+longer reconstructable from `config + current files`, and faithful replay
+requires storing it. It projects to nothing (the system prompt rides the
+request's `system` field, never `messages`), so appending it cannot perturb
+the projected wire; the `wire` dev view reads it back instead of re-resolving
+files from disk.
 
 ### `WireState` / `Keep`
 

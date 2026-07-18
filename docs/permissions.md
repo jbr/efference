@@ -174,6 +174,21 @@ edit-pipeline call that names the file — and `persist_edit` clears on the name
 cohesive fix (an MCP-superset that carries permission/notification metadata alongside the
 schema) is later architectural work; for now the coupling is marked, not hidden.
 
+### the `[context]` rung: a listing is a grant
+
+A `[context]` entry ([context.md](context.md)) is an independent clearance source, checked
+before the name-grant rule: listing a path **is** a read grant — the preamble stub invites
+the model to `Read {path}`, so that read fast-path clears with no `tools` or `[paths]`
+config at all. The same lexical subtree rule applies, and the caveat is stated loudly: a
+location entry (dir, and later glob) read-grants everything under it, so operators must
+list deliberately. The entry's write grants ride the same check: `update` clears a write
+to an **existing** file under the entry, `create` a write to a **new** one — `create`
+without `update` is an append-only store. Telling create from update is the classifier's
+one filesystem touch (an existence probe) — sound here because a verdict is derived state,
+never on the wire. The context rung covers only the structured path-bearing tools; bash
+never clears through it. A write to the session's own config file still bypasses
+everything to the human gate.
+
 ## The spotter (`src/spotter.rs`)
 
 What the fast-path can't `Clear` falls to the **spotter** before it reaches the human — a

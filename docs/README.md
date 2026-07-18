@@ -140,6 +140,7 @@ Read top-down; open the subsystem doc you need.
 | Background processes — the supervisor | [supervisor.md](supervisor.md) | `src/supervisor.rs`, `src/bash.rs` |
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs`, `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
 | Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/config.rs`, `src/policy.rs`, `src/agent.rs` |
+| The `[context]` preamble builder — what the session boots knowing | [context.md](context.md) | `src/context.rs`, `src/config.rs`, `src/env.rs`, `src/policy.rs` |
 | Transport & streaming (upstream SSE, deltas, keepalive) | [transport.md](transport.md) | `src/api.rs` |
 | The TUI client | [tui.md](tui.md) | `src/tui/` |
 
