@@ -307,8 +307,13 @@ fn classify_in(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
 
 /// A structured (non-bash) tool clears iff its name is in the role's `tool` grants and,
 /// for the path-bearing ones, its target is covered by a `path` grant with the right
-/// permission. Anything not granted gates.
+/// permission. A `[context]` listing is an independent clearance source
+/// (backlog/preamble-context.md): the listing itself is the grant, so it clears without a
+/// `tools` name grant — see [`context_clears`]. Anything not granted gates.
 fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
+    if context_clears(role, call, cwd) {
+        return Verdict::Clear;
+    }
     // Nothing clears in code — the name must be granted in config first.
     if !role.tools.contains(&call.name) {
         return Verdict::Gate;
@@ -356,27 +361,93 @@ fn paths_granted(
     cwd: &Path,
     default: Option<&str>,
 ) -> bool {
-    let targets: Vec<&str> = match input.get(key) {
-        Some(Value::String(s)) => vec![s.as_str()],
-        Some(Value::Array(items)) => {
-            // Every element must be a string, and there must be at least one.
-            if items.is_empty() {
-                return false;
-            }
-            let mut out = Vec::with_capacity(items.len());
-            for item in items {
-                let Some(s) = item.as_str() else { return false };
-                out.push(s);
-            }
-            out
-        }
-        Some(_) => return false, // present but not a string/array → malformed
-        None => match default {
-            Some(d) => vec![d],
-            None => return false, // required path absent
-        },
+    let Some(targets) = input_targets(input, key, default) else {
+        return false;
     };
     targets.iter().all(|t| path_granted(role, t, perm, cwd))
+}
+
+/// Extract the path target(s) at `input[key]`: a single string or a non-empty array of
+/// strings (every element must be a string). `default` supplies a fallback when the key is
+/// absent (the optional-path tools default to cwd `"."`); `None` means the path is required.
+/// Returns `None` for a missing required key, an empty array, or any non-string value —
+/// a malformed call never clears.
+fn input_targets<'a>(
+    input: &'a Value,
+    key: &str,
+    default: Option<&'a str>,
+) -> Option<Vec<&'a str>> {
+    match input.get(key) {
+        Some(Value::String(s)) => Some(vec![s.as_str()]),
+        Some(Value::Array(items)) => {
+            if items.is_empty() {
+                return None;
+            }
+            items.iter().map(Value::as_str).collect()
+        }
+        Some(_) => None, // present but not a string/array → malformed
+        None => default.map(|d| vec![d]),
+    }
+}
+
+/// The `[context]` clearance rung (backlog/preamble-context.md). Listing a path in `[context]`
+/// **is** a read grant: the preamble stub says `Read {path}`, so the read the model was invited
+/// to make must fast-path clear with no `tools`/`paths` config at all — the listing is
+/// operator-sanctioned. The write grants ride the same entries: `update` clears a write to an
+/// **existing** file under an entry, `create` a write to a **new** one (so `create` without
+/// `update` is an append-only store). Uses the same per-tool input keys as [`path_check`].
+///
+/// `persist_edit` names no path (its target was named by the `preview_edit` where the grant is
+/// enforced — the acknowledged wart in [`path_check`]), so it clears when any entry carries a
+/// write grant, mirroring its clear-on-name-alone rule under `tools`.
+fn context_clears(role: &Config, call: &ToolCall, cwd: &Path) -> bool {
+    if role.context.is_empty() {
+        return false;
+    }
+    let (key, perm, default) = match call.name.as_str() {
+        "read" => ("paths", Perm::Read, None),
+        "list" | "search" => ("path", Perm::Read, Some(".")),
+        "read_node" => ("file_path", Perm::Read, None),
+        "write" => ("path", Perm::Write, None),
+        "preview_edit" => ("file_path", Perm::Write, None),
+        "persist_edit" => {
+            return role
+                .context
+                .iter()
+                .any(|e| e.grants.update || e.grants.create);
+        }
+        _ => return false,
+    };
+    let Some(targets) = input_targets(&call.input, key, default) else {
+        return false;
+    };
+    targets.iter().all(|t| context_granted(role, t, perm, cwd))
+}
+
+/// Whether `target` falls under some `[context]` entry path carrying `perm`
+/// (backlog/preamble-context.md). Read is always on for a listed path — a file exactly, a
+/// location's whole subtree — by the same lexical rule as [`path_granted`]. A write needs the
+/// covering entry's `update` (target exists) or `create` (target is new) grant; the existence
+/// probe is the one filesystem touch in the classifier — it is what tells create from update,
+/// and is harmless here because a verdict is derived state, never on the wire
+/// (docs/substrate.md). `exec` entries have no files and grant nothing.
+fn context_granted(role: &Config, target: &str, perm: Perm, cwd: &Path) -> bool {
+    let target = lexical_normalize(&absolutize(target, cwd));
+    role.context.iter().any(|entry| {
+        let crate::config::ContextSource::Files(paths) = &entry.source else {
+            return false;
+        };
+        paths
+            .iter()
+            .any(|p| target.starts_with(lexical_normalize(&absolutize(p, cwd))))
+            && match perm {
+                Perm::Read => true,
+                Perm::Write => {
+                    (entry.grants.update && target.exists())
+                        || (entry.grants.create && !target.exists())
+                }
+            }
+    })
 }
 
 /// Whether `path` (resolved against `cwd`) falls under some role `path` grant carrying
@@ -1281,5 +1352,154 @@ mod tests {
             !ledger.ready_to_promote("cargo"),
             "a fallback casts no vote"
         );
+    }
+
+    // --- the [context] clearance rung (backlog/preamble-context.md) ---
+
+    mod context_rung {
+        use super::*;
+        use crate::config::{ContextEntry, ContextGrants, ContextSource};
+
+        fn ctx_entry(paths: &[&str], update: bool, create: bool) -> ContextEntry {
+            ContextEntry {
+                heading: None,
+                source: ContextSource::Files(paths.iter().map(|s| s.to_string()).collect()),
+                grants: ContextGrants { update, create },
+                sort: None,
+            }
+        }
+
+        fn ctx_role(entries: Vec<ContextEntry>) -> Config {
+            Config {
+                context: entries,
+                ..Default::default()
+            }
+        }
+
+        /// The headline behavior: a `[context]` listing is itself the read grant. An otherwise
+        /// empty role (no `tools`, no `paths`) still fast-path clears a read of the listed file
+        /// — that read is exactly what the preamble stub invited.
+        #[test]
+        fn listing_clears_a_read_with_no_other_grants() {
+            let role = ctx_role(vec![ctx_entry(&["docs/verify.md"], false, false)]);
+            assert_eq!(
+                structured(&role, &call("read", serde_json::json!({ "paths": ["docs/verify.md"] }))),
+                Verdict::Clear
+            );
+            // An unlisted path still gates…
+            assert_eq!(
+                structured(&role, &call("read", serde_json::json!({ "paths": ["src/main.rs"] }))),
+                Verdict::Gate
+            );
+            // …and one unlisted target poisons a batch (every path must be granted).
+            assert_eq!(
+                structured(
+                    &role,
+                    &call(
+                        "read",
+                        serde_json::json!({ "paths": ["docs/verify.md", "src/main.rs"] })
+                    )
+                ),
+                Verdict::Gate
+            );
+        }
+
+        /// A location entry (dir) grants read on its whole subtree, by the same lexical rule as
+        /// `[paths]` — the caveat the backlog states loudly: the listing is a read grant on
+        /// everything under it, not just a mention.
+        #[test]
+        fn location_entry_clears_reads_under_its_subtree() {
+            let role = ctx_role(vec![ctx_entry(&["memories"], false, false)]);
+            assert_eq!(
+                structured(
+                    &role,
+                    &call("read", serde_json::json!({ "paths": ["memories/apis.md"] }))
+                ),
+                Verdict::Clear
+            );
+            assert_eq!(
+                structured(&role, &call("list", serde_json::json!({ "path": "memories" }))),
+                Verdict::Clear
+            );
+            // An escape via `..` normalizes out of the subtree and gates.
+            assert_eq!(
+                structured(
+                    &role,
+                    &call("read", serde_json::json!({ "paths": ["memories/../secrets.md"] }))
+                ),
+                Verdict::Gate
+            );
+        }
+
+        /// A read-only listing clears no writes; `update` clears a write to an **existing** file
+        /// under the entry; `create` clears a write to a **new** one. `create` without `update`
+        /// is the append-only store: add, never rewrite.
+        #[test]
+        fn write_grants_split_on_existence() {
+            let dir = std::env::temp_dir()
+                .join(format!("efference-policy-ctx-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(dir.join("memories")).unwrap();
+            std::fs::write(dir.join("memories/existing.md"), "a fact\n").unwrap();
+
+            let existing = call("write", serde_json::json!({ "path": "memories/existing.md" }));
+            let fresh = call("write", serde_json::json!({ "path": "memories/new.md" }));
+
+            let read_only = ctx_role(vec![ctx_entry(&["memories"], false, false)]);
+            assert_eq!(classify_in(&read_only, &existing, &dir), Verdict::Gate);
+            assert_eq!(classify_in(&read_only, &fresh, &dir), Verdict::Gate);
+
+            let update_only = ctx_role(vec![ctx_entry(&["memories"], true, false)]);
+            assert_eq!(classify_in(&update_only, &existing, &dir), Verdict::Clear);
+            assert_eq!(classify_in(&update_only, &fresh, &dir), Verdict::Gate);
+
+            let append_only = ctx_role(vec![ctx_entry(&["memories"], false, true)]);
+            assert_eq!(classify_in(&append_only, &existing, &dir), Verdict::Gate);
+            assert_eq!(classify_in(&append_only, &fresh, &dir), Verdict::Clear);
+
+            // The edit pipeline: `preview_edit` names the file (enforced like `write`);
+            // `persist_edit` names nothing and clears on any context write grant.
+            let preview = call(
+                "preview_edit",
+                serde_json::json!({ "file_path": "memories/existing.md" }),
+            );
+            let persist = call("persist_edit", serde_json::json!({}));
+            assert_eq!(classify_in(&update_only, &preview, &dir), Verdict::Clear);
+            assert_eq!(classify_in(&update_only, &persist, &dir), Verdict::Clear);
+            assert_eq!(classify_in(&read_only, &persist, &dir), Verdict::Gate);
+
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+
+        /// An `exec` entry has no files: it grants nothing, read or write.
+        #[test]
+        fn exec_entry_grants_nothing() {
+            let role = ctx_role(vec![ContextEntry {
+                heading: Some("Date".into()),
+                source: ContextSource::Exec("date".into()),
+                grants: ContextGrants::default(),
+                sort: None,
+            }]);
+            assert_eq!(
+                structured(&role, &call("read", serde_json::json!({ "paths": ["date"] }))),
+                Verdict::Gate
+            );
+        }
+
+        /// The rung never reaches beyond the known path-bearing tools: an unrelated structured
+        /// tool (or bash) is untouched by `[context]` and follows the ordinary rules.
+        #[test]
+        fn unrelated_tools_are_untouched() {
+            let role = ctx_role(vec![ctx_entry(&["docs"], true, true)]);
+            assert_eq!(
+                structured(&role, &call("kill_process", serde_json::json!({ "id": 1 }))),
+                Verdict::Gate
+            );
+            assert_eq!(
+                structured(&role, &call("bash", serde_json::json!({ "command": "cat docs/x.md" }))),
+                Verdict::Gate,
+                "bash never clears via a context listing — only the structured read path"
+            );
+        }
     }
 }
