@@ -16,7 +16,7 @@ anyhow = "1"
 # with RUST_LOG (e.g. `RUST_LOG=efference=debug efference serve`).
 log = "0.4"
 env_logger = "0.11"
-tokio = { version = "1.52.3", features = [
+tokio = { version = "1.53.0", features = [
   "macros",
   "process",
   "rt-multi-thread",
@@ -30,7 +30,7 @@ libc = "0.2.186"
 clap = { version = "4", features = ["derive", "env"] }
 # Core trillium types (Conn/Handler/Method) for the control-channel HTTP server.
 trillium = "1.3.0"
-trillium-client = { version = "0.9.7", features = ["sse"] }
+trillium-client = { version = "0.9.12", features = ["sse"] }
 trillium-rustls = "0.11.3"
 # 0.6.4 adds `UnixClientConfig` — the client-side Unix-socket connector the
 # control-channel client (src/client.rs) dials the daemon through (DESIGN §10).
@@ -61,7 +61,7 @@ yash-syntax = "=0.14.1"
 # reads the config and writes the harness's auto-persisted edits back, comments intact. A parse
 # error carries a source span; its `Display` renders the offending line (the load-time diagnostic
 # that stands in for KDL's miette report).
-toml_edit = { version = "0.25.12", features = ["serde"] }
+toml_edit = { version = "0.25.13", features = ["serde"] }
 notify-debouncer-full = "0.7"
 
 [dev-dependencies]
