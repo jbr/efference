@@ -639,6 +639,24 @@ pub fn render_request_yaml(
     Ok(crate::pretty::join(lines))
 }
 
+/// Render just the projected `messages` array — the `wire --messages` view: what
+/// [`crate::project::project`] produced (with the trailing cache breakpoint
+/// placed), skipping the `system`/`tools[]` envelope entirely. Unlike
+/// [`render_request_pretty`], this needs no model id, system prompt, or tool
+/// list, so it works even when a session's config won't parse (nothing here
+/// depends on it) — a lean, config-independent view of what the model sees.
+pub fn render_messages_pretty(messages: &[ApiMessage]) -> Result<String, Error> {
+    Ok(serde_json::to_string_pretty(messages)?)
+}
+
+/// Pseudo-YAML counterpart to [`render_messages_pretty`] (see [`crate::pretty`]
+/// for the rendering trade-offs): the projected `messages` array, unfolded for
+/// readability, with no `system`/`tools[]` envelope.
+pub fn render_messages_yaml(messages: &[ApiMessage]) -> Result<String, Error> {
+    let value = serde_json::to_value(messages)?;
+    Ok(crate::pretty::to_pseudo_yaml(&value))
+}
+
 /// The request envelope as a [`Value`] — the shared source for both dev renderers
 /// (`render_request_*`). Reuses the private [`Request`] shape, so a wire-shape
 /// change can't drift the dev views out of sync with what `complete` POSTs.
@@ -827,5 +845,51 @@ mod tests {
         )])
         .unwrap_err();
         assert!(err.to_string().contains("overloaded_error"), "{err}");
+    }
+
+    use crate::project::ApiBlock;
+
+    fn sample_messages() -> Vec<ApiMessage> {
+        vec![
+            ApiMessage {
+                role: crate::project::Role::User,
+                content: vec![ApiBlock::Text {
+                    text: "hello".into(),
+                    cache_control: None,
+                }],
+            },
+            ApiMessage {
+                role: crate::project::Role::Assistant,
+                content: vec![ApiBlock::Text {
+                    text: "hi there".into(),
+                    cache_control: None,
+                }],
+            },
+        ]
+    }
+
+    /// `render_messages_pretty` (the `wire --messages` JSON view) is exactly the
+    /// projected array — no `system`/`tools`/`model` envelope wrapped around it.
+    #[test]
+    fn render_messages_pretty_is_just_the_array() {
+        let messages = sample_messages();
+        let rendered = render_messages_pretty(&messages).unwrap();
+        let value: Value = serde_json::from_str(&rendered).unwrap();
+        assert!(value.is_array(), "expected a bare array, got {value}");
+        assert_eq!(value, serde_json::to_value(&messages).unwrap());
+        assert!(!rendered.contains("\"system\""));
+        assert!(!rendered.contains("\"tools\""));
+    }
+
+    /// `render_messages_yaml` unfolds the same array as pseudo-YAML, with no
+    /// envelope keys either.
+    #[test]
+    fn render_messages_yaml_is_just_the_array() {
+        let messages = sample_messages();
+        let rendered = render_messages_yaml(&messages).unwrap();
+        assert!(rendered.contains("hello"));
+        assert!(rendered.contains("hi there"));
+        assert!(!rendered.contains("system:"));
+        assert!(!rendered.contains("tools:"));
     }
 }

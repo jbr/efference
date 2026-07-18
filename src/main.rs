@@ -239,6 +239,14 @@ enum Command {
     Wire {
         /// Path to a session JSONL log (e.g. `.efference/session-<millis>.jsonl`).
         path: PathBuf,
+        /// Print only the projected `messages` array — `project(log)` with the
+        /// trailing cache breakpoint placed — skipping the `system`/`tools[]`
+        /// envelope entirely. A lean, config-independent view of what the model
+        /// actually sees: unlike the full envelope, this needs no config, model
+        /// id, or rebuilt tool list, so it works even when a session's config
+        /// won't parse. Composes with `--format`.
+        #[arg(long)]
+        messages: bool,
         /// Rendering: `json` (true-to-bytes, pipeable to `jq`) or `yaml` (a lossy,
         /// read-only pseudo-YAML that unfolds escaped/multi-line strings for
         /// readability — not parseable back).
@@ -354,10 +362,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::Gallery { theme } => gallery(theme).await,
         Command::Wire {
             path,
+            messages,
             format,
             model,
             config,
-        } => wire(path, format, &model, config).await,
+        } => wire(path, messages, format, &model, config).await,
     }
 }
 
@@ -370,6 +379,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 /// warns when the session may have run in a different environment.
 async fn wire(
     path: PathBuf,
+    messages_only: bool,
     format: WireFormat,
     model: &str,
     config: Option<PathBuf>,
@@ -377,6 +387,23 @@ async fn wire(
     let entries = efference::persist::load(&path)?;
     let mut messages = efference::project::project(&entries);
     efference::project::place_trailing_cache_breakpoint(&mut messages);
+
+    // `--messages` prints just the projected array and returns before touching
+    // config/system/tools at all — a lean, config-independent view of what the
+    // model sees, so it still works when a session's config won't parse.
+    if messages_only {
+        eprintln!(
+            "note: {} log entries → {} wire messages.",
+            entries.len(),
+            messages.len()
+        );
+        let rendered = match format {
+            WireFormat::Json => efference::api::render_messages_pretty(&messages)?,
+            WireFormat::Yaml => efference::api::render_messages_yaml(&messages)?,
+        };
+        println!("{rendered}");
+        return Ok(());
+    }
 
     // The envelope's system + tools aren't recorded in the log — rebuild them the
     // same way `serve` does (current cwd seeds both the env block and the MCP
@@ -966,5 +993,74 @@ mod tests {
     #[test]
     fn session_dir_is_under_the_base() {
         assert_eq!(session_dir("abc"), Path::new(".efference/abc"));
+    }
+
+    /// A minimal session log fixture: one user turn, one assistant reply. Written
+    /// via [`Log::create`]/[`Log::append`] (like a real session) so `persist::load`
+    /// reads back exactly what `wire` would see.
+    fn write_fixture_log(path: &Path) {
+        let mut log = Log::create(path).unwrap();
+        log.append(
+            0,
+            efference::log::Payload::User(vec![efference::log::ContentBlock::Text(
+                "hello".into(),
+            )]),
+        )
+        .unwrap();
+        log.append(
+            1,
+            efference::log::Payload::Assistant {
+                thinking: vec![],
+                text: vec![efference::log::ContentBlock::Text("hi there".into())],
+                calls: vec![],
+            },
+        )
+        .unwrap();
+    }
+
+    /// `wire --messages` is the point of this flag: a lean, config-independent
+    /// view of `project(log)` that works even when the session's config won't
+    /// parse. Exercise both halves — the full envelope path *does* fail on a
+    /// malformed config, while `--messages` skips config loading entirely and
+    /// succeeds regardless (docs: the flag's purpose is exactly this).
+    #[tokio::test]
+    async fn wire_messages_skips_the_unparseable_config() {
+        let log_path =
+            std::env::temp_dir().join(format!("efference-wire-log-{}.jsonl", std::process::id()));
+        let _ = std::fs::remove_file(&log_path);
+        write_fixture_log(&log_path);
+
+        let bad_config = std::env::temp_dir().join(format!(
+            "efference-wire-bad-config-{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(&bad_config, "this is not valid toml [[[").unwrap();
+
+        // Without `--messages`, the full envelope rebuild loads the config and
+        // fails loudly on the malformed file.
+        let full = wire(
+            log_path.clone(),
+            false,
+            WireFormat::Json,
+            "claude-haiku-4-5",
+            Some(bad_config.clone()),
+        )
+        .await;
+        assert!(full.is_err(), "expected the full envelope to reject the bad config");
+
+        // With `--messages`, config is never touched, so the same bad config
+        // doesn't matter — it prints just the projected messages array.
+        let lean = wire(
+            log_path.clone(),
+            true,
+            WireFormat::Json,
+            "claude-haiku-4-5",
+            Some(bad_config.clone()),
+        )
+        .await;
+        assert!(lean.is_ok(), "expected --messages to succeed despite the bad config: {lean:?}");
+
+        let _ = std::fs::remove_file(&log_path);
+        let _ = std::fs::remove_file(&bad_config);
     }
 }
