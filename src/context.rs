@@ -141,6 +141,92 @@ pub fn fallback_name(path: &Path) -> String {
         .unwrap_or_else(|| "context".to_string())
 }
 
+/// A fully-resolved `[context]` ready to render into the preamble: sections in **document order**
+/// (backlog/preamble-context.md). Each [`Section`] is a bare entry (no heading) or a labeled group.
+/// This is what [`crate::env`] builds from disk at boot and freezes into the cached prefix.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Resolved {
+    pub sections: Vec<Section>,
+}
+
+/// One rendered section: a labeled group (`heading = Some`) or a bare entry (`heading = None`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Section {
+    pub heading: Option<String>,
+    pub items: Vec<Item>,
+}
+
+/// A single resolved context item — an inlined file (body in full) or a listed stub (read on demand).
+/// Both render as a name tag `<name>…</name>` (backlog/preamble-context.md); the name is the file's
+/// frontmatter `name`, else its basename.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Item {
+    /// The full body rides in the preamble inside `<name>…</name>`. `path` is kept for provenance /
+    /// the boot snapshot, not rendered (the tag name is the identity).
+    Inline {
+        name: String,
+        path: String,
+        body: String,
+    },
+    /// A one-line stub `<name>{description} Read {path} for the full file.</name>`; the body is read
+    /// on demand via `path`.
+    Listed {
+        name: String,
+        description: String,
+        path: String,
+    },
+}
+
+/// The instructional lead-in before the tagged block — teaches the model that a tag holding a file's
+/// full text is present as-is, while a tag holding a short summary ending in "Read PATH" is a pointer
+/// to fetch on demand. Fixed text, so it stays byte-stable in the cached prefix.
+const LEAD_IN: &str = "The following context is available for this session, wrapped in name tags. \
+A tag holding a file's full text is present as-is; a tag holding a one-line summary that ends in \
+\"Read PATH …\" is a pointer — read that path to load the full file when relevant.";
+
+impl Resolved {
+    /// Render the whole `[context]` block appended to the system preamble, or `None` when nothing is
+    /// configured (so the caller appends no empty block). **Byte-deterministic** — a pure function of
+    /// the resolved sections, safe for the cached prefix (docs/substrate.md). Every file renders as a
+    /// `<name>…</name>` tag (name-as-tag pseudo-XML — the file's name, or the operator's group
+    /// heading, used **verbatim**: spaces and leading digits and all, since nothing parses it); a
+    /// group wraps its members in `<Heading>…</Heading>`. Inlined bodies ride verbatim inside their
+    /// tag, so a body's own markdown can't blur the boundary. Sections join with a blank line, in
+    /// document order (backlog/preamble-format-experiment.md records why this format is provisional).
+    pub fn render(&self) -> Option<String> {
+        if self.sections.is_empty() {
+            return None;
+        }
+        let mut blocks = vec![LEAD_IN.to_string()];
+        for section in &self.sections {
+            let inner = section
+                .items
+                .iter()
+                .map(render_item)
+                .collect::<Vec<_>>()
+                .join("\n");
+            blocks.push(match &section.heading {
+                Some(heading) => format!("<{heading}>\n{inner}\n</{heading}>"),
+                None => inner,
+            });
+        }
+        Some(blocks.join("\n\n"))
+    }
+}
+
+/// Render one item as its `<name>…</name>` tag: an inlined file holds its verbatim body (trimmed of
+/// surrounding blank space); a listed file holds its summary and a read pointer.
+fn render_item(item: &Item) -> String {
+    match item {
+        Item::Inline { name, body, .. } => format!("<{name}>\n{}\n</{name}>", body.trim()),
+        Item::Listed {
+            name,
+            description,
+            path,
+        } => format!("<{name}>{description} Read {path} for the full file.</{name}>"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,5 +339,66 @@ mod tests {
     fn fallback_name_is_the_stem() {
         assert_eq!(fallback_name(Path::new("docs/verify.md")), "verify");
         assert_eq!(fallback_name(Path::new("CLAUDE.md")), "CLAUDE");
+    }
+
+    // --- render: the name-as-tag pseudo-XML format (byte-pinned) ---
+
+    #[test]
+    fn empty_resolved_renders_none() {
+        assert_eq!(Resolved::default().render(), None);
+    }
+
+    /// The full render pins the tagged bytes: a bare inlined file is its own `<name>` tag; a labeled
+    /// group wraps its listed member(s); sections join with a blank line, in document order. Pins the
+    /// structure by referencing `LEAD_IN`, so the lead-in wording can change without breaking it.
+    #[test]
+    fn render_pins_the_tagged_bytes() {
+        let resolved = Resolved {
+            sections: vec![
+                Section {
+                    heading: None,
+                    items: vec![Item::Inline {
+                        name: "CLAUDE.md".into(),
+                        path: "./CLAUDE.md".into(),
+                        body: "# efference\n\nThe harness.\n".into(),
+                    }],
+                },
+                Section {
+                    heading: Some("Skills".into()),
+                    items: vec![Item::Listed {
+                        name: "verify".into(),
+                        description: "Drive the flow end to end.".into(),
+                        path: "skills/verify.md".into(),
+                    }],
+                },
+            ],
+        };
+        let expected = format!(
+            "{LEAD_IN}\n\n\
+             <CLAUDE.md>\n# efference\n\nThe harness.\n</CLAUDE.md>\n\n\
+             <Skills>\n<verify>Drive the flow end to end. Read skills/verify.md for the full \
+             file.</verify>\n</Skills>"
+        );
+        assert_eq!(resolved.render().as_deref(), Some(expected.as_str()));
+    }
+
+    /// The operator's heading is the tag verbatim — spaces and all, since it's pseudo-XML nothing
+    /// parses.
+    #[test]
+    fn render_uses_the_heading_verbatim_as_a_tag() {
+        let resolved = Resolved {
+            sections: vec![Section {
+                heading: Some("Project Tips".into()),
+                items: vec![Item::Listed {
+                    name: "style".into(),
+                    description: "Two-space indent.".into(),
+                    path: "tips/style.md".into(),
+                }],
+            }],
+        };
+        assert!(resolved.render().unwrap().contains(
+            "<Project Tips>\n<style>Two-space indent. Read tips/style.md for the full \
+             file.</style>\n</Project Tips>"
+        ));
     }
 }
