@@ -68,6 +68,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use indexmap::IndexMap;
 use serde::Deserialize;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value, value};
 
@@ -117,6 +118,51 @@ pub struct Config {
     /// Reserved ancestor pointers (tsconfig/eslint-style explicit inheritance). Parsed so a
     /// file can declare them, but the merge engine is **not built**. TOML: `extends = ["base.toml"]`.
     pub extends: Vec<String>,
+
+    /// The `[context]` preamble builder (backlog/preamble-context.md): the markdown files (and, later,
+    /// `exec` sections) the operator makes available to the session, in **document order** — a `Vec`,
+    /// not a sorted map, because the entries render as preamble sections in the order they're written
+    /// (a dynamic `exec` section can sit between static files). The harness bakes in nothing about
+    /// what any entry "is" — see [`ContextEntry`].
+    pub context: Vec<ContextEntry>,
+}
+
+/// One `[context]` entry — a source of preamble bytes with an optional heading, write grants, and a
+/// sort override (backlog/preamble-context.md). Two axes land on two authorities: **mode**
+/// (inline-vs-listed) is the file's call via its frontmatter, decided at render time; **grant**,
+/// **heading**, and **sort** are the operator's call, materialized here from the config.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextEntry {
+    /// The operator's section heading (`Memories`, `Skills`, `Runbooks`, …), or `None` for a bare
+    /// path rendered with no heading. **Pure presentation** — the harness attaches no meaning to it.
+    pub heading: Option<String>,
+    /// What produces this section's bytes.
+    pub source: ContextSource,
+    /// Write grants beyond the always-on read: `update` (modify existing files), `create` (add new
+    /// files to a location). `create` is group-only; a bare path can carry only `update`.
+    pub grants: ContextGrants,
+    /// Raw SQL-ish sort override for a multi-file source (`"modified desc"`); `None` = default
+    /// `name asc`. Stored verbatim — parsed at render time (a later increment). Group-only.
+    pub sort: Option<String>,
+}
+
+/// Where a [`ContextEntry`]'s bytes come from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContextSource {
+    /// One or more file / dir / glob paths — a bare path (the table key) or a group's `path`/`paths`.
+    Files(Vec<String>),
+    /// A command whose stdout is the section body, run once at boot (backlog/dynamic-context-exec.md).
+    Exec(String),
+}
+
+/// Write grants a [`ContextEntry`] carries (read is always implied for listed files).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ContextGrants {
+    /// The session may modify existing file(s) at this entry. Legal on a bare path or a group.
+    pub update: bool,
+    /// The session may add new files to this location. Group-only (a single file has nowhere to
+    /// create into).
+    pub create: bool,
 }
 
 /// Read/write permission a [`Config::paths`] grant carries. `write` implies `read` at check
@@ -148,6 +194,42 @@ struct RawConfig {
     paths: BTreeMap<String, RawPathValue>,
     #[serde(default)]
     extends: Vec<String>,
+    /// `[context]` table. An [`IndexMap`] (not `BTreeMap`) so **document order is preserved** — the
+    /// entries render as preamble sections in the order the operator wrote them. Each value is the
+    /// `true` sugar or an inline table ([`RawContextValue`]); [`validate`] interprets each into a
+    /// [`ContextEntry`].
+    #[serde(default)]
+    context: IndexMap<String, RawContextValue>,
+}
+
+/// A `[context]` value: the `true`/`false` sugar (a bare read-only path) or an inline table
+/// ([`RawContextEntry`]). Interpreted by [`validate_context_entry`].
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawContextValue {
+    /// `"./CLAUDE.md" = true` → a bare read-only path (the key is the path).
+    Sugar(bool),
+    /// A table: a labeled group (`{ path|paths = … }`), a dynamic section (`{ exec = … }`), or a
+    /// bare path carrying `update` (the key is the path, no `path`/`paths`).
+    Table(RawContextEntry),
+}
+
+/// The inline-table form of a `[context]` value. Which shape it is (labeled group / exec / bare
+/// updatable path) is disambiguated by which keys are present — see [`validate_context_entry`].
+#[derive(Deserialize)]
+struct RawContextEntry {
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    paths: Vec<String>,
+    #[serde(default)]
+    exec: Option<String>,
+    #[serde(default)]
+    update: bool,
+    #[serde(default)]
+    create: bool,
+    #[serde(default)]
+    sort: Option<String>,
 }
 
 /// A `[paths]` value: either the `true`/`false` sugar (`true` = read+write) or an explicit
@@ -193,6 +275,16 @@ pub enum ValidationError {
     /// redirections, expansions, or an env-assignment prefix). The fast-path can only soundly
     /// prefix-match simple commands, so an un-lexable key fails the whole file — no silent skip.
     CommandNotSimple(String),
+    /// A `[context]` entry set to `false`. There is nothing to disable — an unwanted entry is
+    /// simply not listed — so a `false` is rejected rather than silently doing nothing.
+    ContextDisabled(String),
+    /// A `[context]` `exec` entry that also carries `path`/`paths`/grants/`sort` — the source is
+    /// ambiguous (command stdout *or* files?). An `exec` section has no files to grant or sort.
+    ContextExecConflict(String),
+    /// A group-only key (`create` or `sort`, named in the payload) on a **bare path** (a `[context]`
+    /// entry whose key *is* the path, with no `path`/`paths`). Both are about a *location of many
+    /// files*; a single file has nowhere to create into and nothing to sort.
+    ContextBarePathGrant(String, &'static str),
 }
 
 impl std::fmt::Display for ValidationError {
@@ -208,6 +300,22 @@ impl std::fmt::Display for ValidationError {
                 "command key `{key}` is not a single simple command (no operators, \
                  redirections, expansions, or env-assignments) — the fast-path can only \
                  prefix-match simple commands"
+            ),
+            ValidationError::ContextDisabled(key) => write!(
+                f,
+                "context entry `{key}` is set to false; there is nothing to disable — remove the \
+                 entry instead of listing it as off"
+            ),
+            ValidationError::ContextExecConflict(key) => write!(
+                f,
+                "context entry `{key}` mixes `exec` with `path`/`paths`/grants/`sort` — an exec \
+                 section's body is the command's stdout and has no files to grant or sort"
+            ),
+            ValidationError::ContextBarePathGrant(key, which) => write!(
+                f,
+                "context entry `{key}` uses `{which}` on a bare path — `{which}` needs a labeled \
+                 group with `path`/`paths` (a single file has nowhere to create into / nothing to \
+                 sort)"
             ),
         }
     }
@@ -327,6 +435,10 @@ fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
         .into_iter()
         .map(|(k, v)| (k, v.into_perms()))
         .collect();
+    let mut context = Vec::with_capacity(raw.context.len());
+    for (key, value) in raw.context {
+        context.push(validate_context_entry(key, value)?);
+    }
     Ok(Config {
         scope: raw.scope,
         watch_for: raw.watch_for,
@@ -335,7 +447,80 @@ fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
         tools: raw.tools.into_iter().collect(),
         paths,
         extends: raw.extends,
+        context,
     })
+}
+
+/// Interpret one `[context]` `(key, value)` into a [`ContextEntry`], failing closed on an illegal
+/// shape (backlog/preamble-context.md). The value's shape decides the kind:
+///
+/// - `true` → a bare read-only path (the key is the path, no heading).
+/// - a table with `exec` → a labeled dynamic section (no files/grants/sort allowed alongside).
+/// - a table with `path`/`paths` → a labeled group (may carry `update`/`create`/`sort`).
+/// - a table with neither → a bare path (the key is the path) that may carry only `update`;
+///   `create`/`sort` are group-only and rejected here.
+fn validate_context_entry(
+    key: String,
+    value: RawContextValue,
+) -> Result<ContextEntry, ValidationError> {
+    let entry = match value {
+        RawContextValue::Sugar(true) => ContextEntry {
+            heading: None,
+            source: ContextSource::Files(vec![key]),
+            grants: ContextGrants::default(),
+            sort: None,
+        },
+        RawContextValue::Sugar(false) => return Err(ValidationError::ContextDisabled(key)),
+        RawContextValue::Table(t) => {
+            let has_files = t.path.is_some() || !t.paths.is_empty();
+            if let Some(exec) = t.exec {
+                // A dynamic section is a labeled group whose body is command stdout: it has no
+                // files, so file grants and a sort would be meaningless — reject the mix.
+                if has_files || t.update || t.create || t.sort.is_some() {
+                    return Err(ValidationError::ContextExecConflict(key));
+                }
+                ContextEntry {
+                    heading: Some(key),
+                    source: ContextSource::Exec(exec),
+                    grants: ContextGrants::default(),
+                    sort: None,
+                }
+            } else if has_files {
+                // Labeled group: the key is a heading; the location is `path` then any `paths`.
+                let mut files = Vec::new();
+                files.extend(t.path);
+                files.extend(t.paths);
+                ContextEntry {
+                    heading: Some(key),
+                    source: ContextSource::Files(files),
+                    grants: ContextGrants {
+                        update: t.update,
+                        create: t.create,
+                    },
+                    sort: t.sort,
+                }
+            } else {
+                // Bare path carrying grants: the key itself is the path, no heading. Only `update`
+                // is legal here — `create`/`sort` are about a location of many files.
+                if t.create {
+                    return Err(ValidationError::ContextBarePathGrant(key, "create"));
+                }
+                if t.sort.is_some() {
+                    return Err(ValidationError::ContextBarePathGrant(key, "sort"));
+                }
+                ContextEntry {
+                    heading: None,
+                    source: ContextSource::Files(vec![key]),
+                    grants: ContextGrants {
+                        update: t.update,
+                        create: false,
+                    },
+                    sort: None,
+                }
+            }
+        }
+    };
+    Ok(entry)
 }
 
 /// The additive/replace deltas that carry `from` to `to`, as [`ConfigChange`]s — the diff the
@@ -486,6 +671,7 @@ mod tests {
         assert!(role.tools.is_empty());
         assert!(role.paths.is_empty());
         assert!(role.extends.is_empty());
+        assert!(role.context.is_empty());
     }
 
     #[test]
@@ -570,6 +756,172 @@ mod tests {
     fn parses_reserved_extends_pointer() {
         let role = parse_str(r#"extends = ["base.toml"]"#);
         assert_eq!(role.extends, ["base.toml"]);
+    }
+
+    // --- [context] preamble builder (backlog/preamble-context.md) ---
+
+    /// The three legal entry shapes decode to the right `ContextEntry`: a bare read-only path, a
+    /// bare updatable path (key-is-path table), and a labeled group with `path` + write grants.
+    #[test]
+    fn parses_context_entry_shapes() {
+        let role = parse_str(
+            r#"
+            [context]
+            "./CLAUDE.md" = true
+            "./ARCHITECTURE.md" = { update = true }
+            Memories = { path = "./memories/", create = true, update = true }
+            "#,
+        );
+        assert_eq!(
+            role.context,
+            vec![
+                ContextEntry {
+                    heading: None,
+                    source: ContextSource::Files(vec!["./CLAUDE.md".into()]),
+                    grants: ContextGrants::default(),
+                    sort: None,
+                },
+                ContextEntry {
+                    heading: None,
+                    source: ContextSource::Files(vec!["./ARCHITECTURE.md".into()]),
+                    grants: ContextGrants {
+                        update: true,
+                        create: false,
+                    },
+                    sort: None,
+                },
+                ContextEntry {
+                    heading: Some("Memories".into()),
+                    source: ContextSource::Files(vec!["./memories/".into()]),
+                    grants: ContextGrants {
+                        update: true,
+                        create: true,
+                    },
+                    sort: None,
+                },
+            ],
+        );
+    }
+
+    /// A labeled group's `paths` list and a `sort` override decode; `path` then `paths` join in order.
+    #[test]
+    fn parses_context_group_with_paths_and_sort() {
+        let role = parse_str(
+            r#"
+            [context]
+            Skills = { paths = ["a/*.md", "b/*.md"], sort = "modified desc" }
+            "#,
+        );
+        assert_eq!(
+            role.context,
+            vec![ContextEntry {
+                heading: Some("Skills".into()),
+                source: ContextSource::Files(vec!["a/*.md".into(), "b/*.md".into()]),
+                grants: ContextGrants::default(),
+                sort: Some("modified desc".into()),
+            }],
+        );
+    }
+
+    /// An `exec` entry is a labeled dynamic section with no files, grants, or sort.
+    #[test]
+    fn parses_context_exec_entry() {
+        let role = parse_str(
+            r#"
+            [context]
+            Date = { exec = "date" }
+            "#,
+        );
+        assert_eq!(
+            role.context,
+            vec![ContextEntry {
+                heading: Some("Date".into()),
+                source: ContextSource::Exec("date".into()),
+                grants: ContextGrants::default(),
+                sort: None,
+            }],
+        );
+    }
+
+    /// **Document order is preserved** — the `[context]` entries come out in file order, not sorted
+    /// (they render as preamble sections positionally; an `exec` can sit between static files). The
+    /// keys here are deliberately anti-alphabetical to catch a sorted-map regression.
+    #[test]
+    fn context_preserves_document_order() {
+        let role = parse_str(
+            r#"
+            [context]
+            "zzz.md" = true
+            Middle = { exec = "date" }
+            "aaa.md" = true
+            "#,
+        );
+        let headings_and_sources: Vec<_> = role
+            .context
+            .iter()
+            .map(|e| (e.heading.clone(), e.source.clone()))
+            .collect();
+        assert_eq!(
+            headings_and_sources,
+            vec![
+                (None, ContextSource::Files(vec!["zzz.md".into()])),
+                (Some("Middle".into()), ContextSource::Exec("date".into())),
+                (None, ContextSource::Files(vec!["aaa.md".into()])),
+            ],
+        );
+    }
+
+    /// `create` on a bare path (key-is-path, no `path`/`paths`) fails — it's group-only.
+    #[test]
+    fn context_create_on_bare_path_fails() {
+        let err = super::parse(
+            Path::new("bad.toml"),
+            "[context]\n\"./notes.md\" = { create = true }\n",
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            LoadError::Validate(_, ValidationError::ContextBarePathGrant(_, "create"))
+        ));
+    }
+
+    /// `sort` on a bare path fails for the same reason — nothing to order.
+    #[test]
+    fn context_sort_on_bare_path_fails() {
+        let err = super::parse(
+            Path::new("bad.toml"),
+            "[context]\n\"./notes.md\" = { sort = \"modified desc\" }\n",
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            LoadError::Validate(_, ValidationError::ContextBarePathGrant(_, "sort"))
+        ));
+    }
+
+    /// `exec` mixed with a file source is ambiguous and fails.
+    #[test]
+    fn context_exec_with_files_fails() {
+        let err = super::parse(
+            Path::new("bad.toml"),
+            "[context]\nBad = { exec = \"date\", path = \"./x\" }\n",
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            LoadError::Validate(_, ValidationError::ContextExecConflict(_))
+        ));
+    }
+
+    /// A `false` context entry is rejected — nothing to disable.
+    #[test]
+    fn context_false_is_rejected() {
+        let err =
+            super::parse(Path::new("bad.toml"), "[context]\n\"./x.md\" = false\n").unwrap_err();
+        assert!(matches!(
+            err,
+            LoadError::Validate(_, ValidationError::ContextDisabled(_))
+        ));
     }
 
     #[test]
