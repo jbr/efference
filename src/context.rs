@@ -199,10 +199,7 @@ impl Split<'_> {
     pub fn mode(&self, fallback_name: &str) -> Mode {
         match &self.frontmatter {
             Some(fm) if fm.description.is_some() && fm.inline != Some(true) => Mode::Listed {
-                name: fm
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| fallback_name.to_string()),
+                name: fm.name.clone().unwrap_or_else(|| fallback_name.to_string()),
                 description: fm.description.clone().unwrap_or_default(),
             },
             _ => Mode::Inline,
@@ -269,8 +266,8 @@ pub enum Item {
 /// full text is present as-is, while a tag holding a short summary ending in "Read PATH" is a pointer
 /// to fetch on demand. Fixed text, so it stays byte-stable in the cached prefix.
 const LEAD_IN: &str = "The following context is available for this session, wrapped in name tags. \
-A tag holding a file's full text is present as-is; a tag holding a one-line summary that ends in \
-\"Read PATH …\" is a pointer — read that path to load the full file when relevant.";
+A tag holding a file's full text is present as-is; a tag with a path= attribute holds a brief summary — \
+read the file at that path to load the full content.";
 
 impl Resolved {
     /// Render the whole `[context]` block appended to the system preamble, or `None` when nothing is
@@ -313,7 +310,7 @@ fn render_item(item: &Item) -> String {
             name,
             description,
             path,
-        } => format!("<{name}>{description} Read {path} for the full file.</{name}>"),
+        } => format!("<{name} path=\"{path}\">{description}</{name}>"),
     }
 }
 
@@ -399,7 +396,10 @@ pub fn resolve(entries: &[ContextEntry], base: &Path) -> Result<Resolved, Resolv
                 split_frontmatter(&text).map_err(|_| ResolveError::Frontmatter(full.clone()))?;
             let basename = fallback_name(Path::new(display));
             let name = if labeled_single {
-                entry.heading.clone().expect("labeled_single implies a heading")
+                entry
+                    .heading
+                    .clone()
+                    .expect("labeled_single implies a heading")
             } else {
                 split
                     .frontmatter
@@ -423,8 +423,8 @@ pub fn resolve(entries: &[ContextEntry], base: &Path) -> Result<Resolved, Resolv
         if items.is_empty() {
             continue;
         }
-        let heading = (entry.heading.is_some() && !labeled_single)
-            .then(|| entry.heading.clone().unwrap());
+        let heading =
+            (entry.heading.is_some() && !labeled_single).then(|| entry.heading.clone().unwrap());
         sections.push(Section { heading, items });
     }
     Ok(Resolved { sections })
@@ -748,6 +748,32 @@ mod tests {
                     heading: None,
                     items: vec![Item::Inline {
                         name: "CLAUDE.md".into(),
+                        path: "CLAUDE.md".into(),
+                        body: "# efference\n\nThe harness.".into(),
+                    }],
+                },
+                Section {
+                    heading: Some("Skills".into()),
+                    items: vec![Item::Listed {
+                        name: "verify".into(),
+                        description: "Drive the flow end to end.".into(),
+                        path: "skills/verify.md".into(),
+                    }],
+                },
+            ],
+        };
+        let expected = format!(
+            "{LEAD_IN}\n\n\
+             <CLAUDE.md>\n# efference\n\nThe harness.\n</CLAUDE.md>\n\n\
+             <Skills>\n<verify path=\"skills/verify.md\">Drive the flow end to end.</verify>\n</Skills>"
+        );
+        assert_eq!(resolved.render().as_deref(), Some(expected.as_str()));
+        let resolved = Resolved {
+            sections: vec![
+                Section {
+                    heading: None,
+                    items: vec![Item::Inline {
+                        name: "CLAUDE.md".into(),
                         path: "./CLAUDE.md".into(),
                         body: "# efference\n\nThe harness.\n".into(),
                     }],
@@ -765,8 +791,7 @@ mod tests {
         let expected = format!(
             "{LEAD_IN}\n\n\
              <CLAUDE.md>\n# efference\n\nThe harness.\n</CLAUDE.md>\n\n\
-             <Skills>\n<verify>Drive the flow end to end. Read skills/verify.md for the full \
-             file.</verify>\n</Skills>"
+             <Skills>\n<verify path=\"skills/verify.md\">Drive the flow end to end.</verify>\n</Skills>"
         );
         assert_eq!(resolved.render().as_deref(), Some(expected.as_str()));
     }
@@ -786,8 +811,7 @@ mod tests {
             }],
         };
         assert!(resolved.render().unwrap().contains(
-            "<Project Tips>\n<style>Two-space indent. Read tips/style.md for the full \
-             file.</style>\n</Project Tips>"
+            "<Project Tips>\n<style path=\"tips/style.md\">Two-space indent.</style>\n</Project Tips>"
         ));
     }
 
@@ -1075,7 +1099,14 @@ mod tests {
     fn resolve_exec_runs_in_base_and_allows_empty_stdout() {
         let dir = tmpdir("exec-cwd");
         std::fs::write(dir.join("marker.txt"), "here\n").unwrap();
-        let resolved = resolve(&[exec_entry("Files", "ls marker.txt"), exec_entry("Quiet", "true")], &dir).unwrap();
+        let resolved = resolve(
+            &[
+                exec_entry("Files", "ls marker.txt"),
+                exec_entry("Quiet", "true"),
+            ],
+            &dir,
+        )
+        .unwrap();
         assert!(matches!(
             &resolved.sections[0].items[0],
             Item::Exec { body, .. } if body == "marker.txt\n"
@@ -1094,7 +1125,10 @@ mod tests {
         let dir = tmpdir("exec-fail");
         let err = resolve(&[exec_entry("Broken", "echo oops >&2; exit 3")], &dir).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("exit status: 3") && msg.contains("oops"), "{msg}");
+        assert!(
+            msg.contains("exit status: 3") && msg.contains("oops"),
+            "{msg}"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
