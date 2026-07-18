@@ -184,6 +184,7 @@ impl Screenplay<'_> {
     /// A committed assistant turn: markdown prose plus zero or more tool calls.
     pub(crate) fn assistant(&mut self, text: &str, calls: Vec<ToolCall>) -> &mut Self {
         self.commit(Payload::Assistant {
+            thinking: vec![],
             text: vec![ContentBlock::Text(text.into())],
             calls,
         })

@@ -696,6 +696,7 @@ mod tests {
     fn retain_completion(name: &str, input: Value) -> Completion {
         Completion {
             assistant: Payload::Assistant {
+                thinking: vec![],
                 text: vec![],
                 calls: vec![ToolCall {
                     id: CallId("r".into()),

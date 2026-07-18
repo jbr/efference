@@ -45,16 +45,14 @@ struct Request<'a> {
     /// keys serialize sorted, so it is.
     tools: &'a [Value],
     tool_choice: ToolChoice,
-    /// Extended thinking, always sent as `{"type":"disabled"}` (docs/transport.md). This is
-    /// a **stopgap**, not the thinking slice: current models default to *adaptive* thinking
-    /// when the field is omitted (Sonnet 5 does; Opus 4.8 still runs thinking-off, so the
-    /// locked default is safe either way), and the [`Assembler`] rejects thinking blocks
-    /// (see `THINKING_UNSUPPORTED`) — so without this an adaptive-by-default model can't
-    /// complete a single turn. Sending `disabled` keeps the fork's forced `tool_choice`
-    /// legal and is accepted with `max_tokens: 0` (only `enabled` is rejected there), so the
-    /// keepalive warms the same cache. Set once and never varied → never invalidates the
-    /// cache. (`disabled` 400s on Fable 5, which can't disable thinking — not a serve target
-    /// until the thinking slice lands.)
+    /// Extended thinking (docs/transport.md, backlog/thinking-blocks.md). Rides on
+    /// `tool_choice`: **adaptive** on the main agent turn (`tool_choice: auto`), **disabled**
+    /// whenever the choice is forced — because forced `tool_choice` is incompatible with
+    /// thinking (400), and the fork forces its distiller. Keepalive is disabled independently
+    /// (`max_tokens: 0` rejects `enabled`; adaptive there is untested). Set once per call-type
+    /// and never flipped turn-to-turn, so it stays out of the cached prefix's way (toggling
+    /// thinking keeps the tools+system tier valid; docs/substrate.md). (`disabled` 400s on
+    /// Fable 5, which can't disable thinking — not a serve target yet.)
     thinking: Thinking,
     messages: &'a [ApiMessage],
     /// Always `true` — we consume the response as SSE (docs/transport.md). Set once and
@@ -64,16 +62,37 @@ struct Request<'a> {
     stream: bool,
 }
 
-/// The `thinking` field. Only ever `{"type":"disabled"}` — the stopgap described on
-/// [`Request::thinking`]. A struct (not a bare string) so the wire shape is exactly the
-/// object the API expects; the thinking slice replaces this with a real config.
+/// The `thinking` field (docs/transport.md, backlog/thinking-blocks.md). `Adaptive` lets the
+/// model decide when/how much to think and interleaves it across turns; `display: "summarized"`
+/// captures a readable model-authored summary into the log (same token cost as omitted). The
+/// serde tag renders `{"type":"adaptive","display":"summarized"}` / `{"type":"disabled"}`
+/// exactly.
 #[derive(Serialize, Clone, Copy)]
-struct Thinking {
-    #[serde(rename = "type")]
-    kind: &'static str,
+#[serde(tag = "type", rename_all = "snake_case")]
+enum Thinking {
+    Disabled,
+    Adaptive {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display: Option<&'static str>,
+    },
 }
 
-const THINKING_DISABLED: Thinking = Thinking { kind: "disabled" };
+const THINKING_DISABLED: Thinking = Thinking::Disabled;
+const THINKING_ADAPTIVE: Thinking = Thinking::Adaptive {
+    display: Some("summarized"),
+};
+
+impl Thinking {
+    /// Thinking rides on `tool_choice`: forced choice ⟺ no thinking (the API rejects the
+    /// combination). Auto → adaptive; any forced choice → disabled. Encoding it here makes the
+    /// illegal pairing unrepresentable (backlog/thinking-blocks.md).
+    fn for_tool_choice(tool_choice: &ToolChoice) -> Self {
+        match tool_choice.kind {
+            "auto" => THINKING_ADAPTIVE,
+            _ => THINKING_DISABLED,
+        }
+    }
+}
 
 /// The `tool_choice` field. Phase 1+ always sets `disable_parallel_tool_use` so
 /// the model emits **at most one** `tool_use` per turn (docs/README.md) — set once and
@@ -130,21 +149,20 @@ pub struct Completion {
     pub usage: Usage,
 }
 
-/// Carved out until the thinking slice (docs/transport.md): we recognize streamed
-/// thinking / `redacted_thinking` blocks and their deltas and reject them with
-/// this precise error rather than letting them fall into the generic
-/// unknown-type arm. Storing thinking needs a `ContentBlock` variant, the
-/// mandatory same-turn round-trip on the wire (which moves the byte-stability
-/// pin), and a resolution for the fork's forced `tool_choice` — its own slice.
-/// Until then, streaming against a thinking-enabled model fails loudly; dev runs
-/// on Haiku, which emits none.
-const THINKING_UNSUPPORTED: &str = "streamed a thinking/redacted_thinking block — \
-    extended thinking is not yet supported (see docs/transport.md); develop on Haiku until \
-    the thinking slice lands";
-
 /// One content block being reassembled from the stream, keyed by its `index`.
 enum BlockAccum {
     Text(String),
+    /// An extended-thinking block (docs/transport.md, backlog/thinking-blocks.md): `text`
+    /// accumulates `thinking_delta` chunks, `signature` arrives whole in a `signature_delta`
+    /// near the block's end. The signature must be preserved verbatim for replay.
+    Thinking {
+        text: String,
+        signature: String,
+    },
+    /// A safety-encrypted thinking block — opaque `data`, no text or signature.
+    Redacted {
+        data: String,
+    },
     ToolUse {
         id: String,
         name: String,
@@ -169,7 +187,8 @@ enum BlockAccum {
 ///   final `output_tokens` from `message_delta`. Reading only one event would
 ///   regress the cache-gate metrics to the `message_start` placeholder
 ///   (`output_tokens: 1`) — see docs/substrate.md.
-/// - **Thinking carved out, not built** (see [`THINKING_UNSUPPORTED`]).
+/// - **Thinking assembled** into leading `ContentBlock::Thinking` / `RedactedThinking`
+///   (docs/transport.md, backlog/thinking-blocks.md), signatures preserved for replay.
 struct Assembler {
     /// Indexed by content-block `index`; pushed in order as blocks open.
     blocks: Vec<BlockAccum>,
@@ -240,7 +259,16 @@ impl Assembler {
                             .to_string(),
                         partial_json: String::new(),
                     },
-                    "thinking" | "redacted_thinking" => return Err(THINKING_UNSUPPORTED.into()),
+                    // Thinking leads the turn; `thinking`/`signature` accumulate via deltas
+                    // (docs/transport.md). `content_block_start` may already carry an initial
+                    // `thinking` string, so seed from it.
+                    "thinking" => BlockAccum::Thinking {
+                        text: field("thinking").unwrap_or_default().to_string(),
+                        signature: field("signature").unwrap_or_default().to_string(),
+                    },
+                    "redacted_thinking" => BlockAccum::Redacted {
+                        data: field("data").unwrap_or_default().to_string(),
+                    },
                     other => return Err(format!("unknown content_block type {other:?}").into()),
                 };
                 self.blocks.push(block);
@@ -276,8 +304,21 @@ impl Assembler {
                                 .unwrap_or_default(),
                         );
                     }
-                    ("thinking_delta" | "signature_delta", _) => {
-                        return Err(THINKING_UNSUPPORTED.into());
+                    ("thinking_delta", BlockAccum::Thinking { text, .. }) => {
+                        text.push_str(
+                            delta
+                                .get("thinking")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default(),
+                        );
+                    }
+                    ("signature_delta", BlockAccum::Thinking { signature, .. }) => {
+                        signature.push_str(
+                            delta
+                                .get("signature")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default(),
+                        );
                     }
                     (other, _) => {
                         return Err(
@@ -326,11 +367,18 @@ impl Assembler {
     /// Collapse the accumulated blocks into the assistant turn. Tool inputs parse
     /// here, after all fragments have arrived (an empty input → `{}`).
     fn finish(self) -> Result<Completion, Error> {
+        let mut thinking = Vec::new();
         let mut text = Vec::new();
         let mut calls = Vec::new();
         for block in self.blocks {
             match block {
                 BlockAccum::Text(t) => text.push(ContentBlock::Text(t)),
+                BlockAccum::Thinking { text: t, signature } => {
+                    thinking.push(ContentBlock::Thinking { text: t, signature })
+                }
+                BlockAccum::Redacted { data } => {
+                    thinking.push(ContentBlock::RedactedThinking { data })
+                }
                 BlockAccum::ToolUse {
                     id,
                     name,
@@ -350,7 +398,11 @@ impl Assembler {
             }
         }
         Ok(Completion {
-            assistant: Payload::Assistant { text, calls },
+            assistant: Payload::Assistant {
+                thinking,
+                text,
+                calls,
+            },
             model: self.model,
             stop_reason: self.stop_reason,
             usage: self.usage,
@@ -407,7 +459,7 @@ impl Client {
             system: &self.system,
             tools,
             tool_choice,
-            thinking: THINKING_DISABLED,
+            thinking: Thinking::for_tool_choice(&tool_choice),
             messages,
             stream: true,
         };
@@ -544,7 +596,7 @@ pub fn render_request_pretty(
         system,
         tools,
         tool_choice,
-        thinking: THINKING_DISABLED,
+        thinking: Thinking::for_tool_choice(&tool_choice),
         messages,
         stream: true,
     };
@@ -603,7 +655,7 @@ fn request_value(
         system,
         tools,
         tool_choice,
-        thinking: THINKING_DISABLED,
+        thinking: Thinking::for_tool_choice(&tool_choice),
         messages,
         stream: true,
     };
@@ -653,7 +705,12 @@ mod tests {
         assert_eq!(completion.usage.output_tokens, 4); // message_delta, not the placeholder 1
 
         match completion.assistant {
-            Payload::Assistant { text, calls } => {
+            Payload::Assistant {
+                thinking,
+                text,
+                calls,
+            } => {
+                assert!(thinking.is_empty(), "no thinking blocks in this stream");
                 assert_eq!(text, vec![ContentBlock::Text("let me look".into())]);
                 assert_eq!(calls.len(), 1);
                 assert_eq!(calls[0].name, "bash");
@@ -692,17 +749,65 @@ mod tests {
         }
     }
 
-    /// A streamed thinking block is rejected with a precise, labeled error — the
-    /// carved-out seam for the deferred thinking slice (docs/transport.md), not a silent
-    /// drop.
+    /// A streamed thinking block is assembled into a leading `ContentBlock::Thinking`
+    /// (docs/transport.md, backlog/thinking-blocks.md): `thinking_delta` chunks concatenate,
+    /// the `signature_delta` is preserved verbatim (mandatory for replay), and the block leads
+    /// the turn — before the text block that follows it in the stream.
     #[test]
-    fn rejects_thinking_block_loudly() {
-        let err = feed(&[
+    fn assembles_thinking_block_leading_the_turn() {
+        let completion = feed(&[
             ("message_start", r#"{"message":{"model":"claude-opus-4-8","usage":{"input_tokens":5,"output_tokens":1}}}"#),
             ("content_block_start", r#"{"index":0,"content_block":{"type":"thinking","thinking":""}}"#),
+            ("content_block_delta", r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"weighing "}}"#),
+            ("content_block_delta", r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"the options"}}"#),
+            ("content_block_delta", r#"{"index":0,"delta":{"type":"signature_delta","signature":"SiG=="}}"#),
+            ("content_block_stop", r#"{"index":0}"#),
+            ("content_block_start", r#"{"index":1,"content_block":{"type":"text","text":""}}"#),
+            ("content_block_delta", r#"{"index":1,"delta":{"type":"text_delta","text":"here's the answer"}}"#),
+            ("content_block_stop", r#"{"index":1}"#),
+            ("message_delta", r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":6}}"#),
         ])
-        .unwrap_err();
-        assert!(err.to_string().contains("thinking"), "{err}");
+        .unwrap();
+        match completion.assistant {
+            Payload::Assistant {
+                thinking,
+                text,
+                calls,
+            } => {
+                assert_eq!(
+                    thinking,
+                    vec![ContentBlock::Thinking {
+                        text: "weighing the options".into(),
+                        signature: "SiG==".into(),
+                    }]
+                );
+                assert_eq!(text, vec![ContentBlock::Text("here's the answer".into())]);
+                assert!(calls.is_empty());
+            }
+            other => panic!("expected Payload::Assistant, got {other:?}"),
+        }
+    }
+
+    /// A `redacted_thinking` block (opaque `data`, no text/signature) is preserved into a
+    /// leading `ContentBlock::RedactedThinking` for verbatim replay.
+    #[test]
+    fn assembles_redacted_thinking_block() {
+        let completion = feed(&[
+            ("message_start", r#"{"message":{"model":"claude-opus-4-8","usage":{"input_tokens":5,"output_tokens":1}}}"#),
+            ("content_block_start", r#"{"index":0,"content_block":{"type":"redacted_thinking","data":"ENCRYPTED=="}}"#),
+            ("content_block_stop", r#"{"index":0}"#),
+            ("message_delta", r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#),
+        ])
+        .unwrap();
+        match completion.assistant {
+            Payload::Assistant { thinking, .. } => assert_eq!(
+                thinking,
+                vec![ContentBlock::RedactedThinking {
+                    data: "ENCRYPTED==".into()
+                }]
+            ),
+            other => panic!("expected Payload::Assistant, got {other:?}"),
+        }
     }
 
     /// An unknown event type is loud, never silently dropped.

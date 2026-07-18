@@ -337,10 +337,12 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
 
             // Surface the model's prose, then pull its calls before the payload
             // moves into the log.
-            let calls = if let Payload::Assistant { text, calls } = &completion.assistant {
-                for ContentBlock::Text(t) in text {
-                    if !t.is_empty() {
-                        println!("\n{t}");
+            let calls = if let Payload::Assistant { text, calls, .. } = &completion.assistant {
+                for block in text {
+                    if let ContentBlock::Text(t) = block {
+                        if !t.is_empty() {
+                            println!("\n{t}");
+                        }
                     }
                 }
                 calls.clone()

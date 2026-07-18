@@ -1216,6 +1216,7 @@ mod tests {
                 turn: 0,
                 at: Timestamp(0),
                 payload: Payload::Assistant {
+                    thinking: vec![],
                     text: vec![],
                     calls: vec![ToolCall {
                         id: CallId(id.into()),

@@ -112,6 +112,7 @@ mod tests {
         log.append(
             1,
             Payload::Assistant {
+                thinking: vec![],
                 text: vec![ContentBlock::Text("let me check".into())],
                 calls: vec![ToolCall {
                     id: CallId("toolu_1".into()),

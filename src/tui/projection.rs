@@ -134,7 +134,7 @@ pub(crate) fn project(
             Payload::User(blocks) => {
                 nodes.push(turn(Author::User, markdown(&join_text(blocks))));
             }
-            Payload::Assistant { text, calls } => {
+            Payload::Assistant { text, calls, .. } => {
                 let mut blocks = Vec::new();
                 let prose = join_text(text);
                 if !prose.trim().is_empty() {
@@ -588,11 +588,15 @@ fn push_mark(nodes: &mut Vec<DocumentNode<'static>>, kind: &MarkKind, note: &str
     });
 }
 
-/// Join text blocks with blank lines so paragraph structure survives.
+/// Join text blocks with blank lines so paragraph structure survives. Only `Text` blocks
+/// contribute — thinking blocks render through their own (future) surface, not the prose join.
 fn join_text(blocks: &[ContentBlock]) -> String {
     blocks
         .iter()
-        .map(|ContentBlock::Text(t)| t.as_str())
+        .filter_map(|b| match b {
+            ContentBlock::Text(t) => Some(t.as_str()),
+            ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => None,
+        })
         .collect::<Vec<_>>()
         .join("\n\n")
 }
@@ -622,6 +626,7 @@ mod tests {
             entry(
                 2,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![ContentBlock::Text("**bold** plan".into())],
                     calls: vec![ToolCall {
                         id: CallId("toolu_1".into()),
@@ -720,6 +725,7 @@ mod tests {
             entry(
                 4,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![],
                     calls: vec![ToolCall {
                         id: CallId("toolu_9".into()),
@@ -828,6 +834,7 @@ mod tests {
             entry(
                 4,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![],
                     calls: vec![ToolCall {
                         id: CallId("toolu_9".into()),
@@ -891,6 +898,7 @@ mod tests {
         live.commit(&entry(
             4,
             Payload::Assistant {
+                thinking: vec![],
                 text: vec![ContentBlock::Text("done".into())],
                 calls: vec![],
             },

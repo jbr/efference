@@ -41,8 +41,18 @@ pub struct LogEntry {
 pub enum Payload {
     /// Prose (and, later, richer blocks) authored by the user / operator.
     User(Vec<ContentBlock>),
-    /// A model turn: prose plus zero or more tool calls.
+    /// A model turn: leading thinking blocks, prose, then zero or more tool calls.
+    ///
+    /// `thinking` holds the extended-thinking blocks that lead the turn on the wire
+    /// (`thinking` → `text` → `tool_use`); it is a separate typed field rather than folded
+    /// into `text` because thinking is always a *leading group* under efference's
+    /// single-tool-per-turn constraint (`disable_parallel_tool_use` → no intra-turn
+    /// `think→act→think` interleaving), so field order encodes wire order and `calls` stays a
+    /// first-class handle (backlog/thinking-blocks.md). `#[serde(default)]` keeps pre-thinking
+    /// log entries deserializable.
     Assistant {
+        #[serde(default)]
+        thinking: Vec<ContentBlock>,
         text: Vec<ContentBlock>,
         calls: Vec<ToolCall>,
     },
@@ -100,10 +110,16 @@ pub enum Payload {
     ConfigEdit(ConfigEdit),
 }
 
-/// Phase 0 content is text-only; richer blocks (images, …) come later.
+/// A content block authored by the model or user. `Thinking` / `RedactedThinking` carry the
+/// extended-thinking payload (docs/transport.md, backlog/thinking-blocks.md): `signature` is
+/// the opaque per-block token the API mints and requires echoed **verbatim** on replay (it
+/// rejects a modified block); `redacted_thinking` carries opaque `data` instead of text.
+/// Richer blocks (images, …) come later.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentBlock {
     Text(String),
+    Thinking { text: String, signature: String },
+    RedactedThinking { data: String },
 }
 
 /// A tool invocation emitted by the model. `input` is a [`serde_json::Value`],

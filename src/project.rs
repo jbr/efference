@@ -53,6 +53,24 @@ pub enum ApiBlock {
         #[serde(skip_serializing_if = "Option::is_none")]
         cache_control: Option<CacheControl>,
     },
+    /// An extended-thinking block replayed verbatim (docs/transport.md,
+    /// backlog/thinking-blocks.md). `signature` is the opaque token the API minted and
+    /// requires echoed unchanged; both fields are stored strings projected verbatim, so the
+    /// block stays byte-deterministic. Thinking blocks lead the assistant turn, before text
+    /// and `tool_use`.
+    Thinking {
+        thinking: String,
+        signature: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+    },
+    /// A safety-encrypted thinking block — opaque `data`, no text. Replayed verbatim like
+    /// [`ApiBlock::Thinking`].
+    RedactedThinking {
+        data: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+    },
     ToolUse {
         id: String,
         name: String,
@@ -77,6 +95,8 @@ impl ApiBlock {
     fn set_cache_control(&mut self, cc: Option<CacheControl>) {
         match self {
             ApiBlock::Text { cache_control, .. }
+            | ApiBlock::Thinking { cache_control, .. }
+            | ApiBlock::RedactedThinking { cache_control, .. }
             | ApiBlock::ToolUse { cache_control, .. }
             | ApiBlock::ToolResult { cache_control, .. } => *cache_control = cc,
         }
@@ -208,9 +228,16 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
                     content: blocks.iter().map(block_to_api).collect(),
                 });
             }
-            Payload::Assistant { text, calls } => {
+            Payload::Assistant {
+                thinking,
+                text,
+                calls,
+            } => {
                 flush_tool_results(&mut pending_tool_results, &mut messages);
-                let mut content: Vec<ApiBlock> = text.iter().map(block_to_api).collect();
+                // Wire order: thinking → text → tool_use (docs/transport.md). Thinking blocks
+                // lead so the replayed signatures sit exactly where the API expects them.
+                let mut content: Vec<ApiBlock> =
+                    thinking.iter().chain(text.iter()).map(block_to_api).collect();
                 for call in calls {
                     content.push(ApiBlock::ToolUse {
                         id: call.id.0.clone(),
@@ -306,6 +333,15 @@ fn block_to_api(block: &ContentBlock) -> ApiBlock {
     match block {
         ContentBlock::Text(text) => ApiBlock::Text {
             text: text.clone(),
+            cache_control: None,
+        },
+        ContentBlock::Thinking { text, signature } => ApiBlock::Thinking {
+            thinking: text.clone(),
+            signature: signature.clone(),
+            cache_control: None,
+        },
+        ContentBlock::RedactedThinking { data } => ApiBlock::RedactedThinking {
+            data: data.clone(),
             cache_control: None,
         },
     }
@@ -455,6 +491,7 @@ mod tests {
                 1,
                 1,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![ContentBlock::Text("let me check".into())],
                     calls: vec![ToolCall {
                         id: CallId("toolu_1".into()),
@@ -505,6 +542,42 @@ mod tests {
         assert_eq!(wire, expected);
     }
 
+    /// Pins the exact wire encoding of a thinking-bearing assistant turn
+    /// (backlog/thinking-blocks.md): thinking leads (before text, before `tool_use`), the
+    /// `signature` rides verbatim, and `redacted_thinking` renders its opaque `data`. This is
+    /// the byte pin the thinking slice moves — reorder/rename a thinking field and it fails
+    /// here first, before it can silently break the cache.
+    #[test]
+    fn thinking_turn_matches_expected_wire_bytes() {
+        let log = vec![
+            entry(0, 1, Payload::User(vec![ContentBlock::Text("go".into())])),
+            entry(
+                1,
+                1,
+                Payload::Assistant {
+                    thinking: vec![
+                        ContentBlock::Thinking {
+                            text: "let me weigh it".into(),
+                            signature: "SiG==".into(),
+                        },
+                        ContentBlock::RedactedThinking {
+                            data: "ENC==".into(),
+                        },
+                    ],
+                    text: vec![ContentBlock::Text("running it".into())],
+                    calls: vec![ToolCall {
+                        id: CallId("toolu_1".into()),
+                        name: "bash".into(),
+                        input: json!({ "command": "ls" }),
+                    }],
+                },
+            ),
+        ];
+        let wire = serde_json::to_string(&project(&log)).unwrap();
+        let expected = r#"[{"role":"user","content":[{"type":"text","text":"go"}]},{"role":"assistant","content":[{"type":"thinking","thinking":"let me weigh it","signature":"SiG=="},{"type":"redacted_thinking","data":"ENC=="},{"type":"text","text":"running it"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls"}}]}]"#;
+        assert_eq!(wire, expected);
+    }
+
     /// A `ConfigEdit` is audit-only **in every lifecycle state**: appending a `Proposed`,
     /// `Committed`, or `Cancelled` entry anywhere in the log must not change a single projected
     /// byte (its effect reaches the model through the classifier, not the wire). If this ever
@@ -552,6 +625,7 @@ mod tests {
                 0,
                 0,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![],
                     calls: vec![ToolCall {
                         id: CallId("x".into()),
@@ -588,6 +662,7 @@ mod tests {
                 0,
                 0,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![],
                     calls: vec![
                         ToolCall {
@@ -651,6 +726,7 @@ mod tests {
                 0,
                 0,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![],
                     calls: vec![ToolCall {
                         id: CallId("x".into()),
@@ -711,6 +787,7 @@ mod tests {
                 1,
                 1,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![],
                     calls: vec![ToolCall {
                         id: CallId("t1".into()),
@@ -740,6 +817,7 @@ mod tests {
                 4,
                 3,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![],
                     calls: vec![ToolCall {
                         id: CallId("c1".into()),
@@ -818,6 +896,7 @@ mod tests {
                 1,
                 1,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![ContentBlock::Text("done A".into())],
                     calls: vec![],
                 },
@@ -841,6 +920,7 @@ mod tests {
                 4,
                 3,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![ContentBlock::Text("working on B".into())],
                     calls: vec![],
                 },
@@ -864,6 +944,7 @@ mod tests {
                 7,
                 5,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![ContentBlock::Text("working on C".into())],
                     calls: vec![],
                 },
@@ -933,6 +1014,7 @@ mod tests {
                 0,
                 0,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![],
                     calls: vec![ToolCall {
                         id: CallId("a".into()),
@@ -1032,6 +1114,7 @@ mod tests {
                 0,
                 0,
                 Payload::Assistant {
+                    thinking: vec![],
                     text: vec![],
                     calls: vec![ToolCall {
                         id: CallId("t".into()),

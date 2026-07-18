@@ -24,6 +24,7 @@ fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
     entry(
         seq,
         Payload::Assistant {
+            thinking: vec![],
             text: vec![ContentBlock::Text(text.into())],
             calls,
         },

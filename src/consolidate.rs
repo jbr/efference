@@ -106,6 +106,7 @@ mod tests {
         at(
             seq,
             Payload::Assistant {
+                thinking: vec![],
                 text: vec![],
                 calls: vec![],
             },

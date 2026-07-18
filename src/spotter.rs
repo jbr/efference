@@ -346,6 +346,7 @@ mod tests {
     fn spot_completion(name: &str, input: Value) -> Completion {
         Completion {
             assistant: Payload::Assistant {
+                thinking: vec![],
                 text: vec![],
                 calls: vec![ToolCall {
                     id: CallId("s".into()),

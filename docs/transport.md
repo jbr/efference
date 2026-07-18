@@ -57,17 +57,29 @@ all four fields (`input_tokens`, `output_tokens`, `cache_creation_input_tokens`,
 
 ---
 
-## Thinking: carved out, not built
+## Thinking: assembled and replayed verbatim
 
-Streamed `thinking` and `redacted_thinking` blocks, and their delta types
-(`thinking_delta`, `signature_delta`), are recognized and rejected with a
-precise `THINKING_UNSUPPORTED` error rather than falling into the
-unknown-type arm. This is a deliberate landing spot: when thinking support is
-built it will need a `ContentBlock` variant, an adjustment to the byte-stability
-pin (see [the substrate](substrate.md)), and a resolution for the fork's forced
-`tool_choice`. Until that slice lands, running against a thinking-enabled model
-fails loudly rather than silently misbehaving. Dev runs use Haiku, which emits
-none.
+Extended thinking is supported end-to-end. The assembler folds streamed
+`thinking` / `redacted_thinking` blocks (and their `thinking_delta` /
+`signature_delta` deltas) into leading `ContentBlock::Thinking { text,
+signature }` / `RedactedThinking { data }` on the assistant turn; `project`
+renders them as the first wire blocks (`thinking` → `text` → `tool_use`),
+signatures preserved verbatim because the API rejects a modified block on
+replay. Same-model replay only ever happens (the model is locked per session),
+so a signature always returns to the model that minted it.
+
+The `thinking` **request** field rides on `tool_choice`, which makes the one
+illegal pairing unrepresentable: forced `tool_choice` is incompatible with
+thinking (400), so a forced choice → `disabled`, `auto` → `adaptive`
+(`display: "summarized"`). The main agent turn is `auto` → thinks; the fork
+forces its distiller → thinking off; the keepalive is `disabled` independently
+(`max_tokens: 0` rejects thinking-on). Toggling thinking keeps the tools+system
+cache tier valid (see [the substrate](substrate.md)), and it's set once per
+call-type and never flipped turn-to-turn, so it stays out of the cached
+prefix's way. The wire encoding is pinned by
+`project::tests::thinking_turn_matches_expected_wire_bytes`. Thinking blocks are
+never elided today — that's a deferred generalization of the redaction model
+(the log holds them all verbatim).
 
 ---
 
