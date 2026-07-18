@@ -405,49 +405,69 @@ async fn wire(
         return Ok(());
     }
 
-    // The envelope's system + tools aren't recorded in the log — rebuild them the
-    // same way `serve` does (current cwd seeds both the env block and the MCP
-    // servers' session roots; the role config folds its brief into the preamble).
-    let loaded = match efference::config::load(config.as_deref()) {
-        Ok(l) => l,
-        Err(e) => {
-            e.eprint();
-            return Err("could not load role config".into());
-        }
-    };
-    let role_section = loaded.role.preamble_section();
-    // The dev view rebuilds the envelope from current code/cwd, not the recorded run, so it passes
-    // the *resolved* config path (or none) — close enough for inspection; the note on stderr warns.
-    let config_path = match &loaded.source {
-        efference::config::ConfigSource::Path(p) => Some(p.as_path()),
-        efference::config::ConfigSource::Default => None,
-    };
+    // The `system` a session sent is recorded in the log as the boot preamble snapshot
+    // (backlog/preamble-context.md) — prefer it (the last one wins on a multi-boot log) so
+    // the view shows exactly what the model saw, not a re-resolve of files that may have
+    // drifted on disk since. Only logs that predate the snapshot fall back to a rebuild.
+    let recorded_system = entries.iter().rev().find_map(|e| match &e.payload {
+        efference::log::Payload::Preamble { system } => Some(system.clone()),
+        _ => None,
+    });
     let cwd = std::env::current_dir()?;
-    // Best-effort for the dev view: if the [context] files don't resolve from the current cwd
-    // (e.g. inspecting a session recorded elsewhere), note it and omit the block rather than fail.
-    let context_block = match efference::context::resolve(&loaded.role.context, &cwd) {
-        Ok(resolved) => resolved.render(),
-        Err(e) => {
-            eprintln!("note: [context] not resolved ({e}); omitting from the rebuilt envelope");
-            None
-        }
+    let system = if let Some(system) = recorded_system {
+        eprintln!(
+            "note: {} log entries → {} wire messages. `system` is the recorded boot \
+             preamble; `tools[]` is rebuilt from the current code and cwd.",
+            entries.len(),
+            messages.len()
+        );
+        system
+    } else {
+        // No snapshot (a pre-snapshot log) — rebuild the envelope the same way `serve` does
+        // (current cwd seeds both the env block and the MCP servers' session roots; the role
+        // config folds its brief into the preamble).
+        let loaded = match efference::config::load(config.as_deref()) {
+            Ok(l) => l,
+            Err(e) => {
+                e.eprint();
+                return Err("could not load role config".into());
+            }
+        };
+        let role_section = loaded.role.preamble_section();
+        // The dev view rebuilds the envelope from current code/cwd, not the recorded run, so it
+        // passes the *resolved* config path (or none) — close enough for inspection; the note on
+        // stderr warns.
+        let config_path = match &loaded.source {
+            efference::config::ConfigSource::Path(p) => Some(p.as_path()),
+            efference::config::ConfigSource::Default => None,
+        };
+        // Best-effort for the dev view: if the [context] files don't resolve from the current cwd
+        // (e.g. inspecting a session recorded elsewhere), note it and omit the block rather than fail.
+        let context_block = match efference::context::resolve(&loaded.role.context, &cwd) {
+            Ok(resolved) => resolved.render(),
+            Err(e) => {
+                eprintln!("note: [context] not resolved ({e}); omitting from the rebuilt envelope");
+                None
+            }
+        };
+        eprintln!(
+            "note: {} log entries → {} wire messages. This log predates the boot-preamble \
+             snapshot: `system`/`tools[]` are rebuilt from the current code and cwd, not the \
+             recorded session.",
+            entries.len(),
+            messages.len()
+        );
+        efference::env::system_prompt(
+            context_block.as_deref(),
+            role_section.as_deref(),
+            config_path,
+        )
     };
-    let system = efference::env::system_prompt(
-        context_block.as_deref(),
-        role_section.as_deref(),
-        config_path,
-    );
     // The full tools[] a real turn sends — world tools + the harness tools
     // (`consolidate`, the docs/supervisor.md and docs/inbox.md tools) — so the dev view matches.
     let toolbox = Toolbox::bash_and_mcps(cwd)?;
     let tools = efference::agent::tool_definitions(&toolbox);
 
-    eprintln!(
-        "note: {} log entries → {} wire messages. `system`/`tools[]` are rebuilt \
-         from the current code and cwd, not the recorded session.",
-        entries.len(),
-        messages.len()
-    );
     let choice = efference::api::ToolChoice::auto();
     let rendered = match format {
         WireFormat::Json => {
@@ -861,7 +881,7 @@ async fn serve(
     };
 
     let log_path = session_dir.join(LOG_NAME);
-    let log = Log::create(&log_path)?;
+    let mut log = Log::create(&log_path)?;
     eprintln!("session dir: {}", session_dir.display());
     eprintln!("logging to {}", log_path.display());
     let socket = session_dir.join(SOCKET_NAME);
@@ -892,6 +912,16 @@ async fn serve(
         role_section.as_deref(),
         Some(session_config.as_path()),
     );
+    // Snapshot the rendered boot preamble into the log (backlog/preamble-context.md): the
+    // [context] block folds in file contents that drift on disk, so the preamble is no longer
+    // reconstructable from config + current files — this one entry keeps the log the complete
+    // record of the wire. `efference wire` reads it back instead of rebuilding.
+    log.append(
+        0,
+        efference::log::Payload::Preamble {
+            system: system.clone(),
+        },
+    )?;
 
     let client = Client::new(api_key.clone(), model, system);
 

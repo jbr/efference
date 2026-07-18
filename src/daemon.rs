@@ -1306,6 +1306,7 @@ fn log_event(entry: &LogEntry) -> LogEvent {
         Payload::Ambient(_) => "ambient",
         Payload::Spot(_) => "spot",
         Payload::ConfigEdit(_) => "config_edit",
+        Payload::Preamble { .. } => "preamble",
     };
     LogEvent {
         id: entry.seq.to_string(),

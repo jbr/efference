@@ -269,6 +269,10 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // the transcript. So it projects to nothing, and appending one cannot perturb
             // the cached prefix (docs/substrate.md).
             Payload::ConfigEdit(_) => {}
+            // The boot preamble snapshot (backlog/preamble-context.md) is replay/audit data:
+            // the system prompt rides the request's `system` field, never the `messages`
+            // array, so the snapshot projects to nothing.
+            Payload::Preamble { .. } => {}
             // A fork verdict emits a block per **pinned** notification at its own
             // position (docs/inbox.md) — body looked up from the `Ambient` arrival. This
             // tail-ward placement keeps the wire append-only: a notification pinned at
@@ -612,6 +616,27 @@ mod tests {
                 "a {state:?} config edit must not perturb the projected wire"
             );
         }
+    }
+
+    /// The boot preamble snapshot is replay/audit only: appending one anywhere in the log
+    /// must not change a single projected byte — the system prompt is carried by the
+    /// request's `system` field, never the `messages` array (backlog/preamble-context.md).
+    #[test]
+    fn preamble_snapshot_projects_to_nothing() {
+        let without = serde_json::to_string(&project(&sample_log())).unwrap();
+        let mut with = sample_log();
+        with.push(entry(
+            3,
+            1,
+            Payload::Preamble {
+                system: "You are an agent.\n\n<CLAUDE>\nthe whole repo map\n</CLAUDE>".into(),
+            },
+        ));
+        let with = serde_json::to_string(&project(&with)).unwrap();
+        assert_eq!(
+            without, with,
+            "a preamble snapshot must not perturb the projected wire"
+        );
     }
 
     /// `is_error: false` must be omitted (lean wire); a true error must appear.

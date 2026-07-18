@@ -108,6 +108,14 @@ pub enum Payload {
     /// [`effective_config`]: crate::policy::effective_config
     /// [`Ambient`]: Payload::Ambient
     ConfigEdit(ConfigEdit),
+    /// The boot preamble snapshot (backlog/preamble-context.md): the full rendered `system`
+    /// string, exactly as this session's requests carry it, appended **once at boot**. The
+    /// preamble folds in `[context]` file contents that drift on disk between boots, so it is
+    /// no longer reconstructable from `config + current files` — this entry makes the log the
+    /// complete record of the wire (docs/substrate.md). Audit/replay only: it projects to
+    /// nothing (the system prompt rides the request's `system` field, never the `messages`
+    /// array); the `wire` dev view reads it back instead of re-resolving files from disk.
+    Preamble { system: String },
 }
 
 /// A content block authored by the model or user. `Thinking` / `RedactedThinking` carry the

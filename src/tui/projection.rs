@@ -174,6 +174,9 @@ pub(crate) fn project(
             // A grant (backlog/permissions/config-edit.md) — audit-only on the transcript
             // for now; surfacing scope changes to the human lands with the construction sites.
             Payload::ConfigEdit(_) => {}
+            // The boot preamble snapshot (backlog/preamble-context.md) — session boot record,
+            // not conversation; the human inspects it via `efference wire`, not the transcript.
+            Payload::Preamble { .. } => {}
         }
     }
 
