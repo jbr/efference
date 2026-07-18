@@ -1516,7 +1516,24 @@ fn reload_and_emit(shared: &Shared, path: &std::path::Path) {
     let file_config = match crate::config::load(Some(path)) {
         Ok(loaded) => loaded.role,
         Err(e) => {
+            // Fail-closed, but **loud**: a config edit that doesn't parse must never be a silent
+            // no-op (backlog/permissions/config-edit-validation.md). The effective policy stays at
+            // last-good; we surface the parse error to the session as a notification so the model
+            // (and the human, via /state) learns its edit didn't take and can fix the file — instead
+            // of thrashing against a wall it believes it already cleared. A stable slot supersedes,
+            // so repeated bad saves collapse to one live notice rather than piling up.
             eprintln!("[config-watch: reload failed, keeping current policy: {e}]");
+            shared.notify(
+                "config".to_string(),
+                format!(
+                    "Your config edit did not take effect — the file no longer parses, so the \
+                     effective policy is unchanged (last good config still in force). Fix it so it \
+                     parses (check that `scope` is a string, not a `[scope]` table, and that keys \
+                     match the schema in the file's header comment). Error: {e}"
+                ),
+                Some("config-parse-error".to_string()),
+                None,
+            );
             return;
         }
     };
@@ -2042,6 +2059,46 @@ mod tests {
             shared.log.lock().unwrap().entries().len(),
             before,
             "no-op echo appends nothing"
+        );
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A config edit that no longer parses keeps the last-good policy **and** surfaces the parse
+    /// error to the session — the fix for the silent-no-op (backlog/permissions/config-edit-validation.md).
+    #[test]
+    fn reload_failure_keeps_policy_and_notifies() {
+        use crate::policy::{Verdict, classify};
+        let path = std::env::temp_dir()
+            .join(format!("efference-watch-bad-{}.toml", std::process::id()));
+
+        // A good edit first: grants `cargo`, moves policy off the default gate.
+        std::fs::write(&path, "scope = \"stay in src/\"\n[commands]\ncargo = true\n").unwrap();
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        reload_and_emit(&shared, &path);
+        assert_eq!(
+            classify(&shared.effective_config(), &bash_call("cargo build")),
+            Verdict::Clear
+        );
+
+        // Now a malformed save — the exact footgun from session 1784334112726: `[scope]` as a
+        // table where the schema wants a string, which fails the whole file.
+        std::fs::write(&path, "[scope]\ndefault = \"read\"\n[commands]\ncargo = true\n").unwrap();
+        reload_and_emit(&shared, &path);
+
+        // Effective policy is unchanged (last good still in force) — fail-closed…
+        assert_eq!(
+            classify(&shared.effective_config(), &bash_call("cargo build")),
+            Verdict::Clear,
+            "malformed edit keeps last-good policy"
+        );
+        // …but NOT silent: a notice on the parse-error slot tells the session its edit didn't take.
+        assert!(
+            shared
+                .pending_notifications()
+                .iter()
+                .any(|n| n.slot.as_deref() == Some("config-parse-error")),
+            "a parse failure raises a session-visible notice, distinct from the scope-delta notice"
         );
 
         std::fs::remove_file(&path).unwrap();

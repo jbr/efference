@@ -35,12 +35,14 @@ const CONFIG_NAME: &str = "config.toml";
 /// what it can edit (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
 const CONFIG_SCAFFOLD: &str = "\
 # Your session's permissions config. Edit it to request changes — edits are reviewed before they
-# take effect. Schema:
-#   scope = \"...\"                      # what this session is for (shown to you in your preamble)
-#   watch-for = [\"...\"]                # hazards the permission spotter should watch for
+# take effect, and a malformed file is rejected wholesale (fail-closed): if an edit doesn't seem to
+# \"take\", check that the file still parses. Unknown keys are rejected. Schema (all keys optional):
+#   scope = \"...\"                       # STRING, top-level — what this session is for (NOT a [scope] table)
+#   watch-for = [\"...\"]                 # hazards the permission spotter should watch for
+#   trust-threshold = 0.5               # where the watch-window/gate cutoffs sit (optional float)
 #   tools = [\"read\", \"list\", \"search\"]  # structured tools you may use
-#   [commands]                         # bash prefixes that auto-clear, e.g. cargo = true
-#   [paths]                            # filesystem grants, e.g. \".\" = true or \"../x\" = { read = true }
+#   [commands]                          # bash prefixes that auto-clear, e.g. cargo = true or \"git diff\" = true
+#   [paths]                             # filesystem grants, e.g. \".\" = true or \"/refs\" = { read = true }
 ";
 
 #[derive(Parser)]

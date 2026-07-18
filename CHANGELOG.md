@@ -51,3 +51,4 @@ behind a change, see [`journal/`](journal/).
 - Guard against runaway tool results overflowing the request (400 on oversized content).
 - Streamed control characters, a turn-loop livelock, and a resume edge case.
 - Every request now sends `thinking: {"type":"disabled"}` (real turns + keepalive) — a stopgap so adaptive-thinking-default models (Sonnet 5) complete turns instead of tripping the assembler's thinking-block rejection.
+- A config edit that no longer parses fails loud, not silent: reload keeps last-good policy (fail-closed) and raises a `config-parse-error` notification naming the error, so the session learns its edit didn't take instead of thrashing. Schema-teaching headers on `efference.toml` + the config scaffold lead with the `scope`-is-a-string anti-footgun.
