@@ -45,6 +45,17 @@ struct Request<'a> {
     /// keys serialize sorted, so it is.
     tools: &'a [Value],
     tool_choice: ToolChoice,
+    /// Extended thinking, always sent as `{"type":"disabled"}` (docs/transport.md). This is
+    /// a **stopgap**, not the thinking slice: current models default to *adaptive* thinking
+    /// when the field is omitted (Sonnet 5 does; Opus 4.8 still runs thinking-off, so the
+    /// locked default is safe either way), and the [`Assembler`] rejects thinking blocks
+    /// (see `THINKING_UNSUPPORTED`) — so without this an adaptive-by-default model can't
+    /// complete a single turn. Sending `disabled` keeps the fork's forced `tool_choice`
+    /// legal and is accepted with `max_tokens: 0` (only `enabled` is rejected there), so the
+    /// keepalive warms the same cache. Set once and never varied → never invalidates the
+    /// cache. (`disabled` 400s on Fable 5, which can't disable thinking — not a serve target
+    /// until the thinking slice lands.)
+    thinking: Thinking,
     messages: &'a [ApiMessage],
     /// Always `true` — we consume the response as SSE (docs/transport.md). Set once and
     /// never varied; a delivery flag, not part of the cached prefix (docs/substrate.md),
@@ -52,6 +63,17 @@ struct Request<'a> {
     /// (which guards `project()` output, not this request envelope).
     stream: bool,
 }
+
+/// The `thinking` field. Only ever `{"type":"disabled"}` — the stopgap described on
+/// [`Request::thinking`]. A struct (not a bare string) so the wire shape is exactly the
+/// object the API expects; the thinking slice replaces this with a real config.
+#[derive(Serialize, Clone, Copy)]
+struct Thinking {
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
+const THINKING_DISABLED: Thinking = Thinking { kind: "disabled" };
 
 /// The `tool_choice` field. Phase 1+ always sets `disable_parallel_tool_use` so
 /// the model emits **at most one** `tool_use` per turn (docs/README.md) — set once and
@@ -385,6 +407,7 @@ impl Client {
             system: &self.system,
             tools,
             tool_choice,
+            thinking: THINKING_DISABLED,
             messages,
             stream: true,
         };
@@ -470,6 +493,7 @@ impl Client {
             system: &self.system,
             tools,
             tool_choice,
+            thinking: THINKING_DISABLED,
             messages,
             stream: false,
         };
@@ -520,6 +544,7 @@ pub fn render_request_pretty(
         system,
         tools,
         tool_choice,
+        thinking: THINKING_DISABLED,
         messages,
         stream: true,
     };
@@ -550,6 +575,7 @@ pub fn render_request_yaml(
         "system",
         "tools",
         "tool_choice",
+        "thinking",
         "messages",
     ];
     let mut lines = Vec::new();
@@ -577,6 +603,7 @@ fn request_value(
         system,
         tools,
         tool_choice,
+        thinking: THINKING_DISABLED,
         messages,
         stream: true,
     };

@@ -50,3 +50,4 @@ behind a change, see [`journal/`](journal/).
 ### Fixed
 - Guard against runaway tool results overflowing the request (400 on oversized content).
 - Streamed control characters, a turn-loop livelock, and a resume edge case.
+- Every request now sends `thinking: {"type":"disabled"}` (real turns + keepalive) — a stopgap so adaptive-thinking-default models (Sonnet 5) complete turns instead of tripping the assembler's thinking-block rejection.
