@@ -11,6 +11,7 @@ pub mod bash;
 pub mod client;
 pub mod config;
 pub mod consolidate;
+pub mod context;
 pub mod daemon;
 pub mod distill;
 pub mod env;
