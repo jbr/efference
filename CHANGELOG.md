@@ -41,6 +41,7 @@ behind a change, see [`journal/`](journal/).
 - `/settle` long-poll (+ `turn --wait` / `approve --wait`): block until the daemon reaches a decision point — a gate, or idle — then return `/state`, so a client drives it synchronously instead of polling.
 - `GET /state` reports the full *effective* policy in force (scope, watch-for, commands, tools, paths), not the boot config — an orchestrator reads a subordinate's live perimeter from it.
 - Autonomous mode (`serve --autonomous`): with no synchronous human at the gate, a spotter `watch`/`gate` becomes a redirect that hands the call back to the model (pointing it at its config file to request access) instead of blocking; a config-file write still gates, held for the orchestrator-above. `autonomous` reported on `GET /state`.
+- `wire --messages`: a config-independent messages-only view — prints just `project(log)` (+ trailing breakpoint), skipping the `system` + `tools[]` envelope, so it reads a session whose `config.toml` doesn't parse.
 - Prefix promotion: the harness learns its allowlist by probing. A frequency-gated, shortest-first descent rides one yes/no on each spotter call — the stance gains `clear_always` (clear the move *and* vote the offered prefix blanket-safe), recorded on the `Spot` entry and folded into a probe ledger; `K` safe-votes file a `Proposed(Command)` for an orchestrator to confirm. Soundness is exact-match + recurrence + judge-consensus (no fuzzy matching, no command-granularity cap).
 
 ### Changed
