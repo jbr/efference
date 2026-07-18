@@ -1,18 +1,17 @@
-//! Session environment context for the system preamble (docs/substrate.md).
-//!
-//! A weak model that isn't told *where* it is guesses — a live Haiku run searched
-//! for Python/JS/TS files in a Rust repo before finding its footing. This module
-//! builds a short block of concrete facts (working directory, platform,
-//! project type) to append to the system prompt so the agent is oriented from
-//! turn one.
+//! The system preamble assembly (docs/substrate.md, docs/context.md).
 //!
 //! **Caching discipline (load-bearing).** The system prompt sits in the cached
-//! prefix (`tools → system → messages`), so anything injected here must be
+//! prefix (`tools → system → messages`), so everything assembled here must be
 //! **byte-stable for the whole session** or it invalidates the cache every turn.
-//! Therefore [`orientation`] is computed **once at startup** and frozen into the
-//! prompt, and it reports only session-stable facts. Volatile state (git status,
-//! file listings, `cargo` output) is deliberately excluded — that is the agent's
-//! to fetch via tools, where it lands past the cache breakpoint.
+//! [`system_prompt`] is built **once at startup** from parts that are themselves
+//! frozen at boot (the `[context]` block, the role section, the config note).
+//!
+//! Orientation — *where the session is* (cwd, platform) — is no longer a
+//! hardcoded block: it is an ordinary `[context]` exec entry in the config
+//! (the scaffold ships one; see docs/context.md), so what a session boots
+//! knowing is entirely the operator's declaration. The incident that motivated
+//! orientation (a live Haiku run searching for Python/JS/TS files in a Rust
+//! repo before finding its footing) is now answered by the config, not the code.
 
 use std::path::Path;
 
@@ -26,24 +25,24 @@ use std::path::Path;
 const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 
 /// The full system prompt sent in the request's `system` field (docs/substrate.md): the
-/// curation-model [`PREAMBLE`], the frozen session [`orientation`] block, the `[context]` preamble
-/// builder's block when configured (`context_block`, rendered by
-/// [`crate::context::Resolved::render`] — backlog/preamble-context.md), the config's preamble section
+/// curation-model [`PREAMBLE`], the `[context]` preamble builder's block when configured
+/// (`context_block`, rendered by [`crate::context::Resolved::render`] — docs/context.md; this is
+/// where orientation now lives, as a config exec entry), the config's preamble section
 /// when the session has a scope (`role_section`, rendered by
 /// [`crate::config::Config::preamble_section`]), and — when the session has a config file — a note
 /// naming its path so the session can read its perimeter and **edit the file to request changes**
 /// (backlog/permissions/session-dir-and-config-as-reviewed-file.md). Built once at session start and
-/// frozen into the cached prefix, so every part must be byte-stable. The `wire` dev view reconstructs
-/// it identically by calling this with the same inputs.
+/// frozen into the cached prefix, so every part must be byte-stable. The `wire` dev view shows the
+/// recorded boot snapshot instead of reconstructing (docs/substrate.md).
 pub fn system_prompt(
     context_block: Option<&str>,
     role_section: Option<&str>,
     config_path: Option<&Path>,
 ) -> String {
     // `include_str!` keeps the file's trailing newline; trim it so the join is clean.
-    let mut prompt = format!("{}\n\n{}", PREAMBLE.trim_end(), orientation());
-    // Knowledge (what the session knows) sits after orientation (where it is) and before the
-    // perimeter (what it may do) — three distinct axes (backlog/preamble-context.md).
+    let mut prompt = PREAMBLE.trim_end().to_string();
+    // Knowledge (what the session knows) sits before the perimeter (what it may do)
+    // (docs/context.md).
     if let Some(block) = context_block {
         prompt.push_str("\n\n");
         prompt.push_str(block);
@@ -72,101 +71,9 @@ fn config_note(path: &Path) -> String {
     )
 }
 
-/// Build the **orientation** block appended to the system preamble — the frozen session facts (cwd,
-/// platform, project type) that tell the model *where* it is. Call **once** at session start; never
-/// recompute (see the caching note above). Distinct from the `[context]` block — *what the session
-/// knows* (backlog/preamble-context.md) — which [`crate::context`] builds separately.
-pub fn orientation() -> String {
-    let cwd = std::env::current_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
-    let os = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
-    let project = detect_project(Path::new(&cwd));
-    format!(
-        "Environment (fixed for this session):\n\
-         - working directory: {cwd}\n\
-         - platform: {os} ({arch})\n\
-         - project type: {project}"
-    )
-}
-
-/// Marker files that identify a project's ecosystem, most-specific first. Pure
-/// over the filesystem so it stays deterministic for the session.
-const MARKERS: &[(&str, &str)] = &[
-    ("Cargo.toml", "Rust (Cargo)"),
-    ("package.json", "Node.js"),
-    ("pyproject.toml", "Python"),
-    ("setup.py", "Python"),
-    ("requirements.txt", "Python"),
-    ("go.mod", "Go"),
-    ("pom.xml", "Java (Maven)"),
-    ("build.gradle", "Java/Kotlin (Gradle)"),
-    ("Gemfile", "Ruby"),
-    ("composer.json", "PHP"),
-    ("mix.exs", "Elixir"),
-];
-
-/// Name the project ecosystem(s) by marker files in `dir`. Multiple matches join
-/// (a polyglot repo), deduplicated so two Python markers read as one. Unknown
-/// when nothing matches — honest, not a guess.
-fn detect_project(dir: &Path) -> String {
-    let mut names: Vec<&str> = Vec::new();
-    for (file, name) in MARKERS {
-        if dir.join(file).exists() && !names.contains(name) {
-            names.push(name);
-        }
-    }
-    if names.is_empty() {
-        "unknown".to_string()
-    } else {
-        names.join(", ")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn tmpdir(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("efference-env-{}-{tag}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    #[test]
-    fn detects_rust_by_cargo_toml() {
-        let dir = tmpdir("rust");
-        std::fs::write(dir.join("Cargo.toml"), "[package]").unwrap();
-        assert_eq!(detect_project(&dir), "Rust (Cargo)");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn dedups_two_python_markers_into_one_name() {
-        let dir = tmpdir("py");
-        std::fs::write(dir.join("pyproject.toml"), "").unwrap();
-        std::fs::write(dir.join("requirements.txt"), "").unwrap();
-        assert_eq!(detect_project(&dir), "Python");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn polyglot_joins_distinct_ecosystems() {
-        let dir = tmpdir("poly");
-        std::fs::write(dir.join("Cargo.toml"), "").unwrap();
-        std::fs::write(dir.join("package.json"), "{}").unwrap();
-        assert_eq!(detect_project(&dir), "Rust (Cargo), Node.js");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn unknown_when_no_markers() {
-        let dir = tmpdir("bare");
-        assert_eq!(detect_project(&dir), "unknown");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
 
     #[test]
     fn system_prompt_appends_role_section_when_present() {
@@ -179,8 +86,8 @@ mod tests {
         assert!(!without.contains("Your role for this session"));
     }
 
-    /// The `[context]` block splices in after orientation and **before** the role/scope — knowledge
-    /// before perimeter (backlog/preamble-context.md).
+    /// The `[context]` block splices in after the curation preamble and **before** the role/scope —
+    /// knowledge before perimeter (docs/context.md).
     #[test]
     fn system_prompt_splices_context_block_before_the_role() {
         let s = system_prompt(
@@ -204,13 +111,5 @@ mod tests {
         assert!(with.contains(".efference/foo/config.toml"));
         assert!(with.contains("reviewed before they take effect"));
         assert!(!plain.contains("config.toml"));
-    }
-
-    #[test]
-    fn detects_elixir_by_mix_exs() {
-        let dir = tmpdir("elixir");
-        std::fs::write(dir.join("mix.exs"), "defmodule MyApp.MixProject do").unwrap();
-        assert_eq!(detect_project(&dir), "Elixir");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

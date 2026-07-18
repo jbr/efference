@@ -30,9 +30,11 @@ const SOCKET_NAME: &str = "control.sock";
 const LOG_NAME: &str = "log.jsonl";
 const CONFIG_NAME: &str = "config.toml";
 
-/// Written into a fresh session's `config.toml` when there's no origin to snapshot — an empty config
-/// (parses to the default) with a header that teaches the schema, so a session that `cat`s it sees
-/// what it can edit (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+/// Written into a fresh session's `config.toml` when there's no origin to snapshot — a header that
+/// teaches the schema, plus the one default that isn't empty: an `Environment at boot` `[context]`
+/// exec entry, orientation expressed as config rather than hardcoded (docs/context.md). It's a real,
+/// visible line in the session's own file, so a session that `cat`s its config sees it and an
+/// operator can edit or delete it (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
 const CONFIG_SCAFFOLD: &str = "\
 # Your session's permissions config. Edit it to request changes — edits are reviewed before they
 # take effect, and a malformed file is rejected wholesale (fail-closed): if an edit doesn't seem to
@@ -43,6 +45,12 @@ const CONFIG_SCAFFOLD: &str = "\
 #   tools = [\"read\", \"list\", \"search\"]  # structured tools you may use
 #   [commands]                          # bash prefixes that auto-clear, e.g. cargo = true or \"git diff\" = true
 #   [paths]                             # filesystem grants, e.g. \".\" = true or \"/refs\" = { read = true }
+#   [context]                           # knowledge the session boots with (docs/context.md), e.g.
+#                                       #   \"CLAUDE.md\" = true or Label = { exec = \"...\" } (stdout at boot)
+
+# Orientation as config: this section's stdout is frozen into the session preamble at boot.
+[context]
+\"Environment at boot\" = { exec = 'echo \"working directory: $PWD\"; echo \"platform: $(uname -sm)\"; echo \"top-level entries:\"; ls' }
 ";
 
 #[derive(Parser)]
@@ -406,7 +414,7 @@ async fn wire(
     }
 
     // The `system` a session sent is recorded in the log as the boot preamble snapshot
-    // (backlog/preamble-context.md) — prefer it (the last one wins on a multi-boot log) so
+    // (docs/context.md) — prefer it (the last one wins on a multi-boot log) so
     // the view shows exactly what the model saw, not a re-resolve of files that may have
     // drifted on disk since. Only logs that predate the snapshot fall back to a rebuild.
     let recorded_system = entries.iter().rev().find_map(|e| match &e.payload {
@@ -887,17 +895,15 @@ async fn serve(
     let socket = session_dir.join(SOCKET_NAME);
     let _ = std::fs::remove_file(&socket); // ignore if absent.
 
-    // Append the session environment block once, here at startup, and freeze it
-    // into the system prompt. It must stay byte-stable for the whole session or it
-    // would invalidate the cached prefix every turn (docs/substrate.md) — so it carries
-    // only session-stable facts (cwd, platform, project type), never volatile state
-    // like git status. See `env::system_prompt`. The `wire` dev view reconstructs
-    // the same string. The role's brief (if any) folds in here, frozen for the session
-    // exactly like the env block (backlog/permissions/README.md — the
-    // config→preamble projection must be byte-stable).
+    // Build the system prompt once, here at startup, and freeze it into the cached
+    // prefix — it must stay byte-stable for the whole session or it would invalidate
+    // the cache every turn (docs/substrate.md). Everything it folds in is resolved
+    // once at boot: the [context] block (files read + exec sections run now, frozen —
+    // docs/context.md; orientation rides here as a config exec entry), the role's
+    // brief, and the config note.
     let cwd = std::env::current_dir()?;
     let role_section = loaded.role.preamble_section();
-    // The [context] preamble builder (backlog/preamble-context.md): resolve the operator's listed
+    // The [context] preamble builder (docs/context.md): resolve the operator's listed
     // files from cwd and fold the rendered block into the frozen prefix. Fail closed — configured
     // context that can't be read aborts startup rather than silently vanishing.
     let context_block = match efference::context::resolve(&loaded.role.context, &cwd) {
@@ -912,7 +918,7 @@ async fn serve(
         role_section.as_deref(),
         Some(session_config.as_path()),
     );
-    // Snapshot the rendered boot preamble into the log (backlog/preamble-context.md): the
+    // Snapshot the rendered boot preamble into the log (docs/context.md): the
     // [context] block folds in file contents that drift on disk, so the preamble is no longer
     // reconstructable from config + current files — this one entry keeps the log the complete
     // record of the wire. `efference wire` reads it back instead of rebuilding.
