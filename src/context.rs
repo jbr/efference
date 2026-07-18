@@ -13,7 +13,9 @@
 //! engine: multiline scalars and nested structures are out of scope (and unnecessary for those
 //! keys). Unknown keys are ignored so the frontmatter vocabulary can grow without a parser change.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use crate::config::{ContextEntry, ContextSource};
 
 /// The frontmatter keys we read. Everything else in the block is ignored (forward-compatible).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -227,6 +229,121 @@ fn render_item(item: &Item) -> String {
     }
 }
 
+/// A failure resolving the `[context]` entries at boot — the preamble builder fails **closed** on
+/// these (backlog/preamble-context.md): configured context that can't be materialized is a config
+/// error, never a silently-dropped section.
+#[derive(Debug)]
+pub enum ResolveError {
+    /// A listed path (or a directory's child) could not be statted or read.
+    Io(PathBuf, std::io::Error),
+    /// A file's frontmatter opened (`---`) but never closed.
+    Frontmatter(PathBuf),
+}
+
+impl std::fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResolveError::Io(p, e) => write!(f, "reading context path {}: {e}", p.display()),
+            ResolveError::Frontmatter(p) => write!(
+                f,
+                "context file {} has an unterminated `---` frontmatter block",
+                p.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ResolveError {}
+
+/// Resolve the config's `[context]` entries against `base` (the session cwd) into a renderable
+/// [`Resolved`], reading each file and deciding its mode from frontmatter. **Fails closed**: a listed
+/// path that can't be read/statted, or a file whose frontmatter opens but never closes, fails the
+/// whole load — the preamble never silently drops configured context.
+///
+/// Tag-name precedence: the operator's label (when a labeled entry resolves to a *single* file) →
+/// the file's frontmatter `name` (skills-compat) → the basename. A labeled entry with *many* files
+/// becomes a `<Heading>` group whose members are named individually; a bare entry never gets a
+/// wrapper. Directory paths expand to their `.md` children, sorted name-ascending (the default; the
+/// SQL-ish `sort` override and globs are later increments). `exec` entries are skipped until step 6.
+pub fn resolve(entries: &[ContextEntry], base: &Path) -> Result<Resolved, ResolveError> {
+    let mut sections = Vec::new();
+    for entry in entries {
+        let paths = match &entry.source {
+            ContextSource::Files(paths) => paths,
+            ContextSource::Exec(_) => continue, // wired in step 6
+        };
+        let files = resolve_files(paths, base)?;
+        // The operator's label is a file's own tag only when the entry resolves to exactly one file;
+        // otherwise the label is a group wrapper and members are named individually.
+        let labeled_single = entry.heading.is_some() && files.len() == 1;
+        let mut items = Vec::new();
+        for (display, full) in &files {
+            let text =
+                std::fs::read_to_string(full).map_err(|e| ResolveError::Io(full.clone(), e))?;
+            let split =
+                split_frontmatter(&text).map_err(|_| ResolveError::Frontmatter(full.clone()))?;
+            let basename = fallback_name(Path::new(display));
+            let name = if labeled_single {
+                entry.heading.clone().expect("labeled_single implies a heading")
+            } else {
+                split
+                    .frontmatter
+                    .as_ref()
+                    .and_then(|fm| fm.name.clone())
+                    .unwrap_or_else(|| basename.clone())
+            };
+            items.push(match split.mode(&basename) {
+                Mode::Inline => Item::Inline {
+                    name,
+                    path: display.clone(),
+                    body: split.body.to_string(),
+                },
+                Mode::Listed { description, .. } => Item::Listed {
+                    name,
+                    description,
+                    path: display.clone(),
+                },
+            });
+        }
+        if items.is_empty() {
+            continue;
+        }
+        let heading = (entry.heading.is_some() && !labeled_single)
+            .then(|| entry.heading.clone().unwrap());
+        sections.push(Section { heading, items });
+    }
+    Ok(Resolved { sections })
+}
+
+/// Resolve one entry's path list into `(display, full)` pairs: `display` is the model-facing path
+/// (relative, as the operator wrote it) used in a stub's `Read {path}`; `full` is `base`-joined for
+/// reading. A directory expands to its `.md` children, name-ascending; an explicit list keeps its
+/// order. (Globs are a later increment; a `*` path just won't stat and fails closed.)
+fn resolve_files(paths: &[String], base: &Path) -> Result<Vec<(String, PathBuf)>, ResolveError> {
+    let mut out = Vec::new();
+    for p in paths {
+        let full = base.join(p);
+        let meta = std::fs::metadata(&full).map_err(|e| ResolveError::Io(full.clone(), e))?;
+        if meta.is_dir() {
+            let mut children: Vec<PathBuf> = std::fs::read_dir(&full)
+                .map_err(|e| ResolveError::Io(full.clone(), e))?
+                .filter_map(Result::ok)
+                .map(|d| d.path())
+                .filter(|c| c.extension().and_then(|e| e.to_str()) == Some("md"))
+                .collect();
+            children.sort();
+            for child in children {
+                let file = child.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                let display = Path::new(p).join(&file).to_string_lossy().into_owned();
+                out.push((display, child));
+            }
+        } else {
+            out.push((p.clone(), full));
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,5 +517,156 @@ mod tests {
             "<Project Tips>\n<style>Two-space indent. Read tips/style.md for the full \
              file.</style>\n</Project Tips>"
         ));
+    }
+
+    // --- resolve: config entries → files on disk → Resolved (backlog/preamble-context.md) ---
+
+    use crate::config::ContextGrants;
+
+    fn tmpdir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("efference-ctx-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn bare(path: &str) -> ContextEntry {
+        ContextEntry {
+            heading: None,
+            source: ContextSource::Files(vec![path.into()]),
+            grants: ContextGrants::default(),
+            sort: None,
+        }
+    }
+
+    fn labeled(heading: &str, paths: &[&str]) -> ContextEntry {
+        ContextEntry {
+            heading: Some(heading.into()),
+            source: ContextSource::Files(paths.iter().map(|s| s.to_string()).collect()),
+            grants: ContextGrants::default(),
+            sort: None,
+        }
+    }
+
+    #[test]
+    fn resolve_bare_inline_file_uses_the_basename() {
+        let dir = tmpdir("bare-inline");
+        std::fs::write(dir.join("CLAUDE.md"), "# efference\nbody\n").unwrap();
+        let resolved = resolve(&[bare("CLAUDE.md")], &dir).unwrap();
+        assert_eq!(
+            resolved.sections,
+            vec![Section {
+                heading: None,
+                items: vec![Item::Inline {
+                    name: "CLAUDE".into(),
+                    path: "CLAUDE.md".into(),
+                    body: "# efference\nbody\n".into(),
+                }],
+            }]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Skills-compat: a file with `name` + `description` becomes a *listed* stub tagged by its
+    /// frontmatter name (preferred over the basename).
+    #[test]
+    fn resolve_prefers_frontmatter_name_and_lists_a_described_file() {
+        let dir = tmpdir("fm-name");
+        std::fs::write(
+            dir.join("v.md"),
+            "---\nname: verify\ndescription: Drive it.\n---\nbody\n",
+        )
+        .unwrap();
+        let resolved = resolve(&[bare("v.md")], &dir).unwrap();
+        assert_eq!(
+            resolved.sections,
+            vec![Section {
+                heading: None,
+                items: vec![Item::Listed {
+                    name: "verify".into(),
+                    description: "Drive it.".into(),
+                    path: "v.md".into(),
+                }],
+            }]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A labeled entry resolving to a single file collapses: the label is the file's tag, no wrapper.
+    #[test]
+    fn resolve_labeled_single_file_collapses_label_to_the_tag() {
+        let dir = tmpdir("labeled-single");
+        std::fs::write(dir.join("arch.md"), "the architecture\n").unwrap();
+        let resolved = resolve(&[labeled("Architecture", &["arch.md"])], &dir).unwrap();
+        assert_eq!(
+            resolved.sections,
+            vec![Section {
+                heading: None,
+                items: vec![Item::Inline {
+                    name: "Architecture".into(),
+                    path: "arch.md".into(),
+                    body: "the architecture\n".into(),
+                }],
+            }]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A labeled entry resolving to many files (a directory) wraps its `.md` children, name-sorted,
+    /// each tagged individually.
+    #[test]
+    fn resolve_labeled_dir_wraps_sorted_members() {
+        let dir = tmpdir("labeled-dir");
+        let skills = dir.join("skills");
+        std::fs::create_dir_all(&skills).unwrap();
+        std::fs::write(
+            skills.join("release.md"),
+            "---\nname: release\ndescription: Cut a release.\n---\nb\n",
+        )
+        .unwrap();
+        std::fs::write(
+            skills.join("verify.md"),
+            "---\nname: verify\ndescription: Drive the flow.\n---\nb\n",
+        )
+        .unwrap();
+        // A non-markdown file in the dir is ignored.
+        std::fs::write(skills.join("notes.txt"), "ignore me").unwrap();
+        let resolved = resolve(&[labeled("Skills", &["skills"])], &dir).unwrap();
+        assert_eq!(
+            resolved.sections,
+            vec![Section {
+                heading: Some("Skills".into()),
+                items: vec![
+                    Item::Listed {
+                        name: "release".into(),
+                        description: "Cut a release.".into(),
+                        path: "skills/release.md".into(),
+                    },
+                    Item::Listed {
+                        name: "verify".into(),
+                        description: "Drive the flow.".into(),
+                        path: "skills/verify.md".into(),
+                    },
+                ],
+            }]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn resolve_missing_path_fails_closed() {
+        let dir = tmpdir("missing");
+        let err = resolve(&[bare("nope.md")], &dir).unwrap_err();
+        assert!(matches!(err, ResolveError::Io(..)));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn resolve_unterminated_frontmatter_fails_closed() {
+        let dir = tmpdir("unterm");
+        std::fs::write(dir.join("bad.md"), "---\nname: x\nno close\n").unwrap();
+        let err = resolve(&[bare("bad.md")], &dir).unwrap_err();
+        assert!(matches!(err, ResolveError::Frontmatter(_)));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
