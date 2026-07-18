@@ -422,8 +422,21 @@ async fn wire(
         efference::config::ConfigSource::Path(p) => Some(p.as_path()),
         efference::config::ConfigSource::Default => None,
     };
-    let system = efference::env::system_prompt(role_section.as_deref(), config_path);
     let cwd = std::env::current_dir()?;
+    // Best-effort for the dev view: if the [context] files don't resolve from the current cwd
+    // (e.g. inspecting a session recorded elsewhere), note it and omit the block rather than fail.
+    let context_block = match efference::context::resolve(&loaded.role.context, &cwd) {
+        Ok(resolved) => resolved.render(),
+        Err(e) => {
+            eprintln!("note: [context] not resolved ({e}); omitting from the rebuilt envelope");
+            None
+        }
+    };
+    let system = efference::env::system_prompt(
+        context_block.as_deref(),
+        role_section.as_deref(),
+        config_path,
+    );
     // The full tools[] a real turn sends — world tools + the harness tools
     // (`consolidate`, the docs/supervisor.md and docs/inbox.md tools) — so the dev view matches.
     let toolbox = Toolbox::bash_and_mcps(cwd)?;
@@ -862,9 +875,23 @@ async fn serve(
     // the same string. The role's brief (if any) folds in here, frozen for the session
     // exactly like the env block (backlog/permissions/README.md — the
     // config→preamble projection must be byte-stable).
+    let cwd = std::env::current_dir()?;
     let role_section = loaded.role.preamble_section();
-    let system =
-        efference::env::system_prompt(role_section.as_deref(), Some(session_config.as_path()));
+    // The [context] preamble builder (backlog/preamble-context.md): resolve the operator's listed
+    // files from cwd and fold the rendered block into the frozen prefix. Fail closed — configured
+    // context that can't be read aborts startup rather than silently vanishing.
+    let context_block = match efference::context::resolve(&loaded.role.context, &cwd) {
+        Ok(resolved) => resolved.render(),
+        Err(e) => {
+            eprintln!("error: {e}");
+            return Err("could not resolve [context] entries".into());
+        }
+    };
+    let system = efference::env::system_prompt(
+        context_block.as_deref(),
+        role_section.as_deref(),
+        Some(session_config.as_path()),
+    );
 
     let client = Client::new(api_key.clone(), model, system);
 
@@ -876,8 +903,7 @@ async fn serve(
     // The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
     // canonical wire keeps only what the model retains. `Toolbox` is the docs/tools.md tool
     // seam; mount bash + the in-process MCP servers (fs-mcp + semantic-edit-mcp),
-    // their session cwd seeded to where we're running.
-    let cwd = std::env::current_dir()?;
+    // their session cwd seeded to where we're running (resolved once above for [context]).
     let toolbox = Toolbox::bash_and_mcps(cwd)?;
     if autonomous {
         eprintln!(
