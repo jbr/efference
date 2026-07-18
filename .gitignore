@@ -2,3 +2,6 @@
 .efference.pid
 .efference/
 .envrc
+# Personal op env-file (holds an `op://Private/...` reference, not a secret):
+#   op run --env-file=.env.op -- cargo run
+.env.op
