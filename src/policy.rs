@@ -308,7 +308,7 @@ fn classify_in(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
 /// A structured (non-bash) tool clears iff its name is in the role's `tool` grants and,
 /// for the path-bearing ones, its target is covered by a `path` grant with the right
 /// permission. A `[context]` listing is an independent clearance source
-/// (backlog/preamble-context.md): the listing itself is the grant, so it clears without a
+/// (docs/context.md): the listing itself is the grant, so it clears without a
 /// `tools` name grant — see [`context_clears`]. Anything not granted gates.
 fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
     if context_clears(role, call, cwd) {
@@ -390,7 +390,7 @@ fn input_targets<'a>(
     }
 }
 
-/// The `[context]` clearance rung (backlog/preamble-context.md). Listing a path in `[context]`
+/// The `[context]` clearance rung (docs/context.md). Listing a path in `[context]`
 /// **is** a read grant: the preamble stub says `Read {path}`, so the read the model was invited
 /// to make must fast-path clear with no `tools`/`paths` config at all — the listing is
 /// operator-sanctioned. The write grants ride the same entries: `update` clears a write to an
@@ -425,7 +425,7 @@ fn context_clears(role: &Config, call: &ToolCall, cwd: &Path) -> bool {
 }
 
 /// Whether `target` falls under some `[context]` entry path carrying `perm`
-/// (backlog/preamble-context.md). Read is always on for a listed path — a file exactly, a
+/// (docs/context.md). Read is always on for a listed path — a file exactly, a
 /// location's whole subtree — by the same lexical rule as [`path_granted`]. A write needs the
 /// covering entry's `update` (target exists) or `create` (target is new) grant; the existence
 /// probe is the one filesystem touch in the classifier — it is what tells create from update,
@@ -1354,7 +1354,7 @@ mod tests {
         );
     }
 
-    // --- the [context] clearance rung (backlog/preamble-context.md) ---
+    // --- the [context] clearance rung (docs/context.md) ---
 
     mod context_rung {
         use super::*;

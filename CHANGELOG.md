@@ -46,8 +46,10 @@ behind a change, see [`journal/`](journal/).
 - `[context]` preamble builder: the operator declares what the session boots knowing in `efference.toml` — bare paths and labeled groups of markdown files, mode (inlined body vs. listed stub) picked by each file's frontmatter, rendered as pseudo-XML name tags into the frozen system prompt after orientation. No auto-discovery; skills-compat falls out of frontmatter `name`/`description`.
 - Boot preamble snapshot: `serve` appends the full rendered system prompt to the log once at boot (`Payload::Preamble`, projects to nothing), keeping the log the complete record now that the preamble folds in drifting file contents; `efference wire` shows the recorded preamble instead of a rebuild.
 - `[context]` grants through policy: a listing is itself a read grant (reads of listed paths fast-path clear with no other config); `update` clears writes to existing files under an entry, `create` to new ones — `create` without `update` is an append-only store.
+- `[context]` exec sections: `Label = { exec = "…" }` runs once at boot (`bash -c`, session cwd, 10s timeout, process-group kill on hang) and its stdout becomes a preamble section at its document-order position, frozen + snapshotted like static files; fails closed on spawn/exit/timeout/non-UTF-8.
 
 ### Changed
+- Orientation is config, not code: the hardcoded environment block (cwd/platform/project-type, `env::orientation` + marker detection) is deleted; *where the session is* is now an ordinary `[context]` exec entry — the config-less scaffold ships `"Environment at boot" = { exec = … }`, and a written config owns the whole preamble.
 - Model selection moved to a per-session `serve --model <id>` flag (default `claude-haiku-4-5` for dev).
 - Tool definitions unified into one source shared by the loop, the keepalive ping, and the dev `wire` view (closing a cache-correctness gap).
 

@@ -108,7 +108,7 @@ pub enum Payload {
     /// [`effective_config`]: crate::policy::effective_config
     /// [`Ambient`]: Payload::Ambient
     ConfigEdit(ConfigEdit),
-    /// The boot preamble snapshot (backlog/preamble-context.md): the full rendered `system`
+    /// The boot preamble snapshot (docs/context.md): the full rendered `system`
     /// string, exactly as this session's requests carry it, appended **once at boot**. The
     /// preamble folds in `[context]` file contents that drift on disk between boots, so it is
     /// no longer reconstructable from `config + current files` — this entry makes the log the

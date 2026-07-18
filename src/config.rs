@@ -119,7 +119,7 @@ pub struct Config {
     /// file can declare them, but the merge engine is **not built**. TOML: `extends = ["base.toml"]`.
     pub extends: Vec<String>,
 
-    /// The `[context]` preamble builder (backlog/preamble-context.md): the markdown files (and, later,
+    /// The `[context]` preamble builder (docs/context.md): the markdown files (and, later,
     /// `exec` sections) the operator makes available to the session, in **document order** — a `Vec`,
     /// not a sorted map, because the entries render as preamble sections in the order they're written
     /// (a dynamic `exec` section can sit between static files). The harness bakes in nothing about
@@ -128,7 +128,7 @@ pub struct Config {
 }
 
 /// One `[context]` entry — a source of preamble bytes with an optional heading, write grants, and a
-/// sort override (backlog/preamble-context.md). Two axes land on two authorities: **mode**
+/// sort override (docs/context.md). Two axes land on two authorities: **mode**
 /// (inline-vs-listed) is the file's call via its frontmatter, decided at render time; **grant**,
 /// **heading**, and **sort** are the operator's call, materialized here from the config.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,7 +151,7 @@ pub struct ContextEntry {
 pub enum ContextSource {
     /// One or more file / dir / glob paths — a bare path (the table key) or a group's `path`/`paths`.
     Files(Vec<String>),
-    /// A command whose stdout is the section body, run once at boot (backlog/dynamic-context-exec.md).
+    /// A command whose stdout is the section body, run once at boot (docs/context.md).
     Exec(String),
 }
 
@@ -452,7 +452,7 @@ fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
 }
 
 /// Interpret one `[context]` `(key, value)` into a [`ContextEntry`], failing closed on an illegal
-/// shape (backlog/preamble-context.md). The value's shape decides the kind:
+/// shape (docs/context.md). The value's shape decides the kind:
 ///
 /// - `true` → a bare read-only path (the key is the path, no heading).
 /// - a table with `exec` → a labeled dynamic section (no files/grants/sort allowed alongside).
@@ -758,7 +758,7 @@ mod tests {
         assert_eq!(role.extends, ["base.toml"]);
     }
 
-    // --- [context] preamble builder (backlog/preamble-context.md) ---
+    // --- [context] preamble builder (docs/context.md) ---
 
     /// The three legal entry shapes decode to the right `ContextEntry`: a bare read-only path, a
     /// bare updatable path (key-is-path table), and a labeled group with `path` + write grants.

@@ -64,8 +64,30 @@ verbatim inside their tag, so a body's own `#`/`---`/``` cannot blur a boundary.
 format is byte-pinned and deliberately cheap to flip: whether tags actually beat markdown
 here is an unverified assumption, recorded for A/B in
 `backlog/preamble-format-experiment.md`. The block splices into the system prompt after
-orientation (*where* the session is) and before the role scope (*what it may do*) —
-knowledge between the two (`env::system_prompt`).
+the curation preamble and before the role scope (*what it may do*) — knowledge before
+perimeter (`env::system_prompt`).
+
+## Exec sections — a section whose body is a command's stdout
+
+`Label = { exec = "…" }` is just another row: the command runs **once at boot** (`bash
+-c`, session cwd — the same entrypoint as the bash tool), its stdout becomes the section
+body at the entry's position in document order, frozen and snapshotted like everything
+else. That per-boot-not-per-turn semantics is the only coherent one for a frozen cached
+prefix: `Date = { exec = "date" }` honestly means "the date as of session boot." Bash as
+the entrypoint means the content can come from anything the operator can script; volatile
+stdout costs cross-boot cache sharing, an opt-in the operator wrote. It fails closed like
+a file would — a spawn failure, non-zero exit (stderr quoted), a 10-second timeout (the
+child's process group is killed so a hung command can't hang boot), or non-UTF-8 stdout
+all fail the load. An exec runs with harness privileges, ungated: the operator authored
+the config, so gating their own boot command would be theater — but it *is* an
+arbitrary-code-execution surface at session start, stated plainly.
+
+**Orientation is an exec entry, not code.** The once-hardcoded orientation block (cwd,
+platform, project type) is gone from `src/env.rs`; *where the session is* is now an
+ordinary config line — the scaffold written for a config-less session ships
+`"Environment at boot" = { exec = 'echo "working directory: $PWD"; …' }`, so a bare
+session still boots oriented, visibly and editably, and a written config owns the whole
+preamble (omitting the entry omits the block — explicit over magic).
 
 ## Boot discipline: freeze, snapshot, fail closed
 
@@ -84,6 +106,6 @@ knowledge between the two (`env::system_prompt`).
 
 ## Deferred
 
-Live mid-session discovery of context files (`backlog/live-context-update.md`), `exec`
-sections whose body is a command's stdout (`backlog/dynamic-context-exec.md` — parsed,
-skipped by `resolve`), and globs + the `sort` override.
+Live mid-session discovery of context files (`backlog/live-context-update.md`), and
+globs + the `sort` override + the fallback-tag-name call
+(`backlog/context-globs-and-sort.md`).

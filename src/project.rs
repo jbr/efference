@@ -269,7 +269,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // the transcript. So it projects to nothing, and appending one cannot perturb
             // the cached prefix (docs/substrate.md).
             Payload::ConfigEdit(_) => {}
-            // The boot preamble snapshot (backlog/preamble-context.md) is replay/audit data:
+            // The boot preamble snapshot (docs/context.md) is replay/audit data:
             // the system prompt rides the request's `system` field, never the `messages`
             // array, so the snapshot projects to nothing.
             Payload::Preamble { .. } => {}
@@ -620,7 +620,7 @@ mod tests {
 
     /// The boot preamble snapshot is replay/audit only: appending one anywhere in the log
     /// must not change a single projected byte — the system prompt is carried by the
-    /// request's `system` field, never the `messages` array (backlog/preamble-context.md).
+    /// request's `system` field, never the `messages` array (docs/context.md).
     #[test]
     fn preamble_snapshot_projects_to_nothing() {
         let without = serde_json::to_string(&project(&sample_log())).unwrap();
