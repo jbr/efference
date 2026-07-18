@@ -1,11 +1,11 @@
-//! `[context]` preamble builder — reading, frontmatter, and mode (backlog/preamble-context.md).
+//! `[context]` preamble builder — reading, frontmatter, and mode (docs/context.md).
 //!
 //! The [`crate::config`] schema materializes the operator's `[context]` entries (what files, what
 //! grants, what order). This module turns a file's *content* into a preamble section: it splits an
 //! optional leading frontmatter block off the body and decides the file's **mode** — **inlined**
 //! (the whole body rides in the cached preamble, the CLAUDE.md role) or **listed** (only a one-line
 //! stub rides, the body fetched on demand via the `read` tool). Mode is the *file's* call, carried
-//! in its frontmatter; the config never decides it (backlog/preamble-context.md).
+//! in its frontmatter; the config never decides it (docs/context.md).
 //!
 //! Frontmatter is recognized **only at the very start of the file** (first line `---`), so a `---`
 //! horizontal rule mid-document is never mistaken for it. The parser is deliberately minimal —
@@ -37,7 +37,7 @@ pub struct Split<'a> {
     pub body: &'a str,
 }
 
-/// How a context file renders into the preamble (backlog/preamble-context.md).
+/// How a context file renders into the preamble (docs/context.md).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
     /// The whole body rides in the cached preamble (always-on knowledge).
@@ -144,7 +144,7 @@ pub fn fallback_name(path: &Path) -> String {
 }
 
 /// A fully-resolved `[context]` ready to render into the preamble: sections in **document order**
-/// (backlog/preamble-context.md). Each [`Section`] is a bare entry (no heading) or a labeled group.
+/// (docs/context.md). Each [`Section`] is a bare entry (no heading) or a labeled group.
 /// This is what [`crate::env`] builds from disk at boot and freezes into the cached prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Resolved {
@@ -159,7 +159,7 @@ pub struct Section {
 }
 
 /// A single resolved context item — an inlined file (body in full) or a listed stub (read on demand).
-/// Both render as a name tag `<name>…</name>` (backlog/preamble-context.md); the name is the file's
+/// Both render as a name tag `<name>…</name>` (docs/context.md); the name is the file's
 /// frontmatter `name`, else its basename.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
@@ -176,6 +176,15 @@ pub enum Item {
         name: String,
         description: String,
         path: String,
+    },
+    /// A dynamic section (docs/context.md): `body` is the stdout of `command`, run
+    /// **once at boot** with the session cwd — frozen and snapshotted exactly like a static file, so
+    /// `Date = { exec = "date" }` honestly means "the date as of session boot". Renders identically
+    /// to [`Item::Inline`]; `command` is kept for provenance, not rendered.
+    Exec {
+        name: String,
+        command: String,
+        body: String,
     },
 }
 
@@ -220,7 +229,9 @@ impl Resolved {
 /// surrounding blank space); a listed file holds its summary and a read pointer.
 fn render_item(item: &Item) -> String {
     match item {
-        Item::Inline { name, body, .. } => format!("<{name}>\n{}\n</{name}>", body.trim()),
+        Item::Inline { name, body, .. } | Item::Exec { name, body, .. } => {
+            format!("<{name}>\n{}\n</{name}>", body.trim())
+        }
         Item::Listed {
             name,
             description,
@@ -230,7 +241,7 @@ fn render_item(item: &Item) -> String {
 }
 
 /// A failure resolving the `[context]` entries at boot — the preamble builder fails **closed** on
-/// these (backlog/preamble-context.md): configured context that can't be materialized is a config
+/// these (docs/context.md): configured context that can't be materialized is a config
 /// error, never a silently-dropped section.
 #[derive(Debug)]
 pub enum ResolveError {
@@ -238,6 +249,9 @@ pub enum ResolveError {
     Io(PathBuf, std::io::Error),
     /// A file's frontmatter opened (`---`) but never closed.
     Frontmatter(PathBuf),
+    /// An `exec` section's command failed — couldn't spawn, exited non-zero, timed out, or
+    /// produced non-UTF-8 stdout. The detail says which.
+    Exec { command: String, detail: String },
 }
 
 impl std::fmt::Display for ResolveError {
@@ -249,6 +263,9 @@ impl std::fmt::Display for ResolveError {
                 "context file {} has an unterminated `---` frontmatter block",
                 p.display()
             ),
+            ResolveError::Exec { command, detail } => {
+                write!(f, "context exec `{command}`: {detail}")
+            }
         }
     }
 }
@@ -264,13 +281,34 @@ impl std::error::Error for ResolveError {}
 /// the file's frontmatter `name` (skills-compat) → the basename. A labeled entry with *many* files
 /// becomes a `<Heading>` group whose members are named individually; a bare entry never gets a
 /// wrapper. Directory paths expand to their `.md` children, sorted name-ascending (the default; the
-/// SQL-ish `sort` override and globs are later increments). `exec` entries are skipped until step 6.
+/// SQL-ish `sort` override and globs are later increments).
+///
+/// An `exec` entry runs its command **here, once at boot** ([`run_exec`]) — its stdout is the
+/// section body, frozen and snapshotted like everything else (docs/context.md). It
+/// always resolves to a single section that collapses like a labeled single file (the label is the
+/// tag, no wrapper), and it fails closed like a file would: a command that can't run is a config
+/// error, never a silently dropped section.
 pub fn resolve(entries: &[ContextEntry], base: &Path) -> Result<Resolved, ResolveError> {
     let mut sections = Vec::new();
     for entry in entries {
         let paths = match &entry.source {
             ContextSource::Files(paths) => paths,
-            ContextSource::Exec(_) => continue, // wired in step 6
+            ContextSource::Exec(command) => {
+                let name = entry
+                    .heading
+                    .clone()
+                    .expect("validate gives every exec entry a heading");
+                let body = run_exec(command, base, EXEC_TIMEOUT)?;
+                sections.push(Section {
+                    heading: None,
+                    items: vec![Item::Exec {
+                        name,
+                        command: command.clone(),
+                        body,
+                    }],
+                });
+                continue;
+            }
         };
         let files = resolve_files(paths, base)?;
         // The operator's label is a file's own tag only when the entry resolves to exactly one file;
@@ -342,6 +380,62 @@ fn resolve_files(paths: &[String], base: &Path) -> Result<Vec<(String, PathBuf)>
         }
     }
     Ok(out)
+}
+
+/// How long an `exec` section's command may run before boot fails closed
+/// (docs/context.md): long enough for a real describe-the-world script, short
+/// enough that a hung command can't hang boot indefinitely.
+const EXEC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Run one `exec` section's command and return its stdout — `bash -c`, cwd = `base` (the same
+/// entrypoint the bash tool uses, so an operator's command means the same thing in both places).
+/// Fails closed on a spawn failure, non-zero exit (stderr quoted in the error), timeout, or
+/// non-UTF-8 stdout — binary bytes in a text preamble are a config mistake, not content.
+///
+/// The child leads its own process group and is reaped on a thread (`wait_with_output` drains the
+/// pipes, so a chatty command can't deadlock on a full pipe buffer); on timeout the whole group is
+/// killed ([`crate::bash::kill_group`]), so a hung command's children die with it.
+fn run_exec(
+    command: &str,
+    base: &Path,
+    timeout: std::time::Duration,
+) -> Result<String, ResolveError> {
+    use std::os::unix::process::CommandExt;
+    let err = |detail: String| ResolveError::Exec {
+        command: command.to_string(),
+        detail,
+    };
+    let child = std::process::Command::new("bash")
+        .arg("-c")
+        .arg(command)
+        .current_dir(base)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .process_group(0)
+        .spawn()
+        .map_err(|e| err(format!("failed to spawn bash: {e}")))?;
+    let pgid = child.id();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+    let output = match rx.recv_timeout(timeout) {
+        Ok(result) => result.map_err(|e| err(format!("waiting on the command: {e}")))?,
+        Err(_) => {
+            crate::bash::kill_group(pgid);
+            return Err(err(format!("timed out after {}s", timeout.as_secs_f32())));
+        }
+    };
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(err(format!(
+            "exited with {}; stderr: {}",
+            output.status,
+            stderr.trim()
+        )));
+    }
+    String::from_utf8(output.stdout).map_err(|_| err("stdout was not valid UTF-8".into()))
 }
 
 #[cfg(test)]
@@ -519,7 +613,7 @@ mod tests {
         ));
     }
 
-    // --- resolve: config entries → files on disk → Resolved (backlog/preamble-context.md) ---
+    // --- resolve: config entries → files on disk → Resolved (docs/context.md) ---
 
     use crate::config::ContextGrants;
 
@@ -667,6 +761,100 @@ mod tests {
         std::fs::write(dir.join("bad.md"), "---\nname: x\nno close\n").unwrap();
         let err = resolve(&[bare("bad.md")], &dir).unwrap_err();
         assert!(matches!(err, ResolveError::Frontmatter(_)));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // --- exec sections (docs/context.md) ---
+
+    fn exec_entry(label: &str, command: &str) -> ContextEntry {
+        ContextEntry {
+            heading: Some(label.into()),
+            source: ContextSource::Exec(command.into()),
+            grants: ContextGrants::default(),
+            sort: None,
+        }
+    }
+
+    /// An exec entry is just another row: its stdout becomes a section at its position in
+    /// document order — a dynamic section sitting *between* static files — collapsed like a
+    /// labeled single file (the label is the tag, no wrapper).
+    #[test]
+    fn resolve_exec_section_lands_in_document_order() {
+        let dir = tmpdir("exec-order");
+        std::fs::write(dir.join("a.md"), "first\n").unwrap();
+        std::fs::write(dir.join("b.md"), "last\n").unwrap();
+        let resolved = resolve(
+            &[
+                bare("a.md"),
+                exec_entry("Date", "echo from a command"),
+                bare("b.md"),
+            ],
+            &dir,
+        )
+        .unwrap();
+        assert_eq!(resolved.sections.len(), 3);
+        assert_eq!(
+            resolved.sections[1],
+            Section {
+                heading: None,
+                items: vec![Item::Exec {
+                    name: "Date".into(),
+                    command: "echo from a command".into(),
+                    body: "from a command\n".into(),
+                }],
+            }
+        );
+        let rendered = resolved.render().unwrap();
+        let date = rendered.find("<Date>\nfrom a command\n</Date>").unwrap();
+        assert!(rendered.find("first").unwrap() < date && date < rendered.find("last").unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The command runs with the session cwd, so relative commands mean what they mean in the
+    /// bash tool; empty stdout is an empty body, not an error (bytes are bytes).
+    #[test]
+    fn resolve_exec_runs_in_base_and_allows_empty_stdout() {
+        let dir = tmpdir("exec-cwd");
+        std::fs::write(dir.join("marker.txt"), "here\n").unwrap();
+        let resolved = resolve(&[exec_entry("Files", "ls marker.txt"), exec_entry("Quiet", "true")], &dir).unwrap();
+        assert!(matches!(
+            &resolved.sections[0].items[0],
+            Item::Exec { body, .. } if body == "marker.txt\n"
+        ));
+        assert!(matches!(
+            &resolved.sections[1].items[0],
+            Item::Exec { body, .. } if body.is_empty()
+        ));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Fail closed, loudly: a non-zero exit is a config error carrying the command's stderr —
+    /// never a silently dropped section.
+    #[test]
+    fn exec_nonzero_exit_fails_closed_with_stderr() {
+        let dir = tmpdir("exec-fail");
+        let err = resolve(&[exec_entry("Broken", "echo oops >&2; exit 3")], &dir).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("exit status: 3") && msg.contains("oops"), "{msg}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A hung command can't hang boot: past the timeout the process group is killed and the
+    /// load fails closed.
+    #[test]
+    fn exec_timeout_fails_closed() {
+        let dir = tmpdir("exec-hang");
+        let err = run_exec("sleep 30", &dir, std::time::Duration::from_millis(100)).unwrap_err();
+        assert!(err.to_string().contains("timed out"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Binary stdout in a text preamble is a config mistake — fail closed, don't mangle.
+    #[test]
+    fn exec_non_utf8_stdout_fails_closed() {
+        let dir = tmpdir("exec-binary");
+        let err = resolve(&[exec_entry("Binary", r"printf '\xff\xfe'")], &dir).unwrap_err();
+        assert!(err.to_string().contains("not valid UTF-8"), "{err}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
