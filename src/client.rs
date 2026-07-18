@@ -138,14 +138,18 @@ impl Client {
     /// the effective config. `note` is the rationale for the audit record.
     pub async fn commit_proposal(&self, seq: u64, note: &str) -> Result<()> {
         let body = serde_json::json!({ "decision": "commit", "note": note }).to_string();
-        self.post(&format!("/proposals/{seq}"), body).await.map(drop)
+        self.post(&format!("/proposals/{seq}"), body)
+            .await
+            .map(drop)
     }
 
     /// Cancel a pending proposal by its `seq` (`POST /proposals/:seq`) — audit-only, drops it
     /// from the queue without touching the effective config.
     pub async fn cancel_proposal(&self, seq: u64, note: &str) -> Result<()> {
         let body = serde_json::json!({ "decision": "cancel", "note": note }).to_string();
-        self.post(&format!("/proposals/{seq}"), body).await.map(drop)
+        self.post(&format!("/proposals/{seq}"), body)
+            .await
+            .map(drop)
     }
 
     /// The durable log (`GET /log?since=<seq>`), the append-only event store
@@ -192,7 +196,7 @@ impl Client {
         let conn = self
             .http
             .post(path)
-            .with_request_header("content-type", "application/json")
+            .with_request_header("content-type", "application/json; charset=utf-8")
             .with_body(body)
             .await
             .with_context(|| format!("POST {path} to the control socket"))?;
@@ -365,6 +369,33 @@ mod tests {
         assert!(approvals[0].1.contains("redirect"));
         assert!(approvals[0].1.contains("try the other file"));
         assert_eq!(*rec.interrupts.lock().unwrap(), 1);
+
+        let _ = std::fs::remove_file(&socket);
+    }
+
+    /// Regression test for the UTF-8 mis-decode mojibake (backlog/dogfooding-friction.md):
+    /// `conn.request_body_string()` — the same call the real daemon's `/turn` handler
+    /// uses — decodes the body according to the request's `Content-Type` charset,
+    /// defaulting away from UTF-8 when none is given. `Client::post` must pin
+    /// `charset=utf-8` so non-ASCII text (em-dashes, smart quotes, accents) survives
+    /// the real Unix-socket round trip byte-for-byte instead of coming out as
+    /// `â€"`-style mojibake.
+    #[tokio::test]
+    async fn non_ascii_turn_round_trips_cleanly() {
+        let rec = Recorder::default();
+        let socket = spawn_stub(rec.clone());
+        let client = Client::new(&socket);
+
+        let text = "em dash — smart “quotes” — café";
+        client.turn(text).await.unwrap();
+
+        let turns = rec.turns.lock().unwrap();
+        assert_eq!(turns.len(), 1);
+        assert!(
+            turns[0].contains(text),
+            "non-ASCII text should survive the round trip verbatim: {:?}",
+            turns[0]
+        );
 
         let _ = std::fs::remove_file(&socket);
     }
