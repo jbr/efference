@@ -47,6 +47,7 @@ behind a change, see [`journal/`](journal/).
 - Boot preamble snapshot: `serve` appends the full rendered system prompt to the log once at boot (`Payload::Preamble`, projects to nothing), keeping the log the complete record now that the preamble folds in drifting file contents; `efference wire` shows the recorded preamble instead of a rebuild.
 - `[context]` grants through policy: a listing is itself a read grant (reads of listed paths fast-path clear with no other config); `update` clears writes to existing files under an entry, `create` to new ones — `create` without `update` is an append-only store.
 - `[context]` exec sections: `Label = { exec = "…" }` runs once at boot (`bash -c`, session cwd, 10s timeout, process-group kill on hang) and its stdout becomes a preamble section at its document-order position, frozen + snapshotted like static files; fails closed on spawn/exit/timeout/non-UTF-8.
+- `[context]` dirs walk recursively (hidden children skipped, symlinks followed with a cycle guard), so a Claude-Code skills tree (`skills/<name>/SKILL.md`) lands as one listing per skill; frontmatter handles YAML block scalars (`description: >-`) and nested maps can't pollute top-level keys.
 
 ### Changed
 - Orientation is config, not code: the hardcoded environment block (cwd/platform/project-type, `env::orientation` + marker detection) is deleted; *where the session is* is now an ordinary `[context]` exec entry — the config-less scaffold ships `"Environment at boot" = { exec = … }`, and a written config owns the whole preamble.

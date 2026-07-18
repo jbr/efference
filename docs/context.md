@@ -28,10 +28,13 @@ A **bare path** (the key is the path) renders with no heading and may carry only
 `update`. A **labeled group** (the value carries `path`/`paths`) points at a location; its
 key is a heading — *pure presentation*, zero meaning to the harness. "Memories" and
 "Skills" are never tool concepts, just rows an operator wrote. `create` and `sort` are
-group-only (they are about a location of many files); a directory expands to its `.md`
-children, default order `name asc` (the SQL-ish `sort` override is parsed but not yet
-applied). Validation fails closed on the nonsense shapes (`false` entries, group-only keys
-on a bare path, `exec` mixed with files).
+group-only (they are about a location of many files); a directory expands to every `.md`
+file **recursively** beneath it — which is what makes a Claude-Code-style skills tree
+(`skills/<name>/SKILL.md`, one directory per skill) land as one listing per skill —
+skipping hidden children, following symlinks with a cycle guard (a symlinked skill
+collection is a real layout), default order `name asc` by display path (the SQL-ish
+`sort` override is parsed but not yet applied). Validation fails closed on the nonsense
+shapes (`false` entries, group-only keys on a bare path, `exec` mixed with files).
 
 ## Mode is the file's call; grants are the operator's
 
@@ -42,7 +45,10 @@ Two orthogonal axes land on two authorities on purpose:
   preamble — the CLAUDE.md role, always-on knowledge. A frontmatter `description` → only a
   one-line **stub** rides in the preamble (name, description, `Read {path} …`); skills
   compatibility falls out, since a real skill file has name+description and becomes a
-  read-on-demand stub. `inline: true` overrides a described file back to inlined.
+  read-on-demand stub. `inline: true` overrides a described file back to inlined. The
+  frontmatter parser is minimal but handles what real skill files use: `key: value` lines
+  plus YAML block scalars (`description: >-` folded over indented lines); nested
+  structures are consumed, never misread as top-level keys.
 - **Read-only vs. writable** (`update`/`create`) is decided by the *config*, because a
   file granting itself write access would be exactly the self-authorization the
   config-as-reviewed-file design forbids.

@@ -9,9 +9,11 @@
 //!
 //! Frontmatter is recognized **only at the very start of the file** (first line `---`), so a `---`
 //! horizontal rule mid-document is never mistaken for it. The parser is deliberately minimal —
-//! `key: value` lines for the few keys we read (`name`, `description`, `inline`) — not a full YAML
-//! engine: multiline scalars and nested structures are out of scope (and unnecessary for those
-//! keys). Unknown keys are ignored so the frontmatter vocabulary can grow without a parser change.
+//! `key: value` lines plus YAML block scalars (`>-`-style folded / `|`-style literal values, which
+//! real Claude-Code skill files use for their `description`) — not a full YAML engine: nested
+//! structures stay out of scope. Unknown keys are ignored (their block values consumed whole, so a
+//! foreign multiline value can never be misread as keys) so the vocabulary can grow without a
+//! parser change.
 
 use std::path::{Path, PathBuf};
 
@@ -52,10 +54,24 @@ pub enum Mode {
 #[derive(Debug, PartialEq, Eq)]
 pub struct UnterminatedFrontmatter;
 
+/// An in-progress YAML block scalar while scanning frontmatter: which key it belongs to, whether
+/// it folds (`>`, lines joined with spaces) or is literal (`|`, newlines kept), and the trimmed
+/// continuation lines collected so far.
+struct BlockScalar {
+    key: String,
+    folded: bool,
+    lines: Vec<String>,
+}
+
 /// Split an optional leading frontmatter block off `text`. Frontmatter exists **only** when the very
 /// first line is the `---` delimiter; the block runs to the next `---` line, and the body is
 /// everything after it. A `---` anywhere but the first line is ordinary markdown (a horizontal
 /// rule), never frontmatter. An opened-but-unclosed block is [`UnterminatedFrontmatter`].
+///
+/// A value of `>`/`>-`/`>+` or `|`/`|-`/`|+` opens a YAML block scalar: the indented (or blank)
+/// lines that follow are its content, closed by the first flush-left line or the `---` terminator.
+/// Block content is consumed for **every** key, known or not — an unknown key's multiline value
+/// must never be misread as `key: value` lines of its own.
 pub fn split_frontmatter(text: &str) -> Result<Split<'_>, UnterminatedFrontmatter> {
     let first_line_end = text.find('\n').map(|i| i + 1).unwrap_or(text.len());
     if text[..first_line_end].trim() != "---" {
@@ -65,30 +81,91 @@ pub fn split_frontmatter(text: &str) -> Result<Split<'_>, UnterminatedFrontmatte
         });
     }
     let mut fm = Frontmatter::default();
+    let mut block: Option<BlockScalar> = None;
     let mut offset = first_line_end;
     for line in text[first_line_end..].split_inclusive('\n') {
-        if line.trim() == "---" {
+        let trimmed = line.trim();
+        if trimmed == "---" {
             // Closing delimiter: the body is everything after this line.
+            if let Some(b) = block.take() {
+                close_block_scalar(&mut fm, b);
+            }
             return Ok(Split {
                 frontmatter: Some(fm),
                 body: &text[offset + line.len()..],
             });
         }
-        parse_frontmatter_line(line, &mut fm);
+        if block.is_some() {
+            if trimmed.is_empty() || line.starts_with([' ', '\t']) {
+                block.as_mut().unwrap().lines.push(trimmed.to_string());
+                offset += line.len();
+                continue;
+            }
+            // First flush-left line ends the block; fall through to parse this line normally.
+            close_block_scalar(&mut fm, block.take().unwrap());
+        }
+        block = parse_frontmatter_line(line, &mut fm);
         offset += line.len();
     }
     Err(UnterminatedFrontmatter)
 }
 
-/// Parse one `key: value` frontmatter line into `fm`. Splits on the *first* colon (so a value may
-/// itself contain colons), trims, and strips one layer of matching surrounding quotes. Unknown keys
-/// and blank lines are ignored; an unrecognized `inline` value leaves the flag unset.
-fn parse_frontmatter_line(line: &str, fm: &mut Frontmatter) {
-    let Some((key, value)) = line.split_once(':') else {
-        return;
+/// Parse one `key: value` frontmatter line. Splits on the *first* colon (so a value may itself
+/// contain colons) and trims. A block-scalar indicator value (`>`/`|` with an optional `-`/`+`
+/// chomp) returns the opened [`BlockScalar`] for the caller to fill; otherwise the value has one
+/// layer of matching surrounding quotes stripped and is assigned via [`set_frontmatter_key`].
+/// Lines without a colon are ignored, as are **indented** lines: a top-level frontmatter key is
+/// flush-left, so an indented `key: value` is the interior of some nested YAML structure (e.g. a
+/// `metadata:` map) — skipping it keeps a nested `name:`/`description:` from polluting ours.
+fn parse_frontmatter_line(line: &str, fm: &mut Frontmatter) -> Option<BlockScalar> {
+    if line.starts_with([' ', '\t']) {
+        return None;
+    }
+    let (key, value) = line.split_once(':')?;
+    let value = value.trim();
+    if let Some(folded) = block_scalar_style(value) {
+        return Some(BlockScalar {
+            key: key.trim().to_string(),
+            folded,
+            lines: Vec::new(),
+        });
+    }
+    set_frontmatter_key(fm, key.trim(), unquote(value));
+    None
+}
+
+/// Whether `value` is a YAML block-scalar indicator, and if so which style: `Some(true)` for
+/// folded (`>`, `>-`, `>+`), `Some(false)` for literal (`|`, `|-`, `|+`), `None` for a plain value.
+fn block_scalar_style(value: &str) -> Option<bool> {
+    match value {
+        ">" | ">-" | ">+" => Some(true),
+        "|" | "|-" | "|+" => Some(false),
+        _ => None,
+    }
+}
+
+/// Assemble a finished block scalar and assign it: folded joins the non-blank lines with spaces
+/// (the single-paragraph `description: >-` case real skill files use); literal keeps line breaks.
+/// Chomping indicators are ignored — trailing whitespace never matters to these keys.
+fn close_block_scalar(fm: &mut Frontmatter, block: BlockScalar) {
+    let value = if block.folded {
+        block
+            .lines
+            .iter()
+            .filter(|l| !l.is_empty())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        block.lines.join("\n").trim_end().to_string()
     };
-    let value = unquote(value.trim());
-    match key.trim() {
+    set_frontmatter_key(fm, &block.key, &value);
+}
+
+/// Assign one frontmatter value to the key it names. Unknown keys are ignored; an unrecognized
+/// `inline` value leaves the flag unset.
+fn set_frontmatter_key(fm: &mut Frontmatter, key: &str, value: &str) {
+    match key {
         "name" => fm.name = Some(value.to_string()),
         "description" => fm.description = Some(value.to_string()),
         "inline" => {
@@ -355,31 +432,71 @@ pub fn resolve(entries: &[ContextEntry], base: &Path) -> Result<Resolved, Resolv
 
 /// Resolve one entry's path list into `(display, full)` pairs: `display` is the model-facing path
 /// (relative, as the operator wrote it) used in a stub's `Read {path}`; `full` is `base`-joined for
-/// reading. A directory expands to its `.md` children, name-ascending; an explicit list keeps its
-/// order. (Globs are a later increment; a `*` path just won't stat and fails closed.)
+/// reading. A directory expands to every `.md` file **recursively** beneath it ([`walk_md`]) —
+/// which is what makes a Claude-Code-style skills tree (`skills/<name>/SKILL.md`, one dir per
+/// skill) land as one listing per skill — sorted name-ascending by display path; an explicit list
+/// keeps its order. (Globs are a later increment; a `*` path just won't stat and fails closed.)
 fn resolve_files(paths: &[String], base: &Path) -> Result<Vec<(String, PathBuf)>, ResolveError> {
     let mut out = Vec::new();
     for p in paths {
         let full = base.join(p);
         let meta = std::fs::metadata(&full).map_err(|e| ResolveError::Io(full.clone(), e))?;
         if meta.is_dir() {
-            let mut children: Vec<PathBuf> = std::fs::read_dir(&full)
-                .map_err(|e| ResolveError::Io(full.clone(), e))?
-                .filter_map(Result::ok)
-                .map(|d| d.path())
-                .filter(|c| c.extension().and_then(|e| e.to_str()) == Some("md"))
-                .collect();
-            children.sort();
-            for child in children {
-                let file = child.file_name().unwrap_or_default().to_string_lossy().into_owned();
-                let display = Path::new(p).join(&file).to_string_lossy().into_owned();
-                out.push((display, child));
+            let mut found = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            if let Ok(canon) = full.canonicalize() {
+                seen.insert(canon);
             }
+            walk_md(&full, Path::new(p), &mut found, &mut seen)?;
+            found.sort_by(|a, b| a.0.cmp(&b.0));
+            out.extend(found);
         } else {
             out.push((p.clone(), full));
         }
     }
     Ok(out)
+}
+
+/// Collect every `.md` file under `dir` (recursively) into `(display, full)` pairs, `display`
+/// rooted at `display_dir` (the path as the operator wrote it). **Hidden children** (dot-prefixed)
+/// are skipped — a `.git` or cache dir inside a listed tree is never content, though the named
+/// root itself may be hidden (`~/.claude/skills`). **Symlinks are followed** — a symlinked skill
+/// collection is a real layout — with a cycle guard: `seen` holds every canonical directory
+/// already entered, so a link cycle (or a diamond) walks each real directory once. Children are
+/// visited in name order, so which path a diamond's files get is deterministic. A child the walk
+/// can't stat/read fails closed like any other unreadable listed path.
+fn walk_md(
+    dir: &Path,
+    display_dir: &Path,
+    out: &mut Vec<(String, PathBuf)>,
+    seen: &mut std::collections::HashSet<PathBuf>,
+) -> Result<(), ResolveError> {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .map_err(|e| ResolveError::Io(dir.to_path_buf(), e))?
+        .filter_map(Result::ok)
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        let child = entry.path();
+        // `metadata` follows symlinks, so a link to a dir/file behaves as what it points at.
+        let meta = std::fs::metadata(&child).map_err(|e| ResolveError::Io(child.clone(), e))?;
+        let child_display = display_dir.join(&name);
+        if meta.is_dir() {
+            let canon = child
+                .canonicalize()
+                .map_err(|e| ResolveError::Io(child.clone(), e))?;
+            if seen.insert(canon) {
+                walk_md(&child, &child_display, out, seen)?;
+            }
+        } else if meta.is_file() && child.extension().and_then(|e| e.to_str()) == Some("md") {
+            out.push((child_display.to_string_lossy().into_owned(), child));
+        }
+    }
+    Ok(())
 }
 
 /// How long an `exec` section's command may run before boot fails closed
@@ -525,6 +642,67 @@ mod tests {
             split.frontmatter.unwrap().description.as_deref(),
             Some("Use this: for X, Y, and Z"),
         );
+    }
+
+    /// The shape real Claude-Code skill files use: `description: >-` folded over several
+    /// indented lines. The folded value joins with spaces and still drives listed mode.
+    #[test]
+    fn folded_block_scalar_description_lists() {
+        let text = "---\nname: ferritin\ndescription: >-\n  Look up real Rust documentation\n  \
+                    instead of guessing APIs.\n---\nbody\n";
+        let split = split_frontmatter(text).unwrap();
+        assert_eq!(
+            split.mode("fallback"),
+            Mode::Listed {
+                name: "ferritin".into(),
+                description: "Look up real Rust documentation instead of guessing APIs.".into(),
+            }
+        );
+        assert_eq!(split.body, "body\n");
+    }
+
+    /// A literal (`|`) block scalar keeps its line breaks; the chomp indicator is ignored.
+    #[test]
+    fn literal_block_scalar_keeps_newlines() {
+        let text = "---\ndescription: |-\n  line one\n  line two\n---\nbody";
+        let split = split_frontmatter(text).unwrap();
+        assert_eq!(
+            split.frontmatter.unwrap().description.as_deref(),
+            Some("line one\nline two")
+        );
+    }
+
+    /// An unknown key's block value is consumed whole — an indented `description:` line inside
+    /// it is that block's content, never a frontmatter key of its own.
+    #[test]
+    fn unknown_key_block_scalar_cannot_pollute_known_keys() {
+        let text = "---\nfuture_key: >-\n  description: sneaky\n  more text\n---\nbody";
+        let split = split_frontmatter(text).unwrap();
+        assert_eq!(split.mode("d"), Mode::Inline);
+        assert_eq!(split.frontmatter.unwrap().description, None);
+    }
+
+    /// A block scalar closed by the frontmatter terminator itself (no flush-left line after it)
+    /// still lands.
+    #[test]
+    fn block_scalar_closed_by_the_terminator() {
+        let text = "---\ndescription: >\n  right at the end\n---\nbody";
+        let split = split_frontmatter(text).unwrap();
+        assert_eq!(
+            split.frontmatter.unwrap().description.as_deref(),
+            Some("right at the end")
+        );
+    }
+
+    /// A nested map's interior lines are indented, so its `name:`/`description:` never pollute the
+    /// top-level keys — the shape of a memory file's `metadata:` map.
+    #[test]
+    fn nested_map_keys_cannot_pollute_top_level_keys() {
+        let text = "---\nmetadata:\n  name: sneaky\n  type: user\ndescription: Real one.\n---\nb";
+        let split = split_frontmatter(text).unwrap();
+        let fm = split.frontmatter.unwrap();
+        assert_eq!(fm.name, None);
+        assert_eq!(fm.description.as_deref(), Some("Real one."));
     }
 
     #[test]
@@ -742,6 +920,87 @@ mod tests {
                         path: "skills/verify.md".into(),
                     },
                 ],
+            }]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The Claude-Code skills layout — one directory per skill holding a `SKILL.md` — lands as
+    /// one listing per skill via the recursive walk. Hidden children (a `.cache` dir, a dotfile)
+    /// are skipped; the walk is sorted by display path; and a symlink cycle (here, a link back
+    /// to the root) is walked once, not forever — the cycle guard skips the re-entry.
+    #[test]
+    fn resolve_dir_walks_recursively_for_the_skills_layout() {
+        let dir = tmpdir("skills-tree");
+        let skills = dir.join("skills");
+        std::fs::create_dir_all(skills.join("alpha")).unwrap();
+        std::fs::create_dir_all(skills.join("beta")).unwrap();
+        std::fs::create_dir_all(skills.join(".cache")).unwrap();
+        std::fs::write(
+            skills.join("alpha/SKILL.md"),
+            "---\nname: alpha\ndescription: First.\n---\nb\n",
+        )
+        .unwrap();
+        std::fs::write(
+            skills.join("beta/SKILL.md"),
+            "---\nname: beta\ndescription: Second.\n---\nb\n",
+        )
+        .unwrap();
+        std::fs::write(skills.join(".cache/ignored.md"), "not content\n").unwrap();
+        std::fs::write(skills.join(".hidden.md"), "not content\n").unwrap();
+        std::os::unix::fs::symlink(&skills, skills.join("loop")).unwrap();
+
+        let resolved = resolve(&[labeled("Skills", &["skills"])], &dir).unwrap();
+        assert_eq!(
+            resolved.sections,
+            vec![Section {
+                heading: Some("Skills".into()),
+                items: vec![
+                    Item::Listed {
+                        name: "alpha".into(),
+                        description: "First.".into(),
+                        path: "skills/alpha/SKILL.md".into(),
+                    },
+                    Item::Listed {
+                        name: "beta".into(),
+                        description: "Second.".into(),
+                        path: "skills/beta/SKILL.md".into(),
+                    },
+                ],
+            }]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A symlinked directory inside a listed tree is a real layout (a skill collection linked in
+    /// from another repo) — the walk follows it, and files land under the *link's* display path,
+    /// the path the operator's tree presents.
+    #[test]
+    fn resolve_follows_a_symlinked_directory() {
+        let dir = tmpdir("skills-symlink");
+        let skills = dir.join("skills");
+        let external = dir.join("external");
+        std::fs::create_dir_all(&skills).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        std::fs::write(
+            external.join("SKILL.md"),
+            "---\nname: linked\ndescription: From elsewhere.\n---\nb\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&external, skills.join("linked")).unwrap();
+
+        let resolved = resolve(&[labeled("Skills", &["skills"])], &dir).unwrap();
+        assert_eq!(
+            resolved.sections,
+            vec![Section {
+                // Resolving to a single file, the entry collapses: the operator's label is the
+                // tag (label > frontmatter name — the settled precedence), no wrapper.
+                heading: None,
+                items: vec![Item::Listed {
+                    name: "Skills".into(),
+                    description: "From elsewhere.".into(),
+                    path: "skills/linked/SKILL.md".into(),
+                }],
             }]
         );
         std::fs::remove_dir_all(&dir).unwrap();
