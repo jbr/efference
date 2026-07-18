@@ -63,6 +63,12 @@ genuine pure projection, and the kept bytes are never persisted twice. The
 structured decision doubles as the audit record. See [the redaction
 fork](redaction-fork.md) for how verdicts are produced.
 
+**Note on `Elided`:** `WireState::Elided` is never constructed at runtime. The
+variant exists as a defensive arm in projection match statements (see
+[project.rs](../src/project.rs)) to handle future redaction modes gracefully, but
+current Phase 0 never produces it. Phase 1 (the actual redaction implementation)
+will add the construction sites.
+
 ### `Mark` / `MarkKind`
 
 ```rust
