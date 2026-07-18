@@ -46,13 +46,15 @@ struct Request<'a> {
     tools: &'a [Value],
     tool_choice: ToolChoice,
     /// Extended thinking (docs/transport.md, backlog/thinking-blocks.md). Rides on
-    /// `tool_choice`: **adaptive** on the main agent turn (`tool_choice: auto`), **disabled**
-    /// whenever the choice is forced — because forced `tool_choice` is incompatible with
-    /// thinking (400), and the fork forces its distiller. Keepalive is disabled independently
-    /// (`max_tokens: 0` rejects `enabled`; adaptive there is untested). Set once per call-type
-    /// and never flipped turn-to-turn, so it stays out of the cached prefix's way (toggling
-    /// thinking keeps the tools+system tier valid; docs/substrate.md). (`disabled` 400s on
-    /// Fable 5, which can't disable thinking — not a serve target yet.)
+    /// `tool_choice` and the model: **adaptive** on the main agent turn (`tool_choice: auto`)
+    /// when the model supports it, **disabled** whenever the choice is forced (forced
+    /// `tool_choice` is incompatible with thinking — 400 — and the fork forces its distiller)
+    /// or the model can't run adaptive thinking (Haiku 4.5; see `supports_adaptive_thinking`).
+    /// Keepalive is disabled independently (`max_tokens: 0` rejects `enabled`; adaptive there
+    /// is untested). Set once per call-type and never flipped turn-to-turn, so it stays out of
+    /// the cached prefix's way (toggling thinking keeps the tools+system tier valid;
+    /// docs/substrate.md). (`disabled` 400s on Fable 5, which can't disable thinking — not a
+    /// serve target yet.)
     thinking: Thinking,
     messages: &'a [ApiMessage],
     /// Always `true` — we consume the response as SSE (docs/transport.md). Set once and
@@ -83,15 +85,25 @@ const THINKING_ADAPTIVE: Thinking = Thinking::Adaptive {
 };
 
 impl Thinking {
-    /// Thinking rides on `tool_choice`: forced choice ⟺ no thinking (the API rejects the
-    /// combination). Auto → adaptive; any forced choice → disabled. Encoding it here makes the
-    /// illegal pairing unrepresentable (backlog/thinking-blocks.md).
-    fn for_tool_choice(tool_choice: &ToolChoice) -> Self {
+    /// Thinking rides on `tool_choice` and the model: forced choice ⟺ no thinking (the API
+    /// rejects the combination), and a model that can't run adaptive thinking (e.g. Haiku
+    /// 4.5) never gets it even on `auto`. Encoding both here makes the illegal pairings
+    /// unrepresentable (backlog/thinking-blocks.md).
+    fn for_request(model: &str, tool_choice: &ToolChoice) -> Self {
         match tool_choice.kind {
-            "auto" => THINKING_ADAPTIVE,
+            "auto" if supports_adaptive_thinking(model) => THINKING_ADAPTIVE,
             _ => THINKING_DISABLED,
         }
     }
+}
+
+/// Models that 400 on `thinking: {type: "adaptive"}` (docs/transport.md,
+/// backlog/thinking-blocks.md). Haiku 4.5 only accepts `enabled`+`budget_tokens` or no
+/// `thinking` at all — adaptive is Sonnet/Opus/Fable-tier only. Matched by prefix so a
+/// dated snapshot (`claude-haiku-4-5-20251001`) still matches. Extend this as new
+/// non-adaptive-capable models show up; there's no capability-query endpoint for this today.
+fn supports_adaptive_thinking(model: &str) -> bool {
+    !model.starts_with("claude-haiku")
 }
 
 /// The `tool_choice` field. Phase 1+ always sets `disable_parallel_tool_use` so
@@ -459,7 +471,7 @@ impl Client {
             system: &self.system,
             tools,
             tool_choice,
-            thinking: Thinking::for_tool_choice(&tool_choice),
+            thinking: Thinking::for_request(&self.model, &tool_choice),
             messages,
             stream: true,
         };
@@ -596,7 +608,7 @@ pub fn render_request_pretty(
         system,
         tools,
         tool_choice,
-        thinking: Thinking::for_tool_choice(&tool_choice),
+        thinking: Thinking::for_request(model, &tool_choice),
         messages,
         stream: true,
     };
@@ -673,7 +685,7 @@ fn request_value(
         system,
         tools,
         tool_choice,
-        thinking: Thinking::for_tool_choice(&tool_choice),
+        thinking: Thinking::for_request(model, &tool_choice),
         messages,
         stream: true,
     };
