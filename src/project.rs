@@ -260,8 +260,11 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
                 flush_tool_results(&mut pending_tool_results, &mut messages);
                 // Wire order: thinking → text → tool_use (docs/transport.md). Thinking blocks
                 // lead so the replayed signatures sit exactly where the API expects them.
-                let mut content: Vec<ApiBlock> =
-                    thinking.iter().chain(text.iter()).map(block_to_api).collect();
+                let mut content: Vec<ApiBlock> = thinking
+                    .iter()
+                    .chain(text.iter())
+                    .map(block_to_api)
+                    .collect();
                 for call in calls {
                     content.push(ApiBlock::ToolUse {
                         id: call.id.0.clone(),

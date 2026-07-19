@@ -186,7 +186,10 @@ mod tests {
         match serde_json::from_str::<Payload>(&line).unwrap() {
             Payload::Preamble { system, context } => {
                 assert_eq!(system, "sys");
-                assert_eq!(context, listing, "structured listing must survive the round-trip");
+                assert_eq!(
+                    context, listing,
+                    "structured listing must survive the round-trip"
+                );
             }
             other => panic!("expected a Preamble, got {other:?}"),
         }
