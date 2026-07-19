@@ -52,7 +52,7 @@ expression: self.render()
 44 │                                                                               ┃│
 45 │   Here's a structured edit, shown as a colored diff:                          ┃│
 46 │                                                                               ┃│
-47 │   ❯ preview_edit · fn is_empty                                                ┃│
+47 │   ❯ edit · fn is_empty                                                        ┃│
 48 │        /// True when the buffer holds no non-whitespace text.                 ┃│
 49 │        pub(super) fn is_empty(&self) -> bool {                                ┃│
 50 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))     ┃│

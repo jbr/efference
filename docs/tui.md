@@ -34,7 +34,7 @@ Because all tools are known at compile time, results get **per-tool representati
 
 - `bash` — rendered as a shell code block; a single-line command goes inline on the exchange header, a multi-line command overflows into the body.
 - `read` — strips the sentinel framing (`==<token> BEGIN <path>, LENGTH: n` … `END`) and highlights the file body by extension.
-- `preview_edit` / `persist_edit` / `retarget_edit` — parses the `===DIFF===` section into a color-coded `DocumentNode::Diff` (added/removed/hunk/context lines).
+- `edit` / `undo_edit` / `retarget_edit` — parses the `===DIFF===` section into a color-coded `DocumentNode::Diff` (added/removed/hunk/context lines).
 - Unrecognized tools — falls back to a plain code block of JSON input.
 
 The throughline: lean on pre-attentive cues (color, gutter, glyph) and tool-specific shape, not repeated labels.

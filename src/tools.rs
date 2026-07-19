@@ -367,14 +367,14 @@ mod tests {
             &["set_working_directory"],
         );
 
-        for expected in ["preview_edit", "retarget_edit", "persist_edit"] {
+        for expected in ["edit", "retarget_edit", "undo_edit"] {
             assert!(
                 server.handles(expected),
                 "missing {expected} in {:?}",
                 server.names
             );
         }
-        let bad = server.run_call("preview_edit", &json!({ "nonsense": true }));
+        let bad = server.run_call("edit", &json!({ "nonsense": true }));
         assert!(bad.is_error, "bad input should error: {:?}", bad.content);
 
         std::fs::remove_dir_all(&dir).unwrap();
@@ -407,8 +407,8 @@ mod tests {
             "search",
             "write",
             "list",
-            "preview_edit",
-            "persist_edit",
+            "edit",
+            "undo_edit",
         ] {
             assert!(names.contains(&tool), "missing {tool} in {names:?}");
         }

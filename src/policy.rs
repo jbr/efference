@@ -44,10 +44,10 @@
 //! requires reaching into each built-in's JSON input by known key ([`path_check`]). That
 //! is a deliberate wart: there is no way around it until an MCP-superset can carry
 //! permission metadata alongside the tool schema. The string literals are centralized in
-//! [`path_check`] so the coupling is in one place. One subtlety it encodes: `persist_edit`
+//! [`path_check`] so the coupling is in one place. One subtlety it encodes: `undo_edit`
 //! writes to disk but carries *no* path (the target was named by an earlier
-//! `preview_edit`), so write permission is enforced at `preview_edit` — the only
-//! edit-pipeline call that names the file — and `persist_edit` clears on the name grant.
+//! `edit`), so write permission is enforced at `edit` — the only
+//! edit-pipeline call that names the file — and `undo_edit` clears on the name grant.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Component, Path, PathBuf};
@@ -267,9 +267,9 @@ pub fn classify(role: &Config, call: &ToolCall) -> Verdict {
 /// exception to "no deny carve-out inside an allowed subtree": `.` may grant the tree, but this file
 /// still gates.
 ///
-/// Only the write-class tools that *name* a path qualify (`write`→`path`, `preview_edit`→`file_path`).
-/// `persist_edit` carries no path, but it can only persist a previously-`preview_edit`ed target — and
-/// a `preview_edit` of the config is caught here — so the review point is the naming step, exactly
+/// Only the write-class tools that *name* a path qualify (`write`→`path`, `edit`→`file_path`).
+/// `undo_edit` carries no path, but it can only revert a previously-`edit`ed target — and
+/// an `edit` of the config is caught here — so the review point is the naming step, exactly
 /// where write permission is already enforced (the acknowledged per-tool wart in `path_check`).
 pub fn is_config_write(call: &ToolCall, protected: &Path) -> bool {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
@@ -280,7 +280,7 @@ pub fn is_config_write(call: &ToolCall, protected: &Path) -> bool {
 fn is_config_write_in(call: &ToolCall, protected: &Path, cwd: &Path) -> bool {
     let key = match call.name.as_str() {
         "write" => "path",
-        "preview_edit" => "file_path",
+        "edit" => "file_path",
         _ => return false,
     };
     let Some(target) = call.input.get(key).and_then(Value::as_str) else {
@@ -327,7 +327,7 @@ fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
 
 /// The per-tool path rule — the acknowledged wart (see the module docs): reach into the
 /// built-in's JSON input by known key and confirm the target is granted. Tools with no
-/// path here (`persist_edit`, `retarget_edit`, `consolidate`, the supervisor/inbox tools)
+/// path here (`undo_edit`, `retarget_edit`, `consolidate`, the supervisor/inbox tools)
 /// clear on the name grant alone. Returns `true` when the path requirement is satisfied
 /// (or there is none), `false` when a required path is missing, malformed, or ungranted.
 fn path_check(role: &Config, call: &ToolCall, cwd: &Path) -> bool {
@@ -338,11 +338,11 @@ fn path_check(role: &Config, call: &ToolCall, cwd: &Path) -> bool {
         "list" => paths_granted(role, input, "path", Perm::Read, cwd, Some(".")),
         "search" => paths_granted(role, input, "path", Perm::Read, cwd, Some(".")),
         "find_anchor" => paths_granted(role, input, "file_path", Perm::Read, cwd, None),
-        // Writes: the target must be under a write grant. `preview_edit` is where the
-        // edit pipeline names its file, so write is enforced here; `persist_edit` (no
+        // Writes: the target must be under a write grant. `edit` is where the
+        // edit pipeline names its file, so write is enforced here; `undo_edit` (no
         // path) then clears on the name grant.
         "write" => paths_granted(role, input, "path", Perm::Write, cwd, None),
-        "preview_edit" => paths_granted(role, input, "file_path", Perm::Write, cwd, None),
+        "edit" => paths_granted(role, input, "file_path", Perm::Write, cwd, None),
         // No path to check — the name grant is sufficient.
         _ => true,
     }
@@ -397,7 +397,7 @@ fn input_targets<'a>(
 /// **existing** file under an entry, `create` a write to a **new** one (so `create` without
 /// `update` is an append-only store). Uses the same per-tool input keys as [`path_check`].
 ///
-/// `persist_edit` names no path (its target was named by the `preview_edit` where the grant is
+/// `undo_edit` names no path (its target was named by the `edit` where the grant is
 /// enforced — the acknowledged wart in [`path_check`]), so it clears when any entry carries a
 /// write grant, mirroring its clear-on-name-alone rule under `tools`.
 fn context_clears(role: &Config, call: &ToolCall, cwd: &Path) -> bool {
@@ -409,8 +409,8 @@ fn context_clears(role: &Config, call: &ToolCall, cwd: &Path) -> bool {
         "list" | "search" => ("path", Perm::Read, Some(".")),
         "find_anchor" => ("file_path", Perm::Read, None),
         "write" => ("path", Perm::Write, None),
-        "preview_edit" => ("file_path", Perm::Write, None),
-        "persist_edit" => {
+        "edit" => ("file_path", Perm::Write, None),
+        "undo_edit" => {
             return role
                 .context
                 .iter()
@@ -824,9 +824,9 @@ mod tests {
     const CWD: &str = "/work";
 
     /// The config-write carve-out (backlog/permissions/session-dir-and-config-as-reviewed-file.md):
-    /// a `write`/`preview_edit` whose target resolves to the protected config file is detected (so
+    /// a `write`/`edit` whose target resolves to the protected config file is detected (so
     /// the loop forces the operator gate), whether the target is relative or absolute; a write
-    /// elsewhere, a *read* of the config, and the path-less `persist_edit` are not.
+    /// elsewhere, a *read* of the config, and the path-less `undo_edit` are not.
     #[test]
     fn config_write_carve_out_detects_writes_to_the_protected_file() {
         let cwd = Path::new(CWD);
@@ -850,13 +850,13 @@ mod tests {
             "absolute write to config"
         );
 
-        let preview = call(
-            "preview_edit",
+        let edit = call(
+            "edit",
             serde_json::json!({ "file_path": ".efference/foo/config.toml" }),
         );
         assert!(
-            is_config_write_in(&preview, protected, cwd),
-            "preview_edit names the config"
+            is_config_write_in(&edit, protected, cwd),
+            "edit names the config"
         );
 
         let elsewhere = call("write", serde_json::json!({ "path": "src/main.rs" }));
@@ -874,10 +874,10 @@ mod tests {
             "reading the config is not a write"
         );
 
-        let persist = call("persist_edit", serde_json::json!({}));
+        let undo = call("undo_edit", serde_json::json!({}));
         assert!(
-            !is_config_write_in(&persist, protected, cwd),
-            "persist_edit carries no path"
+            !is_config_write_in(&undo, protected, cwd),
+            "undo_edit carries no path"
         );
     }
 
@@ -892,8 +892,8 @@ mod tests {
                 "list",
                 "search",
                 "write",
-                "preview_edit",
-                "persist_edit",
+                "edit",
+                "undo_edit",
                 "kill_process",
             ]
             .iter()
@@ -1024,33 +1024,33 @@ mod tests {
     }
 
     #[test]
-    fn edit_pipeline_enforces_write_at_preview_then_persist_clears() {
+    fn edit_pipeline_enforces_write_at_edit_then_undo_clears() {
         let role = fs_role();
-        // preview_edit names the file → write enforced here.
+        // edit names the file → write enforced here.
         assert_eq!(
             structured(
                 &role,
                 &call(
-                    "preview_edit",
+                    "edit",
                     serde_json::json!({ "file_path": "src/x.rs", "operation": "replace", "anchor": "fn x" })
                 )
             ),
             Verdict::Clear
         );
-        // preview into the read-only zone gates (the write is refused up front).
+        // edit into the read-only zone gates (the write is refused up front).
         assert_eq!(
             structured(
                 &role,
                 &call(
-                    "preview_edit",
+                    "edit",
                     serde_json::json!({ "file_path": "/refs/x.rs", "operation": "replace", "anchor": "fn x" })
                 )
             ),
             Verdict::Gate
         );
-        // persist_edit carries no path; the name grant suffices (write was authorized at preview).
+        // undo_edit carries no path; the name grant suffices (write was authorized at edit).
         assert_eq!(
-            structured(&role, &call("persist_edit", serde_json::json!({}))),
+            structured(&role, &call("undo_edit", serde_json::json!({}))),
             Verdict::Clear
         );
     }
@@ -1457,16 +1457,16 @@ mod tests {
             assert_eq!(classify_in(&append_only, &existing, &dir), Verdict::Gate);
             assert_eq!(classify_in(&append_only, &fresh, &dir), Verdict::Clear);
 
-            // The edit pipeline: `preview_edit` names the file (enforced like `write`);
-            // `persist_edit` names nothing and clears on any context write grant.
-            let preview = call(
-                "preview_edit",
+            // The edit pipeline: `edit` names the file (enforced like `write`);
+            // `undo_edit` names nothing and clears on any context write grant.
+            let edit = call(
+                "edit",
                 serde_json::json!({ "file_path": "memories/existing.md" }),
             );
-            let persist = call("persist_edit", serde_json::json!({}));
-            assert_eq!(classify_in(&update_only, &preview, &dir), Verdict::Clear);
-            assert_eq!(classify_in(&update_only, &persist, &dir), Verdict::Clear);
-            assert_eq!(classify_in(&read_only, &persist, &dir), Verdict::Gate);
+            let undo = call("undo_edit", serde_json::json!({}));
+            assert_eq!(classify_in(&update_only, &edit, &dir), Verdict::Clear);
+            assert_eq!(classify_in(&update_only, &undo, &dir), Verdict::Clear);
+            assert_eq!(classify_in(&read_only, &undo, &dir), Verdict::Gate);
 
             std::fs::remove_dir_all(&dir).unwrap();
         }

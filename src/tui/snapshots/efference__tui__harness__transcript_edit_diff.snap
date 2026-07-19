@@ -9,7 +9,7 @@ expression: self.render()
  1 │                                                                                │
  2 │   Here's the reformatted version.                                              │
  3 │                                                                                │
- 4 │   ❯ preview_edit · fn is_empty                                                 │
+ 4 │   ❯ edit · fn is_empty                                                         │
  5 │        /// True when the buffer holds no non-whitespace text.                  │
  6 │        pub(super) fn is_empty(&self) -> bool {                                 │
  7 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │

@@ -38,7 +38,7 @@ which must exist; else the `efference.toml` probe; else a scaffolded empty file)
 into the session's own `.efference/<id>/config.toml`. That snapshot — not the origin — is the live,
 watched, editable policy: two sessions sharing an origin diverge freely (the origin is an inert
 template). The session is told its config path in the preamble and may **edit the file to request a
-permission change** — but a `write`/`preview_edit` to the config file is forced to the operator gate
+permission change** — but a `write`/`edit` to the config file is forced to the operator gate
 (`policy::is_config_write`), bypassing both the fast-path and the spotter, so a permission change can
 never auto-apply; on approval the write lands and fs-watch folds the diff into effective policy. A
 malformed edit fail-closes (the loader rejects it, the last-good policy stands). "Session-only" is thus
@@ -155,7 +155,7 @@ See the prefix-promotion section below.
 A structured (non-bash) tool clears only if its name is in the config's `tools` set
 **and**, for the path-bearing ones, its target resolves under a `[paths]` grant with the
 needed permission — reads (`read`/`list`/`search`/`find_anchor`) need `read`, writes
-(`write`/`preview_edit`) need `write` (`write` implies `read`). Nothing clears in code; an
+(`write`/`edit`) need `write` (`write` implies `read`). Nothing clears in code; an
 empty config gates every tool, exactly as before.
 
 Two properties are load-bearing. **Grants are additive subtrees with no deny.** A `[paths]`
@@ -167,10 +167,10 @@ pointing outside is treated as inside — acceptable under the error-not-decepti
 
 **Mapping a tool to its path field is a deliberate wart.** The classifier reaches into
 each built-in's JSON input by known key (`read`→`paths`, `write`→`path`,
-`preview_edit`→`file_path`, …); the string literals are centralized in `policy.rs`. The
-sharp case: `persist_edit` writes to disk but carries *no* path (the target was named by an
-earlier `preview_edit`), so write permission is enforced at `preview_edit` — the only
-edit-pipeline call that names the file — and `persist_edit` clears on the name grant. The
+`edit`→`file_path`, …); the string literals are centralized in `policy.rs`. The
+sharp case: `undo_edit` writes to disk but carries *no* path (the target was named by an
+earlier `edit`), so write permission is enforced at `edit` — the only
+edit-pipeline call that names the file — and `undo_edit` clears on the name grant. The
 cohesive fix (an MCP-superset that carries permission/notification metadata alongside the
 schema) is later architectural work; for now the coupling is marked, not hidden.
 
@@ -274,7 +274,7 @@ asynchronous proposers go `Proposed → commit/cancel`.
 of the config file (the operator editing it externally takes effect live — `config_watch_loop`
 diffs the file and emits `Committed` edits); and the **session editing its own config file**, the
 config-as-reviewed-file mechanism that *replaced* the planned `propose_scope` tool — a session
-`write`/`preview_edit` to its `config.toml` is forced to the operator gate (`is_config_write`,
+`write`/`edit` to its `config.toml` is forced to the operator gate (`is_config_write`,
 bypassing fast-path and spotter), and on approval fs-watch folds it; the **autonomous flip**
 (`serve --autonomous`), below; and **prefix-promotion** (the spotter files a `Proposed(Command)`),
 below — the last `Proposed`-lifecycle user. See

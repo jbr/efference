@@ -423,11 +423,10 @@ mod scenarios {
     use ratatui::style::{Color, Modifier};
     use serde_json::json;
 
-    /// A realistic `preview_edit` result (real format from `.efference/*.jsonl`):
+    /// A realistic `edit` result (real format from `.efference/*.jsonl`):
     /// preamble lines, then a `===DIFF===` section with ` `/`+`/`-` line prefixes.
-    const EDIT_RESULT: &str = "Previewing: replace\n\
-        Note: the editor applies a consistent formatting style to the entire file\n\n\
-        💡 TIP: For focused changes you might try targeted replace operations\n\n\
+    const EDIT_RESULT: &str = "Applied replace — the file has been updated.\n\
+        Note: the editor applies a consistent formatting style to the entire file, including your edit\n\n\
         ===DIFF===\n\n\
         \x20    /// True when the buffer holds no non-whitespace text.\n\
         \x20    pub(super) fn is_empty(&self) -> bool {\n\
@@ -437,7 +436,7 @@ mod scenarios {
         +            .all(|l| l.iter().all(|c| c.is_whitespace()))\n\
         \x20    }";
 
-    /// Builds a transcript whose last entry is a `preview_edit` result carrying
+    /// Builds a transcript whose last entry is an `edit` result carrying
     /// [`EDIT_RESULT`], so both the snapshot and the color test share one setup.
     fn edit_scenario(w: u16, h: u16) -> Screenplay<'static> {
         let mut play = Screenplay::new(w, h);
@@ -445,7 +444,7 @@ mod scenarios {
         play.assistant(
             "Here's the reformatted version.",
             vec![tool_call(
-                "preview_edit",
+                "edit",
                 "toolu_08",
                 json!({ "anchor": "fn is_empty", "content": "…" }),
             )],

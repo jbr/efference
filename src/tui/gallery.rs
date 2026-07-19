@@ -141,7 +141,7 @@ pub(super) fn log() -> Vec<LogEntry> {
             4,
             "Here's a structured edit, shown as a colored diff:",
             vec![call(
-                "preview_edit",
+                "edit",
                 "toolu_g2",
                 serde_json::json!({ "anchor": "fn is_empty" }),
             )],

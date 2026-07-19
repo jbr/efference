@@ -485,7 +485,7 @@ fn result_body(
 
 /// The known tools whose result carries a `===DIFF===` section.
 fn is_diff_tool(name: &str) -> bool {
-    matches!(name, "preview_edit" | "persist_edit" | "retarget_edit")
+    matches!(name, "edit" | "undo_edit" | "retarget_edit")
 }
 
 /// Strip a `read` result's sentinel framing (`==<token> BEGIN <path>, LENGTH: n

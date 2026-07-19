@@ -30,8 +30,8 @@ knob; see `redaction-fork.md`.
 Not everything belongs behind the in-process trait.
 
 **Built-in (in-process):** the generic, language-agnostic primitives — `fs`
-(read / list / search / write) and structured edit (`preview_edit` /
-`retarget_edit` / `persist_edit`). These earn the typed hook: gating, staleness
+(read / list / search / write) and structured edit (`edit` /
+`retarget_edit` / `undo_edit`). These earn the typed hook: gating, staleness
 checks, and line-numbered rendering for the fork all want direct access to the
 result structure.
 
