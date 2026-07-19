@@ -219,6 +219,7 @@ impl Composer {
             KeyCode::Char('f') if alt => self.move_word_right(),
 
             // Emacs editing.
+            KeyCode::Backspace if alt => self.delete_word_back(),
             KeyCode::Backspace => self.delete_back(),
             KeyCode::Char('h') if ctrl => self.delete_back(),
             KeyCode::Delete => self.delete_forward(),
@@ -458,6 +459,9 @@ mod tests {
     fn ctrl(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
     }
+    fn alt_backspace() -> KeyEvent {
+        KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT)
+    }
 
     /// Screenplay scenario: a line longer than the composer width. This captures
     /// the *current* render so the wrap fix has a visible before/after. Watch the
@@ -559,6 +563,16 @@ mod tests {
             c.handle_key(key(ch));
         }
         c.handle_key(ctrl('w'));
+        assert_eq!(c.text(), "foo ");
+    }
+
+    #[test]
+    fn alt_backspace_deletes_word_back() {
+        let mut c = Composer::new();
+        for ch in "foo bar".chars() {
+            c.handle_key(key(ch));
+        }
+        c.handle_key(alt_backspace());
         assert_eq!(c.text(), "foo ");
     }
 
