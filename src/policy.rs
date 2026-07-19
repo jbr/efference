@@ -337,7 +337,7 @@ fn path_check(role: &Config, call: &ToolCall, cwd: &Path) -> bool {
         "read" => paths_granted(role, input, "paths", Perm::Read, cwd, None),
         "list" => paths_granted(role, input, "path", Perm::Read, cwd, Some(".")),
         "search" => paths_granted(role, input, "path", Perm::Read, cwd, Some(".")),
-        "read_node" => paths_granted(role, input, "file_path", Perm::Read, cwd, None),
+        "find_anchor" => paths_granted(role, input, "file_path", Perm::Read, cwd, None),
         // Writes: the target must be under a write grant. `preview_edit` is where the
         // edit pipeline names its file, so write is enforced here; `persist_edit` (no
         // path) then clears on the name grant.
@@ -407,7 +407,7 @@ fn context_clears(role: &Config, call: &ToolCall, cwd: &Path) -> bool {
     let (key, perm, default) = match call.name.as_str() {
         "read" => ("paths", Perm::Read, None),
         "list" | "search" => ("path", Perm::Read, Some(".")),
-        "read_node" => ("file_path", Perm::Read, None),
+        "find_anchor" => ("file_path", Perm::Read, None),
         "write" => ("path", Perm::Write, None),
         "preview_edit" => ("file_path", Perm::Write, None),
         "persist_edit" => {

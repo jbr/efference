@@ -154,7 +154,7 @@ See the prefix-promotion section below.
 
 A structured (non-bash) tool clears only if its name is in the config's `tools` set
 **and**, for the path-bearing ones, its target resolves under a `[paths]` grant with the
-needed permission — reads (`read`/`list`/`search`/`read_node`) need `read`, writes
+needed permission — reads (`read`/`list`/`search`/`find_anchor`) need `read`, writes
 (`write`/`preview_edit`) need `write` (`write` implies `read`). Nothing clears in code; an
 empty config gates every tool, exactly as before.
 
