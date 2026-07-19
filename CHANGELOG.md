@@ -16,6 +16,7 @@ behind a change, see [`journal/`](journal/).
 - Visible `[seq]` block handles on tool results for re-read / branch / compare addressing.
 - Trajectory consolidation: agent-called `consolidate(summary)` + `Mark::Boundary` projection fold, with branch-from-seq.
 - Ambient-notification inbox: out-of-band `POST /notify`, enqueue-then-triage at the fork gate (pin / dismiss / leave), logged at first-show.
+- Context surfacing: the fork peek offers a roster of unloaded `[context]` items; the model's `surfaced` verdict rides the `Triage` and projects as a read-me reminder at the Triage position (structured listing snapshotted additively in the `Preamble`).
 - Background-process supervisor: `bash background:true`, live peek tail, directed `list_processes` / `read_process` / `kill_process`, and idle-triggered triage (wake-on-notification).
 - Control channel: HTTP-over-Unix-socket daemon (`serve` / `turn` / `approve` / `interrupt` / `state` / `log` / `attach`) with durable `/events` and lossy `/stream`.
 - Three-valued approval gate (approve / abort / redirect) over the `Frontend` trait; multi-turn headless via `POST /turn`.

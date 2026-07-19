@@ -216,6 +216,9 @@ async fn run_idle_triage<D: Distiller>(
             origin: triage.origin,
             raw_keep: String::new(),
             inbox,
+            // The idle triage rides no tool result and shows no surfacing roster — the
+            // nudge is powered by proximity to work in flight (backlog/context-surfacing.md).
+            surfaced: Vec::new(),
         }),
     )?;
     Ok(escalate)
@@ -646,6 +649,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                                 origin: distilled.origin,
                                 raw_keep: distilled.raw_keep,
                                 inbox,
+                                surfaced: distilled.surfaced,
                             }),
                         )?;
                     }

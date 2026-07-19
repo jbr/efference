@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use std::collections::{HashMap, HashSet};
 
+use crate::context::Item;
 use crate::log::{
     CallId, ContentBlock, Disposition, Keep, LogEntry, Mark, MarkKind, Notification, Payload,
     RawResult, Seq, WireState,
@@ -184,6 +185,29 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             _ => None,
         })
         .collect();
+    // The `[context]` listing by item name — (description, path) for each read-on-demand
+    // stub — so a `Triage` can re-render a surfaced context item (backlog/context-surfacing.md)
+    // at cache-read cost, mirroring the notification body map. Sourced from the last boot
+    // `Preamble`'s structured snapshot (context.md); only looked up by name, so `HashMap`
+    // order can't reach the wire.
+    let listing: HashMap<&str, (&str, &str)> = log
+        .iter()
+        .rev()
+        .find_map(|e| match &e.payload {
+            Payload::Preamble { context, .. } => Some(context),
+            _ => None,
+        })
+        .into_iter()
+        .flat_map(|ctx| ctx.sections.iter().flat_map(|s| &s.items))
+        .filter_map(|item| match item {
+            Item::Listed {
+                name,
+                description,
+                path,
+            } => Some((name.as_str(), (description.as_str(), path.as_str()))),
+            Item::Inline { .. } | Item::Exec { .. } => None,
+        })
+        .collect();
     // Cursor into `boundaries` — advance past each one as we emit the first
     // non-elided entry after its `upto`.
     let mut boundary_cursor = 0;
@@ -273,14 +297,15 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // the system prompt rides the request's `system` field, never the `messages`
             // array, so the snapshot projects to nothing.
             Payload::Preamble { .. } => {}
-            // A fork verdict emits a block per **pinned** notification at its own
-            // position (docs/inbox.md) — body looked up from the `Ambient` arrival. This
-            // tail-ward placement keeps the wire append-only: a notification pinned at
-            // a later gate than its first-show never splices behind a breakpoint \(docs/substrate.md\).
-            // Dismissed / left dispositions don't project. The verdict is otherwise
-            // audit-only.
+            // A fork verdict emits a block per **pinned** notification and per **surfaced**
+            // context item at its own position — notification bodies looked up from the
+            // `Ambient` arrival (docs/inbox.md), surfaced items re-rendered from the boot
+            // listing (backlog/context-surfacing.md). This tail-ward placement keeps the wire
+            // append-only: content acknowledged at a later gate than its origin never splices
+            // behind a breakpoint (docs/substrate.md). Dismissed / left / already-surfaced
+            // dispositions don't project. The verdict is otherwise audit-only.
             Payload::Triage(t) => {
-                let pins: Vec<String> = t
+                let mut blocks: Vec<String> = t
                     .inbox
                     .iter()
                     .filter(|(_, d)| matches!(d, Disposition::Pin))
@@ -290,12 +315,20 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
                             .map(|n| format!("⟢ {}: {}", n.source, n.body))
                     })
                     .collect();
-                if !pins.is_empty() {
+                // Surfaced context items — name resolved to its one-line description and
+                // read path off the listing. A name absent from the current listing (a
+                // cross-boot listing change) simply drops: deterministic, never a panic.
+                blocks.extend(t.surfaced.iter().filter_map(|name| {
+                    listing.get(name.as_str()).map(|(description, path)| {
+                        format!("⟢ context · {name} may be relevant: {description} — read {path}")
+                    })
+                }));
+                if !blocks.is_empty() {
                     flush_tool_results(&mut pending_tool_results, &mut messages);
                     messages.push(ApiMessage {
                         role: Role::User,
                         content: vec![ApiBlock::Text {
-                            text: pins.join("\n"),
+                            text: blocks.join("\n"),
                             cache_control: None,
                         }],
                     });
@@ -630,6 +663,7 @@ mod tests {
             1,
             Payload::Preamble {
                 system: "You are an agent.\n\n<CLAUDE>\nthe whole repo map\n</CLAUDE>".into(),
+                context: Default::default(),
             },
         ));
         let with = serde_json::to_string(&project(&with)).unwrap();
@@ -1170,6 +1204,7 @@ mod tests {
                     origin: Origin::Model,
                     raw_keep: "all".into(),
                     inbox: vec![(1, Disposition::Pin), (2, Disposition::Dismiss)],
+                    surfaced: Vec::new(),
                 }),
             ),
         ];
@@ -1186,6 +1221,85 @@ mod tests {
         assert!(
             !wire.contains("reviewer") && !wire.contains("a nit"),
             "dismissed off wire: {wire}"
+        );
+    }
+
+    /// A surfaced context item projects as a `⟢ context · …` read-me reminder **at its
+    /// `Triage`'s position** (backlog/context-surfacing.md) — the one-line description and
+    /// read path re-rendered from the boot `Preamble` listing, not stored on the verdict.
+    /// This is the byte pin the surfacing slice moves: change the render and it fails here
+    /// first, before it can silently break the cache. A surfaced name absent from the
+    /// current listing (a cross-boot change) drops silently — deterministic, never a panic.
+    #[test]
+    fn surfaced_context_item_projects_at_triage_position() {
+        use crate::context::{Resolved, Section};
+        let listing = Resolved {
+            sections: vec![Section {
+                heading: Some("Skills".into()),
+                items: vec![Item::Listed {
+                    name: "ferritin".into(),
+                    description: "look up Rust docs".into(),
+                    path: "skills/ferritin.md".into(),
+                }],
+            }],
+        };
+        let log = vec![
+            entry(
+                0,
+                0,
+                Payload::Preamble {
+                    system: "sys".into(),
+                    context: listing,
+                },
+            ),
+            entry(
+                1,
+                0,
+                Payload::Assistant {
+                    thinking: vec![],
+                    text: vec![],
+                    calls: vec![ToolCall {
+                        id: CallId("t".into()),
+                        name: "grep".into(),
+                        input: json!({}),
+                    }],
+                },
+            ),
+            entry(
+                2,
+                0,
+                Payload::ToolResult {
+                    call_id: CallId("t".into()),
+                    raw: RawResult {
+                        content: "no match".into(),
+                        is_error: false,
+                    },
+                    wire: WireState::Raw,
+                },
+            ),
+            entry(
+                3,
+                0,
+                Payload::Triage(Triage {
+                    for_result: Some(2),
+                    origin: Origin::Model,
+                    raw_keep: "all".into(),
+                    inbox: Vec::new(),
+                    // "unknown" isn't in the listing → drops; only ferritin renders.
+                    surfaced: vec!["ferritin".into(), "unknown".into()],
+                }),
+            ),
+        ];
+        let messages = project(&log);
+        // assistant(tool_use) · user(tool_result) · user(surfacing reminder). The Preamble
+        // projects to nothing, so it adds no message.
+        assert_eq!(messages.len(), 3, "{messages:#?}");
+        assert_eq!(messages[2].role, Role::User); // the reminder, at the Triage position
+        assert!(
+            matches!(&messages[2].content[0], ApiBlock::Text { text, .. }
+                if text == "⟢ context · ferritin may be relevant: look up Rust docs — read skills/ferritin.md"),
+            "{:#?}",
+            messages[2].content[0]
         );
     }
 

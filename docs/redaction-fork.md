@@ -106,6 +106,39 @@ explicit structured result appended to canonical (the `Distilled` verdict, a pin
 irreversible to the world (`kill -9` a process), that is a main-branch, gated
 action, not perception management.
 
+## Surfacing unloaded context — the relevance rider
+
+Deciding what to perceive next also runs *forward*: the same peek can pull an
+**unloaded** `[context]` item (a read-on-demand skill/memory stub, see
+[context.md](context.md)) into view when it bears on the work in flight. A cheap
+model that recalls a stub's description but answers from memory anyway is missing a
+*decision* step, not a fact; the rider lands the nudge adjacent to the moment of
+need. Implemented in `src/distill.rs` (the roster + verdict) and `src/project.rs`
+(the render).
+
+- **Roster.** The peek view lists the surfaceable items — every `Item::Listed`
+  (those with a `path`) in the boot listing that no prior gate has surfaced — by
+  `[name]`, and `retain` gains an optional `surfaced` field over those names. The
+  roster is a pure fold over the prefix; names double as the constrained output
+  vocabulary, validated against the roster (invented names dropped).
+- **Surfaced-once dedup.** The fold excludes any name already in a prior
+  `Triage.surfaced`, so an item is offered at most once per session — the same
+  shape as the inbox's `active_shown`, `Triage`-only, no path-load tracking. It
+  suppresses on *surfaced*, not *read*; closing that gap is the pin-until-read
+  escalation, which is the only part that would need path tracking.
+- **Verdict is the stored form.** The chosen names ride on `Triage.surfaced`
+  (`src/log.rs`); `project` re-renders each as a `⟢ context · <name> …: <desc> —
+  read <path>` reminder **at the Triage position**, folding name→(path,
+  description) from the `Preamble`'s structured listing snapshot — tail-ward, so the
+  wire stays append-only, exactly like a pinned notification. Nothing but the names
+  is stored; the render evolves without touching stored entries.
+
+The rider is a **late-session** mechanism: its value is surfacing a relevant item
+the agent has drifted away from, which a constrained single turn can't manufacture
+(a capable model self-serves before the rider's window opens). So its causal payoff
+is a dogfooding question, not a single-turn test — while its cheap complement,
+stronger stub descriptions, works on its own at boot.
+
 ## `reread` — agent-initiated re-peek, tail-additive
 
 A `reread(seq, focus?)` tool re-runs the existing `ForkPeek` on the raw still in

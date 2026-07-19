@@ -115,7 +115,18 @@ pub enum Payload {
     /// complete record of the wire (docs/substrate.md). Audit/replay only: it projects to
     /// nothing (the system prompt rides the request's `system` field, never the `messages`
     /// array); the `wire` dev view reads it back instead of re-resolving files from disk.
-    Preamble { system: String },
+    ///
+    /// `context` carries the **structured** `[context]` listing (name / `path` / description
+    /// per item) the flat `system` string was rendered from, snapshotted **additively** so the
+    /// listing survives as a fold over the log — the source `project` re-renders a surfaced
+    /// context item from (backlog/context-surfacing.md), the same way it looks up pinned
+    /// notification bodies. `system` stays the byte-exact wire truth; `context` never touches
+    /// the wire. `#[serde(default)]`: logs predating the field read back an empty listing.
+    Preamble {
+        system: String,
+        #[serde(default)]
+        context: crate::context::Resolved,
+    },
 }
 
 /// A content block authored by the model or user. `Thinking` / `RedactedThinking` carry the
@@ -192,6 +203,14 @@ pub struct Triage {
     /// Per-notification dispositions chosen in this peek, by the notification's
     /// arrival `seq` (docs/inbox.md). Always empty until Slice C wires the inbox.
     pub inbox: Vec<(Seq, Disposition)>,
+    /// Context items this peek chose to **surface** — names from the boot `Preamble`'s
+    /// structured listing (stub files with a `path`) the model judged relevant to the
+    /// work in flight (backlog/context-surfacing.md). `project` re-renders each as a
+    /// read-me reminder at this entry's tail-ward position, off the listing (like a
+    /// pinned notification's body). Also the surfaced-once dedup source: a later gate's
+    /// roster excludes any name already here. `#[serde(default)]`: old logs read empty.
+    #[serde(default)]
+    pub surfaced: Vec<String>,
 }
 
 /// Where a [`Triage`] verdict came from (docs/redaction-fork.md).

@@ -79,6 +79,7 @@ mod tests {
                 origin: crate::log::Origin::Model,
                 raw_keep: "all".into(),
                 inbox,
+                surfaced: Vec::new(),
             }),
         )
     }

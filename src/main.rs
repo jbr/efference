@@ -418,7 +418,7 @@ async fn wire(
     // the view shows exactly what the model saw, not a re-resolve of files that may have
     // drifted on disk since. Only logs that predate the snapshot fall back to a rebuild.
     let recorded_system = entries.iter().rev().find_map(|e| match &e.payload {
-        efference::log::Payload::Preamble { system } => Some(system.clone()),
+        efference::log::Payload::Preamble { system, .. } => Some(system.clone()),
         _ => None,
     });
     let cwd = std::env::current_dir()?;
@@ -906,13 +906,14 @@ async fn serve(
     // The [context] preamble builder (docs/context.md): resolve the operator's listed
     // files from cwd and fold the rendered block into the frozen prefix. Fail closed — configured
     // context that can't be read aborts startup rather than silently vanishing.
-    let context_block = match efference::context::resolve(&loaded.role.context, &cwd) {
-        Ok(resolved) => resolved.render(),
+    let resolved = match efference::context::resolve(&loaded.role.context, &cwd) {
+        Ok(resolved) => resolved,
         Err(e) => {
             eprintln!("error: {e}");
             return Err("could not resolve [context] entries".into());
         }
     };
+    let context_block = resolved.render();
     let system = efference::env::system_prompt(
         context_block.as_deref(),
         role_section.as_deref(),
@@ -926,6 +927,7 @@ async fn serve(
         0,
         efference::log::Payload::Preamble {
             system: system.clone(),
+            context: resolved,
         },
     )?;
 

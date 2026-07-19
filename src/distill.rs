@@ -30,6 +30,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::api::{Client, Completion, ToolChoice, Usage};
+use crate::context::Item;
 use crate::inbox::ShownNotification;
 use crate::log::{
     Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall, WireState,
@@ -71,6 +72,11 @@ record now, and `mute` the ones whose tail you no longer need to see (they keep 
 running and still notify you when they exit). Anything you don't list keeps streaming \
 its latest tail to you at the next decision point.";
 
+const SURFACE_INSTRUCTION: &str = " Under \"context\" above are one-line-summarized \
+files available to you but not yet loaded, each with a [name]. In the `surfaced` field, \
+name any that genuinely bear on what you're doing right now — each you name will be \
+surfaced as a reminder to read it before you rely on memory. Name nothing if none apply.";
+
 /// A live-process triage disposition (docs/supervisor.md) — distinct from the seq-keyed
 /// notification [`Disposition`] because a running process is addressed by its live
 /// `bg#<n>` handle, not a frozen arrival seq, and its "dismiss" is **mute** (stop
@@ -104,6 +110,11 @@ pub struct Distillation {
     /// filtered to processes actually shown. The loop materializes a `Pin` into a
     /// snapshot `Ambient` and applies a `Mute` to the supervisor.
     pub background: Vec<(String, BgVerdict)>,
+    /// Context-item names this peek chose to surface (backlog/context-surfacing.md) —
+    /// filtered to the roster actually shown (invented names dropped). Stored on the
+    /// `Triage` (`surfaced`); `project` re-renders each as a read-me reminder. Empty
+    /// when nothing was surfaced.
+    pub surfaced: Vec<String>,
     /// The fork request's [`Usage`], if a model round-trip happened: it reads the
     /// shared canonical prefix (sliding its cache TTL), so the loop folds it into the
     /// cache telemetry (docs/substrate.md). `None` for a model-free distiller.
@@ -181,13 +192,14 @@ impl Distiller for HeadTail {
         } else {
             Keep::Ranges(vec![(1, self.head), (n - self.tail + 1, n)])
         };
-        // Model-free: a `Fallback` verdict, no usage, inbox + background untouched.
+        // Model-free: a `Fallback` verdict, no usage, inbox + background + surfacing untouched.
         Distillation {
             wire: WireState::Distilled { keep, note: None },
             origin: Origin::Fallback,
             raw_keep: String::new(),
             inbox: Vec::new(),
             background: Vec::new(),
+            surfaced: Vec::new(),
             usage: None,
         }
     }
@@ -227,6 +239,11 @@ impl Distiller for ForkPeek {
         // prefix, so they never touch the canonical wire (docs/substrate.md). The same
         // builder feeds the standalone idle triage.
         append_inbox_and_background(&mut peek_view, inbox, background);
+        // The surfacing roster (backlog/context-surfacing.md): unloaded `[context]` stub
+        // files this session hasn't surfaced yet, by `[name]` — the coordinates the
+        // `retain.surfaced` field addresses. Folded from the cached prefix, throwaway tail.
+        let roster = surfaceable_roster(prefix);
+        append_roster(&mut peek_view, &roster);
 
         // Fork: cached prefix-through-tool_use ┃ + full result + retain prompt. The
         // prefix hits cache; only the raw + instruction tail is fresh, and it is
@@ -239,6 +256,9 @@ impl Distiller for ForkPeek {
         }
         if !background.is_empty() {
             instruction.push_str(BACKGROUND_INSTRUCTION);
+        }
+        if !roster.is_empty() {
+            instruction.push_str(SURFACE_INSTRUCTION);
         }
         messages.push(ApiMessage {
             role: Role::User,
@@ -264,7 +284,7 @@ impl Distiller for ForkPeek {
             // surface on `GET /stream` — only the main thread's prose streams.
             .complete(
                 &messages,
-                &[retain_tool(inbox, background)],
+                &[retain_tool(inbox, background, &roster)],
                 ToolChoice::force(RETAIN),
                 |_| {},
             )
@@ -293,6 +313,15 @@ impl Distiller for ForkPeek {
                     .into_iter()
                     .filter(|(h, _)| shown_bg.contains(h.as_str()))
                     .collect();
+                // Keep only names actually on the roster (drop any the model invented),
+                // deduped — the harness-side guard (backlog/context-surfacing.md).
+                let offered: HashSet<&str> = roster.iter().map(String::as_str).collect();
+                let mut kept = HashSet::new();
+                let surfaced = p
+                    .surfaced
+                    .into_iter()
+                    .filter(|n| offered.contains(n.as_str()) && kept.insert(n.clone()))
+                    .collect();
                 Distillation {
                     wire: WireState::Distilled {
                         keep: p.keep,
@@ -302,6 +331,7 @@ impl Distiller for ForkPeek {
                     raw_keep: p.raw_keep,
                     inbox: dispositions,
                     background: bg,
+                    surfaced,
                     usage,
                 }
             }
@@ -327,6 +357,7 @@ impl Distiller for ForkPeek {
                     raw_keep: String::new(),
                     inbox: Vec::new(),
                     background: Vec::new(),
+                    surfaced: Vec::new(),
                     usage,
                 }
             }
@@ -444,10 +475,22 @@ fn background_schema_field() -> Value {
     })
 }
 
+/// The `surfaced` schema field (name-keyed) — present only when the roster is non-empty.
+/// A plain string array: names are validated against the roster in code (invented ones
+/// dropped), not by a schema enum, keeping the guard harness-side (backlog/context-surfacing.md).
+fn surfaced_schema_field() -> Value {
+    json!({
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Names of available context items (listed under \"context\" above) that genuinely bear on what you're doing now — each is surfaced as a reminder to read it. Omit or leave empty if none apply."
+    })
+}
+
 /// The forced fork tool. Its `input_schema` gains an `inbox` field only when there are
-/// notifications to triage, and a `background` field only when processes are running —
-/// each absent case stays lean (and the model isn't prompted to invent dispositions).
-fn retain_tool(shown: &[ShownNotification], background: &[BgView]) -> Value {
+/// notifications to triage, a `background` field only when processes are running, and a
+/// `surfaced` field only when there are unloaded context items to offer — each absent case
+/// stays lean (and the model isn't prompted to invent dispositions).
+fn retain_tool(shown: &[ShownNotification], background: &[BgView], roster: &[String]) -> Value {
     let mut input_schema = json!({
         "type": "object",
         "properties": {
@@ -467,6 +510,9 @@ fn retain_tool(shown: &[ShownNotification], background: &[BgView]) -> Value {
     }
     if !background.is_empty() {
         input_schema["properties"]["background"] = background_schema_field();
+    }
+    if !roster.is_empty() {
+        input_schema["properties"]["surfaced"] = surfaced_schema_field();
     }
     json!({
         "name": RETAIN,
@@ -525,6 +571,49 @@ fn append_inbox_and_background(
     }
 }
 
+/// The fork's surfacing roster (backlog/context-surfacing.md): the names of **listed**
+/// `[context]` items — stub files carrying a `path`, read on demand — that no prior gate
+/// has surfaced yet. A pure fold over the prefix: the boot `Preamble`'s structured listing
+/// (last one wins on a multi-boot log) minus every name any prior `Triage.surfaced` already
+/// carried (the surfaced-once dedup, `Triage`-only — no path-load tracking). Inlined and
+/// exec items are excluded: their whole body is already on the wire, so there is nothing to
+/// read on demand. Names double as the constrained output vocabulary.
+fn surfaceable_roster(prefix: &[LogEntry]) -> Vec<String> {
+    let mut sections: &[crate::context::Section] = &[];
+    let mut surfaced: HashSet<&str> = HashSet::new();
+    for entry in prefix {
+        match &entry.payload {
+            Payload::Preamble { context, .. } => sections = &context.sections,
+            Payload::Triage(t) => surfaced.extend(t.surfaced.iter().map(String::as_str)),
+            _ => {}
+        }
+    }
+    let mut seen = HashSet::new();
+    sections
+        .iter()
+        .flat_map(|s| &s.items)
+        .filter_map(|item| match item {
+            Item::Listed { name, .. } => Some(name),
+            Item::Inline { .. } | Item::Exec { .. } => None,
+        })
+        .filter(|name| !surfaced.contains(name.as_str()) && seen.insert(name.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// Render the surfacing roster section of a peek view (backlog/context-surfacing.md): the
+/// available-but-unloaded context items by `[name]`, the coordinates the `retain.surfaced`
+/// field addresses. Only in the tool-result gate — the idle triage rides no work in flight.
+fn append_roster(view: &mut String, roster: &[String]) {
+    if roster.is_empty() {
+        return;
+    }
+    view.push_str(&format!("\n\n═══ context · {} available ═══", roster.len()));
+    for name in roster {
+        view.push_str(&format!("\n[{name}]"));
+    }
+}
+
 // ---- the verdict ----
 
 /// A parsed `retain` call: the structured `keep`, the optional `note`, the model's
@@ -538,6 +627,8 @@ struct ParsedRetain {
     raw_keep: String,
     inbox: Vec<(Seq, Disposition)>,
     background: Vec<(String, BgVerdict)>,
+    /// Names the model surfaced — **unfiltered**; the caller drops any not on the roster.
+    surfaced: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -549,6 +640,8 @@ struct RetainInput {
     inbox: Option<InboxVerdict>,
     #[serde(default)]
     background: Option<BackgroundVerdict>,
+    #[serde(default)]
+    surfaced: Vec<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -611,6 +704,7 @@ fn parse_retain(completion: &Completion) -> Option<ParsedRetain> {
         note,
         inbox,
         background,
+        surfaced,
     } = RetainInput::deserialize(&retain.input).ok()?;
     let parsed_keep = parse_keep(&keep);
     let (dispositions, bg) = collect_dispositions(inbox, background);
@@ -620,6 +714,7 @@ fn parse_retain(completion: &Completion) -> Option<ParsedRetain> {
         raw_keep: keep,
         inbox: dispositions,
         background: bg,
+        surfaced,
     })
 }
 
@@ -685,7 +780,7 @@ fn number_lines(lines: &[&str]) -> String {
 mod tests {
     use super::*;
     use crate::api::Usage;
-    use crate::log::CallId;
+    use crate::log::{CallId, Triage};
 
     fn lines(s: &str) -> Vec<&str> {
         s.lines().collect()
@@ -806,5 +901,106 @@ mod tests {
         // The peek is force-called to `retain`, but guard anyway: a turn that called
         // something else yields no verdict → keep-all fallback.
         assert!(parse_retain(&retain_completion("bash", json!({"command": "ls"}))).is_none());
+    }
+
+    #[test]
+    fn parse_retain_reads_surfaced_names() {
+        // The `surfaced` field carries context-item names the model judged relevant
+        // (backlog/context-surfacing.md); parse_retain reads them unfiltered.
+        let p = parse_retain(&retain_completion(
+            RETAIN,
+            json!({ "keep": "all", "surfaced": ["ferritin", "jsonl-prose"] }),
+        ))
+        .expect("parses");
+        assert_eq!(p.surfaced, vec!["ferritin", "jsonl-prose"]);
+
+        // Absent field → no surfacing (the lean default).
+        let p = parse_retain(&retain_completion(RETAIN, json!({ "keep": "all" }))).unwrap();
+        assert!(p.surfaced.is_empty());
+    }
+
+    fn entry(seq: u64, payload: Payload) -> LogEntry {
+        use crate::log::Timestamp;
+        LogEntry {
+            seq,
+            turn: 0,
+            at: Timestamp(1000 + seq),
+            payload,
+        }
+    }
+
+    fn preamble_with(items: Vec<Item>) -> LogEntry {
+        use crate::context::{Resolved, Section};
+        entry(
+            0,
+            Payload::Preamble {
+                system: "sys".into(),
+                context: Resolved {
+                    sections: vec![Section {
+                        heading: Some("Skills".into()),
+                        items,
+                    }],
+                },
+            },
+        )
+    }
+
+    fn listed(name: &str) -> Item {
+        Item::Listed {
+            name: name.into(),
+            description: format!("what {name} does"),
+            path: format!("skills/{name}.md"),
+        }
+    }
+
+    #[test]
+    fn roster_lists_stub_items_and_excludes_inlined_and_exec() {
+        // Only read-on-demand stubs (`Listed`) are surfaceable; inlined and exec bodies
+        // are already whole on the wire, so there's nothing to load.
+        let prefix = vec![preamble_with(vec![
+            listed("ferritin"),
+            Item::Inline {
+                name: "CLAUDE".into(),
+                path: "CLAUDE.md".into(),
+                body: "the repo map".into(),
+            },
+            Item::Exec {
+                name: "Env".into(),
+                command: "env".into(),
+                body: "PWD=/x".into(),
+            },
+            listed("jsonl-prose"),
+        ])];
+        assert_eq!(surfaceable_roster(&prefix), vec!["ferritin", "jsonl-prose"]);
+    }
+
+    #[test]
+    fn roster_excludes_already_surfaced_names() {
+        // Surfaced-once dedup (backlog/context-surfacing.md): a name any prior
+        // `Triage.surfaced` carried drops out of the roster — folded from the log alone.
+        let prefix = vec![
+            preamble_with(vec![listed("ferritin"), listed("jsonl-prose")]),
+            entry(
+                1,
+                Payload::Triage(Triage {
+                    for_result: Some(1),
+                    origin: Origin::Model,
+                    raw_keep: "all".into(),
+                    inbox: Vec::new(),
+                    surfaced: vec!["ferritin".into()],
+                }),
+            ),
+        ];
+        assert_eq!(
+            surfaceable_roster(&prefix),
+            vec!["jsonl-prose"],
+            "ferritin was surfaced already; only jsonl-prose remains offerable"
+        );
+    }
+
+    #[test]
+    fn roster_is_empty_without_a_preamble() {
+        // No listing → nothing to offer (the pre-snapshot / config-less case).
+        assert!(surfaceable_roster(&[]).is_empty());
     }
 }

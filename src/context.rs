@@ -17,6 +17,8 @@
 
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::config::{ContextEntry, ContextSource};
 
 /// The frontmatter keys we read. Everything else in the block is ignored (forward-compatible).
@@ -220,13 +222,13 @@ pub fn fallback_name(path: &Path) -> String {
 /// A fully-resolved `[context]` ready to render into the preamble: sections in **document order**
 /// (docs/context.md). Each [`Section`] is a bare entry (no heading) or a labeled group.
 /// This is what [`crate::env`] builds from disk at boot and freezes into the cached prefix.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Resolved {
     pub sections: Vec<Section>,
 }
 
 /// One rendered section: a labeled group (`heading = Some`) or a bare entry (`heading = None`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Section {
     pub heading: Option<String>,
     pub items: Vec<Item>,
@@ -235,7 +237,7 @@ pub struct Section {
 /// A single resolved context item — an inlined file (body in full) or a listed stub (read on demand).
 /// Both render as a name tag `<name>…</name>` (docs/context.md); the name is the file's
 /// frontmatter `name`, else its basename.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Item {
     /// The full body rides in the preamble inside `<name>…</name>`. `path` is kept for provenance /
     /// the boot snapshot, not rendered (the tag name is the identity).

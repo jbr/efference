@@ -105,7 +105,10 @@ preamble (omitting the entry omits the block — explicit over magic).
   the full rendered system prompt as a `Payload::Preamble` entry once at boot
   ([substrate.md](substrate.md)). The log stays the complete record; `efference wire`
   reads the snapshot back instead of re-resolving; and once order is baked into the
-  snapshot, sort order is a pure semantic choice, never a stability constraint.
+  snapshot, sort order is a pure semantic choice, never a stability constraint. The entry
+  also carries the **structured** `Resolved` listing (the `Section`/`Item` tree) beside the
+  flat string — additive, so the byte-exact string stays the wire truth while the structure
+  survives as a fold for the surfacing rider ([redaction-fork.md](redaction-fork.md)).
 - **Fail closed, loudly.** A named file that can't be read, or an unterminated
   frontmatter block, fails startup — silently booting without configured context would be
   the model running with knowledge it was told it had.

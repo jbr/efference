@@ -158,6 +158,55 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
     }
 
+    /// The boot preamble snapshots the **structured** `[context]` listing beside the flat
+    /// `system` string (backlog/context-surfacing.md), so a listed item's name / path /
+    /// description survive the log's serde and `project` can later fold them back into a
+    /// surfacing reminder. The flat `system` stays the byte-exact wire truth; this pins the
+    /// additive structured half.
+    #[test]
+    fn preamble_snapshots_the_structured_context_listing() {
+        use crate::context::{Item, Resolved, Section};
+
+        let listing = Resolved {
+            sections: vec![Section {
+                heading: Some("Skills".into()),
+                items: vec![Item::Listed {
+                    name: "ferritin".into(),
+                    description: "look up Rust docs".into(),
+                    path: "skills/ferritin.md".into(),
+                }],
+            }],
+        };
+        let line = serde_json::to_string(&Payload::Preamble {
+            system: "sys".into(),
+            context: listing.clone(),
+        })
+        .unwrap();
+
+        match serde_json::from_str::<Payload>(&line).unwrap() {
+            Payload::Preamble { system, context } => {
+                assert_eq!(system, "sys");
+                assert_eq!(context, listing, "structured listing must survive the round-trip");
+            }
+            other => panic!("expected a Preamble, got {other:?}"),
+        }
+    }
+
+    /// A log line predating the structured listing (bare `{"system": …}`) still loads — the
+    /// `#[serde(default)]` on `context` reads it back as an empty `Resolved`, never a parse
+    /// error. Old logs must remain replayable.
+    #[test]
+    fn legacy_preamble_without_context_reads_back_empty() {
+        let legacy = r#"{"Preamble":{"system":"you are an agent"}}"#;
+        match serde_json::from_str::<Payload>(legacy).unwrap() {
+            Payload::Preamble { system, context } => {
+                assert_eq!(system, "you are an agent");
+                assert_eq!(context, crate::context::Resolved::default());
+            }
+            other => panic!("expected a Preamble, got {other:?}"),
+        }
+    }
+
     /// Blank lines tolerated; entry count survives.
     #[test]
     fn load_tolerates_blank_lines() {
