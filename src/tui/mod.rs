@@ -455,7 +455,10 @@ fn parse_policy(body: &str) -> Option<PolicyView> {
             m.iter()
                 .map(|(path, perms)| {
                     let r = perms.get("read").and_then(|b| b.as_bool()).unwrap_or(false);
-                    let w = perms.get("write").and_then(|b| b.as_bool()).unwrap_or(false);
+                    let w = perms
+                        .get("write")
+                        .and_then(|b| b.as_bool())
+                        .unwrap_or(false);
                     PolicyEntry {
                         label: format!("{path}  {}", perm_str(r, w)),
                         proposed: false,
@@ -469,10 +472,9 @@ fn parse_policy(body: &str) -> Option<PolicyView> {
     let mut scope_proposal = None;
     if let Some(arr) = v.get("proposals").and_then(|p| p.as_array()) {
         for prop in arr {
-            let (Some(seq), Some(change)) = (
-                prop.get("seq").and_then(|s| s.as_u64()),
-                prop.get("change"),
-            ) else {
+            let (Some(seq), Some(change)) =
+                (prop.get("seq").and_then(|s| s.as_u64()), prop.get("change"))
+            else {
                 continue;
             };
             if let Some(c) = change

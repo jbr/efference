@@ -19,8 +19,110 @@ use trillium_tokio::ClientConfig;
 use crate::log::{CallId, ContentBlock, Payload, ToolCall};
 use crate::project::ApiMessage;
 
-const MESSAGES_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
+/// The default upstream: Anthropic's own Messages endpoint. Used when neither
+/// `EFFERENCE_ENDPOINT` nor `EFFERENCE_API_KEY` is set, so a bare `ANTHROPIC_API_KEY`
+/// keeps working exactly as it did (docs/transport.md).
+const DEFAULT_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
+
+/// The `anthropic-version` header value. This is part of the Anthropic Messages
+/// *wire dialect*, not a provider identity — OpenRouter's `/api/v1/messages` skin
+/// speaks the same dialect and tolerates the header — so it rides every request
+/// regardless of which `Endpoint` is targeted (docs/transport.md).
 const ANTHROPIC_VERSION: &str = "2023-06-01";
+
+/// The one provider seam (docs/transport.md). The request *body* is always the
+/// Anthropic Messages wire — `project(log)` output — because that shape is what
+/// every supported provider serves (Anthropic directly; OpenRouter via its
+/// `/api/v1/messages` skin). Switching providers therefore only changes **where**
+/// the POST goes and **how** it authenticates, so those are the only two things
+/// this carries. Resolved once from the environment at boot and shared by the
+/// agent [`Client`] and the fork's spotter client, so both hit the same endpoint
+/// over the same cached prefix.
+#[derive(Clone, Debug)]
+pub struct Endpoint {
+    /// Full messages URL, e.g. `https://api.anthropic.com/v1/messages` or
+    /// `https://openrouter.ai/api/v1/messages`.
+    pub url: String,
+    /// The auth header **name** — `x-api-key` for Anthropic, `authorization` for
+    /// OpenRouter's `Bearer` scheme. A runtime `String` (not a `&'static str`) so
+    /// the provider, not the code, chooses it.
+    pub auth_header: String,
+    /// The auth header **value**, already assembled — the raw key for `x-api-key`,
+    /// or `Bearer sk-or-...` once the scheme prefix is prepended (see [`from_env`]).
+    ///
+    /// [`from_env`]: Self::from_env
+    pub auth_value: String,
+}
+
+impl Endpoint {
+    /// Resolve the endpoint from the environment. Every knob is optional, so an
+    /// existing `ANTHROPIC_API_KEY`-only setup is entirely unchanged:
+    ///
+    /// - `EFFERENCE_ENDPOINT` — the full messages URL. Defaults to Anthropic's.
+    /// - `EFFERENCE_API_KEY` — the **raw secret**, nothing else. Kept alone (not
+    ///   `header=value`) so it can be a *whole-value* 1Password reference: `op run`
+    ///   only substitutes a reference that is the entire value, never one embedded
+    ///   mid-string. The header **name** and any scheme **prefix** are separate:
+    /// - `EFFERENCE_AUTH_HEADER` — the auth header name. Defaults to `x-api-key`.
+    /// - `EFFERENCE_AUTH_PREFIX` — a literal prepended to the secret to form the
+    ///   header value. Defaults to empty; set `"Bearer "` (trailing space included)
+    ///   for OpenRouter's `authorization: Bearer <key>`. Splitting the prefix off
+    ///   keeps the secret a whole value, so `EFFERENCE_AUTH_PREFIX="Bearer "` +
+    ///   `EFFERENCE_API_KEY="op://…"` resolves cleanly under `op run`.
+    ///
+    /// All provider knowledge thus stays in the environment, not the code. When
+    /// `EFFERENCE_API_KEY` is absent, falls back to `ANTHROPIC_API_KEY` sent bare as
+    /// `x-api-key` (the historical behavior); the `EFFERENCE_AUTH_*` knobs apply
+    /// only to the `EFFERENCE_API_KEY` path.
+    pub fn from_env() -> Result<Self, Error> {
+        Self::resolve(
+            std::env::var("EFFERENCE_ENDPOINT").ok(),
+            std::env::var("EFFERENCE_API_KEY").ok(),
+            std::env::var("EFFERENCE_AUTH_HEADER").ok(),
+            std::env::var("EFFERENCE_AUTH_PREFIX").ok(),
+            std::env::var("ANTHROPIC_API_KEY").ok(),
+        )
+    }
+
+    /// The pure core of [`Self::from_env`], factored out so the precedence and the
+    /// header/prefix/secret assembly are unit-testable without touching process env.
+    fn resolve(
+        endpoint: Option<String>,
+        api_key: Option<String>,
+        auth_header: Option<String>,
+        auth_prefix: Option<String>,
+        anthropic_key: Option<String>,
+    ) -> Result<Self, Error> {
+        let url = endpoint.unwrap_or_else(|| DEFAULT_ENDPOINT.to_string());
+        match (api_key, anthropic_key) {
+            // The configurable path: raw secret + optional header name + optional prefix.
+            (Some(key), _) => {
+                let auth_header = auth_header
+                    .map(|h| h.trim().to_string())
+                    .filter(|h| !h.is_empty())
+                    .unwrap_or_else(|| "x-api-key".to_string());
+                let auth_value = format!("{}{}", auth_prefix.unwrap_or_default(), key);
+                Ok(Self {
+                    url,
+                    auth_header,
+                    auth_value,
+                })
+            }
+            // Backward-compat: a bare `ANTHROPIC_API_KEY` is always `x-api-key: <key>`,
+            // ignoring the `EFFERENCE_AUTH_*` knobs (those belong to the path above).
+            (None, Some(anthropic)) => Ok(Self {
+                url,
+                auth_header: "x-api-key".to_string(),
+                auth_value: anthropic,
+            }),
+            (None, None) => Err("no API credentials: set EFFERENCE_API_KEY (plus \
+                                 EFFERENCE_ENDPOINT / EFFERENCE_AUTH_HEADER / \
+                                 EFFERENCE_AUTH_PREFIX for a non-Anthropic provider), or \
+                                 ANTHROPIC_API_KEY for the default Anthropic endpoint"
+                .into()),
+        }
+    }
+}
 
 /// Response-token ceiling per request. 1024 truncated real final answers in a
 /// live run (the model's synthesis was cut mid-sentence); 4096 gives the agent
@@ -97,13 +199,60 @@ impl Thinking {
     }
 }
 
-/// Models that 400 on `thinking: {type: "adaptive"}` (docs/transport.md,
-/// backlog/thinking-blocks.md). Haiku 4.5 only accepts `enabled`+`budget_tokens` or no
-/// `thinking` at all — adaptive is Sonnet/Opus/Fable-tier only. Matched by prefix so a
-/// dated snapshot (`claude-haiku-4-5-20251001`) still matches. Extend this as new
-/// non-adaptive-capable models show up; there's no capability-query endpoint for this today.
+/// Per-process override for adaptive thinking, read once from `EFFERENCE_THINKING`:
+/// `adaptive` forces it on, `off`/`disabled` forces it off, `auto` (or unset) defers
+/// to the model allowlist. Read once — env is process-stable and thinking must not
+/// flip turn-to-turn or it would perturb the cached prefix (docs/transport.md). An
+/// unrecognized value warns once and falls back to `auto`.
+static THINKING_OVERRIDE: std::sync::LazyLock<Option<bool>> = std::sync::LazyLock::new(|| {
+    match std::env::var("EFFERENCE_THINKING")
+        .ok()
+        .as_deref()
+        .map(str::trim)
+    {
+        Some("adaptive") => Some(true),
+        Some("off" | "disabled") => Some(false),
+        None | Some("" | "auto") => None,
+        Some(other) => {
+            log::warn!(
+                "EFFERENCE_THINKING={other:?} not understood (use adaptive|off|auto); \
+                 falling back to the per-model default"
+            );
+            None
+        }
+    }
+});
+
+/// Whether to send `thinking: {type:"adaptive"}` for `model` (docs/transport.md,
+/// backlog/thinking-blocks.md). An explicit `EFFERENCE_THINKING` wins; otherwise this
+/// is an **allowlist**, not "everything but haiku": most non-Anthropic models (reached
+/// via OpenRouter) don't accept the Anthropic `thinking` field at all, so the safe
+/// default is off unless the model is a recognized adaptive-capable Claude tier
+/// (Sonnet/Opus/Fable — **not** Haiku, which takes `enabled`+`budget_tokens` only).
+/// Matched by substring so both bare ids (`claude-opus-4-8`) and provider-scoped slugs
+/// (`anthropic/claude-opus-4.1`) match. There is no portable capability query for this
+/// — OpenRouter's `supported_parameters` describes its normalized `reasoning` interface,
+/// not the Anthropic `thinking` block — so recognition lives here; override per session
+/// with `EFFERENCE_THINKING=adaptive|off`.
 fn supports_adaptive_thinking(model: &str) -> bool {
-    !model.starts_with("claude-haiku")
+    THINKING_OVERRIDE.unwrap_or_else(|| is_recognized_adaptive_claude(model))
+}
+
+/// The allowlist behind [`supports_adaptive_thinking`]'s `auto` default: a Claude
+/// family model (direct id or `anthropic/…` slug) that isn't Haiku. Everything
+/// foreign (`openai/…`, `google/…`, …) falls outside it and thus gets no `thinking`.
+///
+/// Adaptive thinking (`{type:"adaptive"}`) is a Claude **4.6+** feature; pre-4.6
+/// tiers (Opus 4.5/4.1, Sonnet 4.5/4, …) speak the older `{type:"enabled",
+/// budget_tokens}` API and **400 on adaptive**. This substring rule doesn't encode
+/// that version floor — parsing a version out of both `claude-opus-4-8` and
+/// `anthropic/claude-opus-4.1` is its own fragile problem — so it assumes the
+/// current Claude generation, which is what efference actually serves (default
+/// `claude-opus-4-8`). efference can't express budgeted thinking anyway (the
+/// [`Thinking`] enum is Adaptive/Disabled only), so a pre-4.6 Claude wants
+/// thinking off: set `EFFERENCE_THINKING=off` for that non-target case.
+fn is_recognized_adaptive_claude(model: &str) -> bool {
+    (model.contains("claude") || model.contains("anthropic")) && !model.contains("haiku")
 }
 
 /// The `tool_choice` field. Phase 1+ always sets `disable_parallel_tool_use` so
@@ -141,14 +290,36 @@ impl ToolChoice {
 /// The Anthropic `usage` object. The two `cache_*` fields are the Phase 0 gate
 /// metrics; defaulted because they're absent unless caching is in play. `Default`
 /// seeds the [`Assembler`] before `message_start` arrives.
+///
+/// Every field is null-tolerant (docs/transport.md: the provider seam). Anthropic
+/// *omits* a token count it has nothing to say about; OpenRouter's skin (and the
+/// upstreams behind it — e.g. Together) instead sends the field **present with an
+/// explicit `null`** (`cache_creation_input_tokens: null` in every `message_start`).
+/// `#[serde(default)]` covers only an *absent* field — a present `null` still hits
+/// the `u64` and fails (`invalid type: null, expected u64`), which crashed the very
+/// first OpenRouter turn. [`null_or_missing`] folds both absent and null to 0, so a
+/// token count no provider reports is simply zero telemetry rather than a hard error.
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct Usage {
+    #[serde(default, deserialize_with = "null_or_missing")]
     pub input_tokens: u64,
+    #[serde(default, deserialize_with = "null_or_missing")]
     pub output_tokens: u64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_or_missing")]
     pub cache_creation_input_tokens: u64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_or_missing")]
     pub cache_read_input_tokens: u64,
+}
+
+/// Deserialize a `u64` that a provider may send as an explicit JSON `null` (or omit
+/// entirely, when paired with `#[serde(default)]`), folding both to 0. Anthropic
+/// omits; OpenRouter-fronted upstreams null it out — see [`Usage`]. Not part of any
+/// wire-byte pin: `Usage` is response/telemetry only, never projected (docs/substrate.md).
+fn null_or_missing<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<u64>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 /// A parsed assistant turn plus the metadata we surface and log.
@@ -225,6 +396,15 @@ impl Assembler {
     /// a live sink without re-parsing — every other event yields `None`.
     fn apply(&mut self, event_type: Option<&str>, data: &str) -> Result<Option<String>, Error> {
         let mut streamed = None;
+        // The OpenAI/OpenRouter stream-end sentinel (docs/transport.md: the provider seam).
+        // Anthropic closes the stream after `message_stop`; OpenRouter's `/api/v1/messages`
+        // skin appends a trailing `data: [DONE]` (labeled `event: data`) as OpenAI's wire
+        // does. It carries no content — recognize it by its *payload*, since the event
+        // label varies by provider, and treat it as terminal rather than tripping
+        // loud-on-unknown below.
+        if data.trim() == "[DONE]" {
+            return Ok(None);
+        }
         match event_type {
             Some("message_start") => {
                 #[derive(Deserialize)]
@@ -355,6 +535,7 @@ impl Assembler {
                 }
                 #[derive(Deserialize)]
                 struct DeltaUsage {
+                    #[serde(default, deserialize_with = "null_or_missing")]
                     output_tokens: u64,
                 }
                 let Env { delta, usage } = serde_json::from_str(data)?;
@@ -370,7 +551,7 @@ impl Assembler {
             // An in-stream error (e.g. `overloaded_error` after a 200) carries a
             // full JSON body — surface it verbatim (the lossy path is only the
             // pre-stream non-2xx in `complete`, see the trillium backlog note).
-            Some("error") => return Err(format!("Anthropic stream error: {data}").into()),
+            Some("error") => return Err(format!("upstream stream error: {data}").into()),
             other => return Err(format!("unknown SSE event {other:?}: {data}").into()),
         }
         Ok(streamed)
@@ -422,24 +603,25 @@ impl Assembler {
     }
 }
 
-/// A thin Anthropic Messages client: holds the HTTP stack, key, model, and the
-/// stable system prompt. The system is byte-stable across the session, so it
-/// stays in the cached prefix (docs/substrate.md); the fork (docs/redaction-fork.md)
-/// shares the same client and thus the same system, so its prefix matches and hits cache.
+/// A thin Anthropic Messages client: holds the HTTP stack, the [`Endpoint`] (URL +
+/// auth), the model, and the stable system prompt. The system is byte-stable across
+/// the session, so it stays in the cached prefix (docs/substrate.md); the fork
+/// (docs/redaction-fork.md) shares the same endpoint and system, so its prefix matches
+/// and hits cache.
 pub struct Client {
     http: HttpClient,
-    api_key: String,
+    endpoint: Endpoint,
     model: String,
     system: String,
 }
 
 impl Client {
-    pub fn new(api_key: String, model: impl Into<String>, system: impl Into<String>) -> Self {
+    pub fn new(endpoint: Endpoint, model: impl Into<String>, system: impl Into<String>) -> Self {
         Self {
             // TLS over the tokio TCP connector; ALPN negotiates HTTP/2 (no h3
             // advertised by Anthropic/Cloudflare as of 2026-06). See main.rs.
             http: HttpClient::new(RustlsConfig::<ClientConfig>::default()),
-            api_key,
+            endpoint,
             model: model.into(),
             system: system.into(),
         }
@@ -477,15 +659,19 @@ impl Client {
         };
         let body = serde_json::to_string(&request)?;
         log::debug!(
-            "POST {MESSAGES_ENDPOINT}: {} messages, {} request bytes",
+            "POST {}: {} messages, {} request bytes",
+            self.endpoint.url,
             messages.len(),
             body.len()
         );
 
         let mut events = match self
             .http
-            .post(MESSAGES_ENDPOINT)
-            .with_request_header("x-api-key", self.api_key.clone())
+            .post(self.endpoint.url.as_str())
+            .with_request_header(
+                self.endpoint.auth_header.clone(),
+                self.endpoint.auth_value.clone(),
+            )
             .with_request_header("anthropic-version", ANTHROPIC_VERSION)
             .with_request_header("content-type", "application/json")
             .with_body(body)
@@ -526,9 +712,9 @@ impl Client {
                 .read_string()
                 .await
                 .unwrap_or_else(|read_err| format!("(could not read error body: {read_err})"));
-            format!("Anthropic API returned {status}: {body}")
+            format!("upstream API returned {status}: {body}")
         } else {
-            format!("Anthropic SSE request failed: {}", e.kind)
+            format!("upstream SSE request failed: {}", e.kind)
         };
         log::error!("{message}");
         message.into()
@@ -564,8 +750,11 @@ impl Client {
         let body = serde_json::to_string(&request)?;
         let mut conn = self
             .http
-            .post(MESSAGES_ENDPOINT)
-            .with_request_header("x-api-key", self.api_key.clone())
+            .post(self.endpoint.url.as_str())
+            .with_request_header(
+                self.endpoint.auth_header.clone(),
+                self.endpoint.auth_value.clone(),
+            )
             .with_request_header("anthropic-version", ANTHROPIC_VERSION)
             .with_request_header("content-type", "application/json")
             .with_body(body)
@@ -696,6 +885,100 @@ fn request_value(
 mod tests {
     use super::*;
 
+    /// A bare `ANTHROPIC_API_KEY` (no EFFERENCE_* knobs) resolves to today's
+    /// behavior: Anthropic's endpoint, `x-api-key` auth. This is the
+    /// backward-compat contract.
+    #[test]
+    fn endpoint_defaults_to_anthropic_from_bare_key() {
+        let e = Endpoint::resolve(None, None, None, None, Some("sk-ant-xyz".into())).unwrap();
+        assert_eq!(e.url, DEFAULT_ENDPOINT);
+        assert_eq!(e.auth_header, "x-api-key");
+        assert_eq!(e.auth_value, "sk-ant-xyz");
+    }
+
+    /// OpenRouter: a custom endpoint, `authorization` header, and a `Bearer ` scheme
+    /// prefix — all from the environment, and each a *whole* value (so the secret can
+    /// be an `op://…` reference `op run` resolves). No provider knowledge in the code.
+    #[test]
+    fn endpoint_openrouter_via_prefix_and_header() {
+        let e = Endpoint::resolve(
+            Some("https://openrouter.ai/api/v1/messages".into()),
+            Some("sk-or-v1-abc".into()),
+            Some("authorization".into()),
+            Some("Bearer ".into()),
+            None,
+        )
+        .unwrap();
+        assert_eq!(e.url, "https://openrouter.ai/api/v1/messages");
+        assert_eq!(e.auth_header, "authorization");
+        assert_eq!(e.auth_value, "Bearer sk-or-v1-abc");
+    }
+
+    /// `EFFERENCE_API_KEY` with no header/prefix defaults to a bare `x-api-key`, and
+    /// the key rides through verbatim (base64 `=` padding intact).
+    #[test]
+    fn endpoint_api_key_defaults_to_bare_x_api_key() {
+        let e = Endpoint::resolve(None, Some("abc==".into()), None, None, None).unwrap();
+        assert_eq!(e.auth_header, "x-api-key");
+        assert_eq!(e.auth_value, "abc==");
+    }
+
+    /// `EFFERENCE_API_KEY` wins over a lingering `ANTHROPIC_API_KEY`.
+    #[test]
+    fn endpoint_api_key_overrides_anthropic_key() {
+        let e =
+            Endpoint::resolve(None, Some("z".into()), None, None, Some("sk-ant".into())).unwrap();
+        assert_eq!(e.auth_header, "x-api-key");
+        assert_eq!(e.auth_value, "z");
+    }
+
+    /// A blank `EFFERENCE_AUTH_HEADER` falls back to `x-api-key` rather than sending
+    /// an empty header name.
+    #[test]
+    fn endpoint_blank_header_falls_back_to_x_api_key() {
+        let e = Endpoint::resolve(None, Some("k".into()), Some("   ".into()), None, None).unwrap();
+        assert_eq!(e.auth_header, "x-api-key");
+        assert_eq!(e.auth_value, "k");
+    }
+
+    /// The `EFFERENCE_AUTH_*` knobs apply only to the `EFFERENCE_API_KEY` path — a
+    /// stray prefix never mutates the `ANTHROPIC_API_KEY` fallback.
+    #[test]
+    fn endpoint_prefix_ignored_on_anthropic_fallback() {
+        let e = Endpoint::resolve(
+            None,
+            None,
+            None,
+            Some("Bearer ".into()),
+            Some("sk-ant".into()),
+        )
+        .unwrap();
+        assert_eq!(e.auth_header, "x-api-key");
+        assert_eq!(e.auth_value, "sk-ant");
+    }
+
+    /// No credentials at all is an error naming both ways to provide them.
+    #[test]
+    fn endpoint_errors_with_no_credentials() {
+        assert!(Endpoint::resolve(None, None, None, None, None).is_err());
+    }
+
+    /// The `auto` thinking default is a Claude allowlist, not "everything but haiku":
+    /// foreign models (reached via OpenRouter) never get an Anthropic `thinking` block,
+    /// while direct ids and `anthropic/…` slugs do — except Haiku.
+    #[test]
+    fn adaptive_thinking_allowlist_is_claude_non_haiku() {
+        assert!(is_recognized_adaptive_claude("claude-opus-4-8"));
+        assert!(is_recognized_adaptive_claude("claude-sonnet-5"));
+        assert!(is_recognized_adaptive_claude("anthropic/claude-opus-4.1"));
+        assert!(is_recognized_adaptive_claude("claude-fable-5"));
+        assert!(!is_recognized_adaptive_claude("claude-haiku-4-5-20251001"));
+        assert!(!is_recognized_adaptive_claude("anthropic/claude-haiku-4.5"));
+        assert!(!is_recognized_adaptive_claude("openai/gpt-5.6"));
+        assert!(!is_recognized_adaptive_claude("google/gemini-2.5-pro"));
+        assert!(!is_recognized_adaptive_claude("deepseek/deepseek-chat"));
+    }
+
     fn feed(events: &[(&str, &str)]) -> Result<Completion, Error> {
         let mut a = Assembler::new();
         for (ty, data) in events {
@@ -749,6 +1032,29 @@ mod tests {
             }
             other => panic!("expected Payload::Assistant, got {other:?}"),
         }
+    }
+
+    /// OpenRouter's `/api/v1/messages` skin sends the `cache_*` token counts as an
+    /// explicit `null` in every `message_start` (the upstream — here Together — has no
+    /// caching to report), rather than omitting them as Anthropic does. Regression: a
+    /// present `null` is not covered by `#[serde(default)]` and crashed the first
+    /// OpenRouter turn with `invalid type: null, expected u64`. These are the exact
+    /// bytes captured from `thinkingmachines/inkling`.
+    #[test]
+    fn openrouter_null_cache_usage_does_not_crash() {
+        let completion = feed(&[
+            ("message_start", r#"{"type":"message_start","message":{"id":"gen-1","type":"message","role":"assistant","container":null,"content":[],"model":"thinkingmachines/inkling","stop_reason":null,"usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":null,"cache_read_input_tokens":null,"cache_creation":null,"inference_geo":null,"server_tool_use":null,"service_tier":null,"speed":"standard"},"provider":"Together"}}"#),
+            ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
+            ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#),
+            ("content_block_stop", r#"{"index":0}"#),
+            ("message_delta", r#"{"delta":{"stop_reason":"max_tokens"},"usage":{"input_tokens":17,"output_tokens":64,"cache_creation_input_tokens":null,"cache_read_input_tokens":0}}"#),
+        ])
+        .unwrap();
+        assert_eq!(completion.model, "thinkingmachines/inkling");
+        assert_eq!(completion.usage.input_tokens, 0);
+        assert_eq!(completion.usage.cache_creation_input_tokens, 0); // null → 0
+        assert_eq!(completion.usage.cache_read_input_tokens, 0); // null → 0
+        assert_eq!(completion.usage.output_tokens, 64); // message_delta, non-null
     }
 
     /// A tool call with no `input_json_delta` fragments projects to `{}`, not a
@@ -845,6 +1151,31 @@ mod tests {
     fn unknown_event_type_is_loud() {
         let err = feed(&[("surprise", "{}")]).unwrap_err();
         assert!(err.to_string().contains("surprise"), "{err}");
+    }
+
+    /// OpenRouter's skin terminates the stream with a trailing `[DONE]` sentinel
+    /// (labeled `event: data`) as OpenAI's wire does; Anthropic never sends one.
+    /// It must be recognized as terminal, not tripped as an unknown event — this is
+    /// the second thing that crashed the first OpenRouter turn after the null usage.
+    #[test]
+    fn done_sentinel_is_terminal_not_unknown() {
+        let completion = feed(&[
+            ("message_start", r#"{"message":{"model":"thinkingmachines/inkling","usage":{"input_tokens":1,"output_tokens":1}}}"#),
+            ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
+            ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#),
+            ("content_block_stop", r#"{"index":0}"#),
+            ("message_delta", r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#),
+            ("message_stop", r#"{"type":"message_stop"}"#),
+            // The OpenRouter/OpenAI terminator — must not error.
+            ("data", "[DONE]"),
+        ])
+        .unwrap();
+        match completion.assistant {
+            Payload::Assistant { text, .. } => {
+                assert_eq!(text, vec![ContentBlock::Text("hi".into())]);
+            }
+            other => panic!("expected Payload::Assistant, got {other:?}"),
+        }
     }
 
     /// An in-stream `error` event surfaces its full body (the path that keeps the

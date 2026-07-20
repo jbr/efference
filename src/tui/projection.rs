@@ -752,7 +752,13 @@ mod tests {
                 },
             ),
         ];
-        let doc = project(&log, &LiveTail::default(), &ViewState::default(), None, None);
+        let doc = project(
+            &log,
+            &LiveTail::default(),
+            &ViewState::default(),
+            None,
+            None,
+        );
         let code: String = collect_code(&doc.nodes);
         assert!(
             code.contains("the distilled summary"),

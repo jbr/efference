@@ -630,7 +630,11 @@ mod scenarios {
         play.user("List the tui module.");
         play.assistant(
             "Here.",
-            vec![tool_call("bash", "toolu_nav", json!({ "command": "ls src/tui" }))],
+            vec![tool_call(
+                "bash",
+                "toolu_nav",
+                json!({ "command": "ls src/tui" }),
+            )],
         );
         let listing = (1..=20)
             .map(|n| format!("render_module_{n:02}.rs"))
@@ -675,7 +679,11 @@ mod scenarios {
         play.user("List the tui module.");
         play.assistant(
             "Here.",
-            vec![tool_call("bash", "toolu_fb", json!({ "command": "ls src/tui" }))],
+            vec![tool_call(
+                "bash",
+                "toolu_fb",
+                json!({ "command": "ls src/tui" }),
+            )],
         );
         let listing = (1..=20)
             .map(|n| format!("render_module_{n:02}.rs"))
@@ -736,7 +744,11 @@ mod scenarios {
         play.user("What does project() do?");
         play.assistant(
             "It folds the log into the wire.",
-            vec![tool_call("bash", "p1", json!({ "command": "grep -n fold src" }))],
+            vec![tool_call(
+                "bash",
+                "p1",
+                json!({ "command": "grep -n fold src" }),
+            )],
         );
         play.tool_result("p1", "src/project.rs:12: fold", false, WireState::Raw);
 
@@ -766,7 +778,11 @@ mod scenarios {
         play.user("List the tui module.");
         play.assistant(
             "Here.",
-            vec![tool_call("bash", "toolu_nav2", json!({ "command": "ls src/tui" }))],
+            vec![tool_call(
+                "bash",
+                "toolu_nav2",
+                json!({ "command": "ls src/tui" }),
+            )],
         );
         let listing = (1..=20)
             .map(|n| format!("render_module_{n:02}.rs"))
@@ -882,7 +898,10 @@ mod scenarios {
         }));
 
         let slice = play.sidebar_grid();
-        assert!(slice.contains("POLICY"), "the slice shows the sidebar:\n{slice}");
+        assert!(
+            slice.contains("POLICY"),
+            "the slice shows the sidebar:\n{slice}"
+        );
         assert!(
             !slice.contains("must NOT appear"),
             "the slice excludes the transcript:\n{slice}"
@@ -902,7 +921,11 @@ mod scenarios {
         play.user("Clean the build directory.");
         play.assistant(
             "Sure — I'll remove it.",
-            vec![tool_call("bash", "toolu_g", json!({ "command": "rm -rf ./build" }))],
+            vec![tool_call(
+                "bash",
+                "toolu_g",
+                json!({ "command": "rm -rf ./build" }),
+            )],
         );
         play.pending_gate_reason(
             "toolu_g",
@@ -943,13 +966,20 @@ mod scenarios {
         play.event(TuiEvent::Policy(PolicyView {
             scope: Some("work only in this repo".into()),
             scope_proposal: None,
-            commands: vec![committed("cargo"), committed("git diff"), proposed("git log", 7)],
+            commands: vec![
+                committed("cargo"),
+                committed("git diff"),
+                proposed("git log", 7),
+            ],
             paths: vec![committed(".  rw"), proposed("/refs  r", 9)],
             tools: vec![committed("read"), committed("write")],
         }));
 
         let bar = play.find("⊕").expect("the proposed grant shows a ⊕ marker");
-        assert!(bar.0 > 80, "the proposal marker is in the right-docked sidebar");
+        assert!(
+            bar.0 > 80,
+            "the proposal marker is in the right-docked sidebar"
+        );
         play.snapshot("sidebar_policy_with_proposal");
     }
 

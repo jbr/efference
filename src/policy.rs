@@ -1383,12 +1383,18 @@ mod tests {
         fn listing_clears_a_read_with_no_other_grants() {
             let role = ctx_role(vec![ctx_entry(&["docs/verify.md"], false, false)]);
             assert_eq!(
-                structured(&role, &call("read", serde_json::json!({ "paths": ["docs/verify.md"] }))),
+                structured(
+                    &role,
+                    &call("read", serde_json::json!({ "paths": ["docs/verify.md"] }))
+                ),
                 Verdict::Clear
             );
             // An unlisted path still gates…
             assert_eq!(
-                structured(&role, &call("read", serde_json::json!({ "paths": ["src/main.rs"] }))),
+                structured(
+                    &role,
+                    &call("read", serde_json::json!({ "paths": ["src/main.rs"] }))
+                ),
                 Verdict::Gate
             );
             // …and one unlisted target poisons a batch (every path must be granted).
@@ -1418,14 +1424,20 @@ mod tests {
                 Verdict::Clear
             );
             assert_eq!(
-                structured(&role, &call("list", serde_json::json!({ "path": "memories" }))),
+                structured(
+                    &role,
+                    &call("list", serde_json::json!({ "path": "memories" }))
+                ),
                 Verdict::Clear
             );
             // An escape via `..` normalizes out of the subtree and gates.
             assert_eq!(
                 structured(
                     &role,
-                    &call("read", serde_json::json!({ "paths": ["memories/../secrets.md"] }))
+                    &call(
+                        "read",
+                        serde_json::json!({ "paths": ["memories/../secrets.md"] })
+                    )
                 ),
                 Verdict::Gate
             );
@@ -1436,13 +1448,16 @@ mod tests {
         /// is the append-only store: add, never rewrite.
         #[test]
         fn write_grants_split_on_existence() {
-            let dir = std::env::temp_dir()
-                .join(format!("efference-policy-ctx-{}", std::process::id()));
+            let dir =
+                std::env::temp_dir().join(format!("efference-policy-ctx-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(dir.join("memories")).unwrap();
             std::fs::write(dir.join("memories/existing.md"), "a fact\n").unwrap();
 
-            let existing = call("write", serde_json::json!({ "path": "memories/existing.md" }));
+            let existing = call(
+                "write",
+                serde_json::json!({ "path": "memories/existing.md" }),
+            );
             let fresh = call("write", serde_json::json!({ "path": "memories/new.md" }));
 
             let read_only = ctx_role(vec![ctx_entry(&["memories"], false, false)]);
@@ -1481,7 +1496,10 @@ mod tests {
                 sort: None,
             }]);
             assert_eq!(
-                structured(&role, &call("read", serde_json::json!({ "paths": ["date"] }))),
+                structured(
+                    &role,
+                    &call("read", serde_json::json!({ "paths": ["date"] }))
+                ),
                 Verdict::Gate
             );
         }
@@ -1496,7 +1514,10 @@ mod tests {
                 Verdict::Gate
             );
             assert_eq!(
-                structured(&role, &call("bash", serde_json::json!({ "command": "cat docs/x.md" }))),
+                structured(
+                    &role,
+                    &call("bash", serde_json::json!({ "command": "cat docs/x.md" }))
+                ),
                 Verdict::Gate,
                 "bash never clears via a context listing — only the structured read path"
             );

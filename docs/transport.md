@@ -1,9 +1,10 @@
 # Transport & streaming
 
-This layer bridges `project(log)` and the Anthropic Messages API: it turns a
-projected message list into an HTTP request, streams the response back, and
-hands a finished `Completion` to the loop — which appends it to the log and
-forks. Everything described here is transport-only. None of it appends to the
+This layer bridges `project(log)` and an Anthropic-Messages-compatible endpoint
+(Anthropic directly, or OpenRouter's `/api/v1/messages` skin — see [the provider
+seam](#the-provider-seam)): it turns a projected message list into an HTTP
+request, streams the response back, and hands a finished `Completion` to the
+loop — which appends it to the log and forks. Everything described here is transport-only. None of it appends to the
 log, changes a projection, or perturbs the byte-stability invariants guarded in
 [the substrate](substrate.md).
 
@@ -88,6 +89,66 @@ never elided today — that's a deferred generalization of the redaction model
 `Client` uses `trillium-client` with `trillium-rustls` for TLS. ALPN
 negotiates HTTP/2 — Anthropic is fronted by Cloudflare, which does not
 advertise `alt-svc: h3`, so HTTP/3 is not a live option. HTTP/2 is the path.
+
+---
+
+## The provider seam
+
+The request **body** is always the Anthropic Messages wire — `project(log)`
+output — so the entire substrate, projection, assembler, and cache-breakpoint
+model are provider-independent. What varies between providers is only **where**
+the POST goes and **how** it authenticates. That is the whole of `api::Endpoint`
+(`url` + `auth_header` + `auth_value`), resolved once at boot from the
+environment and shared by the agent `Client` and the fork's spotter client so
+both hit the same endpoint over the same cached prefix.
+
+Env knobs, all optional so a pre-existing `ANTHROPIC_API_KEY`-only setup is
+unchanged:
+
+- `EFFERENCE_ENDPOINT` — the full messages URL (default: Anthropic's).
+- `EFFERENCE_API_KEY` — the **raw secret**, and nothing else.
+- `EFFERENCE_AUTH_HEADER` — the auth header *name* (default `x-api-key`).
+- `EFFERENCE_AUTH_PREFIX` — a literal prepended to the secret to form the header
+  value (default empty; `"Bearer "` for OpenRouter's `authorization: Bearer …`).
+
+Header name and scheme prefix are split *off* the secret deliberately: it keeps
+the secret a **whole value**, so it can be a 1Password reference that `op run`
+resolves (`op run` only substitutes an `op://…` reference that is the entire
+value, never one embedded mid-string). Provider identity stays entirely in the
+environment — `x-api-key` + no prefix (Anthropic) and `authorization` +
+`"Bearer "` (OpenRouter) are the same code path, differing only in data. The
+`EFFERENCE_AUTH_*` knobs apply only to the `EFFERENCE_API_KEY` path; a bare
+`ANTHROPIC_API_KEY` is always sent as `x-api-key`.
+
+**OpenRouter** is reached this way with no code change: `EFFERENCE_ENDPOINT` =
+`https://openrouter.ai/api/v1/messages`, `EFFERENCE_AUTH_HEADER=authorization`,
+`EFFERENCE_AUTH_PREFIX="Bearer "`, `EFFERENCE_API_KEY=sk-or-…`, with a
+provider-scoped model slug (`anthropic/claude-opus-4.1`). Its `/api/v1/messages`
+skin is the Anthropic
+Messages wire: it honors per-block `cache_control` breakpoints (across all
+Anthropic-compatible providers), emits Anthropic-shaped SSE `error` events, and
+its `: OPENROUTER PROCESSING` keepalive comments are skipped by the SSE decoder
+(leading-colon lines are comments). The one Anthropic-dialect header efference
+sends besides auth, `anthropic-version`, is part of the *wire dialect*, not a
+provider identity — OpenRouter tolerates it — so it stays a constant.
+
+**Caching portability.** Only Anthropic's *explicit* `cache_control` breakpoints
+are Anthropic-specific; every other major model does **automatic prefix
+caching** (OpenAI, Gemini's implicit caching, DeepSeek). The byte-deterministic,
+append-only-prefix discipline the substrate enforces is exactly what those
+automatic caches reward — foreign providers simply ignore the `cache_control`
+blocks (or translate them, as OpenRouter does for OpenAI). What's lost off the
+Anthropic path is control over breakpoint *placement* and the `1h` TTL; the short
+foreign TTLs keep the keepalive relevant, though whether a `max_tokens: 0` ping
+refreshes a non-Anthropic cache is unverified.
+
+**Thinking.** Adaptive thinking is an Anthropic `thinking` block most foreign
+models don't accept, so `supports_adaptive_thinking` is an **allowlist** (a
+recognized non-Haiku Claude tier), not "everything but Haiku" — a foreign model
+gets no `thinking` block by default. `EFFERENCE_THINKING=adaptive|off|auto`
+overrides per session (there is no portable capability query: OpenRouter's
+`supported_parameters` describes its normalized `reasoning` param, not the
+Anthropic `thinking` block).
 
 ---
 

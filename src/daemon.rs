@@ -2070,11 +2070,15 @@ mod tests {
     #[test]
     fn reload_failure_keeps_policy_and_notifies() {
         use crate::policy::{Verdict, classify};
-        let path = std::env::temp_dir()
-            .join(format!("efference-watch-bad-{}.toml", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("efference-watch-bad-{}.toml", std::process::id()));
 
         // A good edit first: grants `cargo`, moves policy off the default gate.
-        std::fs::write(&path, "scope = \"stay in src/\"\n[commands]\ncargo = true\n").unwrap();
+        std::fs::write(
+            &path,
+            "scope = \"stay in src/\"\n[commands]\ncargo = true\n",
+        )
+        .unwrap();
         let (shared, _rx) = Shared::new(Log::in_memory());
         reload_and_emit(&shared, &path);
         assert_eq!(
@@ -2084,7 +2088,11 @@ mod tests {
 
         // Now a malformed save — the exact footgun from session 1784334112726: `[scope]` as a
         // table where the schema wants a string, which fails the whole file.
-        std::fs::write(&path, "[scope]\ndefault = \"read\"\n[commands]\ncargo = true\n").unwrap();
+        std::fs::write(
+            &path,
+            "[scope]\ndefault = \"read\"\n[commands]\ncargo = true\n",
+        )
+        .unwrap();
         reload_and_emit(&shared, &path);
 
         // Effective policy is unchanged (last good still in force) — fail-closed…
@@ -2211,7 +2219,10 @@ mod tests {
             Verdict::Clear,
             "commit folds the proposed change",
         );
-        assert!(shared.pending_proposals().is_empty(), "commit drains the queue");
+        assert!(
+            shared.pending_proposals().is_empty(),
+            "commit drains the queue"
+        );
 
         // Cancel: a proposed cargo grant is dropped without taking effect.
         let cargo = bash_call("cargo build");
@@ -2233,7 +2244,10 @@ mod tests {
             Verdict::Gate,
             "cancel does not apply the change",
         );
-        assert!(shared.pending_proposals().is_empty(), "cancel drains the queue");
+        assert!(
+            shared.pending_proposals().is_empty(),
+            "cancel drains the queue"
+        );
     }
 
     /// The `/settle` predicate (backlog/permissions/proposal-lifecycle.md) tracks the loop's

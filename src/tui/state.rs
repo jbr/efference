@@ -490,10 +490,7 @@ impl<'a> InteractiveState<'a> {
     /// for callers that must reproject immediately (e.g. tests, an expand action).
     pub(super) fn reproject(&mut self) {
         let pending_call = self.pending_gate.as_ref().map(|g| g.call_id.as_str());
-        let pending_reason = self
-            .pending_gate
-            .as_ref()
-            .and_then(|g| g.reason.as_deref());
+        let pending_reason = self.pending_gate.as_ref().and_then(|g| g.reason.as_deref());
         self.document.document = projection::project(
             &self.log,
             &self.live,

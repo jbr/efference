@@ -80,7 +80,11 @@ impl<'a> InteractiveState<'a> {
                     x0 + 3,
                     y,
                     max_w.saturating_sub(3),
-                    &format!("{} · idle {}", fmt_secs(p.running_secs), fmt_secs(p.idle_secs)),
+                    &format!(
+                        "{} · idle {}",
+                        fmt_secs(p.running_secs),
+                        fmt_secs(p.idle_secs)
+                    ),
                     muted,
                 );
                 y += 1;

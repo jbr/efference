@@ -150,7 +150,11 @@ impl<'a> InteractiveState<'a> {
     /// `.efference/screenshots/` and report the path in the status bar. The dev
     /// screenshot keybind (`Ctrl+S`, gated by `EFFERENCE_DEV`); see
     /// [`capture_screenshot_grid`](InteractiveState::capture_screenshot_grid).
-    fn dev_screenshot(&mut self, terminal: &mut Terminal<impl Backend + Write>, sidebar_only: bool) {
+    fn dev_screenshot(
+        &mut self,
+        terminal: &mut Terminal<impl Backend + Write>,
+        sidebar_only: bool,
+    ) {
         let (w, h) = terminal
             .size()
             .map(|s| (s.width, s.height))

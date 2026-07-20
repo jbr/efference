@@ -2,6 +2,7 @@
 .efference.pid
 .efference/
 .envrc
-# Personal op env-file (holds an `op://Private/...` reference, not a secret):
-#   op run --env-file=.env.op -- cargo run
-.env.op
+# Personal op env-files (hold `op://Private/...` references, not secrets):
+#   op run --env-file=.anthropic.env.op  -- cargo run -- serve ...   # Anthropic
+#   op run --env-file=.openrouter.env.op -- cargo run -- serve --model anthropic/claude-opus-4.1 ...
+*.env.op

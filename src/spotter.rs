@@ -37,7 +37,7 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::api::{Client, Usage};
+use crate::api::{Client, Endpoint, Usage};
 use crate::bash;
 use crate::config::Config;
 use crate::log::{Origin, Stance, ToolCall};
@@ -112,10 +112,11 @@ pub struct ForkSpot {
 
 impl ForkSpot {
     /// Build the spotter over a fresh client pinned to the spotter `model` (Haiku)
-    /// with the persona as its byte-stable system prompt.
-    pub fn new(api_key: String, model: impl Into<String>) -> Self {
+    /// with the persona as its byte-stable system prompt. Shares the acting session's
+    /// [`Endpoint`], so it authenticates and routes the same way (docs/transport.md).
+    pub fn new(endpoint: Endpoint, model: impl Into<String>) -> Self {
         ForkSpot {
-            client: Client::new(api_key, model, PERSONA),
+            client: Client::new(endpoint, model, PERSONA),
         }
     }
 }

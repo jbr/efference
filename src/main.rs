@@ -835,8 +835,13 @@ async fn serve(
     )
     .try_init();
 
-    let api_key = std::env::var("ANTHROPIC_API_KEY")
-        .map_err(|_| "ANTHROPIC_API_KEY is not set in the environment")?;
+    // The provider seam (docs/transport.md): endpoint URL + auth header, resolved once from
+    // the environment. Defaults to Anthropic when only ANTHROPIC_API_KEY is set; point
+    // EFFERENCE_ENDPOINT + EFFERENCE_API_KEY (raw secret) + EFFERENCE_AUTH_HEADER /
+    // EFFERENCE_AUTH_PREFIX at OpenRouter's /api/v1/messages (or any Anthropic-Messages-
+    // compatible endpoint) to switch, no code change. Secret kept alone so it can be a
+    // whole-value `op://…` reference under `op run`.
+    let endpoint = efference::api::Endpoint::from_env()?;
 
     // Everything for this session is colocated in its own dir (gitignored), standard-named since
     // the dir is the unique unit (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
@@ -931,12 +936,12 @@ async fn serve(
         },
     )?;
 
-    let client = Client::new(api_key.clone(), model, system);
+    let client = Client::new(endpoint.clone(), model, system);
 
     // The independent permission rung (docs/permissions.md): a fresh-context spotter
-    // on its own Haiku-band client, built from the same key. It re-decides the calls
+    // on its own Haiku-band client, built from the same endpoint. It re-decides the calls
     // the deterministic fast-path can't clear, before the human gate.
-    let spotter = ForkSpot::new(api_key, spotter_model);
+    let spotter = ForkSpot::new(endpoint, spotter_model);
 
     // The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
     // canonical wire keeps only what the model retains. `Toolbox` is the docs/tools.md tool
@@ -969,8 +974,7 @@ async fn spotter_check(
     probe: Option<String>,
     command: String,
 ) -> CliResult {
-    let api_key = std::env::var("ANTHROPIC_API_KEY")
-        .map_err(|_| "ANTHROPIC_API_KEY is not set in the environment")?;
+    let endpoint = efference::api::Endpoint::from_env()?;
     let role = efference::config::Config {
         scope,
         watch_for,
@@ -982,7 +986,7 @@ async fn spotter_check(
         name: efference::bash::NAME.into(),
         input: serde_json::json!({ "command": command }),
     };
-    let spotting = ForkSpot::new(api_key, model)
+    let spotting = ForkSpot::new(endpoint, model)
         .assess(&role, &call, probe.as_deref())
         .await;
     println!("stance: {:?}", spotting.read.stance);
@@ -1066,9 +1070,7 @@ mod tests {
         let mut log = Log::create(path).unwrap();
         log.append(
             0,
-            efference::log::Payload::User(vec![efference::log::ContentBlock::Text(
-                "hello".into(),
-            )]),
+            efference::log::Payload::User(vec![efference::log::ContentBlock::Text("hello".into())]),
         )
         .unwrap();
         log.append(
@@ -1110,7 +1112,10 @@ mod tests {
             Some(bad_config.clone()),
         )
         .await;
-        assert!(full.is_err(), "expected the full envelope to reject the bad config");
+        assert!(
+            full.is_err(),
+            "expected the full envelope to reject the bad config"
+        );
 
         // With `--messages`, config is never touched, so the same bad config
         // doesn't matter — it prints just the projected messages array.
@@ -1122,7 +1127,10 @@ mod tests {
             Some(bad_config.clone()),
         )
         .await;
-        assert!(lean.is_ok(), "expected --messages to succeed despite the bad config: {lean:?}");
+        assert!(
+            lean.is_ok(),
+            "expected --messages to succeed despite the bad config: {lean:?}"
+        );
 
         let _ = std::fs::remove_file(&log_path);
         let _ = std::fs::remove_file(&bad_config);
