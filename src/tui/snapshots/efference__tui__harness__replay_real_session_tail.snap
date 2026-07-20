@@ -6,7 +6,7 @@ expression: self.render()
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
  0 │ │  20191 total                                          │                      │
- 1 │ │ —   20,191 total lines of Rust code in src/ directory │                      │
+ 1 │ │ ⟢   20,191 total lines of Rust code in src/ directory │                      │
  2 │ ╰───────────────────────────────────────────────────────╯                      │
  3 │                                                                                │
  4 │                                                                                │
@@ -16,7 +16,7 @@ expression: self.render()
  8 │                                                                                │
  9 │   ❯ bash · touch /tmp/efference-smoke-test                                     │
 10 │ ╭───────────────────────────────────────────────────────────────────❬rust❭─╮   │
-11 │ │ — touch command succeeded with no output  ; file created at /tmp/efferen │-s │
+11 │ │ ⟢ touch command succeeded with no output  ; file created at /tmp/efferen │-s │
 12 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
 13 │                                                                                │
 14 │                                                                                │

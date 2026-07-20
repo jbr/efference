@@ -459,7 +459,7 @@ fn render_hunks(lines: &[&str], ranges: &[(usize, usize)], note: Option<&str>) -
         }
     }
     if let Some(note) = note.map(str::trim).filter(|s| !s.is_empty()) {
-        parts.push(format!("— {note}"));
+        parts.push(format!("⟢ {note}"));
     }
     if parts.is_empty() {
         parts.push("(nothing kept)".to_string());
@@ -1340,7 +1340,7 @@ mod tests {
         );
 
         let none = render_distilled(c, &Keep::None, Some("nothing useful here"));
-        assert_eq!(none, "— nothing useful here");
+        assert_eq!(none, "⟢ nothing useful here");
 
         let ranges = render_distilled(c, &Keep::Ranges(vec![(2, 3)]), None);
         assert!(ranges.contains("@@ lines 2-3 @@"), "{ranges}");
@@ -1423,8 +1423,8 @@ mod tests {
     #[test]
     fn note_appends_and_empty_falls_back_to_breadcrumb() {
         let ls = lines("a\nb\nc");
-        assert!(render_hunks(&ls, &[(2, 2)], Some("the b line")).ends_with("— the b line"));
-        assert_eq!(render_hunks(&ls, &[], Some("wrong file")), "— wrong file");
+        assert!(render_hunks(&ls, &[(2, 2)], Some("the b line")).ends_with("⟢ the b line"));
+        assert_eq!(render_hunks(&ls, &[], Some("wrong file")), "⟢ wrong file");
         assert_eq!(render_hunks(&ls, &[], None), "(nothing kept)");
     }
 

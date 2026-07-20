@@ -62,9 +62,13 @@ therefore split:
   line); gaps between hunks are implied by the jump in headers, as in a unified
   diff. A keep-all result is one header plus verbatim body, approximately equal to
   raw. `render_hunks` runs at **projection time** over the stored verdict
-  (`WireState::Distilled { keep, note }`), not at append — the wire form is
+    (`WireState::Distilled { keep, note }`), not at append — the wire form is
   re-derived from `raw` plus the verdict each turn, so the kept bytes are never
-  stored twice. Implemented in `src/project.rs`.
+  stored twice. When a note survives, `render_hunks` prefixes it with the `⟢`
+  provenance sigil — the same marker surfaced-context lines carry (`⟢ context ·
+  …`) — so the note is honestly signed as harness-curated output without invoking
+  mechanism vocabulary. The sigil is render-layer only; the fork produces a bare
+  `note` string and is unaware of how it's rendered. Implemented in `src/project.rs`.
 
 ## The verdict is the stored form
 

@@ -11,7 +11,7 @@ expression: self.render()
  3 │                                                                                │
  4 │   ❯ bash · cargo tree                                                          │
  5 │ ╭───────────────────────────────────────────────────────────────────❬rust❭─╮   │
- 6 │ │ —   12 direct deps; heaviest subtrees are tokio and trillium. Nothing ou │at │
+ 6 │ │ ⟢   12 direct deps; heaviest subtrees are tokio and trillium. Nothing ou │at │
  7 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
  8 │                                                                                │
  9 │                                                                                │

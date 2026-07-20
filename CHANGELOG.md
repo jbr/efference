@@ -57,6 +57,7 @@ behind a change, see [`journal/`](journal/).
 - Orientation is config, not code: the hardcoded environment block (cwd/platform/project-type, `env::orientation` + marker detection) is deleted; *where the session is* is now an ordinary `[context]` exec entry — the config-less scaffold ships `"Environment at boot" = { exec = … }`, and a written config owns the whole preamble.
 - Model selection moved to a per-session `serve --model <id>` flag (default `claude-haiku-4-5` for dev).
 - Tool definitions unified into one source shared by the loop, the keepalive ping, and the dev `wire` view (closing a cache-correctness gap).
+- The distilled-note prefix changed from an em-dash (`— `) to the `⟢` provenance sigil already used by surfaced-context lines, so a surviving triage note is honestly signed as harness-curated output without invoking mechanism vocabulary. Render-layer only; the fork's `note` schema is unchanged.
 
 ### Fixed
 - Fast-path permission grants no longer misfire on two dogfood-caught cases: a trailing fd-dup redirection (`cmd 2>&1`) stays on the bash fast path (only *file* redirections gate now), and a batched `read` spanning both `[paths]` and `[context]` grants clears per-path across the union instead of gating.
