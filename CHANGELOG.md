@@ -53,6 +53,7 @@ behind a change, see [`journal/`](journal/).
 - `[context]` dirs walk recursively (hidden children skipped, symlinks followed with a cycle guard), so a Claude-Code skills tree (`skills/<name>/SKILL.md`) lands as one listing per skill; frontmatter handles YAML block scalars (`description: >-`) and nested maps can't pollute top-level keys.
 
 ### Changed
+- The session's config file is no longer named up front in the preamble — that high-salience "here's what you're allowed to do" pointer drew sessions into reading and probing their own perimeter as a first move. The perimeter stays out of attention; the gate-rejection message names the config as the request channel only when a move actually strays.
 - Orientation is config, not code: the hardcoded environment block (cwd/platform/project-type, `env::orientation` + marker detection) is deleted; *where the session is* is now an ordinary `[context]` exec entry — the config-less scaffold ships `"Environment at boot" = { exec = … }`, and a written config owns the whole preamble.
 - Model selection moved to a per-session `serve --model <id>` flag (default `claude-haiku-4-5` for dev).
 - Tool definitions unified into one source shared by the loop, the keepalive ping, and the dev `wire` view (closing a cache-correctness gap).

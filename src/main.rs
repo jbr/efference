@@ -442,13 +442,6 @@ async fn wire(
             }
         };
         let role_section = loaded.role.preamble_section();
-        // The dev view rebuilds the envelope from current code/cwd, not the recorded run, so it
-        // passes the *resolved* config path (or none) — close enough for inspection; the note on
-        // stderr warns.
-        let config_path = match &loaded.source {
-            efference::config::ConfigSource::Path(p) => Some(p.as_path()),
-            efference::config::ConfigSource::Default => None,
-        };
         // Best-effort for the dev view: if the [context] files don't resolve from the current cwd
         // (e.g. inspecting a session recorded elsewhere), note it and omit the block rather than fail.
         let context_block = match efference::context::resolve(&loaded.role.context, &cwd) {
@@ -465,11 +458,7 @@ async fn wire(
             entries.len(),
             messages.len()
         );
-        efference::env::system_prompt(
-            context_block.as_deref(),
-            role_section.as_deref(),
-            config_path,
-        )
+        efference::env::system_prompt(context_block.as_deref(), role_section.as_deref())
     };
     // The full tools[] a real turn sends — world tools + the harness tools
     // (`consolidate`, the docs/supervisor.md and docs/inbox.md tools) — so the dev view matches.
@@ -919,11 +908,7 @@ async fn serve(
         }
     };
     let context_block = resolved.render();
-    let system = efference::env::system_prompt(
-        context_block.as_deref(),
-        role_section.as_deref(),
-        Some(session_config.as_path()),
-    );
+    let system = efference::env::system_prompt(context_block.as_deref(), role_section.as_deref());
     // Snapshot the rendered boot preamble into the log (docs/context.md): the
     // [context] block folds in file contents that drift on disk, so the preamble is no longer
     // reconstructable from config + current files — this one entry keeps the log the complete

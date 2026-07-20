@@ -13,8 +13,6 @@
 //! orientation (a live Haiku run searching for Python/JS/TS files in a Rust
 //! repo before finding its footing) is now answered by the config, not the code.
 
-use std::path::Path;
-
 /// The system preamble. Explains the curation model so the agent stops defending
 /// against context bloat the old way (docs/redaction-fork.md) — the run that
 /// motivated this watched the model reflexively `grep`/`head` its own tool output.
@@ -27,18 +25,19 @@ const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 /// The full system prompt sent in the request's `system` field (docs/substrate.md): the
 /// curation-model [`PREAMBLE`], the `[context]` preamble builder's block when configured
 /// (`context_block`, rendered by [`crate::context::Resolved::render`] — docs/context.md; this is
-/// where orientation now lives, as a config exec entry), the config's preamble section
+/// where orientation now lives, as a config exec entry), and the config's preamble section
 /// when the session has a scope (`role_section`, rendered by
-/// [`crate::config::Config::preamble_section`]), and — when the session has a config file — a note
-/// naming its path so the session can read its perimeter and **edit the file to request changes**
-/// (backlog/permissions/session-dir-and-config-as-reviewed-file.md). Built once at session start and
-/// frozen into the cached prefix, so every part must be byte-stable. The `wire` dev view shows the
-/// recorded boot snapshot instead of reconstructing (docs/substrate.md).
-pub fn system_prompt(
-    context_block: Option<&str>,
-    role_section: Option<&str>,
-    config_path: Option<&Path>,
-) -> String {
+/// [`crate::config::Config::preamble_section`]). Built once at session start and frozen into the
+/// cached prefix, so every part must be byte-stable. The `wire` dev view shows the recorded boot
+/// snapshot instead of reconstructing (docs/substrate.md).
+///
+/// The session's config file is deliberately **not** named here. Surfacing it up front read as
+/// "this is what you're allowed to do" and drew sessions into reading and probing their own
+/// perimeter as a first move (a dogfood session did exactly that) — attention the guardrails are
+/// designed to spare the agent. The permission perimeter stays invisible until a move actually
+/// strays, at which point the gate-rejection message names the config as the request channel
+/// ([`crate::agent`], backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+pub fn system_prompt(context_block: Option<&str>, role_section: Option<&str>) -> String {
     // `include_str!` keeps the file's trailing newline; trim it so the join is clean.
     let mut prompt = PREAMBLE.trim_end().to_string();
     // Knowledge (what the session knows) sits before the perimeter (what it may do)
@@ -51,24 +50,7 @@ pub fn system_prompt(
         prompt.push_str("\n\n");
         prompt.push_str(section);
     }
-    if let Some(path) = config_path {
-        prompt.push_str("\n\n");
-        prompt.push_str(&config_note(path));
-    }
     prompt
-}
-
-/// The preamble note naming the session's config file (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
-/// Editing the file is how the session *requests* a permission change; the edit is reviewed before
-/// it takes effect, so the session can propose freely without being able to self-authorize.
-fn config_note(path: &Path) -> String {
-    format!(
-        "Your permissions for this session are configured in `{}`. You may read that file to see \
-         your current scope, allowed commands, tools, and path grants. To request a change to your \
-         permissions, edit the file — your edits are reviewed before they take effect, so propose \
-         whatever you genuinely need and explain why.",
-        path.display()
-    )
 }
 
 #[cfg(test)]
@@ -77,8 +59,8 @@ mod tests {
 
     #[test]
     fn system_prompt_appends_role_section_when_present() {
-        let without = system_prompt(None, None, None);
-        let with = system_prompt(None, Some("Your role for this session:\n\nStay put."), None);
+        let without = system_prompt(None, None);
+        let with = system_prompt(None, Some("Your role for this session:\n\nStay put."));
         // The role section is appended verbatim after the env block; without a role the
         // prompt is exactly the preamble + env (no trailing role text).
         assert!(with.starts_with(&without));
@@ -93,23 +75,24 @@ mod tests {
         let s = system_prompt(
             Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
             Some("Your role for this session:\n\nDo it."),
-            None,
         );
         assert!(s.contains("<CLAUDE.md>\nhi\n</CLAUDE.md>"));
         assert!(s.find("<CLAUDE.md>").unwrap() < s.find("Your role").unwrap());
         // No block → nothing spliced.
-        assert!(!system_prompt(None, None, None).contains("<CLAUDE.md>"));
+        assert!(!system_prompt(None, None).contains("<CLAUDE.md>"));
     }
 
-    /// A config path appends the editable-config note (the session's request channel), naming the
-    /// path so the session knows where to propose edits (session-dir-and-config-as-reviewed-file.md).
+    /// The session's config file is never named in the system prompt: the permission perimeter
+    /// stays out of the agent's attention until a move strays and the gate surfaces it. Guards
+    /// against reintroducing the up-front config mention a dogfood session found distracting.
     #[test]
-    fn system_prompt_appends_config_note_with_the_path() {
-        let plain = system_prompt(None, None, None);
-        let with = system_prompt(None, None, Some(Path::new(".efference/foo/config.toml")));
-        assert!(with.starts_with(&plain));
-        assert!(with.contains(".efference/foo/config.toml"));
-        assert!(with.contains("reviewed before they take effect"));
-        assert!(!plain.contains("config.toml"));
+    fn system_prompt_never_names_the_config_file() {
+        let full = system_prompt(
+            Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
+            Some("Your role for this session:\n\nDo it."),
+        );
+        assert!(!full.contains(".toml"));
+        assert!(!full.to_lowercase().contains("permission"));
+        assert!(!full.contains("request a change"));
     }
 }

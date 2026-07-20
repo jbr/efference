@@ -37,10 +37,13 @@ both reads the config and writes the harness's edits back with comments intact.
 which must exist; else the `efference.toml` probe; else a scaffolded empty file) is **snapshotted once**
 into the session's own `.efference/<id>/config.toml`. That snapshot — not the origin — is the live,
 watched, editable policy: two sessions sharing an origin diverge freely (the origin is an inert
-template). The session is told its config path in the preamble and may **edit the file to request a
-permission change** — but a `write`/`edit` to the config file is forced to the operator gate
-(`policy::is_config_write`), bypassing both the fast-path and the spotter, so a permission change can
-never auto-apply; on approval the write lands and fs-watch folds the diff into effective policy. A
+template). Editing that file is how the session **requests a permission change** — but a
+`write`/`edit` to the config file is forced to the operator gate (`policy::is_config_write`),
+bypassing both the fast-path and the spotter, so a permission change can never auto-apply; on
+approval the write lands and fs-watch folds the diff into effective policy. The config path is
+**not** named in the preamble (that up-front mention drew sessions into probing their own perimeter
+as a first move — a dogfood regression); the session learns the path from the gate-rejection
+message when a move actually strays, keeping the perimeter out of attention until it's relevant. A
 malformed edit fail-closes (the loader rejects it, the last-good policy stands). "Session-only" is thus
 a matter of geography, not a flag. See
 [`../backlog/permissions/session-dir-and-config-as-reviewed-file.md`](../backlog/permissions/session-dir-and-config-as-reviewed-file.md).
