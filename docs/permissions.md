@@ -113,9 +113,14 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
 `git = true` survivable in principle and a sub-verb `"git diff" = true` sound.
 
 - **Stage 1** parses the command with `yash-syntax` — a real POSIX parser, not a regex —
-  and accepts only a *single simple command*: no operators (`| & ; && ||`), no
+  and accepts only a *single simple command*: no operators (`| & ; && ||`), no *file*
   redirection, no command/arithmetic substitution, no parameter/tilde expansion, no
-  env-assignment prefix, no unquoted glob/brace. The parser is needed (not a regex)
+  env-assignment prefix, no unquoted glob/brace. The one redirection it tolerates is a pure
+  file-descriptor duplication/closure (`2>&1`, `>&2`, `2>&-`) — those rewire the process's
+  own fds and touch no filesystem, so they're sound, and admitting them keeps the habitual
+  `cmd 2>&1` on the fast path (without it a trailing `2>&1` knocks blanket `cargo = true` off,
+  as a dogfood session found). A `>&` whose operand is a *filename* or an expansion is not a
+  pure dup and still gates. The parser is needed (not a regex)
   because safety is quote-sensitive: the `|` in `rg 'a|b' src/` is one literal argument,
   not a pipe. yash *parses* without *expanding*, so we inspect word units ourselves for
   the expansion metacharacters bash would act on at runtime (`* ? [ {` anywhere; a leading
@@ -158,6 +163,16 @@ needed permission — reads (`read`/`list`/`search`/`find_anchor`) need `read`, 
 (`write`/`edit`) need `write` (`write` implies `read`). Nothing clears in code; an
 empty config gates every tool, exactly as before.
 
+**Multi-path clearance is per-path, unioned across sources.** A tool naming several paths
+(`read`'s `paths` array) clears only when *every* path is granted — but each path may be
+granted by a *different* source: a `[paths]` grant (which requires the name grant) **or** a
+`[context]` listing (standalone, below). So a batched `read` mixing a repo file (under a
+`[paths]` grant) and a memory file (under a `[context]` entry) clears, even though neither
+source covers the whole batch alone — the check is over the union, decided path by path. One
+ungranted path still poisons the batch. (An earlier version evaluated each source
+all-or-nothing over the whole batch, so a cross-source read gated; a dogfood session caught
+it.)
+
 Two properties are load-bearing. **Grants are additive subtrees with no deny.** A `[paths]`
 grant trusts its *entire* subtree; there is no carve-out to deny a sensitive subdir within
 an allowed parent (you cannot allow `.` but deny `./secrets`) — explicitly out of scope
@@ -176,10 +191,10 @@ schema) is later architectural work; for now the coupling is marked, not hidden.
 
 ### the `[context]` rung: a listing is a grant
 
-A `[context]` entry ([context.md](context.md)) is an independent clearance source, checked
-before the name-grant rule: listing a path **is** a read grant — the preamble stub invites
-the model to `Read {path}`, so that read fast-path clears with no `tools` or `[paths]`
-config at all. The same lexical subtree rule applies, and the caveat is stated loudly: a
+A `[context]` entry ([context.md](context.md)) is an independent clearance source, unioned
+per-path with the name-grant rule (above): listing a path **is** a read grant — the preamble
+stub invites the model to `Read {path}`, so that read fast-path clears with no `tools` or
+`[paths]` config at all. The same lexical subtree rule applies, and the caveat is stated loudly: a
 location entry (dir, and later glob) read-grants everything under it, so operators must
 list deliberately. The entry's write grants ride the same check: `update` clears a write
 to an **existing** file under the entry, `create` a write to a **new** one — `create`

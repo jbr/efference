@@ -58,6 +58,7 @@ behind a change, see [`journal/`](journal/).
 - Tool definitions unified into one source shared by the loop, the keepalive ping, and the dev `wire` view (closing a cache-correctness gap).
 
 ### Fixed
+- Fast-path permission grants no longer misfire on two dogfood-caught cases: a trailing fd-dup redirection (`cmd 2>&1`) stays on the bash fast path (only *file* redirections gate now), and a batched `read` spanning both `[paths]` and `[context]` grants clears per-path across the union instead of gating.
 - Guard against runaway tool results overflowing the request (400 on oversized content).
 - Streamed control characters, a turn-loop livelock, and a resume edge case.
 - Extended thinking, end to end: the assembler folds streamed `thinking`/`redacted_thinking` blocks (signatures preserved) into leading assistant content, `project` renders them first on the wire, and the request's `thinking` field rides on `tool_choice` (main turn `auto` → adaptive+summarized; the fork's forced choice and the keepalive → disabled, the one illegal pairing made unrepresentable). Replaces the earlier thinking-disabled stopgap; thinking blocks are stored verbatim, not yet elided.

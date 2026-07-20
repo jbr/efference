@@ -23,8 +23,11 @@
 //!
 //! - **Stage 1** parses the command with [`yash_syntax`] (a real POSIX parser, not a
 //!   regex) and accepts only a *single simple command* — no operators (`| & ; && ||`),
-//!   no redirection, no command/arithmetic substitution, no parameter/tilde expansion,
-//!   no env-assignment prefix, no unquoted glob/brace. yash is POSIX-strict, which only
+//!   no *file* redirection, no command/arithmetic substitution, no parameter/tilde expansion,
+//!   no env-assignment prefix, no unquoted glob/brace. The one redirection it tolerates is a
+//!   pure file-descriptor duplication/closure (`2>&1`, `>&2`, `2>&-`) — it rewires the process's
+//!   own fds and touches no filesystem, so it's sound and lets the habitual `cmd 2>&1` stay on the
+//!   fast path ([`is_safe_fd_dup`]). yash is POSIX-strict, which only
 //!   costs *coverage* (a few bash-only forms gate to the spotter), never *soundness* —
 //!   bash's dangerous operators are POSIX too, so they parse as operators and gate;
 //!   bash-only syntax either fails to parse (→ gate) or surfaces as inert literal words
@@ -305,66 +308,71 @@ fn classify_in(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
     }
 }
 
-/// A structured (non-bash) tool clears iff its name is in the role's `tool` grants and,
-/// for the path-bearing ones, its target is covered by a `path` grant with the right
-/// permission. A `[context]` listing is an independent clearance source
-/// (docs/context.md): the listing itself is the grant, so it clears without a
-/// `tools` name grant — see [`context_clears`]. Anything not granted gates.
+/// A structured (non-bash) tool clears when every path it targets is granted — by **either**
+/// clearance source, decided **per path**: a `[paths]` grant (which requires the tool name to be in
+/// `tools`) *or* a `[context]` listing (a standalone grant needing no name — docs/context.md). The
+/// union is per-path on purpose: a batched `read` mixing a `[paths]`-covered file and a
+/// `[context]`-covered one clears, because each path is authorized by *some* source, even though
+/// neither source covers the whole batch alone (the dogfood regression). A path-less tool
+/// (`kill_process`, …) clears on the name grant; `undo_edit` also clears on any `[context]` write
+/// grant. Anything not granted gates.
 fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
-    if context_clears(role, call, cwd) {
-        return Verdict::Clear;
+    // `undo_edit` names no path (its target was named by the `edit` where write is enforced — the
+    // acknowledged wart in [`path_spec`]). It clears on the name grant, or on any `[context]` write
+    // grant, mirroring its clear-on-name rule under `tools`.
+    if call.name == "undo_edit" {
+        let cleared = role.tools.contains(&call.name)
+            || role
+                .context
+                .iter()
+                .any(|e| e.grants.update || e.grants.create);
+        return verdict(cleared);
     }
-    // Nothing clears in code — the name must be granted in config first.
-    if !role.tools.contains(&call.name) {
-        return Verdict::Gate;
-    }
-    if path_check(role, call, cwd) {
+    let Some((key, perm, default)) = path_spec(&call.name) else {
+        // A structured tool with no path target (`kill_process`, `retarget_edit`, `consolidate`,
+        // the supervisor/inbox tools): the name grant alone suffices.
+        return verdict(role.tools.contains(&call.name));
+    };
+    let Some(targets) = input_targets(&call.input, key, default) else {
+        return Verdict::Gate; // required path missing/empty/malformed → never auto-clear
+    };
+    // Per-path union of the two sources. `[context]` clears standalone; `[paths]` clears only when
+    // the tool name is also granted (the name grant is a per-call precondition on that source).
+    let name_granted = role.tools.contains(&call.name);
+    let cleared = targets.iter().all(|t| {
+        context_granted(role, t, perm, cwd) || (name_granted && path_granted(role, t, perm, cwd))
+    });
+    verdict(cleared)
+}
+
+/// The per-tool path rule — the acknowledged wart (see the module docs): which JSON input key holds
+/// the target path, whether it is a read or a write, and the fallback when the key is absent (the
+/// optional-path tools default to cwd `"."`; `None` means the path is required). Tools absent from
+/// this map (`undo_edit`, `retarget_edit`, `consolidate`, the supervisor/inbox tools) carry no path
+/// and clear on the name grant alone. The string literals are centralized here so the coupling to
+/// each built-in's schema lives in one place, shared by both clearance sources.
+fn path_spec(name: &str) -> Option<(&'static str, Perm, Option<&'static str>)> {
+    Some(match name {
+        // Reads: the target must be under a read-or-write grant.
+        "read" => ("paths", Perm::Read, None),
+        "list" => ("path", Perm::Read, Some(".")),
+        "search" => ("path", Perm::Read, Some(".")),
+        "find_anchor" => ("file_path", Perm::Read, None),
+        // Writes: the target must be under a write grant. `edit` is where the edit pipeline names
+        // its file, so write is enforced here; `undo_edit` (no path) clears on the name grant.
+        "write" => ("path", Perm::Write, None),
+        "edit" => ("file_path", Perm::Write, None),
+        _ => return None,
+    })
+}
+
+/// Tiny helper: fold a boolean clearance decision into a [`Verdict`].
+fn verdict(cleared: bool) -> Verdict {
+    if cleared {
         Verdict::Clear
     } else {
         Verdict::Gate
     }
-}
-
-/// The per-tool path rule — the acknowledged wart (see the module docs): reach into the
-/// built-in's JSON input by known key and confirm the target is granted. Tools with no
-/// path here (`undo_edit`, `retarget_edit`, `consolidate`, the supervisor/inbox tools)
-/// clear on the name grant alone. Returns `true` when the path requirement is satisfied
-/// (or there is none), `false` when a required path is missing, malformed, or ungranted.
-fn path_check(role: &Config, call: &ToolCall, cwd: &Path) -> bool {
-    let input = &call.input;
-    match call.name.as_str() {
-        // Reads: the target must be under a read-or-write grant.
-        "read" => paths_granted(role, input, "paths", Perm::Read, cwd, None),
-        "list" => paths_granted(role, input, "path", Perm::Read, cwd, Some(".")),
-        "search" => paths_granted(role, input, "path", Perm::Read, cwd, Some(".")),
-        "find_anchor" => paths_granted(role, input, "file_path", Perm::Read, cwd, None),
-        // Writes: the target must be under a write grant. `edit` is where the
-        // edit pipeline names its file, so write is enforced here; `undo_edit` (no
-        // path) then clears on the name grant.
-        "write" => paths_granted(role, input, "path", Perm::Write, cwd, None),
-        "edit" => paths_granted(role, input, "file_path", Perm::Write, cwd, None),
-        // No path to check — the name grant is sufficient.
-        _ => true,
-    }
-}
-
-/// Check the path(s) at `input[key]` against the role's grants. The value may be a single
-/// string or an array of strings (e.g. `read`'s `paths`); every path must be granted.
-/// `default` supplies a fallback when the key is absent (the optional-path tools default
-/// to cwd `"."`); `None` means the path is required, so an absent/empty/malformed value
-/// fails. Empty array → fail (a no-target call shouldn't auto-clear).
-fn paths_granted(
-    role: &Config,
-    input: &Value,
-    key: &str,
-    perm: Perm,
-    cwd: &Path,
-    default: Option<&str>,
-) -> bool {
-    let Some(targets) = input_targets(input, key, default) else {
-        return false;
-    };
-    targets.iter().all(|t| path_granted(role, t, perm, cwd))
 }
 
 /// Extract the path target(s) at `input[key]`: a single string or a non-empty array of
@@ -388,40 +396,6 @@ fn input_targets<'a>(
         Some(_) => None, // present but not a string/array → malformed
         None => default.map(|d| vec![d]),
     }
-}
-
-/// The `[context]` clearance rung (docs/context.md). Listing a path in `[context]`
-/// **is** a read grant: the preamble stub says `Read {path}`, so the read the model was invited
-/// to make must fast-path clear with no `tools`/`paths` config at all — the listing is
-/// operator-sanctioned. The write grants ride the same entries: `update` clears a write to an
-/// **existing** file under an entry, `create` a write to a **new** one (so `create` without
-/// `update` is an append-only store). Uses the same per-tool input keys as [`path_check`].
-///
-/// `undo_edit` names no path (its target was named by the `edit` where the grant is
-/// enforced — the acknowledged wart in [`path_check`]), so it clears when any entry carries a
-/// write grant, mirroring its clear-on-name-alone rule under `tools`.
-fn context_clears(role: &Config, call: &ToolCall, cwd: &Path) -> bool {
-    if role.context.is_empty() {
-        return false;
-    }
-    let (key, perm, default) = match call.name.as_str() {
-        "read" => ("paths", Perm::Read, None),
-        "list" | "search" => ("path", Perm::Read, Some(".")),
-        "find_anchor" => ("file_path", Perm::Read, None),
-        "write" => ("path", Perm::Write, None),
-        "edit" => ("file_path", Perm::Write, None),
-        "undo_edit" => {
-            return role
-                .context
-                .iter()
-                .any(|e| e.grants.update || e.grants.create);
-        }
-        _ => return false,
-    };
-    let Some(targets) = input_targets(&call.input, key, default) else {
-        return false;
-    };
-    targets.iter().all(|t| context_granted(role, t, perm, cwd))
 }
 
 /// Whether `target` falls under some `[context]` entry path carrying `perm`
@@ -547,6 +521,33 @@ pub fn promotable_command(role: &Config, prefix: &str) -> Option<String> {
     Some(prefix.trim().to_string())
 }
 
+/// Whether a redirection is a pure file-descriptor **duplication or closure** (`2>&1`, `>&2`,
+/// `2>&-`, `<&3`) — the one redirection class stage 1 tolerates. Sound because it never names or
+/// touches a file: `>&`/`<&` (yash's [`RedirOp::FdOut`]/[`RedirOp::FdIn`]) only copy or close an
+/// already-open descriptor, so there is no filesystem write, read, or exfiltration to gate on.
+///
+/// The operand must reduce (via [`literal_word`]) to a descriptor: an all-digits fd number or `-`
+/// (close). A `>&` whose operand is a filename (`>& out.log`) or an expansion (`2>&$FD`) is *not* a
+/// pure dup — it can reach the filesystem — so it returns `false` and the command gates. Here-docs
+/// and here-strings are file/data redirections and are rejected here too.
+///
+/// [`RedirOp::FdOut`]: yash_syntax::syntax::RedirOp::FdOut
+/// [`RedirOp::FdIn`]: yash_syntax::syntax::RedirOp::FdIn
+fn is_safe_fd_dup(redir: &yash_syntax::syntax::Redir) -> bool {
+    use yash_syntax::syntax::{RedirBody, RedirOp};
+    let RedirBody::Normal { operator, operand } = &redir.body else {
+        return false; // here-doc: data redirection, not an fd dup
+    };
+    if !matches!(operator, RedirOp::FdOut | RedirOp::FdIn) {
+        return false; // a file redirection (`>`, `>>`, `<`, `<>`, `>|`, here-string)
+    }
+    match literal_word(operand) {
+        // `-` closes the fd; otherwise the operand must be a bare descriptor number.
+        Some(word) => word == "-" || (!word.is_empty() && word.bytes().all(|b| b.is_ascii_digit())),
+        None => false, // expanded/globbed operand → not a decidable fd
+    }
+}
+
 /// **Stage 1 — structural simplicity.** Parse `command` and return its literal token
 /// vector (`[program, args…]`) iff it is exactly one simple command with no operators,
 /// redirections, assignments, or expansions, and whose every word is wholly literal.
@@ -582,8 +583,14 @@ pub(crate) fn simple_command_tokens(command: &str) -> Option<Vec<String>> {
     if !simple.assigns.is_empty() {
         return None; // no `FOO=bar cmd` env-assignment prefix
     }
-    if !simple.redirs.is_empty() {
-        return None; // no redirection
+    // Redirections gate — *except* a file-descriptor duplication/closure (`2>&1`, `>&2`, `2>&-`,
+    // `<&3`), which touches no filesystem: it only rewires the process's own descriptors among
+    // already-open fds. That's sound under the error-not-deception model, and it's the habitual
+    // `cmd 2>&1` the model appends; without this a trailing `2>&1` knocks a blanket-allowlisted
+    // program off the fast path (docs/permissions.md). A file redirection, here-doc, or expanded
+    // operand still gates via [`is_safe_fd_dup`].
+    if !simple.redirs.iter().all(is_safe_fd_dup) {
+        return None;
     }
     let mut tokens = Vec::with_capacity(simple.words.len());
     // `words` pairs each word with its expansion mode; we only need the word.
@@ -708,6 +715,60 @@ mod tests {
                 simple_command_tokens(complex),
                 None,
                 "{complex:?} must gate"
+            );
+        }
+    }
+
+    /// A file-descriptor duplication/closure (`2>&1`, `>&2`, `2>&-`, `<&3`) is *not* a file
+    /// redirection: it only rewires the process's own descriptors, touching no filesystem, so it
+    /// stays structurally simple and its literal words still lex to the program tokens. This is the
+    /// habitual `cmd 2>&1` the model appends — it must not knock a blanket-allowlisted program off
+    /// the fast path (the dogfood regression: `cargo test 2>&1` gated despite `cargo` being blanket).
+    #[test]
+    fn fd_duplications_are_simple_and_lex_to_the_program_tokens() {
+        // The redir words are *not* part of the token vector — only `simple.words` are.
+        assert_eq!(
+            simple_command_tokens("cargo test 2>&1"),
+            Some(vec!["cargo".into(), "test".into()])
+        );
+        assert_eq!(
+            simple_command_tokens("ferritin get efference::log::LogEntry 2>&1"),
+            Some(vec![
+                "ferritin".into(),
+                "get".into(),
+                "efference::log::LogEntry".into()
+            ])
+        );
+        // fd-close and input-side dup are equally inert.
+        assert_eq!(
+            simple_command_tokens("cargo build 2>&-"),
+            Some(vec!["cargo".into(), "build".into()])
+        );
+        assert_eq!(
+            simple_command_tokens("cat foo <&3"),
+            Some(vec!["cat".into(), "foo".into()])
+        );
+        // …and the blanket allowlist therefore clears them.
+        assert_eq!(verdict("cargo test 2>&1"), Verdict::Clear);
+    }
+
+    /// The fd-dup carve-out is *only* for descriptor operands (a number or `-`). A `>&` whose operand
+    /// is a filename or an expansion is still a filesystem-touching redirection and must gate.
+    #[test]
+    fn fd_dup_carve_out_does_not_leak_to_file_redirections() {
+        for still_gates in [
+            "cargo build > out.log",  // truncating file redirect
+            "cargo build >> out.log", // appending file redirect
+            "cargo build 2> err.log", // stderr to a file
+            "cargo build &> all.log", // bash both-streams (parses as bg + redir here)
+            "cat <<< hello",          // here-string
+            "cargo build >& out.log", // `>&` to a *filename*, not an fd
+            "cargo build 2>&$FD",     // expanded operand
+        ] {
+            assert_eq!(
+                simple_command_tokens(still_gates),
+                None,
+                "{still_gates:?} must gate — it is not a pure fd duplication"
             );
         }
     }
@@ -1437,6 +1498,63 @@ mod tests {
                     &call(
                         "read",
                         serde_json::json!({ "paths": ["memories/../secrets.md"] })
+                    )
+                ),
+                Verdict::Gate
+            );
+        }
+
+        /// The dogfood regression: a batched read spanning **both** clearance sources must clear.
+        /// One path is covered by a `[paths]` grant (needs the `read` name grant), the other only by
+        /// a `[context]` entry (standalone). Neither source covers the *whole* batch alone, so the
+        /// old all-or-nothing-per-source check gated it; per-path union clears it, because every path
+        /// is granted by *some* source.
+        #[test]
+        fn a_read_spanning_paths_and_context_clears_per_path() {
+            let role = Config {
+                tools: ["read"].iter().map(|s| s.to_string()).collect(),
+                paths: [(
+                    ".".to_string(),
+                    Perms {
+                        read: true,
+                        write: true,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                context: vec![ctx_entry(&["/outside/memory"], false, false)],
+                ..Default::default()
+            };
+            // `docs/x.md` is under the `.` [paths] grant; `/outside/memory/note.md` is under the
+            // [context] entry. Each path clears via a *different* source; the batch clears.
+            assert_eq!(
+                structured(
+                    &role,
+                    &call(
+                        "read",
+                        serde_json::json!({ "paths": ["docs/x.md", "/outside/memory/note.md"] })
+                    )
+                ),
+                Verdict::Clear
+            );
+            // Order-independence: the same two paths, swapped, still clear.
+            assert_eq!(
+                structured(
+                    &role,
+                    &call(
+                        "read",
+                        serde_json::json!({ "paths": ["/outside/memory/note.md", "docs/x.md"] })
+                    )
+                ),
+                Verdict::Clear
+            );
+            // A third path covered by *neither* source still poisons the batch.
+            assert_eq!(
+                structured(
+                    &role,
+                    &call(
+                        "read",
+                        serde_json::json!({ "paths": ["docs/x.md", "/outside/memory/note.md", "/etc/passwd"] })
                     )
                 ),
                 Verdict::Gate
