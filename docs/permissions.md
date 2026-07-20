@@ -246,7 +246,11 @@ projects to nothing — audit-only, never on the canonical wire. This is the *fi
 decision that earns a log line: fast-path clears stay deliberately unlogged. `efference
 spotter --scope … --watch-for … --path … "<cmd>"` runs the exact `assess` path on one move,
 for iterating on the persona and config against real cases (`--watch-for` repeats; `--path`
-takes `<path>:rw` / `<path>:r`).
+takes `<path>:rw` / `<path>:r`). Its read-side companion, `efference spotter-log`, surveys
+these `Spot` entries back out of the session logs — a stance-distribution summary (with the
+fail-closed rate) plus each verdict correlated to the call it judged and its one-line reason,
+across every `.efference/*/log.jsonl` or one session; `--stance`/`--no-fallback` filter, and
+`--summary`/`--list` pick a half. The dev-facing lens for auditing how the spotter is doing.
 
 ## The config-edit loop (`src/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/daemon.rs`)
 

@@ -307,6 +307,59 @@ enum Command {
         #[arg(required = true, num_args = 1..)]
         command: Vec<String>,
     },
+    /// Dev tool (like `wire`/`spotter`): survey the recorded spotter verdicts
+    /// (docs/permissions.md) across sessions — read every `Payload::Spot` back out
+    /// of the session logs and print a health summary (stance distribution,
+    /// fail-closed rate) followed by each verdict: the tool call it judged, its
+    /// stance, and its one-line reason. Pure offline log read — no daemon, no
+    /// network, config-independent (works even when a session's config won't
+    /// parse). The companion to the live `spotter` tester: `spotter` runs one fresh
+    /// check, `spotter-log` reviews the ones that already ran.
+    SpotterLog {
+        /// A session dir (`.efference/<id>`) or a `log.jsonl` to survey. Omit to
+        /// scan every `.efference/*/log.jsonl` under the cwd — the cross-session view.
+        path: Option<PathBuf>,
+        /// Show only verdicts with this stance (repeatable): `clear`, `clear-always`,
+        /// `watch`, or `gate`. Omit for all. E.g. `--stance gate --stance watch` to
+        /// read just the calls the spotter didn't wave through.
+        #[arg(long = "stance", value_enum)]
+        stances: Vec<StanceArg>,
+        /// Print only the aggregate summary (stance distribution + fail-closed rate),
+        /// skipping the per-verdict listing.
+        #[arg(long, conflicts_with = "list")]
+        summary: bool,
+        /// Print only the per-verdict listing, skipping the aggregate summary.
+        #[arg(long, conflicts_with = "summary")]
+        list: bool,
+        /// Hide the fail-closed fallback verdicts (`origin: Fallback` — a failed
+        /// spotter call that defaulted to the gate), leaving only real model
+        /// verdicts. Excludes them from both the summary and the listing.
+        #[arg(long = "no-fallback")]
+        no_fallback: bool,
+    },
+}
+
+/// A spotter [`Stance`](efference::log::Stance) as a `--stance` filter value for the
+/// `spotter-log` dev survey. Mirrors the log's four verdicts.
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum StanceArg {
+    Clear,
+    ClearAlways,
+    Watch,
+    Gate,
+}
+
+impl StanceArg {
+    fn matches(self, stance: efference::log::Stance) -> bool {
+        use efference::log::Stance;
+        matches!(
+            (self, stance),
+            (StanceArg::Clear, Stance::Clear)
+                | (StanceArg::ClearAlways, Stance::ClearAlways)
+                | (StanceArg::Watch, Stance::Watch)
+                | (StanceArg::Gate, Stance::Gate)
+        )
+    }
 }
 
 /// Output format for the `wire` dev view.
@@ -365,6 +418,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             probe,
             command,
         } => spotter_check(scope, watch_for, paths, &model, probe, command.join(" ")).await,
+        Command::SpotterLog {
+            path,
+            stances,
+            summary,
+            list,
+            no_fallback,
+        } => spotter_log(path, stances, summary, list, no_fallback),
         Command::Attach => attach(client_socket()?).await,
         Command::Tui { theme } => tui(client_socket()?, theme).await,
         Command::Gallery { theme } => gallery(theme).await,
@@ -1024,6 +1084,292 @@ fn parse_path_grant(spec: &str) -> (String, efference::config::Perms) {
     }
 }
 
+// ---- spotter-log survey (docs/permissions.md) ----
+// Minimal ANSI so the survey reads at a glance on a tty and stays clean when piped.
+const BOLD: &str = "1";
+const DIM: &str = "2";
+const RED: &str = "31";
+const GREEN: &str = "32";
+const YELLOW: &str = "33";
+const GREEN_BOLD: &str = "1;32";
+
+/// Wrap `s` in an ANSI SGR code, but only when writing to a terminal — piped output stays plain
+/// (and grep/`jq`-friendly). The reset always closes the span so padded widths stay correct.
+fn paint(s: &str, code: &str, tty: bool) -> String {
+    if tty {
+        format!("\x1b[{code}m{s}\x1b[0m")
+    } else {
+        s.to_string()
+    }
+}
+
+/// The uppercase display label and colour for a stance in the survey listing.
+fn stance_label(stance: efference::log::Stance) -> (&'static str, &'static str) {
+    use efference::log::Stance;
+    match stance {
+        Stance::Clear => ("CLEAR", GREEN),
+        Stance::ClearAlways => ("CLEAR_ALWAYS", GREEN_BOLD),
+        Stance::Watch => ("WATCH", YELLOW),
+        Stance::Gate => ("GATE", RED),
+    }
+}
+
+/// A compact one-line description of the tool call a verdict judged, for the survey listing.
+/// Prefers the human-obvious field per tool shape — a bash `command`, else a `path`/`file_path`,
+/// else a `pattern`/`query` — falling back to compact JSON of the whole input.
+fn describe_call(name: &str, input: &serde_json::Value) -> String {
+    let field = |k: &str| input.get(k).and_then(|v| v.as_str());
+    // A `paths` array (the structured read/list tools) → its string elements, comma-joined.
+    let paths = input.get("paths").and_then(|v| v.as_array()).map(|a| {
+        a.iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    });
+    if let Some(cmd) = field("command") {
+        format!("{name}: {}", one_line(cmd))
+    } else if let Some(p) = field("path").or_else(|| field("file_path")) {
+        format!("{name}: {p}")
+    } else if let Some(p) = paths.filter(|s| !s.is_empty()) {
+        format!("{name}: {p}")
+    } else if let Some(q) = field("pattern").or_else(|| field("query")) {
+        format!("{name}: {q}")
+    } else {
+        format!("{name}: {}", one_line(&input.to_string()))
+    }
+}
+
+/// Collapse whitespace/newlines to single spaces and cap length so a call reads as one tidy cell.
+fn one_line(s: &str) -> String {
+    let flat = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    const MAX: usize = 120;
+    if flat.chars().count() > MAX {
+        let head: String = flat.chars().take(MAX - 1).collect();
+        format!("{head}…")
+    } else {
+        flat
+    }
+}
+
+/// One surveyed spotter verdict, flattened for the `spotter-log` listing.
+struct SpotRow {
+    session: String,
+    seq: u64,
+    turn: u32,
+    stance: efference::log::Stance,
+    origin: efference::log::Origin,
+    reason: String,
+    probed_prefix: Option<String>,
+    call: String,
+}
+
+/// Extract the spotter verdicts from one session's loaded log, in append order, correlating each
+/// `Payload::Spot` to the tool call it judged (by `call_id`) and applying the `--stance` /
+/// `--no-fallback` filters. The pure, testable core of [`spotter_log`].
+fn spots_in(
+    session: &str,
+    entries: &[efference::log::LogEntry],
+    stances: &[StanceArg],
+    no_fallback: bool,
+) -> Vec<SpotRow> {
+    use efference::log::{CallId, Origin, Payload, ToolCall};
+    use std::collections::HashMap;
+
+    // Index every tool call by id so each Spot can name what it judged.
+    let mut calls: HashMap<&CallId, &ToolCall> = HashMap::new();
+    for entry in entries {
+        if let Payload::Assistant { calls: cs, .. } = &entry.payload {
+            for c in cs {
+                calls.insert(&c.id, c);
+            }
+        }
+    }
+
+    let mut rows = Vec::new();
+    for entry in entries {
+        let Payload::Spot(spot) = &entry.payload else {
+            continue;
+        };
+        if no_fallback && spot.origin == Origin::Fallback {
+            continue;
+        }
+        if !stances.is_empty() && !stances.iter().any(|s| s.matches(spot.stance)) {
+            continue;
+        }
+        let call = calls
+            .get(&spot.call_id)
+            .map(|c| describe_call(&c.name, &c.input))
+            .unwrap_or_else(|| format!("<unresolved call {}>", spot.call_id.0));
+        rows.push(SpotRow {
+            session: session.to_string(),
+            seq: entry.seq,
+            turn: entry.turn,
+            stance: spot.stance,
+            origin: spot.origin,
+            reason: spot.reason.clone(),
+            probed_prefix: spot.probed_prefix.clone(),
+            call,
+        });
+    }
+    rows
+}
+
+/// Resolve which session logs the survey reads. An explicit path is either a `log.jsonl` file
+/// (used directly) or a session dir (→ its `LOG_NAME`); omitting it scans every
+/// `.efference/*/log.jsonl` under the cwd. Returns `(session id, log path)` pairs, sorted by id
+/// (the timestamp id sorts oldest→newest).
+fn resolve_spotter_logs(path: Option<PathBuf>) -> std::io::Result<Vec<(String, PathBuf)>> {
+    if let Some(p) = path {
+        let (id, log) = if p.is_dir() {
+            let id = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("session")
+                .to_string();
+            (id, p.join(LOG_NAME))
+        } else {
+            // A log file directly — name it by its parent dir (the session id) when we can.
+            let id = p
+                .parent()
+                .and_then(|d| d.file_name())
+                .and_then(|n| n.to_str())
+                .unwrap_or("session")
+                .to_string();
+            (id, p)
+        };
+        return Ok(vec![(id, log)]);
+    }
+    let mut out = Vec::new();
+    let base = Path::new(BASE_DIR);
+    if !base.is_dir() {
+        return Ok(out);
+    }
+    for entry in std::fs::read_dir(base)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let log = entry.path().join(LOG_NAME);
+        if log.is_file() {
+            out.push((entry.file_name().to_string_lossy().into_owned(), log));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
+}
+
+/// Survey the recorded spotter verdicts across sessions (docs/permissions.md): read every
+/// `Payload::Spot` back out of the session logs, correlate each to the tool call it judged, and
+/// print a stance-distribution summary and/or the per-verdict listing. Offline — no daemon, no
+/// network, config-independent. The read side of the `spotter` dev tool.
+fn spotter_log(
+    path: Option<PathBuf>,
+    stances: Vec<StanceArg>,
+    summary_only: bool,
+    list_only: bool,
+    no_fallback: bool,
+) -> CliResult {
+    use efference::log::{Origin, Stance};
+    use std::io::IsTerminal;
+
+    let logs = resolve_spotter_logs(path)?;
+    if logs.is_empty() {
+        eprintln!("no session logs found (looked under {BASE_DIR}/*/{LOG_NAME}).");
+        return Ok(());
+    }
+    let tty = std::io::stdout().is_terminal();
+
+    let mut rows: Vec<SpotRow> = Vec::new();
+    let mut sessions_with_spots = 0usize;
+    for (session, log_path) in &logs {
+        let entries = match efference::persist::load(log_path) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("skipping {}: {e}", log_path.display());
+                continue;
+            }
+        };
+        let found = spots_in(session, &entries, &stances, no_fallback);
+        if !found.is_empty() {
+            sessions_with_spots += 1;
+        }
+        rows.extend(found);
+    }
+
+    if rows.is_empty() {
+        let suffix = if stances.is_empty() && !no_fallback {
+            ""
+        } else {
+            " matching the filter"
+        };
+        println!("no spotter verdicts{suffix} across {} log(s).", logs.len());
+        return Ok(());
+    }
+
+    // ---- summary: stance distribution + fail-closed rate ----
+    if !list_only {
+        let total = rows.len();
+        let count = |s: Stance| rows.iter().filter(|r| r.stance == s).count();
+        let fallback = rows.iter().filter(|r| r.origin == Origin::Fallback).count();
+        let pct = |n: usize| n as f64 * 100.0 / total as f64;
+
+        println!("{}", paint("SPOTTER SURVEY", BOLD, tty));
+        println!(
+            "  {} log(s) scanned · {sessions_with_spots} with verdicts · {total} verdict(s)",
+            logs.len()
+        );
+        let line = |label: &str, n: usize, code: &str| {
+            if n > 0 {
+                let lbl = paint(&format!("{label:<12}"), code, tty);
+                println!("  {lbl} {n:>4}  ({:>3.0}%)", pct(n));
+            }
+        };
+        line("clear", count(Stance::Clear), GREEN);
+        line("clear_always", count(Stance::ClearAlways), GREEN_BOLD);
+        line("watch", count(Stance::Watch), YELLOW);
+        line("gate", count(Stance::Gate), RED);
+        if fallback > 0 {
+            let lbl = paint(&format!("{:<12}", "fallback"), DIM, tty);
+            println!(
+                "  {lbl} {fallback:>4}  ({:>3.0}%)  fail-closed",
+                pct(fallback)
+            );
+        }
+    }
+
+    // ---- listing: each verdict, grouped by session ----
+    if !summary_only {
+        if !list_only {
+            println!();
+        }
+        let mut current = "";
+        for r in &rows {
+            if r.session.as_str() != current {
+                current = r.session.as_str();
+                let hdr = format!("── {} ", r.session);
+                println!("{}", paint(&format!("{hdr:─<64}"), DIM, tty));
+            }
+            let (label, code) = stance_label(r.stance);
+            let mut tags = String::new();
+            if r.origin == Origin::Fallback {
+                tags.push_str(" · fallback");
+            }
+            if let Some(p) = &r.probed_prefix {
+                tags.push_str(&format!(" · probe `{p}`"));
+            }
+            println!(
+                "  seq {} · turn {} · {}{tags}",
+                r.seq,
+                r.turn,
+                paint(label, code, tty)
+            );
+            println!("    {}", r.call);
+            println!("    {}", paint(&format!("“{}”", r.reason.trim()), DIM, tty));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1119,5 +1465,114 @@ mod tests {
 
         let _ = std::fs::remove_file(&log_path);
         let _ = std::fs::remove_file(&bad_config);
+    }
+
+    // ---- spotter-log survey ----
+
+    fn entry(seq: u64, payload: efference::log::Payload) -> efference::log::LogEntry {
+        efference::log::LogEntry {
+            seq,
+            turn: 1,
+            at: efference::log::Timestamp(0),
+            payload,
+        }
+    }
+
+    /// A log with one bash call, a `Gate`(model) verdict on it, and a `Clear`(fallback)
+    /// verdict on a call id that isn't in the log (the fail-closed-on-a-missing-call shape).
+    fn spot_fixture() -> Vec<efference::log::LogEntry> {
+        use efference::log::{CallId, Origin, Payload, Spot, Stance, ToolCall};
+        vec![
+            entry(
+                1,
+                Payload::Assistant {
+                    thinking: vec![],
+                    text: vec![],
+                    calls: vec![ToolCall {
+                        id: CallId("toolu_a".into()),
+                        name: "bash".into(),
+                        input: serde_json::json!({ "command": "rm  -rf\n ./build" }),
+                    }],
+                },
+            ),
+            entry(
+                2,
+                Payload::Spot(Spot {
+                    call_id: CallId("toolu_a".into()),
+                    stance: Stance::Gate,
+                    reason: "deletes outside the sanctioned scope".into(),
+                    origin: Origin::Model,
+                    probed_prefix: None,
+                }),
+            ),
+            entry(
+                3,
+                Payload::Spot(Spot {
+                    call_id: CallId("toolu_gone".into()),
+                    stance: Stance::Clear,
+                    reason: "spotter unavailable".into(),
+                    origin: Origin::Fallback,
+                    probed_prefix: None,
+                }),
+            ),
+        ]
+    }
+
+    #[test]
+    fn spots_in_correlates_calls_and_flattens_whitespace() {
+        use efference::log::Stance;
+        let rows = spots_in("sess", &spot_fixture(), &[], false);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].stance, Stance::Gate);
+        // The bash command is resolved from the Assistant call and collapsed to one line.
+        assert_eq!(rows[0].call, "bash: rm -rf ./build");
+        // A Spot whose call id isn't in the log still surfaces, marked unresolved.
+        assert!(rows[1].call.contains("unresolved"));
+        assert!(rows[1].call.contains("toolu_gone"));
+    }
+
+    #[test]
+    fn spots_in_no_fallback_drops_fail_closed_verdicts() {
+        use efference::log::Origin;
+        let rows = spots_in("sess", &spot_fixture(), &[], true);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].origin, Origin::Model);
+    }
+
+    #[test]
+    fn spots_in_stance_filter_keeps_only_matching() {
+        use efference::log::Stance;
+        let gates = spots_in("sess", &spot_fixture(), &[StanceArg::Gate], false);
+        assert_eq!(gates.len(), 1);
+        assert_eq!(gates[0].stance, Stance::Gate);
+        // A stance nobody has → empty.
+        assert!(spots_in("sess", &spot_fixture(), &[StanceArg::Watch], false).is_empty());
+    }
+
+    #[test]
+    fn describe_call_prefers_the_obvious_field() {
+        assert_eq!(
+            describe_call("bash", &serde_json::json!({ "command": "ls -la" })),
+            "bash: ls -la"
+        );
+        assert_eq!(
+            describe_call("read", &serde_json::json!({ "file_path": "src/log.rs" })),
+            "read: src/log.rs"
+        );
+        // The structured read/list tools carry a `paths` array — joined, not dumped as JSON.
+        assert_eq!(
+            describe_call("read", &serde_json::json!({ "paths": ["a.rs", "b.rs"] })),
+            "read: a.rs, b.rs"
+        );
+        // No obvious key → compact JSON of the whole input, so the call is never opaque.
+        let other = describe_call("mystery", &serde_json::json!({ "z": 1, "a": 2 }));
+        assert!(other.starts_with("mystery: "));
+        assert!(other.contains("\"a\""));
+    }
+
+    #[test]
+    fn paint_is_plain_when_not_a_tty() {
+        assert_eq!(paint("x", RED, false), "x");
+        assert_eq!(paint("x", RED, true), "\x1b[31mx\x1b[0m");
     }
 }
