@@ -3,8 +3,7 @@
 The inbox is the realized form of "enqueue then triage": background and out-of-band
 events interrupt the agent by enqueuing, but never mid-thought. Each time the agent
 finishes an action and runs the triage fork peek (see `redaction-fork.md`), it grooms
-its inbox in the same throwaway branch at no extra round-trip. The model is never
-interrupted; it is woken.
+its inbox in the same throwaway branch at no extra round-trip.
 
 ## What a notification is
 
@@ -75,7 +74,7 @@ Records are immutable; a `PUT /notifications/:id` verb does not exist. A new not
 naming the same `slot` (or naming an explicit `replaces` id) archives the prior record
 rather than mutating it. For example, a slot `bash#7` receiving "running 5 min" and then
 "finished" produces two immutable records, not one edited one. The wire prefix therefore
-re-renders byte-identically across turns (the core caching invariant from `substrate.md`).
+re-renders byte-identically across turns (the core caching invariant from `log-and-projection.md`).
 
 Superseded while pending: the prior record is archived in the ephemeral queue and never
 reaches the log — the never-happened case. Superseded after pinning: the new notification
@@ -88,10 +87,10 @@ Pinned notifications project into the wire transcript at the **pinning `Triage` 
 position**, not at the arrival entry's position. Arrival entries (`Payload::Ambient`)
 project to nothing — they are audit-only.
 
-This is the load-bearing cache-safety choice. A notification may be shown at one gate,
+This placement is what keeps pinning cache-safe. A notification may be shown at one gate,
 left, left again, and pinned at a third gate. Projecting the block at the arrival position
 would splice new content behind an earlier point in the transcript — behind the cache head
-if any boundary has been committed — which is the cardinal sin (see `substrate.md`).
+if any boundary has been committed — invalidating the cached prefix (see `log-and-projection.md`).
 Projecting at the `Triage` position is always tail-ward: the wire grows only at the tail.
 
 It is also semantically correct: the agent "receives" a notification when it acknowledges

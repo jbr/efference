@@ -1,6 +1,6 @@
 //! The agent loop — the turn engine (docs/README.md).
 //!
-//! Where the substrate, the transport, and the user meet. Read a user turn, then
+//! Where the log, the transport, and the user meet. Read a user turn, then
 //! repeat `project → complete → append assistant → {approve, run, append result}`
 //! until the model stops calling tools, then read the next user turn.
 //!
@@ -35,7 +35,7 @@ use crate::tools::Toolbox;
 /// The exact `tools[]` a turn advertises: the world tools (`toolbox`) plus the
 /// harness tools handled structurally in the loop — `consolidate` (docs/consolidate.md)
 /// and the supervisor/inbox tools (docs/supervisor.md). One source of truth so the
-/// keepalive ping (docs/substrate.md) and the real turns send a byte-identical prefix;
+/// keepalive ping (docs/log-and-projection.md) and the real turns send a byte-identical prefix;
 /// drift here silently breaks the tools cache tier.
 pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     let mut tools = toolbox.definitions();
@@ -290,7 +290,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
     // World-facing tools plus the harness tools (`consolidate`, the
     // supervisor/inbox tools (docs/supervisor.md)) handled structurally in the loop
     // below, not by a `Provider`. Built once from the shared source; the defs are
-    // constant `json!`, so `tools[]` stays byte-stable across requests (docs/substrate.md).
+    // constant `json!`, so `tools[]` stays byte-stable across requests (docs/log-and-projection.md).
     let tools = tool_definitions(&toolbox);
     let mut turn: Turn = 0;
 
@@ -349,7 +349,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             }
             // Project, then place the single trailing cache breakpoint just before
             // sending — projection stays pure; the breakpoint walks the tail each
-            // request (docs/substrate.md).
+            // request (docs/log-and-projection.md).
             let mut messages = shared.project_messages();
             place_trailing_cache_breakpoint(&mut messages);
             // One tool call per turn (docs/README.md) — the agent picks its next single
@@ -379,7 +379,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             };
             // Record cache/usage telemetry (surfaced on `GET /state`) and print a
             // legible live line: cache read vs creation is the hot/cold signal
-            // (docs/substrate.md). Transport-only — `record_request` never touches the log.
+            // (docs/log-and-projection.md). Transport-only — `record_request` never touches the log.
             let u = &completion.usage;
             eprintln!(
                 "[usage: in {} · out {} · cache read {} · cache write {}]",
@@ -413,7 +413,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 // graded stance. Its verdict is logged as a `Spot` audit entry
                 // regardless of outcome (the first permission decision that earns a
                 // log line; fast-path clears stay unlogged), and its usage reads the
-                // shared spotter prefix, so it joins the cache telemetry (docs/substrate.md).
+                // shared spotter prefix, so it joins the cache telemetry (docs/log-and-projection.md).
                 // Classify against the *effective* policy — base role + the fold of every
                 // grant so far (backlog/permissions/config-edit.md). A prior amendment can
                 // promote this very call into the fast-path; the spotter sees the same scope.
@@ -622,7 +622,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         // arrived (ephemeral) ones as first-show `Ambient` entries —
                         // each entry's seq becomes its durable id, the handle the
                         // verdict pins/dismisses by. (They project to nothing, so the
-                        // fork prefix `entries` stays byte-identical, docs/substrate.md.)
+                        // fork prefix `entries` stays byte-identical, docs/log-and-projection.md.)
                         let mut shown = active_shown(&entries);
                         for note in shared.drain_inbox() {
                             let source = note.source.clone();
@@ -637,7 +637,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                             .distill(client, &entries, call, &result, &shown, &background)
                             .await;
                         // The fork peek reads the shared canonical prefix (sliding
-                        // its TTL), so its usage belongs in the docs/substrate.md telemetry too.
+                        // its TTL), so its usage belongs in the docs/log-and-projection.md telemetry too.
                         if let Some(u) = distilled.usage {
                             shared.record_request(u);
                         }

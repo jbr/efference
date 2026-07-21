@@ -1,4 +1,4 @@
-//! The `Frontend` — the user-facing interaction seam (docs/README.md).
+//! The `Frontend` — the user-facing interaction boundary (docs/README.md).
 //!
 //! The agent loop knows only this trait; whichever backend is mounted sits behind
 //! it. The control channel makes HTTP the *singular, authoritative* input source
@@ -48,7 +48,7 @@ pub enum Approval {
     },
 }
 
-/// The interaction seam. Used generically by the loop (`<F: Frontend>`); not
+/// The interaction boundary. Used generically by the loop (`<F: Frontend>`); not
 /// object-safe, and it needn't be — there's one mounted backend at a time.
 #[allow(async_fn_in_trait)] // single-consumer interaction; no Send bound needed.
 pub trait Frontend {

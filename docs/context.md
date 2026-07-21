@@ -43,9 +43,9 @@ Two orthogonal axes land on two authorities on purpose:
 - **Inlined vs. listed** is decided by the *file*, via frontmatter (`src/context.rs`). No
   frontmatter (or no `description`) → the whole body is **inlined** into the cached
   preamble — the CLAUDE.md role, always-on knowledge. A frontmatter `description` → only a
-  one-line **stub** rides in the preamble (name, description, `Read {path} …`); skills
-  compatibility falls out, since a real skill file has name+description and becomes a
-  read-on-demand stub. `inline: true` overrides a described file back to inlined. The
+  one-line **stub** rides in the preamble (name, description, `Read {path} …`); a real
+  skill file already has name+description, so it becomes a read-on-demand stub with no
+  special handling. `inline: true` overrides a described file back to inlined. The
   frontmatter parser is minimal but handles what real skill files use: `key: value` lines
   plus YAML block scalars (`description: >-` folded over indented lines); nested
   structures are consumed, never misread as top-level keys.
@@ -56,8 +56,8 @@ Two orthogonal axes land on two authorities on purpose:
 The reveal mechanism is **the filesystem, not a new tool**: every listed path is
 read-allowed by default (the `[context]` rung in `src/policy.rs` — see
 [permissions.md](permissions.md)), so a stub's `Read {path}` resolves through the `read`
-tool the model already has. No `skill()` verb, no reveal machinery — this is the README's
-"progressive doc reveal" behavior falling out of a read grant. A group with `create` *is*
+tool the model already has. No `skill()` verb, no reveal machinery — progressive doc
+reveal reduces to a read grant. A group with `create` *is*
 a memory store: descriptions are the index, `read` is recall, a write is a save, and
 `create` without `update` is an append-only store — the same shape as the log.
 
@@ -99,11 +99,11 @@ preamble (omitting the entry omits the block — explicit over magic).
 
 - **Read once at boot, frozen.** Bodies and stubs are resolved from disk once and frozen
   into the cached prefix; a later edit to a listed file never re-renders the preamble
-  (the same discipline as scope — mutating behind a cache breakpoint is the cardinal sin).
+  (the same discipline as scope: never mutate behind a cache breakpoint).
 - **Snapshotted into the log.** Because the preamble folds in file contents that drift on
   disk, it is no longer reconstructable from `config + current files` — so `serve` appends
   the full rendered system prompt as a `Payload::Preamble` entry once at boot
-  ([substrate.md](substrate.md)). The log stays the complete record; `efference wire`
+  ([log-and-projection.md](log-and-projection.md)). The log stays the complete record; `efference wire`
   reads the snapshot back instead of re-resolving; and once order is baked into the
   snapshot, sort order is a pure semantic choice, never a stability constraint. The entry
   also carries the **structured** `Resolved` listing (the `Section`/`Item` tree) beside the

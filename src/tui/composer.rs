@@ -3,7 +3,7 @@
 //!
 //! This is deliberately self-contained behind a small interface
 //! ([`handle_key`](Composer::handle_key) / [`render`](Composer::render) /
-//! [`take`](Composer::take)) so it is the **swappable input seam**: a later
+//! [`take`](Composer::take)) so it is the **swappable input interface**: a later
 //! version can grow spellcheck, typeahead, or integrated transcript-focus (arrow
 //! at the top edge spills into scroll), or be replaced wholesale, without
 //! touching the rest of the TUI. `tui-textarea` was the intended first cut but is

@@ -1,7 +1,7 @@
-//! The append-only annotated log — the source of truth (docs/README.md, docs/substrate.md).
+//! The append-only annotated log — the source of truth (docs/README.md, docs/log-and-projection.md).
 //!
 //! Phase 0 minimal slice: only the `User` / `Assistant` / `ToolResult` payloads
-//! and the [`WireState`] seam needed to drive the bash-only loop. `Mark`,
+//! and the [`WireState`] types needed to drive the bash-only loop. `Mark`,
 //! `Ambient`, and `Commit` payloads (and the model-driven distiller) arrive with
 //! the phases that exercise them — see docs/README.md.
 
@@ -18,7 +18,7 @@ pub type Turn = u32;
 
 /// Wall-clock millis since the Unix epoch. **Log metadata only**: timestamps are
 /// never projected onto the wire, so their non-determinism cannot affect cache
-/// stability (docs/substrate.md).
+/// stability (docs/log-and-projection.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Timestamp(pub u64);
 
@@ -64,8 +64,8 @@ pub enum Payload {
         wire: WireState,
     },
     /// A salience annotation written at the moment it's known (docs/README.md,
-    /// docs/substrate.md): a decision, a dead end, a relevance note, or a
-    /// consolidation boundary. The Phase-3 substrate for intent-aware compaction —
+    /// docs/log-and-projection.md): a decision, a dead end, a relevance note, or a
+    /// consolidation boundary. The Phase-3 foundation for intent-aware compaction —
     /// *kept* through a fold while the deliberation around it is elided.
     /// [`MarkKind::Boundary`] folds its named span (`seq <= upto`) to a summary
     /// user message on the wire (Slice 1, docs/README.md).
@@ -97,7 +97,7 @@ pub enum Payload {
     /// negotiation: an orchestrator (human or coordinating session) edits the session's
     /// config, and the change lands here. Effective policy = base config + the fold of these
     /// (see [`effective_config`]); the log is the source of truth for what changed, exactly as
-    /// it is for everything else (docs/substrate.md). The fold is **replace-at-key**
+    /// it is for everything else (docs/log-and-projection.md). The fold is **replace-at-key**
     /// (last-write-wins, order-defined) — materializing a table from an ordered log, like a
     /// database replaying its write-ahead log. Audit-only on the wire — it projects to nothing,
     /// like [`Spot`]; its effect reaches the model *by key*: a `commands`/`tools` edit only
@@ -112,7 +112,7 @@ pub enum Payload {
     /// string, exactly as this session's requests carry it, appended **once at boot**. The
     /// preamble folds in `[context]` file contents that drift on disk between boots, so it is
     /// no longer reconstructable from `config + current files` — this entry makes the log the
-    /// complete record of the wire (docs/substrate.md). Audit/replay only: it projects to
+    /// complete record of the wire (docs/log-and-projection.md). Audit/replay only: it projects to
     /// nothing (the system prompt rides the request's `system` field, never the `messages`
     /// array); the `wire` dev view reads it back instead of re-resolving files from disk.
     ///
@@ -143,7 +143,7 @@ pub enum ContentBlock {
 
 /// A tool invocation emitted by the model. `input` is a [`serde_json::Value`],
 /// whose object maps serialize with sorted keys — deterministic, sidestepping
-/// the `HashMap`-key-order cache hazard (docs/substrate.md).
+/// the `HashMap`-key-order cache hazard (docs/log-and-projection.md).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: CallId,
@@ -164,7 +164,7 @@ pub struct RawResult {
 /// Richer structure (a `kind` discriminator, the span a consolidation boundary
 /// covers) lands with Slice 1, when projection starts folding behind it. Additive
 /// by design: because a mark projects to nothing today, growing this struct cannot
-/// perturb the byte-stability pin (docs/substrate.md).
+/// perturb the byte-stability pin (docs/log-and-projection.md).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Mark {
     pub kind: MarkKind,
@@ -174,7 +174,7 @@ pub struct Mark {
 /// What a [`Mark`] does to the projection. `Boundary` is the consolidation
 /// variant (Slice 1 — active in `project`): folds every entry with `seq <=
 /// upto` to a summary user message. The salience-annotation kinds defined in
-/// docs/README.md and docs/substrate.md (decision / dead-end / relevance) land
+/// docs/README.md and docs/log-and-projection.md (decision / dead-end / relevance) land
 /// when they get a construction site.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MarkKind {
@@ -273,7 +273,7 @@ pub enum Stance {
 }
 
 /// One config edit: a single, durable change to the policy table (backlog/permissions/config-edit.md).
-/// The change vocabulary lives here, in the substrate, deliberately — like [`Stance`] and
+/// The change vocabulary lives here, in the log types, deliberately — like [`Stance`] and
 /// [`Origin`], the log owns its own serialized types so the wire format isn't hostage to a
 /// config struct's layout. [`crate::policy::apply_config_change`] applies each [`ConfigChange`] to
 /// the config it folds into.
@@ -390,7 +390,7 @@ pub struct Notification {
 
 /// How a [`Payload::ToolResult`] should be projected. Flipping this (never
 /// touching `raw`) is the one redaction primitive — every projection experiment
-/// is a change to how [`project`] reads these (docs/README.md, docs/substrate.md).
+/// is a change to how [`project`] reads these (docs/README.md, docs/log-and-projection.md).
 ///
 /// Phase 0 only ever constructs `Raw`; `Distilled`/`Elided` are wired into
 /// [`project`] now so Phase 1 adds *construction sites*, not a type change that

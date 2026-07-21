@@ -15,7 +15,7 @@
 //! **behavior** (not), and it errs toward `Gate`: any doubt — a parse failure, an
 //! operator, an expansion, an unmatched prefix — gates.
 //!
-//! ## Bash: the two-stage check (order is load-bearing)
+//! ## Bash: the two-stage check (the order matters)
 //!
 //! Stage 1 (structural simplicity) runs *before* stage 2 (prefix match), so a trusted
 //! `git diff` prefix can never clear `git diff > /etc/hosts` or `git diff $(rm x)` —
@@ -141,9 +141,9 @@ enum Perm {
 
 /// Fold the log's [`Payload::ConfigEdit`] changes onto a base config, yielding the **effective
 /// config** the classifier should consult (backlog/permissions/config-edit.md). The effective
-/// policy at any point is `base + fold(changes)` — the substrate thesis applied to policy: this
+/// policy at any point is `base + fold(changes)` — the same fold-over-the-log shape as the wire: this
 /// is materializing a table from an ordered log, exactly as a database replays its write-ahead
-/// log (kin to `project(log)`, docs/substrate.md). The base config is the table's initial state;
+/// log (kin to `project(log)`, docs/log-and-projection.md). The base config is the table's initial state;
 /// each change is a `set key = value` the replay applies in order.
 ///
 /// Each change is **replace-at-key** (last-write-wins). Today's changes happen to be additive
@@ -203,7 +203,7 @@ pub const MIN_SIGHTINGS_TO_PROBE: u32 = 2;
 /// How many independent safe-votes promote a prefix — the consensus threshold `K`. `1` = the first
 /// `clear_always` files a proposal for an orchestrator to confirm. Raising it (and tolerating a few
 /// dissenting not-safe votes) is the path to evidence-only, human-out-of-the-loop promotion; the
-/// vote ledger already records the evidence, so it's a threshold change, not a substrate one.
+/// vote ledger already records the evidence, so it's a threshold change, not a schema one.
 pub const PROMOTE_AFTER_SAFE_VOTES: u32 = 1;
 
 /// The per-prefix tally the prefix-promotion descent reads (backlog/permissions/prefix-promotion.md).
@@ -464,7 +464,7 @@ fn input_targets<'a>(
 /// covering entry's `update` (target exists) or `create` (target is new) grant; the existence
 /// probe is the one filesystem touch in the classifier — it is what tells create from update,
 /// and is harmless here because a verdict is derived state, never on the wire
-/// (docs/substrate.md). `exec` entries have no files and grant nothing.
+/// (docs/log-and-projection.md). `exec` entries have no files and grant nothing.
 fn context_granted(role: &Config, target: &str, perm: Perm, cwd: &Path) -> bool {
     let target = lexical_normalize(&absolutize(target, cwd));
     role.context.iter().any(|entry| {
@@ -1222,7 +1222,7 @@ mod tests {
         assert_eq!(read("src/main.rs"), Verdict::Clear);
         assert_eq!(write("src/main.rs"), Verdict::Clear);
         // The `.efference/` deny governs the log and the socket — the more specific grant wins
-        // over the broader `.` allow, so writing the substrate or reading it is refused.
+        // over the broader `.` allow, so writing the log or reading it is refused.
         assert_eq!(read(".efference/sess/log.jsonl"), Verdict::Gate);
         assert_eq!(write(".efference/sess/log.jsonl"), Verdict::Gate);
         // This session's own config: readable (the deepest grant re-allows read)…

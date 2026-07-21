@@ -40,7 +40,7 @@ re-sampled* view held in an ephemeral `Supervisor` registry inside `Shared` (a
 sibling to `Inbox` and `Metrics`). It is never written to the log. It is dropped on
 restart, at which point `killpg`-on-teardown reaps the children. The async
 spawn/drain orchestration — which needs `Arc<Shared>` and the `POST /notify` path
-— lives in `daemon.rs`; `supervisor.rs` is the pure substrate: the registry,
+— lives in `daemon.rs`; `supervisor.rs` holds the state: the registry,
 the bounded per-process capture buffer, and the read projections over it.
 
 **The exit** — status, duration, and final tail — is a discrete immutable event.
@@ -54,7 +54,7 @@ pinned tail = `Ambient`, the live state = ephemeral registry.
 The [inbox](inbox.md) / notification model is built on immutable bodies: an
 `Ambient` body is frozen at first-show, and a "left" item re-emits verbatim.
 Supersession only touches the un-shown queue; refreshing an already-shown body is
-unbuilt by design (immutability is load-bearing for the projection invariants).
+unbuilt by design (the projection invariants depend on immutable bodies).
 
 A tail's whole value is that it *updates*. Forcing it through notifications would
 pile up one stale, frozen snapshot per process per gate — defeating the purpose.
@@ -70,7 +70,7 @@ through the Ambient inbox rather than a new payload type.
 
 ## One registry, two projections
 
-The `Supervisor` registry is the substrate; it is read two ways — ambient awareness
+The `Supervisor` registry is read two ways — ambient awareness
 and directed query — mirroring the [inbox](inbox.md)'s own ephemeral-queue vs.
 logged-Ambient split.
 
@@ -129,7 +129,7 @@ no actionable work costs one cheap ack turn; the model avoids it by leaving
 
 Throttles prevent idle-triage from thrashing: **debounce** coalesces events in a
 small window into a single triage; **urgency** lets low-urgency events wait for the
-next natural gate rather than waking a fork. The design earns this: because tails
+next natural gate rather than waking a fork. Because tails
 are *not* notifications, idle-triage fires only on discrete lifecycle events,
 operator nudges, and inter-agent messages — low-frequency by construction. Had tails
 been notifications, every refresh would wake a fork.

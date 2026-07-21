@@ -1,13 +1,12 @@
-# The substrate — log, projection, caching
+# The log, the projection, and caching
 
-The whole system rides on a clean split between **substrate** (the log) and
-**view** (the projection). The log is the source of truth; the wire transcript
-is `project(log)`, recomputed each turn. Everything else is a consequence of
-keeping that seam sharp.
+The log is the source of truth; the wire transcript is `project(log)`,
+recomputed each turn. This doc covers the log's types, the projection, and the
+caching constraint that shapes both.
 
 ---
 
-## Load-bearing types
+## Core types
 
 ### `LogEntry`
 
@@ -34,13 +33,13 @@ enum Payload {
     ConfigEdit(ConfigEdit),  // one durable policy change — folded by the classifier (see permissions.md)
     Preamble { system: String },  // the boot preamble snapshot — replay/audit only (see context.md)
     // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)
-    // for compaction. Kept here as a forward marker — "wire the seam ahead of
-    // the feature" — not present in the code today.
+    // for compaction. Kept here as a forward marker — types land ahead of the
+    // feature that constructs them — not present in the code today.
 }
 ```
 
-`Commit` is a load-bearing placeholder. When compaction needs an explicit
-freeze primitive it slots in here without touching any other type.
+`Commit` is a placeholder: when compaction needs an explicit freeze primitive
+it slots in here without touching any other type.
 
 `Preamble` records the full rendered `system` string once at boot, exactly as
 this session's requests carry it. It exists because the `[context]` preamble
@@ -175,7 +174,7 @@ this:
 
 - **Redaction is at append.** Each tool result's `wire` is fixed the moment it
   enters the log and never changes — so no cached prefix entry is ever
-  mutated. The invariant holds by construction, the strongest possible form.
+  mutated. The invariant holds by construction.
 
 - **Compaction folds a span.** Projection over a `Mark::Boundary` elides
   entries with `seq <= upto` and injects a summary, rewriting the prefix from
@@ -192,9 +191,8 @@ this:
 Because redaction-at-append never touches a committed entry, no explicit freeze
 primitive is needed yet. A `Commit` payload that freezes a boundary is
 anticipated (see `Payload` above) but not built. Keeping the canonical lineage
-lean — distilled, not raw — is what keeps consecutive breakpoints inside the
-20-block window longer. Continuous compaction and cache longevity are the same
-lever pulled once.
+lean — distilled, not raw — also keeps consecutive breakpoints inside the
+20-block window longer.
 
 ---
 
@@ -207,8 +205,8 @@ Correctness can never depend on the memo.
 Its invalidation boundary coincides with the prompt-cache breakpoint: every
 tail append extends the wire only at the tail, and the one event that rewrites
 the prefix — a `Mark::Boundary` fold — is exactly the "one deliberate cache
-write." Incremental re-derivation falls out of the same prefix/tail seam the
-design already bends around.
+write." Incremental re-derivation follows the same prefix/tail boundary the
+cache already imposes.
 
 The memo is available as a pure-efficiency lever but is **never persisted** — a
 persisted wire would become a rival source of truth. Tracked in the backlog

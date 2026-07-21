@@ -4,21 +4,21 @@
 
 The HTTP-over-Unix-socket interface is not merely equivalent to other input paths — it is the only input path. There is no privileged in-process route. The loop's sole `Frontend` implementation is `RemoteFrontend`, which reads from shared daemon state populated exclusively by HTTP handlers. The human using the TUI client, an automated driver (such as Claude Code), and a subagent are all HTTP clients of the same socket. The one added hop — the approval round-trip — is microseconds against inference latency and the Anthropic round-trip, so it costs nothing in practice.
 
-This is the interface-parity principle carried to its conclusion: the TUI is not a special client with privileged access, it is one client among peers. Two payoffs follow directly. First, any driver can exercise the full harness without a human hand-off — the control channel is the same surface regardless of who is on the other end. Second, subagents fall out for free. The subagent boundary *is* the client boundary: an efference agent's tool can spawn and drive another efference daemon over the same socket interface. Agents addressing each other is just one agent injecting an `Ambient` event into another's log, triaged at its head (see [the inbox](inbox.md)) — no separate messaging system is needed.
+The TUI is not a special client with privileged access; it is one client among peers. Two payoffs follow. First, any driver can exercise the full harness without a human hand-off — the control channel is the same surface regardless of who is on the other end. Second, subagents need no separate mechanism: the subagent boundary is the client boundary — an efference agent's tool can spawn and drive another efference daemon over the same socket interface. Agents addressing each other is just one agent injecting an `Ambient` event into another's log, triaged at its head (see [the inbox](inbox.md)) — no separate messaging system is needed.
 
 ## The log is already the event store
 
-The hardest control-channel problem — SSE has no replay, so a reconnecting client drops events — dissolves because of the substrate's design (see [substrate](substrate.md)). The append-only log with monotonic `seq` *is* the event store.
+SSE has no built-in replay, but none needs building: the append-only log with monotonic `seq` is the event store, so a reconnecting client replays from a cursor — the standard `Last-Event-ID` pattern, with the log as the buffer (see [log-and-projection.md](log-and-projection.md)).
 
 `GET /events` tails the log as a Server-Sent Event stream. Each event carries `id: <seq>` and `data: <serialized LogEntry>` — the same JSON `GET /log` returns, so the tail and the catch-up read are byte-identical per entry. A reconnecting or late-joining client replays history with `GET /log?since=<seq>` and then resumes the SSE tail, deduplicating by `seq`. The slow-consumer case is also safe: because the log is the buffer and each `GET /events` connection reads at its own pace, a slow client never drops events (unlike a broadcast channel).
 
 Ephemeral control state — a pending approval, current status, live process tails — is not a log payload. The log records the *result* of a gate (approved and ran, or rejected), not the in-flight gate itself. A connecting client therefore does three things in sequence: `GET /state` to fetch current ephemeral state (last `seq`, any pending approval, usage telemetry, running background processes), `GET /log?since=<seq>` to catch up on history, then attach to `GET /events` and deduplicate by `seq`.
 
-## Shared: the loop ↔ handlers seam
+## Shared: the loop ↔ handlers bridge
 
 `Shared` is the bridge between the agent loop task and the HTTP handlers. Both hold it as `Arc<Shared>`. The daemon registers it as trillium's server-global shared state; handlers retrieve it per-connection. Its contents:
 
-**`Arc<Mutex<Log>>`** — the persisted, append-only log (see [substrate](substrate.md)). The loop appends under this lock via `Shared::append`, which also pings the append notifier so SSE tailers wake. The lock is never held across an `await`; code that needs to call the model on a snapshot calls `Shared::snapshot()` to clone the entries first.
+**`Arc<Mutex<Log>>`** — the persisted, append-only log (see [log-and-projection.md](log-and-projection.md)). The loop appends under this lock via `Shared::append`, which also pings the append notifier so SSE tailers wake. The lock is never held across an `await`; code that needs to call the model on a snapshot calls `Shared::snapshot()` to clone the entries first.
 
 **Turn inbox** — an unbounded MPSC channel. `POST /turn` enqueues a string; `RemoteFrontend::read_user_turn()` awaits the next pop. This also seeds turn 1: an idle daemon parks at `read_user_turn` waiting for the first `POST /turn`, which retired argv-seeding and the "backgrounded run can't get its opening prompt" problem. A turn submitted while the loop is *mid-trajectory* doesn't wait for the whole trajectory to end: `RemoteFrontend::drain_injected_turns()` non-blockingly pulls the queued turns at the next juncture (top of the inner loop, after the last tool's results land) and the loop appends each as a canonical `Payload::User` — the seam-drain (backlog/participation/README.md). A user turn is undismissable; it never routes through the inbox/triage path.
 
@@ -26,11 +26,11 @@ Ephemeral control state — a pending approval, current status, live process tai
 
 **Interrupt `Notify`** — `POST /interrupt` fires this; `RemoteFrontend::interrupted()` resolves when it's notified. The loop races this against a running tool (the SIGINT equivalent, killing the tool's process group).
 
-**Pace state** — `Mutex<Pace>` (`{ speed: Duration, held: bool }`) plus a `pace_interrupt` `Notify` (backlog/participation/README.md). The operator's between-turns wall-clock dial: `effective_sleep = held ? ∞ : speed`, `held` an overlay that retains `speed` underneath (resume returns to it, never to zero). `Shared::pace_at_seam` applies an interruptible sleep at the seam; `set_pace` (via `POST /pace`) moves the dials, and a **release** or a **submit** fires `pace_interrupt` so the wait ends immediately. It is **operator-view only — never a log entry, never projected**, so a held or slowed loop is byte-identical on the wire to a fast one (that, plus timestamps-never-projected, is the whole invisibility guarantee: loud to the operator's TUI, silent to the agent).
+**Pace state** — `Mutex<Pace>` (`{ speed: Duration, held: bool }`) plus a `pace_interrupt` `Notify` (backlog/participation/README.md). The operator's between-turns wall-clock dial: `effective_sleep = held ? ∞ : speed`, `held` an overlay that retains `speed` underneath (resume returns to it, never to zero). `Shared::pace_at_seam` applies an interruptible sleep at the between-step juncture; `set_pace` (via `POST /pace`) moves the dials, and a **release** or a **submit** fires `pace_interrupt` so the wait ends immediately. It is **operator-view only — never a log entry, never projected**, so a held or slowed loop is byte-identical on the wire to a fast one (that, plus timestamps-never-projected, is the whole invisibility guarantee: loud to the operator's TUI, silent to the agent).
 
 **Append `Notify`** — pinged by every `Shared::append` call; the `GET /events` tail arms a `Notified` before each catch-up read so an append landing between the read and the await cannot be lost (the lost-wakeup-safe pattern).
 
-**Broadcast for stream deltas** (`broadcast::Sender<StreamDelta>`) — carries ephemeral pre-commit output fragments to `GET /stream` subscribers. Lossy by design: a consumer that lags past the ring drops the oldest deltas rather than stalling the loop. The committed entry on `/events` is the authoritative copy, so the stream is interface candy with the durable log as its backstop.
+**Broadcast for stream deltas** (`broadcast::Sender<StreamDelta>`) — carries ephemeral pre-commit output fragments to `GET /stream` subscribers. Lossy by design: a consumer that lags past the ring drops the oldest deltas rather than stalling the loop. The committed entry on `/events` is the authoritative copy; the durable log is the backstop.
 
 ## The verb set
 
@@ -60,7 +60,7 @@ The cross-host TCP+TLS case (see [transport](transport.md)) is the same code pat
 
 ## The Frontend trait
 
-The agent loop and the log know only the `Frontend` trait. Swapping the underlying line-editor or replacing the spartan attach client with a full TUI touches only this boundary, never the substrate.
+The agent loop and the log know only the `Frontend` trait. Swapping the underlying line-editor or replacing the spartan attach client with a full TUI touches only this boundary, never the log or projection.
 
 ```rust
 trait Frontend {
@@ -85,7 +85,7 @@ The loop is pull-shaped and stays that way. It blocks at `read_user_turn()` and 
 
 There is still no always-allow mode, and `ConfigEdit` is not one: it is a **specific, logged, prunable** change (a named command-prefix / path / tool / the scope), never a blanket "stop asking." A re-classified call is re-checked against the new policy, so nothing rides along unchecked. The gate exists so every command is seen before it runs — a guardrail, not a security posture.
 
-**Every tool call that doesn't run still produces a `ToolResult { is_error: true, wire: Raw }`.** This is an API hard requirement: every `tool_use` in the assistant turn must have a paired `tool_result` in the next user turn. Two flavors exist: `aborted()` (from C-c) and `rejected()` (from a redirect). On a redirect, a real `User` turn with the human's steering text is appended after the rejection `tool_result`. A `tool_result` can't be followed by bare user text as a separate message, so `project` **merges** a `User` entry that directly follows a turn's `tool_result`s into that same user message as `[tool_result…, text]` (see [substrate](substrate.md)) — the model reads the rejection and the direction together, in the human's own words. This is the identical merge the mid-trajectory seam-drain relies on: an injected `Payload::User` lands right after the results and projects into one role-alternating user message.
+**Every tool call that doesn't run still produces a `ToolResult { is_error: true, wire: Raw }`.** This is an API hard requirement: every `tool_use` in the assistant turn must have a paired `tool_result` in the next user turn. Two flavors exist: `aborted()` (from C-c) and `rejected()` (from a redirect). On a redirect, a real `User` turn with the human's steering text is appended after the rejection `tool_result`. A `tool_result` can't be followed by bare user text as a separate message, so `project` **merges** a `User` entry that directly follows a turn's `tool_result`s into that same user message as `[tool_result…, text]` (see [log-and-projection.md](log-and-projection.md)) — the model reads the rejection and the direction together, in the human's own words. This is the identical merge the mid-trajectory seam-drain relies on: an injected `Payload::User` lands right after the results and projects into one role-alternating user message.
 
 ## The loop shape
 
@@ -99,7 +99,7 @@ pace_at_seam (interruptible sleep) → drain injected user turns → project →
 → repeat
 ```
 
-The seam — top of the inner loop, after a step's results land, before the next model call — is where three participation affordances act (backlog/participation/): the pace sleep (`pace_at_seam`), the mid-trajectory turn drain (`drain_injected_turns`), and (future) the soft-Esc hold. Both are skipped on the first step so a fresh user turn / escalated event gets a prompt first response; pacing is a *between-turns* delay.
+The between-step juncture — top of the inner loop, after a step's results land, before the next model call — is where three participation affordances act (backlog/participation/): the pace sleep (`pace_at_seam`), the mid-trajectory turn drain (`drain_injected_turns`), and (future) the soft-Esc hold. Both are skipped on the first step so a fresh user turn / escalated event gets a prompt first response; pacing is a *between-turns* delay.
 
 A redirect does not break the loop. The model receives the rejection and the steering text and responds — the loop continues from `project` with the new state. The approval gate sits in exactly the right spot for the eventual concurrent TUI, which will have it in this same position.
 

@@ -16,13 +16,13 @@ hints. Whether a tool definition appears in the preamble (hot, always present)
 or surfaces later in the session (cold, behind a discovery hint) is a property
 of how `src/project.rs` chooses which definitions to emit — not a separate
 subsystem. Mid-session reveals land at cache breakpoints so they do not
-invalidate the established prefix (see [substrate.md](substrate.md) on the
+invalidate the established prefix (see [log-and-projection.md](log-and-projection.md) on the
 cache-prefix invariant). The real cost to watch is discoverability failure: a
-capability that never fires because its hint did not trigger. Hint quality is
-load-bearing.
+capability that never fires because its hint did not trigger — hints deserve
+the same iteration as the tools themselves.
 
 The redaction policy — deterministic rule vs. fork vs. eventual small
-distiller — is kept ruthlessly pluggable behind a trait. It is the most-iterated
+distiller — is kept pluggable behind a trait. It is the most-iterated
 knob; see `redaction-fork.md`.
 
 ## Tool taxonomy
@@ -35,11 +35,14 @@ Not everything belongs behind the in-process trait.
 checks, and line-numbered rendering for the fork all want direct access to the
 result structure.
 
-**Per-language tooling → bash or MCP, not built-in.** `cargo`, `rustc` /
-`ferritin`, test runners, and similar language-specific tools are better shelled
-out via `bash` or mounted over MCP than baked into the harness. This takes
-cargo-mcp off the critical path — it becomes a later optional MCP mount, not a
-blocker.
+**Per-language tooling → bash or MCP, not built-in — provisionally.** `cargo`,
+`rustc` / `ferritin`, test runners, and similar language-specific tools are
+shelled out via `bash` or mounted over MCP rather than baked into the harness.
+This takes cargo-mcp off the critical path — it becomes a later optional MCP
+mount, not a blocker. Held as the current resolution, not settled doctrine: the
+longer-term position is that language support ("adding python support") wants a
+deeper extension contract than MCP tool calls or LSP
+(see [positions.md](positions.md)); nothing built so far commits against that.
 
 **`CLAUDE.md` / configurable frontmatter (skills): deferred.** "Read this
 file" covers the need until there is a concrete reason for richer
@@ -50,7 +53,8 @@ progressive-reveal config.
 fs-mcp and semantic-edit-mcp are integrated in-process. The open question of
 whether to reuse the generated `mcplease` `Tools` enum or re-wrap the
 underlying state methods resolved toward reuse: the tool logic lives on the
-per-tool param structs' `execute`, so the enum is the minimal seam.
+per-tool param structs' `execute`, so the enum is the smallest integration
+surface.
 
 Each crate gets one additive `lib.rs` (the binary and tests are untouched,
 fully reversible) that exposes its modules, `Tools` enum, state struct, and an

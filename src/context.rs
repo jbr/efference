@@ -274,7 +274,7 @@ read the file at that path to load the full content.";
 impl Resolved {
     /// Render the whole `[context]` block appended to the system preamble, or `None` when nothing is
     /// configured (so the caller appends no empty block). **Byte-deterministic** — a pure function of
-    /// the resolved sections, safe for the cached prefix (docs/substrate.md). Every file renders as a
+    /// the resolved sections, safe for the cached prefix (docs/log-and-projection.md). Every file renders as a
     /// `<name>…</name>` tag (name-as-tag pseudo-XML — the file's name, or the operator's group
     /// heading, used **verbatim**: spaces and leading digits and all, since nothing parses it); a
     /// group wraps its members in `<Heading>…</Heading>`. Inlined bodies ride verbatim inside their

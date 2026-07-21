@@ -1,4 +1,4 @@
-//! The tool seam (docs/tools.md) — how the agent loop discovers and dispatches tools.
+//! The tool layer (docs/tools.md) — how the agent loop discovers and dispatches tools.
 //!
 //! A **backend** exposes one or more tools. `Bash` is one tool; an in-process MCP
 //! server (docs/tools.md "MCP integration") exposes many behind one shared state. So a
@@ -13,7 +13,7 @@
 //!
 //! The mounted set is fixed for the session (chosen once in `main`), so the
 //! request's `tools[]` is byte-stable and never perturbs the tools cache tier
-//! (docs/substrate.md).
+//! (docs/log-and-projection.md).
 
 use std::cell::RefCell;
 use std::future::Future;
@@ -80,7 +80,7 @@ impl Provider {
     }
 }
 
-/// An in-process MCP server (docs/tools.md) adapted to the tool seam, generic over the
+/// An in-process MCP server (docs/tools.md) adapted to the toolbox, generic over the
 /// server's session `State` and its generated `mcplease` `ToolEnum` dispatcher.
 /// Holds the state behind a `RefCell` — the loop is single-threaded and
 /// `mcplease`'s `execute` is synchronous (`&mut state`), so the borrow never spans
@@ -102,7 +102,7 @@ where
     /// generated enum exposes **except** those named in `hidden` — the curation
     /// point for which of a server's tools reach the wire (docs/tools.md taxonomy).
     /// The tool schemas are built once here (pure; `serde_json::to_value` sorts
-    /// keys, so the defs are byte-stable for the session — docs/substrate.md) and reused as the
+    /// keys, so the defs are byte-stable for the session — docs/log-and-projection.md) and reused as the
     /// wire `tools[]`.
     fn from_state(state: State, hidden: &[&str]) -> Self {
         let schemas: Vec<ToolSchema> = <ToolEnum as AsToolsList>::tools_list()
@@ -154,7 +154,7 @@ where
 /// Translate an mcplease [`ToolSchema`] (MCP `inputSchema`, camelCase) into the
 /// Anthropic `tools[]` shape (`input_schema`, snake_case). `serde_json::to_value`
 /// normalizes object keys to sorted order, so the result is byte-deterministic —
-/// safe for the tools cache tier (docs/substrate.md).
+/// safe for the tools cache tier (docs/log-and-projection.md).
 fn anthropic_def(schema: &ToolSchema) -> Value {
     let mut def = serde_json::Map::new();
     def.insert("name".to_string(), Value::String(schema.name.clone()));

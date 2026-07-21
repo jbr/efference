@@ -8,7 +8,7 @@
 //! non-issue: projection reads the in-memory `Vec` each turn, never the disk;
 //! the disk is touched once per append and once per session load.
 //!
-//! This is the durable substrate *mechanism*; `log.rs` holds the substrate
+//! This is the durable persistence *mechanism*; `log.rs` holds the log
 //! *types*. Phase 0 always constructs `wire: Raw`, so persisting the entry whole
 //! is faithful; when Phase 1 introduces wire flips, those become their own
 //! appended events that replay folds in (not a rewrite of the line).
@@ -22,7 +22,7 @@ use crate::log::{LogEntry, Payload, Seq, Timestamp, Turn};
 
 /// The live append-only log: the in-memory entries plus an optional JSONL sink.
 /// Construction is the only place that touches the clock and `seq` allocation,
-/// so those non-deterministic inputs never leak toward the wire (docs/substrate.md).
+/// so those non-deterministic inputs never leak toward the wire (docs/log-and-projection.md).
 pub struct Log {
     entries: Vec<LogEntry>,
     sink: Option<BufWriter<File>>,

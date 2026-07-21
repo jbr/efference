@@ -65,7 +65,7 @@ pub struct Read {
 
 /// The outcome of one spotter assessment: the [`Read`], its [`Origin`] (model vs the
 /// fail-closed fallback — the audit signal the stance alone erases), and the request
-/// [`Usage`] if a round-trip happened (folded into the docs/substrate.md cache
+/// [`Usage`] if a round-trip happened (folded into the docs/log-and-projection.md cache
 /// telemetry, since it reads the shared spotter prefix). `None` usage for a
 /// model-free spotter or a transport error.
 pub struct Spotting {
@@ -89,7 +89,7 @@ impl Spotting {
     }
 }
 
-/// The permission-rung seam. Used generically by the loop (`<S: Spotter>`); not
+/// The permission-rung interface. Used generically by the loop (`<S: Spotter>`); not
 /// object-safe and needn't be (one mounted rung per session).
 #[allow(async_fn_in_trait)] // single-threaded loop; no Send bound needed, like Distiller.
 pub trait Spotter {
@@ -125,7 +125,7 @@ impl Spotter for ForkSpot {
     async fn assess(&self, role: &Config, call: &ToolCall, probe: Option<&str>) -> Spotting {
         // Cached block: the per-session-stable scope + watch-for. Fresh
         // block: the move (plus the optional promotion probe — it rides the fresh tail, so it never
-        // perturbs the cached prefix, docs/substrate.md). The persona (system) + the cached block are
+        // perturbs the cached prefix, docs/log-and-projection.md). The persona (system) + the cached block are
         // the prefix; only the move is rewritten each call (docs/permissions.md).
         let messages = vec![ApiMessage {
             role: ApiRole::User,

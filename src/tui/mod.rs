@@ -1,7 +1,7 @@
 //! The interactive TUI (docs/README.md — the human-facing client).
 //!
-//! Vendored-and-adapted from ferritin's interactive renderer. The load-bearing
-//! seam ferritin exposed — a general-purpose document IR ([`document`]) rendered
+//! Vendored-and-adapted from ferritin's interactive renderer. The
+//! interface ferritin exposed — a general-purpose document IR ([`document`]) rendered
 //! by a domain-free pipeline ([`render_node`] et al.) over a syntect theme
 //! ([`theme`], [`render_context`]) — carries over almost verbatim. What changed:
 //!

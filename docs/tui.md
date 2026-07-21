@@ -7,13 +7,13 @@
 
 ## The transcript is another `project(log)`
 
-This is the load-bearing idea. Just as the wire is a deterministic projection of the log into an Anthropic `messages` array (see [the substrate](substrate.md)), `tui/projection.rs`'s
+Just as the wire is a deterministic projection of the log into an Anthropic `messages` array (see [log-and-projection.md](log-and-projection.md)), `tui/projection.rs`'s
 
 ```rust
 project(&[LogEntry], &LiveTail, &ViewState, pending_call: Option<&str>) -> Document<'static>
 ```
 
-is a *second* projection of the same substrate to a different target: a renderable tree instead of a model-facing message list. It reuses the wire projection's rules where they apply — distillate-else-raw for tool results, the streamed-vs-committed dedup (where the wire uses `streamed_*` flags, the TUI projection uses the structural `LiveTail`) — and diverges where a human reader differs from the model: nothing is elided or coalesced (the human sees the whole record), and the projection carries a deliberate **information architecture** rather than a flat dump of labeled blocks.
+is a *second* projection of the same log to a different target: a renderable tree instead of a model-facing message list. It reuses the wire projection's rules where they apply — distillate-else-raw for tool results, the streamed-vs-committed dedup (where the wire uses `streamed_*` flags, the TUI projection uses the structural `LiveTail`) — and diverges where a human reader differs from the model: nothing is elided or coalesced (the human sees the whole record), and the projection carries a deliberate **information architecture** rather than a flat dump of labeled blocks.
 
 
 ## Information architecture: conversational and minimalist
@@ -83,8 +83,8 @@ The operator's pace (backlog/participation/README.md) is polled from `GET /state
 `Esc` is a **state machine, not a press-count** (backlog/participation/README.md): each press's effect is a pure function of the current state — so there is no counter, no timing debounce, and nothing to reset. Precedence, gentlest first (`handle_escape` in `tui/state.rs`):
 
 1. **not at rest in the composer** (an overlay is open, or focus is in the transcript) → return to the composer (`Esc` is one-directional toward the composer).
-2. **at the composer, held** → **interrupt** the in-flight tool (`POST /interrupt`, killing its process group; a no-op if nothing runs — the one seam pace can't reach).
-3. **at the composer, not held, loop active** → **pause** (set the `held` overlay via `POST /pace {held:true}`; the loop stops at the next seam).
+2. **at the composer, held** → **interrupt** the in-flight tool (`POST /interrupt`, killing its process group; a no-op if nothing runs — mid-tool is the one point pacing can't reach).
+3. **at the composer, not held, loop active** → **pause** (set the `held` overlay via `POST /pace {held:true}`; the loop stops at the next between-step juncture).
 4. **at the composer, not held, nothing happening** → **swallow** (a silent no-op).
 
 So sitting in the composer while the agent works, *one* `Esc` pauses and a second interrupts — no wasted "return to composer" press; and jamming `Esc` from anywhere still walks return → pause → interrupt. "Loop active" is read from `/state`'s **`running`** flag (unioned with the streaming `pending_request`), which — unlike streaming deltas — stays true through a *silent* long-running tool, so `Esc` can still reach a runaway command. `Esc` only ever *enters* the hold or *fires* the interrupt; resume is the pace layer's job (send a message — submit always resumes — or the `p` key). The hold and interrupt verbs are exactly unit 2's `/pace` and the long-standing `/interrupt`, so this is a TUI-only key binding over existing daemon affordances.
@@ -103,9 +103,9 @@ ratatui is immediate-mode, so "streaming" is just mutate-and-redraw: there is no
 
 ## The composer
 
-`tui/composer.rs` is a dependency-free, emacs-keybind multiline editor. Its interface is a swappable seam: `handle_key` / `render` / `take` (or `clear`). The buffer is `Vec<Vec<char>>` — one row per line — so cursor columns are plain char indices, correct across UTF-8 without byte-boundary juggling.
+`tui/composer.rs` is a dependency-free, emacs-keybind multiline editor. Its interface is deliberately swappable: `handle_key` / `render` / `take` (or `clear`). The buffer is `Vec<Vec<char>>` — one row per line — so cursor columns are plain char indices, correct across UTF-8 without byte-boundary juggling.
 
-`tui-textarea` was the intended first cut but is pinned to an older ratatui/unicode-width ecosystem and does not resolve against ratatui 0.30, hence the hand-rolled editor. The seam makes replacing it later surgical.
+`tui-textarea` was the intended first cut but is pinned to an older ratatui/unicode-width ecosystem and does not resolve against ratatui 0.30, hence the hand-rolled editor. The narrow interface makes replacing it later surgical.
 
 **Focus model.** Focus lives in one of two *contexts* — the composer or the transcript — and the same physical key takes a context-dependent meaning (`C-p` is "previous line" composing, "previous unit" navigating), the way an editor's motion keys don't stop existing when you leave the buffer. There is no modal toggle: you cross between contexts by *moving*. `↑` at the top of the composer (the `0,0` detent: one press lands at the start of the first line, the next crosses the edge) spills focus into the transcript; `↓` past the last unit falls back into the composer; `Esc` is a graduated *return to steady state* (see [Graduated Esc](#graduated-esc) below) whose first rung returns to the composer. In the transcript context every block is a focus **unit** — each prose turn and each exchange — and the focused unit is marked by an accent glyph **`▌`** down its full height (a glyph, not reversed-video, so it shows on any theme and in the snapshot grid). `↑/↓` (or `C-p`/`C-n`) move between units, `Enter` expands a focused collapsible block, and other transcript commands (`r` raw, `t` theme, `+`/`-` pace, `p` pause, `?`/`h` help, `g`/`G` top/bottom, `q` quit) are bound here; an unbound key is a clean no-op (typing never leaks into the composer). Submit in the composer drives `POST /turn`; submit while a gate is pending resolves the gate (below); `C-d` on an empty composer quits (shell EOF).
 

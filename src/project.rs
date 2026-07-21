@@ -1,9 +1,9 @@
 //! `project(log) -> Vec<ApiMessage>` — the deterministic view sent to the API
-//! (docs/README.md, docs/substrate.md).
+//! (docs/README.md, docs/log-and-projection.md).
 //!
 //! The whole thesis rides on this being **byte-stable**: identical input must
 //! serialize to identical bytes every time, or prompt caching breaks silently.
-//! The hazards (docs/substrate.md) are non-deterministic map ordering (avoided by
+//! The hazards (docs/log-and-projection.md) are non-deterministic map ordering (avoided by
 //! using [`serde_json::Value`], which serializes object keys in sorted order) and
 //! any accidental change to field order / naming on the wire (pinned by the
 //! expected-bytes test below).
@@ -33,7 +33,7 @@ pub enum Role {
     Assistant,
 }
 
-/// A prompt-cache breakpoint marker (docs/substrate.md). `ephemeral` is the 5-minute TTL.
+/// A prompt-cache breakpoint marker (docs/log-and-projection.md). `ephemeral` is the 5-minute TTL.
 /// Serializes as `{"type":"ephemeral"}`. It rides on whichever content block it's
 /// attached to; [`place_trailing_cache_breakpoint`] puts exactly one at the wire
 /// tail each request, so the (stable) prefix before it is cache-read while only
@@ -104,7 +104,7 @@ impl ApiBlock {
     }
 }
 
-/// Place the single trailing cache breakpoint (docs/substrate.md): mark the last
+/// Place the single trailing cache breakpoint (docs/log-and-projection.md): mark the last
 /// block of the last message `ephemeral`. Kept out of [`project`] so projection
 /// stays a pure, byte-stable function (the breakpoint moves every request; the
 /// prefix it caches does not). Idempotent re-placement on an identical wire is
@@ -218,7 +218,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
     // turn's `tool_use`s into the following user turn), and a `User` entry that
     // immediately follows them merges into the *same* message rather than forming a
     // second consecutive user-role message — the seam-drain projection shape
-    // (docs/substrate.md): an injected/redirect user turn appended
+    // (docs/log-and-projection.md): an injected/redirect user turn appended
     // right after a turn's `tool_result`s must project as one user message
     // `[tool_result…, text]`, preserving role-alternation and byte-stability. We
     // accumulate and flush at the next assistant / boundary / end.
@@ -254,7 +254,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             Payload::User(blocks) => {
                 // Merge into the pending user message rather than flushing first: a
                 // user turn following this turn's `tool_result`s lands as one message
-                // `[tool_result…, text]` (docs/substrate.md). With
+                // `[tool_result…, text]` (docs/log-and-projection.md). With
                 // nothing pending this is just a fresh user message, flushed at the
                 // next assistant / boundary / end — byte-identical to a direct push.
                 pending_user_content.extend(blocks.iter().map(block_to_api));
@@ -301,7 +301,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // A grant (backlog/permissions/config-edit.md) is audit-only too — its
             // *effect* reaches the model through the classifier (the policy fold), never
             // the transcript. So it projects to nothing, and appending one cannot perturb
-            // the cached prefix (docs/substrate.md).
+            // the cached prefix (docs/log-and-projection.md).
             Payload::ConfigEdit(_) => {}
             // The boot preamble snapshot (docs/context.md) is replay/audit data:
             // the system prompt rides the request's `system` field, never the `messages`
@@ -312,7 +312,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // `Ambient` arrival (docs/inbox.md), surfaced items re-rendered from the boot
             // listing (backlog/context-surfacing.md). This tail-ward placement keeps the wire
             // append-only: content acknowledged at a later gate than its origin never splices
-            // behind a breakpoint (docs/substrate.md). Dismissed / left / already-surfaced
+            // behind a breakpoint (docs/log-and-projection.md). Dismissed / left / already-surfaced
             // dispositions don't project. The verdict is otherwise audit-only.
             Payload::Triage(t) => {
                 let mut blocks: Vec<String> = t
@@ -431,7 +431,7 @@ pub const PEEK_LINE_CAP: usize = 2000;
 /// verdict (docs/redaction-fork.md): the kept ranges as diff-style `@@`-hunks over the verbatim
 /// lines, the optional `note`, and a truncation breadcrumb past the cap. The wire
 /// projection and the TUI projection share this one renderer. **Deterministic** — part
-/// of the byte-stability contract (docs/substrate.md): a pure function of its inputs.
+/// of the byte-stability contract (docs/log-and-projection.md): a pure function of its inputs.
 pub fn render_distilled(content: &str, keep: &Keep, note: Option<&str>) -> String {
     let all: Vec<&str> = content.lines().collect();
     let total = all.len();
@@ -628,7 +628,7 @@ mod tests {
     /// A `ConfigEdit` is audit-only **in every lifecycle state**: appending a `Proposed`,
     /// `Committed`, or `Cancelled` entry anywhere in the log must not change a single projected
     /// byte (its effect reaches the model through the classifier, not the wire). If this ever
-    /// fails, a config edit has leaked onto the cached prefix (docs/substrate.md).
+    /// fails, a config edit has leaked onto the cached prefix (docs/log-and-projection.md).
     #[test]
     fn config_edit_projects_to_nothing() {
         use crate::log::{ConfigChange, ConfigEdit, EditState, Lifetime};
@@ -786,7 +786,7 @@ mod tests {
         );
     }
 
-    /// The seam-drain projection shape (docs/substrate.md): a `User`
+    /// The seam-drain projection shape (docs/log-and-projection.md): a `User`
     /// entry appended right after a turn's `tool_result`s projects as **one** user
     /// message `[tool_result…, text]`, not two consecutive user-role messages —
     /// preserving role-alternation and byte-stability. This is the shape both the
@@ -1199,7 +1199,7 @@ mod tests {
 
     /// The trailing breakpoint marks exactly the last block as `ephemeral` and
     /// nothing else — the cached prefix bytes are untouched, only the tail gains
-    /// the marker (docs/substrate.md).
+    /// the marker (docs/log-and-projection.md).
     #[test]
     fn trailing_cache_breakpoint_marks_only_the_last_block() {
         let mut messages = project(&sample_log());

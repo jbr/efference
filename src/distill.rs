@@ -117,7 +117,7 @@ pub struct Distillation {
     pub surfaced: Vec<String>,
     /// The fork request's [`Usage`], if a model round-trip happened: it reads the
     /// shared canonical prefix (sliding its cache TTL), so the loop folds it into the
-    /// cache telemetry (docs/substrate.md). `None` for a model-free distiller.
+    /// cache telemetry (docs/log-and-projection.md). `None` for a model-free distiller.
     pub usage: Option<Usage>,
 }
 
@@ -236,7 +236,7 @@ impl Distiller for ForkPeek {
         // The pending inbox + live background processes, by their `[seq]` / `[bg#n]`
         // handles (docs/inbox.md, docs/supervisor.md) — the coordinates
         // `retain.{inbox,background}` address. Re-rendered every gate off the cached
-        // prefix, so they never touch the canonical wire (docs/substrate.md). The same
+        // prefix, so they never touch the canonical wire (docs/log-and-projection.md). The same
         // builder feeds the standalone idle triage.
         append_inbox_and_background(&mut peek_view, inbox, background);
         // The surfacing roster (backlog/context-surfacing.md): unloaded `[context]` stub

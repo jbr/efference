@@ -7,7 +7,7 @@
 //! inbox queue and the cache `Metrics` in [`Shared`](crate::daemon): dropped on
 //! restart, where killpg-on-teardown reaps the children it owns.
 //!
-//! This module is the pure substrate: the registry, its one bounded per-process
+//! This module holds the state: the registry, its one bounded per-process
 //! capture buffer, and the read projections over it — [`Supervisor::views`] (the
 //! ambient auto-show the peek renders each gate), [`Supervisor::pin_snapshot`] (a
 //! frozen tail when the model pins), and [`Supervisor::finish`] (the exit
@@ -36,7 +36,7 @@ pub const CHECK_INBOX: &str = "check_inbox";
 /// act on daemon state (the registry, the inbox), not the world, so the agent loop
 /// dispatches them structurally — but their results distill through the universal
 /// fork like any tool (no bypass). Definitions are constant `json!` (sorted keys),
-/// so `tools[]` stays byte-stable for the session (docs/substrate.md).
+/// so `tools[]` stays byte-stable for the session (docs/log-and-projection.md).
 pub fn tool_definitions() -> Vec<Value> {
     vec![
         json!({

@@ -3,7 +3,7 @@
 //! Streaming. The request `messages` are produced by [`crate::project::project`];
 //! the response arrives as a Server-Sent Events stream and is reassembled by
 //! [`Assembler`] back into a single [`Payload::Assistant`], so the result folds
-//! straight into the log — this is where the substrate and the transport meet.
+//! straight into the log — this is where the log and the transport meet.
 //! Reassembly is a pure fold over the event sequence (docs/transport.md: streaming wire);
 //! the `Assembler` is unit-tested without a live stream.
 
@@ -30,7 +30,7 @@ const DEFAULT_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
 /// regardless of which `Endpoint` is targeted (docs/transport.md).
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
-/// The one provider seam (docs/transport.md). The request *body* is always the
+/// The provider endpoint (docs/transport.md). The request *body* is always the
 /// Anthropic Messages wire — `project(log)` output — because that shape is what
 /// every supported provider serves (Anthropic directly; OpenRouter via its
 /// `/api/v1/messages` skin). Switching providers therefore only changes **where**
@@ -127,11 +127,11 @@ impl Endpoint {
 /// Response-token ceiling per request. 1024 truncated real final answers in a
 /// live run (the model's synthesis was cut mid-sentence); 4096 gives the agent
 /// room to conclude while staying bounded. A `Client` field can replace this when
-/// per-call control becomes load-bearing.
+/// per-call control is needed.
 const MAX_TOKENS: u32 = 4096;
 
 /// Boxed error for the Phase 0 transport. A typed error enum can replace this
-/// once error handling becomes load-bearing; for now non-2xx responses carry
+/// once error handling needs structure; for now non-2xx responses carry
 /// the raw body in the message so failures are legible.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -142,7 +142,7 @@ struct Request<'a> {
     #[serde(skip_serializing_if = "str::is_empty")]
     system: &'a str,
     /// Tool definitions. Always sent (Phase 0 always has bash), so the request
-    /// never toggles the tools-cache tier (docs/substrate.md). Their *content* must be
+    /// never toggles the tools-cache tier (docs/log-and-projection.md). Their *content* must be
     /// byte-stable — `Bash::definition()` builds them from a [`Value`], whose
     /// keys serialize sorted, so it is.
     tools: &'a [Value],
@@ -155,12 +155,12 @@ struct Request<'a> {
     /// Keepalive is disabled independently (`max_tokens: 0` rejects `enabled`; adaptive there
     /// is untested). Set once per call-type and never flipped turn-to-turn, so it stays out of
     /// the cached prefix's way (toggling thinking keeps the tools+system tier valid;
-    /// docs/substrate.md). (`disabled` 400s on Fable 5, which can't disable thinking — not a
+    /// docs/log-and-projection.md). (`disabled` 400s on Fable 5, which can't disable thinking — not a
     /// serve target yet.)
     thinking: Thinking,
     messages: &'a [ApiMessage],
     /// Always `true` — we consume the response as SSE (docs/transport.md). Set once and
-    /// never varied; a delivery flag, not part of the cached prefix (docs/substrate.md),
+    /// never varied; a delivery flag, not part of the cached prefix (docs/log-and-projection.md),
     /// so it never invalidates the cache and isn't covered by the wire-bytes pin
     /// (which guards `project()` output, not this request envelope).
     stream: bool,
@@ -291,7 +291,7 @@ impl ToolChoice {
 /// metrics; defaulted because they're absent unless caching is in play. `Default`
 /// seeds the [`Assembler`] before `message_start` arrives.
 ///
-/// Every field is null-tolerant (docs/transport.md: the provider seam). Anthropic
+/// Every field is null-tolerant (docs/transport.md: providers). Anthropic
 /// *omits* a token count it has nothing to say about; OpenRouter's skin (and the
 /// upstreams behind it — e.g. Together) instead sends the field **present with an
 /// explicit `null`** (`cache_creation_input_tokens: null` in every `message_start`).
@@ -314,7 +314,7 @@ pub struct Usage {
 /// Deserialize a `u64` that a provider may send as an explicit JSON `null` (or omit
 /// entirely, when paired with `#[serde(default)]`), folding both to 0. Anthropic
 /// omits; OpenRouter-fronted upstreams null it out — see [`Usage`]. Not part of any
-/// wire-byte pin: `Usage` is response/telemetry only, never projected (docs/substrate.md).
+/// wire-byte pin: `Usage` is response/telemetry only, never projected (docs/log-and-projection.md).
 fn null_or_missing<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -369,7 +369,7 @@ enum BlockAccum {
 /// - **Usage merge.** `input_tokens` + `cache_*` come from `message_start`; the
 ///   final `output_tokens` from `message_delta`. Reading only one event would
 ///   regress the cache-gate metrics to the `message_start` placeholder
-///   (`output_tokens: 1`) — see docs/substrate.md.
+///   (`output_tokens: 1`) — see docs/log-and-projection.md.
 /// - **Thinking assembled** into leading `ContentBlock::Thinking` / `RedactedThinking`
 ///   (docs/transport.md, backlog/thinking-blocks.md), signatures preserved for replay.
 struct Assembler {
@@ -396,7 +396,7 @@ impl Assembler {
     /// a live sink without re-parsing — every other event yields `None`.
     fn apply(&mut self, event_type: Option<&str>, data: &str) -> Result<Option<String>, Error> {
         let mut streamed = None;
-        // The OpenAI/OpenRouter stream-end sentinel (docs/transport.md: the provider seam).
+        // The OpenAI/OpenRouter stream-end sentinel (docs/transport.md: providers).
         // Anthropic closes the stream after `message_stop`; OpenRouter's `/api/v1/messages`
         // skin appends a trailing `data: [DONE]` (labeled `event: data`) as OpenAI's wire
         // does. It carries no content — recognize it by its *payload*, since the event
@@ -605,7 +605,7 @@ impl Assembler {
 
 /// A thin Anthropic Messages client: holds the HTTP stack, the [`Endpoint`] (URL +
 /// auth), the model, and the stable system prompt. The system is byte-stable across
-/// the session, so it stays in the cached prefix (docs/substrate.md); the fork
+/// the session, so it stays in the cached prefix (docs/log-and-projection.md); the fork
 /// (docs/redaction-fork.md) shares the same endpoint and system, so its prefix matches
 /// and hits cache.
 pub struct Client {
@@ -724,7 +724,7 @@ impl Client {
     /// round-trip over the same prefix a real turn would send. It READS the cached
     /// prefix — refreshing its (sliding) TTL — and generates nothing, so the
     /// (empty) assistant turn is discarded and the log is never touched. Returns
-    /// only the `usage`, which the daemon folds into the cache telemetry (docs/substrate.md).
+    /// only the `usage`, which the daemon folds into the cache telemetry (docs/log-and-projection.md).
     ///
     /// Non-streaming on purpose: `max_tokens: 0` is rejected with `stream: true`
     /// (verified live). The prefix bytes must match a real request's **exactly**

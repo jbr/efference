@@ -1,6 +1,6 @@
-//! The system preamble assembly (docs/substrate.md, docs/context.md).
+//! The system preamble assembly (docs/log-and-projection.md, docs/context.md).
 //!
-//! **Caching discipline (load-bearing).** The system prompt sits in the cached
+//! **Caching discipline.** The system prompt sits in the cached
 //! prefix (`tools → system → messages`), so everything assembled here must be
 //! **byte-stable for the whole session** or it invalidates the cache every turn.
 //! [`system_prompt`] is built **once at startup** from parts that are themselves
@@ -22,14 +22,14 @@
 /// newline so the joined prompt stays byte-clean.
 const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 
-/// The full system prompt sent in the request's `system` field (docs/substrate.md): the
+/// The full system prompt sent in the request's `system` field (docs/log-and-projection.md): the
 /// curation-model [`PREAMBLE`], the `[context]` preamble builder's block when configured
 /// (`context_block`, rendered by [`crate::context::Resolved::render`] — docs/context.md; this is
 /// where orientation now lives, as a config exec entry), and the config's preamble section
 /// when the session has a scope (`role_section`, rendered by
 /// [`crate::config::Config::preamble_section`]). Built once at session start and frozen into the
 /// cached prefix, so every part must be byte-stable. The `wire` dev view shows the recorded boot
-/// snapshot instead of reconstructing (docs/substrate.md).
+/// snapshot instead of reconstructing (docs/log-and-projection.md).
 ///
 /// The session's config file is deliberately **not** named here. Surfacing it up front read as
 /// "this is what you're allowed to do" and drew sessions into reading and probing their own

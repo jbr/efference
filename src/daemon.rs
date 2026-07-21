@@ -52,7 +52,7 @@ use crate::tools::Toolbox;
 /// (docs/README.md — the deferred token-level deltas). **Ephemeral and transport-only**:
 /// never appended to the log, never projected, and droppable for a slow consumer.
 /// The authoritative text always lands as a committed [`LogEntry`] on `/events`, so
-/// the stream is interface candy with the durable log as its backstop — which is
+/// the stream is a live convenience with the durable log as its backstop — which is
 /// exactly why it can ride a lossy `broadcast` where `/events` must tail the log.
 #[derive(Clone)]
 pub enum StreamDelta {
@@ -93,7 +93,7 @@ struct Inbox {
 }
 
 /// One pending ambient notification, surfaced by `GET /state` (docs/inbox.md). Immutable
-/// once enqueued — supersession archives-and-replaces rather than editing (docs/substrate.md).
+/// once enqueued — supersession archives-and-replaces rather than editing (docs/log-and-projection.md).
 #[derive(Clone, Debug, Serialize)]
 struct PendingNotification {
     /// Queue-local id; the handle `POST /notifications/:id/dismiss` addresses.
@@ -165,7 +165,7 @@ pub struct Shared {
     stream_tx: broadcast::Sender<StreamDelta>,
     /// Cache/usage telemetry — the most recent request's `usage` and a wall-clock
     /// stamp, surfaced by `GET /state` so clients can see cache hit/miss and
-    /// predict TTL eviction (docs/substrate.md). Transport-only: never touches the log.
+    /// predict TTL eviction (docs/log-and-projection.md). Transport-only: never touches the log.
     metrics: Mutex<Metrics>,
     /// The ephemeral inbox of pending ambient notifications (docs/inbox.md): out-of-band
     /// events awaiting their first triage gate. Control state, *not* a log payload —
@@ -223,7 +223,7 @@ pub struct Shared {
     /// turn ends the wait *immediately* rather than after the remaining delay. Fired by
     /// [`submit_turn`](Shared::submit_turn) (submit ⇒ resume, always) and by a release
     /// (`set_pace` dropping `held`); a pure speed change or a *hold* does not fire it (those take
-    /// effect at the next seam).
+    /// effect at the next juncture).
     pace_interrupt: Notify,
 }
 
@@ -236,7 +236,7 @@ pub struct Shared {
 struct Pace {
     /// The between-turns delay when not held (`0` = as fast as possible, the default).
     speed: Duration,
-    /// The pause overlay: while set, the effective sleep is infinite (wait at the seam until
+    /// The pause overlay: while set, the effective sleep is infinite (wait at the juncture until
     /// released or a turn is submitted). Retains `speed` underneath.
     held: bool,
 }
@@ -252,7 +252,7 @@ struct Metrics {
     last_request_at: Option<Instant>,
     /// Stamped by real loop turns (incl. the fork) but **not** keepalive pings, so
     /// it measures genuine idle and a ping can't reset its own deadline. Gates the
-    /// keepalive cap (docs/substrate.md).
+    /// keepalive cap (docs/log-and-projection.md).
     last_real_turn_at: Option<Instant>,
     total_input: u64,
     total_output: u64,
@@ -313,14 +313,14 @@ impl Shared {
     /// Record a completed request's `usage` and stamp the wall clock. The loop
     /// calls this once per API round-trip; `GET /state` reports the latest plus
     /// running totals and the seconds-since (the eviction-prediction signal,
-    /// docs/substrate.md). Transport-only — no log append, no projection change.
+    /// docs/log-and-projection.md). Transport-only — no log append, no projection change.
     pub fn record_request(&self, usage: Usage) {
         let mut m = self.metrics.lock().unwrap();
         Self::fold_usage(&mut m, usage);
         m.last_real_turn_at = Some(Instant::now());
     }
 
-    /// A keepalive ping's usage (docs/substrate.md). Folded into the telemetry and the
+    /// A keepalive ping's usage (docs/log-and-projection.md). Folded into the telemetry and the
     /// cache-touch clock like any request, but it does **not** stamp the real-turn
     /// clock — a ping must not reset the cap that decides when to stop pinging.
     pub fn record_keepalive(&self, usage: Usage) {
@@ -590,9 +590,9 @@ impl Shared {
         // backlog/permissions/proposal-lifecycle.md).
         self.queued.fetch_add(1, Ordering::SeqCst);
         // Submit ⇒ resume, always (docs/control-channel.md): drop any hold and wake an
-        // in-flight seam sleep so the message is delivered at the next juncture *immediately*, not
+        // in-flight juncture sleep so the message is delivered at the next juncture *immediately*, not
         // after the remaining paced delay. The retained `speed` is untouched (it recolors later
-        // seams); only the `held` overlay drops.
+        // junctures); only the `held` overlay drops.
         {
             let mut p = self.pace.lock().unwrap();
             p.held = false;
@@ -603,7 +603,7 @@ impl Shared {
         let _ = self.turns_tx.send(text);
     }
 
-    /// The current pace `(speed, held)` — surfaced on `GET /state` and read by the seam sleep.
+    /// The current pace `(speed, held)` — surfaced on `GET /state` and read by the juncture sleep.
     fn pace_snapshot(&self) -> (Duration, bool) {
         let p = self.pace.lock().unwrap();
         (p.speed, p.held)
@@ -611,8 +611,8 @@ impl Shared {
 
     /// Apply an operator pace change (docs/control-channel.md — the `POST /pace` verb):
     /// set the `speed` dial and/or the `held` overlay, each optional. **Releasing** a hold (`held`
-    /// true → false) wakes an in-flight seam sleep so resume is immediate; a pure speed change or a
-    /// *hold* does not wake it — those take effect at the next seam, per the design (a hold lands at
+    /// true → false) wakes an in-flight juncture sleep so resume is immediate; a pure speed change or a
+    /// *hold* does not wake it — those take effect at the next juncture, per the design (a hold lands at
     /// the next juncture, letting the in-flight step finish; a speed change outlives the hold and
     /// recolors resume). Returns the resulting `(speed, held)`.
     fn set_pace(&self, speed: Option<Duration>, held: Option<bool>) -> (Duration, bool) {
@@ -624,7 +624,7 @@ impl Shared {
             }
             if let Some(h) = held {
                 if p.held && !h {
-                    wake = true; // releasing a hold ends the seam sleep now
+                    wake = true; // releasing a hold ends the juncture sleep now
                 }
                 p.held = h;
             }
@@ -637,7 +637,7 @@ impl Shared {
     }
 
     /// The interruptible between-turns sleep (docs/control-channel.md). Applied at the
-    /// seam — after a step's results land, before the next model call — and **transparent to the
+    /// juncture — after a step's results land, before the next model call — and **transparent to the
     /// agent**: it touches no log entry, so a held/slowed loop projects byte-identically to a fast
     /// one. Waits `effective_sleep = held ? ∞ : speed`, but returns *immediately* if a turn is
     /// already queued (never pace over pending input) and ends early when the `pace_interrupt` fires
@@ -779,7 +779,7 @@ impl Shared {
     /// Enqueue an ambient notification (docs/inbox.md — `POST /notify`). If it names a
     /// `slot` (or an explicit `replaces` id) matching a pending entry, that entry is
     /// **superseded**: archived-and-replaced, never edited (records are immutable,
-    /// docs/substrate.md). A superseded-while-pending entry is simply dropped — it never reached a
+    /// docs/log-and-projection.md). A superseded-while-pending entry is simply dropped — it never reached a
     /// gate, so from the log's perspective it never happened. Returns the new id.
     fn notify(
         &self,
@@ -1792,7 +1792,7 @@ fn reload_and_emit(shared: &Shared, path: &std::path::Path) {
     }
 }
 
-/// The cache keepalive (docs/substrate.md): a daemon-side timer that fires a
+/// The cache keepalive (docs/log-and-projection.md): a daemon-side timer that fires a
 /// `max_tokens: 0` ping when the canonical prefix nears its 5-minute cache TTL
 /// during idle, refreshing it so the next real turn resumes hot instead of cold.
 /// Pure transport — it reads the prefix and records the usage; the log is never
@@ -1801,7 +1801,7 @@ fn reload_and_emit(shared: &Shared, path: &std::path::Path) {
 /// Two clocks ([`Shared::keepalive_clocks`]): ping when the cache-touch clock
 /// nears the TTL, but stop once the *real-turn* clock passes `CAP` — past that the
 /// human has been gone long enough that pinging forever costs more than one cold
-/// read on resume (the crossover, docs/substrate.md). 5m TTL only: a warm cache can't be entered
+/// read on resume (the crossover, docs/log-and-projection.md). 5m TTL only: a warm cache can't be entered
 /// at 1h (verified — TTL is write-time), so 1h is a future cold-write knob, not a
 /// keepalive concern.
 async fn keepalive_loop(client: Arc<Client>, shared: Arc<Shared>, tools: Vec<Value>) {
@@ -1887,13 +1887,13 @@ pub async fn serve<D: Distiller, S: Spotter>(
     // session-dir-and-config-as-reviewed-file.md — the autonomous flip).
     shared.set_autonomous(autonomous);
     // Share the client between the loop and the keepalive task. `tools` is computed
-    // once here for the ping; `agent::run` recomputes the same (byte-stable, docs/substrate.md)
+    // once here for the ping; `agent::run` recomputes the same (byte-stable, docs/log-and-projection.md)
     // definitions internally, so both send an identical prefix.
     let client = Arc::new(client);
     // The exact tools[] a real turn sends — world tools + the harness tools
     // (`consolidate`, the supervisor/inbox tools, docs/supervisor.md, docs/inbox.md). Built from the one source
     // (`agent::tool_definitions`) so the keepalive ping warms the *same* cache prefix
-    // a real turn reads; any drift here silently breaks idle cache-warming (docs/substrate.md).
+    // a real turn reads; any drift here silently breaks idle cache-warming (docs/log-and-projection.md).
     let tools = agent::tool_definitions(&toolbox);
     let mut frontend = RemoteFrontend {
         shared: Arc::clone(&shared),
@@ -1903,7 +1903,7 @@ pub async fn serve<D: Distiller, S: Spotter>(
     // `with_shared_state` carries the Arc into every conn's TypeSet; `listeners()`
     // upgrades to the multi-listener builder (carrying that state over) so we can
     // `bind_uds`. The same builder's `bind_tcp`/`bind_env` is the deferred-TCP
-    // seam (docs/transport.md) — a config switch, not an abstraction to build.
+    // path (docs/transport.md) — a config switch, not an abstraction to build.
     let server = trillium_tokio::config()
         .with_shared_state(Arc::clone(&shared))
         .listeners()
@@ -1912,7 +1912,7 @@ pub async fn serve<D: Distiller, S: Spotter>(
         .spawn(router());
     eprintln!("control socket: {}", socket.display());
 
-    // The cache keepalive runs alongside the loop (docs/substrate.md) — a transport-side
+    // The cache keepalive runs alongside the loop (docs/log-and-projection.md) — a transport-side
     // timer that never touches the log, so it composes with the loop without
     // sharing anything but the read-only client and the telemetry clocks.
     tokio::spawn(keepalive_loop(
@@ -2007,7 +2007,7 @@ mod tests {
         );
         assert_eq!(v["usage"]["cumulative"]["cache_read_input_tokens"], 9407);
         assert_eq!(v["usage"]["cumulative"]["output_tokens"], 22);
-        // A wall-clock stamp now exists — the eviction-prediction signal (docs/substrate.md).
+        // A wall-clock stamp now exists — the eviction-prediction signal (docs/log-and-projection.md).
         assert!(v["usage"]["seconds_since_last_request"].is_u64());
     }
 
@@ -2608,7 +2608,7 @@ mod tests {
         );
     }
 
-    /// The keepalive's load-bearing invariant (docs/substrate.md): a ping advances the
+    /// The keepalive's load-bearing invariant (docs/log-and-projection.md): a ping advances the
     /// cache-touch clock (it really did refresh the TTL) but must NOT reset the
     /// real-turn clock — that clock gates the give-up cap, and a ping resetting its
     /// own deadline would pin the cache forever. So after a real turn then a ping,
@@ -2771,7 +2771,7 @@ mod tests {
         let _ = std::fs::remove_file(&log_path);
     }
 
-    /// The inbox supersedes by slot (archive-and-replace, never edit — docs/inbox.md, docs/substrate.md) and
+    /// The inbox supersedes by slot (archive-and-replace, never edit — docs/inbox.md, docs/log-and-projection.md) and
     /// dismisses by id; a superseded or dismissed entry is gone from the pending set.
     #[test]
     fn inbox_supersedes_by_slot_and_dismisses() {

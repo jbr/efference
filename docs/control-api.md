@@ -3,7 +3,7 @@
 > Consumer-facing reference for the daemon's control interface — written for
 > someone building a *client* (the TUI, the CLI verbs, a future web/iOS/desktop
 > app), not for someone changing the daemon. For the internal rationale and the
-> `Frontend` seam, see [control-channel.md](control-channel.md); for the
+> `Frontend` boundary, see [control-channel.md](control-channel.md); for the
 > streaming/transport internals see [transport.md](transport.md).
 >
 > **Status:** unversioned and unstable. There is no `/vN` prefix and no
@@ -197,7 +197,7 @@ committed entry on `/events` is the authoritative copy.
 
 - **`LogEntry`** `{ seq, turn, at, payload }` where `payload` is one of `User` /
   `Assistant` / `ToolResult` / `Mark` / `Triage` / `Ambient` / `Spot` /
-  `ConfigEdit` (see [substrate.md](substrate.md)).
+  `ConfigEdit` (see [log-and-projection.md](log-and-projection.md)).
 - **`ConfigChange`** — one of `command` / `path` / `tool` / `scope` (see
   [permissions.md](permissions.md)).
 - **`BgView`** — a background-process view (see [supervisor.md](supervisor.md)).

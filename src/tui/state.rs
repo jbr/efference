@@ -211,7 +211,7 @@ pub(super) struct InteractiveState<'a> {
     /// Inbound events from the SSE bridge (durable entries + ephemeral deltas).
     pub events: Receiver<TuiEvent>,
 
-    /// The input composer (M2). The swappable input seam (docs/tui.md).
+    /// The input composer (M2). The swappable input interface (docs/tui.md).
     pub composer: Composer,
     /// Focus model: true = composing (keys go to the composer), false = command
     /// mode (M1's single-key transcript commands). Esc toggles; a printable key in
@@ -547,7 +547,7 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// The pause step of graduated Esc (docs/tui.md): set the `held` overlay (unit 2) and push it to
-    /// the daemon so the loop stops at the next seam. Idempotent (ensures held whatever the current
+    /// the daemon so the loop stops at the next juncture. Idempotent (ensures held whatever the current
     /// pace), optimistic like the pace keys. The hint names both ways forward: another Esc stops a
     /// running tool now, and typing a message resumes (submit always resumes, unit 2).
     fn esc_hold(&mut self) {
@@ -563,7 +563,7 @@ impl<'a> InteractiveState<'a> {
 
     /// The interrupt step of graduated Esc (docs/tui.md): abort the in-flight tool now — fire
     /// `POST /interrupt`, which kills the running tool's process group (a no-op if nothing is
-    /// running). Reaches the one seam pace can't (mid-tool).
+    /// running). Reaches the one point pace can't (mid-tool).
     fn esc_interrupt(&mut self) {
         let _ = self.interrupt_tx.send(());
         self.ui.debug_message = "interrupting the running tool…".into();
@@ -594,7 +594,7 @@ impl<'a> InteractiveState<'a> {
                         self.pending_turns.remove(pos);
                     }
                 }
-                // Entries can arrive out of order across the durable/replay seam;
+                // Entries can arrive out of order across the durable/replay boundary;
                 // keep the log sorted by seq so the projection is stable.
                 match self.log.binary_search_by_key(&entry.seq, |e| e.seq) {
                     Ok(idx) => self.log[idx] = entry,

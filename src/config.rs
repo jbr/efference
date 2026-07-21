@@ -53,14 +53,14 @@
 //!   the watch-window rung (not built yet).
 //!
 //! Per the convention in CLAUDE.md, the schema fields land *before* the rungs that
-//! read them — "wire the seam ahead of the feature".
+//! read them — types land ahead of the feature that constructs them.
 //!
-//! ## Caching discipline (load-bearing)
+//! ## Caching discipline
 //!
 //! The scope projects into the system preamble, which sits in the cached prefix
 //! (`tools → system → messages`). [`Config::preamble_section`] must therefore be
 //! **byte-stable for the whole session** (see the invariant in
-//! backlog/permissions/README.md, kin to `project(log)` in docs/substrate.md). It is —
+//! backlog/permissions/README.md, kin to `project(log)` in docs/log-and-projection.md). It is —
 //! the config is loaded once at startup and frozen, and the rendering is a pure function
 //! of the scope text. Changing configs is a cold cache write, which is fine: configs do
 //! not change mid-session.

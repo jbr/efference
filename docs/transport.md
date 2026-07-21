@@ -1,12 +1,12 @@
 # Transport & streaming
 
 This layer bridges `project(log)` and an Anthropic-Messages-compatible endpoint
-(Anthropic directly, or OpenRouter's `/api/v1/messages` skin — see [the provider
-seam](#the-provider-seam)): it turns a projected message list into an HTTP
+(Anthropic directly, or OpenRouter's `/api/v1/messages` skin — see
+[providers](#providers)): it turns a projected message list into an HTTP
 request, streams the response back, and hands a finished `Completion` to the
 loop — which appends it to the log and forks. Everything described here is transport-only. None of it appends to the
 log, changes a projection, or perturbs the byte-stability invariants guarded in
-[the substrate](substrate.md).
+[log-and-projection.md](log-and-projection.md).
 
 ---
 
@@ -41,7 +41,7 @@ once the block closes. An empty accumulator (no fragments received) produces
 see no difference from a non-streaming call — the SSE complexity is fully
 contained inside `api.rs`.
 
-**Two invariants, both load-bearing.**
+**Two invariants.**
 
 *Loud-on-unknown.* An unrecognized event type, block type, or delta type is a
 hard error, never a silent drop. The API surface is explicit about what the
@@ -75,7 +75,7 @@ thinking (400), so a forced choice → `disabled`, `auto` → `adaptive`
 (`display: "summarized"`). The main agent turn is `auto` → thinks; the fork
 forces its distiller → thinking off; the keepalive is `disabled` independently
 (`max_tokens: 0` rejects thinking-on). Toggling thinking keeps the tools+system
-cache tier valid (see [the substrate](substrate.md)), and it's set once per
+cache tier valid (see [log-and-projection.md](log-and-projection.md)), and it's set once per
 call-type and never flipped turn-to-turn, so it stays out of the cached
 prefix's way. The wire encoding is pinned by
 `project::tests::thinking_turn_matches_expected_wire_bytes`. Thinking blocks are
@@ -92,10 +92,10 @@ advertise `alt-svc: h3`, so HTTP/3 is not a live option. HTTP/2 is the path.
 
 ---
 
-## The provider seam
+## Providers
 
 The request **body** is always the Anthropic Messages wire — `project(log)`
-output — so the entire substrate, projection, assembler, and cache-breakpoint
+output — so the entire log, projection, assembler, and cache-breakpoint
 model are provider-independent. What varies between providers is only **where**
 the POST goes and **how** it authenticates. That is the whole of `api::Endpoint`
 (`url` + `auth_header` + `auth_value`), resolved once at boot from the
@@ -135,7 +135,7 @@ provider identity — OpenRouter tolerates it — so it stays a constant.
 **Caching portability.** Only Anthropic's *explicit* `cache_control` breakpoints
 are Anthropic-specific; every other major model does **automatic prefix
 caching** (OpenAI, Gemini's implicit caching, DeepSeek). The byte-deterministic,
-append-only-prefix discipline the substrate enforces is exactly what those
+append-only-prefix discipline the projection enforces is exactly what those
 automatic caches reward — foreign providers simply ignore the `cache_control`
 blocks (or translate them, as OpenRouter does for OpenAI). What's lost off the
 Anthropic path is control over breakpoint *placement* and the `1h` TTL; the short
@@ -200,8 +200,8 @@ stream shows raw live output, the result shows the fork's distillate (see
 
 ## Cache instrument panel and keepalive
 
-Caching is the constraint everything bends around (see [the
-substrate](substrate.md) for the TTL-is-a-write-time-property background). It
+Caching shapes this layer (see [log-and-projection.md](log-and-projection.md) for the
+TTL-is-a-write-time-property background). It
 was previously invisible and died at the 5-minute TTL on any idle. This layer
 makes it legible and keeps it warm, entirely within transport and daemon — no
 log appends, no projection changes, fully reversible.

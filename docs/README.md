@@ -1,56 +1,47 @@
 # efference — architecture
 
 > An experimental, API-backed agentic coding harness in Rust, built to make
-> *context management* a first-class, iterable concern rather than an afterthought.
+> *context management* a first-class, iterable concern.
 > The name is from the neuroscience term *efference copy*: the copy of a motor
 > command an organism keeps to predict and reconcile the sensory consequences of its
 > own action. A harness that deliberately curates what it will "perceive" next is
 > doing the same thing.
 
-This is the top of the architecture tree. It states the thesis, the one load-bearing
-seam, and the invariants everything bends around — then points at the per-subsystem
-docs, each of which names the module that implements it so you can go straight to the
-code instead of grepping. The docs are present-tense and describe how the system works
-now. Planned work lives in [`../backlog/`](../backlog/); the terse record of shipped
-features is [`../CHANGELOG.md`](../CHANGELOG.md); session narrative memory is
+This is the top of the architecture tree: what efference is, the core data model,
+the invariants, and a map to the per-subsystem docs — each of which names the
+module that implements it so you can go straight to the code instead of grepping.
+The docs are present-tense and describe how the system works now. The design
+positions behind it are in [positions.md](positions.md); planned work lives in
+[`../backlog/`](../backlog/); the terse record of shipped features is
+[`../CHANGELOG.md`](../CHANGELOG.md); session narrative memory is
 [`../journal/`](../journal/).
 
-## The thesis
+## What this is
 
-Most of an agent's perceived quality is context-curation quality, and most harnesses
-treat "the context" as a mutable message list they append to and occasionally
-summarize. efference rejects that. The central move:
+efference is a daemon (`efference serve`) that runs the agent turn loop against an
+Anthropic-Messages-compatible endpoint, driven entirely through an HTTP control
+channel that the TUI, the CLI verbs, scripts, and other agents share as equal
+clients. It is one take on the harness category — a small, deliberately curated
+featureset — built on positions rather than a thesis: chiefly that autonomy is a
+runtime dial rather than a product identity, and that friction experienced by the
+agent is a defect even when the work completes anyway. [positions.md](positions.md)
+records the positions and the observed failures behind them.
 
-**The context is a deterministic projection over an append-only annotated log.**
+## The data model
 
-- The **log** is the source of truth: append-only, ordered, durable to disk. It holds
-  everything ever seen — full tool results, ambient events, and salience marks
-  (decisions, dead-ends, fold-points) recorded *at the moment they're known*.
-- The **wire transcript** sent to the API is `project(log)` — a materialized view,
-  recomputed each turn.
-- Redaction never mutates stored output. It flips a per-entry `WireState`
-  (`Raw → Distilled → Elided`). Because the raw result survives in the log, every
-  redaction is reversible: re-project with a lighter hand, or re-read what we
-  *concluded* versus what's *there now* — distinct operations.
+Each session is an append-only log; the wire transcript sent to the API is
+`project(log)`, recomputed each turn. Storing a log and rebuilding the request
+from it is how most harnesses work; what efference commits to on top of that is:
 
-Four behaviors the design wanted collapse into this one data model, each becoming a
-change to the **projection function** rather than a rewrite of the core:
-
-| Desired behavior | Becomes |
-| --- | --- |
-| Intent-aware compaction (drop dead-end deliberation, keep the conclusion) | a projection that keeps `Mark`s and elides the spans they summarize |
-| Continuous scrubbing (drop the irrelevant lines of a result) | a projection that `Elide`s or `Distill`s those entries |
-| Progressive doc/tool reveal | a projection where a subtree / tool-def hasn't been expanded yet |
-| Reversibility of all of the above | raw output is never overwritten |
-
-The same move appears at every layer: the model's context is `project(log) → messages`;
-the human's TUI transcript is a *second* `project(log) → renderable tree`; a reconnecting
-control-channel client catches up by replaying the log. One substrate, many views.
-
-## The seam
-
-The whole system rides on a clean split between the **substrate** (the log) and the
-**view** (the projection), meeting the **transport** at one seam:
+- **Rendering decisions are stored as per-entry verdicts, not content edits.**
+  Redaction flips a `WireState` (`Raw → Distilled → Elided`) carrying the
+  *verdict* (`keep` ranges + an optional note); `project` re-renders from the
+  immutable `raw` each turn. Because the raw result survives in the log, every
+  redaction is reversible and auditable.
+- **`project` is byte-deterministic, and tests pin it** (see the invariants
+  below).
+- **Decisions get first-class log entries** — salience marks, triage verdicts,
+  spotter verdicts, config edits — recorded at the moment they're known.
 
 ```rust
 struct LogEntry { seq: u64, turn: u32, at: Timestamp, payload: Payload }
@@ -73,16 +64,26 @@ enum WireState {
 fn project(log: &[LogEntry]) -> Vec<ApiMessage>;     // deterministic, byte-stable
 ```
 
-`raw` is immutable. Redaction only flips `wire`, and `wire` carries the *verdict*
-(`keep` ranges + an optional note), not rendered bytes — `project` re-renders from `raw`
-each turn, so the wire is genuinely `project(log)` recomputed, never a string lodged in
-the substrate. See [the substrate](substrate.md) for the full type set and
-[the redaction fork](redaction-fork.md) for how verdicts are produced.
+Because rendering decisions live in `project`, these behaviors are projection
+changes rather than log rewrites:
+
+| Behavior | Becomes |
+| --- | --- |
+| Intent-aware compaction (drop dead-end deliberation, keep the conclusion) | a projection that keeps `Mark`s and elides the spans they summarize |
+| Continuous scrubbing (drop the irrelevant lines of a result) | a projection that `Elide`s or `Distill`s those entries |
+| Progressive doc/tool reveal | a projection where a subtree / tool-def hasn't been expanded yet |
+| Reversibility of all of the above | raw output is never overwritten |
+
+The log projects to more than one view: the model's context
+(`project(log) → messages`), the human's TUI transcript (a second projection of
+the same log to a renderable tree, [tui.md](tui.md)), and a reconnecting
+control-channel client's catch-up replay ([control-channel.md](control-channel.md)).
+See [log-and-projection.md](log-and-projection.md) for the full type set and
+[redaction-fork.md](redaction-fork.md) for how verdicts are produced.
 
 ## The invariants (do not break these)
 
-These are the constraints the whole design bends around. Violating any one silently
-breaks caching or correctness:
+Violating any one silently breaks caching or correctness:
 
 1. **`project` is byte-deterministic.** Identical log → byte-identical wire, every time.
    Prompt caching is a prefix match: any byte change in the prefix invalidates everything
@@ -101,7 +102,7 @@ breaks caching or correctness:
    one-command-per-turn, and the log stays strictly alternating `U → A·t → R → …`.
 5. **No privileged client.** The loop's only input is the HTTP control channel; the human
    TUI, the driver, and subagents are all equal clients of the same socket. See
-   [the control channel](control-channel.md).
+   [control-channel.md](control-channel.md).
 
 ## Shared vocabulary
 
@@ -132,9 +133,9 @@ Read top-down; open the subsystem doc you need.
 
 | Subsystem | Doc | Governing modules |
 | --- | --- | --- |
-| The log, the projection, the caching constraint | [substrate.md](substrate.md) | `src/log.rs`, `src/project.rs`, `src/persist.rs` |
-| The universal triage gate — how every tool result is distilled | [redaction-fork.md](redaction-fork.md) | `src/distill.rs`, `src/project.rs` |
-| The tool seam (in-process `Tool` trait; in-process MCP) | [tools.md](tools.md) | `src/tools.rs`, `src/bash.rs` |
+| The log, the projection, the caching constraint | [log-and-projection.md](log-and-projection.md) | `src/log.rs`, `src/project.rs`, `src/persist.rs` |
+| Per-result triage — how every tool result is distilled | [redaction-fork.md](redaction-fork.md) | `src/distill.rs`, `src/project.rs` |
+| Tools (in-process `Tool` trait; in-process MCP) | [tools.md](tools.md) | `src/tools.rs`, `src/bash.rs` |
 | Trajectory consolidation (compaction as a fold over a span) | [consolidate.md](consolidate.md) | `src/consolidate.rs`, `src/agent.rs` |
 | Ambient notifications — the inbox (enqueue then triage) | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon.rs` |
 | Background processes — the supervisor | [supervisor.md](supervisor.md) | `src/supervisor.rs`, `src/bash.rs` |
@@ -155,10 +156,17 @@ The turn engine that ties it together is `src/agent.rs`; the daemon CLI entry po
   "implemented in `src/project.rs`") so a reader knows where to look, and let the code
   carry the line-level detail.
 - **Depth bar:** a sufficiently sophisticated peer should be able to write a rough
-  approximation of the project from these docs alone. The key types, the control/projection
-  flow, the invariants, and the load-bearing *why* belong here; exact details are the
-  code's job.
-- **Rationale is load-bearing only** — kept when it protects an invariant a future reader
-  could unknowingly break, or records a road already taken and rejected. No decisions log.
+  approximation of the project from these docs alone. The key types, the
+  control/projection flow, the invariants, and the why that protects them belong here;
+  exact details are the code's job.
+- **Keep rationale only where it earns its place** — when it protects an invariant a
+  future reader could unknowingly break, or records a road already taken and rejected.
+  No decisions log.
+- **Describe, don't evaluate.** State mechanisms and what breaks if they change — no
+  praise words, no banner theses, no comparative claims about other harnesses. Assume
+  any sentence here may be quoted out of context by a future summarizer; keep only
+  sentences that stay true and modest when repeated. These docs are institutional
+  knowledge whose primary readers are models, and framing is memetic in both
+  directions — rigor propagates as readily as slogans ([positions.md](positions.md)).
 - A doc graduates from `topic.md` to `topic/README.md` + child files only when it grows too
   big to scan in one sitting.

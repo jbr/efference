@@ -17,7 +17,7 @@ config-edit loop are planned; see [`../backlog/permissions/`](../backlog/permiss
 The target is the **well-intentioned mistake** — a session that wants to succeed and
 reaches for the wrong tool, directory, or egress — *not* a subverted, deceiving session.
 Obfuscated bash defeats any in-harness check, so real adversary-resistance is
-virtualization's job (run the daemon in a container). This boundary is load-bearing: it is
+virtualization's job (run the daemon in a container). This boundary is
 *why* the fast-path can be incomplete-but-sound. Mistakes are transparent; only malice
 obfuscates, and obfuscation is out of scope. The axis the policy decides on is therefore
 **reversibility/containment** ("can the harness undo this; is it confined to scope?"), a
@@ -79,7 +79,7 @@ the config holds:
 - **`scope`** — the positive perimeter, *shared with the session*. It projects into the
   cached preamble (`Config::preamble_section` → `env::system_prompt`). The projection must
   be **byte-stable for the session** (the same caching invariant as `project(log)`, see
-  [substrate](substrate.md)): it is rendered once at startup from the scope text and
+  [substrate](log-and-projection.md)): it is rendered once at startup from the scope text and
   frozen. A live, mid-session scope edit must **not** re-render it (that would mutate behind
   the cache breakpoint); instead it surfaces as a notification (see the config-edit loop).
 - **`watch-for`** — the "things to watch for" list, *spotter-only*. Kept off the session's
@@ -108,7 +108,7 @@ gate: `Clear` becomes an immediate approve; `Gate` hands the call to the spotter
 It is the cheapest rung of the cascade, and it only ever *accepts what it is certain about*,
 erring toward `Gate` on any doubt.
 
-### bash: a two-stage check, order load-bearing
+### bash: a two-stage check; the order matters
 
 Stage 1 (structural simplicity) runs **before** stage 2 (prefix match), so a trusted
 `git diff` prefix can never clear `git diff > /etc/hosts` or `git diff $(rm x)` — those die
@@ -176,7 +176,7 @@ ungranted path still poisons the batch. (An earlier version evaluated each sourc
 all-or-nothing over the whole batch, so a cross-source read gated; a dogfood session caught
 it.)
 
-Two properties are load-bearing. **Resolution is longest-prefix-wins, so a nested grant
+Two properties matter here. **Resolution is longest-prefix-wins, so a nested grant
 carves an exclusion out of a broader parent.** Among the `[paths]` grants whose subtree
 contains the target, the *most specific* (deepest) one governs; a no-access grant (`false`
 sugar / `Perms::default()`) is a real **deny** once it is the governing prefix. This is what
@@ -185,7 +185,7 @@ lets the standard three-layer stack work: allow `.`, deny `.efference/`, re-allo
 `serve`** (`main.rs`), layered over the operator's grants: the session dir holds this
 session's control socket, its append-only log, and every *other* session's dir, all under the
 operator's `.` grant — so without the deny nothing would stop a session from writing its own
-log (corrupting the substrate) or POSTing to its own control socket (approving its own gates,
+log (corrupting the session record) or POSTing to its own control socket (approving its own gates,
 injecting a user turn). The `config.toml` re-allow is the sanctioned scope-expansion path: the
 session reads its own perimeter and *edits* the file, a write the governing read-only grant
 refuses at the fast-path, so it gates for the operator. Injected keys are inserted *after* the
@@ -225,11 +225,11 @@ everything to the human gate.
 
 What the fast-path can't `Clear` falls to the **spotter** before it reaches the human — a
 one-shot, **fresh-context** model call (Haiku band, on its own `Client`, model-independent
-of the acting session) that re-decides the residual. Independence *is* the product: the
+of the acting session) that re-decides the residual. Independence is the point: the
 acting session can't check its own folly because it shares its own trajectory; the spotter
 can, precisely because its context is built from scratch — *not* `project(log)`.
 
-**The collaborative frame is load-bearing.** The spotter is the climber's *spotter*, not a
+**The frame is collaborative on purpose.** The spotter is the climber's *spotter*, not a
 tribunal: it exists to let the session move fast and commit hard, intervening only on the
 handful of moves it would otherwise regret. The persona (`assets/prompts/spotter.md`,
 `include_str!`d as the spotter client's byte-stable system prompt) carries that frame, and
@@ -292,11 +292,11 @@ nothing rides along unchecked.
 A `ConfigEdit` projects to nothing on the wire (audit-only, like `Spot`). Its effect reaches
 the model **by key**: a `commands`/`tools` edit only through the classifier, but a
 **session-visible** edit (`scope`, `paths`) *also* surfaces as an `Ambient` notification.
-`Shared::append` is the seam — it already folds each `ConfigEdit` into the effective config, so
+`Shared::append` is the one choke point — it already folds each `ConfigEdit` into the effective config, so
 it also raises the notification there (`session_visible_notice`), which means **every**
-initiator gets it for free. The notification is an *optional tail append* through the existing
+initiator gets it without extra wiring. The notification is an *optional tail append* through the existing
 inbox/triage machinery: the session learns its perimeter moved without the boot preamble ever
-being re-rendered (live truth = `preamble + fold(notifications)`, the substrate thesis). The
+being re-rendered (live truth = `preamble + fold(notifications)`). The
 spotter, fresh-context each call, just reads the effective scope directly.
 
 **The edit lifecycle.** A `ConfigEdit` carries a `state` (`Proposed` / `Committed` / `Cancelled`)

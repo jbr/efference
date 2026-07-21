@@ -1,7 +1,7 @@
 //! The bash tool — Phase 0's only tool (docs/tools.md, docs/supervisor.md).
 //!
 //! Two concerns meet here. The *capability* is trivial: run a shell command,
-//! return its combined output. The load-bearing part is *ownership* (docs/supervisor.md,
+//! return its combined output. The critical part is *ownership* (docs/supervisor.md,
 //! seeded now): the child is spawned with `process_group(0)` so it leads a fresh
 //! process group (child pid == pgid), and [`Bash::run`] races completion against
 //! an injected `abort` future — on abort it `killpg`s the whole group with
@@ -45,7 +45,7 @@ struct Input {
 impl Bash {
     /// The Anthropic `tools[]` entry — name, description, JSON-Schema input.
     /// Built from a [`serde_json::Value`] so its keys serialize in sorted order
-    /// (cache determinism, docs/substrate.md) when this lands in the request next slice.
+    /// (cache determinism, docs/log-and-projection.md) when this lands in the request next slice.
     pub fn definition() -> Value {
         json!({
             "name": NAME,

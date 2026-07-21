@@ -12,7 +12,7 @@ rather than entry granularity.
 agent invokes it to fold its own finished work — typically right as it starts a new task
 — writing the summary it would want to read at the top of the next task. It is
 advertised in `tools[]` alongside the world-facing tools, but it is the first tool that
-acts on [the substrate](substrate.md), not the world. The agent loop in `src/agent.rs`
+acts on the log ([log-and-projection.md](log-and-projection.md)), not the world. The agent loop in `src/agent.rs`
 therefore dispatches it **structurally** rather than routing it through the `Toolbox`
 (`src/tools.rs`): when the call arrives and the human approves, the loop appends a
 `Mark { kind: MarkKind::Boundary { upto }, note: summary }` plus a paired `ToolResult`
@@ -67,7 +67,7 @@ served from cache.
 ## Branch-from-seq
 
 Replay-and-branch from any `seq` (running a task again from any prior point to try a
-different tool call or prompt) rides the same `Mark`/`seq` substrate. A branch is simply
+different tool call or prompt) uses the same `Mark`/`seq` machinery. A branch is simply
 a replay of `project(log[:seq])` with a divergent tail appended; no additional log
 machinery is needed.
 
@@ -84,7 +84,7 @@ These stay distinct and must not be conflated:
 ## Why `Commit` is not built
 
 A `Commit` payload that would freeze a boundary — making it immutable at the log level
-rather than purely at the projection level — is anticipated in [the substrate](substrate.md)
+rather than purely at the projection level — is anticipated in [log-and-projection.md](log-and-projection.md)
 but not built. It is not needed: the fold is pure projection over `Mark::Boundary`, and
 the canonical wire is already lean and append-only behind the breakpoint. The immutability
 invariant holds without a separate payload variant.

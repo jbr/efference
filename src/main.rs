@@ -199,7 +199,7 @@ enum Command {
         /// Between-turns delay in milliseconds (0 = as fast as possible).
         #[arg(long)]
         speed_ms: Option<u64>,
-        /// Pause at the next between-turns seam; the speed dial is retained underneath.
+        /// Pause at the next between-turns juncture; the speed dial is retained underneath.
         #[arg(long, conflicts_with = "resume")]
         hold: bool,
         /// Release a hold — resume at the retained speed.
@@ -466,7 +466,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 /// Reconstruct and print the wire request for a recorded session JSONL — the
-/// deterministic projection the assistant sees (docs/README.md, docs/substrate.md). No daemon, no
+/// deterministic projection the assistant sees (docs/README.md, docs/log-and-projection.md). No daemon, no
 /// socket, no network: load the log, fold it to `messages`, place the trailing
 /// cache breakpoint, and rebuild the `system`/`tools` envelope exactly as a real
 /// turn would (`tool_choice: auto`, docs/transport.md). `system` and `tools[]` are not in
@@ -933,7 +933,7 @@ async fn serve(
     )
     .try_init();
 
-    // The provider seam (docs/transport.md): endpoint URL + auth header, resolved once from
+    // Provider resolution (docs/transport.md): endpoint URL + auth header, resolved once from
     // the environment. Defaults to Anthropic when only ANTHROPIC_API_KEY is set; point
     // EFFERENCE_ENDPOINT + EFFERENCE_API_KEY (raw secret) + EFFERENCE_AUTH_HEADER /
     // EFFERENCE_AUTH_PREFIX at OpenRouter's /api/v1/messages (or any Anthropic-Messages-
@@ -994,7 +994,7 @@ async fn serve(
     // Layer the harness's self-surface protection over the operator's grants (docs/permissions.md).
     // The session dir holds this session's control socket, its append-only log, and — under the same
     // base — every *other* session's dir; all of it sits inside the operator's `.` grant, so nothing
-    // stops the session from writing its own log (corrupting the substrate) or POSTing to its own
+    // stops the session from writing its own log (corrupting the log) or POSTing to its own
     // control socket (approving its own gates, injecting a user turn) without this. Deny the whole
     // base dir, then re-allow read-only on *this* session's `config.toml` — the sanctioned
     // scope-expansion path: the session reads its own perimeter and *edits* the file, which is a
@@ -1022,7 +1022,7 @@ async fn serve(
 
     // Build the system prompt once, here at startup, and freeze it into the cached
     // prefix — it must stay byte-stable for the whole session or it would invalidate
-    // the cache every turn (docs/substrate.md). Everything it folds in is resolved
+    // the cache every turn (docs/log-and-projection.md). Everything it folds in is resolved
     // once at boot: the [context] block (files read + exec sections run now, frozen —
     // docs/context.md; orientation rides here as a config exec entry), the role's
     // brief, and the config note.
@@ -1061,7 +1061,7 @@ async fn serve(
 
     // The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
     // canonical wire keeps only what the model retains. `Toolbox` is the docs/tools.md tool
-    // seam; mount bash + the in-process MCP servers (fs-mcp + semantic-edit-mcp),
+    // layer; mount bash + the in-process MCP servers (fs-mcp + semantic-edit-mcp),
     // their session cwd seeded to where we're running (resolved once above for [context]).
     let toolbox = Toolbox::bash_and_mcps(cwd)?;
     if autonomous {

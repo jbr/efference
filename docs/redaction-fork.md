@@ -1,4 +1,4 @@
-# The redaction fork — the universal triage gate
+# The redaction fork — triage on every tool result
 
 Every tool result enters the canonical lineage through a fork: a throwaway branch
 that shares a cached prefix with canonical but whose raw content and extraction
@@ -20,8 +20,8 @@ result is peeked once, and only the distillate is appended. Peeking a small resu
 is cheap, and uniformity removes a special case. The payoff is **window economy**
 and cache-chain longevity: the canonical context stays maximally lean. The cost is
 one extra round-trip per result — latency, not tokens — explicitly accepted. The
-north star: **a joy for the agent to use** — it never has to fear reading a whole
-file, because only the relevant parts come back.
+point is agent-facing: the agent never has to fear reading a whole file, because
+only the relevant parts come back (see [positions.md](positions.md)).
 
 ## The `retain` verdict
 
@@ -40,10 +40,10 @@ doesn't re-run what it just disowned — inline dead-end shedding at the source.
 On any failure (the peek errors, or calls something other than `retain`), the
 gate falls back to keep-all. Data is never lost.
 
-## Line numbers are load-bearing
+## Line numbers are the coordinate system
 
-All tool output is line-numbered before it is shown in the fork peek. This is not
-cosmetic: line numbers are the coordinate system `retain(lines=…)` addresses, and
+All tool output is line-numbered before it is shown in the fork peek. Line
+numbers are the coordinate system `retain(lines=…)` addresses, and
 the distillate preserves original numbers across elisions so any kept line maps
 back to the raw. The raw in the log stays pristine; numbering is a render transform
 applied only inside the throwaway branch.
@@ -152,9 +152,9 @@ now" (`retain(all)`). The content reappearing at the tail is correct: the agent
 re-read it, mirroring re-opening a file.
 
 The naive alternative — flipping a committed `WireState` back to `Raw` or a fuller
-distillate — mutates a cached prefix entry and invalidates everything downstream.
-That is the cardinal sin (see [the substrate doc](substrate.md) on cache-prefix
-immutability), so it is rejected. `reread` reuses the universal fork verbatim; only
+distillate — mutates a cached prefix entry and invalidates everything downstream
+(see [log-and-projection.md](log-and-projection.md) on cache-prefix immutability), so it is
+rejected. `reread` reuses the universal fork verbatim; only
 the trigger differs (agent-initiated vs. at-append).
 
 Building `reread` is gated on evidence of over-redaction causing a wrong or
@@ -169,7 +169,7 @@ block 14" describable across the model wire, the TUI, and the control plane.
 
 The **stable `seq`** is used, not a positional wire-index. A positional count
 renumbers on elision or consolidation, which would bust the cache. `seq` is
-immutable and survives compaction; it is a property of the substrate, and `/log`
+immutable and survives compaction; it is a property of the log, and `/log`
 plus `/events` already serialize it. A `BlockId` alias can later hide the
 representation (`seq`, session-prefixed `seq`, short-sha) if needed. Tagging every
 entry uniformly (vs. only tool results) is tracked in the backlog.
