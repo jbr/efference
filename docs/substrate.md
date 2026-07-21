@@ -105,10 +105,15 @@ fn project(log: &[LogEntry]) -> Vec<ApiMessage>
 
 Implemented in `src/project.rs`. A pure deterministic fold over the log that
 produces the Anthropic `messages` array. It coalesces consecutive `ToolResult`
-entries into one user message, omits `is_error: false` for a lean wire, and
-re-renders `Distilled` wire states from their `keep` + `raw` pair. A pre-pass
-over `Mark::Boundary` entries drives the compaction fold; no external parameter
-controls it.
+entries into one user message — and a `User` entry that directly follows them
+merges into that *same* message as `[tool_result…, text]` rather than forming a
+second consecutive user-role message, so role-alternation and byte-stability
+hold when a user turn is appended right after a turn's results (the seam-drain,
+backlog/participation/README.md — the mid-trajectory injection and
+the redirect steer both rely on this shape). It omits `is_error: false` for a
+lean wire and re-renders `Distilled` wire states from their `keep` + `raw` pair.
+A pre-pass over `Mark::Boundary` entries drives the compaction fold; no external
+parameter controls it.
 
 ---
 

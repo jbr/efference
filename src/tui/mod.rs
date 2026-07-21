@@ -88,9 +88,31 @@ pub(crate) enum TuiEvent {
     /// The effective policy + its pending proposals changed (polled from `GET /state`'s
     /// `role` + `proposals`). Drives the sidebar's POLICY section (docs/permissions.md).
     Policy(PolicyView),
+    /// The operator's pace dial / hold overlay changed (polled from `GET /state`'s `pace`,
+    /// docs/tui.md). Loud to the operator (surfaced in the status bar),
+    /// silent to the agent — it is never logged or projected.
+    Pace(PaceView),
+    /// Whether the loop is executing a turn (polled from `GET /state`'s `running`). The
+    /// "is something happening" signal graduated Esc reads to choose pause-vs-swallow
+    /// (docs/tui.md) — reliable through a silent tool, unlike streaming deltas.
+    Running(bool),
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
 }
+
+/// The operator's pace state, as surfaced by `GET /state`'s `pace`
+/// (docs/tui.md). `speed_ms` is the between-turns delay; `held` is the
+/// pause overlay. Operator-view chrome — never part of the transcript.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PaceView {
+    pub speed_ms: u64,
+    pub held: bool,
+}
+
+/// A pace command the operator issues from the TUI (docs/tui.md), sent to
+/// the tokio side which `POST`s it to `/pace`: `(speed_ms, held)`, each optional so a key can move
+/// the speed dial, toggle the hold, or both.
+pub(crate) type PaceCmd = (Option<u64>, Option<bool>);
 
 /// One live background process, as surfaced by `GET /state`'s `processes` array
 /// (the serialized `supervisor::BgView`, docs/supervisor.md). `Serialize` too so the poller
@@ -148,6 +170,10 @@ pub(crate) struct PolicyView {
     pub commands: Vec<PolicyEntry>,
     pub paths: Vec<PolicyEntry>,
     pub tools: Vec<PolicyEntry>,
+    /// The review-level dial (docs/tui.md) from `/state`'s
+    /// `review_level` — who reviews a gated call (`autonomous` / `spotter_human` / `human_only`).
+    /// Read-only here; the interactive gear selector is deferred to the ergonomics pass.
+    pub review_level: Option<String>,
 }
 
 use std::io::{self, stdout};
@@ -191,6 +217,8 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
     let (submit_tx, mut submit_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let (approve_tx, mut approve_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Approval)>();
+    let (pace_tx, mut pace_rx) = tokio::sync::mpsc::unbounded_channel::<PaceCmd>();
+    let (interrupt_tx, mut interrupt_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
 
     // The bridge feeds the UI thread; it ends when the streams close or the UI
     // thread drops the receiver.
@@ -205,6 +233,8 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
         let mut last_procs = String::new();
         let mut last_usage = String::new();
         let mut last_policy = String::new();
+        let mut last_pace: Option<PaceView> = None;
+        let mut last_running: Option<bool> = None;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(400)).await;
             let Ok(body) = poll_client.state().await else {
@@ -250,6 +280,25 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
                     }
                 }
             }
+            // The operator's pace from the same poll (docs/tui.md).
+            // Emit on change so a CLI `efference pace` (or another client) is reflected too.
+            if let Some(pace) = parse_pace(&body)
+                && last_pace != Some(pace)
+            {
+                last_pace = Some(pace);
+                if gate_tx.send(TuiEvent::Pace(pace)).is_err() {
+                    break;
+                }
+            }
+            // Whether the loop is running (docs/tui.md) — graduated Esc reads it.
+            if let Some(running) = parse_running(&body)
+                && last_running != Some(running)
+            {
+                last_running = Some(running);
+                if gate_tx.send(TuiEvent::Running(running)).is_err() {
+                    break;
+                }
+            }
         }
     });
 
@@ -269,14 +318,35 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
         }
     });
 
+    // Pace sender: each pace key issues a `POST /pace` (docs/tui.md).
+    let pace_client = client.clone();
+    let pacer = tokio::spawn(async move {
+        while let Some((speed_ms, held)) = pace_rx.recv().await {
+            let _ = pace_client.pace(speed_ms, held).await;
+        }
+    });
+
+    // Interrupt sender: the hard rung of graduated Esc fires `POST /interrupt`
+    // (docs/tui.md), killing the in-flight tool's process group.
+    let interrupt_client = client.clone();
+    let interrupter = tokio::spawn(async move {
+        while interrupt_rx.recv().await.is_some() {
+            let _ = interrupt_client.interrupt().await;
+        }
+    });
+
     // The crossterm UI loop is blocking — run it off the async runtime.
-    let ui = tokio::task::spawn_blocking(move || ui_loop(rx, submit_tx, approve_tx, theme));
+    let ui = tokio::task::spawn_blocking(move || {
+        ui_loop(rx, submit_tx, approve_tx, pace_tx, interrupt_tx, theme)
+    });
 
     let result = ui.await.context("the TUI thread panicked")?;
     bridge.abort();
     poller.abort();
     sender.abort();
     approver.abort();
+    pacer.abort();
+    interrupter.abort();
     result.context("the TUI event loop failed")
 }
 
@@ -292,18 +362,24 @@ pub async fn run_gallery(theme: Option<String>) -> Result<()> {
     let (submit_tx, submit_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let (approve_tx, approve_rx) =
         tokio::sync::mpsc::unbounded_channel::<(String, crate::frontend::Approval)>();
+    let (pace_tx, pace_rx) = tokio::sync::mpsc::unbounded_channel::<PaceCmd>();
+    let (interrupt_tx, interrupt_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
 
     for entry in gallery::log() {
         let _ = tx.send(TuiEvent::Entry(entry));
     }
 
-    let ui = tokio::task::spawn_blocking(move || ui_loop(rx, submit_tx, approve_tx, theme));
+    let ui = tokio::task::spawn_blocking(move || {
+        ui_loop(rx, submit_tx, approve_tx, pace_tx, interrupt_tx, theme)
+    });
     let result = ui.await.context("the TUI thread panicked")?;
 
     // Hold the far-ends until the UI exits, so the channels stay open for its life.
     drop(tx);
     drop(submit_rx);
     drop(approve_rx);
+    drop(pace_rx);
+    drop(interrupt_rx);
 
     result.context("the TUI event loop failed")
 }
@@ -527,6 +603,27 @@ fn parse_policy(body: &str) -> Option<PolicyView> {
         commands,
         paths,
         tools,
+        // `review_level` sits at the top level of `/state`, not under `role`.
+        review_level: v
+            .get("review_level")
+            .and_then(|l| l.as_str())
+            .map(String::from),
+    })
+}
+
+/// Parse `GET /state`'s `running` bool (docs/tui.md) — is the loop executing a turn.
+fn parse_running(body: &str) -> Option<bool> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    value.get("running")?.as_bool()
+}
+
+/// Parse `GET /state`'s `pace` object into a [`PaceView`] (docs/tui.md).
+fn parse_pace(body: &str) -> Option<PaceView> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let pace = value.get("pace")?;
+    Some(PaceView {
+        speed_ms: pace.get("speed_ms")?.as_u64()?,
+        held: pace.get("held")?.as_bool()?,
     })
 }
 
@@ -638,6 +735,8 @@ fn ui_loop(
     events: Receiver<TuiEvent>,
     submit_tx: tokio::sync::mpsc::UnboundedSender<String>,
     approve_tx: tokio::sync::mpsc::UnboundedSender<(String, crate::frontend::Approval)>,
+    pace_tx: tokio::sync::mpsc::UnboundedSender<PaceCmd>,
+    interrupt_tx: tokio::sync::mpsc::UnboundedSender<()>,
     theme_name: String,
 ) -> io::Result<()> {
     // Build the render context: interactive TTY, sized to the terminal.
@@ -681,7 +780,15 @@ fn ui_loop(
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let mut state = InteractiveState::new(events, submit_tx, approve_tx, render_context, theme);
+    let mut state = InteractiveState::new(
+        events,
+        submit_tx,
+        approve_tx,
+        pace_tx,
+        interrupt_tx,
+        render_context,
+        theme,
+    );
 
     // Event reader thread: blocks on crossterm reads, forwards to a channel.
     let (event_tx, event_rx) = crossbeam_channel::unbounded();

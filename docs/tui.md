@@ -68,6 +68,30 @@ struct LiveTail {
 `project` renders the committed log first, then appends the live tail — in-flight assistant prose as its own turn, each running tool as a result-less exchange. When a committed `LogEntry` arrives, `LiveTail::commit` clears the superseded buffer (assistant prose on `Payload::Assistant`, tool output on `Payload::ToolResult`), mirroring the wire projection's `streamed_*` dedup flags, now structural.
 
 
+## Pending user turns: the delivery indicator
+
+A submitted turn is not lost while a trajectory runs. `submit_composer` pushes the text onto an ordered `pending_turns` queue and reprojects at once; `project` renders each as a **dimmed, `⋯`-marked user turn** after the live tail — the optimistic "handed to the daemon, not yet on the wire" echo. When the matching `User` `LogEntry` streams back via `/events` (that entry *is* `project(log)`, i.e. now on the wire), `handle_event` drops it from the queue by content match, and it re-renders as a normal committed turn. The pending→committed flip is a faithful delivery signal, not cosmetic: it mirrors, on the operator's side, the daemon's mid-trajectory seam-drain (backlog/participation/README.md, [control channel](control-channel.md)).
+
+
+## The pace indicator
+
+The operator's pace (backlog/participation/README.md) is polled from `GET /state`'s `pace` into a `PaceView` and surfaced **loud** in the status bar: a `⏸ HELD` / `⏱ 10s` indicator ahead of the status text whenever the pace is non-default (the default fast-and-unheld state adds no chrome). It is status-bar chrome, never transcript content — pacing never reaches the log or the wire. The transcript keys `+`/`-` step the speed dial along a coarse ladder and `p` toggles the hold, each optimistically updating the local `PaceView` on the keypress (the poll reconciles) and issuing `POST /pace` over a dedicated pace channel. Because a slow pace *is* the window during which the operator has room to read and type, pacing and the mid-trajectory injection compose: the sleep is exactly when a message can be interjected.
+
+
+## Graduated Esc
+
+`Esc` is a **state machine, not a press-count** (backlog/participation/README.md): each press's effect is a pure function of the current state — so there is no counter, no timing debounce, and nothing to reset. Precedence, gentlest first (`handle_escape` in `tui/state.rs`):
+
+1. **not at rest in the composer** (an overlay is open, or focus is in the transcript) → return to the composer (`Esc` is one-directional toward the composer).
+2. **at the composer, held** → **interrupt** the in-flight tool (`POST /interrupt`, killing its process group; a no-op if nothing runs — the one seam pace can't reach).
+3. **at the composer, not held, loop active** → **pause** (set the `held` overlay via `POST /pace {held:true}`; the loop stops at the next seam).
+4. **at the composer, not held, nothing happening** → **swallow** (a silent no-op).
+
+So sitting in the composer while the agent works, *one* `Esc` pauses and a second interrupts — no wasted "return to composer" press; and jamming `Esc` from anywhere still walks return → pause → interrupt. "Loop active" is read from `/state`'s **`running`** flag (unioned with the streaming `pending_request`), which — unlike streaming deltas — stays true through a *silent* long-running tool, so `Esc` can still reach a runaway command. `Esc` only ever *enters* the hold or *fires* the interrupt; resume is the pace layer's job (send a message — submit always resumes — or the `p` key). The hold and interrupt verbs are exactly unit 2's `/pace` and the long-standing `/interrupt`, so this is a TUI-only key binding over existing daemon affordances.
+
+> **Discoverability (ergonomics-pass work).** Pause is now reachable where the operator lives — `Esc` in the composer. The *speed* keys (`+`/`-`) and the `p` hold toggle still live only in transcript-navigation mode, which is hard to find from the composer; they're listed in the `?` help for now. Making the speed dial composer-reachable is left to the ergonomics pass.
+
+
 ## Wiring: two threads, one crossbeam channel
 
 crossterm's event read blocks, so the UI runs on a dedicated OS thread (`tui::ui_loop`). A tokio task (`tui::bridge`) subscribes to `/events` (durable `LogEntry` entries) and `/stream` (ephemeral `assistant_delta` / `tool_output` deltas) over the [transport](transport.md), decodes them into `TuiEvent`s, and forwards them over a crossbeam channel into the UI thread.
@@ -83,7 +107,7 @@ ratatui is immediate-mode, so "streaming" is just mutate-and-redraw: there is no
 
 `tui-textarea` was the intended first cut but is pinned to an older ratatui/unicode-width ecosystem and does not resolve against ratatui 0.30, hence the hand-rolled editor. The seam makes replacing it later surgical.
 
-**Focus model.** Focus lives in one of two *contexts* — the composer or the transcript — and the same physical key takes a context-dependent meaning (`C-p` is "previous line" composing, "previous unit" navigating), the way an editor's motion keys don't stop existing when you leave the buffer. There is no modal toggle: you cross between contexts by *moving*. `↑` at the top of the composer (the `0,0` detent: one press lands at the start of the first line, the next crosses the edge) spills focus into the transcript; `↓` past the last unit falls back into the composer; `Esc` always returns to the composer, one-directionally (jamming it lands you home). In the transcript context every block is a focus **unit** — each prose turn and each exchange — and the focused unit is marked by an accent glyph **`▌`** down its full height (a glyph, not reversed-video, so it shows on any theme and in the snapshot grid). `↑/↓` (or `C-p`/`C-n`) move between units, `Enter` expands a focused collapsible block, and other transcript commands (`r` raw, `t` theme, `?`/`h` help, `g`/`G` top/bottom, `q` quit) are bound here; an unbound key is a clean no-op (typing never leaks into the composer). Submit in the composer drives `POST /turn`; submit while a gate is pending resolves the gate (below); `C-d` on an empty composer quits (shell EOF).
+**Focus model.** Focus lives in one of two *contexts* — the composer or the transcript — and the same physical key takes a context-dependent meaning (`C-p` is "previous line" composing, "previous unit" navigating), the way an editor's motion keys don't stop existing when you leave the buffer. There is no modal toggle: you cross between contexts by *moving*. `↑` at the top of the composer (the `0,0` detent: one press lands at the start of the first line, the next crosses the edge) spills focus into the transcript; `↓` past the last unit falls back into the composer; `Esc` is a graduated *return to steady state* (see [Graduated Esc](#graduated-esc) below) whose first rung returns to the composer. In the transcript context every block is a focus **unit** — each prose turn and each exchange — and the focused unit is marked by an accent glyph **`▌`** down its full height (a glyph, not reversed-video, so it shows on any theme and in the snapshot grid). `↑/↓` (or `C-p`/`C-n`) move between units, `Enter` expands a focused collapsible block, and other transcript commands (`r` raw, `t` theme, `+`/`-` pace, `p` pause, `?`/`h` help, `g`/`G` top/bottom, `q` quit) are bound here; an unbound key is a clean no-op (typing never leaks into the composer). Submit in the composer drives `POST /turn`; submit while a gate is pending resolves the gate (below); `C-d` on an empty composer quits (shell EOF).
 
 
 ## Inline approval gates
@@ -113,7 +137,7 @@ Resolving replaces the inline affordance with the real result (or, on redirect/a
 
 When the terminal is wide enough (≥ a threshold), a **right-docked sidebar** carries the glanceable, self-contained widgets that don't belong in the transcript: `PROCESSES` (the live background processes, off the old bottom strip), `STATS` (token/cache telemetry, off the status bar), and `POLICY`. It is chrome, fed by the `/state` poll (`tui/render_sidebar.rs`), with a `│` dividing it from the transcript; the composer spans the transcript column only, and below the dock threshold the sidebar is hidden (a narrow-mode drawer is future work). Its `Rect` is remembered so `Alt-S` can screenshot just those columns.
 
-`POLICY` renders the effective perimeter — scope, commands, paths, tools — read from `/state`'s `role`. Pending **proposals** (from `/state`'s `proposals`: prefix-promotion, a session's config-write) render *in the same section, in their committed sort position*, flagged with a trailing `⊕` in a muted style — a proposal is a projection of its committed self, so committing it (over `POST /proposals/:seq`) drops the `⊕` in place without reflow. This is the human/orchestrator surface for the config-edit loop (see [permissions](permissions.md)).
+`POLICY` renders the **review level** (`/state`'s `review_level` — who reviews a gated call, read-only here; set it with `efference review-level`, the interactive gear selector deferred to the ergonomics pass) followed by the effective perimeter — scope, commands, paths, tools — read from `/state`'s `role`. Pending **proposals** (from `/state`'s `proposals`: prefix-promotion, a session's config-write) render *in the same section, in their committed sort position*, flagged with a trailing `⊕` in a muted style — a proposal is a projection of its committed self, so committing it (over `POST /proposals/:seq`) drops the `⊕` in place without reflow. This is the human/orchestrator surface for the config-edit loop (see [permissions](permissions.md)).
 
 
 ## Iterating the display without being blind

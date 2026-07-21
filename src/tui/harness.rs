@@ -48,6 +48,10 @@ pub(crate) struct Screenplay<'a> {
     _event_tx: Sender<TuiEvent>,
     _submit_rx: UnboundedReceiver<String>,
     _approve_rx: UnboundedReceiver<(String, Approval)>,
+    _pace_rx: UnboundedReceiver<super::PaceCmd>,
+    /// Held un-underscored so a scenario can assert the hard rung of graduated Esc fired a
+    /// `POST /interrupt` (via [`took_interrupt`](Screenplay::took_interrupt)).
+    interrupt_rx: UnboundedReceiver<()>,
 }
 
 impl Screenplay<'static> {
@@ -68,7 +72,10 @@ impl Screenplay<'static> {
         let (event_tx, event_rx) = unbounded();
         let (submit_tx, submit_rx) = unbounded_channel();
         let (approve_tx, approve_rx) = unbounded_channel();
-        let state = InteractiveState::new(event_rx, submit_tx, approve_tx, rc, theme);
+        let (pace_tx, pace_rx) = unbounded_channel();
+        let (interrupt_tx, interrupt_rx) = unbounded_channel();
+        let state =
+            InteractiveState::new(event_rx, submit_tx, approve_tx, pace_tx, interrupt_tx, rc, theme);
         Self {
             state,
             width,
@@ -77,6 +84,8 @@ impl Screenplay<'static> {
             _event_tx: event_tx,
             _submit_rx: submit_rx,
             _approve_rx: approve_rx,
+            _pace_rx: pace_rx,
+            interrupt_rx,
         }
     }
 }
@@ -146,6 +155,13 @@ impl Screenplay<'_> {
     pub(crate) fn event(&mut self, event: TuiEvent) -> &mut Self {
         self.state.handle_event(event);
         self
+    }
+
+    /// Whether the hard rung of graduated Esc fired a `POST /interrupt` since the last check
+    /// (docs/tui.md) — drains the interrupt channel the UI would have
+    /// sent on.
+    pub(crate) fn took_interrupt(&mut self) -> bool {
+        self.interrupt_rx.try_recv().is_ok()
     }
 
     /// Commit a [`Payload`] to the transcript as the next sequential log entry,
@@ -420,6 +436,8 @@ pub(crate) fn tool_call(name: &str, call_id: &str, input: serde_json::Value) -> 
 mod scenarios {
     use super::{Screenplay, tool_call};
     use crate::log::{Keep, WireState};
+    use crate::tui::{PaceView, TuiEvent};
+    use crossterm::event::{KeyCode, KeyModifiers};
     use ratatui::style::{Color, Modifier};
     use serde_json::json;
 
@@ -895,12 +913,17 @@ mod scenarios {
             }],
             paths: vec![],
             tools: vec![],
+            review_level: Some("human_only".into()),
         }));
 
         let slice = play.sidebar_grid();
         assert!(
             slice.contains("POLICY"),
             "the slice shows the sidebar:\n{slice}"
+        );
+        assert!(
+            slice.contains("human_only"),
+            "the sidebar surfaces the review-level dial:\n{slice}"
         );
         assert!(
             !slice.contains("must NOT appear"),
@@ -973,6 +996,7 @@ mod scenarios {
             ],
             paths: vec![committed(".  rw"), proposed("/refs  r", 9)],
             tools: vec![committed("read"), committed("write")],
+            review_level: None,
         }));
 
         let bar = play.find("⊕").expect("the proposed grant shows a ⊕ marker");
@@ -1169,6 +1193,161 @@ mod scenarios {
             b > r,
             "the user gutter should be a blue accent, got {gutter:?}"
         );
+    }
+
+    /// The seam-drain's operator-facing half (docs/tui.md): a
+    /// submitted turn echoes **immediately** as a pending unit — dimmed, led by a `⋯`
+    /// marker — so a mid-trajectory message never vanishes into the void. When its
+    /// matching `User` entry streams back (the entry *is* on the wire), the echo
+    /// resolves: the marker drops and it renders as a normal committed turn.
+    #[test]
+    fn submitted_turn_echoes_pending_then_resolves_on_commit() {
+        let mut play = Screenplay::new(60, 12);
+        play.type_str("hello there");
+        play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+
+        // The optimistic echo is on screen right away, with the pending marker…
+        assert!(
+            play.find("⋯").is_some(),
+            "the pending marker shows immediately on submit"
+        );
+        let (tx, ty) = play.find("hello there").expect("pending echo text visible");
+        let pending_fg = play.cell(tx, ty).fg;
+
+        // …and the composer was cleared (the text isn't sitting in the input anymore,
+        // only in the transcript echo — one occurrence on screen).
+        // Now the daemon's `/events` delivers the committed User entry.
+        play.user("hello there");
+
+        assert!(
+            play.find("⋯").is_none(),
+            "the pending marker drops once the User entry commits"
+        );
+        let (cx, cy) = play.find("hello there").expect("committed turn present");
+        let committed_fg = play.cell(cx, cy).fg;
+        assert_ne!(
+            pending_fg, committed_fg,
+            "the in-flight echo is dimmed; the committed turn renders in the normal voice"
+        );
+    }
+
+    /// Pace (docs/tui.md) is *loud to the operator, silent to the
+    /// agent*: a held or slowed pace (polled from `/state`) surfaces a `⏸`/`⏱` indicator in the
+    /// status bar, and the default (fast, not held) adds no chrome. Pace never reaches the
+    /// transcript — this is status-bar-only.
+    #[test]
+    fn pace_state_is_loud_in_the_status_bar() {
+        let mut play = Screenplay::new(80, 12);
+        play.user("do a thing");
+
+        // A hold with a retained speed: the indicator shouts HELD and shows the retained pace.
+        play.event(TuiEvent::Pace(PaceView {
+            speed_ms: 10_000,
+            held: true,
+        }));
+        assert!(play.find("HELD").is_some(), "held pace is loud");
+        assert!(play.find("10s").is_some(), "retained speed shown under the hold");
+
+        // Released but still slowed: HELD drops, the ⏱ speed indicator remains.
+        play.event(TuiEvent::Pace(PaceView {
+            speed_ms: 10_000,
+            held: false,
+        }));
+        assert!(play.find("HELD").is_none(), "resume drops the HELD");
+        assert!(play.find("⏱ 10s").is_some(), "slowed-but-running indicator");
+
+        // Default (fast, not held): no pace chrome at all.
+        play.event(TuiEvent::Pace(PaceView {
+            speed_ms: 0,
+            held: false,
+        }));
+        assert!(
+            play.find("HELD").is_none() && play.find("⏱").is_none(),
+            "the default fast pace adds no status chrome"
+        );
+    }
+
+    /// The pace keys drive the daemon control (docs/tui.md): from the
+    /// transcript context, `p` toggles the hold and `+` slows the dial, each optimistically
+    /// reflected in the status bar on the keypress (the `/state` poll later reconciles).
+    #[test]
+    fn pace_keys_toggle_hold_and_slow_the_dial() {
+        let mut play = Screenplay::new(80, 12);
+        play.user("do a thing");
+        // Spill out of the empty composer into transcript command mode, where the pace keys live.
+        play.route_key(KeyCode::Up, KeyModifiers::NONE);
+
+        // `p` pauses.
+        play.route_key(KeyCode::Char('p'), KeyModifiers::NONE);
+        assert!(play.find("HELD").is_some(), "p pauses → HELD");
+
+        // `+` slows the dial one rung (500ms); still held.
+        play.route_key(KeyCode::Char('+'), KeyModifiers::NONE);
+        assert!(
+            play.find("HELD").is_some(),
+            "held survives a speed nudge (recolors resume)"
+        );
+
+        // `p` again resumes; the hold drops.
+        play.route_key(KeyCode::Char('p'), KeyModifiers::NONE);
+        assert!(play.find("HELD").is_none(), "p again resumes");
+    }
+
+    /// Graduated Esc (docs/tui.md) is a **state machine**, not a press-count: each Esc's effect
+    /// follows the current state. From transcript focus it returns to the composer; then, while the
+    /// loop is active, the very next Esc pauses (no wasted "return to composer" press), and a
+    /// further Esc interrupts the in-flight tool.
+    #[test]
+    fn graduated_esc_is_state_driven_return_pause_interrupt() {
+        let none = KeyModifiers::NONE;
+        let mut play = Screenplay::new(80, 12);
+        play.user("do a thing");
+        // The loop is working — the daemon's `/state` poll reports `running: true`.
+        play.event(TuiEvent::Running(true));
+
+        // From transcript navigation, Esc returns to the composer — it does not pause.
+        play.route_key(KeyCode::Up, none);
+        assert!(!play.state.composing, "spilled into navigation");
+        play.route_key(KeyCode::Esc, none);
+        assert!(play.state.composing, "esc returns to the composer");
+        assert!(
+            play.find("HELD").is_none(),
+            "…and does not pause on that press"
+        );
+        assert!(!play.took_interrupt());
+
+        // Now at rest in the composer with the loop active: the very next Esc pauses.
+        play.route_key(KeyCode::Esc, none);
+        assert!(
+            play.find("HELD").is_some(),
+            "esc pauses on the first press from the composer (no wasted press)"
+        );
+        assert!(!play.took_interrupt());
+
+        // Paused: a further Esc interrupts the in-flight tool.
+        play.route_key(KeyCode::Esc, none);
+        assert!(
+            play.took_interrupt(),
+            "esc while held interrupts the in-flight tool"
+        );
+    }
+
+    /// When nothing is happening, Esc at the composer is **swallowed** (docs/tui.md) — it does not
+    /// set a meaningless hold. The pause step is gated on the loop actually being active, so an idle
+    /// Esc is a silent no-op (contrast the active case above).
+    #[test]
+    fn esc_at_an_idle_composer_is_swallowed() {
+        let none = KeyModifiers::NONE;
+        let mut play = Screenplay::new(80, 12);
+        play.user("x");
+        // Default state: not streaming, `running` never reported true → idle.
+        play.route_key(KeyCode::Esc, none);
+        assert!(
+            play.find("HELD").is_none(),
+            "esc at an idle composer does not pause"
+        );
+        assert!(!play.took_interrupt(), "…and does not interrupt");
+        assert!(play.state.composing, "…and stays in the composer");
     }
 
     /// A failed exchange reads as an error via a red `✗` prompt (replacing the

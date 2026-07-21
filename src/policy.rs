@@ -72,6 +72,66 @@ pub enum Verdict {
     Gate,
 }
 
+/// The operator's **review level** (docs/permissions.md): who reviews a
+/// call the deterministic fast-path didn't clear. An ordinal dial of increasing human involvement,
+/// runtime-settable over the control channel (unlike the frozen base config). Orthogonal to pace —
+/// any combination is meaningful (autonomous-but-slow, human-only-and-held). Pause is *not* a
+/// position here; that's the `held` overlay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewLevel {
+    /// No synchronous human: a spotter `Watch`/`Gate` redirects the model to its config
+    /// (`agent::autonomous_gate_message`) instead of blocking on an absent gate.
+    Autonomous,
+    /// The supervised default: fast-path → spotter → human gate.
+    SpotterHuman,
+    /// The human takes the spotter's role **entirely** — skip the spotter (pay no tokens, log no
+    /// `Spot`); every call the fast-path didn't clear goes straight to the human, who both gates it
+    /// and grows the allowlist by hand (the `approve-always-at-prefix` grant).
+    HumanOnly,
+}
+
+impl ReviewLevel {
+    /// Ordinal for lock-free `AtomicU8` storage; also the gear position a UI can present.
+    pub fn as_u8(self) -> u8 {
+        match self {
+            ReviewLevel::Autonomous => 0,
+            ReviewLevel::SpotterHuman => 1,
+            ReviewLevel::HumanOnly => 2,
+        }
+    }
+
+    /// Inverse of [`as_u8`](Self::as_u8); any out-of-range value falls back to the supervised
+    /// default (fail-safe: an unknown ordinal never silently drops to autonomous).
+    pub fn from_u8(n: u8) -> Self {
+        match n {
+            0 => ReviewLevel::Autonomous,
+            2 => ReviewLevel::HumanOnly,
+            _ => ReviewLevel::SpotterHuman,
+        }
+    }
+
+    /// The wire / CLI token (snake_case), for `GET /state`, `POST /review-level`, and `efference
+    /// review-level`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReviewLevel::Autonomous => "autonomous",
+            ReviewLevel::SpotterHuman => "spotter_human",
+            ReviewLevel::HumanOnly => "human_only",
+        }
+    }
+
+    /// Parse the wire / CLI token; `None` if unrecognized (the caller reports a 400 / usage error
+    /// rather than guessing).
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "autonomous" => Some(ReviewLevel::Autonomous),
+            "spotter_human" => Some(ReviewLevel::SpotterHuman),
+            "human_only" => Some(ReviewLevel::HumanOnly),
+            _ => None,
+        }
+    }
+}
+
 /// A filesystem permission a path-bearing tool needs to clear.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Perm {
@@ -669,6 +729,34 @@ fn literal_word(word: &yash_syntax::syntax::Word) -> Option<String> {
 mod tests {
     use super::*;
     use crate::log::CallId;
+
+    /// The review-level dial (docs/permissions.md) round-trips through its
+    /// `u8` ordinal (atomic storage) and its wire token (`/state`, `/review-level`, CLI), and both
+    /// decoders fail *safe* — an unknown ordinal / token never silently becomes `Autonomous`.
+    #[test]
+    fn review_level_round_trips_and_fails_safe() {
+        for level in [
+            ReviewLevel::Autonomous,
+            ReviewLevel::SpotterHuman,
+            ReviewLevel::HumanOnly,
+        ] {
+            assert_eq!(ReviewLevel::from_u8(level.as_u8()), level, "u8 round-trip");
+            assert_eq!(
+                ReviewLevel::parse(level.as_str()),
+                Some(level),
+                "token round-trip"
+            );
+        }
+        // Ordinal is the gear order: Autonomous < SpotterHuman < HumanOnly.
+        assert!(
+            ReviewLevel::Autonomous.as_u8() < ReviewLevel::SpotterHuman.as_u8()
+                && ReviewLevel::SpotterHuman.as_u8() < ReviewLevel::HumanOnly.as_u8()
+        );
+        // Fail-safe: an out-of-range ordinal or unknown token defaults to supervised, never
+        // silently to the unsupervised `Autonomous`.
+        assert_eq!(ReviewLevel::from_u8(99), ReviewLevel::SpotterHuman);
+        assert_eq!(ReviewLevel::parse("nonsense"), None);
+    }
 
     /// Build a [`Config`] whose `commands` set holds the given command-prefix keys.
     fn commands(keys: &[&str]) -> std::collections::BTreeSet<String> {

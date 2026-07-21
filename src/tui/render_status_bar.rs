@@ -21,11 +21,17 @@ impl<'a> InteractiveState<'a> {
 
         // Render the status message from the left margin, truncating by columns
         // (char-safe — the message may contain multi-byte glyphs). A streaming
-        // turn gets a marker prefix.
-        let text = if self.loading.pending_request {
+        // turn gets a marker prefix, and a non-default pace gets a loud `⏸`/`⏱`
+        // indicator ahead of everything (docs/tui.md) so a held or
+        // slowed loop is always legible, even when the sidebar owns the right side.
+        let base = if self.loading.pending_request {
             format!("◍ streaming…  {}", self.ui.debug_message)
         } else {
             self.ui.debug_message.to_string()
+        };
+        let text = match super::state::pace_indicator(self.pace) {
+            Some(ind) => format!("{ind}  {base}"),
+            None => base,
         };
         for (col, ch) in (BASELINE_LEFT_MARGIN..).zip(text.chars()) {
             if col >= area.width {

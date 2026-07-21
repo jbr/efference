@@ -317,20 +317,28 @@ below — the last `Proposed`-lifecycle user. See
 [`../backlog/permissions/session-dir-and-config-as-reviewed-file.md`](../backlog/permissions/session-dir-and-config-as-reviewed-file.md)
 and [`../backlog/permissions/proposal-lifecycle.md`](../backlog/permissions/proposal-lifecycle.md).
 
-## The autonomous flip (`src/agent.rs`, `src/daemon.rs`)
+## The review-level dial (`src/agent.rs`, `src/daemon.rs`)
 
-`serve --autonomous` sets a flag on `Shared` (read at the gate as `shared.autonomous()`, reported on
-`GET /state`) that changes what a *gate* means when there is **no synchronous human** to consult.
-The spotter still runs and can `Clear`; what changes is the residual: a spotter `Watch`/`Gate` no
-longer blocks on an absent human — it becomes an `Approval::Redirect` (`agent::autonomous_gate_message`)
-that hands the call back to the model with the spotter's reason and a pointer to its own per-session
-`config.toml`, the one policy interface it has. The model may then *edit that file* to request the
-access — but that write hits the `is_config_write` carve-out and **still gates**, held for the
-orchestrator-above to review over the control channel. So autonomous mode relocates the human, it
-doesn't remove it: routine gated calls self-resolve (the model finds another path or asks via a config
-edit), and the operator's attention is spent only on the genuine policy-change requests. Enactment
-still requires an operator — the model only gets to *ask*. (With no orchestrator connected, that
-config-write gate simply waits; watcher-escalation is the watch-window's job.)
+**Who reviews a call the fast-path didn't clear** is a runtime dial — a [`ReviewLevel`] ordinal on
+`Shared` (`policy.rs`), set over the control channel (`POST /review-level`, `efference review-level`)
+and reported on `GET /state`, orthogonal to pace (backlog/participation/README.md). Three
+positions of increasing human involvement:
+
+- **`Autonomous`** — no synchronous human. The spotter still runs and can `Clear`; what changes is
+  the residual: a spotter `Watch`/`Gate` no longer blocks on an absent human — it becomes an
+  `Approval::Redirect` (`agent::autonomous_gate_message`) that hands the call back to the model with
+  the spotter's reason and a pointer to its own per-session `config.toml`, the one policy interface it
+  has. The model may *edit that file* to request the access — but that write hits the `is_config_write`
+  carve-out and **still gates**, held for the orchestrator-above. So autonomous mode relocates the
+  human, it doesn't remove it: routine gated calls self-resolve, and the operator's attention is spent
+  only on genuine policy-change requests. (`serve --autonomous` boots into this position.)
+- **`SpotterHuman`** — the supervised default: fast-path → spotter → human gate.
+- **`HumanOnly`** — the human takes the spotter's role **entirely**: the spotter is **skipped**
+  (no model call, no token cost, no `Spot` entry), and every call the fast-path didn't clear goes
+  straight to the human gate. The catch the design turns on: the spotter has *two* jobs — clearing
+  residual calls **and** growing the allowlist (`clear_always` → prefix promotion) — so skipping it
+  can't just be "gate everything," or learning stops. The human inherits both jobs via the gate's
+  **`approve-always-at-prefix`** grant (the `.allow` affordance / a `config_edit` approval decision): a self-authorizing `ConfigChange` committed **directly** (no `Proposed` round-trip — the human *is* the reviewer). That grant works at any human gate, so it improves plain `SpotterHuman` too; `HumanOnly` just relocates the learning to the human rather than losing it.
 
 ## Prefix-promotion: the harness learns its allowlist (`src/policy.rs`, `src/agent.rs`, `src/spotter.rs`)
 

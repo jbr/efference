@@ -55,6 +55,18 @@ pub trait Frontend {
     /// Read the next user turn. `None` = end of input → quit.
     async fn read_user_turn(&mut self) -> Option<String>;
 
+    /// Non-blocking drain of any user turns submitted **while the loop was
+    /// mid-trajectory** (docs/control-channel.md). The loop calls this at
+    /// each inner-loop juncture (after a tool's results land, before the next model
+    /// call) and appends each as a canonical `Payload::User` — the "next possible
+    /// juncture" delivery that keeps a mid-trajectory message from waiting until the
+    /// whole trajectory ends. Returns the queued turns in submission order (blank
+    /// turns filtered); empty when nothing is queued. Default: none — a frontend with
+    /// no out-of-band turn queue never has anything to drain.
+    fn drain_injected_turns(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Gate a pending tool call: approve, abort, or redirect.
     async fn approve(&mut self, call: &ToolCall) -> Approval;
 

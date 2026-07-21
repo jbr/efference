@@ -21,7 +21,7 @@ use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -204,14 +204,41 @@ pub struct Shared {
     /// [`crate::policy::probe_ledger`], maintained incrementally as the loop assesses moves), never on
     /// the wire — like `effective`, behind a lock because the loop mutates it mid-session.
     probes: Mutex<crate::policy::ProbeLedger>,
-    /// **Autonomous mode** (backlog/permissions/session-dir-and-config-as-reviewed-file.md): no
-    /// synchronous human sits at the gate. Set once at boot from `serve --autonomous`; the gate
-    /// reads it ([`Shared::autonomous`]) to turn a spotter `Watch`/`Gate` into a *redirect* —
-    /// handing the decision back to the model, pointing it at its own config file — instead of
-    /// blocking on an absent human. The **config-write** gate is deliberately *not* flipped: a
-    /// session's edit to its config is held for the orchestrator-above to review over the control
-    /// channel, which is the very channel the redirect points at.
-    autonomous: AtomicBool,
+    /// The operator's **review level** (docs/permissions.md), stored as an
+    /// `AtomicU8` ordinal so it is lock-free and **runtime-mutable** (the `POST /review-level` verb,
+    /// not just a boot flag). The loop's cascade reads it ([`Shared::review_level`]) to decide who
+    /// reviews a gated call: `Autonomous` redirects the model instead of blocking on an absent
+    /// human; `SpotterHuman` runs the spotter then the human gate; `HumanOnly` skips the spotter
+    /// entirely and gates straight to the human. Orthogonal to pace. (The **config-write** gate is
+    /// never flipped by this — a session's edit to its own config is always held for the
+    /// orchestrator-above.)
+    review_level: AtomicU8,
+    /// The operator's **pace** dial (docs/control-channel.md): a between-turns
+    /// wall-clock control that is *transparent to the agent*. Pure operator-view state — never a
+    /// log entry, never projected — so a held or slowed loop is byte-identical on the wire to a
+    /// fast one (that, plus timestamps-never-projected, is the invisibility guarantee). Read at the
+    /// seam by [`Shared::pace_at_seam`].
+    pace: Mutex<Pace>,
+    /// Wakes an in-flight [`pace_at_seam`](Shared::pace_at_seam) sleep so a release or a submitted
+    /// turn ends the wait *immediately* rather than after the remaining delay. Fired by
+    /// [`submit_turn`](Shared::submit_turn) (submit ⇒ resume, always) and by a release
+    /// (`set_pace` dropping `held`); a pure speed change or a *hold* does not fire it (those take
+    /// effect at the next seam).
+    pace_interrupt: Notify,
+}
+
+/// The operator's pacing state (docs/control-channel.md): a continuous speed dial
+/// plus a pause **overlay**. `effective_sleep = held ? ∞ : speed` — `held` is an overlay, *not* a
+/// speed value, so the dial retains `speed` while held and releasing returns to the retained speed,
+/// never to zero. Freely adjustable while held and outliving it, so a change made during a pause
+/// "recolors" what resume does.
+#[derive(Clone, Copy, Default)]
+struct Pace {
+    /// The between-turns delay when not held (`0` = as fast as possible, the default).
+    speed: Duration,
+    /// The pause overlay: while set, the effective sleep is infinite (wait at the seam until
+    /// released or a turn is submitted). Retains `speed` underneath.
+    held: bool,
 }
 
 /// Per-session cache/usage telemetry. `last_request_at` is an [`Instant`] (not
@@ -276,7 +303,9 @@ impl Shared {
             role,
             effective: Mutex::new(effective),
             probes: Mutex::new(probes),
-            autonomous: AtomicBool::new(false),
+            review_level: AtomicU8::new(crate::policy::ReviewLevel::SpotterHuman.as_u8()),
+            pace: Mutex::new(Pace::default()),
+            pace_interrupt: Notify::new(),
         });
         (shared, turns_rx)
     }
@@ -490,16 +519,35 @@ impl Shared {
         }
     }
 
-    /// Whether the daemon is in **autonomous mode** — no synchronous human at the gate, so a
-    /// spotter `Watch`/`Gate` redirects the model instead of blocking (the `autonomous` field).
-    /// Relaxed: written once at boot before the loop starts, read on the loop's thread.
-    pub fn autonomous(&self) -> bool {
-        self.autonomous.load(Ordering::Relaxed)
+    /// The current **review level** (docs/permissions.md) — who reviews a
+    /// gated call. Runtime-mutable (the `POST /review-level` verb); read by the loop's cascade and
+    /// reported on `GET /state`. Relaxed ordering: a lone dial with no happens-before tie to other
+    /// state, read on the loop thread and written by a handler thread.
+    pub fn review_level(&self) -> crate::policy::ReviewLevel {
+        crate::policy::ReviewLevel::from_u8(self.review_level.load(Ordering::Relaxed))
     }
 
-    /// Set autonomous mode. Called once by `serve` at boot, before the loop is spawned.
+    /// Set the review level — the runtime `POST /review-level` verb, or `serve --autonomous` at
+    /// boot via [`set_autonomous`](Self::set_autonomous).
+    pub fn set_review_level(&self, level: crate::policy::ReviewLevel) {
+        self.review_level.store(level.as_u8(), Ordering::Relaxed);
+    }
+
+    /// Whether no synchronous human sits at the gate — derived from the review level
+    /// (`Autonomous`). Kept for the `GET /state` `autonomous` field and callers that only care
+    /// about the redirect-vs-block distinction.
+    pub fn autonomous(&self) -> bool {
+        self.review_level() == crate::policy::ReviewLevel::Autonomous
+    }
+
+    /// Set autonomous mode at boot (`serve --autonomous`): maps to the `Autonomous` review level,
+    /// else the supervised default (`SpotterHuman`).
     pub fn set_autonomous(&self, on: bool) {
-        self.autonomous.store(on, Ordering::Relaxed);
+        self.set_review_level(if on {
+            crate::policy::ReviewLevel::Autonomous
+        } else {
+            crate::policy::ReviewLevel::SpotterHuman
+        });
     }
 
     /// Observe one spotter-assessed bash command and pick the prefix to probe for promotion, if any
@@ -541,9 +589,84 @@ impl Shared {
         // the turn is accepted — even before the loop dequeues it (the `/settle` submit race,
         // backlog/permissions/proposal-lifecycle.md).
         self.queued.fetch_add(1, Ordering::SeqCst);
+        // Submit ⇒ resume, always (docs/control-channel.md): drop any hold and wake an
+        // in-flight seam sleep so the message is delivered at the next juncture *immediately*, not
+        // after the remaining paced delay. The retained `speed` is untouched (it recolors later
+        // seams); only the `held` overlay drops.
+        {
+            let mut p = self.pace.lock().unwrap();
+            p.held = false;
+        }
+        self.pace_interrupt.notify_waiters();
         // The receiver lives in the loop's `RemoteFrontend`; a send fails only if
         // the loop has exited, in which case the daemon is shutting down anyway.
         let _ = self.turns_tx.send(text);
+    }
+
+    /// The current pace `(speed, held)` — surfaced on `GET /state` and read by the seam sleep.
+    fn pace_snapshot(&self) -> (Duration, bool) {
+        let p = self.pace.lock().unwrap();
+        (p.speed, p.held)
+    }
+
+    /// Apply an operator pace change (docs/control-channel.md — the `POST /pace` verb):
+    /// set the `speed` dial and/or the `held` overlay, each optional. **Releasing** a hold (`held`
+    /// true → false) wakes an in-flight seam sleep so resume is immediate; a pure speed change or a
+    /// *hold* does not wake it — those take effect at the next seam, per the design (a hold lands at
+    /// the next juncture, letting the in-flight step finish; a speed change outlives the hold and
+    /// recolors resume). Returns the resulting `(speed, held)`.
+    fn set_pace(&self, speed: Option<Duration>, held: Option<bool>) -> (Duration, bool) {
+        let mut wake = false;
+        let result = {
+            let mut p = self.pace.lock().unwrap();
+            if let Some(s) = speed {
+                p.speed = s;
+            }
+            if let Some(h) = held {
+                if p.held && !h {
+                    wake = true; // releasing a hold ends the seam sleep now
+                }
+                p.held = h;
+            }
+            (p.speed, p.held)
+        };
+        if wake {
+            self.pace_interrupt.notify_waiters();
+        }
+        result
+    }
+
+    /// The interruptible between-turns sleep (docs/control-channel.md). Applied at the
+    /// seam — after a step's results land, before the next model call — and **transparent to the
+    /// agent**: it touches no log entry, so a held/slowed loop projects byte-identically to a fast
+    /// one. Waits `effective_sleep = held ? ∞ : speed`, but returns *immediately* if a turn is
+    /// already queued (never pace over pending input) and ends early when the `pace_interrupt` fires
+    /// (a release or a submitted turn). A finite sleep that expires with no input just proceeds.
+    ///
+    /// Lost-wakeup safe: the interrupt future is armed (`enable`) *before* the state is read, so a
+    /// release/submit racing the read still wakes the wait (mirrors [`await_settled`]).
+    ///
+    /// [`await_settled`]: Shared::await_settled
+    pub async fn pace_at_seam(&self) {
+        let interrupt = self.pace_interrupt.notified();
+        tokio::pin!(interrupt);
+        interrupt.as_mut().enable(); // register before reading state, so a racing wake isn't lost
+        // A submitted turn always wins — deliver it now rather than pacing over it.
+        if self.queued.load(Ordering::SeqCst) > 0 {
+            return;
+        }
+        let (speed, held) = self.pace_snapshot();
+        if held {
+            // Infinite hold: wait until released or a turn is submitted, then proceed.
+            interrupt.await;
+        } else if !speed.is_zero() {
+            // Paced: proceed when the delay elapses or an interrupt (submit/release) ends it early.
+            tokio::select! {
+                _ = tokio::time::sleep(speed) => {}
+                _ = interrupt => {}
+            }
+        }
+        // Not held, no delay → proceed at once.
     }
 
     /// The loop dequeued a turn: mark running, then consume the queued count — `running` set
@@ -552,6 +675,17 @@ impl Shared {
     /// [`is_settled`]: Shared::is_settled
     fn dequeued_turn(&self) {
         self.running.store(true, Ordering::SeqCst);
+        self.queued.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    /// A turn was drained mid-trajectory at the injection juncture
+    /// (docs/control-channel.md): consume its `queued` count so `/settle` can
+    /// still settle once the trajectory ends, but leave `running` alone — the loop is already
+    /// running, so unlike [`dequeued_turn`] there's no busy edge to guard. Mirrors only the
+    /// queued-count half of the dequeue.
+    ///
+    /// [`dequeued_turn`]: Shared::dequeued_turn
+    fn injected_turn_dequeued(&self) {
         self.queued.fetch_sub(1, Ordering::SeqCst);
     }
 
@@ -844,6 +978,7 @@ impl Shared {
 
     fn state_json(&self) -> String {
         let pending = self.pending.lock().unwrap().clone();
+        let (pace_speed, pace_held) = self.pace_snapshot();
         let last_seq = self
             .log
             .lock()
@@ -866,9 +1001,25 @@ impl Shared {
         serde_json::json!({
             "last_seq": last_seq,
             "pending_approval": pending,
+            // Whether the loop is executing a turn (vs. parked idle) — the "is something happening"
+            // signal the TUI's graduated Esc reads to decide pause-vs-swallow
+            // (backlog/participation/graduated-esc.md). Unlike streaming deltas, this stays true
+            // through a *silent* long-running tool, so Esc can still reach it.
+            "running": self.running.load(Ordering::SeqCst),
             // Autonomous = no synchronous human at the gate (the orchestrator-above wants to know
             // a subordinate runs unsupervised before it trusts the perimeter it reads below).
+            // Derived from `review_level`; kept for back-compat.
             "autonomous": self.autonomous(),
+            // The review-level dial (docs/permissions.md): who reviews a
+            // gated call — `autonomous` / `spotter_human` / `human_only`. Runtime-settable.
+            "review_level": self.review_level().as_str(),
+            // The operator's pace dial (docs/control-channel.md) — loud to the
+            // operator's clients, silent to the agent (never logged/projected). `speed_ms` is the
+            // between-turns delay; `held` is the pause overlay.
+            "pace": {
+                "speed_ms": pace_speed.as_millis() as u64,
+                "held": pace_held,
+            },
             "role": self.role_json(),
             "pending_notifications": self.pending_notifications(),
             // Async config edits awaiting an orchestrator decision (the prefix-promotion
@@ -954,6 +1105,23 @@ impl Frontend for RemoteFrontend {
         turn
     }
 
+    fn drain_injected_turns(&mut self) -> Vec<String> {
+        // Non-blocking pull of everything queued right now (docs/control-channel.md).
+        // Each drained turn consumes its `queued` count — the loop is already running, so we
+        // only balance the counter (never touch `running`), or `/settle` would read "busy"
+        // forever after the trajectory ends. Blank turns are dropped (still counted): a
+        // mid-trajectory empty submit mirrors the idle path's blank-keep-idling, never landing
+        // an empty `User` entry on the wire.
+        let mut turns = Vec::new();
+        while let Ok(text) = self.turns.try_recv() {
+            self.shared.injected_turn_dequeued();
+            if !text.trim().is_empty() {
+                turns.push(text);
+            }
+        }
+        turns
+    }
+
     async fn approve(&mut self, call: &ToolCall) -> Approval {
         let rx = self.shared.register_pending(call);
         // A dropped sender (shouldn't happen on the live daemon) defaults to abort
@@ -1021,6 +1189,24 @@ struct DecisionBody {
     lifetime: Option<crate::log::Lifetime>,
     #[serde(default)]
     note: Option<String>,
+}
+
+/// Body of `POST /pace` (docs/control-channel.md): an operator pace change. Both
+/// fields optional so a client can set the speed dial, toggle the hold, or both in one call —
+/// `{"speed_ms":10000}` slows, `{"held":true}` pauses, `{"held":false}` resumes.
+#[derive(Deserialize)]
+struct PaceBody {
+    #[serde(default)]
+    speed_ms: Option<u64>,
+    #[serde(default)]
+    held: Option<bool>,
+}
+
+/// Body of `POST /review-level` (docs/permissions.md): the operator sets the
+/// review-level dial to one of `autonomous` / `spotter_human` / `human_only`.
+#[derive(Deserialize)]
+struct ReviewLevelBody {
+    level: String,
 }
 
 #[derive(Deserialize)]
@@ -1130,6 +1316,52 @@ fn router() -> Router {
             shared.interrupt();
             conn.with_status(200)
                 .with_body(r#"{"status":"interrupted"}"#)
+        })
+        // Set the operator's pace dial / hold overlay (docs/control-channel.md).
+        // Operator-view only — never a log entry, so it can't perturb the wire or the cache.
+        // Returns the resulting pace so the client reflects it without a follow-up `/state`.
+        .post("/pace", |mut conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            let body = conn.request_body_string().await.unwrap_or_default();
+            match serde_json::from_str::<PaceBody>(&body) {
+                Ok(p) => {
+                    let (speed, held) =
+                        shared.set_pace(p.speed_ms.map(Duration::from_millis), p.held);
+                    conn.with_status(200).with_body(format!(
+                        r#"{{"speed_ms":{},"held":{}}}"#,
+                        speed.as_millis() as u64,
+                        held
+                    ))
+                }
+                Err(e) => conn
+                    .with_status(400)
+                    .with_body(format!(r#"{{"error":"bad /pace body: {e}"}}"#)),
+            }
+        })
+        // Set the review-level dial (docs/permissions.md): who reviews a
+        // gated call. Runtime-mutable, reported on `GET /state`. Returns the resulting level.
+        .post("/review-level", |mut conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            let body = conn.request_body_string().await.unwrap_or_default();
+            match serde_json::from_str::<ReviewLevelBody>(&body) {
+                Ok(b) => match crate::policy::ReviewLevel::parse(&b.level) {
+                    Some(level) => {
+                        shared.set_review_level(level);
+                        conn.with_status(200)
+                            .with_body(format!(r#"{{"review_level":"{}"}}"#, level.as_str()))
+                    }
+                    None => conn.with_status(400).with_body(
+                        r#"{"error":"level must be autonomous | spotter_human | human_only"}"#,
+                    ),
+                },
+                Err(e) => conn
+                    .with_status(400)
+                    .with_body(format!(r#"{{"error":"bad /review-level body: {e}"}}"#)),
+            }
         })
         // Enqueue an ambient notification into the inbox (docs/inbox.md). 202 — it waits
         // for the next triage gate (Slice C); a client watches /state for the inbox.
@@ -1856,6 +2088,34 @@ mod tests {
         shared.set_autonomous(true);
         assert!(shared.autonomous());
         let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert_eq!(v["autonomous"], true);
+    }
+
+    /// The review-level dial (docs/permissions.md) is runtime-settable and
+    /// reported on `/state`: default `spotter_human`, and `autonomous` is a *derived* mirror of the
+    /// dial (true iff the level is `Autonomous`) — so the two stay consistent.
+    #[test]
+    fn state_reports_the_review_level_dial() {
+        use crate::policy::ReviewLevel;
+        let (shared, _rx) = Shared::new(Log::in_memory());
+
+        // Default: supervised, not autonomous.
+        assert_eq!(shared.review_level(), ReviewLevel::SpotterHuman);
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert_eq!(v["review_level"], "spotter_human");
+        assert_eq!(v["autonomous"], false);
+
+        // HumanOnly: reported, and still not autonomous (a human is at the gate).
+        shared.set_review_level(ReviewLevel::HumanOnly);
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert_eq!(v["review_level"], "human_only");
+        assert_eq!(v["autonomous"], false);
+
+        // Autonomous: the derived mirror flips true.
+        shared.set_review_level(ReviewLevel::Autonomous);
+        assert!(shared.autonomous());
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert_eq!(v["review_level"], "autonomous");
         assert_eq!(v["autonomous"], true);
     }
 
@@ -2724,5 +2984,170 @@ mod tests {
 
         let _ = std::fs::remove_file(&socket);
         let _ = std::fs::remove_file(&log_path);
+    }
+
+    /// `POST /review-level` over the real router + control client (docs/permissions.md):
+    /// a valid level is set and echoed on `/state`; an unknown level is rejected (400) and the dial
+    /// is left untouched.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn review_level_over_the_socket() {
+        let dir = std::env::temp_dir();
+        let log_path = dir.join("efference-review-level-test.jsonl");
+        let socket = dir.join("efference-review-level-test.sock");
+        let _ = std::fs::remove_file(&log_path);
+        let _ = std::fs::remove_file(&socket);
+
+        let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
+        trillium_tokio::config()
+            .with_shared_state(Arc::clone(&shared))
+            .listeners()
+            .bind_uds(&socket)
+            .expect("bind uds")
+            .spawn(router());
+
+        let client = ControlClient::new(&socket);
+        assert_eq!(
+            client.review_level("human_only").await.unwrap(),
+            "human_only"
+        );
+        let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
+        assert_eq!(state["review_level"], "human_only");
+        assert_eq!(state["autonomous"], false, "human_only is not autonomous");
+
+        // An unknown level is rejected and does not move the dial.
+        assert!(client.review_level("wat").await.is_err(), "unknown → error");
+        let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
+        assert_eq!(state["review_level"], "human_only", "unchanged after a 400");
+
+        let _ = std::fs::remove_file(&socket);
+        let _ = std::fs::remove_file(&log_path);
+    }
+
+    /// The seam-drain (docs/control-channel.md): turns submitted while the loop
+    /// is mid-trajectory sit in the turn inbox until the loop drains them at a juncture. The
+    /// non-blocking drain must (a) return every non-blank queued turn in submission order,
+    /// (b) drop blank turns, and (c) balance the `queued` settle-counter for *every* drained
+    /// turn — so once the trajectory ends `/settle` can settle instead of reading "busy"
+    /// forever. Without the counter balance the last assertion fails.
+    #[test]
+    fn drain_injected_turns_delivers_queued_turns_and_balances_settle() {
+        let (shared, turns_rx) = Shared::new(Log::in_memory());
+        let mut frontend = RemoteFrontend {
+            shared: Arc::clone(&shared),
+            turns: turns_rx,
+        };
+
+        // Three turns arrive while the loop is busy (mid-trajectory), one of them blank.
+        shared.submit_turn("first".into());
+        shared.submit_turn("   ".into());
+        shared.submit_turn("second".into());
+        assert!(
+            !shared.is_settled(),
+            "queued turns → not settled while they wait"
+        );
+
+        let drained = frontend.drain_injected_turns();
+        assert_eq!(
+            drained,
+            vec!["first".to_string(), "second".to_string()],
+            "non-blank turns in submission order; the blank one is dropped"
+        );
+        assert!(
+            shared.is_settled(),
+            "every drained turn (blank included) balanced the queued counter, so the loop can settle"
+        );
+
+        // A second drain with nothing queued is an empty, no-op pull.
+        assert!(frontend.drain_injected_turns().is_empty());
+    }
+
+    /// Pace (docs/control-channel.md) is operator-view state: `set_pace` moves the
+    /// speed dial and the hold overlay independently, `held` is an overlay that retains `speed`
+    /// underneath (resume returns to the retained speed, never zero), and `/state` reports both.
+    #[test]
+    fn set_pace_moves_the_dials_and_retains_speed_under_a_hold() {
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        // Default: fast, not held.
+        assert_eq!(shared.pace_snapshot(), (Duration::ZERO, false));
+
+        let (speed, held) = shared.set_pace(Some(Duration::from_secs(10)), Some(true));
+        assert_eq!((speed, held), (Duration::from_secs(10), true));
+
+        // Releasing keeps the retained speed — the overlay drops, the dial does not zero.
+        let (speed, held) = shared.set_pace(None, Some(false));
+        assert_eq!((speed, held), (Duration::from_secs(10), false));
+
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert_eq!(v["pace"]["speed_ms"], 10_000);
+        assert_eq!(v["pace"]["held"], false);
+    }
+
+    /// Default pace never blocks the seam (fast path: no hold, zero speed).
+    #[tokio::test]
+    async fn pace_at_seam_is_a_noop_by_default() {
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        tokio::time::timeout(Duration::from_millis(200), shared.pace_at_seam())
+            .await
+            .expect("default pace does not block the seam");
+    }
+
+    /// A hold blocks the seam indefinitely; a **release** ends it immediately (the resume trigger).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn hold_blocks_the_seam_until_released() {
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        shared.set_pace(None, Some(true)); // hold
+
+        // While held, the seam does not return.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), shared.pace_at_seam())
+                .await
+                .is_err(),
+            "a held seam blocks"
+        );
+
+        // A release from another task wakes the waiting seam.
+        let s2 = Arc::clone(&shared);
+        let seam = tokio::spawn(async move { s2.pace_at_seam().await });
+        tokio::time::sleep(Duration::from_millis(20)).await; // let the seam arm + await
+        shared.set_pace(None, Some(false)); // release
+        tokio::time::timeout(Duration::from_millis(500), seam)
+            .await
+            .expect("release wakes the held seam")
+            .expect("seam task joined");
+    }
+
+    /// Submit ⇒ resume, always: a submitted turn drops the hold, and a queued turn skips the seam
+    /// wait outright (never pace over pending input).
+    #[tokio::test]
+    async fn a_submit_resumes_and_skips_the_seam() {
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        shared.set_pace(None, Some(true));
+        assert!(shared.pace_snapshot().1, "held before submit");
+
+        shared.submit_turn("go".into());
+        assert!(!shared.pace_snapshot().1, "submit dropped the hold");
+
+        // A turn is queued, so the seam returns at once even though we had been held.
+        tokio::time::timeout(Duration::from_millis(200), shared.pace_at_seam())
+            .await
+            .expect("a queued turn ends the seam wait immediately");
+    }
+
+    /// A finite paced sleep is interruptible: a submitted message ends the delay early rather than
+    /// making the operator's steer wait out the remaining pace.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_submit_interrupts_a_finite_paced_sleep() {
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        shared.set_pace(Some(Duration::from_secs(30)), None); // slow, not held
+
+        let s2 = Arc::clone(&shared);
+        let seam = tokio::spawn(async move { s2.pace_at_seam().await });
+        tokio::time::sleep(Duration::from_millis(20)).await; // let the seam enter its sleep
+        shared.submit_turn("urgent".into()); // fires the pace interrupt
+
+        tokio::time::timeout(Duration::from_millis(500), seam)
+            .await
+            .expect("submit ends the 30s paced sleep early")
+            .expect("seam task joined");
     }
 }

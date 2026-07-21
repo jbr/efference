@@ -89,6 +89,47 @@ impl Client {
         self.post("/interrupt", String::new()).await.map(drop)
     }
 
+    /// Set the operator's pace dial / hold overlay (`POST /pace`,
+    /// docs/control-channel.md). Both optional: `speed_ms` sets the between-turns
+    /// delay, `held` toggles the pause. Returns the daemon's resulting `(speed_ms, held)`.
+    /// Operator-view only — the agent never sees it.
+    pub async fn pace(&self, speed_ms: Option<u64>, held: Option<bool>) -> Result<(u64, bool)> {
+        let mut payload = serde_json::Map::new();
+        if let Some(s) = speed_ms {
+            payload.insert("speed_ms".into(), serde_json::json!(s));
+        }
+        if let Some(h) = held {
+            payload.insert("held".into(), serde_json::json!(h));
+        }
+        let resp = self
+            .post("/pace", serde_json::Value::Object(payload).to_string())
+            .await?;
+        let v = serde_json::from_str::<serde_json::Value>(&resp)
+            .map_err(|_| anyhow!("bad /pace response: {resp}"))?;
+        let speed = v.get("speed_ms").and_then(|s| s.as_u64());
+        let held = v.get("held").and_then(|h| h.as_bool());
+        match (speed, held) {
+            (Some(s), Some(h)) => Ok((s, h)),
+            _ => Err(anyhow!("no pace in /pace response: {resp}")),
+        }
+    }
+
+    /// Set the operator's review-level dial (`POST /review-level`,
+    /// docs/permissions.md): `autonomous` / `spotter_human` / `human_only`.
+    /// Returns the daemon's resulting level.
+    pub async fn review_level(&self, level: &str) -> Result<String> {
+        let payload = serde_json::json!({ "level": level });
+        let resp = self.post("/review-level", payload.to_string()).await?;
+        serde_json::from_str::<serde_json::Value>(&resp)
+            .ok()
+            .and_then(|v| {
+                v.get("review_level")
+                    .and_then(|l| l.as_str())
+                    .map(String::from)
+            })
+            .ok_or_else(|| anyhow!("no review_level in response: {resp}"))
+    }
+
     /// Enqueue an ambient notification into the daemon's inbox (`POST /notify`,
     /// docs/inbox.md). `slot` binds it to a logical channel so a later notify on the same
     /// slot supersedes it; `replaces` supersedes a specific pending id. Returns the

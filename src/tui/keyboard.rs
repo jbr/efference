@@ -16,25 +16,12 @@ impl<'a> InteractiveState<'a> {
         key: KeyEvent,
         terminal: &mut Terminal<impl Backend + Write>,
     ) -> bool {
-        // Escape closes help, reverts the theme picker, or — in Normal mode —
-        // returns home to the composer. Esc is *one-directional* (docs/tui.md):
-        // always back toward the keyboard entry, never out into navigation. Entry
-        // into transcript navigation is the composer's `↑`-spill, not a toggle, so
-        // jamming Esc always lands at the composer.
+        // Graduated Esc (docs/tui.md): a state machine, not a press-count — each Esc's effect is a
+        // function of the current state (focus/overlay, held, loop-active), so no counter or timer.
+        // Not-at-rest-composer → return to the composer; then held → interrupt, active → pause,
+        // idle → swallow. See [`handle_escape`](InteractiveState::handle_escape).
         if key.code == KeyCode::Esc {
-            match std::mem::replace(&mut self.ui_mode, UiMode::Normal) {
-                UiMode::Help => {}
-                UiMode::ThemePicker {
-                    saved_theme_name, ..
-                } => {
-                    let _ = self.apply_theme(&saved_theme_name);
-                }
-                UiMode::Normal => {
-                    self.composing = true;
-                    self.viewport.keyboard_cursor = super::state::KeyboardCursor::VirtualTop;
-                    self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
-                }
-            }
+            self.handle_escape();
             return false;
         }
 
@@ -303,6 +290,20 @@ impl<'a> InteractiveState<'a> {
                 };
                 self.ui.debug_message =
                     "Select theme (↑/↓ to navigate, Enter to save, Esc to cancel)".into();
+            }
+
+            // Pace (docs/tui.md): `+`/`-` step the between-turns speed
+            // dial (slower/faster), `p` toggles the pause overlay. Operator-view controls — the
+            // agent never sees the pacing. `Ctrl-p` (previous unit) is matched earlier, so plain
+            // `p` reaches here.
+            (KeyCode::Char('+'), _) | (KeyCode::Char('='), _) => {
+                self.nudge_pace_speed(true);
+            }
+            (KeyCode::Char('-'), _) | (KeyCode::Char('_'), _) => {
+                self.nudge_pace_speed(false);
+            }
+            (KeyCode::Char('p'), _) => {
+                self.toggle_pace_hold();
             }
 
             // Help

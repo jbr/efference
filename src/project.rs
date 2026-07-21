@@ -213,10 +213,16 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
     let mut boundary_cursor = 0;
 
     let mut messages = Vec::new();
-    // `tool_result` blocks coalesce into a single user message: Anthropic groups
-    // the results answering one assistant turn's `tool_use`s into the following
-    // user turn. We accumulate them and flush at the next non-tool-result entry.
-    let mut pending_tool_results: Vec<ApiBlock> = Vec::new();
+    // The content of the user message currently being assembled. `tool_result`
+    // blocks coalesce here (Anthropic groups the results answering one assistant
+    // turn's `tool_use`s into the following user turn), and a `User` entry that
+    // immediately follows them merges into the *same* message rather than forming a
+    // second consecutive user-role message — the seam-drain projection shape
+    // (docs/substrate.md): an injected/redirect user turn appended
+    // right after a turn's `tool_result`s must project as one user message
+    // `[tool_result…, text]`, preserving role-alternation and byte-stability. We
+    // accumulate and flush at the next assistant / boundary / end.
+    let mut pending_user_content: Vec<ApiBlock> = Vec::new();
 
     for entry in log {
         // Inject the summary just before the first non-elided entry that follows
@@ -228,7 +234,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             && entry.seq > boundaries[boundary_cursor].upto
         {
             let b = &boundaries[boundary_cursor];
-            flush_tool_results(&mut pending_tool_results, &mut messages);
+            flush_pending_user(&mut pending_user_content, &mut messages);
             messages.push(ApiMessage {
                 role: Role::User,
                 content: vec![ApiBlock::Text {
@@ -246,18 +252,19 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
 
         match &entry.payload {
             Payload::User(blocks) => {
-                flush_tool_results(&mut pending_tool_results, &mut messages);
-                messages.push(ApiMessage {
-                    role: Role::User,
-                    content: blocks.iter().map(block_to_api).collect(),
-                });
+                // Merge into the pending user message rather than flushing first: a
+                // user turn following this turn's `tool_result`s lands as one message
+                // `[tool_result…, text]` (docs/substrate.md). With
+                // nothing pending this is just a fresh user message, flushed at the
+                // next assistant / boundary / end — byte-identical to a direct push.
+                pending_user_content.extend(blocks.iter().map(block_to_api));
             }
             Payload::Assistant {
                 thinking,
                 text,
                 calls,
             } => {
-                flush_tool_results(&mut pending_tool_results, &mut messages);
+                flush_pending_user(&mut pending_user_content, &mut messages);
                 // Wire order: thinking → text → tool_use (docs/transport.md). Thinking blocks
                 // lead so the replayed signatures sit exactly where the API expects them.
                 let mut content: Vec<ApiBlock> = thinking
@@ -279,7 +286,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
                 });
             }
             Payload::ToolResult { call_id, raw, wire } => {
-                pending_tool_results.push(tool_result_block(entry.seq, call_id, raw, wire))
+                pending_user_content.push(tool_result_block(entry.seq, call_id, raw, wire))
             }
             // Marks are in the elided set (extract_boundaries inserts every
             // Boundary mark's own seq); this arm is only reachable for future
@@ -327,7 +334,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
                     })
                 }));
                 if !blocks.is_empty() {
-                    flush_tool_results(&mut pending_tool_results, &mut messages);
+                    flush_pending_user(&mut pending_user_content, &mut messages);
                     messages.push(ApiMessage {
                         role: Role::User,
                         content: vec![ApiBlock::Text {
@@ -345,7 +352,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
 
     while boundary_cursor < boundaries.len() {
         let b = &boundaries[boundary_cursor];
-        flush_tool_results(&mut pending_tool_results, &mut messages);
+        flush_pending_user(&mut pending_user_content, &mut messages);
         messages.push(ApiMessage {
             role: Role::User,
             content: vec![ApiBlock::Text {
@@ -356,11 +363,11 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
         boundary_cursor += 1;
     }
 
-    flush_tool_results(&mut pending_tool_results, &mut messages);
+    flush_pending_user(&mut pending_user_content, &mut messages);
     messages
 }
 
-fn flush_tool_results(pending: &mut Vec<ApiBlock>, messages: &mut Vec<ApiMessage>) {
+fn flush_pending_user(pending: &mut Vec<ApiBlock>, messages: &mut Vec<ApiMessage>) {
     if !pending.is_empty() {
         messages.push(ApiMessage {
             role: Role::User,
@@ -776,6 +783,73 @@ mod tests {
             messages[1].content.len(),
             2,
             "both tool_results in one message"
+        );
+    }
+
+    /// The seam-drain projection shape (docs/substrate.md): a `User`
+    /// entry appended right after a turn's `tool_result`s projects as **one** user
+    /// message `[tool_result…, text]`, not two consecutive user-role messages —
+    /// preserving role-alternation and byte-stability. This is the shape both the
+    /// mid-trajectory injection and the redirect steer rely on; pinned here so a
+    /// change to the merge breaks a test before it can silently split the wire.
+    #[test]
+    fn user_turn_after_tool_result_merges_into_one_message() {
+        let log = vec![
+            entry(
+                0,
+                0,
+                Payload::Assistant {
+                    thinking: vec![],
+                    text: vec![],
+                    calls: vec![ToolCall {
+                        id: CallId("a".into()),
+                        name: "bash".into(),
+                        input: json!({}),
+                    }],
+                },
+            ),
+            entry(
+                1,
+                0,
+                Payload::ToolResult {
+                    call_id: CallId("a".into()),
+                    raw: RawResult {
+                        content: "tool output".into(),
+                        is_error: false,
+                    },
+                    wire: WireState::Raw,
+                },
+            ),
+            // Injected mid-trajectory (or a redirect steer): a user turn right after
+            // the result, with no assistant between.
+            entry(
+                2,
+                1,
+                Payload::User(vec![ContentBlock::Text("actually, do X instead".into())]),
+            ),
+        ];
+        let messages = project(&log);
+        // assistant(tool_use) · ONE user message carrying [tool_result, text].
+        assert_eq!(
+            messages.len(),
+            2,
+            "the user turn merges into the tool_result message, not a second user message: {messages:#?}"
+        );
+        assert_eq!(messages[1].role, Role::User);
+        assert_eq!(
+            messages[1].content.len(),
+            2,
+            "tool_result then text, in one user message"
+        );
+        assert!(
+            matches!(&messages[1].content[0], ApiBlock::ToolResult { .. }),
+            "tool_result leads (Anthropic requires it first): {:#?}",
+            messages[1].content[0]
+        );
+        assert!(
+            matches!(&messages[1].content[1], ApiBlock::Text { text, .. } if text == "actually, do X instead"),
+            "the injected text follows: {:#?}",
+            messages[1].content[1]
         );
     }
 

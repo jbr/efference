@@ -26,7 +26,7 @@ use crate::log::{
     ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Lifetime, Mark, MarkKind,
     Notification, Origin, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
 };
-use crate::policy::{self, Verdict};
+use crate::policy::{self, ReviewLevel, Verdict};
 use crate::project::place_trailing_cache_breakpoint;
 use crate::spotter::Spotter;
 use crate::supervisor;
@@ -260,9 +260,11 @@ fn aborted(call: &ToolCall) -> Payload {
 
 /// A `tool_result` for a call the user rejected in favor of a redirect message.
 /// Like [`aborted`] it pairs the orphaned `tool_use`; the human's actual words
-/// follow as a separate user turn (the API merges the two consecutive user
-/// messages), so the model reads this as context for the steer that follows
-/// rather than as tool output (docs/README.md).
+/// follow as a separate `Payload::User` entry, which `project` merges into this
+/// result's user message as `[tool_result…, text]` (the same seam-drain merge the
+/// mid-trajectory injection relies on, docs/control-channel.md) — so the
+/// model reads this as context for the steer that follows rather than as tool output
+/// (docs/README.md).
 fn rejected(call: &ToolCall) -> Payload {
     Payload::ToolResult {
         call_id: call.id.clone(),
@@ -320,8 +322,31 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             }
         }
 
-        // Inner loop: keep round-tripping while the model calls tools.
+        // Inner loop: keep round-tripping while the model calls tools. `first_step` skips the
+        // pace sleep on the turn that responds to the just-read user message / escalated event —
+        // pacing is a *between-turns* delay, so it applies to the tool round-trips that follow,
+        // not the first response (docs/control-channel.md).
+        let mut first_step = true;
         loop {
+            // Pace (docs/control-channel.md): the operator's between-turns wall-clock
+            // dial. An interruptible daemon-side sleep at this same juncture, transparent to the
+            // agent (never logged/projected) — a submitted turn or a release ends it immediately,
+            // so the drain below picks up anything that arrived during the wait.
+            if !first_step {
+                shared.pace_at_seam().await;
+            }
+            first_step = false;
+            // Seam-drain (docs/control-channel.md): deliver any user turns
+            // submitted while this trajectory was in flight, at the juncture — after the
+            // last tool's results landed, before the next model call. Each lands as a
+            // canonical `Payload::User` (never the inbox/triage path — a user turn is
+            // undismissable), which `project` merges into the trailing tool_result message
+            // as `[tool_result…, text]`. A turn arriving while the loop is idle still takes
+            // the fast path (the outer `select!`); this only catches mid-trajectory ones.
+            for line in frontend.drain_injected_turns() {
+                turn += 1;
+                shared.append(turn, Payload::User(vec![ContentBlock::Text(line)]))?;
+            }
             // Project, then place the single trailing cache breakpoint just before
             // sending — projection stays pure; the breakpoint walks the tail each
             // request (docs/substrate.md).
@@ -406,6 +431,15 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 } else {
                     match policy::classify(&role, call) {
                         Verdict::Clear => Approval::Approve,
+                        // HumanOnly (docs/permissions.md): the human takes the
+                        // spotter's role *entirely* — skip the spotter (pay no tokens, log no `Spot`)
+                        // and gate straight to the human, who both decides this call and grows the
+                        // allowlist by hand (`approve-always-at-prefix`, the `.allow` grant). Learning
+                        // is relocated to the human, not lost. Autonomous/SpotterHuman fall through to
+                        // the spotter rung below.
+                        Verdict::Gate if shared.review_level() == ReviewLevel::HumanOnly => {
+                            frontend.approve(call).await
+                        }
                         Verdict::Gate => {
                             // Prefix-promotion probe (backlog/permissions/prefix-promotion.md): on a
                             // bash move, observe its recurrence and pick the shortest prefix worth

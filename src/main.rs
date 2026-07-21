@@ -192,6 +192,27 @@ enum Command {
     Settle,
     /// Interrupt a running tool (`POST /interrupt`) — kills its process group.
     Interrupt,
+    /// Set the operator's pace dial / hold overlay (`POST /pace`,
+    /// docs/control-channel.md). Between-turns wall-clock pacing, transparent to the
+    /// agent (never logged or sent to the model). Combine `--speed-ms` with `--hold`/`--resume`.
+    Pace {
+        /// Between-turns delay in milliseconds (0 = as fast as possible).
+        #[arg(long)]
+        speed_ms: Option<u64>,
+        /// Pause at the next between-turns seam; the speed dial is retained underneath.
+        #[arg(long, conflicts_with = "resume")]
+        hold: bool,
+        /// Release a hold — resume at the retained speed.
+        #[arg(long)]
+        resume: bool,
+    },
+    /// Set the review-level dial (`POST /review-level`, docs/permissions.md):
+    /// who reviews a call the fast-path didn't clear.
+    ReviewLevel {
+        /// `autonomous` (spotter redirects the model), `spotter_human` (spotter → human gate), or
+        /// `human_only` (skip the spotter; every gated call goes straight to the human).
+        level: String,
+    },
     /// Post an ambient notification into the daemon's inbox (`POST /notify`, docs/inbox.md).
     /// It waits for the next triage gate; watch `state` for the pending inbox.
     Notify {
@@ -401,6 +422,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         } => approve(client_socket()?, call_id, abort, redirect, wait).await,
         Command::Settle => settle(client_socket()?).await,
         Command::Interrupt => interrupt(client_socket()?).await,
+        Command::Pace {
+            speed_ms,
+            hold,
+            resume,
+        } => pace(client_socket()?, speed_ms, hold, resume).await,
+        Command::ReviewLevel { level } => review_level(client_socket()?, level).await,
         Command::Notify {
             source,
             body,
@@ -613,6 +640,28 @@ async fn pending_call_id(
         .and_then(|id| id.as_str())
         .map(str::to_string)
         .ok_or_else(|| "no pending approval; pass a call id explicitly".into())
+}
+
+async fn pace(socket: PathBuf, speed_ms: Option<u64>, hold: bool, resume: bool) -> CliResult {
+    // `--hold` / `--resume` map to the `held` overlay; absent, only the speed dial (if given)
+    // moves. `conflicts_with` already rejects `--hold --resume`.
+    let held = match (hold, resume) {
+        (true, _) => Some(true),
+        (_, true) => Some(false),
+        _ => None,
+    };
+    let (speed, held) = ControlClient::new(socket).pace(speed_ms, held).await?;
+    println!(
+        "pace: speed {speed}ms, {}",
+        if held { "HELD" } else { "running" }
+    );
+    Ok(())
+}
+
+async fn review_level(socket: PathBuf, level: String) -> CliResult {
+    let set = ControlClient::new(socket).review_level(&level).await?;
+    println!("review level: {set}");
+    Ok(())
 }
 
 async fn interrupt(socket: PathBuf) -> CliResult {

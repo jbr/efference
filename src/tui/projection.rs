@@ -112,12 +112,19 @@ fn toggle(set: &mut HashSet<String>, call_id: &str) -> bool {
 /// *as if invoked*, with a `⏸` marker and an inline affordance where the result
 /// will land, so the gate reads as "after the call, before the result" rather than
 /// a banner divorced from the call it's gating.
+///
+/// `pending_turns` are just-submitted user messages not yet echoed back as committed
+/// `User` log entries (docs/tui.md). They render **after** the
+/// committed log and live tail, dimmed with a `⋯` marker — the optimistic "handed to the
+/// daemon, not yet on the wire" echo — and are dropped as their matching `User` entry
+/// arrives via `/events`.
 pub(crate) fn project(
     log: &[LogEntry],
     live: &LiveTail,
     view: &ViewState,
     pending_call: Option<&str>,
     pending_reason: Option<&str>,
+    pending_turns: &[String],
 ) -> Document<'static> {
     // A result lands in a later entry than the call it answers; index results by
     // `call_id` up front so a call can be paired with its result in one place.
@@ -198,7 +205,44 @@ pub(crate) fn project(
         ));
     }
 
+    // Optimistic echoes of just-submitted turns, last of all (docs/tui.md).
+    for text in pending_turns {
+        nodes.push(pending_turn(text));
+    }
+
     Document::with_nodes(nodes)
+}
+
+/// A just-submitted user turn not yet echoed back as a committed `User` log entry
+/// (docs/tui.md): the user's own voice (the accent gutter), but
+/// **dimmed** and led by a `⋯` marker so the human sees the message landed and is in flight
+/// — "handed to the daemon, not yet on the wire." It resolves to the normal committed
+/// rendering the instant the matching `User` entry arrives via `/events`. Rendered as plain
+/// dimmed lines (not markdown) so the in-flight echo doesn't reflow as it commits.
+fn pending_turn(text: &str) -> DocumentNode<'static> {
+    let mut blocks: Vec<DocumentNode<'static>> = text
+        .lines()
+        .enumerate()
+        .map(|(i, line)| DocumentNode::Paragraph {
+            spans: vec![Span {
+                // The marker leads the first line; continuation lines indent to align.
+                text: format!("{}{line}", if i == 0 { "⋯ " } else { "  " }).into(),
+                style: SpanStyle::Comment,
+                action: None,
+            }],
+        })
+        .collect();
+    // A blank submit can't reach here, but always emit a turn rather than an empty one.
+    if blocks.is_empty() {
+        blocks.push(DocumentNode::Paragraph {
+            spans: vec![Span {
+                text: "⋯ ".into(),
+                style: SpanStyle::Comment,
+                action: None,
+            }],
+        });
+    }
+    turn(Author::User, blocks)
 }
 
 /// Wrap a turn's blocks under its author.
@@ -593,7 +637,9 @@ fn push_mark(nodes: &mut Vec<DocumentNode<'static>>, kind: &MarkKind, note: &str
 
 /// Join text blocks with blank lines so paragraph structure survives. Only `Text` blocks
 /// contribute — thinking blocks render through their own (future) surface, not the prose join.
-fn join_text(blocks: &[ContentBlock]) -> String {
+/// `pub(crate)` so the state layer can match a committed `User` entry against its optimistic
+/// pending echo (docs/tui.md) using the same text extraction.
+pub(crate) fn join_text(blocks: &[ContentBlock]) -> String {
     blocks
         .iter()
         .filter_map(|b| match b {
@@ -660,6 +706,7 @@ mod tests {
             &ViewState::default(),
             None,
             None,
+            &[],
         );
 
         // Top level is a sequence of authored turns: user, then assistant.
@@ -758,6 +805,7 @@ mod tests {
             &ViewState::default(),
             None,
             None,
+            &[],
         );
         let code: String = collect_code(&doc.nodes);
         assert!(
@@ -814,16 +862,16 @@ mod tests {
         let mut view = ViewState::default();
 
         // Default: collapsed.
-        let doc = project(&log, &LiveTail::default(), &view, None, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
         assert_eq!(exchange_level(&doc), TruncationLevel::Brief);
 
         // Expanding persists in the view.
         view.toggle_expanded("toolu_1");
-        let doc = project(&log, &LiveTail::default(), &view, None, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
         assert_eq!(exchange_level(&doc), TruncationLevel::Full);
 
         // A second projection (the streamed-token rebuild) keeps it expanded.
-        let doc = project(&log, &LiveTail::default(), &view, None, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
         assert_eq!(
             exchange_level(&doc),
             TruncationLevel::Full,
@@ -832,7 +880,7 @@ mod tests {
 
         // Toggling back collapses, and that persists too.
         view.toggle_expanded("toolu_1");
-        let doc = project(&log, &LiveTail::default(), &view, None, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
         assert_eq!(exchange_level(&doc), TruncationLevel::Brief);
     }
 
@@ -870,7 +918,7 @@ mod tests {
         let mut view = ViewState::default();
 
         // Default: the distillate, raw hidden, no `· raw` marker on the header.
-        let doc = project(&log, &LiveTail::default(), &view, None, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
         let code = collect_code(&doc.nodes);
         assert!(code.contains("the kept line"), "distillate shown: {code}");
         assert!(
@@ -884,7 +932,7 @@ mod tests {
 
         // Flip to raw: the full raw content, and the header flags the override.
         view.toggle_raw("toolu_9");
-        let doc = project(&log, &LiveTail::default(), &view, None, None);
+        let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
         let code = collect_code(&doc.nodes);
         assert!(code.contains("RAW-NOISE"), "full raw now shown: {code}");
         assert!(
@@ -899,7 +947,7 @@ mod tests {
         live.assistant.push_str("streaming…");
         live.push_tool_output("toolu_1", "partial out");
 
-        let doc = project(&sample_log(), &live, &ViewState::default(), None, None);
+        let doc = project(&sample_log(), &live, &ViewState::default(), None, None, &[]);
         let code = collect_code(&doc.nodes);
         assert!(code.contains("partial out"), "live tool output renders");
 
@@ -935,13 +983,17 @@ mod tests {
         let (_tx, rx) = crossbeam_channel::unbounded();
         let (submit_tx, _submit_rx) = tokio::sync::mpsc::unbounded_channel();
         let (approve_tx, _approve_rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut state = InteractiveState::new(rx, submit_tx, approve_tx, rc, theme);
+        let (pace_tx, _pace_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (interrupt_tx, _interrupt_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut state =
+            InteractiveState::new(rx, submit_tx, approve_tx, pace_tx, interrupt_tx, rc, theme);
         state.document.document = project(
             &sample_log(),
             &LiveTail::default(),
             &ViewState::default(),
             None,
             None,
+            &[],
         );
 
         let mut terminal = Terminal::new(TestBackend::new(80, 60)).unwrap();

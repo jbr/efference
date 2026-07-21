@@ -144,6 +144,22 @@ impl<'a> InteractiveState<'a> {
                 put(buf, x0, y, max_w, "▾ POLICY", header);
                 y += 1;
             }
+            // The review-level dial (docs/tui.md) — who reviews a
+            // gated call. Read-only here; set it with `efference review-level` (the interactive
+            // gear selector is deferred to the ergonomics pass).
+            if let Some(level) = &policy.review_level
+                && y < bottom
+            {
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &format!("review  {level}"),
+                    text,
+                );
+                y += 1;
+            }
             if let Some(scope) = &policy.scope
                 && y < bottom
             {

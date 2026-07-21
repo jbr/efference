@@ -15,12 +15,12 @@ use std::time::Instant;
 use super::theme::InteractiveTheme;
 use super::utils::{find_node_at_path_mut, supports_cursor_shape};
 use crate::frontend::Approval;
-use crate::log::LogEntry;
+use crate::log::{LogEntry, Payload};
 use crate::tui::composer::Composer;
 use crate::tui::document::{Document, DocumentNode, NodePath, TuiAction};
 use crate::tui::projection::{self, LiveTail};
 use crate::tui::render_context::{RenderContext, ThemeError};
-use crate::tui::{BgProc, PendingGate, TuiEvent, UsageStats};
+use crate::tui::{BgProc, PaceCmd, PaceView, PendingGate, TuiEvent, UsageStats};
 use crossbeam_channel::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -31,6 +31,41 @@ const IDLE_STATUS: &str = "efference — q:quit ?:help t:theme  j/k:scroll  ⏎/
 /// panel only renders the last line, and a poll reconciles to the authoritative
 /// snapshot every ~400ms, so this just bounds the gap-filling append.
 const BG_TAIL_CAP: usize = 4096;
+
+/// The between-turns speed rungs the `+`/`-` keys step through (ms)
+/// (docs/tui.md). `0` is as-fast-as-possible; the ladder is coarse on
+/// purpose — a felt "slower/faster," not a precise slider. Tunable in the end-of-sequence ergonomics
+/// pass.
+const PACE_LADDER: &[u64] = &[0, 500, 1_000, 2_000, 5_000, 10_000, 30_000];
+
+/// A short human label for a speed dial value: `fast` at zero, else `2s` / `500ms`.
+fn pace_label(speed_ms: u64, held: bool) -> String {
+    let speed = if speed_ms == 0 {
+        "fast".to_string()
+    } else if speed_ms.is_multiple_of(1000) {
+        format!("{}s", speed_ms / 1000)
+    } else {
+        format!("{speed_ms}ms")
+    };
+    if held {
+        format!("HELD ({speed})")
+    } else {
+        speed
+    }
+}
+
+/// The status-bar pace indicator (docs/tui.md) — loud to the operator.
+/// `None` at the default (fast, not held) so the normal state adds no chrome; a `⏸`/`⏱` glyph marks
+/// held / slowed otherwise.
+pub(super) fn pace_indicator(pace: Option<PaceView>) -> Option<String> {
+    let p = pace?;
+    match (p.held, p.speed_ms) {
+        (false, 0) => None,
+        (true, 0) => Some("⏸ HELD".to_string()),
+        (true, ms) => Some(format!("⏸ HELD · {}", pace_label(ms, false))),
+        (false, ms) => Some(format!("⏱ {}", pace_label(ms, false))),
+    }
+}
 
 /// UI mode — the modal structure of the interface. ferritin's `DevLog` and
 /// `Input` (go-to/search) modes are dropped for the read-only M1 viewer.
@@ -184,11 +219,34 @@ pub(super) struct InteractiveState<'a> {
     pub composing: bool,
     /// Sends a submitted turn to the tokio side, which `POST`s it to the daemon.
     pub submit_tx: UnboundedSender<String>,
+    /// Optimistic echoes of just-submitted user turns, in submission order, not yet
+    /// confirmed by a committed `User` log entry (docs/tui.md).
+    /// `project` renders them dimmed after the live tail; each is dropped when its
+    /// matching `User` entry arrives via `/events` (content match on this ordered
+    /// queue). The delivery indicator: a message never vanishes into the void while a
+    /// trajectory runs, and the pending→committed flip *is* "now on the wire."
+    pub pending_turns: Vec<String>,
     /// The pending tool-approval gate, if any (polled from `GET /state`, M3).
     pub pending_gate: Option<PendingGate>,
     /// Sends an approval decision (`call_id`, decision) to the tokio side, which
     /// resolves it via `POST /approvals/:call_id`.
     pub approve_tx: UnboundedSender<(String, Approval)>,
+    /// Sends a pace command (`speed_ms`, `held`) to the tokio side, which `POST`s it to
+    /// `/pace` (docs/tui.md).
+    pub pace_tx: UnboundedSender<PaceCmd>,
+    /// Fires `POST /interrupt` (the hard rung of graduated Esc, docs/tui.md) — the tokio side kills
+    /// the in-flight tool's process group. A no-op if nothing is running.
+    pub interrupt_tx: UnboundedSender<()>,
+    /// Whether the loop is executing a turn, polled from `GET /state`'s `running` (docs/tui.md).
+    /// Graduated Esc reads it (via [`is_loop_active`](Self::is_loop_active)) to choose
+    /// pause-vs-swallow — reliable through a *silent* long tool, where streaming
+    /// (`pending_request`) reads false.
+    pub loop_running: bool,
+    /// The operator's pace dial / hold overlay, polled from `GET /state`'s `pace`
+    /// (docs/tui.md). `None` until the first poll. Ephemeral chrome —
+    /// surfaced in the status bar (loud to the operator), never in the transcript, and never
+    /// projected (a held/slowed loop is byte-identical on the wire to a fast one).
+    pub pace: Option<PaceView>,
     /// The live background processes (docs/supervisor.md), polled from `GET /state`. Rendered
     /// as a persistent panel above the composer; empty hides it. Ephemeral chrome —
     /// never part of the transcript document, so it never triggers a reproject.
@@ -227,6 +285,8 @@ impl<'a> InteractiveState<'a> {
         events: Receiver<TuiEvent>,
         submit_tx: UnboundedSender<String>,
         approve_tx: UnboundedSender<(String, Approval)>,
+        pace_tx: UnboundedSender<PaceCmd>,
+        interrupt_tx: UnboundedSender<()>,
         render_context: RenderContext,
         theme: InteractiveTheme,
     ) -> Self {
@@ -281,8 +341,13 @@ impl<'a> InteractiveState<'a> {
             composer: Composer::new(),
             composing: true,
             submit_tx,
+            pending_turns: Vec::new(),
             pending_gate: None,
             approve_tx,
+            pace_tx,
+            interrupt_tx,
+            loop_running: false,
+            pace: None,
             processes: Vec::new(),
             usage: None,
             policy: None,
@@ -365,14 +430,144 @@ impl<'a> InteractiveState<'a> {
             return;
         }
 
-        if self.submit_tx.send(text).is_ok() {
+        if self.submit_tx.send(text.clone()).is_ok() {
+            // Echo the message immediately as a pending transcript unit
+            // (docs/tui.md): it's handed to the daemon but not yet a
+            // committed `User` entry, so it renders dimmed until its log entry streams back
+            // via `/events`. Reproject now so the echo appears on this keypress rather than
+            // waiting for the next daemon event.
+            self.pending_turns.push(text);
             self.composer.clear();
             self.ui.debug_message = "sent".into();
             // Follow the new turn as it streams in.
             self.viewport.stuck_to_bottom = true;
+            self.mark_reproject();
         } else {
             self.ui.debug_message = "could not send (daemon gone?)".into();
         }
+    }
+
+    /// Step the between-turns speed dial along [`PACE_LADDER`] and push it to the daemon
+    /// (docs/tui.md — the `+`/`-` keys). `slower` (`+`) moves up the
+    /// ladder, else down toward as-fast-as-possible. The hold overlay is left untouched (a change
+    /// while held recolors resume). Optimistically updates the local pace so the status bar reflects
+    /// it on this keypress; the `/state` poll reconciles.
+    pub(super) fn nudge_pace_speed(&mut self, slower: bool) {
+        let cur = self.pace.map(|p| p.speed_ms).unwrap_or(0);
+        let held = self.pace.map(|p| p.held).unwrap_or(false);
+        // The ladder rung at or just below the current speed, then step off it.
+        let idx = PACE_LADDER.iter().rposition(|&ms| ms <= cur).unwrap_or(0);
+        let next = if slower {
+            PACE_LADDER.get(idx + 1).copied().unwrap_or(cur) // clamp at the slowest rung
+        } else {
+            PACE_LADDER.get(idx.saturating_sub(1)).copied().unwrap_or(0)
+        };
+        let _ = self.pace_tx.send((Some(next), None));
+        self.pace = Some(PaceView {
+            speed_ms: next,
+            held,
+        });
+        self.ui.debug_message = format!("pace · {}", pace_label(next, held)).into();
+        self.dirty = true;
+    }
+
+    /// Toggle the pause overlay and push it to the daemon (docs/tui.md —
+    /// the hold/resume key). The speed dial is retained underneath (resume returns to it).
+    /// Optimistic like [`nudge_pace_speed`](Self::nudge_pace_speed).
+    pub(super) fn toggle_pace_hold(&mut self) {
+        let cur = self.pace.unwrap_or(PaceView {
+            speed_ms: 0,
+            held: false,
+        });
+        let held = !cur.held;
+        let _ = self.pace_tx.send((None, Some(held)));
+        self.pace = Some(PaceView { held, ..cur });
+        self.ui.debug_message = if held {
+            "paused — ⏸ HELD (resume: same key, or send a message)".into()
+        } else {
+            "resumed".into()
+        };
+        self.dirty = true;
+    }
+
+    /// Whether the loop is doing something an Esc could pause or interrupt
+    /// (docs/tui.md): a request is streaming (`pending_request`, event-driven and immediate) **or**
+    /// the daemon reports it is executing a turn (`loop_running`, polled — the signal that survives
+    /// a *silent* long-running tool, where streaming reads false). The union catches both the fast
+    /// edge and the silent middle.
+    fn is_loop_active(&self) -> bool {
+        self.loading.pending_request || self.loop_running
+    }
+
+    /// Graduated Esc (docs/tui.md): a **state machine**, not a press-count — each Esc's effect is a
+    /// function of the current state, so no counter, timer, or reset is needed. Precedence, gentlest
+    /// first:
+    ///
+    /// 1. **not at rest in the composer** (an overlay is open, or focus is in the transcript) →
+    ///    return to the composer.
+    /// 2. **at the composer, held** → interrupt the in-flight tool (`POST /interrupt`).
+    /// 3. **at the composer, not held, loop active** → pause/hold.
+    /// 4. **at the composer, not held, nothing happening** → swallow (Esc has nothing to do).
+    ///
+    /// So sitting in the composer while the agent works, one Esc pauses and a second interrupts;
+    /// and jamming Esc from anywhere still walks return-to-composer → pause → interrupt.
+    pub(super) fn handle_escape(&mut self) {
+        let at_rest_composer = self.composing && matches!(self.ui_mode, UiMode::Normal);
+        if !at_rest_composer {
+            self.normalize_to_composer();
+            return;
+        }
+        let held = self.pace.is_some_and(|p| p.held);
+        if held {
+            self.esc_interrupt();
+        } else if self.is_loop_active() {
+            self.esc_hold();
+        }
+        // else: nothing happening → swallow (a silent no-op, by design).
+    }
+
+    /// Return to the composer's steady state, from anywhere (docs/tui.md) — close an overlay (help /
+    /// theme picker), or from transcript navigation refocus the composer. Esc is one-directional
+    /// toward the composer; this is the gentlest Esc step and the first thing it does when the UI
+    /// isn't already at rest there.
+    fn normalize_to_composer(&mut self) {
+        match std::mem::replace(&mut self.ui_mode, UiMode::Normal) {
+            UiMode::Help => {}
+            UiMode::ThemePicker {
+                saved_theme_name, ..
+            } => {
+                let _ = self.apply_theme(&saved_theme_name);
+            }
+            UiMode::Normal => {
+                self.composing = true;
+                self.viewport.keyboard_cursor = KeyboardCursor::VirtualTop;
+                self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
+            }
+        }
+    }
+
+    /// The pause step of graduated Esc (docs/tui.md): set the `held` overlay (unit 2) and push it to
+    /// the daemon so the loop stops at the next seam. Idempotent (ensures held whatever the current
+    /// pace), optimistic like the pace keys. The hint names both ways forward: another Esc stops a
+    /// running tool now, and typing a message resumes (submit always resumes, unit 2).
+    fn esc_hold(&mut self) {
+        let cur = self.pace.unwrap_or(PaceView {
+            speed_ms: 0,
+            held: false,
+        });
+        let _ = self.pace_tx.send((None, Some(true)));
+        self.pace = Some(PaceView { held: true, ..cur });
+        self.ui.debug_message = "⏸ HELD — esc again to stop the running tool · type to resume".into();
+        self.dirty = true;
+    }
+
+    /// The interrupt step of graduated Esc (docs/tui.md): abort the in-flight tool now — fire
+    /// `POST /interrupt`, which kills the running tool's process group (a no-op if nothing is
+    /// running). Reaches the one seam pace can't (mid-tool).
+    fn esc_interrupt(&mut self) {
+        let _ = self.interrupt_tx.send(());
+        self.ui.debug_message = "interrupting the running tool…".into();
+        self.dirty = true;
     }
 
     /// Apply one inbound event: fold it into the log or live tail and flag what the
@@ -388,6 +583,17 @@ impl<'a> InteractiveState<'a> {
             TuiEvent::Entry(entry) => {
                 // A committed entry supersedes whatever was streamed live for it.
                 self.live.commit(&entry);
+                // A committed user turn resolves its optimistic pending echo
+                // (docs/tui.md): the entry *is* on the wire now
+                // (`project(log)` is exactly what the request sends), so drop the matching
+                // queued echo. First-match on the ordered queue keeps ordering correct even
+                // when the same message was sent twice.
+                if let Payload::User(blocks) = &entry.payload {
+                    let text = projection::join_text(blocks);
+                    if let Some(pos) = self.pending_turns.iter().position(|p| *p == text) {
+                        self.pending_turns.remove(pos);
+                    }
+                }
                 // Entries can arrive out of order across the durable/replay seam;
                 // keep the log sorted by seq so the projection is stable.
                 match self.log.binary_search_by_key(&entry.seq, |e| e.seq) {
@@ -462,6 +668,19 @@ impl<'a> InteractiveState<'a> {
                 self.policy = Some(policy);
                 self.dirty = true;
             }
+            TuiEvent::Pace(pace) => {
+                // Operator-view chrome (the status-bar pace indicator), not transcript content —
+                // update and repaint, no reproject (docs/tui.md). Reconciles
+                // the optimistic update a pace key made with the daemon's authoritative pace.
+                self.pace = Some(pace);
+                self.dirty = true;
+            }
+            TuiEvent::Running(running) => {
+                // Not rendered; it's the "is the loop working" signal graduated Esc reads
+                // (docs/tui.md). No repaint needed — nothing on screen depends on it directly.
+                self.loop_running = running;
+                return false;
+            }
             TuiEvent::Disconnected => return true,
         }
         false
@@ -497,6 +716,7 @@ impl<'a> InteractiveState<'a> {
             &self.view,
             pending_call,
             pending_reason,
+            &self.pending_turns,
         );
         self.viewport.cached_layout = None;
     }
@@ -692,7 +912,9 @@ mod tests {
         let (_etx, erx) = crossbeam_channel::unbounded();
         let (stx, _srx) = tokio::sync::mpsc::unbounded_channel();
         let (atx, arx) = tokio::sync::mpsc::unbounded_channel();
-        let mut s = InteractiveState::new(erx, stx, atx, rc, theme);
+        let (ptx, _prx) = tokio::sync::mpsc::unbounded_channel();
+        let (itx, _irx) = tokio::sync::mpsc::unbounded_channel();
+        let mut s = InteractiveState::new(erx, stx, atx, ptx, itx, rc, theme);
         s.pending_gate = Some(PendingGate {
             call_id: "toolu_1".into(),
             name: "bash".into(),
@@ -818,7 +1040,9 @@ mod tests {
         let (_etx, erx) = crossbeam_channel::unbounded();
         let (stx, mut srx) = tokio::sync::mpsc::unbounded_channel();
         let (atx, mut arx) = tokio::sync::mpsc::unbounded_channel();
-        let mut s = InteractiveState::new(erx, stx, atx, rc, theme);
+        let (ptx, _prx) = tokio::sync::mpsc::unbounded_channel();
+        let (itx, _irx) = tokio::sync::mpsc::unbounded_channel();
+        let mut s = InteractiveState::new(erx, stx, atx, ptx, itx, rc, theme);
         s.submit_composer("hello".into());
         assert_eq!(srx.try_recv().unwrap(), "hello", "went to the turn channel");
         assert!(arx.try_recv().is_err(), "not to the approval channel");
