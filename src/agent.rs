@@ -24,8 +24,8 @@ use crate::distill::{BgVerdict, Distiller};
 use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
-    ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Lifetime, Mark, MarkKind,
-    Notification, Origin, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
+    ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Mark, MarkKind, Notification,
+    Origin, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
 };
 use crate::policy::{self, ReviewLevel, Verdict};
 use crate::project::place_trailing_cache_breakpoint;
@@ -492,7 +492,6 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                                         state: EditState::Proposed,
                                         resolves: None,
                                         change: ConfigChange::Command { command },
-                                        lifetime: Lifetime::Session,
                                         note: format!(
                                             "spotter: `{prefix}` judged safe for all arguments — \
                                              proposed for the allowlist"
@@ -529,11 +528,9 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 // *this* call against the new policy. The call runs only if the changed rule now
                 // clears it — it never rides along unchecked.
                 let approval = match approval {
-                    Approval::ConfigEdit {
-                        change,
-                        lifetime,
-                        note,
-                    } => commit_config_edit(&shared, turn, call, change, lifetime, note)?,
+                    Approval::ConfigEdit { change, note } => {
+                        commit_config_edit(&shared, turn, call, change, note)?
+                    }
                     other => other,
                 };
                 match approval {
@@ -808,28 +805,34 @@ fn config_write_outcome(shared: &Shared, result: RawResult) -> RawResult {
 /// doesn't cover this call, it stays gated (a `Redirect` that tells the model why), so nothing
 /// rides along unchecked.
 ///
-/// A persist failure degrades the grant to session-only (honest: we log what actually took
-/// effect) rather than failing the turn.
+/// **The file gets the grant first, and a failed write fails the grant.** The session's
+/// `config.toml` is the perimeter's readable form — what an operator inspects to see what the
+/// session ran under, and what they copy a useful grant up to the origin template from
+/// (backlog/permissions/session-dir-and-config-as-reviewed-file.md). A grant that folded into
+/// effective policy but never reached the file would be policy in force that the file doesn't
+/// show, the divergence [`crate::config::ConfigFile`] exists to prevent. So the write happens
+/// before the append, and its failure aborts the commit rather than degrading it to something
+/// weaker that still logs a success.
+///
+/// A session with no config file (the built-in default role) is the one exception: there is
+/// nothing to diverge from, so the grant lives in the log fold alone.
 fn commit_config_edit(
     shared: &Shared,
     turn: Turn,
     call: &ToolCall,
     change: ConfigChange,
-    lifetime: Lifetime,
     note: String,
 ) -> std::io::Result<Approval> {
-    let lifetime = match lifetime {
-        Lifetime::Persist => match shared.apply_config_change(&change) {
-            Ok(true) => Lifetime::Persist,
-            // The built-in default config has no file to persist to — session-only.
-            Ok(false) => Lifetime::Session,
-            Err(e) => {
-                eprintln!("config edit: could not persist to the config file: {e}");
-                Lifetime::Session
-            }
-        },
-        Lifetime::Session => Lifetime::Session,
-    };
+    if let Err(e) = shared.apply_config_change(&change) {
+        // Nothing is appended, so effective policy is untouched — the gate stands, and the reason
+        // names the file rather than implying the rule itself was refused.
+        eprintln!("config edit: could not write to the config file: {e}");
+        return Ok(Approval::Redirect(format!(
+            "That grant could not be written to the session's config file, so it was not applied \
+             and this call is still gated. The config file needs attention before policy can \
+             change. Error: {e}"
+        )));
+    }
     // The human upgrading a gate is a *direct* commit — the gesture is the commit, no prior
     // proposal to resolve (backlog/permissions/proposal-lifecycle.md).
     shared.append(
@@ -838,7 +841,6 @@ fn commit_config_edit(
             state: EditState::Committed,
             resolves: None,
             change,
-            lifetime,
             note,
         }),
     )?;
@@ -875,11 +877,63 @@ mod tests {
         }
     }
 
+    /// A committed grant reaches the **file**, not just the log fold
+    /// (backlog/permissions/write-back-every-grant.md). The session's `config.toml` is the
+    /// perimeter's readable form — what an operator inspects, and copies grants up to the origin
+    /// template from — so a grant that folded into effective policy but never appeared there would
+    /// make that artifact an incomplete record. Formatting survives, since the operator reads this
+    /// file by hand.
+    #[test]
+    fn a_committed_grant_is_written_to_the_config_file() {
+        use crate::log::ConfigChange;
+        let path =
+            std::env::temp_dir().join(format!("efference-writeback-{}.toml", std::process::id()));
+        std::fs::write(&path, "# my perimeter\nscope = \"stay in src/\"\n").unwrap();
+        let (shared, _rx) = Shared::with_role(
+            crate::persist::Log::in_memory(),
+            crate::config::LoadedConfig {
+                role: crate::config::Config::default(),
+                source: crate::config::ConfigSource::Path(path.clone()),
+            },
+        );
+        let call = bash_call("npm install");
+
+        let approval = commit_config_edit(
+            &shared,
+            0,
+            &call,
+            ConfigChange::Command {
+                command: "npm".into(),
+            },
+            "ok".into(),
+        )
+        .unwrap();
+        assert_eq!(approval, Approval::Approve);
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("npm"), "the grant is in the file: {text}");
+        assert!(
+            text.contains("# my perimeter"),
+            "the operator's formatting survives: {text}"
+        );
+        // The file and effective policy agree — no divergence between the two live records.
+        assert!(shared.effective_config().commands.contains("npm"));
+        assert!(
+            crate::config::ConfigFile::load(&path)
+                .unwrap()
+                .config()
+                .commands
+                .contains("npm")
+        );
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
     /// Legislating a grant that *covers* the gated call amends the policy and approves the
     /// call (the amended rule clears it on re-classify).
     #[test]
     fn legislate_grants_then_approves_a_covered_call() {
-        use crate::log::{ConfigChange, Lifetime};
+        use crate::log::ConfigChange;
         let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
         let call = bash_call("npm install");
         assert_eq!(
@@ -894,7 +948,6 @@ mod tests {
             ConfigChange::Command {
                 command: "npm".into(),
             },
-            Lifetime::Session,
             "ok".into(),
         )
         .unwrap();
@@ -910,7 +963,7 @@ mod tests {
     /// but the call does **not** ride along — it's re-checked and stays gated (a redirect).
     #[test]
     fn legislate_does_not_let_an_uncovered_call_ride_along() {
-        use crate::log::{ConfigChange, Lifetime};
+        use crate::log::ConfigChange;
         let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
         let call = bash_call("npm install");
 
@@ -921,7 +974,6 @@ mod tests {
             ConfigChange::Tool {
                 name: "read".into(),
             }, // unrelated to the bash call
-            Lifetime::Session,
             "unrelated".into(),
         )
         .unwrap();

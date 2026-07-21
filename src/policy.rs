@@ -1306,7 +1306,7 @@ mod tests {
 
     // --- effective_config: the policy fold over the log's changes ---
 
-    use crate::log::{ConfigChange, ConfigEdit, EditState, Lifetime, LogEntry, Payload, Timestamp};
+    use crate::log::{ConfigChange, ConfigEdit, EditState, LogEntry, Payload, Timestamp};
 
     /// One config edit in a given lifecycle state, as a log entry (seq/turn/at are irrelevant to
     /// the fold — only `state` gates whether the change takes effect).
@@ -1319,7 +1319,6 @@ mod tests {
                 state,
                 resolves: None,
                 change,
-                lifetime: Lifetime::Session,
                 note: String::new(),
             }),
         }

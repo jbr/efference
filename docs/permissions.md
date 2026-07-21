@@ -44,8 +44,9 @@ approval the write lands and fs-watch folds the diff into effective policy. The 
 **not** named in the preamble (that up-front mention drew sessions into probing their own perimeter
 as a first move — a dogfood regression); the session learns the path from the gate-rejection
 message when a move actually strays, keeping the perimeter out of attention until it's relevant. A
-malformed edit fail-closes (the loader rejects it, the last-good policy stands). "Session-only" is thus
-a matter of geography, not a flag. See
+malformed edit fail-closes *and* is reverted, so the file is never left unparseable (below).
+"Session-only" is thus a matter of geography, not a flag — the file is per-session, and every
+committed grant is written to it. See
 [`../backlog/permissions/session-dir-and-config-as-reviewed-file.md`](../backlog/permissions/session-dir-and-config-as-reviewed-file.md).
 
 `GET /state` reports the resolved source *and the full effective policy in force* (scope, watch-for,
@@ -269,8 +270,8 @@ across every `.efference/*/log.jsonl` or one session; `--stance`/`--no-fallback`
 ## The config-edit loop (`src/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/daemon.rs`)
 
 A deny is not a dead-end: the orchestrator can **edit the config** at a gate. A
-`Payload::ConfigEdit` carries one `ConfigChange` (`command` / `path` / `tool` / `scope`) and
-a `Lifetime` (`session` or `persist`). The **effective config** the cascade consults is
+`Payload::ConfigEdit` carries one `ConfigChange` (`command` / `path` / `tool` / `scope`).
+The **effective config** the cascade consults is
 `base config + fold(config-edits)` — `policy::effective_config` is the batch fold (startup /
 resumed log); the daemon then maintains it **incrementally** (`policy::apply_config_change` on
 each `ConfigEdit` append) so a gate reads current policy in O(1). The fold is
@@ -281,11 +282,18 @@ in the file *and* the log lands the same value, and replace-at-key admits *narro
 which append couldn't.
 
 The human upgrades a gate with a fourth `Approval::ConfigEdit` decision. The loop **commits**
-(`agent::commit_config_edit`): append the `Payload::ConfigEdit`, optionally persist it to the
-TOML file (`config::persist_config_change` — a format-preserving `DocumentMut` edit that sets
-the key while leaving every comment and unrelated line untouched, so "yes, always" auto-persist
-is sound for *every* slot, including a single `scope` narrowing), then **re-classify this call
-against the new policy**. It runs only if the changed rule now clears it; otherwise it stays
+(`agent::commit_config_edit`): write the change to the session's config file (`ConfigFile::apply` —
+a format-preserving `DocumentMut` edit that sets the key while leaving every comment and unrelated
+line untouched, so auto-persist is sound for *every* slot, including a single `scope` narrowing),
+append the `Payload::ConfigEdit`, then **re-classify this call against the new policy**.
+
+**The file gets every committed grant, and a failed write fails the grant.** There is no
+session-only tier: the per-session `config.toml` is the perimeter's readable form — what an operator
+inspects to see what a session ran under, and what they copy a useful grant up to the origin
+template from — so a grant in force that the file didn't show would be a divergence between two live
+records. The write therefore precedes the append, and its failure aborts the commit (a redirect
+naming the file) rather than degrading to something weaker that still logs success. A session
+running on the built-in default role has no file, and there the grant lives in the log fold alone. It runs only if the changed rule now clears it; otherwise it stays
 gated (a redirect). The orchestrator changes the *rule*; the mechanism authorizes the *call* —
 nothing rides along unchecked.
 

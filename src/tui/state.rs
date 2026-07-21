@@ -400,12 +400,11 @@ impl<'a> InteractiveState<'a> {
                 // An explicit prefix (`.allow git log`) grants that bash command prefix;
                 // bare `.allow` derives the grant from the gated call (the bash program,
                 // or a structured tool's name). The mechanism re-checks — nothing rides
-                // along unchecked. Session-scoped by default.
+                // along unchecked. Written to the session's config file like any commit.
                 let spec = trimmed.strip_prefix(".allow").unwrap_or("").trim();
                 match Self::allow_change_impl(&gate, spec) {
                     Some(change) => Approval::ConfigEdit {
                         change,
-                        lifetime: crate::log::Lifetime::Session,
                         note: "allowed at the gate".into(),
                     },
                     // Couldn't form a grant (e.g. bare `.allow` on a path-only tool) —

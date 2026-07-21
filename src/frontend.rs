@@ -17,7 +17,7 @@
 //! - [`Frontend::interrupted`] — resolves when the user interrupts a *running*
 //!   tool, so the loop can kill the process group (docs/supervisor.md).
 
-use crate::log::{ConfigChange, Lifetime, ToolCall};
+use crate::log::{ConfigChange, ToolCall};
 
 /// The decision returned by [`Frontend::approve`] (docs/README.md). A typed line is a
 /// *redirect* — the call is rejected and the human's text is fed to the model as
@@ -37,15 +37,11 @@ pub enum Approval {
     Redirect(String),
     /// **Amend policy**, then run this call iff the amended policy now clears it
     /// (backlog/permissions/config-edit.md). The orchestrator's reply at a gate: extend
-    /// the config with a [`ConfigChange`] (session-only or persisted), logged as a
+    /// the config with a [`ConfigChange`], written to the session's config file and logged as a
     /// `Payload::ConfigEdit`. The current call does not "ride along" — the loop re-classifies it
     /// against the new policy and only runs it if it clears, so the mechanism (not the
     /// human's gesture) authorizes the run. `note` is the rationale, for the audit corpus.
-    ConfigEdit {
-        change: ConfigChange,
-        lifetime: Lifetime,
-        note: String,
-    },
+    ConfigEdit { change: ConfigChange, note: String },
 }
 
 /// The interaction boundary. Used generically by the loop (`<F: Frontend>`); not

@@ -128,7 +128,7 @@ Submitting from the composer while a gate is pending resolves it with the same t
 
 - empty → `Approval::Approve`
 - `.abort` → `Approval::Abort`
-- `.allow [prefix]` → `Approval::ConfigEdit` — add a rule, then run the call iff it now clears (the mechanism re-checks; nothing rides along unchecked, see [permissions](permissions.md)). An explicit prefix grants that bash command-prefix; bare `.allow` derives the grant from the gated call (the bash program, or a structured tool's name). Session-scoped.
+- `.allow [prefix]` → `Approval::ConfigEdit` — add a rule, then run the call iff it now clears (the mechanism re-checks; nothing rides along unchecked, see [permissions](permissions.md)). An explicit prefix grants that bash command-prefix; bare `.allow` derives the grant from the gated call (the bash program, or a structured tool's name). Written to the session's `config.toml`, like every committed grant.
 - any other text → `Approval::Redirect(text)`
 
 Resolving replaces the inline affordance with the real result (or, on redirect/abort, an error result), and the call stays in the transcript with that outcome in place of output.

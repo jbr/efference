@@ -294,10 +294,6 @@ pub struct ConfigEdit {
     /// What changed: which slot, and its new value. Replace-at-key — the fold sets the addressed
     /// key, last-write-wins, so replaying a log in order materializes the table deterministically.
     pub change: ConfigChange,
-    /// Whether the edit is session-scoped or was also persisted to the config file. The fold
-    /// ignores this (both take effect this session); it is audit metadata — the answer to "did
-    /// this survive into future boots?".
-    pub lifetime: Lifetime,
     /// The orchestrator's one-line rationale, addressed to the session (and the corpus byproduct:
     /// the labeled `(change, why)` pair for any future distilled approval model).
     pub note: String,
@@ -353,19 +349,6 @@ pub enum ConfigChange {
     /// live scope edit reaches the session as a notification, not a preamble rewrite
     /// (backlog/permissions/config-edit.md).
     Scope { text: String },
-}
-
-/// How long a [`ConfigEdit`] lives (backlog/permissions/config-edit.md). The MVP carries the two
-/// endpoints; turn/time-TTL is deferred (and time-TTL is a determinism hazard — timestamps are
-/// never projected, so it could only gate the recomputed classifier, never the wire).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Lifetime {
-    /// In effect for this session only: a log entry that dies with the daemon.
-    Session,
-    /// Also written back to the role config file, so it survives into future boots. Sound as an
-    /// append because grants are additive (backlog/permissions/config-edit.md).
-    Persist,
 }
 
 /// What the agent chose to do with one notification at a triage gate (docs/inbox.md).

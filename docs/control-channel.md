@@ -37,7 +37,7 @@ Ephemeral control state — a pending approval, current status, live process tai
 **Writes:**
 
 - `POST /turn {text}` → 202. Enqueues a user turn. Returns immediately; submission is decoupled from inference. With `?wait`, the connection is held until the daemon **settles** (the turn reaches a gate or completes) and the response is the resulting `/state` snapshot instead of the 202 — synchronous "submit, read what happened" with no `/state` poll loop.
-- `POST /approvals/{call_id} {decision: approve|abort|redirect|config_edit, message?, change?, lifetime?, note?}` — resolves a pending gate by the tool call's id (`config_edit` carries the `change` + lifetime, see Approval below). With `?wait`, holds until the daemon settles again (the turn's *next* gate or completion) and returns that `/state` — so a multi-gate turn is driven as a clean approve→read loop.
+- `POST /approvals/{call_id} {decision: approve|abort|redirect|config_edit, message?, change?, note?}` — resolves a pending gate by the tool call's id (`config_edit` carries the `change`, see Approval below). With `?wait`, holds until the daemon settles again (the turn's *next* gate or completion) and returns that `/state` — so a multi-gate turn is driven as a clean approve→read loop.
 - `POST /interrupt` — fires the interrupt notifier.
 - `POST /pace {speed_ms?, held?}` → 200, returns the resulting `{speed_ms, held}`. Sets the operator's pace dial and/or hold overlay (backlog/participation/README.md). Both optional: slow, pause, or resume in one call. Reflected in `GET /state`'s `pace`; never touches the log.
 - `POST /review-level {level}` → 200, returns the resulting `{review_level}`. Sets the review-level dial — `autonomous` / `spotter_human` / `human_only` — deciding who reviews a gated call (see [permissions](permissions.md)). Runtime-mutable; reflected in `GET /state`'s `review_level`.
@@ -76,12 +76,12 @@ The loop is pull-shaped and stays that way. It blocks at `read_user_turn()` and 
 
 ## Approval: four-valued, no always-allow
 
-`Approval` is `Approve | Abort | Redirect(String) | ConfigEdit { change, lifetime, note }`.
+`Approval` is `Approve | Abort | Redirect(String) | ConfigEdit { change, note }`.
 
 - **Empty line (or `POST /approvals/{id}` with `decision: approve`)** — run the call, no policy change.
 - **Any other text** — redirect. The call is rejected; the text is sent to the model as the next user turn, steering it without ending the turn.
 - **C-c (or `POST /interrupt`)** — abort. The call is rejected; the turn unwinds.
-- **`decision: config_edit`** — the orchestrator edits the config (backlog/permissions/config-edit.md): one `change` (`command`/`path`/`tool`/`scope`) with a `session` or `persist` `lifetime`. The loop appends a `Payload::ConfigEdit` (folding it into the effective config by replace-at-key), optionally persists it to the TOML file (a format-preserving `DocumentMut` edit), then **re-classifies this call against the new policy** — it runs only if the changed rule now clears it, otherwise it stays gated as a redirect. The human changes the *rule*; the mechanism, not the gesture, authorizes the *call*.
+- **`decision: config_edit`** — the orchestrator edits the config (backlog/permissions/config-edit.md): one `change` (`command`/`path`/`tool`/`scope`). The loop writes it to the session's config file (a format-preserving `DocumentMut` edit — a failed write fails the grant) and appends a `Payload::ConfigEdit` (folding it into the effective config by replace-at-key), then **re-classifies this call against the new policy** — it runs only if the changed rule now clears it, otherwise it stays gated as a redirect. The human changes the *rule*; the mechanism, not the gesture, authorizes the *call*.
 
 There is still no always-allow mode, and `ConfigEdit` is not one: it is a **specific, logged, prunable** change (a named command-prefix / path / tool / the scope), never a blanket "stop asking." A re-classified call is re-checked against the new policy, so nothing rides along unchecked. The gate exists so every command is seen before it runs — a guardrail, not a security posture.
 

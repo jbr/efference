@@ -76,10 +76,10 @@ Resolve a pending approval gate, addressed by the tool call's `tool_use` id
   - `approve` — run the call.
   - `abort` — reject; the turn unwinds.
   - `redirect` — reject; `"message"` is sent to the model as steering text.
-  - `config_edit` — requires `"change"` (a `ConfigChange`), plus optional
-    `"lifetime": "session"|"persist"` (default `session`) and `"note"`. The
-    daemon folds the change into the effective policy and **re-classifies the
-    gated call** against the new policy.
+  - `config_edit` — requires `"change"` (a `ConfigChange`), plus an optional
+    `"note"`. The daemon writes the change to the session's config file, folds
+    it into the effective policy, and **re-classifies the gated call** against
+    the new policy. A failed write fails the grant.
 - `200 {"status":"resolved"}`
 - `?wait` — hold until the turn's *next* gate or completion, then return `/state`.
 - `404 {"error":"no pending approval with that id"}`

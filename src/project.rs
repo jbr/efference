@@ -631,7 +631,7 @@ mod tests {
     /// fails, a config edit has leaked onto the cached prefix (docs/log-and-projection.md).
     #[test]
     fn config_edit_projects_to_nothing() {
-        use crate::log::{ConfigChange, ConfigEdit, EditState, Lifetime};
+        use crate::log::{ConfigChange, ConfigEdit, EditState};
         let without = serde_json::to_string(&project(&sample_log())).unwrap();
 
         for state in [
@@ -649,7 +649,6 @@ mod tests {
                     change: ConfigChange::Command {
                         command: "cargo nextest".into(),
                     },
-                    lifetime: Lifetime::Persist,
                     note: "promoted: standing-safe in scope".into(),
                 }),
             ));

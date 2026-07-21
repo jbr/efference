@@ -472,7 +472,6 @@ impl Shared {
             },
             resolves: Some(seq),
             change,
-            lifetime: crate::log::Lifetime::Session,
             note,
         };
         self.append(self.latest_turn(), Payload::ConfigEdit(edit))?;
@@ -544,12 +543,14 @@ impl Shared {
     }
 
     /// Edit a committed [`ConfigChange`] into the config file, preserving its formatting
-    /// (backlog/permissions/config-edit.md). `Ok(false)` means there was no file to write to (the
-    /// built-in default role) — the grant is still real, it just lives only in the log fold.
-    pub fn apply_config_change(&self, change: &crate::log::ConfigChange) -> std::io::Result<bool> {
+    /// (backlog/permissions/config-edit.md). Every committed grant goes through here, so the file
+    /// stays a complete record of the perimeter the session ran under — the artifact an operator
+    /// reads, and copies grants up to the origin template from. A session with no config file (the
+    /// built-in default role) is a no-op: there is no file to diverge from.
+    pub fn apply_config_change(&self, change: &crate::log::ConfigChange) -> std::io::Result<()> {
         match self.config_file.lock().unwrap().as_mut() {
-            Some(file) => file.apply(change).map(|()| true),
-            None => Ok(false),
+            Some(file) => file.apply(change),
+            None => Ok(()),
         }
     }
 
@@ -1227,12 +1228,12 @@ struct DecisionBody {
     decision: String,
     #[serde(default)]
     message: Option<String>,
-    /// The config-edit payload (`decision: "config_edit"` only) — the change, its lifetime
-    /// (`session`/`persist`, default `session`), and a rationale note (backlog/permissions/config-edit.md).
+    /// The config-edit payload (`decision: "config_edit"` only) — the change and a rationale note
+    /// (backlog/permissions/config-edit.md). A committed change is always written to the session's
+    /// config file, so there is no lifetime to choose; a `lifetime` field from an older client is
+    /// ignored rather than rejected.
     #[serde(default)]
     change: Option<crate::log::ConfigChange>,
-    #[serde(default)]
-    lifetime: Option<crate::log::Lifetime>,
     #[serde(default)]
     note: Option<String>,
 }
@@ -1327,7 +1328,6 @@ fn router() -> Router {
                 "config_edit" => match decision.change {
                     Some(change) => Approval::ConfigEdit {
                         change,
-                        lifetime: decision.lifetime.unwrap_or(crate::log::Lifetime::Session),
                         note: decision.note.unwrap_or_default(),
                     },
                     None => {
@@ -1850,7 +1850,6 @@ pub(crate) fn refresh_and_emit(shared: &Shared) -> Option<Refreshed> {
             state: EditState::Committed,
             resolves: None,
             change,
-            lifetime: crate::log::Lifetime::Persist,
             note: "config file edited".into(),
         };
         if let Err(e) = shared.append(turn, Payload::ConfigEdit(edit)) {
@@ -2219,7 +2218,6 @@ mod tests {
             state: EditState::Committed,
             resolves: None,
             change,
-            lifetime: crate::log::Lifetime::Session,
             note: String::new(),
         })
     }
@@ -2296,7 +2294,6 @@ mod tests {
             state: EditState::Proposed,
             resolves: None,
             change,
-            lifetime: crate::log::Lifetime::Session,
             note: String::new(),
         })
     }
@@ -2342,7 +2339,6 @@ mod tests {
                     change: crate::log::ConfigChange::Command {
                         command: "npm".into(),
                     },
-                    lifetime: crate::log::Lifetime::Session,
                     note: String::new(),
                 }),
             )
@@ -2485,7 +2481,6 @@ mod tests {
                     change: crate::log::ConfigChange::Command {
                         command: "npm".into(),
                     },
-                    lifetime: crate::log::Lifetime::Session,
                     note: String::new(),
                 }),
             )
@@ -2662,15 +2657,16 @@ mod tests {
             .expect("waiter task panicked");
     }
 
-    /// A `config_edit` decision body decodes into its change + lifetime (lowercase wire tags),
-    /// the wire shape the orchestrator posts to upgrade a gate (backlog/permissions/config-edit.md).
+    /// A `config_edit` decision body decodes into its change, the wire shape the orchestrator
+    /// posts to upgrade a gate (backlog/permissions/config-edit.md). A `lifetime` from an older
+    /// client is ignored rather than rejected — every committed change is written to the file now,
+    /// so there is no lifetime left to choose.
     #[test]
     fn config_edit_decision_body_decodes() {
         let body = r#"{"decision":"config_edit","lifetime":"persist","note":"in scope",
                        "change":{"command":{"command":"cargo nextest"}}}"#;
         let d: DecisionBody = serde_json::from_str(body).unwrap();
         assert_eq!(d.decision, "config_edit");
-        assert_eq!(d.lifetime, Some(crate::log::Lifetime::Persist));
         assert_eq!(
             d.change,
             Some(crate::log::ConfigChange::Command {
