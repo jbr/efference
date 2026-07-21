@@ -38,7 +38,7 @@ use trillium_sse::{Eventable, SseConnExt};
 
 use crate::agent;
 use crate::api::{Client, Error, ToolChoice, Usage};
-use crate::config::{ConfigSource, LoadedConfig};
+use crate::config::{ConfigSource, LoadedConfig, Refreshed};
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend};
 use crate::log::{CallId, EditState, LogEntry, Payload, Seq, ToolCall, Turn};
@@ -198,6 +198,13 @@ pub struct Shared {
     ///
     /// [`append`]: Shared::append
     effective: Mutex<Arc<crate::config::Config>>,
+    /// The live config file — the format-preserving document currently on disk plus what it
+    /// validates to (backlog/permissions/config-edit-validation.md). `None` when the role resolved
+    /// to the built-in default (no file to hold). Behind a lock because both the loop thread (a
+    /// committed grant, and the check after an approved config write) and the fs-watch task reach
+    /// it; every path in and out of the file goes through here, which is what keeps "the disk
+    /// always holds the last content that parsed" true of *all* writers rather than some.
+    config_file: Mutex<Option<crate::config::ConfigFile>>,
     /// The prefix-promotion probe ledger (backlog/permissions/prefix-promotion.md): per-prefix
     /// seen-counts + probe votes, the state the descent reads to decide which prefix (if any) to ask
     /// the spotter to vouch for. Derived from the log's `Spot` entries (folded at startup via
@@ -284,6 +291,22 @@ impl Shared {
         // Fold the probe ledger from a resumed log (no-op for a fresh one), then maintain it
         // incrementally as the loop assesses moves (backlog/permissions/prefix-promotion.md).
         let probes = crate::policy::probe_ledger(log.entries());
+        // Open the file the role resolved from, if any. Boot has already loaded and validated it,
+        // so this parses; a failure here is reported and leaves the session file-less (edits stay
+        // in the log fold) rather than aborting a session over a race with an external writer.
+        let config_file = match &role.source {
+            ConfigSource::Path(path) => match crate::config::ConfigFile::load(path) {
+                Ok(file) => Some(file),
+                Err(e) => {
+                    eprintln!(
+                        "[config: could not open {} for editing: {e}]",
+                        path.display()
+                    );
+                    None
+                }
+            },
+            ConfigSource::Default => None,
+        };
         let shared = Arc::new(Self {
             log: Mutex::new(log),
             turns_tx,
@@ -302,6 +325,7 @@ impl Shared {
             supervisor: Mutex::new(Supervisor::new()),
             role,
             effective: Mutex::new(effective),
+            config_file: Mutex::new(config_file),
             probes: Mutex::new(probes),
             review_level: AtomicU8::new(crate::policy::ReviewLevel::SpotterHuman.as_u8()),
             pace: Mutex::new(Pace::default()),
@@ -517,6 +541,28 @@ impl Shared {
             ConfigSource::Path(p) => Some(p),
             ConfigSource::Default => None,
         }
+    }
+
+    /// Edit a committed [`ConfigChange`] into the config file, preserving its formatting
+    /// (backlog/permissions/config-edit.md). `Ok(false)` means there was no file to write to (the
+    /// built-in default role) — the grant is still real, it just lives only in the log fold.
+    pub fn apply_config_change(&self, change: &crate::log::ConfigChange) -> std::io::Result<bool> {
+        match self.config_file.lock().unwrap().as_mut() {
+            Some(file) => file.apply(change).map(|()| true),
+            None => Ok(false),
+        }
+    }
+
+    /// Re-read the config file, adopting it if it parses and reverting it if it does not
+    /// (backlog/permissions/config-edit-validation.md). `None` when there's no file. Both callers
+    /// — the fs-watch task and the loop, right after an approved config write — go through here,
+    /// because the invariant is about the file's state, not about who edited it.
+    pub fn refresh_config(&self) -> Option<crate::config::Refreshed> {
+        self.config_file
+            .lock()
+            .unwrap()
+            .as_mut()
+            .map(|f| f.refresh())
     }
 
     /// The current **review level** (docs/permissions.md) — who reviews a
@@ -1735,44 +1781,65 @@ async fn config_watch_loop(shared: Arc<Shared>, path: PathBuf) {
                 .any(|p| p.file_name().map(|n| n.to_os_string()) == target)
         });
         if touches {
-            reload_and_emit(&shared, &path);
+            refresh_and_emit(&shared);
         }
     }
 }
 
-/// Reload the config file and emit a `Committed` `ConfigEdit` per additive/replace delta against the
-/// current effective policy (backlog/permissions/proposal-lifecycle.md). A reload failure (malformed
-/// edit mid-save, a transient delete during rename) is logged and skipped — we keep the last good
-/// policy rather than failing the daemon. Diffing against *effective* means only genuinely-new
-/// deltas surface, so the harness's own persist write-back is a no-op echo.
-fn reload_and_emit(shared: &Shared, path: &std::path::Path) {
-    let file_config = match crate::config::load(Some(path)) {
-        Ok(loaded) => loaded.role,
-        Err(e) => {
-            // Fail-closed, but **loud**: a config edit that doesn't parse must never be a silent
-            // no-op (backlog/permissions/config-edit-validation.md). The effective policy stays at
-            // last-good; we surface the parse error to the session as a notification so the model
-            // (and the human, via /state) learns its edit didn't take and can fix the file — instead
-            // of thrashing against a wall it believes it already cleared. A stable slot supersedes,
-            // so repeated bad saves collapse to one live notice rather than piling up.
-            eprintln!("[config-watch: reload failed, keeping current policy: {e}]");
+/// Refresh the config file and emit a `Committed` `ConfigEdit` per additive/replace delta against
+/// the current effective policy (backlog/permissions/proposal-lifecycle.md). Diffing against
+/// *effective* means only genuinely-new deltas surface, so the harness's own write-back is a no-op
+/// echo.
+///
+/// A file that doesn't parse is **reverted**, not merely skipped
+/// (backlog/permissions/config-edit-validation.md): the disk always holds the last content that
+/// parsed, so an edit is either adopted or undone-with-a-reason — never approved-but-inert. The
+/// revert is announced on a stable slot, which supersedes, so repeated bad saves collapse to one
+/// live notice rather than piling up.
+///
+/// Returns the outcome so the loop — which calls this synchronously after an approved config write
+/// — can put a rejection in that call's tool result, where the author will actually see it.
+pub(crate) fn refresh_and_emit(shared: &Shared) -> Option<Refreshed> {
+    let outcome = shared.refresh_config()?;
+    let file_config = match outcome {
+        Refreshed::Adopted(config) => config,
+        Refreshed::Reverted { ref error } => {
+            eprintln!("[config: edit did not parse, reverted to last good: {error}]");
             shared.notify(
                 "config".to_string(),
                 format!(
-                    "Your config edit did not take effect — the file no longer parses, so the \
-                     effective policy is unchanged (last good config still in force). Fix it so it \
-                     parses (check that `scope` is a string, not a `[scope]` table, and that keys \
-                     match the schema in the file's header comment). Error: {e}"
+                    "Your config edit did not take effect — it did not parse, so the file has been \
+                     restored to the last valid config and the effective policy is unchanged. \
+                     Re-edit it so it parses (check that `scope` is a string, not a `[scope]` \
+                     table, and that keys match the schema in the file's header comment). \
+                     Error: {error}"
                 ),
                 Some("config-parse-error".to_string()),
                 None,
             );
-            return;
+            return Some(outcome);
+        }
+        Refreshed::RevertFailed { ref error, ref io } => {
+            // The one state the invariant can't reach: the file is invalid and we couldn't put it
+            // back. Say so plainly rather than implying a revert that didn't happen.
+            eprintln!("[config: edit did not parse AND the revert failed: {error} / {io}]");
+            shared.notify(
+                "config".to_string(),
+                format!(
+                    "Your config edit did not parse, and restoring the last valid config also \
+                     failed — the file on disk is currently invalid and the effective policy is \
+                     unchanged (last good config still in force). It needs a human repair. \
+                     Parse error: {error}. Restore error: {io}"
+                ),
+                Some("config-parse-error".to_string()),
+                None,
+            );
+            return Some(outcome);
         }
     };
     let changes = crate::config::diff_changes(&shared.effective_config(), &file_config);
     if changes.is_empty() {
-        return;
+        return Some(Refreshed::Adopted(file_config));
     }
     let turn = shared.latest_turn();
     for change in changes {
@@ -1790,6 +1857,7 @@ fn reload_and_emit(shared: &Shared, path: &std::path::Path) {
             eprintln!("[config-watch: append failed: {e}]");
         }
     }
+    Some(Refreshed::Adopted(file_config))
 }
 
 /// The cache keepalive (docs/log-and-projection.md): a daemon-side timer that fires a
@@ -2128,6 +2196,16 @@ mod tests {
         }
     }
 
+    /// A role that resolved from `path`, so `Shared` opens it as the live [`ConfigFile`] — what
+    /// makes the refresh/revert path reachable in a test without a real daemon boot. The base role
+    /// stays default: the file's contents reach effective policy through a refresh, like any edit.
+    fn file_role(path: &std::path::Path) -> LoadedConfig {
+        LoadedConfig {
+            role: crate::config::Config::default(),
+            source: ConfigSource::Path(path.to_path_buf()),
+        }
+    }
+
     fn allow_grant(program: &str) -> Payload {
         committed_edit(crate::log::ConfigChange::Command {
             command: program.into(),
@@ -2279,7 +2357,7 @@ mod tests {
     /// The fs-watch initiator's core (backlog/permissions/proposal-lifecycle.md): reloading an
     /// edited config file emits a `Committed` edit per delta against effective policy, folding it
     /// in live; a session-visible delta (`scope`) also notifies; re-running against the *same* file
-    /// is a no-op echo (the diff is empty). Tests `reload_and_emit` directly — the synchronous core
+    /// is a no-op echo (the diff is empty). Tests `refresh_and_emit` directly — the synchronous core
     /// the notify thread drives — so there's no filesystem-event timing in the test.
     #[test]
     fn reload_emits_committed_edits_for_file_deltas() {
@@ -2292,14 +2370,16 @@ mod tests {
         )
         .unwrap();
 
-        let (shared, _rx) = Shared::new(Log::in_memory());
+        // The file is opened at construction, but effective policy still starts at the base role —
+        // the fold happens on refresh, exactly as it does for an edit arriving mid-session.
+        let (shared, _rx) = Shared::with_role(Log::in_memory(), file_role(&path));
         assert_eq!(
             classify(&shared.effective_config(), &bash_call("cargo build")),
             Verdict::Gate
         );
 
         // First reload folds the file's grants into effective policy and notifies on the scope.
-        reload_and_emit(&shared, &path);
+        refresh_and_emit(&shared);
         assert_eq!(
             classify(&shared.effective_config(), &bash_call("cargo build")),
             Verdict::Clear
@@ -2315,7 +2395,7 @@ mod tests {
 
         // A second reload against the unchanged file diffs to nothing — the idempotent echo.
         let before = shared.log.lock().unwrap().entries().len();
-        reload_and_emit(&shared, &path);
+        refresh_and_emit(&shared);
         assert_eq!(
             shared.log.lock().unwrap().entries().len(),
             before,
@@ -2325,22 +2405,22 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
     }
 
-    /// A config edit that no longer parses keeps the last-good policy **and** surfaces the parse
-    /// error to the session — the fix for the silent-no-op (backlog/permissions/config-edit-validation.md).
+    /// A config edit that no longer parses keeps the last-good policy, **reverts the file**, and
+    /// surfaces the parse error to the session — the two-outcome rule
+    /// (backlog/permissions/config-edit-validation.md). The revert is what makes the file an
+    /// always-valid artifact: the operator reads it to see the perimeter the session ran under.
     #[test]
-    fn reload_failure_keeps_policy_and_notifies() {
+    fn reload_failure_keeps_policy_reverts_file_and_notifies() {
         use crate::policy::{Verdict, classify};
         let path =
             std::env::temp_dir().join(format!("efference-watch-bad-{}.toml", std::process::id()));
 
-        // A good edit first: grants `cargo`, moves policy off the default gate.
-        std::fs::write(
-            &path,
-            "scope = \"stay in src/\"\n[commands]\ncargo = true\n",
-        )
-        .unwrap();
-        let (shared, _rx) = Shared::new(Log::in_memory());
-        reload_and_emit(&shared, &path);
+        // A good edit first: grants `cargo`, moves policy off the default gate. The comment is
+        // here to prove the revert restores bytes, not a re-render of the parsed config.
+        let good = "# my config\nscope = \"stay in src/\"\n[commands]\ncargo = true\n";
+        std::fs::write(&path, good).unwrap();
+        let (shared, _rx) = Shared::with_role(Log::in_memory(), file_role(&path));
+        refresh_and_emit(&shared);
         assert_eq!(
             classify(&shared.effective_config(), &bash_call("cargo build")),
             Verdict::Clear
@@ -2353,13 +2433,19 @@ mod tests {
             "[scope]\ndefault = \"read\"\n[commands]\ncargo = true\n",
         )
         .unwrap();
-        reload_and_emit(&shared, &path);
+        refresh_and_emit(&shared);
 
         // Effective policy is unchanged (last good still in force) — fail-closed…
         assert_eq!(
             classify(&shared.effective_config(), &bash_call("cargo build")),
             Verdict::Clear,
             "malformed edit keeps last-good policy"
+        );
+        // …the file itself is back to the last content that parsed, byte for byte…
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            good,
+            "the invalid edit is reverted, comments and all"
         );
         // …but NOT silent: a notice on the parse-error slot tells the session its edit didn't take.
         assert!(

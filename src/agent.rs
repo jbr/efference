@@ -17,6 +17,7 @@ use serde_json::Value;
 
 use crate::api::{Client, Error, ToolChoice};
 use crate::bash;
+use crate::config::Refreshed;
 use crate::consolidate;
 use crate::daemon::{Shared, StreamDelta};
 use crate::distill::{BgVerdict, Distiller};
@@ -610,6 +611,20 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         // the fork peek, the wire, and the logged `raw`. An over-cap
                         // result becomes a hard error so the model narrows the call.
                         let result = cap_tool_result(call, result);
+                        // A config write is the one call whose *effect* is decided after it runs
+                        // (backlog/permissions/config-edit-validation.md): the file must always
+                        // parse, so we re-read it here — synchronously, before the result is
+                        // logged — and either adopt the edit or revert it. Reverting turns the
+                        // result into an error carrying the parse failure, so the author learns
+                        // its edit didn't take *in the tool result it's already reading*, rather
+                        // than believing an approved write took effect and thrashing against a
+                        // wall it thinks it cleared. The fs-watch task calls the same refresh, so
+                        // an edit that arrives any other way gets the identical treatment.
+                        let result = if config_write {
+                            config_write_outcome(&shared, result)
+                        } else {
+                            result
+                        };
                         // Distill at append: the canonical wire never carries raw;
                         // `raw` is kept in the log for reversibility (docs/redaction-fork.md).
                         // `ForkPeek` re-enters the model here (the universal triage fork,
@@ -747,6 +762,45 @@ fn autonomous_gate_message(config_path: Option<&Path>, reason: &str) -> String {
     )
 }
 
+/// Decide what an approved config write actually *did*
+/// (backlog/permissions/config-edit-validation.md). Re-reads the file through the same refresh the
+/// fs-watch task uses, so the edit lands in exactly one of two states:
+///
+/// - **adopted** — it parsed; its deltas are already appended as committed `ConfigEdit`s by the
+///   refresh, so the new policy is in force for the very next call. The tool result stands.
+/// - **reverted** — it didn't parse; the file has been restored to the last valid config and the
+///   result becomes an error naming the parse failure.
+///
+/// The hidden third outcome — approved, written, and inert — is what this deletes. Note the
+/// rejection is phrased as a *policy* outcome, not a tool malfunction: a model that reads "the
+/// write failed" invents theories about the tool, where a model that reads "your config didn't
+/// parse, here's the error" fixes the TOML.
+fn config_write_outcome(shared: &Shared, result: RawResult) -> RawResult {
+    match crate::daemon::refresh_and_emit(shared) {
+        Some(Refreshed::Reverted { error }) => RawResult {
+            content: format!(
+                "Your config edit was not adopted: the file did not parse, so it has been restored \
+                 to the last valid config and your effective permissions are unchanged. Nothing \
+                 else about the write failed — the tool wrote the bytes you gave it, they just \
+                 aren't a valid config. Re-read the file (its header comment carries the schema) \
+                 and write a version that parses.\n\nParse error: {error}"
+            ),
+            is_error: true,
+        },
+        Some(Refreshed::RevertFailed { error, io }) => RawResult {
+            content: format!(
+                "Your config edit was not adopted: the file did not parse, and restoring the last \
+                 valid config also failed, so the file on disk is currently invalid. Your \
+                 effective permissions are unchanged. This needs a human to repair the \
+                 file.\n\nParse error: {error}\nRestore error: {io}"
+            ),
+            is_error: true,
+        },
+        // Adopted, or no config file at all — the write stands as reported.
+        Some(Refreshed::Adopted(_)) | None => result,
+    }
+}
+
 /// Legislate a `ConfigEdit` (backlog/permissions/config-edit.md): persist it if asked, append the
 /// `Payload::ConfigEdit` (which folds it into the effective policy), then re-classify the gated call
 /// against the *new* policy. Returns `Approve` iff the amended rule now clears the call — the
@@ -765,16 +819,14 @@ fn commit_config_edit(
     note: String,
 ) -> std::io::Result<Approval> {
     let lifetime = match lifetime {
-        Lifetime::Persist => match shared.config_path() {
-            Some(path) => match crate::config::persist_config_change(path, &change) {
-                Ok(()) => Lifetime::Persist,
-                Err(e) => {
-                    eprintln!("config edit: could not persist to {}: {e}", path.display());
-                    Lifetime::Session
-                }
-            },
+        Lifetime::Persist => match shared.apply_config_change(&change) {
+            Ok(true) => Lifetime::Persist,
             // The built-in default config has no file to persist to — session-only.
-            None => Lifetime::Session,
+            Ok(false) => Lifetime::Session,
+            Err(e) => {
+                eprintln!("config edit: could not persist to the config file: {e}");
+                Lifetime::Session
+            }
         },
         Lifetime::Session => Lifetime::Session,
     };
@@ -910,6 +962,63 @@ mod tests {
         assert!(msg.contains("orchestrator"));
         assert!(msg.contains("network egress"));
         assert!(!msg.contains("config.toml"));
+    }
+
+    /// The gate-time half of the two-outcome rule (backlog/permissions/config-edit-validation.md):
+    /// an approved config write that doesn't parse comes back to the model as an **error naming
+    /// the parse failure**, with the file reverted and policy unchanged — not as the success the
+    /// tool reported. This is the specific defect from session 1784334112726, where an approved
+    /// write reported success, changed nothing, and the model spent ~20 turns against a wall it
+    /// believed it had cleared.
+    #[test]
+    fn a_config_write_that_does_not_parse_is_reverted_and_reported_as_an_error() {
+        let path = std::env::temp_dir().join(format!(
+            "efference-agent-config-{}.toml",
+            std::process::id()
+        ));
+        let good = "# schema in this header\nscope = \"stay in src/\"\n";
+        std::fs::write(&path, good).unwrap();
+        let (shared, _rx) = crate::daemon::Shared::with_role(
+            crate::persist::Log::in_memory(),
+            crate::config::LoadedConfig {
+                role: crate::config::Config::default(),
+                source: crate::config::ConfigSource::Path(path.clone()),
+            },
+        );
+
+        // The model writes the footgun and the tool reports success, as it truthfully did write.
+        std::fs::write(&path, "[scope]\ndefault = \"read\"\n").unwrap();
+        let reported = config_write_outcome(&shared, ok("wrote 2 lines".into()));
+
+        assert!(reported.is_error, "an inert edit is not a success");
+        assert!(
+            reported.content.contains("did not parse"),
+            "names what went wrong: {}",
+            reported.content
+        );
+        assert!(
+            reported.content.contains("scope"),
+            "carries the parse error itself: {}",
+            reported.content
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            good,
+            "the file is back to the last content that parsed"
+        );
+
+        // A valid edit passes straight through — the tool's own result stands.
+        std::fs::write(&path, "scope = \"narrower\"\n").unwrap();
+        let reported = config_write_outcome(&shared, ok("wrote 1 line".into()));
+        assert!(!reported.is_error);
+        assert_eq!(reported.content, "wrote 1 line");
+        assert_eq!(
+            shared.effective_config().scope.as_deref(),
+            Some("narrower"),
+            "an adopted edit is in force for the very next call"
+        );
+
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

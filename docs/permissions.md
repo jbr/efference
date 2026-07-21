@@ -311,11 +311,32 @@ of the config file (the operator editing it externally takes effect live — `co
 diffs the file and emits `Committed` edits); and the **session editing its own config file**, the
 config-as-reviewed-file mechanism that *replaced* the planned `propose_scope` tool — a session
 `write`/`edit` to its `config.toml` is forced to the operator gate (`is_config_write`,
-bypassing fast-path and spotter), and on approval fs-watch folds it; the **autonomous flip**
+bypassing fast-path and spotter), and on approval the loop refreshes the file and folds it; the **autonomous flip**
 (`serve --autonomous`), below; and **prefix-promotion** (the spotter files a `Proposed(Command)`),
 below — the last `Proposed`-lifecycle user. See
 [`../backlog/permissions/session-dir-and-config-as-reviewed-file.md`](../backlog/permissions/session-dir-and-config-as-reviewed-file.md)
 and [`../backlog/permissions/proposal-lifecycle.md`](../backlog/permissions/proposal-lifecycle.md).
+
+**A config edit has two outcomes, never three (`src/config.rs`).** The file is the session's policy
+interface — the operator reads it to see the perimeter the session ran under — so it must never sit
+in a state that doesn't parse, and an edit must never be *approved but inert*. `ConfigFile` holds
+the file as a format-preserving `toml_edit` document plus the `Config` it validates to, under one
+invariant: **the held document is the last content that parsed, and the disk always holds it.** Two
+directions maintain it — `apply` + `sync` (memory → disk) edits a key and writes it out; `refresh`
+(disk → memory) re-reads, *replacing* the held document when it parses (a merge would resurrect
+keys the author deleted) and `sync`ing it back over the file when it doesn't. Reverting is therefore
+not a separate mechanism: it is the same write the harness's own edits use, which is why a revert
+preserves comments and key order rather than re-rendering the file from the parsed struct.
+
+Every way the file can change routes through `refresh`, because the invariant is about the file's
+state and not about who authored it: the fs-watch task calls it on any external edit, and the loop
+calls it **synchronously after an approved config write**, before that call's result is logged. So
+a write that doesn't parse comes back to the model as an error naming the parse failure, with the
+file restored — rather than as the success the tool truthfully reported for bytes that changed
+nothing. That third outcome is the defect this deletes: an approved write that reported success and
+did nothing cost one session ~20 turns against a wall it believed it had cleared. The one state the
+invariant can't reach — the file is invalid *and* the restore failed — is reported as itself
+(`Refreshed::RevertFailed`) rather than claiming a revert that didn't happen.
 
 ## The review-level dial (`src/agent.rs`, `src/daemon.rs`)
 

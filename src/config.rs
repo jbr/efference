@@ -408,6 +408,146 @@ pub fn load(explicit: Option<&Path>) -> Result<LoadedConfig, LoadError> {
     }
 }
 
+/// The live config file: the format-preserving TOML document currently on disk, plus the
+/// [`Config`] it validates to (backlog/permissions/config-edit-validation.md).
+///
+/// ## The invariant
+///
+/// **The held document is the last content that parsed, and the disk always holds it.** The file
+/// is the session's policy interface — the operator reads it to see the perimeter the session ran
+/// under, and copies grants up to the origin template from it — so it must never sit in a state
+/// that doesn't parse. A config edit therefore has exactly two outcomes, never a silent third
+/// ("approved but didn't take"): **adopted**, or **rejected and reverted with the reason**.
+///
+/// Two directions maintain that invariant, and reverting is not a separate mechanism — it is the
+/// same [`sync`] the harness's own edits use:
+///
+/// - [`apply`] + [`sync`] (memory → disk): mutate the document at a key, write it out.
+/// - [`refresh`] (disk → memory): re-read. On a parse, **replace** the held document wholesale (a
+///   merge would resurrect keys the author deleted). On a failure, [`sync`] the last-good document
+///   back over the file.
+///
+/// Holding [`DocumentMut`] rather than the file's text is what makes [`apply`] format-preserving
+/// without a re-read, and what makes an unmodified document round-trip to its original bytes —
+/// every comment, key order, and blank line survives both an edit and a revert. That matters
+/// concretely: the parse-error message tells the model to consult the schema header comment, so a
+/// revert that dropped comments would erase its own advice.
+///
+/// [`apply`]: ConfigFile::apply
+/// [`sync`]: ConfigFile::sync
+/// [`refresh`]: ConfigFile::refresh
+#[derive(Debug)]
+pub struct ConfigFile {
+    path: PathBuf,
+    /// The last content that parsed, as a format-preserving AST.
+    doc: DocumentMut,
+    /// What [`Self::doc`] validates to. Kept alongside so a reader needn't re-parse.
+    config: Config,
+}
+
+/// The outcome of a [`ConfigFile::refresh`] — which of the two permitted outcomes the edit got.
+#[derive(Debug)]
+pub enum Refreshed {
+    /// The file parsed; the held document now matches disk. Carries the newly-effective config
+    /// for the caller to diff against the policy in force.
+    Adopted(Config),
+    /// The file did not parse; the last-good document was written back over it, so disk is valid
+    /// again and the effective policy is unchanged. `error` is the parse failure, verbatim, to be
+    /// delivered to whoever authored the edit.
+    Reverted { error: String },
+    /// The file did not parse **and** the write-back failed — the one state where disk is left
+    /// invalid. Reported honestly rather than swallowed: the caller cannot claim a revert.
+    RevertFailed { error: String, io: std::io::Error },
+}
+
+impl ConfigFile {
+    /// Read and parse `path` into a live document. Fails if it doesn't parse — a session never
+    /// starts on an invalid config (boot already fails closed), which is what guarantees the held
+    /// document exists for every later revert.
+    pub fn load(path: &Path) -> Result<Self, LoadError> {
+        let text =
+            std::fs::read_to_string(path).map_err(|e| LoadError::Io(path.to_path_buf(), e))?;
+        let config = parse(path, &text)?;
+        let doc = text
+            .parse::<DocumentMut>()
+            .map_err(|e| LoadError::Parse(path.to_path_buf(), toml_edit::de::Error::from(e)))?;
+        Ok(Self {
+            path: path.to_path_buf(),
+            doc,
+            config,
+        })
+    }
+
+    /// The config the held document validates to — the file's contribution to policy.
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Write the held document to disk. This is both the persist path and the revert path: since
+    /// the document is by construction the last content that parsed, writing it out is how the
+    /// file returns to validity, whatever put it in an invalid state.
+    pub fn sync(&self) -> std::io::Result<()> {
+        std::fs::write(&self.path, self.doc.to_string())
+    }
+
+    /// Apply a committed [`ConfigChange`] to the held document and write it out
+    /// (backlog/permissions/config-edit.md). **Replaces at a key** while preserving every comment
+    /// and unrelated line — the property that makes "yes, always" auto-persist sound for *every*
+    /// slot, including a single `scope` narrowing. Idempotent by construction: setting a
+    /// key/array-member that already holds the value is a no-op on disk.
+    ///
+    /// The mutated document is re-validated before it is written, so the invariant ("the held
+    /// document parses") cannot be broken by the harness's own edit; a change that somehow
+    /// wouldn't parse is rejected with the document untouched rather than written out.
+    pub fn apply(&mut self, change: &ConfigChange) -> std::io::Result<()> {
+        let mut doc = self.doc.clone();
+        apply_to_document(&mut doc, change);
+        let config = parse(&self.path, &doc.to_string())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+        self.doc = doc;
+        self.config = config;
+        self.sync()
+    }
+
+    /// Re-read the file: **adopt** it if it parses, **revert** it if it doesn't
+    /// (backlog/permissions/config-edit-validation.md). The single entry point for every way the
+    /// file can change — a model's gated `write`/`edit`, an operator's hand-edit, the harness's own
+    /// write-back echo — because the invariant is about the file's state, not about who authored it.
+    ///
+    /// An unreadable file (deleted, renamed away mid-save) takes the same path as an unparseable
+    /// one: the held document is written back, restoring it.
+    pub fn refresh(&mut self) -> Refreshed {
+        let reverted = |file: &Self, error: String| match file.sync() {
+            Ok(()) => Refreshed::Reverted { error },
+            Err(io) => Refreshed::RevertFailed { error, io },
+        };
+        let text = match std::fs::read_to_string(&self.path) {
+            Ok(text) => text,
+            Err(e) => {
+                let error = LoadError::Io(self.path.clone(), e).to_string();
+                return reverted(self, error);
+            }
+        };
+        let config = match parse(&self.path, &text) {
+            Ok(config) => config,
+            Err(e) => return reverted(self, e.to_string()),
+        };
+        // Parsed as a `Config`, so it parses as a document; a failure here would mean the two
+        // parsers disagree, which is a revert like any other invalid state.
+        let doc = match text.parse::<DocumentMut>() {
+            Ok(doc) => doc,
+            Err(e) => return reverted(self, e.to_string()),
+        };
+        self.doc = doc;
+        self.config = config.clone();
+        Refreshed::Adopted(config)
+    }
+}
+
 /// Parse TOML text into a [`Config`] (decode → validate). The `path` labels diagnostics only.
 fn parse(path: &Path, text: &str) -> Result<Config, LoadError> {
     let raw: RawConfig =
@@ -565,17 +705,10 @@ pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {
     out
 }
 
-/// Persist a committed [`ConfigChange`] to the config file by editing it in place via
-/// [`toml_edit`] (backlog/permissions/config-edit.md). Unlike the old append-only KDL render,
-/// this **replaces at a key** while preserving every comment and unrelated line — the property
-/// that makes "yes, always" auto-persist sound for *every* slot, including a single `scope`
-/// narrowing. Idempotent by construction: setting a key/array-member that already holds the
-/// value is a no-op on the wire.
-pub fn persist_config_change(path: &Path, change: &ConfigChange) -> std::io::Result<()> {
-    let text = std::fs::read_to_string(path)?;
-    let mut doc: DocumentMut = text
-        .parse()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+/// Edit a committed [`ConfigChange`] into a TOML document in place
+/// (backlog/permissions/config-edit.md). Replaces at a key, leaving every comment and unrelated
+/// line untouched; see [`ConfigFile::apply`], the only caller, for the surrounding invariant.
+fn apply_to_document(doc: &mut DocumentMut, change: &ConfigChange) {
     match change {
         // A command-prefix grant: set `[commands][key] = true`. The key is the command string
         // itself (already re-lexable), so there is no token-join to undo.
@@ -615,7 +748,6 @@ pub fn persist_config_change(path: &Path, change: &ConfigChange) -> std::io::Res
             None => doc["scope"] = value(text.as_str()),
         },
     }
-    std::fs::write(path, doc.to_string())
 }
 
 /// Render a `[paths]` value: the `true` sugar when read+write, otherwise an inline table
@@ -656,6 +788,15 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Load → apply → sync. The persistence tests below predate [`ConfigFile`]; they exercise the
+    /// same edit path through a fresh handle, which is also the honest read of what they cover
+    /// (the on-disk result of one change), independent of the held-document invariant.
+    fn persist_config_change(path: &Path, change: &ConfigChange) -> std::io::Result<()> {
+        let mut file = ConfigFile::load(path)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+        file.apply(change)
+    }
 
     fn parse_str(text: &str) -> Config {
         super::parse(Path::new("test.toml"), text).expect("valid config")
@@ -1051,6 +1192,94 @@ mod tests {
             1,
             "idempotent: {after}"
         );
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// The held document round-trips to its original bytes. This is the property the whole
+    /// revert path rests on (backlog/permissions/config-edit-validation.md): reverting writes the
+    /// held document out, so if `to_string` were lossy, every revert would silently reformat the
+    /// author's file — including the schema header comment the parse-error message tells the
+    /// model to go read.
+    #[test]
+    fn an_untouched_document_syncs_back_byte_identically() {
+        let path =
+            std::env::temp_dir().join(format!("efference-roundtrip-{}.toml", std::process::id()));
+        // Comments, alignment, blank lines, key order, quoted and bare keys, inline tables.
+        let original = "# efference config — schema in this header\n\
+             scope = \"stay in src/\"   # the mission\n\
+             \n\
+             watch-for = [\n  \"network egress\",\n]\n\
+             \n\
+             [commands]\n\
+             cargo   = true\n\
+             \"git diff\" = true   # sub-verb\n\
+             \n\
+             # filesystem\n\
+             [paths]\n\
+             \".\" = true\n\
+             \"/refs\" = { read = true }\n";
+        std::fs::write(&path, original).unwrap();
+
+        let file = ConfigFile::load(&path).unwrap();
+        std::fs::write(&path, "clobbered").unwrap();
+        file.sync().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            original,
+            "sync of an untouched document reproduces the file byte for byte"
+        );
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// [`ConfigFile::refresh`] is the two-outcome rule (backlog/permissions/config-edit-validation.md):
+    /// a file that parses is **adopted**, one that doesn't is **reverted** to the last content that
+    /// parsed. Also covers the unreadable case (deleted out from under us), which restores the file
+    /// rather than leaving the session with no config on disk.
+    #[test]
+    fn refresh_adopts_what_parses_and_reverts_what_does_not() {
+        let path =
+            std::env::temp_dir().join(format!("efference-refresh-{}.toml", std::process::id()));
+        let good = "# keep me\nscope = \"first\"\n[commands]\ncargo = true\n";
+        std::fs::write(&path, good).unwrap();
+        let mut file = ConfigFile::load(&path).unwrap();
+
+        // A valid edit is adopted: the new config is returned and becomes the held one.
+        let edited = "# keep me\nscope = \"second\"\n[commands]\ncargo = true\n";
+        std::fs::write(&path, edited).unwrap();
+        match file.refresh() {
+            Refreshed::Adopted(config) => assert_eq!(config.scope.as_deref(), Some("second")),
+            other => panic!("expected Adopted, got {other:?}"),
+        }
+        assert_eq!(file.config().scope.as_deref(), Some("second"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), edited, "untouched");
+
+        // The footgun: `[scope]` as a table where the schema wants a string. Reverted to the last
+        // content that parsed — which is the *adopted* edit, not the original file.
+        std::fs::write(&path, "[scope]\ndefault = \"read\"\n").unwrap();
+        match file.refresh() {
+            Refreshed::Reverted { error } => assert!(
+                error.contains("scope"),
+                "the reason names the offending key: {error}"
+            ),
+            other => panic!("expected Reverted, got {other:?}"),
+        }
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            edited,
+            "reverted to the last content that parsed, comments intact"
+        );
+        assert_eq!(
+            file.config().scope.as_deref(),
+            Some("second"),
+            "the rejected edit never reaches policy"
+        );
+
+        // A file deleted out from under the session is restored the same way.
+        std::fs::remove_file(&path).unwrap();
+        assert!(matches!(file.refresh(), Refreshed::Reverted { .. }));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
 
         std::fs::remove_file(&path).unwrap();
     }
