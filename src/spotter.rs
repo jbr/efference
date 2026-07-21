@@ -213,14 +213,19 @@ fn render_context(role: &Config) -> String {
     if role.paths.is_empty() {
         s.push_str("- allowed paths: none configured\n");
     } else {
-        s.push_str("- allowed paths (and everything beneath them):\n");
+        // A more specific grant overrides a broader one, so a denied subtree carves an
+        // exclusion out of an allowed parent (docs/permissions.md). Surfacing every grant —
+        // including the denies — is what lets the spotter judge a *bash* move against a
+        // carve-out the deterministic fast-path never sees (e.g. a write to the session's own
+        // log, or a poke at its own control socket, both under a denied `.efference/`).
+        s.push_str("- path grants (a more specific grant overrides a broader one):\n");
         for (path, perms) in &role.paths {
             let label = if perms.write {
                 "read, write"
             } else if perms.read {
                 "read only"
             } else {
-                "no access"
+                "no access — denied, even though it sits under an allowed parent"
             };
             s.push_str(&format!("  - {path} ({label})\n"));
         }

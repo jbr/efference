@@ -176,12 +176,26 @@ ungranted path still poisons the batch. (An earlier version evaluated each sourc
 all-or-nothing over the whole batch, so a cross-source read gated; a dogfood session caught
 it.)
 
-Two properties are load-bearing. **Grants are additive subtrees with no deny.** A `[paths]`
-grant trusts its *entire* subtree; there is no carve-out to deny a sensitive subdir within
-an allowed parent (you cannot allow `.` but deny `./secrets`) — explicitly out of scope
-for now. Path matching is lexical (`..`/`.` collapsed without touching the filesystem, so
-it works for not-yet-existing write targets), which means a symlink inside a grant
-pointing outside is treated as inside — acceptable under the error-not-deception model.
+Two properties are load-bearing. **Resolution is longest-prefix-wins, so a nested grant
+carves an exclusion out of a broader parent.** Among the `[paths]` grants whose subtree
+contains the target, the *most specific* (deepest) one governs; a no-access grant (`false`
+sugar / `Perms::default()`) is a real **deny** once it is the governing prefix. This is what
+lets the standard three-layer stack work: allow `.`, deny `.efference/`, re-allow
+`.efference/<id>/config.toml` read-only. The harness **injects that self-surface stack in
+`serve`** (`main.rs`), layered over the operator's grants: the session dir holds this
+session's control socket, its append-only log, and every *other* session's dir, all under the
+operator's `.` grant — so without the deny nothing would stop a session from writing its own
+log (corrupting the substrate) or POSTing to its own control socket (approving its own gates,
+injecting a user turn). The `config.toml` re-allow is the sanctioned scope-expansion path: the
+session reads its own perimeter and *edits* the file, a write the governing read-only grant
+refuses at the fast-path, so it gates for the operator. Injected keys are inserted *after* the
+operator config, so a safety deny overrides an equal-specificity operator grant; an operator
+can still override by naming a *strictly deeper* path. Because bash never touches the fast-path,
+the deny layers are also rendered into the **spotter context** (`spotter.rs`), so a `curl
+--unix-socket .efference/…/control.sock` or `echo >> …/log.jsonl` gates on scope grounds there
+too. Path matching is lexical (`..`/`.` collapsed without touching the filesystem, so it works
+for not-yet-existing write targets), which means a symlink inside a grant pointing outside is
+treated as inside — acceptable under the error-not-deception model.
 
 **Mapping a tool to its path field is a deliberate wart.** The classifier reaches into
 each built-in's JSON input by known key (`read`→`paths`, `write`→`path`,

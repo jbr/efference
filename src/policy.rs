@@ -424,22 +424,37 @@ fn context_granted(role: &Config, target: &str, perm: Perm, cwd: &Path) -> bool 
     })
 }
 
-/// Whether `path` (resolved against `cwd`) falls under some role `path` grant carrying
-/// `perm`. `write` implies `read`. A grant covers its **entire subtree** with no
-/// exclusions — there is no deny mechanism to carve a sensitive subdir out of an allowed
-/// parent (e.g. allow `.` but deny `./secrets`); explicitly out of scope for now. Path
-/// matching is lexical (`..`/`.` collapsed without touching the filesystem), so a symlink
-/// inside a grant that points outside is treated as inside — acceptable under the
-/// error-not-deception threat model (backlog/permissions/README.md).
+/// Whether `path` (resolved against `cwd`) is granted `perm` by the role's `[paths]` map.
+/// `write` implies `read`. Resolution is **longest-prefix-wins**: among the grants whose
+/// subtree contains the target, the *most specific* (deepest) one governs — so a nested
+/// grant carves an exclusion out of a broader parent (allow `.`, deny `.efference/`,
+/// re-allow `.efference/<id>/config.toml` read-only). A no-access grant (`false` sugar,
+/// `Perms::default()`) is a real deny once it's the governing prefix. The harness injects
+/// its self-surface layers (docs/permissions.md) *after* the operator's config, so an
+/// exact-key operator grant is overwritten and a safety deny wins at equal specificity;
+/// an operator can still override by naming a *strictly deeper* path. Path matching is
+/// lexical (`..`/`.` collapsed without touching the filesystem), so a symlink inside a
+/// grant that points outside is treated as inside — acceptable under the error-not-deception
+/// threat model (backlog/permissions/README.md).
 fn path_granted(role: &Config, path: &str, perm: Perm, cwd: &Path) -> bool {
     let target = lexical_normalize(&absolutize(path, cwd));
-    role.paths.iter().any(|(grant_path, perms)| {
-        let granted = match perm {
+    let governing = role
+        .paths
+        .iter()
+        .filter_map(|(grant_path, perms)| {
+            let grant = lexical_normalize(&absolutize(grant_path, cwd));
+            target
+                .starts_with(&grant)
+                .then_some((grant.components().count(), perms))
+        })
+        .max_by_key(|(depth, _)| *depth);
+    match governing {
+        Some((_, perms)) => match perm {
             Perm::Read => perms.read || perms.write, // write implies read
             Perm::Write => perms.write,
-        };
-        granted && target.starts_with(lexical_normalize(&absolutize(grant_path, cwd)))
-    })
+        },
+        None => false, // no grant covers the target at all
+    }
 }
 
 /// Make `path` absolute by joining it onto `cwd` if it is relative.
@@ -1082,6 +1097,53 @@ mod tests {
             ),
             Verdict::Clear
         );
+    }
+
+    #[test]
+    fn a_nested_deny_carves_an_exclusion_out_of_an_allowed_parent() {
+        // The self-surface stack the harness injects in `serve`: allow `.`, deny the whole
+        // `.efference/` base, re-allow read-only on *this* session's `config.toml`. Resolution
+        // is longest-prefix-wins, so each target is judged by its most specific grant.
+        let role = Config {
+            tools: ["read", "write"].iter().map(|s| s.to_string()).collect(),
+            paths: [
+                (
+                    ".".to_string(),
+                    Perms {
+                        read: true,
+                        write: true,
+                    },
+                ),
+                (".efference".to_string(), Perms::default()), // deny
+                (
+                    ".efference/sess/config.toml".to_string(),
+                    Perms {
+                        read: true,
+                        write: false,
+                    }, // re-allow, read only
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            ..Config::default()
+        };
+        let read = |p: &str| structured(&role, &call("read", serde_json::json!({ "paths": [p] })));
+        let write = |p: &str| structured(&role, &call("write", serde_json::json!({ "path": p })));
+
+        // `.` governs ordinary in-tree work.
+        assert_eq!(read("src/main.rs"), Verdict::Clear);
+        assert_eq!(write("src/main.rs"), Verdict::Clear);
+        // The `.efference/` deny governs the log and the socket — the more specific grant wins
+        // over the broader `.` allow, so writing the substrate or reading it is refused.
+        assert_eq!(read(".efference/sess/log.jsonl"), Verdict::Gate);
+        assert_eq!(write(".efference/sess/log.jsonl"), Verdict::Gate);
+        // This session's own config: readable (the deepest grant re-allows read)…
+        assert_eq!(read(".efference/sess/config.toml"), Verdict::Clear);
+        // …but not directly writable — the write falls through to the gate, which is the
+        // sanctioned scope-expansion path (the operator reviews the proposed edit).
+        assert_eq!(write(".efference/sess/config.toml"), Verdict::Gate);
+        // Another session's config is under the deny with no re-allow → opaque.
+        assert_eq!(read(".efference/other/config.toml"), Verdict::Gate);
     }
 
     #[test]

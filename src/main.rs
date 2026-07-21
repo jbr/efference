@@ -934,13 +934,35 @@ async fn serve(
     // The per-session snapshot *is* the live config now (a malformed hand-edit on resume fails fast
     // here). Everything downstream — the preamble, fs-watch, `/state`, persisted config-edits — keys
     // off this path, not the origin.
-    let loaded = match efference::config::load(Some(&session_config)) {
+    let mut loaded = match efference::config::load(Some(&session_config)) {
         Ok(l) => l,
         Err(e) => {
             e.eprint();
             return Err("could not load session config".into());
         }
     };
+
+    // Layer the harness's self-surface protection over the operator's grants (docs/permissions.md).
+    // The session dir holds this session's control socket, its append-only log, and — under the same
+    // base — every *other* session's dir; all of it sits inside the operator's `.` grant, so nothing
+    // stops the session from writing its own log (corrupting the substrate) or POSTing to its own
+    // control socket (approving its own gates, injecting a user turn) without this. Deny the whole
+    // base dir, then re-allow read-only on *this* session's `config.toml` — the sanctioned
+    // scope-expansion path: the session reads its own perimeter and *edits* the file, which is a
+    // write the fast-path won't clear, so it gates for the operator. Inserted after the operator
+    // config so an equal-specificity operator key is overridden; `policy::path_granted`'s
+    // longest-prefix rule still lets a strictly deeper operator grant win.
+    loaded
+        .role
+        .paths
+        .insert(BASE_DIR.to_string(), efference::config::Perms::default());
+    loaded.role.paths.insert(
+        session_config.to_string_lossy().into_owned(),
+        efference::config::Perms {
+            read: true,
+            write: false,
+        },
+    );
 
     let log_path = session_dir.join(LOG_NAME);
     let mut log = Log::create(&log_path)?;
