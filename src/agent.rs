@@ -372,11 +372,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         Streamed::Text(text) => StreamDelta::AssistantText(text),
                         Streamed::Thinking(text) => StreamDelta::ThinkingText(text),
                         Streamed::ToolStart { name } => StreamDelta::ToolCallStart { name },
-                        // The fragment's *bytes* are the signal, not its content — a partial
-                        // slice of a JSON document can't be rendered honestly.
-                        Streamed::ToolInput(fragment) => StreamDelta::ToolCallInput {
-                            bytes: fragment.len(),
-                        },
+                        Streamed::ToolInput(fragment) => StreamDelta::ToolCallInput { fragment },
                     });
                 })
                 .await?;

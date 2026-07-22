@@ -192,9 +192,9 @@ committed entry on `/events` is the authoritative copy.
   assistant's answer; a client must render it as thinking or not at all.
 - `event: tool_call_start` — `{ "name": "<tool>" }` — the model began emitting a tool call,
   named *before* its arguments stream (a large input takes seconds to arrive).
-- `event: tool_call_input` — `{ "bytes": <n> }` — arguments arriving. A byte count, not the
-  fragment: a partial JSON slice can't be rendered honestly, so the only truthful signal is
-  that input is still coming.
+- `event: tool_call_input` — `{ "fragment": "<partial json>" }` — arguments arriving, verbatim.
+  A client may display these but must not **parse** them as a complete document: mid-stream they
+  are a partial slice.
 - `event: tool_output` — `{ "call_id": "…", "chunk": "…" }`
 - `event: bg_output` — `{ "handle": "bg#<n>", "chunk": "…" }`
 

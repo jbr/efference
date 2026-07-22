@@ -68,10 +68,13 @@ pub enum StreamDelta {
     /// large tool input published nothing and read as a hung harness
     /// (backlog/dogfooding-friction.md).
     ToolCallStart { name: String },
-    /// Bytes of a tool call's JSON input arriving. Carries a byte count rather than the fragment:
-    /// a partial slice of a JSON document can't be rendered honestly, and the only thing a client
-    /// can truthfully say is that the input is still arriving.
-    ToolCallInput { bytes: usize },
+    /// A fragment of a tool call's JSON input, verbatim. The bytes are passed through rather than
+    /// summarized as a count: they are a partial slice of a JSON document, so a client must not
+    /// *parse* them as if complete — but showing what actually arrived claims no structure, and
+    /// `{"command":"cargo test` tells an operator far more than a byte count does. (Rendering a
+    /// partial document *structurally* is a real option — `jiter`'s partial mode, `actson`'s push
+    /// parser — and is filed as its own design question.)
+    ToolCallInput { fragment: String },
     /// A chunk of a running tool's combined output, tagged by its `tool_use` id.
     ToolOutput { call_id: String, chunk: String },
     /// A chunk of a running background process's output, tagged by its `bg#<n>`
@@ -1677,9 +1680,9 @@ fn delta_event(delta: &StreamDelta) -> DeltaEvent {
             kind: "tool_call_start",
             data: serde_json::json!({ "name": name }).to_string(),
         },
-        StreamDelta::ToolCallInput { bytes } => DeltaEvent {
+        StreamDelta::ToolCallInput { fragment } => DeltaEvent {
             kind: "tool_call_input",
-            data: serde_json::json!({ "bytes": bytes }).to_string(),
+            data: serde_json::json!({ "fragment": fragment }).to_string(),
         },
         StreamDelta::ToolOutput { call_id, chunk } => DeltaEvent {
             kind: "tool_output",

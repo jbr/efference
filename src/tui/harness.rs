@@ -1378,8 +1378,10 @@ mod scenarios {
             "a thinking phase is not silent"
         );
         assert!(
-            play.find("src directory first").is_some(),
-            "…and shows the tail, the part that is current"
+            play.find("I should look at the ").is_some()
+                && play.find("src directory first").is_some(),
+            "…and shows the thinking in full, not a truncated preview — the point is to watch the \
+             work as it happens"
         );
 
         // The call is named as soon as it opens, before any argument bytes arrive.
@@ -1395,12 +1397,18 @@ mod scenarios {
             "acting supersedes thinking — one phase at a time"
         );
 
-        // Input bytes are progress, not content: a partial JSON slice is never shown.
-        play.event(TuiEvent::ToolCallInput { bytes: 64 });
-        play.event(TuiEvent::ToolCallInput { bytes: 40 });
+        // The arriving input is shown verbatim — never parsed, but not hidden either: the
+        // identifying fields come first in JSON, so the head is the informative part.
+        play.event(TuiEvent::ToolCallInput {
+            fragment: "{\"comm".into(),
+        });
+        play.event(TuiEvent::ToolCallInput {
+            fragment: "and\":\"ls src\"}".into(),
+        });
         assert!(
-            play.find("104 bytes").is_some(),
-            "input arrival accumulates as a byte count"
+            play.find(r#"{"command":"ls src"}"#).is_some(),
+            "fragments accumulate into the raw input, shown in full as text — never parsed as a \
+             complete document, and never truncated"
         );
 
         // Prose is its own evidence of progress, so it replaces the phase line.
@@ -1678,3 +1686,5 @@ mod scenarios {
         play.snapshot("transcript_redirected_gate");
     }
 }
+
+

@@ -41,10 +41,12 @@ pub(crate) enum Phase {
     /// transcript content: it is cleared when the turn commits (rendering committed thinking in
     /// the transcript is a separate unit — backlog/thinking-blocks.md).
     Thinking { text: String },
-    /// A tool call is being emitted: named at `content_block_start`, then `bytes` of JSON input
-    /// arriving. The byte count is the honest progress signal — the input is a partial JSON slice
-    /// until the block closes, so there is nothing else truthful to show.
-    CallingTool { name: String, bytes: usize },
+    /// A tool call is being emitted: named at `content_block_start`, then its JSON `input`
+    /// accumulating. The text is shown verbatim and never parsed — it is a partial slice of a JSON
+    /// document until the block closes. Showing it claims no structure, and `{"command":"cargo
+    /// test` says far more than a byte count; parsing a partial document *structurally* is its own
+    /// design question (backlog/tui-streaming-lifecycle.md).
+    CallingTool { name: String, input: String },
 }
 
 impl LiveTail {
@@ -221,7 +223,7 @@ pub(crate) fn project(
     // arriving). Without this the window between "turn submitted" and "first prose" is silent,
     // and silence is indistinguishable from a hung harness (backlog/dogfooding-friction.md).
     if let Some(phase) = &live.phase {
-        nodes.push(turn(Author::Assistant, vec![phase_line(phase)]));
+        nodes.push(turn(Author::Assistant, phase_blocks(phase)));
     }
     for (call_id, buf) in &live.tools {
         let header = vec![inline_code(call_id.clone())];
@@ -276,55 +278,55 @@ fn pending_turn(text: &str) -> DocumentNode<'static> {
     turn(Author::User, blocks)
 }
 
-/// One dimmed line naming the phase the turn is in, plus whatever evidence that phase has:
-/// thinking shows its **tail** (what the model is working through *now* — the head is stale by the
-/// time a human looks), a tool call shows its name and the bytes of input received so far.
+/// The live phase, rendered **in full** — the point is to watch the work happen, so nothing here
+/// truncates. Thinking renders as dimmed prose; a tool call renders as its name plus the JSON input
+/// accumulating in a code block.
 ///
-/// Deliberately a preview rather than accumulated content: the phase disappears when the turn
-/// commits, so anything shown here must read as progress that finished, not as transcript that
-/// vanished. Committed thinking in the transcript is a separate unit (backlog/thinking-blocks.md).
-fn phase_line(phase: &Phase) -> DocumentNode<'static> {
-    let text = match phase {
+/// The input is shown, never *parsed*: mid-stream it is a partial slice of a JSON document, so the
+/// display must not assert structure the arrived bytes don't support. Rendering it structurally is
+/// its own design question ([`backlog/tui-streaming-lifecycle.md`]) — the raw characters claim
+/// nothing, which is what makes showing them safe.
+///
+/// [`backlog/tui-streaming-lifecycle.md`]: ../../backlog/tui-streaming-lifecycle.md
+fn phase_blocks(phase: &Phase) -> Vec<DocumentNode<'static>> {
+    match phase {
+        Phase::Thinking { text } if text.trim().is_empty() => vec![dim_line("✻ thinking…")],
         Phase::Thinking { text } => {
-            let tail: String = text
-                .chars()
-                .rev()
-                .take(PHASE_PREVIEW_CHARS)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect();
-            let tail = tail.replace('\n', " ");
-            let tail = tail.trim();
-            if tail.is_empty() {
-                "✻ thinking…".to_string()
-            } else {
-                let elision = if text.chars().count() > PHASE_PREVIEW_CHARS {
-                    "…"
-                } else {
-                    ""
-                };
-                format!("✻ thinking… {elision}{tail}")
+            // The marker leads the first line; continuation lines indent to align under it, the
+            // same shape a pending user turn uses.
+            let mut blocks = Vec::new();
+            for (i, line) in text.lines().enumerate() {
+                blocks.push(dim_line(&format!(
+                    "{}{line}",
+                    if i == 0 { "✻ thinking… " } else { "  " }
+                )));
             }
+            blocks
         }
-        Phase::CallingTool { name, bytes } if *bytes == 0 => format!("❯ calling {name}…"),
-        Phase::CallingTool { name, bytes } => format!("❯ calling {name}… ({bytes} bytes)"),
-    };
+        Phase::CallingTool { name, input } if input.is_empty() => {
+            vec![dim_line(&format!("❯ calling {name}…"))]
+        }
+        Phase::CallingTool { name, input } => {
+            // Dimmed lines, not a `code_block`: the boxed render doesn't wrap its content to the
+            // box's inner width, so a long input would be *clipped* at the border — precisely the
+            // content this exists to show (the open box-wrap defect in dogfooding-friction.md).
+            let mut blocks = vec![dim_line(&format!("❯ calling {name}…"))];
+            blocks.extend(input.lines().map(|line| dim_line(&format!("  {line}"))));
+            blocks
+        }
+    }
+}
+
+/// One dimmed line — the live tail's register throughout: present but visibly not committed.
+fn dim_line(text: &str) -> DocumentNode<'static> {
     DocumentNode::Paragraph {
         spans: vec![Span {
-            text: text.into(),
+            text: text.to_string().into(),
             style: SpanStyle::Comment,
             action: None,
         }],
     }
 }
-
-/// How much of a thinking phase's tail the live line shows. Enough to read what the model is
-/// currently working through, short enough to stay on **one line** at a conventional 80 columns
-/// (the `✻ thinking… ` prefix and the turn indent take ~15 of them). One line matters more than
-/// more text: the tail is rewritten on every delta, so a preview that wraps reflows the transcript
-/// several times a second.
-const PHASE_PREVIEW_CHARS: usize = 60;
 
 /// Wrap a turn's blocks under its author.
 fn turn(author: Author, blocks: Vec<DocumentNode<'static>>) -> DocumentNode<'static> {

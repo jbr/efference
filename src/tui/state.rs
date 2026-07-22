@@ -620,13 +620,16 @@ impl<'a> InteractiveState<'a> {
             }
             TuiEvent::ToolCallStart { name } => {
                 // Replaces a thinking phase: the model has moved on to acting.
-                self.live.phase = Some(Phase::CallingTool { name, bytes: 0 });
+                self.live.phase = Some(Phase::CallingTool {
+                    name,
+                    input: String::new(),
+                });
                 self.loading.pending_request = true;
                 self.mark_reproject();
             }
-            TuiEvent::ToolCallInput { bytes } => {
-                if let Some(Phase::CallingTool { bytes: total, .. }) = &mut self.live.phase {
-                    *total += bytes;
+            TuiEvent::ToolCallInput { fragment } => {
+                if let Some(Phase::CallingTool { input, .. }) = &mut self.live.phase {
+                    input.push_str(&fragment);
                     self.mark_reproject();
                 }
             }

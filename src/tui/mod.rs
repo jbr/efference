@@ -73,9 +73,9 @@ pub(crate) enum TuiEvent {
     /// The model began emitting a tool call (`/stream` `tool_call_start`), named before its
     /// arguments arrive.
     ToolCallStart { name: String },
-    /// Bytes of a tool call's input arriving (`/stream` `tool_call_input`) — a progress signal
-    /// only; the fragment itself is a partial JSON slice and never shown.
-    ToolCallInput { bytes: usize },
+    /// A fragment of a tool call's input arriving (`/stream` `tool_call_input`), verbatim. Shown
+    /// as text, never parsed — it is a partial slice of a JSON document.
+    ToolCallInput { fragment: String },
     /// A fragment of a running tool's output (`/stream` `tool_output`).
     ToolOutput { call_id: String, chunk: String },
     /// A fragment of a running background process's output (`/stream` `bg_output`,
@@ -717,9 +717,9 @@ fn decode_delta(
             })
             .map_err(Box::new)
         }),
-        Some("tool_call_input") => value["bytes"].as_u64().map(|bytes| {
+        Some("tool_call_input") => value["fragment"].as_str().map(|fragment| {
             tx.send(TuiEvent::ToolCallInput {
-                bytes: bytes as usize,
+                fragment: fragment.to_string(),
             })
             .map_err(Box::new)
         }),
