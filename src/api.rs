@@ -356,6 +356,32 @@ enum BlockAccum {
     },
 }
 
+/// What a single SSE event contributed to the *live* view, if anything
+/// (backlog/dogfooding-friction.md — the invisible-generation-phase defect). The assembler folds
+/// every event into the [`Completion`] regardless; this is the parallel, transport-only channel
+/// that lets a client show what the model is doing **while** it does it.
+///
+/// Before this existed the sink carried a bare prose fragment, so only `text_delta` could reach it
+/// — a turn spent thinking or emitting a large tool-call input produced no output at all and read
+/// as a hung harness. Typing the channel is what makes the other phases expressible; each variant
+/// is one phase a turn can be in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Streamed {
+    /// A fragment of assistant prose.
+    Text(String),
+    /// A fragment of extended-thinking text. Never part of the assistant's answer — a client
+    /// showing this must mark it as thinking, not prose.
+    Thinking(String),
+    /// The model began emitting a tool call. Arrives at `content_block_start`, *before* the
+    /// arguments stream, so a client can name the pending call immediately — the arguments alone
+    /// can take many seconds to arrive for a large input.
+    ToolStart { name: String },
+    /// A fragment of a tool call's JSON input. Deliberately not parsed: it's a partial byte slice
+    /// of a JSON document, so the only honest use is progress (that bytes are arriving), not
+    /// content.
+    ToolInput(String),
+}
+
 /// Reassembles a streamed SSE event sequence into a single [`Completion`].
 ///
 /// Pure over the event sequence: [`Assembler::apply`] takes one event's `event:`
@@ -391,10 +417,10 @@ impl Assembler {
     }
 
     /// Fold one SSE event into the running state. `event_type` is the SSE
-    /// `event:` field; `data` is the raw JSON payload. Returns the prose fragment a
-    /// `text_delta` contributed (if any), so [`Client::complete`] can forward it to
-    /// a live sink without re-parsing — every other event yields `None`.
-    fn apply(&mut self, event_type: Option<&str>, data: &str) -> Result<Option<String>, Error> {
+    /// `event:` field; `data` is the raw JSON payload. Returns what this event contributed to the
+    /// *live* view as a [`Streamed`] (if anything), so [`Client::complete`] can forward it to a
+    /// live sink without re-parsing — every event that carries no live signal yields `None`.
+    fn apply(&mut self, event_type: Option<&str>, data: &str) -> Result<Option<Streamed>, Error> {
         let mut streamed = None;
         // The OpenAI/OpenRouter stream-end sentinel (docs/transport.md: providers).
         // Anthropic closes the stream after `message_stop`; OpenRouter's `/api/v1/messages`
@@ -463,6 +489,12 @@ impl Assembler {
                     },
                     other => return Err(format!("unknown content_block type {other:?}").into()),
                 };
+                // Name a tool call the moment it opens, before its arguments stream: a large input
+                // can take seconds to arrive, and "calling `bash`…" is the difference between a
+                // visible phase and apparent silence (backlog/dogfooding-friction.md).
+                if let BlockAccum::ToolUse { name, .. } = &block {
+                    streamed = Some(Streamed::ToolStart { name: name.clone() });
+                }
                 self.blocks.push(block);
             }
             Some("content_block_delta") => {
@@ -486,23 +518,23 @@ impl Assembler {
                             .and_then(Value::as_str)
                             .unwrap_or_default();
                         buf.push_str(frag);
-                        streamed = Some(frag.to_string());
+                        streamed = Some(Streamed::Text(frag.to_string()));
                     }
                     ("input_json_delta", BlockAccum::ToolUse { partial_json, .. }) => {
-                        partial_json.push_str(
-                            delta
-                                .get("partial_json")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default(),
-                        );
+                        let frag = delta
+                            .get("partial_json")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
+                        partial_json.push_str(frag);
+                        streamed = Some(Streamed::ToolInput(frag.to_string()));
                     }
                     ("thinking_delta", BlockAccum::Thinking { text, .. }) => {
-                        text.push_str(
-                            delta
-                                .get("thinking")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default(),
-                        );
+                        let frag = delta
+                            .get("thinking")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
+                        text.push_str(frag);
+                        streamed = Some(Streamed::Thinking(frag.to_string()));
                     }
                     ("signature_delta", BlockAccum::Thinking { signature, .. }) => {
                         signature.push_str(
@@ -628,10 +660,11 @@ impl Client {
     }
 
     /// One streaming round-trip: serialize `messages`, POST with `stream: true`,
-    /// and fold the SSE event stream back into a [`Completion`]. Each streamed prose
-    /// fragment is handed to `on_text` as it arrives — the transport-only live sink
-    /// (the daemon publishes it to `GET /stream`); pass a no-op `|_| {}` when nothing
-    /// is listening (e.g. the fork peek, whose triage tokens must never surface).
+    /// and fold the SSE event stream back into a [`Completion`]. Each live signal — prose,
+    /// thinking, a tool call opening, its arguments arriving — is handed to `on_delta` as a
+    /// [`Streamed`] the moment it arrives: the transport-only live sink (the daemon publishes it to
+    /// `GET /stream`). Pass a no-op `|_| {}` when nothing is listening (e.g. the fork peek, whose
+    /// triage tokens must never surface).
     ///
     /// `into_sse` *is* the execution — the conn must not be awaited first (that
     /// is `SseErrorKind::AlreadyExecuted`). On a non-2xx it returns
@@ -645,7 +678,7 @@ impl Client {
         messages: &[ApiMessage],
         tools: &[Value],
         tool_choice: ToolChoice,
-        mut on_text: impl FnMut(&str),
+        mut on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
         let request = Request {
             model: &self.model,
@@ -685,8 +718,8 @@ impl Client {
         let mut assembler = Assembler::new();
         while let Some(event) = events.next().await {
             let event = event?;
-            if let Some(fragment) = assembler.apply(event.event_type(), event.data())? {
-                on_text(&fragment);
+            if let Some(streamed) = assembler.apply(event.event_type(), event.data())? {
+                on_delta(streamed);
             }
         }
         assembler.finish()
@@ -985,6 +1018,108 @@ mod tests {
             a.apply(Some(ty), data)?;
         }
         a.finish()
+    }
+
+    /// Everything the sink sees, in order — the live channel, as distinct from the assembled
+    /// [`Completion`] that `feed` returns.
+    fn live(events: &[(&str, &str)]) -> Vec<Streamed> {
+        let mut a = Assembler::new();
+        let mut out = Vec::new();
+        for (ty, data) in events {
+            if let Some(s) = a.apply(Some(ty), data).unwrap() {
+                out.push(s);
+            }
+        }
+        out
+    }
+
+    /// **Every generation phase reaches the live sink**, not just prose
+    /// (backlog/dogfooding-friction.md). The sink used to carry a bare text fragment, so a turn
+    /// that thought and then emitted a tool call published *nothing* until prose arrived — and a
+    /// turn with no prose at all published nothing, full stop, which is indistinguishable from a
+    /// hung harness. The tool call is named at `content_block_start`, before its arguments,
+    /// because a large input can take seconds to stream.
+    #[test]
+    fn every_phase_reaches_the_live_sink_not_just_prose() {
+        let seen = live(&[
+            (
+                "message_start",
+                r#"{"message":{"model":"claude-opus-4-8","usage":{"input_tokens":1,"output_tokens":1}}}"#,
+            ),
+            (
+                "content_block_start",
+                r#"{"index":0,"content_block":{"type":"thinking","thinking":""}}"#,
+            ),
+            (
+                "content_block_delta",
+                r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"weighing "}}"#,
+            ),
+            (
+                "content_block_delta",
+                r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"the options"}}"#,
+            ),
+            (
+                "content_block_delta",
+                r#"{"index":0,"delta":{"type":"signature_delta","signature":"sig"}}"#,
+            ),
+            ("content_block_stop", r#"{"index":0}"#),
+            (
+                "content_block_start",
+                r#"{"index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"bash","input":{}}}"#,
+            ),
+            (
+                "content_block_delta",
+                r#"{"index":1,"delta":{"type":"input_json_delta","partial_json":"{\"comm"}}"#,
+            ),
+            (
+                "content_block_delta",
+                r#"{"index":1,"delta":{"type":"input_json_delta","partial_json":"and\":\"ls\"}"}}"#,
+            ),
+            ("content_block_stop", r#"{"index":1}"#),
+        ]);
+        assert_eq!(
+            seen,
+            vec![
+                Streamed::Thinking("weighing ".into()),
+                Streamed::Thinking("the options".into()),
+                // The call is named before a single argument byte arrives.
+                Streamed::ToolStart {
+                    name: "bash".into()
+                },
+                Streamed::ToolInput("{\"comm".into()),
+                Streamed::ToolInput("and\":\"ls\"}".into()),
+            ],
+            "a thinking-then-tool-call turn must not stream silently"
+        );
+        // A signature delta carries no live signal — it's replay metadata, not progress.
+        assert!(!seen.iter().any(|s| matches!(s, Streamed::Text(_))));
+    }
+
+    /// Prose still streams as before, and is typed as prose — the regression guard on the
+    /// existing live view, which is what the sink carried before it was typed.
+    #[test]
+    fn prose_still_reaches_the_sink_as_text() {
+        let seen = live(&[
+            (
+                "content_block_start",
+                r#"{"index":0,"content_block":{"type":"text","text":""}}"#,
+            ),
+            (
+                "content_block_delta",
+                r#"{"index":0,"delta":{"type":"text_delta","text":"let me "}}"#,
+            ),
+            (
+                "content_block_delta",
+                r#"{"index":0,"delta":{"type":"text_delta","text":"look"}}"#,
+            ),
+        ]);
+        assert_eq!(
+            seen,
+            vec![
+                Streamed::Text("let me ".into()),
+                Streamed::Text("look".into())
+            ]
+        );
     }
 
     /// The path the bash tool depends on: a text block plus a tool call whose

@@ -74,8 +74,15 @@ impl Screenplay<'static> {
         let (approve_tx, approve_rx) = unbounded_channel();
         let (pace_tx, pace_rx) = unbounded_channel();
         let (interrupt_tx, interrupt_rx) = unbounded_channel();
-        let state =
-            InteractiveState::new(event_rx, submit_tx, approve_tx, pace_tx, interrupt_tx, rc, theme);
+        let state = InteractiveState::new(
+            event_rx,
+            submit_tx,
+            approve_tx,
+            pace_tx,
+            interrupt_tx,
+            rc,
+            theme,
+        );
         Self {
             state,
             width,
@@ -1246,7 +1253,10 @@ mod scenarios {
             held: true,
         }));
         assert!(play.find("HELD").is_some(), "held pace is loud");
-        assert!(play.find("10s").is_some(), "retained speed shown under the hold");
+        assert!(
+            play.find("10s").is_some(),
+            "retained speed shown under the hold"
+        );
 
         // Released but still slowed: HELD drops, the ⏱ speed indicator remains.
         play.event(TuiEvent::Pace(PaceView {
@@ -1348,6 +1358,76 @@ mod scenarios {
         );
         assert!(!play.took_interrupt(), "…and does not interrupt");
         assert!(play.state.composing, "…and stays in the composer");
+    }
+
+    /// **A turn with no prose is still visibly working** (backlog/dogfooding-friction.md). Thinking
+    /// and a tool call's streaming input used to reach the TUI not at all — the sink carried only
+    /// `text_delta` — so the whole window between submitting a turn and the first prose token was
+    /// blank, and blank is indistinguishable from hung. Each phase shows what it honestly can:
+    /// thinking its *tail* (what the model is working through now), a tool call its name, then the
+    /// bytes of input received.
+    #[test]
+    fn a_prose_less_generation_phase_is_visible() {
+        let mut play = Screenplay::new(80, 12);
+        play.user("Count the modules.");
+
+        play.event(TuiEvent::ThinkingDelta("I should look at the ".into()));
+        play.event(TuiEvent::ThinkingDelta("src directory first".into()));
+        assert!(
+            play.find("thinking").is_some(),
+            "a thinking phase is not silent"
+        );
+        assert!(
+            play.find("src directory first").is_some(),
+            "…and shows the tail, the part that is current"
+        );
+
+        // The call is named as soon as it opens, before any argument bytes arrive.
+        play.event(TuiEvent::ToolCallStart {
+            name: "bash".into(),
+        });
+        assert!(
+            play.find("calling bash").is_some(),
+            "the pending call is named before its input streams"
+        );
+        assert!(
+            play.find("src directory first").is_none(),
+            "acting supersedes thinking — one phase at a time"
+        );
+
+        // Input bytes are progress, not content: a partial JSON slice is never shown.
+        play.event(TuiEvent::ToolCallInput { bytes: 64 });
+        play.event(TuiEvent::ToolCallInput { bytes: 40 });
+        assert!(
+            play.find("104 bytes").is_some(),
+            "input arrival accumulates as a byte count"
+        );
+
+        // Prose is its own evidence of progress, so it replaces the phase line.
+        play.event(TuiEvent::AssistantDelta("Looking now.".into()));
+        assert!(
+            play.find("calling bash").is_none(),
+            "prose supersedes phase"
+        );
+        assert!(play.find("Looking now.").is_some());
+    }
+
+    /// The phase line is *live*, not transcript: once the assistant entry commits, the committed
+    /// record is the thing to read and the phase has nothing left to report. (Rendering committed
+    /// thinking in the transcript is a separate unit — backlog/thinking-blocks.md.)
+    #[test]
+    fn a_committed_turn_clears_the_live_phase() {
+        let mut play = Screenplay::new(80, 12);
+        play.user("Count the modules.");
+        play.event(TuiEvent::ThinkingDelta("weighing the options".into()));
+        assert!(play.find("thinking").is_some());
+
+        play.assistant("Twelve.", vec![]);
+        assert!(
+            play.find("thinking").is_none(),
+            "the committed turn supersedes the live phase"
+        );
+        assert!(play.find("Twelve.").is_some());
     }
 
     /// A failed exchange reads as an error via a red `✗` prompt (replacing the

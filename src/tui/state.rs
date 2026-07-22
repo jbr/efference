@@ -18,7 +18,7 @@ use crate::frontend::Approval;
 use crate::log::{LogEntry, Payload};
 use crate::tui::composer::Composer;
 use crate::tui::document::{Document, DocumentNode, NodePath, TuiAction};
-use crate::tui::projection::{self, LiveTail};
+use crate::tui::projection::{self, LiveTail, Phase};
 use crate::tui::render_context::{RenderContext, ThemeError};
 use crate::tui::{BgProc, PaceCmd, PaceView, PendingGate, TuiEvent, UsageStats};
 use crossbeam_channel::Receiver;
@@ -556,7 +556,8 @@ impl<'a> InteractiveState<'a> {
         });
         let _ = self.pace_tx.send((None, Some(true)));
         self.pace = Some(PaceView { held: true, ..cur });
-        self.ui.debug_message = "⏸ HELD — esc again to stop the running tool · type to resume".into();
+        self.ui.debug_message =
+            "⏸ HELD — esc again to stop the running tool · type to resume".into();
         self.dirty = true;
     }
 
@@ -604,8 +605,30 @@ impl<'a> InteractiveState<'a> {
             }
             TuiEvent::AssistantDelta(text) => {
                 self.live.assistant.push_str(&text);
+                // Prose arriving *is* the progress signal, so it supersedes any phase line.
+                self.live.phase = None;
                 self.loading.pending_request = true;
                 self.mark_reproject();
+            }
+            TuiEvent::ThinkingDelta(text) => {
+                match &mut self.live.phase {
+                    Some(Phase::Thinking { text: buf }) => buf.push_str(&text),
+                    _ => self.live.phase = Some(Phase::Thinking { text }),
+                }
+                self.loading.pending_request = true;
+                self.mark_reproject();
+            }
+            TuiEvent::ToolCallStart { name } => {
+                // Replaces a thinking phase: the model has moved on to acting.
+                self.live.phase = Some(Phase::CallingTool { name, bytes: 0 });
+                self.loading.pending_request = true;
+                self.mark_reproject();
+            }
+            TuiEvent::ToolCallInput { bytes } => {
+                if let Some(Phase::CallingTool { bytes: total, .. }) = &mut self.live.phase {
+                    *total += bytes;
+                    self.mark_reproject();
+                }
             }
             TuiEvent::ToolOutput { call_id, chunk } => {
                 self.live.push_tool_output(&call_id, &chunk);

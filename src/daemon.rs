@@ -58,6 +58,20 @@ use crate::tools::Toolbox;
 pub enum StreamDelta {
     /// A fragment of assistant prose as the model streams it from the upstream SSE.
     AssistantText(String),
+    /// A fragment of extended-thinking text as the model streams it. A separate variant from
+    /// [`AssistantText`](Self::AssistantText) because it is *not* the assistant's answer — a client
+    /// must render it as thinking or not at all, never as prose.
+    ThinkingText(String),
+    /// The model began emitting a tool call, named before its arguments stream. Together with
+    /// [`ThinkingText`](Self::ThinkingText) this is what makes a generation phase visible at all:
+    /// before these existed only prose reached the stream, so a turn spent thinking or emitting a
+    /// large tool input published nothing and read as a hung harness
+    /// (backlog/dogfooding-friction.md).
+    ToolCallStart { name: String },
+    /// Bytes of a tool call's JSON input arriving. Carries a byte count rather than the fragment:
+    /// a partial slice of a JSON document can't be rendered honestly, and the only thing a client
+    /// can truthfully say is that the input is still arriving.
+    ToolCallInput { bytes: usize },
     /// A chunk of a running tool's combined output, tagged by its `tool_use` id.
     ToolOutput { call_id: String, chunk: String },
     /// A chunk of a running background process's output, tagged by its `bg#<n>`
@@ -1654,6 +1668,18 @@ fn delta_event(delta: &StreamDelta) -> DeltaEvent {
         StreamDelta::AssistantText(text) => DeltaEvent {
             kind: "assistant_delta",
             data: serde_json::json!({ "text": text }).to_string(),
+        },
+        StreamDelta::ThinkingText(text) => DeltaEvent {
+            kind: "thinking_delta",
+            data: serde_json::json!({ "text": text }).to_string(),
+        },
+        StreamDelta::ToolCallStart { name } => DeltaEvent {
+            kind: "tool_call_start",
+            data: serde_json::json!({ "name": name }).to_string(),
+        },
+        StreamDelta::ToolCallInput { bytes } => DeltaEvent {
+            kind: "tool_call_input",
+            data: serde_json::json!({ "bytes": bytes }).to_string(),
         },
         StreamDelta::ToolOutput { call_id, chunk } => DeltaEvent {
             kind: "tool_output",

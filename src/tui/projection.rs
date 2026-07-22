@@ -25,6 +25,26 @@ use crate::tui::markdown::MarkdownRenderer;
 pub(crate) struct LiveTail {
     pub assistant: String,
     tools: Vec<(String, String)>,
+    /// What the model is doing *right now*, when that isn't emitting prose
+    /// (backlog/dogfooding-friction.md). `None` between turns and while prose streams — prose is
+    /// its own evidence of progress, so it needs no phase line.
+    pub phase: Option<Phase>,
+}
+
+/// A generation phase with no prose to show for it. Both of these used to produce **no output at
+/// all**: the streaming sink only carried `text_delta`, so a turn spent thinking or emitting a
+/// large tool-call input looked identical to a hung harness — and the serve log's last line was
+/// often `idle`, which reads as *finished*.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Phase {
+    /// Extended thinking, with the text so far. Shown as a live preview, not accumulated
+    /// transcript content: it is cleared when the turn commits (rendering committed thinking in
+    /// the transcript is a separate unit — backlog/thinking-blocks.md).
+    Thinking { text: String },
+    /// A tool call is being emitted: named at `content_block_start`, then `bytes` of JSON input
+    /// arriving. The byte count is the honest progress signal — the input is a partial JSON slice
+    /// until the block closes, so there is nothing else truthful to show.
+    CallingTool { name: String, bytes: usize },
 }
 
 impl LiveTail {
@@ -43,7 +63,12 @@ impl LiveTail {
     /// structural.)
     pub(crate) fn commit(&mut self, entry: &LogEntry) {
         match &entry.payload {
-            Payload::Assistant { .. } => self.assistant.clear(),
+            Payload::Assistant { .. } => {
+                self.assistant.clear();
+                // The committed entry *is* the record of what the turn produced, so the live
+                // phase has nothing left to report.
+                self.phase = None;
+            }
             Payload::ToolResult { call_id, .. } => {
                 self.tools.retain(|(id, _)| id != &call_id.0);
             }
@@ -192,6 +217,12 @@ pub(crate) fn project(
     if !live.assistant.is_empty() {
         nodes.push(turn(Author::Assistant, markdown(&live.assistant)));
     }
+    // A generation phase that produces no prose (thinking, or a tool call's input still
+    // arriving). Without this the window between "turn submitted" and "first prose" is silent,
+    // and silence is indistinguishable from a hung harness (backlog/dogfooding-friction.md).
+    if let Some(phase) = &live.phase {
+        nodes.push(turn(Author::Assistant, vec![phase_line(phase)]));
+    }
     for (call_id, buf) in &live.tools {
         let header = vec![inline_code(call_id.clone())];
         nodes.push(turn(
@@ -244,6 +275,56 @@ fn pending_turn(text: &str) -> DocumentNode<'static> {
     }
     turn(Author::User, blocks)
 }
+
+/// One dimmed line naming the phase the turn is in, plus whatever evidence that phase has:
+/// thinking shows its **tail** (what the model is working through *now* — the head is stale by the
+/// time a human looks), a tool call shows its name and the bytes of input received so far.
+///
+/// Deliberately a preview rather than accumulated content: the phase disappears when the turn
+/// commits, so anything shown here must read as progress that finished, not as transcript that
+/// vanished. Committed thinking in the transcript is a separate unit (backlog/thinking-blocks.md).
+fn phase_line(phase: &Phase) -> DocumentNode<'static> {
+    let text = match phase {
+        Phase::Thinking { text } => {
+            let tail: String = text
+                .chars()
+                .rev()
+                .take(PHASE_PREVIEW_CHARS)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            let tail = tail.replace('\n', " ");
+            let tail = tail.trim();
+            if tail.is_empty() {
+                "✻ thinking…".to_string()
+            } else {
+                let elision = if text.chars().count() > PHASE_PREVIEW_CHARS {
+                    "…"
+                } else {
+                    ""
+                };
+                format!("✻ thinking… {elision}{tail}")
+            }
+        }
+        Phase::CallingTool { name, bytes } if *bytes == 0 => format!("❯ calling {name}…"),
+        Phase::CallingTool { name, bytes } => format!("❯ calling {name}… ({bytes} bytes)"),
+    };
+    DocumentNode::Paragraph {
+        spans: vec![Span {
+            text: text.into(),
+            style: SpanStyle::Comment,
+            action: None,
+        }],
+    }
+}
+
+/// How much of a thinking phase's tail the live line shows. Enough to read what the model is
+/// currently working through, short enough to stay on **one line** at a conventional 80 columns
+/// (the `✻ thinking… ` prefix and the turn indent take ~15 of them). One line matters more than
+/// more text: the tail is rewritten on every delta, so a preview that wraps reflows the transcript
+/// several times a second.
+const PHASE_PREVIEW_CHARS: usize = 60;
 
 /// Wrap a turn's blocks under its author.
 fn turn(author: Author, blocks: Vec<DocumentNode<'static>>) -> DocumentNode<'static> {

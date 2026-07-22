@@ -60,12 +60,21 @@ In-flight streaming deltas not yet committed to the log live in a `LiveTail`:
 
 ```rust
 struct LiveTail {
-    assistant: String,           // in-flight prose this turn
+    assistant: String,            // in-flight prose this turn
     tools: Vec<(String, String)>, // (call_id, accumulated output)
+    phase: Option<Phase>,         // Thinking { text } | CallingTool { name, bytes }
 }
 ```
 
 `project` renders the committed log first, then appends the live tail — in-flight assistant prose as its own turn, each running tool as a result-less exchange. When a committed `LogEntry` arrives, `LiveTail::commit` clears the superseded buffer (assistant prose on `Payload::Assistant`, tool output on `Payload::ToolResult`), mirroring the wire projection's `streamed_*` dedup flags, now structural.
+
+**The phase line: a turn that produces no prose is still visibly working.** The streaming sink is typed (`api::Streamed` — `Text` / `Thinking` / `ToolStart` / `ToolInput`), so thinking and a tool call's arriving input reach the client as their own `/stream` events (`thinking_delta`, `tool_call_start`, `tool_call_input`) rather than not at all. They fold into `phase`, which renders as one dimmed line beneath the live prose: `✻ thinking… <tail>` or `❯ calling <tool>… (N bytes)`. Three rules make it honest:
+
+- **The tail, not the head** — what the model is working through *now*. Bounded to one line at 80 columns, because the preview is rewritten on every delta and a wrapping one reflows the transcript several times a second.
+- **Prose supersedes it**, and one phase supersedes another: prose is its own evidence of progress, and acting supersedes thinking.
+- **A committed turn clears it.** The phase is live, never transcript. Thinking is therefore shown as a *preview* — the transcript renders no committed thinking yet (`project` drops the `Payload::Assistant` `thinking` field), so full live thinking would read as content that vanished at commit. Persisting it is [backlog/thinking-blocks.md](../backlog/thinking-blocks.md).
+
+Without this the window between submitting a turn and the first prose token was blank, and blank is indistinguishable from a hung harness — a risk of interrupting or abandoning a live session on false signal. The daemon's own log has the matching fix: it prints `(generating — turn N)` before blocking on the model, so its last line is no longer a stale `idle`, which reads as *finished*.
 
 
 ## Pending user turns: the delivery indicator

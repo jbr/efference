@@ -188,8 +188,19 @@ a late subscriber starts from the next delta; a lagging one drops the oldest. Th
 committed entry on `/events` is the authoritative copy.
 
 - `event: assistant_delta` — `{ "text": "<fragment>" }`
+- `event: thinking_delta` — `{ "text": "<fragment>" }` — extended thinking, never the
+  assistant's answer; a client must render it as thinking or not at all.
+- `event: tool_call_start` — `{ "name": "<tool>" }` — the model began emitting a tool call,
+  named *before* its arguments stream (a large input takes seconds to arrive).
+- `event: tool_call_input` — `{ "bytes": <n> }` — arguments arriving. A byte count, not the
+  fragment: a partial JSON slice can't be rendered honestly, so the only truthful signal is
+  that input is still coming.
 - `event: tool_output` — `{ "call_id": "…", "chunk": "…" }`
 - `event: bg_output` — `{ "handle": "bg#<n>", "chunk": "…" }`
+
+The three middle events exist so a client can show *which phase* a turn is in. Without them
+only prose reaches the stream, and a turn spent thinking or emitting a large tool input
+publishes nothing at all — indistinguishable from a hung harness.
 
 ---
 

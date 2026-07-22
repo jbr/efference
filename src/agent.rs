@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::api::{Client, Error, ToolChoice};
+use crate::api::{Client, Error, Streamed, ToolChoice};
 use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
@@ -354,12 +354,30 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             let mut messages = shared.project_messages();
             place_trailing_cache_breakpoint(&mut messages);
             // One tool call per turn (docs/README.md) — the agent picks its next single
-            // action; the fork's `retain` is the only forced call. Each streamed
-            // prose fragment is published to `GET /stream` as it arrives — the live
-            // view; the committed assistant entry on `/events` remains canonical.
+            // action; the fork's `retain` is the only forced call. Every live signal is
+            // published to `GET /stream` as it arrives — prose, thinking, and the opening
+            // and arrival of a tool call's input — so a client can show *which phase* the
+            // turn is in rather than only its prose (backlog/dogfooding-friction.md). The
+            // committed assistant entry on `/events` remains canonical; this is the live view.
+            // Supersede the idle line before blocking on the model
+            // (backlog/dogfooding-friction.md). It is printed once at the top of the idle loop and
+            // is correct at that moment, but nothing replaced it when a submitted turn then
+            // entered a phase with no output — so the last thing an operator saw during a long
+            // generation was `idle`, which reads as *finished*. The cost of a stale `idle` isn't
+            // cosmetic: it invites interrupting or abandoning a live session on false signal.
+            eprintln!("(generating — turn {turn})");
             let completion = client
-                .complete(&messages, &tools, ToolChoice::auto(), |fragment| {
-                    shared.publish_delta(StreamDelta::AssistantText(fragment.to_string()));
+                .complete(&messages, &tools, ToolChoice::auto(), |streamed| {
+                    shared.publish_delta(match streamed {
+                        Streamed::Text(text) => StreamDelta::AssistantText(text),
+                        Streamed::Thinking(text) => StreamDelta::ThinkingText(text),
+                        Streamed::ToolStart { name } => StreamDelta::ToolCallStart { name },
+                        // The fragment's *bytes* are the signal, not its content — a partial
+                        // slice of a JSON document can't be rendered honestly.
+                        Streamed::ToolInput(fragment) => StreamDelta::ToolCallInput {
+                            bytes: fragment.len(),
+                        },
+                    });
                 })
                 .await?;
             turn += 1;

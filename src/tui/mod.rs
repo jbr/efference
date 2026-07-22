@@ -66,6 +66,16 @@ pub(crate) enum TuiEvent {
     Entry(crate::log::LogEntry),
     /// A fragment of in-progress assistant prose (`/stream` `assistant_delta`).
     AssistantDelta(String),
+    /// A fragment of in-progress extended thinking (`/stream` `thinking_delta`). Kept distinct
+    /// from [`AssistantDelta`](Self::AssistantDelta) so it can never be rendered as the
+    /// assistant's answer.
+    ThinkingDelta(String),
+    /// The model began emitting a tool call (`/stream` `tool_call_start`), named before its
+    /// arguments arrive.
+    ToolCallStart { name: String },
+    /// Bytes of a tool call's input arriving (`/stream` `tool_call_input`) — a progress signal
+    /// only; the fragment itself is a partial JSON slice and never shown.
+    ToolCallInput { bytes: usize },
     /// A fragment of a running tool's output (`/stream` `tool_output`).
     ToolOutput { call_id: String, chunk: String },
     /// A fragment of a running background process's output (`/stream` `bg_output`,
@@ -696,6 +706,22 @@ fn decode_delta(
         Some("assistant_delta") => value["text"].as_str().map(|text| {
             tx.send(TuiEvent::AssistantDelta(text.to_string()))
                 .map_err(Box::new)
+        }),
+        Some("thinking_delta") => value["text"].as_str().map(|text| {
+            tx.send(TuiEvent::ThinkingDelta(text.to_string()))
+                .map_err(Box::new)
+        }),
+        Some("tool_call_start") => value["name"].as_str().map(|name| {
+            tx.send(TuiEvent::ToolCallStart {
+                name: name.to_string(),
+            })
+            .map_err(Box::new)
+        }),
+        Some("tool_call_input") => value["bytes"].as_u64().map(|bytes| {
+            tx.send(TuiEvent::ToolCallInput {
+                bytes: bytes as usize,
+            })
+            .map_err(Box::new)
         }),
         Some("tool_output") => match (value["call_id"].as_str(), value["chunk"].as_str()) {
             (Some(call_id), Some(chunk)) => Some(
