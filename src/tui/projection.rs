@@ -168,8 +168,18 @@ pub(crate) fn project(
             Payload::User(blocks) => {
                 nodes.push(turn(Author::User, markdown(&join_text(blocks))));
             }
-            Payload::Assistant { text, calls, .. } => {
+            Payload::Assistant {
+                thinking,
+                text,
+                calls,
+            } => {
                 let mut blocks = Vec::new();
+                // Thinking leads the turn, as it does on the wire (`thinking` → `text` →
+                // `tool_use`). It is the *record* of the reasoning: watching it stream past at
+                // generation speed is not reading it, so the transcript has to keep it.
+                if let Some(block) = thinking_block(entry.seq, thinking, view) {
+                    blocks.push(block);
+                }
                 let prose = join_text(text);
                 if !prose.trim().is_empty() {
                     blocks.extend(markdown(&prose));
@@ -429,6 +439,71 @@ fn exchange(
         TruncationLevel::Brief
     };
     DocumentNode::collapsible_keyed(call_id.to_string(), header, Some(resting), body, level)
+}
+
+/// A turn's extended thinking, as a collapsed block that stays in the transcript
+/// (docs/tui.md). `None` when the turn did no thinking.
+///
+/// **Collapsed by default, but never hidden.** A collapsed block still shows its opening lines
+/// (with a `(+N lines)` hint), so the gist of the reasoning is permanently visible and the whole of
+/// it is one keypress away. That is the point: thinking streams past far too fast to read live, so
+/// the live phase is only a "something is happening" signal — this is the part a human actually
+/// reads, at their own pace, afterwards.
+///
+/// Rendered in the dimmed register, like the live phase it succeeds: thinking is not the
+/// assistant's answer and must never be mistaken for it. The block is keyed by the entry's `seq`
+/// (thinking has no `call_id`), which is what carries its expand state across the re-projection
+/// that every streamed token triggers.
+fn thinking_block(
+    seq: crate::log::Seq,
+    thinking: &[ContentBlock],
+    view: &ViewState,
+) -> Option<DocumentNode<'static>> {
+    if thinking.is_empty() {
+        return None;
+    }
+    let mut body: Vec<DocumentNode<'static>> = Vec::new();
+    for block in thinking {
+        match block {
+            ContentBlock::Thinking { text, .. } => {
+                // Split on blank lines, not every newline: a blank line is the model's own
+                // paragraph break, and one node per source line would double-space the whole
+                // block (the renderer separates body children by a blank row).
+                body.extend(
+                    text.split("\n\n")
+                        .map(str::trim)
+                        .filter(|para| !para.is_empty())
+                        .map(|para| dim_line(&para.replace('\n', " "))),
+                );
+            }
+            // Safety-encrypted thinking is opaque — say so rather than rendering nothing, so the
+            // record doesn't silently omit that the model thought here.
+            ContentBlock::RedactedThinking { .. } => {
+                body.push(dim_line("(encrypted by the provider — not readable)"));
+            }
+            ContentBlock::Text(_) => {}
+        }
+    }
+    if body.is_empty() {
+        return None;
+    }
+    let key = format!("thinking:{seq}");
+    let level = if view.is_expanded(&key) {
+        TruncationLevel::Full
+    } else {
+        TruncationLevel::Brief
+    };
+    Some(DocumentNode::collapsible_keyed(
+        key,
+        vec![Span {
+            text: "✻ thinking".into(),
+            style: SpanStyle::Comment,
+            action: None,
+        }],
+        None,
+        body,
+        level,
+    ))
 }
 
 /// The inline affordance shown in a pending exchange's body, in place of the

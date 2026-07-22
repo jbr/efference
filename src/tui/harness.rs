@@ -1438,6 +1438,77 @@ mod scenarios {
         assert!(play.find("Twelve.").is_some());
     }
 
+    /// **Thinking stays in the transcript after the turn commits.** Reasoning streams past far
+    /// too fast to read at generation speed, so the live phase is only a "something is happening"
+    /// signal — this is the copy a human actually reads, afterwards, at their own pace. A long
+    /// block collapses (opening paragraphs plus a `(+N)` hint, so the gist is never hidden) and
+    /// expands in place; the expand state is keyed by the entry's `seq`, since thinking has no
+    /// `call_id`.
+    #[test]
+    fn committed_thinking_stays_readable_in_the_transcript() {
+        use crate::log::{ContentBlock, Payload};
+
+        let mut play = Screenplay::new(80, 24);
+        play.user("Why is the cache cold?");
+        let reasoning = (1..=12)
+            .map(|n| format!("Step {n} of the reasoning."))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        play.commit(Payload::Assistant {
+            thinking: vec![ContentBlock::Thinking {
+                text: reasoning,
+                signature: "sig".into(),
+            }],
+            text: vec![ContentBlock::Text("The preamble was re-rendered.".into())],
+            calls: vec![],
+        });
+
+        // Collapsed by default — but the opening is visible, not hidden behind a header.
+        assert!(play.find("✻ thinking").is_some(), "the record is present");
+        assert!(
+            play.find("Step 1 of the reasoning.").is_some(),
+            "…and its opening reads without any interaction"
+        );
+        assert!(
+            play.find("Step 12 of the reasoning.").is_none(),
+            "…while the tail is collapsed away"
+        );
+        // The answer is still the answer — thinking leads the turn, it doesn't replace it.
+        assert!(play.find("The preamble was re-rendered.").is_some());
+
+        play.expand_all().to_bottom();
+        assert!(
+            play.find("Step 12 of the reasoning.").is_some(),
+            "expanding reveals the whole record (it runs past one screen — hence scrolling)"
+        );
+    }
+
+    /// Encrypted thinking is *named*, not silently dropped — otherwise the transcript would imply
+    /// the model didn't think when the provider merely withheld the text.
+    #[test]
+    fn redacted_thinking_says_so_rather_than_rendering_nothing() {
+        use crate::log::{ContentBlock, Payload};
+
+        let mut play = Screenplay::new(80, 12);
+        play.user("Go.");
+        play.commit(Payload::Assistant {
+            thinking: vec![ContentBlock::RedactedThinking {
+                data: "encrypted-blob".into(),
+            }],
+            text: vec![ContentBlock::Text("Done.".into())],
+            calls: vec![],
+        });
+        assert!(play.find("✻ thinking").is_some());
+        assert!(
+            play.find("encrypted").is_some(),
+            "the omission is explained"
+        );
+        assert!(
+            play.find("encrypted-blob").is_none(),
+            "…without dumping the opaque payload"
+        );
+    }
+
     /// A failed exchange reads as an error via a red `✗` prompt (replacing the
     /// normal `❯`) — and explicitly NOT strikethrough (which now means deletion).
     /// The character grid can't show color; `cell` asserts it.
@@ -1686,5 +1757,3 @@ mod scenarios {
         play.snapshot("transcript_redirected_gate");
     }
 }
-
-

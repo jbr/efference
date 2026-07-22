@@ -363,7 +363,17 @@ impl<'a> InteractiveState<'a> {
                 }
 
                 // Body: render children, clipping code to BRIEF_LINES while collapsed.
+                // A *multi-node* body (the thinking block's paragraphs) collapses by stopping
+                // early — `clip_node` can only shrink a single code/diff node, so without this a
+                // paragraph body would render in full no matter the level, and "collapsed" would
+                // differ from "expanded" only by the disclosure triangle. No-op for the
+                // single-code-block bodies an exchange builds.
+                let mut lines_so_far = 0;
                 for (idx, child_node) in nodes.iter().enumerate() {
+                    if collapsed && lines_so_far >= BRIEF_LINES {
+                        break;
+                    }
+                    lines_so_far += node_line_count(child_node);
                     if idx > 0 {
                         self.layout.pos.y += 1;
                     }
