@@ -22,6 +22,7 @@ behind a change, see [`journal/`](journal/).
 - Three-valued approval gate (approve / abort / redirect) over the `Frontend` trait; multi-turn headless via `POST /turn`.
 - Upstream SSE streaming with token-level deltas, cache instrumentation, and a `max_tokens:0` keepalive.
 - In-process MCP tools (fs-mcp, semantic-edit-mcp) reusing the generated `mcplease` tool enums.
+- `read` tool line-range support (via `from_line` and `to_line` arguments) in `fs-mcp`.
 - Interactive TUI (`efference tui`): themed streaming transcript, conversational rendering with per-tool result renderers, emacs-keybind composer, inline approval gates, and a live background-process panel.
 - `Screenplay` snapshot harness + `efference gallery` for iterating TUI display without being blind.
 - TUI dev tooling: a `Ctrl-S` dev screenshot keybind (`EFFERENCE_DEV`) dumping the live screen as the same framed character grid the snapshots use, and a log-replay harness (`Screenplay::replay` over a recorded `.efference/*.jsonl`) so snapshot states are reachable-by-construction; one shared `frame_grid` encoder backs both.
