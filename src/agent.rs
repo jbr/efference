@@ -259,6 +259,22 @@ fn aborted(call: &ToolCall) -> Payload {
     }
 }
 
+/// A `tool_result` for a call whose path expansion failed (docs/tools.md): the
+/// variable was unlisted, undefined, or malformed, so the call never reached the
+/// permission cascade or the tool. Pairs the orphaned `tool_use` like
+/// [`aborted`]; the message names the variable and the allowed set so the model
+/// can correct the path rather than theorize about the tool.
+fn expansion_error(call: &ToolCall, message: &str) -> Payload {
+    Payload::ToolResult {
+        call_id: call.id.clone(),
+        raw: RawResult {
+            content: format!("not run — {message}"),
+            is_error: true,
+        },
+        wire: WireState::Raw,
+    }
+}
+
 /// A `tool_result` for a call the user rejected in favor of a redirect message.
 /// Like [`aborted`] it pairs the orphaned `tool_use`; the human's actual words
 /// follow as a separate `Payload::User` entry, which `project` merges into this
@@ -420,6 +436,27 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                     shared.append(turn, aborted(call))?;
                     continue;
                 }
+                // Path env-var expansion (docs/tools.md): resolve `$TMPDIR` in the
+                // call's path fields at one choke point, before anything judges or
+                // runs the call — the fast-path, the spotter, and the executor all
+                // see the same expanded literal (an unexpanded variable is opaque
+                // to the spotter, so this is what makes the path judgeable). A
+                // failed expansion (unlisted/undefined name) pairs the call with an
+                // error result and never reaches the cascade — a hard stop, not
+                // expand-to-empty. The logged `tool_use` keeps the variable form
+                // the model wrote; only the in-flight call is rewritten.
+                let expanded;
+                let call = match shared.expand_call(call) {
+                    Ok(None) => call,
+                    Ok(Some(rewritten)) => {
+                        expanded = rewritten;
+                        &expanded
+                    }
+                    Err(message) => {
+                        shared.append(turn, expansion_error(call, &message))?;
+                        continue;
+                    }
+                };
                 // The permission cascade (docs/permissions.md). First the
                 // deterministic fast-path (backlog/permissions/prefix-fastpath.md): a
                 // `Clear` verdict auto-approves with zero model cost. What it can't

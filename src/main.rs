@@ -157,6 +157,10 @@ enum Command {
         /// (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
         #[arg(long)]
         autonomous: bool,
+        /// Keep the per-session `$TMPDIR` scratch directory on exit instead of
+        /// deleting it — an artifact for post-mortem analysis (docs/tools.md).
+        #[arg(long)]
+        keep_scratch: bool,
     },
     /// Send a user turn to a running daemon (`POST /turn`). Seeds turn 1 on an
     /// idle daemon. Returns immediately — watch `state`/`log` for the response,
@@ -415,11 +419,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             spotter_model,
             config,
             autonomous,
+            keep_scratch,
         } => {
             // `serve` owns the session dir: `--name` or a generated timestamp id → `.efference/<id>/`,
             // with the socket/log/config colocated inside.
             let id = cli.name.unwrap_or_else(default_session_id);
-            serve(session_dir(&id), &model, &spotter_model, config, autonomous).await
+            serve(
+                session_dir(&id),
+                &model,
+                &spotter_model,
+                config,
+                autonomous,
+                keep_scratch,
+            )
+            .await
         }
         Command::Turn { text, wait } => turn(client_socket()?, text.join(" "), wait).await,
         Command::Approve {
@@ -558,7 +571,8 @@ async fn wire(
     };
     // The full tools[] a real turn sends — world tools + the harness tools
     // (`consolidate`, the docs/supervisor.md and docs/inbox.md tools) — so the dev view matches.
-    let toolbox = Toolbox::bash_and_mcps(cwd)?;
+    // (No scratch dir: the wire view renders, it never executes.)
+    let toolbox = Toolbox::bash_and_mcps(cwd, None)?;
     let tools = efference::agent::tool_definitions(&toolbox);
 
     let choice = efference::api::ToolChoice::auto();
@@ -938,6 +952,7 @@ async fn serve(
     spotter_model: &str,
     config: Option<PathBuf>,
     autonomous: bool,
+    keep_scratch: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Daemon logging: RUST_LOG controls verbosity (default: efference at info, deps
     // quiet). The transport (request sizes, full API error bodies), the agent loop
@@ -1028,6 +1043,21 @@ async fn serve(
         },
     );
 
+    // The per-session scratch dir (docs/tools.md): minted mkdtemp-style, exported to
+    // every tool child as `$TMPDIR`, and always granted rw — the sanctioned answer
+    // to driven sessions reaching for `/tmp` (the most-repeated gate in the
+    // spotter-log survey). It lives outside `.` and outside the session dir, so it
+    // collides with neither the operator's grants nor the self-surface deny above.
+    let scratch = mint_scratch_dir()?;
+    eprintln!("scratch: {} (exported as $TMPDIR)", scratch.display());
+    loaded.role.paths.insert(
+        scratch.to_string_lossy().into_owned(),
+        efference::config::Perms {
+            read: true,
+            write: true,
+        },
+    );
+
     let log_path = session_dir.join(LOG_NAME);
     let mut log = Log::create(&log_path)?;
     eprintln!("session dir: {}", session_dir.display());
@@ -1071,24 +1101,67 @@ async fn serve(
 
     // The independent permission rung (docs/permissions.md): a fresh-context spotter
     // on its own Haiku-band client, built from the same endpoint. It re-decides the calls
-    // the deterministic fast-path can't clear, before the human gate.
-    let spotter = ForkSpot::new(endpoint, spotter_model);
+    // the deterministic fast-path can't clear, before the human gate. It learns the
+    // scratch dir so its scope block can alias `$TMPDIR` to the granted path.
+    let spotter = ForkSpot::new(endpoint, spotter_model).with_scratch(Some(scratch.clone()));
 
     // The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
     // canonical wire keeps only what the model retains. `Toolbox` is the docs/tools.md tool
     // layer; mount bash + the in-process MCP servers (fs-mcp + semantic-edit-mcp),
     // their session cwd seeded to where we're running (resolved once above for [context]).
-    let toolbox = Toolbox::bash_and_mcps(cwd)?;
+    // The scratch dir rides in as bash's `$TMPDIR`; the daemon reads it back off the
+    // toolbox for the expander and background spawns (one source of truth).
+    let toolbox = Toolbox::bash_and_mcps(cwd, Some(scratch.clone()))?;
     if autonomous {
         eprintln!(
             "autonomous: no synchronous gate — spotter Watch/Gate redirects the model to its \
              config file; config writes still gate for the orchestrator-above"
         );
     }
-    daemon::serve(
+    let result = daemon::serve(
         client, toolbox, ForkPeek, spotter, log, socket, loaded, autonomous,
     )
-    .await
+    .await;
+    // Scratch lifecycle (docs/tools.md): cleaned on session end unless retained as
+    // a post-mortem artifact.
+    if keep_scratch {
+        eprintln!("scratch kept: {}", scratch.display());
+    } else if let Err(e) = std::fs::remove_dir_all(&scratch)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        eprintln!("[scratch: could not remove {}: {e}]", scratch.display());
+    }
+    result
+}
+
+/// Mint the per-session scratch dir (docs/tools.md): `<system-temp>/efference-<rand>/`,
+/// mkdtemp-style — a random name and create-or-retry (`create_dir` fails if the name
+/// exists, so there is no check-then-create race), mode `0700` so it is private on a
+/// shared-`/tmp` system (macOS `$TMPDIR` is already per-user). `std::env::temp_dir()`
+/// rather than a literal `/tmp`, which on macOS is a symlink and not the real temp dir.
+fn mint_scratch_dir() -> std::io::Result<PathBuf> {
+    use std::hash::{BuildHasher, Hasher, RandomState};
+    let base = std::env::temp_dir();
+    for _ in 0..16 {
+        // `RandomState` seeds from OS entropy — an unpredictable-enough name;
+        // create-or-retry (not check-then-create) is what closes the race.
+        let n = RandomState::new().build_hasher().finish();
+        let candidate = base.join(format!("efference-{n:016x}"));
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        match builder.create(&candidate) {
+            Ok(()) => return Ok(candidate),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::other(
+        "could not mint a scratch dir (16 name collisions)",
+    ))
 }
 
 /// Dev tool: run the spotter on one `(scope, watch-for, paths, command)` and print

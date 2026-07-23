@@ -108,6 +108,11 @@ pub trait Spotter {
 /// (Haiku), independent of the acting session's model.
 pub struct ForkSpot {
     client: Client,
+    /// The session scratch dir (docs/tools.md), when one exists. Rendered into the
+    /// scope block as the `$TMPDIR` alias: a bash move writes `$TMPDIR/…` (the
+    /// shell expands it in-child, so the spotter sees the *variable*), and without
+    /// the alias the granted literal path and the variable never connect.
+    scratch: Option<std::path::PathBuf>,
 }
 
 impl ForkSpot {
@@ -117,7 +122,15 @@ impl ForkSpot {
     pub fn new(endpoint: Endpoint, model: impl Into<String>) -> Self {
         ForkSpot {
             client: Client::new(endpoint, model, PERSONA),
+            scratch: None,
         }
+    }
+
+    /// Name the session scratch dir so the scope block can render the `$TMPDIR`
+    /// alias (docs/tools.md).
+    pub fn with_scratch(mut self, scratch: Option<std::path::PathBuf>) -> Self {
+        self.scratch = scratch;
+        self
     }
 }
 
@@ -131,7 +144,7 @@ impl Spotter for ForkSpot {
             role: ApiRole::User,
             content: vec![
                 ApiBlock::Text {
-                    text: render_context(role),
+                    text: render_context(role, self.scratch.as_deref()),
                     cache_control: Some(CacheControl::Ephemeral),
                 },
                 ApiBlock::Text {
@@ -191,9 +204,10 @@ impl Spotter for StaticSpotter {
 
 /// Render the per-config context block: the mission (scope), the boundaries (cwd + the
 /// config's path grants — so the spotter judges "outside scope" without the scope prose
-/// having to restate them), and the spotter-only watch-for list. Stable
+/// having to restate them), the `$TMPDIR` scratch alias when a scratch dir exists
+/// (docs/tools.md), and the spotter-only watch-for list. Stable
 /// for the whole session, so it caches.
-fn render_context(role: &Config) -> String {
+fn render_context(role: &Config, scratch: Option<&std::path::Path>) -> String {
     let mut s = String::from("Mission:\n");
     match role
         .scope
@@ -229,6 +243,16 @@ fn render_context(role: &Config) -> String {
             };
             s.push_str(&format!("  - {path} ({label})\n"));
         }
+    }
+    // The scratch alias (docs/tools.md): a bash move writes `$TMPDIR/…` and the
+    // shell expands it in-child, so what the spotter sees is the variable — this
+    // line is what connects it to the granted literal path above.
+    if let Some(scratch) = scratch {
+        s.push_str(&format!(
+            "- `$TMPDIR` points at `{}` — the session's private scratch directory \
+             (read, write; cleaned up when the session ends)\n",
+            scratch.display()
+        ));
     }
 
     let watch: Vec<&str> = role
@@ -477,22 +501,37 @@ mod tests {
             .collect(),
             ..Default::default()
         };
-        let ctx = render_context(&role);
+        let ctx = render_context(&role, None);
         assert!(ctx.contains("Fix the build."), "{ctx}");
         assert!(ctx.contains(". (read, write)"), "{ctx}");
         assert!(ctx.contains("/refs (read only)"), "{ctx}");
         assert!(ctx.contains("Don't touch the deploy keys."), "{ctx}");
+        assert!(!ctx.contains("$TMPDIR"), "no scratch → no alias line: {ctx}");
     }
 
     #[test]
     fn render_context_handles_empty_role() {
         // No scope, no paths, no watch-for: the spotter still gets a usable frame.
-        let ctx = render_context(&Config::default());
+        let ctx = render_context(&Config::default(), None);
         assert!(ctx.contains("no scope specified"), "{ctx}");
         assert!(ctx.contains("none configured"), "{ctx}");
         assert!(
             !ctx.contains("Things to watch for"),
             "no empty watch-for section: {ctx}"
         );
+    }
+
+    /// The scratch alias (docs/tools.md): with a scratch dir, the scope block
+    /// names `$TMPDIR` and the literal path it points at — what lets the spotter
+    /// connect a bash `$TMPDIR/…` write to the granted directory.
+    #[test]
+    fn render_context_names_the_scratch_alias() {
+        let ctx = render_context(
+            &Config::default(),
+            Some(std::path::Path::new("/var/tmp/efference-ab12")),
+        );
+        assert!(ctx.contains("$TMPDIR"), "{ctx}");
+        assert!(ctx.contains("/var/tmp/efference-ab12"), "{ctx}");
+        assert!(ctx.contains("scratch"), "{ctx}");
     }
 }

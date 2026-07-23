@@ -186,7 +186,7 @@ impl Toolbox {
 
     /// Just bash — the Phase 0 default.
     pub fn bash_only() -> Self {
-        Self::new(vec![Provider::Bash(Bash)])
+        Self::new(vec![Provider::Bash(Bash::default())])
     }
 
     /// Bash plus the in-process MCP servers — fs-mcp (read / search / write /
@@ -194,10 +194,12 @@ impl Toolbox {
     /// edits) — each with its session cwd seeded to `cwd` and an in-memory session
     /// store (no shared `~/.ai-tools` writes). The agent gets real file +
     /// structured-edit tools that lean on the fork instead of piping to
-    /// `head`/`grep` (docs/redaction-fork.md, docs/tools.md).
-    pub fn bash_and_mcps(cwd: PathBuf) -> anyhow::Result<Self> {
+    /// `head`/`grep` (docs/redaction-fork.md, docs/tools.md). `scratch` is the
+    /// session scratch dir bash exports as `$TMPDIR` (docs/tools.md); `None` for
+    /// contexts that never execute (the `wire` dev view).
+    pub fn bash_and_mcps(cwd: PathBuf, scratch: Option<PathBuf>) -> anyhow::Result<Self> {
         Ok(Self::new(vec![
-            Provider::Bash(Bash),
+            Provider::Bash(Bash { tmpdir: scratch }),
             // fs-mcp curated down to the tools whose structured, fork-friendly
             // output genuinely beats the shell. `set_working_directory` is managed
             // by efference (the cwd is seeded). `move`/`delete` are dropped: they
@@ -216,6 +218,17 @@ impl Toolbox {
                 &["set_working_directory"],
             ))),
         ]))
+    }
+
+    /// The session scratch dir the bash provider exports as `$TMPDIR`, if any.
+    /// The daemon reads it here to seed the path expander and the background
+    /// spawn env — one source of truth: the value the toolbox was built with
+    /// (docs/tools.md).
+    pub fn scratch_dir(&self) -> Option<&std::path::Path> {
+        self.providers.iter().find_map(|p| match p {
+            Provider::Bash(b) => b.tmpdir.as_deref(),
+            _ => None,
+        })
     }
 
     /// All tool definitions, in mount order — the request's `tools[]`.
@@ -403,7 +416,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        let defs = Toolbox::bash_and_mcps(dir.clone()).unwrap().definitions();
+        let defs = Toolbox::bash_and_mcps(dir.clone(), None).unwrap().definitions();
         let mut names: Vec<&str> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
         names.sort_unstable();
         let mut unique = names.clone();

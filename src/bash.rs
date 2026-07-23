@@ -66,11 +66,17 @@ const DESCRIPTION: &str = "Run a bash command and return its combined \
 stdout/stderr. Runs in its own process group; the user approves each call and \
 can abort a running command with Ctrl-C.";
 
-/// Phase 0's only tool: run a shell command in its own process group.
+/// Run a shell command in its own process group.
 ///
-/// A unit struct for now — it will grow a cwd / session process-group as the
-/// supervisor (docs/supervisor.md) lands, but Phase 0 needs no state.
-pub struct Bash;
+/// `tmpdir`, when set, overrides `$TMPDIR` in the child environment to the
+/// session's private scratch directory (docs/tools.md): the ecosystem already
+/// respects `$TMPDIR` (`mktemp`, `std::env::temp_dir()`, Python `tempfile`), so
+/// incidental *and* deliberate temp files land in the sanctioned, granted,
+/// session-cleaned dir with no agent awareness required.
+#[derive(Default)]
+pub struct Bash {
+    pub tmpdir: Option<std::path::PathBuf>,
+}
 
 #[derive(Deserialize)]
 struct Input {
@@ -128,17 +134,20 @@ impl Bash {
             Err(e) => return error(format!("invalid bash input: {e}")).into(),
         };
 
-        let mut child = match Command::new("bash")
-            .arg("-c")
+        let mut cmd = Command::new("bash");
+        cmd.arg("-c")
             .arg(&command)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             // Lead a fresh process group so one `killpg` reaps the command and
             // anything it spawns (docs/supervisor.md). child pid == pgid.
-            .process_group(0)
-            .spawn()
-        {
+            .process_group(0);
+        // The session scratch dir rides `$TMPDIR` into every child (docs/tools.md).
+        if let Some(tmpdir) = &self.tmpdir {
+            cmd.env("TMPDIR", tmpdir);
+        }
+        let mut child = match cmd.spawn() {
             Ok(child) => child,
             Err(e) => return error(format!("failed to spawn bash: {e}")).into(),
         };
@@ -307,7 +316,7 @@ mod tests {
     #[tokio::test]
     async fn runs_command_and_captures_stdout() {
         let result = done(
-            Bash.run(&json!({ "command": "echo hello" }), never(), sink())
+            Bash::default().run(&json!({ "command": "echo hello" }), never(), sink())
                 .await,
         );
         assert!(!result.is_error);
@@ -317,7 +326,7 @@ mod tests {
     #[tokio::test]
     async fn captures_stderr_without_marking_error() {
         let result = done(
-            Bash.run(&json!({ "command": "echo oops 1>&2" }), never(), sink())
+            Bash::default().run(&json!({ "command": "echo oops 1>&2" }), never(), sink())
                 .await,
         );
         assert!(!result.is_error, "exit 0 even though it wrote to stderr");
@@ -327,7 +336,7 @@ mod tests {
     #[tokio::test]
     async fn nonzero_exit_is_error_and_surfaces_status() {
         let result = done(
-            Bash.run(&json!({ "command": "exit 7" }), never(), sink())
+            Bash::default().run(&json!({ "command": "exit 7" }), never(), sink())
                 .await,
         );
         assert!(result.is_error);
@@ -341,7 +350,7 @@ mod tests {
     #[tokio::test]
     async fn malformed_input_is_an_error_result_not_a_panic() {
         let result = done(
-            Bash.run(&json!({ "not_command": true }), never(), sink())
+            Bash::default().run(&json!({ "not_command": true }), never(), sink())
                 .await,
         );
         assert!(result.is_error);
@@ -354,7 +363,7 @@ mod tests {
     async fn abort_kills_a_running_command_promptly() {
         let start = Instant::now();
         let result = done(
-            Bash.run(&json!({ "command": "sleep 30" }), now(), sink())
+            Bash::default().run(&json!({ "command": "sleep 30" }), now(), sink())
                 .await,
         );
         assert!(result.is_error);
@@ -368,7 +377,7 @@ mod tests {
     #[tokio::test]
     async fn streams_chunks_to_the_sink() {
         let mut streamed = String::new();
-        let outcome = Bash
+        let outcome = Bash::default()
             .run(
                 &json!({ "command": "echo one; echo two 1>&2; echo three" }),
                 never(),
@@ -394,6 +403,20 @@ mod tests {
         );
     }
 
+    /// The session scratch dir overrides `$TMPDIR` in the child environment
+    /// (docs/tools.md) — and without one, the inherited value is untouched.
+    #[tokio::test]
+    async fn tmpdir_is_overridden_when_set() {
+        let bash = Bash {
+            tmpdir: Some(std::path::PathBuf::from("/scratch/efference-test")),
+        };
+        let result = done(
+            bash.run(&json!({ "command": "echo $TMPDIR" }), never(), sink())
+                .await,
+        );
+        assert_eq!(result.content.trim(), "/scratch/efference-test");
+    }
+
     /// A detach surrenders the live child instead of killing it: the outcome
     /// carries the already-drained bytes as the seed, the child is still
     /// running, and the surrendered pipes keep delivering output produced
@@ -405,7 +428,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(300)).await;
             Interrupt::Detach
         };
-        let outcome = Bash
+        let outcome = Bash::default()
             .run(
                 &json!({ "command": "echo early; sleep 0.6; echo late" }),
                 detach,

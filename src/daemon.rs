@@ -260,6 +260,16 @@ pub struct Shared {
     /// (`set_pace` dropping `held`); a pure speed change or a *hold* does not fire it (those take
     /// effect at the next juncture).
     pace_interrupt: Notify,
+    /// The session scratch dir (docs/tools.md): minted by `serve`, exported to bash
+    /// children as `$TMPDIR` (foreground via the toolbox's `Bash`, background via
+    /// [`spawn_background`](Self::spawn_background)), granted rw in the injected
+    /// path stack, and the one value the structured-tool expander resolves. All
+    /// projections of this one value. `None` in tests and non-executing contexts.
+    scratch: Option<PathBuf>,
+    /// The frozen env map for structured-tool path expansion
+    /// ([`crate::expand`]): `{TMPDIR: scratch}` when a scratch dir exists, else
+    /// empty — every `$NAME` then errors, which is the fail-closed default.
+    expander: crate::expand::Expander,
 }
 
 /// The operator's pacing state (docs/control-channel.md): a continuous speed dial
@@ -306,6 +316,17 @@ impl Shared {
     /// Build the shared state under a resolved role and hand back the turn-inbox
     /// receiver for the loop.
     pub fn with_role(log: Log, role: LoadedConfig) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
+        Self::with_role_and_scratch(log, role, None)
+    }
+
+    /// The full constructor: [`with_role`](Self::with_role) plus the session
+    /// scratch dir (docs/tools.md), whose value seeds the structured-tool path
+    /// expander and the background spawn env.
+    pub fn with_role_and_scratch(
+        log: Log,
+        role: LoadedConfig,
+        scratch: Option<PathBuf>,
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
         let (turns_tx, turns_rx) = mpsc::unbounded_channel();
         // Bounded ring: a consumer that falls this far behind drops the oldest
         // deltas (a `Lagged` on `recv`) rather than stalling the loop — the log is
@@ -360,8 +381,25 @@ impl Shared {
             review_level: AtomicU8::new(crate::policy::ReviewLevel::SpotterHuman.as_u8()),
             pace: Mutex::new(Pace::default()),
             pace_interrupt: Notify::new(),
+            expander: crate::expand::Expander::new(
+                scratch
+                    .iter()
+                    .map(|p| ("TMPDIR".to_string(), p.to_string_lossy().into_owned()))
+                    .collect(),
+            ),
+            scratch,
         });
         (shared, turns_rx)
+    }
+
+    /// Resolve `$TMPDIR` in a structured call's path fields against the frozen
+    /// session env map ([`crate::expand`]) — the loop's one expansion choke
+    /// point, upstream of classify/spot/exec. `Ok(None)` = untouched.
+    pub fn expand_call(
+        &self,
+        call: &crate::log::ToolCall,
+    ) -> Result<Option<crate::log::ToolCall>, String> {
+        crate::expand::expand_call(&self.expander, call)
     }
 
     /// Record a completed request's `usage` and stamp the wall clock. The loop
@@ -948,14 +986,19 @@ impl Shared {
     /// notification when it ends. The child leads a fresh process group, so one
     /// `killpg` reaps it and any grandchildren on teardown.
     pub fn spawn_background(self: &Arc<Self>, command: String) -> io::Result<String> {
-        let mut child = Command::new("bash")
-            .arg("-c")
+        let mut cmd = Command::new("bash");
+        cmd.arg("-c")
             .arg(&command)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .process_group(0)
-            .spawn()?;
+            .process_group(0);
+        // The session scratch dir rides `$TMPDIR` into background children too,
+        // mirroring the foreground `Bash` spawn (docs/tools.md).
+        if let Some(scratch) = &self.scratch {
+            cmd.env("TMPDIR", scratch);
+        }
+        let mut child = cmd.spawn()?;
         let pgid = child.id();
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
@@ -2077,7 +2120,11 @@ pub async fn serve<D: Distiller, S: Spotter>(
     role: LoadedConfig,
     autonomous: bool,
 ) -> Result<(), Error> {
-    let (shared, turns) = Shared::with_role(log, role);
+    let (shared, turns) = Shared::with_role_and_scratch(
+        log,
+        role,
+        toolbox.scratch_dir().map(std::path::Path::to_path_buf),
+    );
     // Set before the loop spawns: the gate reads it on the loop's thread (backlog/permissions/
     // session-dir-and-config-as-reviewed-file.md — the autonomous flip).
     shared.set_autonomous(autonomous);
@@ -3074,7 +3121,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(300)).await;
             Interrupt::Detach
         };
-        let outcome = crate::bash::Bash
+        let outcome = crate::bash::Bash::default()
             .run(
                 &serde_json::json!({ "command": "echo early; sleep 0.6; echo late" }),
                 detach,
@@ -3108,6 +3155,28 @@ mod tests {
             }
             tries += 1;
             assert!(tries < 100, "exit notification never arrived: {pending:?}");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    /// A background spawn exports the session scratch dir as `$TMPDIR`, mirroring
+    /// the foreground bash spawn (docs/tools.md).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn background_spawn_exports_the_scratch_tmpdir() {
+        let (shared, _turns_rx) = Shared::with_role_and_scratch(
+            Log::in_memory(),
+            LoadedConfig::default(),
+            Some(PathBuf::from("/scratch/efference-test")),
+        );
+        let handle = shared.spawn_background("echo $TMPDIR".into()).expect("spawn");
+        let mut tries = 0;
+        loop {
+            let read = shared.bg_read_since(&handle, None).expect("known handle");
+            if read.contains("/scratch/efference-test") {
+                break;
+            }
+            tries += 1;
+            assert!(tries < 100, "TMPDIR never appeared in the capture: {read}");
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }

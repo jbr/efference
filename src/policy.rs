@@ -134,7 +134,7 @@ impl ReviewLevel {
 
 /// A filesystem permission a path-bearing tool needs to clear.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Perm {
+pub(crate) enum Perm {
     Read,
     Write,
 }
@@ -411,7 +411,7 @@ fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
 /// this map (`undo_edit`, `retarget_edit`, `consolidate`, the supervisor/inbox tools) carry no path
 /// and clear on the name grant alone. The string literals are centralized here so the coupling to
 /// each built-in's schema lives in one place, shared by both clearance sources.
-fn path_spec(name: &str) -> Option<(&'static str, Perm, Option<&'static str>)> {
+pub(crate) fn path_spec(name: &str) -> Option<(&'static str, Perm, Option<&'static str>)> {
     Some(match name {
         // Reads: the target must be under a read-or-write grant.
         "read" => ("paths", Perm::Read, None),

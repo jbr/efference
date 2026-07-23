@@ -101,6 +101,38 @@ tokens.
 A `mounted_toolbox_advertises_unique_tool_names` test in `src/tools.rs` guards
 against future collisions as new servers or tools are added.
 
+## The session scratch dir and `$TMPDIR`
+
+`serve` mints a private per-session scratch directory (`<system-temp>/efference-<rand>/`,
+mkdtemp-style: random name, create-or-retry, mode `0700`) and projects that one value
+three ways — the env var, the path grant, and the expansion value are all views of it:
+
+- **`$TMPDIR` in every tool child.** The foreground `Bash` spawn and the supervisor's
+  background spawn both override `TMPDIR` in the child environment. The ecosystem
+  already respects it (`mktemp`, `std::env::temp_dir()`, Python `tempfile`), so
+  incidental and deliberate temp files land in the sanctioned dir with no agent
+  awareness required.
+- **Always granted rw** — inserted into the path grants alongside the self-surface
+  carve-out stack ([permissions.md](permissions.md)). It lives outside `.` and outside
+  the session dir, so it collides with neither the operator's grants nor the deny. The
+  spotter's scope block additionally renders the alias line (`$TMPDIR` → the literal
+  path), because a *bash* move writes `$TMPDIR/…` and the shell expands in-child — the
+  spotter sees the variable, and the alias is what connects it to the granted path.
+- **Expanded in structured tool paths** (`src/expand.rs`). Bash gets the variable from
+  the child env; `read`/`write`/`edit`/… don't go through a shell, so the loop expands
+  `$NAME`/`${NAME}` in their *path fields only* (per the same `path_spec` key map the
+  classifier uses — file content is never rewritten) at one choke point upstream of
+  classify/spot/exec, so the fast-path, the spotter, and the executor all see the same
+  expanded literal. Expansion is against a frozen boot-time map whose exposed set
+  starts at exactly `{TMPDIR}`; an unlisted or undefined name is a hard error paired
+  to the call as an error result — never expand-to-empty, never leave-verbatim
+  (`$$` escapes a literal dollar). The grant check stays post-expansion: expansion
+  resolves the name, `path_granted` resolves the permission on the literal.
+
+The logged `tool_use` keeps the variable form the model wrote; only the in-flight call
+is rewritten, so projection determinism is untouched. Lifecycle: deleted on session
+end; `serve --keep-scratch` retains it as a post-mortem artifact.
+
 ## Open items
 
 **cargo-mcp** is not yet integrated — there is a `mcplease` version skew

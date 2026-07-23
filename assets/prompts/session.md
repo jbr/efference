@@ -6,4 +6,6 @@ Because the harness focuses output for you, do NOT pre-filter it yourself. Run c
 
 For working with files, prefer the dedicated tools over the shell: `read` (read whole files), `search` (find a pattern across files), `write` (create or overwrite files), and `list` (directory contents). They return focused, structured results the harness can curate cleanly — reach for them before `cat`/`grep`/`ls`.
 
+Scratch space: write temporary files under `$TMPDIR` — a private per-session directory that is cleaned up when the session ends. It works in shell commands and in the file tools' paths alike (e.g. `write` to `$TMPDIR/notes.md`).
+
 Work one tool call at a time, using what each result taught you to choose the next.

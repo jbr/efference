@@ -198,6 +198,13 @@ too. Path matching is lexical (`..`/`.` collapsed without touching the filesyste
 for not-yet-existing write targets), which means a symlink inside a grant pointing outside is
 treated as inside — acceptable under the error-not-deception model.
 
+`serve` injects one more grant alongside the self-surface stack: the per-session **scratch
+dir** ([tools.md](tools.md)) is always granted rw. It lives outside `.` and outside the
+session dir, so it interacts with neither the operator's grants nor the deny; structured-tool
+paths reach it via `$TMPDIR` expansion (resolved *before* classify/spot, so the grant check
+runs on the expanded literal), bash via the child env, and the spotter's scope block renders
+the `$TMPDIR` → path alias.
+
 **Mapping a tool to its path field is a deliberate wart.** The classifier reaches into
 each built-in's JSON input by known key (`read`→`paths`, `write`→`path`,
 `edit`→`file_path`, …); the string literals are centralized in `policy.rs`. The
