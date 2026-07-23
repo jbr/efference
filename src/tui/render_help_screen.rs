@@ -46,6 +46,11 @@ impl<'a> InteractiveState<'a> {
             ),
             ("  + , -  (nav)", "Slower / faster between-turns pace", key_style),
             ("  p  (nav)", "Pause / resume the loop (hold)", key_style),
+            (
+                "  b  (nav)",
+                "Move the running tool to the background",
+                key_style,
+            ),
             ("", "", bg_style),
             ("Mouse:", "", title_style),
             ("  m", "Toggle mouse mode (for text selection)", key_style),

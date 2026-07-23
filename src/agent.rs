@@ -382,10 +382,10 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             // moves into the log.
             let calls = if let Payload::Assistant { text, calls, .. } = &completion.assistant {
                 for block in text {
-                    if let ContentBlock::Text(t) = block {
-                        if !t.is_empty() {
-                            println!("\n{t}");
-                        }
+                    if let ContentBlock::Text(t) = block
+                        && !t.is_empty()
+                    {
+                        println!("\n{t}");
                     }
                 }
                 calls.clone()
@@ -583,6 +583,10 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         // (kills the process group). Tool output streams to `GET
                         // /stream` chunk-by-chunk as it runs (bash; the MCP tools
                         // resolve whole), tagged by call id.
+                        // Set only by a foreground→background handoff below: the
+                        // operator's optional note, delivered as a user turn after
+                        // the handoff result (docs/supervisor.md).
+                        let mut handoff_note = None;
                         let result = if is_background_bash(call) {
                             match background_command(call) {
                                 Some(command) => match shared.spawn_background(command) {
@@ -609,14 +613,44 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                             // against daemon state synchronously, no world run.
                             r
                         } else {
-                            toolbox
+                            if call.name == bash::NAME {
+                                // A detach request that never found a running tool
+                                // must not label this fresh command's (potential)
+                                // handoff — drop any stale note before running.
+                                shared.take_detach_note();
+                            }
+                            let outcome = toolbox
                                 .run(call, frontend.interrupted(), |chunk| {
                                     shared.publish_delta(StreamDelta::ToolOutput {
                                         call_id: call.id.0.clone(),
                                         chunk: chunk.to_string(),
                                     });
                                 })
-                                .await
+                                .await;
+                            match outcome {
+                                bash::Outcome::Done(result) => result,
+                                // The foreground→background handoff (docs/supervisor.md):
+                                // the operator detached the running command, so adopt the
+                                // live child into the supervisor — seeded with everything
+                                // already streamed — and pair the `tool_use` with a
+                                // handoff result (`is_error: false`; unlike Ctrl-C, the
+                                // command wasn't lost, it moved).
+                                bash::Outcome::Detached(detached) => {
+                                    let handle = shared.adopt_background(*detached);
+                                    handoff_note = shared.take_detach_note();
+                                    RawResult {
+                                        content: format!(
+                                            "the user moved this command to the background as \
+                                             {handle}. it is still running: its recent output \
+                                             will surface in your inbox at each step, you'll get \
+                                             a notification when it exits, and you can \
+                                             read_process/kill_process it like any background \
+                                             process."
+                                        ),
+                                        is_error: false,
+                                    }
+                                }
+                            }
                         };
                         // Bound the result before it touches anything (defense in depth):
                         // the fork peek, the wire, and the logged `raw`. An over-cap
@@ -712,6 +746,20 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                                 surfaced: distilled.surfaced,
                             }),
                         )?;
+                        // The operator note attached to a handoff lands as a real
+                        // user turn right after the handoff's result — direction,
+                        // not tool output (docs/supervisor.md). Same canonical
+                        // `Payload::User` as the seam-drain; `project` merges it
+                        // into the trailing tool_result message.
+                        if let Some(note) = handoff_note {
+                            turn += 1;
+                            shared.append(
+                                turn,
+                                Payload::User(vec![ContentBlock::Text(format!(
+                                    "[on backgrounding the command, the user says:] {note}"
+                                ))]),
+                            )?;
+                        }
                     }
                     Approval::Abort => {
                         shared.append(turn, aborted(call))?;

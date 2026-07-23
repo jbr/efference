@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use super::theme::InteractiveTheme;
 use super::utils::{find_node_at_path_mut, supports_cursor_shape};
-use crate::frontend::Approval;
+use crate::frontend::{Approval, Interrupt};
 use crate::log::{LogEntry, Payload};
 use crate::tui::composer::Composer;
 use crate::tui::document::{Document, DocumentNode, NodePath, TuiAction};
@@ -234,9 +234,11 @@ pub(super) struct InteractiveState<'a> {
     /// Sends a pace command (`speed_ms`, `held`) to the tokio side, which `POST`s it to
     /// `/pace` (docs/tui.md).
     pub pace_tx: UnboundedSender<PaceCmd>,
-    /// Fires `POST /interrupt` (the hard rung of graduated Esc, docs/tui.md) — the tokio side kills
-    /// the in-flight tool's process group. A no-op if nothing is running.
-    pub interrupt_tx: UnboundedSender<()>,
+    /// Fires the operator's interrupt intent at the in-flight tool: `Kill` →
+    /// `POST /interrupt` (the hard rung of graduated Esc, docs/tui.md), `Detach` →
+    /// `POST /background` (the foreground→background handoff, docs/supervisor.md).
+    /// A no-op if nothing is running.
+    pub interrupt_tx: UnboundedSender<Interrupt>,
     /// Whether the loop is executing a turn, polled from `GET /state`'s `running` (docs/tui.md).
     /// Graduated Esc reads it (via [`is_loop_active`](Self::is_loop_active)) to choose
     /// pause-vs-swallow — reliable through a *silent* long tool, where streaming
@@ -286,7 +288,7 @@ impl<'a> InteractiveState<'a> {
         submit_tx: UnboundedSender<String>,
         approve_tx: UnboundedSender<(String, Approval)>,
         pace_tx: UnboundedSender<PaceCmd>,
-        interrupt_tx: UnboundedSender<()>,
+        interrupt_tx: UnboundedSender<Interrupt>,
         render_context: RenderContext,
         theme: InteractiveTheme,
     ) -> Self {
@@ -565,8 +567,25 @@ impl<'a> InteractiveState<'a> {
     /// `POST /interrupt`, which kills the running tool's process group (a no-op if nothing is
     /// running). Reaches the one point pace can't (mid-tool).
     fn esc_interrupt(&mut self) {
-        let _ = self.interrupt_tx.send(());
+        let _ = self.interrupt_tx.send(Interrupt::Kill);
         self.ui.debug_message = "interrupting the running tool…".into();
+        self.dirty = true;
+    }
+
+    /// The foreground→background handoff key (docs/supervisor.md): ask the daemon
+    /// to detach the in-flight tool into the background supervisor — keep it
+    /// running as a `bg#<n>` process instead of killing it or waiting it out.
+    /// Fire-and-forget like the interrupt: the daemon no-ops if nothing is
+    /// mid-tool. A message typed right after rides the seam-drain, so it reaches
+    /// the model alongside the handoff — no separate note-capture flow.
+    pub(super) fn background_detach(&mut self) {
+        if self.is_loop_active() {
+            let _ = self.interrupt_tx.send(Interrupt::Detach);
+            self.ui.debug_message =
+                "moving the running tool to the background… · type to follow up".into();
+        } else {
+            self.ui.debug_message = "nothing running to background".into();
+        }
         self.dirty = true;
     }
 

@@ -49,9 +49,10 @@ pub(crate) struct Screenplay<'a> {
     _submit_rx: UnboundedReceiver<String>,
     _approve_rx: UnboundedReceiver<(String, Approval)>,
     _pace_rx: UnboundedReceiver<super::PaceCmd>,
-    /// Held un-underscored so a scenario can assert the hard rung of graduated Esc fired a
-    /// `POST /interrupt` (via [`took_interrupt`](Screenplay::took_interrupt)).
-    interrupt_rx: UnboundedReceiver<()>,
+    /// Held un-underscored so a scenario can assert an interrupt intent fired —
+    /// the hard rung of graduated Esc ([`took_interrupt`](Screenplay::took_interrupt))
+    /// or the background handoff ([`took_background`](Screenplay::took_background)).
+    interrupt_rx: UnboundedReceiver<crate::frontend::Interrupt>,
 }
 
 impl Screenplay<'static> {
@@ -168,7 +169,19 @@ impl Screenplay<'_> {
     /// (docs/tui.md) — drains the interrupt channel the UI would have
     /// sent on.
     pub(crate) fn took_interrupt(&mut self) -> bool {
-        self.interrupt_rx.try_recv().is_ok()
+        matches!(
+            self.interrupt_rx.try_recv(),
+            Ok(crate::frontend::Interrupt::Kill)
+        )
+    }
+
+    /// Whether the background-handoff key fired a `POST /background` since the last
+    /// check (docs/supervisor.md) — the detach intent on the same channel.
+    pub(crate) fn took_background(&mut self) -> bool {
+        matches!(
+            self.interrupt_rx.try_recv(),
+            Ok(crate::frontend::Interrupt::Detach)
+        )
     }
 
     /// Commit a [`Payload`] to the transcript as the next sequential log entry,
@@ -1339,6 +1352,29 @@ mod scenarios {
         assert!(
             play.took_interrupt(),
             "esc while held interrupts the in-flight tool"
+        );
+    }
+
+    /// The foreground→background handoff key (docs/supervisor.md): with the loop active, `b`
+    /// in transcript navigation fires the detach intent (`POST /background`); idle, it's a
+    /// status-line no-op — nothing to detach, nothing sent.
+    #[test]
+    fn b_backgrounds_a_running_tool_and_noops_idle() {
+        let none = KeyModifiers::NONE;
+        let mut play = Screenplay::new(80, 12);
+        play.user("run the tests");
+
+        // Idle: `b` sends nothing.
+        play.route_key(KeyCode::Up, none);
+        play.route_key(KeyCode::Char('b'), none);
+        assert!(!play.took_background(), "idle → nothing to detach");
+
+        // Loop active: `b` fires the detach.
+        play.event(TuiEvent::Running(true));
+        play.route_key(KeyCode::Char('b'), none);
+        assert!(
+            play.took_background(),
+            "b detaches the running tool into the supervisor"
         );
     }
 

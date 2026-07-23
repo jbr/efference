@@ -40,7 +40,7 @@ use crate::agent;
 use crate::api::{Client, Error, ToolChoice, Usage};
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
 use crate::distill::Distiller;
-use crate::frontend::{Approval, Frontend};
+use crate::frontend::{Approval, Frontend, Interrupt};
 use crate::log::{CallId, EditState, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{ApiMessage, place_trailing_cache_breakpoint, project};
@@ -155,6 +155,17 @@ pub struct Shared {
     pending: Mutex<Option<Pending>>,
     /// Fired by `POST /interrupt`; the future `interrupted()` races a running tool.
     interrupt: Notify,
+    /// Fired by `POST /background` — the detach half of the interrupt intent
+    /// (docs/supervisor.md, the foreground→background handoff). Like `interrupt`,
+    /// `notify_waiters` reaches only a *currently-awaited* race, so a detach
+    /// request with no foreground tool running is lost harmlessly.
+    detach: Notify,
+    /// The operator note optionally attached to a `POST /background`
+    /// (docs/supervisor.md): stashed by the handler, consumed by the loop only
+    /// when a detach actually lands, and cleared when a fresh foreground bash
+    /// starts so a request that never found a running tool can't mislabel a
+    /// later handoff.
+    detach_note: Mutex<Option<String>>,
     /// Pinged on each log append; the SSE tail (next slice) will wake on it.
     appended: Notify,
     /// Whether the loop is **executing a turn** (vs. parked awaiting one). Together with
@@ -330,6 +341,8 @@ impl Shared {
             approvals: Mutex::new(HashMap::new()),
             pending: Mutex::new(None),
             interrupt: Notify::new(),
+            detach: Notify::new(),
+            detach_note: Mutex::new(None),
             appended: Notify::new(),
             running: AtomicBool::new(false),
             queued: AtomicUsize::new(0),
@@ -957,6 +970,51 @@ impl Shared {
         Ok(handle)
     }
 
+    /// Adopt a *detached foreground* command into the supervisor (the
+    /// foreground→background handoff, docs/supervisor.md). Mirrors
+    /// [`spawn_background`](Self::spawn_background) from the registration on —
+    /// same drain task, same exit notification — but the child is already
+    /// running: the capture is seeded with everything the foreground path
+    /// drained before the detach, and the drain resumes from that byte boundary.
+    pub fn adopt_background(self: &Arc<Self>, detached: crate::bash::DetachedBash) -> String {
+        let crate::bash::DetachedBash {
+            command,
+            child,
+            stdout,
+            stderr,
+            seed,
+        } = detached;
+        let pgid = child.id();
+        let handle = self
+            .supervisor
+            .lock()
+            .unwrap()
+            .adopt(command, pgid, &seed);
+        tokio::spawn(drain_background(
+            Arc::clone(self),
+            handle.clone(),
+            child,
+            stdout,
+            stderr,
+        ));
+        handle
+    }
+
+    /// `POST /background` (docs/supervisor.md): ask the loop to detach the
+    /// running foreground tool into the supervisor, optionally attaching an
+    /// operator note the handoff delivers as the next user message. A no-op if
+    /// nothing is mid-tool (no waiter → the wake is lost; the note is cleared
+    /// when the next foreground bash starts).
+    pub fn request_detach(&self, note: Option<String>) {
+        *self.detach_note.lock().unwrap() = note.filter(|n| !n.trim().is_empty());
+        self.detach.notify_waiters();
+    }
+
+    /// Consume the pending detach note — called by the loop when a detach lands.
+    pub fn take_detach_note(&self) -> Option<String> {
+        self.detach_note.lock().unwrap().take()
+    }
+
     /// The peek's ambient `background` section (docs/supervisor.md) — a snapshot of running,
     /// un-muted processes, taken under the lock so the loop can hand it to the fork.
     pub fn bg_snapshot(&self) -> Vec<BgView> {
@@ -1193,8 +1251,13 @@ impl Frontend for RemoteFrontend {
         rx.await.unwrap_or(Approval::Abort)
     }
 
-    async fn interrupted(&mut self) {
-        self.shared.interrupt.notified().await;
+    async fn interrupted(&mut self) -> Interrupt {
+        // Race the two operator intents over the running tool: `POST /interrupt`
+        // kills, `POST /background` detaches into the supervisor (docs/supervisor.md).
+        tokio::select! {
+            _ = self.shared.interrupt.notified() => Interrupt::Kill,
+            _ = self.shared.detach.notified() => Interrupt::Detach,
+        }
     }
 }
 
@@ -1229,6 +1292,14 @@ fn session_visible_notice(change: &crate::log::ConfigChange) -> Option<(String, 
 #[derive(Deserialize)]
 struct TurnBody {
     text: String,
+}
+
+/// Body of `POST /background` (docs/supervisor.md): the optional operator note a
+/// foreground→background handoff delivers as the next user message.
+#[derive(Deserialize)]
+struct BackgroundBody {
+    #[serde(default)]
+    note: Option<String>,
 }
 
 /// Body of `POST /proposals/:seq`: the orchestrator's commit/cancel decision on a pending
@@ -1379,6 +1450,34 @@ fn router() -> Router {
             shared.interrupt();
             conn.with_status(200)
                 .with_body(r#"{"status":"interrupted"}"#)
+        })
+        // Detach the running foreground tool into the background supervisor
+        // (docs/supervisor.md, the foreground→background handoff) instead of
+        // killing it. Optional body `{"note": "…"}` — delivered as the next user
+        // message alongside the handoff. 202: the request only lands if a
+        // foreground tool is actually mid-run; otherwise it is a no-op.
+        // (Interim verb-route; the RESTful form is
+        // backlog/processes-rest-resource.md.)
+        .post("/background", |mut conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return conn.with_status(500).with_body(MISSING_STATE);
+            };
+            let body = conn.request_body_string().await.unwrap_or_default();
+            let note = if body.trim().is_empty() {
+                None
+            } else {
+                match serde_json::from_str::<BackgroundBody>(&body) {
+                    Ok(b) => b.note,
+                    Err(e) => {
+                        return conn
+                            .with_status(400)
+                            .with_body(format!(r#"{{"error":"bad /background body: {e}"}}"#));
+                    }
+                }
+            };
+            shared.request_detach(note);
+            conn.with_status(202)
+                .with_body(r#"{"status":"detach requested"}"#)
         })
         // Set the operator's pace dial / hold overlay (docs/control-channel.md).
         // Operator-view only — never a log entry, so it can't perturb the wire or the cache.
@@ -1727,10 +1826,10 @@ async fn drain_background(
     shared: Arc<Shared>,
     handle: String,
     mut child: tokio::process::Child,
-    stdout: tokio::process::ChildStdout,
-    stderr: tokio::process::ChildStderr,
+    mut stdout: tokio::process::ChildStdout,
+    mut stderr: tokio::process::ChildStderr,
 ) {
-    crate::bash::drain_pipes(stdout, stderr, std::future::pending(), |chunk| {
+    crate::bash::drain_pipes(&mut stdout, &mut stderr, std::future::pending::<()>(), |chunk| {
         shared.supervisor.lock().unwrap().push_chunk(&handle, chunk);
         // Smooth the live process panel between `/state` polls (TUI-bg-2). Lossy
         // and best-effort — the poll snapshot remains the authoritative tail.
@@ -2961,6 +3060,69 @@ mod tests {
             "exited process off the peek"
         );
         shared.kill_all_bg(); // no-op (nothing running) — must not panic.
+    }
+
+    /// The foreground→background handoff end to end (docs/supervisor.md): a foreground
+    /// bash command is detached mid-run, adopted into the supervisor with its
+    /// already-streamed bytes as the seed, the continuing drain lands the
+    /// post-detach output in the same capture, and the exit notifies on the
+    /// `bg#` slot like any spawned background process.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn adopt_background_continues_the_drain_and_notifies_on_exit() {
+        let (shared, _turns_rx) = Shared::new(Log::in_memory());
+        let detach = async {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            Interrupt::Detach
+        };
+        let outcome = crate::bash::Bash
+            .run(
+                &serde_json::json!({ "command": "echo early; sleep 0.6; echo late" }),
+                detach,
+                |_| {},
+            )
+            .await;
+        let detached = match outcome {
+            crate::bash::Outcome::Detached(d) => d,
+            crate::bash::Outcome::Done(r) => panic!("expected a detach, got {:?}", r.content),
+        };
+        let handle = shared.adopt_background(*detached);
+        assert_eq!(handle, "bg#1");
+
+        // The seeded capture is readable immediately, before any new output.
+        let read = shared.bg_read_since(&handle, None).expect("known handle");
+        assert!(read.contains("early"), "seed in the capture: {read}");
+
+        // The continuing drain appends the post-detach output to the same
+        // capture, and the exit notifies — one uninterrupted stream.
+        let mut tries = 0;
+        loop {
+            let pending = shared.pending_notifications();
+            if let Some(n) = pending.iter().find(|n| n.source == "bg#1") {
+                assert!(n.body.contains("exited 0"), "clean exit: {}", n.body);
+                assert!(
+                    n.body.contains("early") && n.body.contains("late"),
+                    "final tail spans the whole run: {}",
+                    n.body
+                );
+                break;
+            }
+            tries += 1;
+            assert!(tries < 100, "exit notification never arrived: {pending:?}");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    /// The detach note (docs/supervisor.md): stashed by `POST /background`,
+    /// consumed exactly once by the loop when a handoff lands; a blank note is
+    /// dropped at the door.
+    #[test]
+    fn detach_note_is_stashed_and_consumed_once() {
+        let (shared, _turns_rx) = Shared::new(Log::in_memory());
+        shared.request_detach(Some("check the logs".into()));
+        assert_eq!(shared.take_detach_note().as_deref(), Some("check the logs"));
+        assert_eq!(shared.take_detach_note(), None, "consumed once");
+        shared.request_detach(Some("   ".into()));
+        assert_eq!(shared.take_detach_note(), None, "blank note dropped");
     }
 
     /// `GET /state` surfaces the live background processes (docs/supervisor.md) — the data the

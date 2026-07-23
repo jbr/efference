@@ -24,7 +24,7 @@ Ephemeral control state — a pending approval, current status, live process tai
 
 **Pending-approval registry** — a `HashMap<CallId, oneshot::Sender<Approval>>`. When the loop reaches a tool call requiring approval, it calls `Shared::register_pending`, which creates a oneshot channel, stores the sender keyed by the call's `CallId` (the same id already on the wire — no new id scheme), and returns the receiver. The loop blocks on that receiver. `POST /approvals/{call_id}` looks up the sender and fulfills it.
 
-**Interrupt `Notify`** — `POST /interrupt` fires this; `RemoteFrontend::interrupted()` resolves when it's notified. The loop races this against a running tool (the SIGINT equivalent, killing the tool's process group).
+**Interrupt `Notify` (×2) + detach note** — `POST /interrupt` fires the kill notifier, `POST /background` fires the detach notifier (plus stashes its optional note in a `Mutex<Option<String>>`); `RemoteFrontend::interrupted()` selects over both and resolves with the intent (`Interrupt::Kill` or `Interrupt::Detach`). The loop races this against a running tool: kill is the SIGINT equivalent (process group killed), detach is the foreground→background handoff (the live child adopted into the supervisor, see [supervisor.md](supervisor.md)).
 
 **Pace state** — `Mutex<Pace>` (`{ speed: Duration, held: bool }`) plus a `pace_interrupt` `Notify` (backlog/participation/README.md). The operator's between-turns wall-clock dial: `effective_sleep = held ? ∞ : speed`, `held` an overlay that retains `speed` underneath (resume returns to it, never to zero). `Shared::pace_at_seam` applies an interruptible sleep at the between-step juncture; `set_pace` (via `POST /pace`) moves the dials, and a **release** or a **submit** fires `pace_interrupt` so the wait ends immediately. It is **operator-view only — never a log entry, never projected**, so a held or slowed loop is byte-identical on the wire to a fast one (that, plus timestamps-never-projected, is the whole invisibility guarantee: loud to the operator's TUI, silent to the agent).
 
@@ -38,7 +38,8 @@ Ephemeral control state — a pending approval, current status, live process tai
 
 - `POST /turn {text}` → 202. Enqueues a user turn. Returns immediately; submission is decoupled from inference. With `?wait`, the connection is held until the daemon **settles** (the turn reaches a gate or completes) and the response is the resulting `/state` snapshot instead of the 202 — synchronous "submit, read what happened" with no `/state` poll loop.
 - `POST /approvals/{call_id} {decision: approve|abort|redirect|config_edit, message?, change?, note?}` — resolves a pending gate by the tool call's id (`config_edit` carries the `change`, see Approval below). With `?wait`, holds until the daemon settles again (the turn's *next* gate or completion) and returns that `/state` — so a multi-gate turn is driven as a clean approve→read loop.
-- `POST /interrupt` — fires the interrupt notifier.
+- `POST /interrupt` — fires the interrupt notifier (kill).
+- `POST /background {note?}` → 202. Fires the detach notifier — the foreground→background handoff (see [supervisor.md](supervisor.md)); the optional note is delivered as a user message alongside the handoff result. No-op when nothing is mid-tool.
 - `POST /pace {speed_ms?, held?}` → 200, returns the resulting `{speed_ms, held}`. Sets the operator's pace dial and/or hold overlay (backlog/participation/README.md). Both optional: slow, pause, or resume in one call. Reflected in `GET /state`'s `pace`; never touches the log.
 - `POST /review-level {level}` → 200, returns the resulting `{review_level}`. Sets the review-level dial — `autonomous` / `spotter_human` / `human_only` — deciding who reviews a gated call (see [permissions](permissions.md)). Runtime-mutable; reflected in `GET /state`'s `review_level`.
 - `POST /notify {source, body, slot?, replaces?}` → 202, returns `{id}`. Enqueues an ambient notification into the ephemeral inbox (see [the inbox](inbox.md)). A `slot` binds the notification to a logical channel; a later notify on the same slot supersedes the old one (archive-and-replace, not edit — records are immutable). `replaces` supersedes a specific pending id by its queue-local id.
@@ -66,13 +67,13 @@ The agent loop and the log know only the `Frontend` trait. Swapping the underlyi
 trait Frontend {
     async fn read_user_turn(&mut self) -> Option<String>;
     async fn approve(&mut self, call: &ToolCall) -> Approval;
-    async fn interrupted(&mut self);
+    async fn interrupted(&mut self) -> Interrupt;
 }
 ```
 
-`read_user_turn` returns the next user turn, or `None` to end the loop. `approve` is a gate on a pending tool call, not a general line-edit surface — it has its own four-valued return (approve / abort / redirect / config_edit) and is conceptually separate from turn input. `interrupted` resolves when the user signals interrupt while a tool is running.
+`read_user_turn` returns the next user turn, or `None` to end the loop. `approve` is a gate on a pending tool call, not a general line-edit surface — it has its own four-valued return (approve / abort / redirect / config_edit) and is conceptually separate from turn input. `interrupted` resolves when the user signals interrupt while a tool is running, carrying the intent — `Kill` (abort the tool, process group killed) or `Detach` (hand the live child to the background supervisor, see [supervisor.md](supervisor.md)).
 
-The loop is pull-shaped and stays that way. It blocks at `read_user_turn()` and `approve()`, and these map cleanly onto request/response: the pull resolves when a client pushes. `RemoteFrontend` implements all three against `Shared` — `read_user_turn` awaits the turn inbox, `approve` registers a gate and awaits its oneshot, `interrupted` awaits the interrupt notifier.
+The loop is pull-shaped and stays that way. It blocks at `read_user_turn()` and `approve()`, and these map cleanly onto request/response: the pull resolves when a client pushes. `RemoteFrontend` implements all three against `Shared` — `read_user_turn` awaits the turn inbox, `approve` registers a gate and awaits its oneshot, `interrupted` selects over the kill and detach notifiers.
 
 ## Approval: four-valued, no always-allow
 

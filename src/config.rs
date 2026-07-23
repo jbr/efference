@@ -730,10 +730,10 @@ fn apply_to_document(doc: &mut DocumentMut, change: &ConfigChange) {
                 .as_table_mut()
                 .entry("tools")
                 .or_insert(Item::Value(Value::Array(Array::new())));
-            if let Some(arr) = entry.as_array_mut() {
-                if !arr.iter().any(|v| v.as_str() == Some(name.as_str())) {
-                    arr.push(name.as_str());
-                }
+            if let Some(arr) = entry.as_array_mut()
+                && !arr.iter().any(|v| v.as_str() == Some(name.as_str()))
+            {
+                arr.push(name.as_str());
             }
         }
         // A scope replace: set the `scope` scalar in place. When it already exists, carry its

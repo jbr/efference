@@ -89,6 +89,19 @@ impl Client {
         self.post("/interrupt", String::new()).await.map(drop)
     }
 
+    /// Detach the running foreground tool into the background supervisor
+    /// (`POST /background`, docs/supervisor.md) — keep it running as a `bg#<n>`
+    /// process instead of killing it or waiting it out. `note`, if given, is
+    /// delivered to the model as the next user message alongside the handoff.
+    /// A no-op if nothing is mid-tool.
+    pub async fn background(&self, note: Option<&str>) -> Result<()> {
+        let body = match note {
+            Some(note) => serde_json::json!({ "note": note }).to_string(),
+            None => String::new(),
+        };
+        self.post("/background", body).await.map(drop)
+    }
+
     /// Set the operator's pace dial / hold overlay (`POST /pace`,
     /// docs/control-channel.md). Both optional: `speed_ms` sets the between-turns
     /// delay, `held` toggles the pause. Returns the daemon's resulting `(speed_ms, held)`.

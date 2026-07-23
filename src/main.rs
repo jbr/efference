@@ -192,6 +192,14 @@ enum Command {
     Settle,
     /// Interrupt a running tool (`POST /interrupt`) — kills its process group.
     Interrupt,
+    /// Detach the running foreground tool into the background supervisor
+    /// (`POST /background`, docs/supervisor.md) — it keeps running as a `bg#<n>`
+    /// process instead of blocking the turn. No-op if nothing is mid-tool.
+    Background {
+        /// A note delivered to the model as the next user message alongside the handoff.
+        #[arg(long)]
+        note: Option<String>,
+    },
     /// Set the operator's pace dial / hold overlay (`POST /pace`,
     /// docs/control-channel.md). Between-turns wall-clock pacing, transparent to the
     /// agent (never logged or sent to the model). Combine `--speed-ms` with `--hold`/`--resume`.
@@ -422,6 +430,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         } => approve(client_socket()?, call_id, abort, redirect, wait).await,
         Command::Settle => settle(client_socket()?).await,
         Command::Interrupt => interrupt(client_socket()?).await,
+        Command::Background { note } => background(client_socket()?, note).await,
         Command::Pace {
             speed_ms,
             hold,
@@ -667,6 +676,12 @@ async fn review_level(socket: PathBuf, level: String) -> CliResult {
 async fn interrupt(socket: PathBuf) -> CliResult {
     ControlClient::new(socket).interrupt().await?;
     println!("interrupted");
+    Ok(())
+}
+
+async fn background(socket: PathBuf, note: Option<String>) -> CliResult {
+    ControlClient::new(socket).background(note.as_deref()).await?;
+    println!("detach requested (lands only if a foreground tool is running)");
     Ok(())
 }
 

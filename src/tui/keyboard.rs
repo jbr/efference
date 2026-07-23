@@ -306,6 +306,13 @@ impl<'a> InteractiveState<'a> {
                 self.toggle_pace_hold();
             }
 
+            // Foreground→background handoff (docs/supervisor.md): move the
+            // in-flight tool into the background supervisor instead of killing
+            // it or waiting it out. Daemon-side no-op when nothing is mid-tool.
+            (KeyCode::Char('b'), _) => {
+                self.background_detach();
+            }
+
             // Help
             (KeyCode::Char('?'), _) | (KeyCode::Char('h'), _) => {
                 self.ui_mode = UiMode::Help;

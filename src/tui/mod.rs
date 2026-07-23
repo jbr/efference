@@ -228,7 +228,8 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
     let (submit_tx, mut submit_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let (approve_tx, mut approve_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Approval)>();
     let (pace_tx, mut pace_rx) = tokio::sync::mpsc::unbounded_channel::<PaceCmd>();
-    let (interrupt_tx, mut interrupt_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let (interrupt_tx, mut interrupt_rx) =
+        tokio::sync::mpsc::unbounded_channel::<crate::frontend::Interrupt>();
 
     // The bridge feeds the UI thread; it ends when the streams close or the UI
     // thread drops the receiver.
@@ -336,12 +337,17 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
         }
     });
 
-    // Interrupt sender: the hard rung of graduated Esc fires `POST /interrupt`
-    // (docs/tui.md), killing the in-flight tool's process group.
+    // Interrupt sender: the operator's intent over the in-flight tool. `Kill`
+    // (the hard rung of graduated Esc, docs/tui.md) fires `POST /interrupt`;
+    // `Detach` (the foreground→background handoff, docs/supervisor.md) fires
+    // `POST /background`.
     let interrupt_client = client.clone();
     let interrupter = tokio::spawn(async move {
-        while interrupt_rx.recv().await.is_some() {
-            let _ = interrupt_client.interrupt().await;
+        while let Some(intent) = interrupt_rx.recv().await {
+            let _ = match intent {
+                crate::frontend::Interrupt::Kill => interrupt_client.interrupt().await,
+                crate::frontend::Interrupt::Detach => interrupt_client.background(None).await,
+            };
         }
     });
 
@@ -373,7 +379,8 @@ pub async fn run_gallery(theme: Option<String>) -> Result<()> {
     let (approve_tx, approve_rx) =
         tokio::sync::mpsc::unbounded_channel::<(String, crate::frontend::Approval)>();
     let (pace_tx, pace_rx) = tokio::sync::mpsc::unbounded_channel::<PaceCmd>();
-    let (interrupt_tx, interrupt_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let (interrupt_tx, interrupt_rx) =
+        tokio::sync::mpsc::unbounded_channel::<crate::frontend::Interrupt>();
 
     for entry in gallery::log() {
         let _ = tx.send(TuiEvent::Entry(entry));
@@ -762,7 +769,7 @@ fn ui_loop(
     submit_tx: tokio::sync::mpsc::UnboundedSender<String>,
     approve_tx: tokio::sync::mpsc::UnboundedSender<(String, crate::frontend::Approval)>,
     pace_tx: tokio::sync::mpsc::UnboundedSender<PaceCmd>,
-    interrupt_tx: tokio::sync::mpsc::UnboundedSender<()>,
+    interrupt_tx: tokio::sync::mpsc::UnboundedSender<crate::frontend::Interrupt>,
     theme_name: String,
 ) -> io::Result<()> {
     // Build the render context: interactive TTY, sized to the terminal.

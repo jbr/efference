@@ -15,9 +15,23 @@
 //!   redirect rejects it and steers the model with the supplied text; abort
 //!   unwinds the turn.
 //! - [`Frontend::interrupted`] — resolves when the user interrupts a *running*
-//!   tool, so the loop can kill the process group (docs/supervisor.md).
+//!   tool, carrying the intent: kill the process group, or detach it into the
+//!   background supervisor (docs/supervisor.md).
 
 use crate::log::{ConfigChange, ToolCall};
+
+/// The operator's intent when interrupting a *running* tool (docs/supervisor.md).
+/// Both reach the one intervention point pace can't — mid-tool — but differ in
+/// what happens to the child.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Interrupt {
+    /// Kill the process group now (`POST /interrupt`, the Ctrl-C guardrail).
+    Kill,
+    /// Keep the child running but stop blocking on it: hand it to the background
+    /// supervisor as a `bg#<n>` process (`POST /background`, the
+    /// foreground→background handoff, docs/supervisor.md).
+    Detach,
+}
 
 /// The decision returned by [`Frontend::approve`] (docs/README.md). A typed line is a
 /// *redirect* — the call is rejected and the human's text is fed to the model as
@@ -66,7 +80,8 @@ pub trait Frontend {
     /// Gate a pending tool call: approve, abort, or redirect.
     async fn approve(&mut self, call: &ToolCall) -> Approval;
 
-    /// Resolve when the user interrupts a *running* tool. The loop passes this as
-    /// the bash tool's `abort` future so the process group is killed (docs/supervisor.md).
-    async fn interrupted(&mut self);
+    /// Resolve when the user interrupts a *running* tool, with the intent: kill
+    /// its process group, or detach it into the background supervisor. The loop
+    /// passes this as the bash tool's `abort` future (docs/supervisor.md).
+    async fn interrupted(&mut self) -> Interrupt;
 }

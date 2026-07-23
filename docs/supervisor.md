@@ -49,6 +49,37 @@ socket just as any other client would. This folds into the existing `Ambient`
 [inbox](inbox.md) with no new `Payload` variant. Spawn = `ToolResult`, exit and
 pinned tail = `Ambient`, the live state = ephemeral registry.
 
+## Foreground → background handoff
+
+A command is foreground-or-background at spawn time (the model's `background:
+true`), but the operator can also move a **running foreground** command into the
+supervisor mid-flight, instead of the only mid-run lever being kill.
+
+The interrupt that races a running tool carries an **intent**
+(`frontend::Interrupt`): `Kill` — today's `POST /interrupt`, `killpg` the group —
+or `Detach` — `POST /background`. On detach, `Bash::run` neither kills nor reaps:
+it surrenders the live child, both pipe halves, and the bytes already drained
+(`bash::DetachedBash`), returned to the loop as `Outcome::Detached`. The loop
+calls `adopt_background`, which registers the child under a fresh `bg#<n>`
+handle, **seeds** the capture buffer with the surrendered bytes (through the
+same bounded-cap accounting as live chunks), and spawns the same drain task as a
+spawned background process — from adoption on, the two paths are
+indistinguishable: tail in the peek, cursor reads, exit notification.
+
+The seam loses nothing and duplicates nothing: the drain select only completes a
+read after its bytes are accumulated, so everything read before the detach won
+the race is in the seed, and the surrendered pipes resume from exactly that
+byte boundary.
+
+The detached call's `tool_use` is paired with a **handoff result** (`is_error:
+false`, unlike a kill): the model is told the user moved the command to the
+background as `bg#<n>`, which it can `read_process`/`kill_process` like any
+other. `POST /background` optionally carries a `note`, appended as a user
+message right after the handoff result — direction, not tool output. A detach
+request with no tool mid-run is a no-op: the wake reaches only a
+currently-awaited race, and a stashed note is dropped when the next foreground
+bash starts, so it can't mislabel a later handoff.
+
 ## Why the running tail is not a notification
 
 The [inbox](inbox.md) / notification model is built on immutable bodies: an

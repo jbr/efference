@@ -91,6 +91,20 @@ process group). No body.
 
 - `200 {"status":"interrupted"}`
 
+#### `POST /background`
+Detach the running foreground tool into the background supervisor — the
+foreground→background handoff ([supervisor.md](supervisor.md)). The command
+keeps running as a `bg#<n>` process; the model's `tool_use` is paired with a
+non-error handoff result. A no-op when nothing is mid-tool (the wake reaches
+only a currently-running tool's race; a stale note is dropped when the next
+foreground bash starts). Interim verb-route; the RESTful form is
+`backlog/processes-rest-resource.md`.
+
+- Body (optional): `{ "note"?: "<string>" }` — delivered to the model as a user
+  message immediately after the handoff result. Blank/absent → silent handoff.
+- `202 {"status":"detach requested"}`
+- `400 {"error":"bad /background body: …"}`
+
 #### `POST /notify`
 Enqueue an ambient notification into the inbox.
 

@@ -152,6 +152,19 @@ impl Supervisor {
         handle
     }
 
+    /// Adopt a command that started life *foreground* and was detached mid-flight
+    /// (the foreground→background handoff, docs/supervisor.md): register it and
+    /// seed its capture with everything the foreground path already drained, so
+    /// the tail/cursor views span the whole run — through the same bounded-cap
+    /// accounting as live chunks, never silently.
+    pub fn adopt(&mut self, command: String, pgid: Option<u32>, seed: &[u8]) -> String {
+        let handle = self.register(command, pgid);
+        if !seed.is_empty() {
+            self.push_chunk(&handle, seed);
+        }
+        handle
+    }
+
     /// Append a freshly-read output chunk to a process's bounded capture and stamp
     /// its activity clock (the source of the peek's `idle` figure).
     pub fn push_chunk(&mut self, handle: &str, chunk: &[u8]) {
@@ -420,6 +433,19 @@ mod tests {
         let (source, body) = s.pin_snapshot(&h).unwrap();
         assert_eq!(source, "bg#1");
         assert!(body.contains("npm test") && body.contains("PASS"), "{body}");
+    }
+
+    #[test]
+    fn adopt_seeds_the_capture_and_reads_span_the_whole_run() {
+        let mut s = Supervisor::new();
+        let h = s.adopt("cargo test".into(), Some(9), b"pre-detach output\n");
+        s.push_chunk(&h, b"post-detach output\n");
+        let read = s.read_since(&h, None).unwrap();
+        assert!(
+            read.contains("pre-detach output") && read.contains("post-detach output"),
+            "seed and live bytes are one stream: {read}"
+        );
+        assert_eq!(s.pgid_of(&h), Some(9), "adopted child is killable/teardown-able");
     }
 
     #[test]
