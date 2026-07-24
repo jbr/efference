@@ -332,6 +332,28 @@ fn item_width(entry: &StripItem) -> u16 {
     (2 + entry.label.chars().count() + hint_w + 1) as u16
 }
 
+/// Write `text` at column `col` of the strip row, truncating at the area edge;
+/// returns the next free column. Column-at-a-time like the other chrome renders.
+fn put_row(
+    buf: &mut Buffer,
+    area: Rect,
+    col: u16,
+    text: &str,
+    style: ratatui::style::Style,
+) -> u16 {
+    let mut x = col;
+    for ch in text.chars() {
+        if x >= area.width {
+            break;
+        }
+        if let Some(cell) = buf.cell_mut((area.x + x, area.y)) {
+            cell.set_char(ch).set_style(style);
+        }
+        x += 1;
+    }
+    x
+}
+
 #[cfg(test)]
 mod scenarios {
     use crate::tui::TuiEvent;
@@ -668,26 +690,4 @@ mod scenarios {
             play.state.strip_hits
         );
     }
-}
-
-/// Write `text` at column `col` of the strip row, truncating at the area edge;
-/// returns the next free column. Column-at-a-time like the other chrome renders.
-fn put_row(
-    buf: &mut Buffer,
-    area: Rect,
-    col: u16,
-    text: &str,
-    style: ratatui::style::Style,
-) -> u16 {
-    let mut x = col;
-    for ch in text.chars() {
-        if x >= area.width {
-            break;
-        }
-        if let Some(cell) = buf.cell_mut((area.x + x, area.y)) {
-            cell.set_char(ch).set_style(style);
-        }
-        x += 1;
-    }
-    x
 }

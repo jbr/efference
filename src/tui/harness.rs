@@ -41,7 +41,9 @@ use crate::log::{
 /// an empty document (`'static`), which is all the composer scenarios need. The
 /// channel far-ends are held so sends from inside the state never error.
 pub(crate) struct Screenplay<'a> {
-    pub(crate) state: InteractiveState<'a>,
+    /// `pub(super)`, not `pub(crate)`: it exposes `InteractiveState`, which is
+    /// itself `pub(in crate::tui)` — and every scenario lives inside `tui`.
+    pub(super) state: InteractiveState<'a>,
     width: u16,
     height: u16,
     next_seq: u64,
@@ -374,7 +376,7 @@ impl Screenplay<'_> {
     /// session is live (`stuck_to_bottom`). Bottom-pinning normally happens in the
     /// `ui_loop` after a reproject; the harness has no loop, so this draws once to
     /// populate the cached layout, then scrolls to the computed max.
-    pub(crate) fn to_bottom(&mut self) -> &mut Self {
+    pub(crate) fn pin_to_bottom(&mut self) -> &mut Self {
         let _ = self.draw();
         self.state.scroll_to_bottom();
         self
@@ -660,7 +662,7 @@ mod scenarios {
     fn replay_real_session_tail() {
         let entries = replay_fixture();
         let mut play = Screenplay::new(80, 24);
-        play.replay(&entries).to_bottom();
+        play.replay(&entries).pin_to_bottom();
         play.snapshot("replay_real_session_tail");
     }
 
@@ -1553,7 +1555,7 @@ mod scenarios {
         // The answer is still the answer — thinking leads the turn, it doesn't replace it.
         assert!(play.find("The preamble was re-rendered.").is_some());
 
-        play.expand_all().to_bottom();
+        play.expand_all().pin_to_bottom();
         assert!(
             play.find("Step 12 of the reasoning.").is_some(),
             "expanding reveals the whole record (it runs past one screen — hence scrolling)"
