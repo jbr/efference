@@ -10,7 +10,7 @@ expression: self.render()
  1 │                                                                                │
  2 │   Here.                                                                        │
  3 │                                                                                │
- 4 │▌  ▶ bash · ls src/tui  (+12 lines)                                             │
+ 4 │▌  ▶ bash · ls src/tui  (+12 lines)  ▸ expand    raw                            │
  5 │▌╭──────────────❬rust❭─╮                                                        │
  6 │▌│ render_module_01.rs │                                                        │
  7 │▌│ render_module_02.rs │                                                        │
@@ -35,5 +35,5 @@ expression: self.render()
 26 │                                                                                │
 27 │   theme t     help ?                                                detach q   │
 28 │›                                                                               │
-29 │   navigate — ↑/↓ move · ⏎ expand · esc compose                                 │
+29 │   navigate — ↑/↓ unit · ←/→ verb · ⏎ act · esc compose                         │
    └────────────────────────────────────────────────────────────────────────────────┘

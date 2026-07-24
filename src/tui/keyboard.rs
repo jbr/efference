@@ -220,7 +220,7 @@ impl<'a> InteractiveState<'a> {
         self.composing = false;
         self.viewport.keyboard_cursor = KeyboardCursor::VirtualBottom;
         self.handle_navigate_up();
-        self.ui.debug_message = "navigate — ↑/↓ move · ⏎ expand · esc compose".into();
+        self.ui.debug_message = "navigate — ↑/↓ unit · ←/→ verb · ⏎ act · esc compose".into();
     }
 
     /// Capture the live screen to a timestamped framed-grid file under
@@ -317,9 +317,20 @@ impl<'a> InteractiveState<'a> {
                 self.sync_stuck_to_bottom();
             }
 
-            // Expand the focused block
+            // The block menu (docs/tui.md): `←`/`→` (and `C-b`/`C-f`) choose among
+            // the focused unit's entry verbs. The Ctrl arms are matched here, ahead
+            // of the plain `b` background bind below.
+            (KeyCode::Left, _) | (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
+                self.move_block_menu(false);
+            }
+            (KeyCode::Right, _) | (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+                self.move_block_menu(true);
+            }
+
+            // Fire the focused unit's selected verb — the collapse toggle unless the
+            // menu selection has moved, so `⏎` keeps meaning "expand this."
             (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => {
-                self.handle_activate_focused_link();
+                self.activate_block_menu();
             }
 
             // Flip the focused tool result between its wire (distilled) and raw
@@ -428,6 +439,10 @@ impl<'a> InteractiveState<'a> {
     fn handle_navigate_down(&mut self) {
         use super::state::KeyboardCursor;
 
+        // The block menu travels with focus: a new unit starts on its leading verb,
+        // so `⏎` after a move is always "the most relevant thing" (docs/tui.md).
+        self.block_menu_focus = 0;
+
         match self.viewport.keyboard_cursor {
             KeyboardCursor::VirtualTop => {
                 // Try to focus first visible link
@@ -519,6 +534,9 @@ impl<'a> InteractiveState<'a> {
     fn handle_navigate_up(&mut self) {
         use super::state::KeyboardCursor;
 
+        // As in `handle_navigate_down`: the menu selection belongs to the unit.
+        self.block_menu_focus = 0;
+
         match self.viewport.keyboard_cursor {
             KeyboardCursor::VirtualTop => {
                 // Can't go higher than virtual top
@@ -604,7 +622,7 @@ impl<'a> InteractiveState<'a> {
     /// request thread and reset keyboard focus to VirtualTop for the new document.
     /// ExpandBlock actions mutate the document in place and preserve focus.
     /// Does nothing when in VirtualTop or VirtualBottom states.
-    fn handle_activate_focused_link(&mut self) {
+    pub(super) fn handle_activate_focused_link(&mut self) {
         use super::state::KeyboardCursor;
 
         if let KeyboardCursor::Focused { action_index } = self.viewport.keyboard_cursor

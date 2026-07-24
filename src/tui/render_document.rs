@@ -13,6 +13,9 @@ impl<'a> InteractiveState<'a> {
     /// Render document nodes to buffer, updating action map
     pub(super) fn render_document(&mut self, _area: Rect, buf: &mut Buffer) {
         self.render_cache.actions.clear();
+        // The block menu is repainted with the focused unit each frame; its click
+        // targets are rebuilt alongside the action map (docs/tui.md).
+        self.block_menu_hits.clear();
 
         // Layout state already initialized in render_frame with area
         // Set initial position and indent

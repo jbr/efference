@@ -237,6 +237,41 @@ impl Screenplay<'_> {
         })
     }
 
+    /// A committed tool exchange in one line: the assistant's `bash`-shaped call
+    /// plus its (non-error, raw) result — the shape most transcript scenarios need
+    /// a focusable unit to be.
+    pub(crate) fn tool_exchange(
+        &mut self,
+        call_id: &str,
+        name: &str,
+        command: &str,
+        output: &str,
+    ) -> &mut Self {
+        let call = tool_call(name, call_id, serde_json::json!({ "command": command }));
+        self.assistant("", vec![call]);
+        self.tool_result(call_id, output, false, WireState::Raw)
+    }
+
+    /// Click screen cell `(x, y)` through the real mouse path — the press that
+    /// records a target, then the deferred `handle_click` the UI loop runs.
+    pub(crate) fn click(&mut self, x: u16, y: u16) -> &mut Self {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        // As with keys: paint first, so the frame's hit maps exist to resolve against.
+        let _ = self.draw();
+        let terminal = Terminal::new(TestBackend::new(self.width, self.height)).unwrap();
+        self.state.handle_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: x,
+                row: y,
+                modifiers: KeyModifiers::NONE,
+            },
+            &terminal,
+        );
+        self.state.handle_click();
+        self
+    }
+
     /// Expand every collapsed exchange in the transcript, driving the real
     /// [`ExpandBlock`](crate::tui::document::TuiAction::ExpandBlock) action the
     /// `⏎`/`space`/click handlers use. This is how a scenario shows the *expanded*

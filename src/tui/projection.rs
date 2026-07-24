@@ -95,11 +95,11 @@ pub(crate) struct ViewState {
 }
 
 impl ViewState {
-    fn is_expanded(&self, call_id: &str) -> bool {
+    pub(super) fn is_expanded(&self, call_id: &str) -> bool {
         self.expanded.contains(call_id)
     }
 
-    fn is_raw(&self, call_id: &str) -> bool {
+    pub(super) fn is_raw(&self, call_id: &str) -> bool {
         self.raw.contains(call_id)
     }
 
@@ -441,6 +441,18 @@ fn exchange(
     DocumentNode::collapsible_keyed(call_id.to_string(), header, Some(resting), body, level)
 }
 
+/// The prefix a thinking block's `key` carries. Two kinds of block are keyed —
+/// a tool exchange by its `call_id`, a thinking block by `thinking:<seq>` — and
+/// this is what tells them apart (see [`is_call_key`]).
+const THINKING_KEY_PREFIX: &str = "thinking:";
+
+/// Whether a block `key` names a tool call rather than a turn's thinking. The
+/// distinction is what the block menu ranks on: only a tool result has a
+/// distillate/raw fork to flip (docs/redaction-fork.md).
+pub(super) fn is_call_key(key: &str) -> bool {
+    !key.starts_with(THINKING_KEY_PREFIX)
+}
+
 /// A turn's extended thinking, as a collapsed block that stays in the transcript
 /// (docs/tui.md). `None` when the turn did no thinking.
 ///
@@ -487,7 +499,7 @@ fn thinking_block(
     if body.is_empty() {
         return None;
     }
-    let key = format!("thinking:{seq}");
+    let key = format!("{THINKING_KEY_PREFIX}{seq}");
     let level = if view.is_expanded(&key) {
         TruncationLevel::Full
     } else {

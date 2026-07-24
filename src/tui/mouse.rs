@@ -142,6 +142,21 @@ impl<'a> super::InteractiveState<'a> {
     pub(super) fn handle_click(&mut self) {
         // Handle any clicked action from previous iteration
         if let Some(click_pos) = self.viewport.clicked_position.take() {
+            // The block menu sits *on* the focused unit's header row, which is
+            // itself the expand action's click target — so menu items resolve
+            // first, or every menu click would just expand the block
+            // (docs/tui.md).
+            if let Some(idx) = self
+                .block_menu_hits
+                .iter()
+                .find(|(rect, _)| rect.contains(click_pos))
+                .map(|(_, i)| *i)
+            {
+                self.block_menu_focus = idx;
+                self.activate_block_menu();
+                return;
+            }
+
             let action_opt = self
                 .render_cache
                 .actions

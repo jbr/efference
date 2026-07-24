@@ -304,7 +304,7 @@ impl<'a> InteractiveState<'a> {
                 resting,
                 nodes,
                 level,
-                ..
+                key,
             } => {
                 // First row of this unit and the index its focus action will take —
                 // captured before any rendering so the focus bar (below) can span the
@@ -313,13 +313,19 @@ impl<'a> InteractiveState<'a> {
                 let block_start = self.layout.pos.y;
                 let my_action_index = self.render_cache.actions.len();
                 let has_action = header.is_some();
+                let is_focused = has_action
+                    && matches!(
+                        self.viewport.keyboard_cursor,
+                        super::state::KeyboardCursor::Focused { action_index }
+                            if action_index == my_action_index
+                    );
 
                 // Source lines the body would occupy fully expanded. The transcript's
                 // collapsible body is a single CodeBlock, so this is its line count;
                 // counting newlines (not wrapped rows) keeps the collapse decision
                 // width-independent and deterministic.
                 let total_lines: usize = nodes.iter().map(node_line_count).sum();
-                let collapsible = total_lines > BRIEF_LINES;
+                let collapsible = is_collapsible(nodes);
                 let collapsed = collapsible && matches!(level, TruncationLevel::Brief);
                 let hidden = total_lines.saturating_sub(BRIEF_LINES);
 
@@ -344,6 +350,21 @@ impl<'a> InteractiveState<'a> {
                     if collapsed {
                         let hint = format!("  (+{hidden} lines)");
                         self.render_span(&muted_span(&hint), buf);
+                    }
+                    // The block menu (docs/tui.md): the focused unit's own verbs,
+                    // trailing its header text — appending clobbers no header
+                    // columns and reflows nothing as focus moves.
+                    if is_focused {
+                        let key = key.as_deref();
+                        let items = super::block_menu::menu_items(
+                            key,
+                            *level,
+                            collapsible,
+                            key.is_some_and(|k| self.view.is_raw(k)),
+                            self.gate_is_on(key),
+                        );
+                        let col = self.layout.pos.x + 2;
+                        self.render_block_menu(buf, &items, header_row, col, self.layout.area);
                     }
                     self.layout.pos.y += 1;
 
@@ -393,14 +414,6 @@ impl<'a> InteractiveState<'a> {
                 // height (docs/tui.md), painted after the body so it spans every row.
                 // Glyph-based, not reversed-video — the latter is invisible on themes
                 // whose fg/bg are close, and never shows in the no-color snapshot grid.
-                // Only collapsible blocks carry a focus action today (the per-turn
-                // focusability is a later step), so only they can be focused.
-                let is_focused = has_action
-                    && matches!(
-                        self.viewport.keyboard_cursor,
-                        super::state::KeyboardCursor::Focused { action_index }
-                            if action_index == my_action_index
-                    );
                 if is_focused {
                     let style = self.style(SpanStyle::UserAccent);
                     for row in block_start..self.layout.pos.y {
@@ -528,6 +541,14 @@ fn node_line_count(node: &DocumentNode<'_>) -> usize {
         DocumentNode::List { items, .. } => items.len(),
         _ => 1,
     }
+}
+
+/// Whether a block's body has more than a collapsed block shows — i.e. whether it
+/// has anything to expand. The renderer's own collapse decision; the block menu
+/// asks the same question to decide whether to offer the expand verb, so both read
+/// one rule.
+pub(super) fn is_collapsible(nodes: &[DocumentNode<'_>]) -> bool {
+    nodes.iter().map(node_line_count).sum::<usize>() > BRIEF_LINES
 }
 
 /// A copy of `node` clipped to its first `max_lines` source lines (the collapsed

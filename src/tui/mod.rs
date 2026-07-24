@@ -18,6 +18,7 @@
 // not exercise yet but that keeps the code shaped like upstream for backporting.
 #![allow(dead_code)]
 
+pub(crate) mod block_menu;
 pub(crate) mod color_scheme;
 pub(crate) mod composer;
 pub(crate) mod control_strip;

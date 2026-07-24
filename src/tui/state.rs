@@ -259,6 +259,14 @@ pub(super) struct InteractiveState<'a> {
     /// The strip items' rendered column ranges (`x_start..x_end`, item index),
     /// rebuilt each frame — what mouse clicks on the strip row resolve against.
     pub strip_hits: Vec<(u16, u16, usize)>,
+    /// Block-menu selection (docs/tui.md): which of the focused transcript unit's
+    /// entry verbs `⏎` fires. Reset to the leading verb whenever focus moves to
+    /// another unit, and clamped to the current unit's verb list at use.
+    pub block_menu_focus: usize,
+    /// The block menu's rendered item rects in *document* coordinates, rebuilt
+    /// each frame — what a click resolves against, ahead of the whole-header
+    /// expand action underneath it.
+    pub block_menu_hits: Vec<(Rect, usize)>,
     /// Sends a submitted turn to the tokio side, which `POST`s it to the daemon.
     pub submit_tx: UnboundedSender<String>,
     /// Optimistic echoes of just-submitted user turns, in submission order, not yet
@@ -388,6 +396,8 @@ impl<'a> InteractiveState<'a> {
             strip_focus: None,
             staging: None,
             strip_hits: Vec::new(),
+            block_menu_focus: 0,
+            block_menu_hits: Vec::new(),
             submit_tx,
             pending_turns: Vec::new(),
             pending_gate: None,

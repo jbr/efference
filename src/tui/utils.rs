@@ -22,6 +22,31 @@ pub(super) fn set_cursor_shape<B: Backend + io::Write>(backend: &mut B, shape: &
     let _ = Backend::flush(backend);
 }
 
+/// The node a [`NodePath`](crate::tui::document::NodePath) addresses, read-only —
+/// the shared-borrow twin of [`find_node_at_path_mut`], for callers that only
+/// inspect (the block menu asking what verbs the focused unit carries).
+pub(super) fn find_node_at_path<'a, 'b>(
+    nodes: &'a [DocumentNode<'b>],
+    path: &[u16],
+) -> Option<&'a DocumentNode<'b>> {
+    let (&idx, rest) = path.split_first()?;
+    let node = nodes.get(idx as usize)?;
+    if rest.is_empty() {
+        return Some(node);
+    }
+    match node {
+        DocumentNode::Section { nodes, .. }
+        | DocumentNode::BlockQuote { nodes }
+        | DocumentNode::TruncatedBlock { nodes, .. } => find_node_at_path(nodes, rest),
+        DocumentNode::Turn { blocks, .. } => find_node_at_path(blocks, rest),
+        DocumentNode::List { items, .. } => {
+            let (&item_idx, rest) = rest.split_first()?;
+            find_node_at_path(&items.get(item_idx as usize)?.content, rest)
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn find_node_at_path_mut<'a, 'b>(
     nodes: &'a mut [DocumentNode<'b>],
     path: &[u16],
