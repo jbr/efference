@@ -562,6 +562,33 @@ impl<'a> InteractiveState<'a> {
         self.loading.pending_request || self.loop_running
     }
 
+    /// The tool call currently executing, derived from the committed log alone —
+    /// the last `Assistant` entry's call, if no `ToolResult` has paired it yet.
+    /// `None` while the model is generating (nothing called yet, or the last call
+    /// already resolved).
+    ///
+    /// No daemon round-trip: the loop appends the `Assistant` entry *before* it
+    /// runs the call and the `ToolResult` after (`src/agent.rs`), so the unpaired
+    /// tail of the log the TUI already holds is exactly "what is running now."
+    /// `disable_parallel_tool_use` means at most one call per turn, so the last
+    /// entry's first call is the whole answer. A gate pending on the call looks
+    /// the same from here; callers that care check `pending_gate` first.
+    pub(super) fn in_flight_call(&self) -> Option<&crate::log::ToolCall> {
+        let (idx, call) = self
+            .log
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(i, entry)| match &entry.payload {
+                Payload::Assistant { calls, .. } => calls.first().map(|c| (i, c)),
+                _ => None,
+            })?;
+        let paired = self.log[idx + 1..].iter().any(|entry| {
+            matches!(&entry.payload, Payload::ToolResult { call_id, .. } if *call_id == call.id)
+        });
+        (!paired).then_some(call)
+    }
+
     /// Graduated Esc (docs/tui.md): a **state machine**, not a press-count — each Esc's effect is a
     /// function of the current state, so no counter, timer, or reset is needed. Precedence, gentlest
     /// first:
@@ -678,12 +705,21 @@ impl<'a> InteractiveState<'a> {
         self.dirty = true;
     }
 
-    /// The interrupt step of graduated Esc (docs/tui.md): abort the in-flight tool now — fire
-    /// `POST /interrupt`, which kills the running tool's process group (a no-op if nothing is
-    /// running). Reaches the one point pace can't (mid-tool).
+    /// The interrupt step of graduated Esc (docs/tui.md): fire `POST /interrupt`, which stops the
+    /// loop at the next juncture and withholds the in-flight call's output from the model
+    /// (docs/control-channel.md) — plus, on a foreground bash, kills the running process group.
+    /// Reaches the one point pace can't (mid-tool). The hint names whichever promise applies, and
+    /// both end the same way: the operator's next message is what the model reads.
     pub(super) fn esc_interrupt(&mut self) {
         let _ = self.interrupt_tx.send(Interrupt::Kill);
-        self.ui.debug_message = "interrupting the running tool…".into();
+        self.ui.debug_message = if self
+            .in_flight_call()
+            .is_some_and(crate::bash::is_foreground_call)
+        {
+            "interrupting — killing the running command · type to steer".into()
+        } else {
+            "interrupting — its output won't reach the model · type to steer".into()
+        };
         self.dirty = true;
     }
 

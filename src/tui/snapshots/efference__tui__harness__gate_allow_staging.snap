@@ -16,7 +16,7 @@ expression: self.render()
  8 │                                                                                │
  9 │                                                                                │
 10 │                                                                                │
-11 │  draft saved · ⏎ commit · ⎋ cancel                                  detach q   │
+11 │ draft saved · ⏎ commit · ⎋ cancel                                              │
 12 │allow › rm                                                                      │
    │          ^                                                                     │
 13 │   allow — edit the grant · ⏎ commit · ⎋ cancel                                 │

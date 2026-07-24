@@ -147,7 +147,11 @@ pub fn expand_call(expander: &Expander, call: &ToolCall) -> Result<Option<ToolCa
     };
     let expanded: Value = match value {
         Value::String(s) if s.contains('$') => Value::String(expander.expand(s)?),
-        Value::Array(items) if items.iter().any(|v| v.as_str().is_some_and(|s| s.contains('$'))) => {
+        Value::Array(items)
+            if items
+                .iter()
+                .any(|v| v.as_str().is_some_and(|s| s.contains('$'))) =>
+        {
             let mut out = Vec::with_capacity(items.len());
             for item in items {
                 out.push(match item.as_str() {
@@ -276,7 +280,10 @@ mod tests {
     #[test]
     fn expand_call_surfaces_the_error_for_a_bad_path() {
         let e = tmpdir_expander();
-        let c = call("write", json!({ "path": "$HOME/.ssh/config", "content": "x" }));
+        let c = call(
+            "write",
+            json!({ "path": "$HOME/.ssh/config", "content": "x" }),
+        );
         let err = expand_call(&e, &c).unwrap_err();
         assert!(err.contains("$HOME"), "{err}");
     }

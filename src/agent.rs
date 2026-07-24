@@ -225,18 +225,6 @@ async fn run_idle_triage<D: Distiller>(
     Ok(escalate)
 }
 
-/// Whether a call is a `bash` invocation asking to be backgrounded (docs/supervisor.md) —
-/// `{ "command": …, "background": true }`. Such a call is handled structurally in
-/// the loop (it registers a child with the supervisor) rather than run to completion.
-fn is_background_bash(call: &ToolCall) -> bool {
-    call.name == bash::NAME
-        && call
-            .input
-            .get("background")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-}
-
 /// The `command` of a background-bash call, if present.
 fn background_command(call: &ToolCall) -> Option<String> {
     call.input
@@ -256,6 +244,27 @@ fn aborted(call: &ToolCall) -> Payload {
             is_error: true,
         },
         wire: WireState::Raw,
+    }
+}
+
+/// A `tool_result` for a call the operator interrupted while it ran
+/// (docs/control-channel.md). Nothing here can suspend a synchronous tool, so the
+/// call completed and its effects stand — what the interrupt buys is that its
+/// *output* never reaches the model: `raw` is kept in the log (the TUI can still
+/// show it, and the verdict is reversible like any other), while the wire carries
+/// only the `Elided` placeholder. The pair has to exist at all because an
+/// assistant `tool_use` with no `tool_result` is a request the API rejects
+/// (docs/log-and-projection.md).
+///
+/// It deliberately explains nothing. The operator interrupted in order to say
+/// something, and their message is the next thing on the wire; a harness-authored
+/// gloss here would guess at a meaning that differs per tool and land *before*
+/// the person whose intent it was guessing at.
+fn withheld(call: &ToolCall, raw: RawResult) -> Payload {
+    Payload::ToolResult {
+        call_id: call.id.clone(),
+        raw,
+        wire: WireState::Elided,
     }
 }
 
@@ -338,6 +347,11 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 shared.append(turn, Payload::User(vec![ContentBlock::Text(line)]))?;
             }
         }
+
+        // A fresh turn starts un-interrupted: an interrupt fired while the loop was idle has
+        // nothing to stop, and a latch left set would silently stop the *next* turn's first
+        // call instead (docs/control-channel.md).
+        shared.take_interrupt();
 
         // Inner loop: keep round-tripping while the model calls tools. `first_step` skips the
         // pace sleep on the turn that responds to the just-read user message / escalated event —
@@ -434,6 +448,14 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 // wire orphans it and the API rejects the request (docs/README.md).
                 if abort_turn || redirect.is_some() {
                     shared.append(turn, aborted(call))?;
+                    continue;
+                }
+                // The interrupt's *before* juncture (docs/control-channel.md): the operator
+                // asked out while the model was generating, so this call never runs — the
+                // un-run stand-in already says so, and the turn ends here.
+                if shared.take_interrupt() {
+                    shared.append(turn, aborted(call))?;
+                    abort_turn = true;
                     continue;
                 }
                 // Path env-var expansion (docs/tools.md): resolve `$TMPDIR` in the
@@ -624,7 +646,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         // operator's optional note, delivered as a user turn after
                         // the handoff result (docs/supervisor.md).
                         let mut handoff_note = None;
-                        let result = if is_background_bash(call) {
+                        let result = if bash::is_background_call(call) {
                             match background_command(call) {
                                 Some(command) => match shared.spawn_background(command) {
                                     Ok(handle) => RawResult {
@@ -707,6 +729,18 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         } else {
                             result
                         };
+                        // The interrupt's *after* juncture (docs/control-channel.md). The
+                        // operator asked out while this call ran; it finished (nothing here
+                        // can suspend a synchronous tool) but its output stops at the log.
+                        // Taken *before* the fork, so the discarded result is never peeked
+                        // at, never distilled, and costs no round-trip — the point of the
+                        // verb is keeping unwanted output out of the context, and a fork
+                        // that read it first would defeat that on the way to the same place.
+                        if shared.take_interrupt() {
+                            shared.append(turn, withheld(call, result))?;
+                            abort_turn = true;
+                            continue;
+                        }
                         // Distill at append: the canonical wire never carries raw;
                         // `raw` is kept in the log for reversibility (docs/redaction-fork.md).
                         // `ForkPeek` re-enters the model here (the universal triage fork,
@@ -974,6 +1008,96 @@ mod tests {
             name: crate::bash::NAME.into(),
             input: serde_json::json!({ "command": command }),
         }
+    }
+
+    /// The wire shape an interrupt produces (docs/control-channel.md). Three
+    /// things have to hold at once, and they are the whole design:
+    ///
+    /// 1. The `tool_use` is **paired** — an orphan is a request the API rejects.
+    /// 2. The pair carries **none of the output** and no harness gloss: the point
+    ///    of interrupting is that the tool's output never enters the context, and
+    ///    a stand-in explaining the situation would be the harness guessing at a
+    ///    meaning that differs per tool.
+    /// 3. The operator's next message merges into the **same** user message, so
+    ///    the model reads `[tool_result, "…"]` in one breath — the person who
+    ///    interrupted says why, in their own words, right where the output would
+    ///    have been. That merge is `project`'s existing seam-drain behavior; this
+    ///    pins that it survives the turn boundary an interrupt introduces.
+    #[test]
+    fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_speaks_next() {
+        use crate::project::ApiBlock;
+        let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
+        let call = bash_call("cat enormous.log");
+        shared
+            .append(
+                1,
+                Payload::Assistant {
+                    thinking: vec![],
+                    text: vec![],
+                    calls: vec![call.clone()],
+                },
+            )
+            .unwrap();
+        shared
+            .append(
+                1,
+                withheld(
+                    &call,
+                    RawResult {
+                        content: "SECRET_TOKEN=hunter2\n…120k of log…".into(),
+                        is_error: false,
+                    },
+                ),
+            )
+            .unwrap();
+        // The turn ended; the operator's message opens the next one.
+        shared
+            .append(
+                2,
+                Payload::User(vec![ContentBlock::Text("read the test instead".into())]),
+            )
+            .unwrap();
+
+        let messages = shared.project_messages();
+        let last = messages.last().expect("a projected message");
+        assert_eq!(last.role, crate::project::Role::User);
+        match &last.content[..] {
+            [
+                ApiBlock::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                    ..
+                },
+                ApiBlock::Text { text, .. },
+            ] => {
+                assert_eq!(tool_use_id, &call.id.0, "the tool_use is paired");
+                assert!(
+                    content.contains("[elided]"),
+                    "the pair is a placeholder: {content}"
+                );
+                assert!(
+                    !content.contains("hunter2") && !content.contains("120k"),
+                    "the withheld output never reaches the wire: {content}"
+                );
+                assert!(!is_error, "the call didn't fail — it was interrupted");
+                assert_eq!(text, "read the test instead");
+            }
+            other => panic!("expected [tool_result, text] in one user message, got {other:?}"),
+        }
+
+        // Withheld from the model, not from the operator: `raw` is intact in the
+        // log, so the TUI can still show it and the verdict stays reversible.
+        let entries = shared.snapshot();
+        let logged = entries
+            .iter()
+            .find_map(|e| match &e.payload {
+                Payload::ToolResult { raw, wire, .. } => Some((raw, wire)),
+                _ => None,
+            })
+            .expect("the result is in the log");
+        assert!(logged.0.content.contains("hunter2"), "raw survives the log");
+        assert!(matches!(logged.1, WireState::Elided));
     }
 
     /// A committed grant reaches the **file**, not just the log fold

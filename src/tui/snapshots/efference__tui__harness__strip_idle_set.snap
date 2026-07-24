@@ -12,7 +12,7 @@ expression: self.render()
  4 │                                                                                │
  5 │                                                                                │
  6 │                                                                                │
- 7 │   theme t     help ?                                                detach q   │
+ 7 │   pace fast     theme t     help ?     detach q                                │
  8 │›                                                                               │
    │  ^                                                                             │
  9 │   efference — ↑ controls                                                       │

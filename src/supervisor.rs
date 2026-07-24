@@ -445,7 +445,11 @@ mod tests {
             read.contains("pre-detach output") && read.contains("post-detach output"),
             "seed and live bytes are one stream: {read}"
         );
-        assert_eq!(s.pgid_of(&h), Some(9), "adopted child is killable/teardown-able");
+        assert_eq!(
+            s.pgid_of(&h),
+            Some(9),
+            "adopted child is killable/teardown-able"
+        );
     }
 
     #[test]

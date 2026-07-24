@@ -375,9 +375,10 @@ pub struct Notification {
 /// touching `raw`) is the one redaction primitive — every projection experiment
 /// is a change to how [`project`] reads these (docs/README.md, docs/log-and-projection.md).
 ///
-/// Phase 0 only ever constructs `Raw`; `Distilled`/`Elided` are wired into
-/// [`project`] now so Phase 1 adds *construction sites*, not a type change that
-/// would invalidate the byte-stability test.
+/// The variants were wired into [`project`] ahead of their construction sites, so
+/// each site landed as a behavior change rather than a type change that would
+/// invalidate the byte-stability test. `Distilled` is built by the redaction fork
+/// (docs/redaction-fork.md); `Elided` by the interrupt (docs/control-channel.md).
 ///
 /// [`project`]: crate::project::project
 #[derive(Clone, Debug, Serialize, Deserialize)]

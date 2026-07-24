@@ -4,13 +4,18 @@
 //! the keybinding legend in one place — each item carries the key that would fire
 //! the same verb without visiting the strip.
 //!
-//! Items are ranked left→right by relevance for the current state family (gate
-//! pending / held / running / idle), so `↑ ⏎` from the composer always lands on
-//! the most relevant verb. Universal items (`detach`) are pinned at the right
-//! edge, dimmer, at a stable position. Contextual items that don't fit the width
-//! are dropped from the right (lowest relevance first); the universals always
-//! render. The strip is chrome, not transcript: its contents come from the same
-//! polled `/state` fields the status bar reads, and it never projects.
+//! Contents are **one relevance-ordered list per state**, most-relevant leftmost,
+//! filled to the available width and **cut from the right** — so `↑ ⏎` from the
+//! composer is always "do the most relevant thing," and what a narrow terminal
+//! loses is always the least relevant verb. The list is the state's context verbs
+//! followed by the omnipresent tail (`pace · theme · help · detach`), which is
+//! therefore what gets cut first; every tail verb has a keyboard fallback, and
+//! `pace` sits leftmost in the tail because it is a control, not a setting.
+//!
+//! Only verbs that apply in the state are shown — the strip flashing between
+//! states is preferred to carrying an affordance that would do nothing. The strip
+//! is chrome, not transcript: its contents come from the polled `/state` fields
+//! the status bar reads plus the committed log, and it never projects.
 //!
 //! Focus model: the strip is one stop on the single vertical axis
 //! (transcript → strip → composer). The focused item fills a reserved marker
@@ -21,6 +26,7 @@
 use ratatui::{buffer::Buffer, layout::Rect};
 
 use super::{InteractiveState, UiMode};
+use crate::bash;
 
 /// A verb the strip can carry. Dispatch happens in
 /// [`activate_strip_item`](InteractiveState::activate_strip_item), always onto
@@ -31,8 +37,9 @@ pub(super) enum StripVerb {
     PauseToggle,
     /// Enter the inline pace stepper (the widget class, docs/tui.md).
     PaceWidget,
-    /// Interrupt the in-flight tool (`POST /interrupt`).
-    Kill,
+    /// Interrupt the loop (`POST /interrupt`) — shown as `kill` where it also
+    /// kills a process group, `interrupt` everywhere else (docs/tui.md).
+    Interrupt,
     /// Foreground→background handoff (`POST /background`).
     Background,
     /// Approve the pending gate.
@@ -50,74 +57,94 @@ pub(super) enum StripVerb {
     Detach,
 }
 
-/// One strip item: a label, the fast-path key it teaches (empty when there is
-/// none), and whether it is a right-pinned universal.
+/// One strip item: a label and the fast-path key it teaches (empty when there is
+/// none). A bare-letter hint is also the item's **scoped mnemonic** — it fires the
+/// verb while the strip is focused, and only where the item is shown (docs/tui.md).
 #[derive(Debug, Clone, Copy)]
 pub(super) struct StripItem {
     pub label: &'static str,
     pub hint: &'static str,
     pub verb: StripVerb,
-    pub universal: bool,
 }
 
 const fn item(label: &'static str, hint: &'static str, verb: StripVerb) -> StripItem {
-    StripItem {
-        label,
-        hint,
-        verb,
-        universal: false,
-    }
+    StripItem { label, hint, verb }
 }
 
+/// The omnipresent tail, appended to every state's context verbs and therefore
+/// the first thing a narrow width cuts (right to left: `detach`, `help`, `theme`,
+/// `pace`). Ordered least-cuttable first: `pace` is a control the operator reaches
+/// for mid-run, `detach` is the one with the plainest keyboard fallback.
+const TAIL: [StripItem; 4] = [
+    item("pace", "", StripVerb::PaceWidget),
+    item("theme", "t", StripVerb::Theme),
+    item("help", "?", StripVerb::Help),
+    item("detach", "q", StripVerb::Detach),
+];
+
 impl InteractiveState<'_> {
-    /// The ranked item list for the current state family. Re-evaluated per frame;
-    /// contents only change when the underlying polled state does, so re-ranking
-    /// happens at state transitions and never while the strip sits stable.
+    /// The ranked item list for the current state. Re-evaluated per frame;
+    /// contents only change when the underlying state does, so re-ranking happens
+    /// at state transitions and never while the strip sits stable.
+    ///
+    /// Two transient sub-states own the row outright and so carry no tail — their
+    /// `⏎`/`⎋` belong to the sub-state, and a clickable tail beside them would
+    /// invite acting out from under it.
     pub(super) fn strip_items(&self) -> Vec<StripItem> {
+        if self.pace_widget.is_some() {
+            // The active pace stepper (docs/tui.md): ↑/↓ adjust, ⏎ sets, ⎋ reverts.
+            return vec![item("pace", "", StripVerb::PaceWidget)];
+        }
+        if self.staging.is_some() {
+            // Mid-staging the composer owns the interaction (⏎ commits, ⎋ cancels);
+            // the row carries the staging note instead of items.
+            return Vec::new();
+        }
+        let mut items = self.strip_context_verbs();
+        items.extend(TAIL);
+        items
+    }
+
+    /// The state's context verbs, most relevant first — everything left of the
+    /// [`TAIL`]. `held` is a modifier rather than a state of its own: wherever the
+    /// hold verb appears it reads `resume` instead of `pause`.
+    fn strip_context_verbs(&self) -> Vec<StripItem> {
         let held = self.pace.is_some_and(|p| p.held);
-        let mut items = if self.pace_widget.is_some() {
-            // The active pace stepper owns the row (docs/tui.md): ↑/↓ adjust, ⏎
-            // sets, ⎋ reverts — the other held verbs leave so nothing else can be
-            // focused or reflow behind the changing value, mirroring staging.
-            vec![item("pace", "", StripVerb::PaceWidget)]
-        } else if self.staging.is_some() {
-            // Mid-staging the composer owns the interaction (⏎ commits, ⎋
-            // cancels) — the gate verbs leave the strip so `approve ⏎` can't
-            // mislead or be clicked out from under the stager; the row carries
-            // the staging note instead.
-            vec![]
-        } else if self.pending_gate.is_some() {
-            vec![
+        let hold = if held {
+            item("resume", "p", StripVerb::PauseToggle)
+        } else {
+            item("pause", "⎋", StripVerb::PauseToggle)
+        };
+        if self.pending_gate.is_some() {
+            return vec![
                 item("approve", "⏎", StripVerb::ApproveGate),
                 item("allow…", "", StripVerb::AllowStage),
                 item("abort", "", StripVerb::AbortGate),
-            ]
-        } else if held {
-            // The pace stepper (a widget) replaces the old slower/faster buttons.
-            vec![
-                item("resume", "p", StripVerb::PauseToggle),
-                item("pace", "", StripVerb::PaceWidget),
-                item("kill", "⎋", StripVerb::Kill),
-            ]
-        } else if self.is_loop_active() {
-            vec![
-                item("pause", "⎋", StripVerb::PauseToggle),
-                item("background", "b", StripVerb::Background),
-                item("kill", "⎋⎋", StripVerb::Kill),
-            ]
-        } else {
-            vec![
-                item("theme", "t", StripVerb::Theme),
-                item("help", "?", StripVerb::Help),
-            ]
-        };
-        items.push(StripItem {
-            label: "detach",
-            hint: "q",
-            verb: StripVerb::Detach,
-            universal: true,
-        });
-        items
+            ];
+        }
+        if self.is_loop_active() {
+            // One verb, two labels. `POST /interrupt` stops the loop at the next
+            // juncture and withholds the in-flight call's output from the model
+            // (docs/control-channel.md) — true in every active state, so the item
+            // is always shown. On a foreground bash it *additionally* kills the
+            // process group, which is the stronger promise and the one worth
+            // naming, so there it reads `kill`. `background` stays bash-only: the
+            // handoff adopts a live child into the supervisor, and there is no
+            // child to adopt anywhere else.
+            let bash_foreground = self.in_flight_call().is_some_and(bash::is_foreground_call);
+            return if bash_foreground {
+                vec![
+                    item("background", "b", StripVerb::Background),
+                    item("kill", "⎋⎋", StripVerb::Interrupt),
+                    hold,
+                ]
+            } else {
+                vec![item("interrupt", "⎋⎋", StripVerb::Interrupt), hold]
+            };
+        }
+        // Idle. A hold set mid-trajectory outlives the turn, so `resume` is
+        // reachable here; there is nothing to pause when nothing is running.
+        if held { vec![hold] } else { Vec::new() }
     }
 
     /// Enter the strip from the composer's `↑`-spill at the 0,0 detent
@@ -146,7 +173,7 @@ impl InteractiveState<'_> {
         match entry.verb {
             StripVerb::PauseToggle => self.toggle_pace_hold(),
             StripVerb::PaceWidget => self.enter_pace_widget(),
-            StripVerb::Kill => self.esc_interrupt(),
+            StripVerb::Interrupt => self.esc_interrupt(),
             StripVerb::Background => self.background_detach(),
             StripVerb::ApproveGate => self.approve_gate(),
             StripVerb::AllowStage => self.stage_allow(),
@@ -289,10 +316,12 @@ impl InteractiveState<'_> {
         }
     }
 
-    /// Render the strip row: contextual items from the left, universals pinned at
-    /// the right edge, the focused item marked with `▸` in its reserved marker
-    /// cell. A dim contextual note (redirect hint at a gate, commit/cancel hint
-    /// while staging) fills the slack before the universal block. Rebuilds
+    /// Render the strip row: one relevance-ordered list left to right, cut at the
+    /// first item that doesn't fit — so the omnipresent tail, being rightmost, is
+    /// what a narrow terminal loses. The focused item is marked with `▸` in its
+    /// reserved marker cell. A dim contextual note (redirect hint at a gate,
+    /// commit/cancel hint while staging) is right-aligned and reserved *out of* the
+    /// item budget, so an instruction is never the thing that gets cut. Rebuilds
     /// [`strip_hits`](InteractiveState::strip_hits), the column-range → item map
     /// mouse clicks resolve against.
     pub(super) fn render_control_strip(&mut self, buf: &mut Buffer, area: Rect) {
@@ -312,33 +341,31 @@ impl InteractiveState<'_> {
         }
         self.strip_hits.clear();
 
-        // Universals first, right-aligned, so the fit budget for contextuals is known.
-        let universal_w: u16 = items
-            .iter()
-            .filter(|e| e.universal)
-            .map(|e| item_width(e) + 2)
-            .sum();
-        let mut ux = area.width.saturating_sub(universal_w);
-        let budget = ux.saturating_sub(2); // gap between the two blocks
-        for (i, entry) in items.iter().enumerate() {
-            if entry.universal {
-                ux = self.render_strip_item(buf, area, ux, entry, i) + 2;
-            }
-        }
+        // The note's width comes off the item budget before any item is placed, so
+        // an instruction is never what the cut drops; it is then drawn *adjacent*
+        // to the last item that fit, where it reads as being about the row rather
+        // than about the right edge.
+        let note = self.strip_note();
+        let reserved = note.map_or(0, |text| text.chars().count() as u16 + 2);
+        let budget = area.width.saturating_sub(reserved);
 
         let mut x: u16 = 1;
         for (i, entry) in items.iter().enumerate() {
-            if entry.universal {
-                continue;
-            }
             if x + self.strip_item_width(entry) > budget {
-                break; // fit-to-width: lowest-ranked contextuals drop first
+                break; // fit-to-width: the lowest-ranked items drop first
             }
             x = self.render_strip_item(buf, area, x, entry, i) + 2;
         }
 
-        // The dim contextual note, truncated to the slack before the universals.
-        let note = if self.pace_widget.is_some() {
+        if let Some(text) = note {
+            put_row(buf, area, x, text, self.theme.muted_style);
+        }
+    }
+
+    /// The dim instruction for a state that has one — always a sentence about the
+    /// keys the *current* state binds, never a verb the operator picks.
+    fn strip_note(&self) -> Option<&'static str> {
+        if self.pace_widget.is_some() {
             Some("↑/↓ adjust · ⏎ set · ⎋ revert")
         } else if self.staging.is_some() {
             Some("draft saved · ⏎ commit · ⎋ cancel")
@@ -346,14 +373,6 @@ impl InteractiveState<'_> {
             Some("type below to redirect")
         } else {
             None
-        };
-        if let Some(note) = note {
-            let x = x + 1;
-            if x < budget {
-                let avail = (budget - x) as usize;
-                let text: String = note.chars().take(avail).collect();
-                put_row(buf, area, x, &text, self.theme.muted_style);
-            }
         }
     }
 
@@ -374,23 +393,15 @@ impl InteractiveState<'_> {
                 self.theme.strip_item_focused_style,
                 self.theme.strip_hint_focused_style,
             )
-        } else if entry.universal {
-            (
-                self.theme.strip_universal_style,
-                self.theme.strip_universal_style,
-            )
+        } else if is_tail(entry) {
+            // The tail reads dimmer than the context verbs: same row, lower
+            // priority — and the same ordering the cut-from-right rule follows.
+            (self.theme.strip_tail_style, self.theme.strip_tail_style)
         } else {
             (self.theme.strip_item_style, self.theme.strip_hint_style)
         };
-        // The pace widget's label is the live value (`pace 2s`, or `▴ pace 2s ▾`
-        // while active) — the `▴`/`▾` are the grid-visible "stepping" tell, the way
-        // `▸` marks focus (docs/tui.md). Every other item's label is its static text.
         let marker = if sel { "▸ " } else { "  " };
-        let label = if entry.verb == StripVerb::PaceWidget {
-            self.pace_item_display()
-        } else {
-            entry.label.to_string()
-        };
+        let label = self.strip_item_label(entry);
         let mut col = put_row(buf, area, x, marker, body);
         col = put_row(buf, area, col, &label, body);
         if !entry.hint.is_empty() {
@@ -402,10 +413,14 @@ impl InteractiveState<'_> {
         col
     }
 
-    /// The pace widget item's label: the live speed, wrapped in `▴`/`▾` while the
-    /// stepper is active. Shared by the renderer and the width calc so the recorded
-    /// hit range matches what's drawn.
-    fn pace_item_display(&self) -> String {
+    /// One item's label as rendered. The pace item's is the live value (`pace 2s`,
+    /// or `▴ pace 2s ▾` while the stepper is active — the `▴`/`▾` are the
+    /// grid-visible "stepping" tell, the way `▸` marks focus, docs/tui.md); every
+    /// other item's is its static text.
+    fn strip_item_label(&self, entry: &StripItem) -> String {
+        if entry.verb != StripVerb::PaceWidget {
+            return entry.label.to_string();
+        }
         let val = super::state::pace_label(self.pace.map(|p| p.speed_ms).unwrap_or(0), false);
         if self.pace_widget.is_some() {
             format!("▴ pace {val} ▾")
@@ -414,26 +429,24 @@ impl InteractiveState<'_> {
         }
     }
 
-    /// Rendered width of one item, accounting for the pace widget's dynamic label
-    /// (the static [`item_width`] can't see the live value).
+    /// Rendered width of one item: marker cell + gap, label, hint, trailing pad.
+    /// Shares [`strip_item_label`](Self::strip_item_label) with the renderer, so
+    /// the fit test and the recorded hit range can't drift from what's drawn.
     fn strip_item_width(&self, entry: &StripItem) -> u16 {
-        if entry.verb == StripVerb::PaceWidget {
-            // marker (2) + label + trailing space (1); the pace item has no hint.
-            (2 + self.pace_item_display().chars().count() + 1) as u16
+        let hint_w = if entry.hint.is_empty() {
+            0
         } else {
-            item_width(entry)
-        }
+            1 + entry.hint.chars().count()
+        };
+        (2 + self.strip_item_label(entry).chars().count() + hint_w + 1) as u16
     }
 }
 
-/// Display width of one rendered item (marker cell + gap, label, hint, padding).
-fn item_width(entry: &StripItem) -> u16 {
-    let hint_w = if entry.hint.is_empty() {
-        0
-    } else {
-        1 + entry.hint.chars().count()
-    };
-    (2 + entry.label.chars().count() + hint_w + 1) as u16
+/// Whether an item belongs to the omnipresent [`TAIL`] — the dim treatment and the
+/// cut-first ordering are the same membership, read off the verb rather than
+/// carried on the item.
+fn is_tail(entry: &StripItem) -> bool {
+    TAIL.iter().any(|t| t.verb == entry.verb)
 }
 
 /// Write `text` at column `col` of the strip row, truncating at the area edge;
@@ -466,43 +479,171 @@ mod scenarios {
 
     const NONE: KeyModifiers = KeyModifiers::NONE;
 
-    /// The strip is always present and never empty: idle shows the quiet set
-    /// (`theme` / `help`) plus the right-pinned `detach` universal, directly above
-    /// the composer.
+    /// The item labels in rank order — the strip's contents model, asserted
+    /// directly. (The status bar's hint text mentions some of the same words, so
+    /// `find` can't carry a negative claim about the strip.)
+    fn labels(play: &Screenplay) -> Vec<&'static str> {
+        play.state.strip_items().iter().map(|e| e.label).collect()
+    }
+
+    /// The strip is always present and never empty: an idle session has no context
+    /// verbs at all, so what shows is exactly the omnipresent tail, in tail order,
+    /// directly above the composer.
     #[test]
     fn strip_is_always_present_and_never_empty() {
         let mut play = Screenplay::new(80, 10);
         play.user("hello");
-        assert!(play.find("theme").is_some(), "idle set shows theme");
-        assert!(play.find("help").is_some(), "idle set shows help");
-        let (dx, _) = play.find("detach").expect("the universal is present");
-        let (tx, _) = play.find("theme").unwrap();
-        assert!(dx > tx, "the universal is pinned right of the contextuals");
+        assert_eq!(
+            labels(&play),
+            vec!["pace", "theme", "help", "detach"],
+            "idle is the tail alone"
+        );
+        let (px, _) = play.find("pace").expect("pace always shows");
+        let (dx, _) = play.find("detach").expect("detach is in the tail");
+        assert!(px < dx, "the tail runs most- to least-protected");
         play.snapshot("strip_idle_set");
     }
 
-    /// The state families swap the contextual set: a running loop shows the loop
-    /// verbs, and the idle set's items are gone. (Asserted on the item list — the
-    /// status bar's hint text also mentions `theme`/`help`, so `find` can't carry
-    /// the negative claims.)
+    /// The context verbs swap with the state while the tail stays put — the tail is
+    /// omnipresent, so a state change never costs the operator `pace`/`theme`/
+    /// `help`/`detach`.
     #[test]
-    fn strip_set_follows_the_state_family() {
+    fn strip_context_verbs_swap_over_a_fixed_tail() {
         let mut play = Screenplay::new(80, 12);
         play.user("run it");
-        let labels = |play: &Screenplay| -> Vec<&str> {
-            play.state.strip_items().iter().map(|e| e.label).collect()
-        };
         assert!(
             !labels(&play).contains(&"pause"),
             "no loop verbs while idle"
         );
-        play.event(TuiEvent::Running(true));
-        assert!(play.find("pause").is_some(), "running renders pause");
-        assert!(
-            labels(&play).contains(&"background"),
-            "running shows background"
+
+        play.running_bash("toolu_b", "cargo test");
+        assert_eq!(
+            labels(&play),
+            vec![
+                "background",
+                "kill",
+                "pause",
+                "pace",
+                "theme",
+                "help",
+                "detach"
+            ],
+            "the foreground-bash verbs lead, the tail follows unchanged"
         );
-        assert!(!labels(&play).contains(&"theme"), "the idle set is gone");
+        play.snapshot("strip_running_bash");
+    }
+
+    /// `background` is foreground-bash-only — it adopts a live child into the
+    /// supervisor, and there is no child to adopt anywhere else. The interrupt is
+    /// not: it stops the loop and withholds the call's output whatever the tool
+    /// (docs/control-channel.md), so it stays, reading `interrupt` where it isn't
+    /// also killing a process group.
+    #[test]
+    fn strip_offers_background_only_for_foreground_bash_but_always_an_interrupt() {
+        use serde_json::json;
+        let mut play = Screenplay::new(80, 12);
+        play.user("read it");
+
+        play.running_tool("toolu_r", "read", json!({ "path": "src/log.rs" }));
+        assert_eq!(
+            labels(&play),
+            vec!["interrupt", "pause", "pace", "theme", "help", "detach"],
+            "a non-bash tool still offers the interrupt, without the handoff"
+        );
+
+        // A *backgrounded* bash call returns at once and runs under the supervisor
+        // (docs/supervisor.md) — it is never the foreground tool either.
+        play.running_tool(
+            "toolu_g",
+            crate::bash::NAME,
+            json!({ "command": "cargo watch", "background": true }),
+        );
+        assert!(
+            !labels(&play).contains(&"background"),
+            "an already-backgrounded call offers no handoff"
+        );
+    }
+
+    /// The non-bash `interrupt` fires the same `POST /interrupt` the bash `kill`
+    /// does — one endpoint, two labels for the two promises it keeps. Before the
+    /// latch this item would have been a button that did nothing: nothing awaits
+    /// the abort future during an MCP call, so the notify had nowhere to land.
+    #[test]
+    fn strip_interrupt_on_a_non_bash_tool_fires_the_interrupt() {
+        use serde_json::json;
+        let mut play = Screenplay::new(80, 12);
+        play.user("read it");
+        play.running_tool("toolu_r", "read", json!({ "path": "src/log.rs" }));
+
+        play.route_key(KeyCode::Up, NONE); // → strip, landing on `interrupt`
+        play.route_key(KeyCode::Enter, NONE);
+        assert!(
+            play.took_interrupt(),
+            "⏎ on interrupt posts the interrupt for a tool it cannot kill"
+        );
+    }
+
+    /// While the model is generating — running, but nothing called yet — there is
+    /// no process to kill and no child to hand off, but the interrupt still
+    /// applies: it latches, and the call the model is about to make never runs
+    /// (docs/control-channel.md).
+    #[test]
+    fn strip_while_generating_offers_the_interrupt_and_the_hold() {
+        let mut play = Screenplay::new(80, 12);
+        play.user("think about it");
+        play.event(TuiEvent::Running(true));
+        assert_eq!(
+            labels(&play),
+            vec!["interrupt", "pause", "pace", "theme", "help", "detach"]
+        );
+    }
+
+    /// `held` is a modifier, not a state: wherever the hold verb appears it reads
+    /// `resume`, including at idle — a hold set mid-trajectory outlives the turn,
+    /// so the way out of it stays reachable.
+    #[test]
+    fn strip_hold_reads_resume_and_survives_into_idle() {
+        let mut play = Screenplay::new(80, 12);
+        play.user("go");
+        play.running_bash("toolu_b", "cargo test");
+        play.event(TuiEvent::Pace(super::super::PaceView {
+            speed_ms: 0,
+            held: true,
+        }));
+        assert!(labels(&play).contains(&"resume"), "held renames the verb");
+        assert!(!labels(&play).contains(&"pause"));
+
+        play.event(TuiEvent::Running(false));
+        assert_eq!(
+            labels(&play),
+            vec!["resume", "pace", "theme", "help", "detach"],
+            "resume is still reachable once the turn ends"
+        );
+    }
+
+    /// Fit-to-width cuts from the right, so a narrow terminal loses the tail's
+    /// least-relevant end first and never a context verb.
+    #[test]
+    fn strip_cuts_from_the_right_when_narrow() {
+        let mut wide = Screenplay::new(120, 12);
+        wide.user("go");
+        wide.running_bash("toolu_b", "cargo test");
+        assert!(
+            wide.find("detach").is_some(),
+            "a wide terminal fits the whole list"
+        );
+
+        let mut narrow = Screenplay::new(40, 12);
+        narrow.user("go");
+        narrow.running_bash("toolu_b", "cargo test");
+        assert!(
+            narrow.find("background").is_some(),
+            "the most relevant verb survives the cut"
+        );
+        assert!(
+            narrow.find("detach").is_none(),
+            "the tail's far end is what's lost"
+        );
     }
 
     /// `↑` from the composer lands on the strip's leftmost (most relevant) item,
@@ -512,7 +653,7 @@ mod scenarios {
     fn strip_focus_marker_moves_without_shifting_text() {
         let mut play = Screenplay::new(80, 12);
         play.user("go");
-        play.event(TuiEvent::Running(true));
+        play.running_bash("toolu_b", "cargo test");
         let pause_before = play.find("pause").expect("pause on screen");
 
         play.route_key(KeyCode::Up, NONE);
@@ -542,7 +683,8 @@ mod scenarios {
         let mut play = Screenplay::new(80, 12);
         play.user("go");
         play.event(TuiEvent::Running(true));
-        play.route_key(KeyCode::Up, NONE); // → strip, on `pause`
+        play.route_key(KeyCode::Up, NONE); // → strip, on `interrupt` (generating: the interrupt leads)
+        play.route_key(KeyCode::Right, NONE); // → `pause`
         play.route_key(KeyCode::Enter, NONE);
         assert!(play.find("HELD").is_some(), "⏎ on pause holds the loop");
         assert!(
@@ -551,8 +693,8 @@ mod scenarios {
         );
         assert_eq!(
             play.state.strip_focus,
-            Some(0),
-            "focus stays on the landing slot (now resume)"
+            Some(1),
+            "focus stays on its slot, whose verb is now resume"
         );
     }
 
@@ -563,7 +705,8 @@ mod scenarios {
     fn strip_focused_item_has_a_raised_surface() {
         let mut play = Screenplay::new(80, 10);
         play.user("hello");
-        play.route_key(KeyCode::Up, NONE); // focus `theme`
+        play.route_key(KeyCode::Up, NONE); // → strip, on `pace`
+        play.route_key(KeyCode::Right, NONE); // focus `theme`
         let (tx, ty) = play.find("theme").expect("theme on screen");
         let (hx, hy) = play.find("help").expect("help on screen");
         let focused = play.cell(tx, ty);
@@ -579,13 +722,15 @@ mod scenarios {
         );
     }
 
-    /// `⏎` on `detach` quits the UI loop (the daemon and session keep running) —
-    /// the strip's right-pinned universal, reachable by keyboard.
+    /// `⏎` on `detach` leaves the TUI; the daemon and session keep running, which
+    /// is why it is one verb and not a detach/terminate pair. It sits at the tail's
+    /// far end — least relevant, first cut, and reachable by keyboard.
     #[test]
     fn strip_detach_quits() {
         let mut play = Screenplay::new(80, 10);
         play.user("hello");
-        play.route_key(KeyCode::Up, NONE); // idle set: theme · help · detach
+        play.route_key(KeyCode::Up, NONE); // idle: pace · theme · help · detach
+        play.route_key(KeyCode::Right, NONE);
         play.route_key(KeyCode::Right, NONE);
         play.route_key(KeyCode::Right, NONE);
         assert!(
@@ -603,11 +748,12 @@ mod scenarios {
         let mut play = Screenplay::new(80, 14);
         play.user("clean up");
         play.pending_gate("toolu_g", "bash", json!({ "command": "rm -rf ./build" }));
-        let labels: Vec<_> = play.state.strip_items().iter().map(|e| e.label).collect();
         assert_eq!(
-            labels,
-            vec!["approve", "allow…", "abort", "detach"],
-            "the gate set in rank order plus the universal"
+            labels(&play),
+            vec![
+                "approve", "allow…", "abort", "pace", "theme", "help", "detach"
+            ],
+            "the gate verbs in rank order, then the tail"
         );
         assert!(
             play.find("type below to redirect").is_some(),

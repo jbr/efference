@@ -405,8 +405,10 @@ fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireSta
         ),
         // Project a placeholder rather than nothing: dropping the block entirely
         // would orphan the assistant `tool_use` it answers, which the API
-        // rejects. Phase 1 (which actually constructs `Elided`) must decide
-        // whether elision folds the paired `tool_use` away too — flagged here.
+        // rejects. Constructed by the interrupt (`withheld` in `src/agent.rs`,
+        // docs/control-channel.md), which is also the answer to the question
+        // flagged here before it had one — elision keeps the pair; the placeholder
+        // exists precisely so the `tool_use` stays answered.
         WireState::Elided => ("[elided]".to_string(), false),
     };
     // Prefix with [seq] handle so tool results are describable as 'reread 14' /

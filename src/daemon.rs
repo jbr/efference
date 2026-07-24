@@ -155,6 +155,13 @@ pub struct Shared {
     pending: Mutex<Option<Pending>>,
     /// Fired by `POST /interrupt`; the future `interrupted()` races a running tool.
     interrupt: Notify,
+    /// The **latched** half of `POST /interrupt` (docs/control-channel.md). `Notify::notify_waiters`
+    /// wakes only a *currently registered* waiter and stores no permit, so during a call no backend
+    /// awaits the abort future — every non-bash tool (`src/tools.rs`) — the wakeup has nowhere to
+    /// land and is dropped. This flag is what survives it: the loop reads it at the junctures
+    /// either side of a call and stops there, so the interrupt lands on tools it cannot suspend.
+    /// Latching also closes the window between a bash spawn and the abort future's first poll.
+    interrupt_latch: AtomicBool,
     /// Fired by `POST /background` — the detach half of the interrupt intent
     /// (docs/supervisor.md, the foreground→background handoff). Like `interrupt`,
     /// `notify_waiters` reaches only a *currently-awaited* race, so a detach
@@ -362,6 +369,7 @@ impl Shared {
             approvals: Mutex::new(HashMap::new()),
             pending: Mutex::new(None),
             interrupt: Notify::new(),
+            interrupt_latch: AtomicBool::new(false),
             detach: Notify::new(),
             detach_note: Mutex::new(None),
             appended: Notify::new(),
@@ -1028,11 +1036,7 @@ impl Shared {
             seed,
         } = detached;
         let pgid = child.id();
-        let handle = self
-            .supervisor
-            .lock()
-            .unwrap()
-            .adopt(command, pgid, &seed);
+        let handle = self.supervisor.lock().unwrap().adopt(command, pgid, &seed);
         tokio::spawn(drain_background(
             Arc::clone(self),
             handle.clone(),
@@ -1138,7 +1142,19 @@ impl Shared {
     }
 
     fn interrupt(&self) {
+        // Latch first, then wake: a bash tool racing the abort future must never
+        // resolve and reach the loop's juncture check before the flag is visible.
+        self.interrupt_latch.store(true, Ordering::SeqCst);
         self.interrupt.notify_waiters();
+    }
+
+    /// Consume the latched interrupt — `true` exactly once per `POST /interrupt`
+    /// (docs/control-channel.md). The loop calls this at both junctures around a
+    /// call: before one runs (it doesn't) and where its result lands (the result
+    /// is withheld from the wire). Also cleared when a fresh user turn starts, so
+    /// an interrupt fired at idle can't stop the *next* turn's first call.
+    pub fn take_interrupt(&self) -> bool {
+        self.interrupt_latch.swap(false, Ordering::SeqCst)
     }
 
     fn state_json(&self) -> String {
@@ -1872,15 +1888,20 @@ async fn drain_background(
     mut stdout: tokio::process::ChildStdout,
     mut stderr: tokio::process::ChildStderr,
 ) {
-    crate::bash::drain_pipes(&mut stdout, &mut stderr, std::future::pending::<()>(), |chunk| {
-        shared.supervisor.lock().unwrap().push_chunk(&handle, chunk);
-        // Smooth the live process panel between `/state` polls (TUI-bg-2). Lossy
-        // and best-effort — the poll snapshot remains the authoritative tail.
-        shared.publish_delta(StreamDelta::BgOutput {
-            handle: handle.clone(),
-            chunk: String::from_utf8_lossy(chunk).into_owned(),
-        });
-    })
+    crate::bash::drain_pipes(
+        &mut stdout,
+        &mut stderr,
+        std::future::pending::<()>(),
+        |chunk| {
+            shared.supervisor.lock().unwrap().push_chunk(&handle, chunk);
+            // Smooth the live process panel between `/state` polls (TUI-bg-2). Lossy
+            // and best-effort — the poll snapshot remains the authoritative tail.
+            shared.publish_delta(StreamDelta::BgOutput {
+                handle: handle.clone(),
+                chunk: String::from_utf8_lossy(chunk).into_owned(),
+            });
+        },
+    )
     .await;
     let status = child.wait().await.ok();
     let summary = shared.supervisor.lock().unwrap().finish(&handle, status);
@@ -3168,7 +3189,9 @@ mod tests {
             LoadedConfig::default(),
             Some(PathBuf::from("/scratch/efference-test")),
         );
-        let handle = shared.spawn_background("echo $TMPDIR".into()).expect("spawn");
+        let handle = shared
+            .spawn_background("echo $TMPDIR".into())
+            .expect("spawn");
         let mut tries = 0;
         loop {
             let read = shared.bg_read_since(&handle, None).expect("known handle");
@@ -3491,5 +3514,29 @@ mod tests {
             .await
             .expect("submit ends the 30s paced sleep early")
             .expect("seam task joined");
+    }
+
+    /// `POST /interrupt` **latches** (docs/control-channel.md). The `Notify` half wakes only a
+    /// currently-registered waiter and stores no permit, so during any tool that doesn't await the
+    /// abort future — every non-bash backend — the wakeup lands nowhere. The flag is what the loop
+    /// reads at its junctures instead, and it is a one-shot: consumed exactly once, so a single
+    /// press stops one call and not the turn after it.
+    #[test]
+    fn an_interrupt_latches_and_is_consumed_exactly_once() {
+        let (shared, _rx) = Shared::new(Log::in_memory());
+        assert!(!shared.take_interrupt(), "nothing latched at rest");
+
+        shared.interrupt(); // no waiter registered — the notify half reaches nobody
+        assert!(
+            shared.take_interrupt(),
+            "the flag survived the dropped wakeup"
+        );
+        assert!(!shared.take_interrupt(), "one press, one stop");
+
+        // Repeated presses before anyone reads still amount to one interrupt.
+        shared.interrupt();
+        shared.interrupt();
+        assert!(shared.take_interrupt());
+        assert!(!shared.take_interrupt());
     }
 }

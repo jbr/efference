@@ -506,7 +506,10 @@ mod tests {
         assert!(ctx.contains(". (read, write)"), "{ctx}");
         assert!(ctx.contains("/refs (read only)"), "{ctx}");
         assert!(ctx.contains("Don't touch the deploy keys."), "{ctx}");
-        assert!(!ctx.contains("$TMPDIR"), "no scratch → no alias line: {ctx}");
+        assert!(
+            !ctx.contains("$TMPDIR"),
+            "no scratch → no alias line: {ctx}"
+        );
     }
 
     #[test]

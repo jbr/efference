@@ -416,7 +416,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        let defs = Toolbox::bash_and_mcps(dir.clone(), None).unwrap().definitions();
+        let defs = Toolbox::bash_and_mcps(dir.clone(), None)
+            .unwrap()
+            .definitions();
         let mut names: Vec<&str> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
         names.sort_unstable();
         let mut unique = names.clone();

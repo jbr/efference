@@ -18,7 +18,7 @@ expression: self.render()
 10 │ ┃ use cargo clean instead                                                      │
 11 │                                                                                │
 12 │                                                                                │
-13 │   theme t     help ?                                                detach q   │
+13 │   pace fast     theme t     help ?     detach q                                │
 14 │›                                                                               │
    │  ^                                                                             │
 15 │   efference — ↑ controls                                                       │

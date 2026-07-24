@@ -75,11 +75,13 @@ genuine pure projection, and the kept bytes are never persisted twice. The
 structured decision doubles as the audit record. See [the redaction
 fork](redaction-fork.md) for how verdicts are produced.
 
-**Note on `Elided`:** `WireState::Elided` is never constructed at runtime. The
-variant exists as a defensive arm in projection match statements (see
-[project.rs](../src/project.rs)) to handle future redaction modes gracefully, but
-current Phase 0 never produces it. Phase 1 (the actual redaction implementation)
-will add the construction sites.
+**Note on `Elided`:** `WireState::Elided` projects the placeholder `[elided]` —
+a block with no content, present only so the paired `tool_use` isn't orphaned.
+Its one construction site is the **interrupt** (`withheld()` in
+[agent.rs](../src/agent.rs), see [control-channel.md](control-channel.md)): the
+operator stopped a call whose output they did not want in the context, so `raw`
+stays in the log and the wire carries nothing. Elision does *not* fold the paired
+`tool_use` away — the pair is the reason the placeholder exists.
 
 ### `Mark` / `MarkKind`
 

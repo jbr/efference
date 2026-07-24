@@ -48,8 +48,8 @@ pub(super) struct InteractiveTheme {
     pub strip_hint_style: Style,
     /// Control strip — the hint inside the focused item
     pub strip_hint_focused_style: Style,
-    /// Control strip — right-pinned universal items (dimmer than contextuals)
-    pub strip_universal_style: Style,
+    /// Control strip — the omnipresent tail (dimmer than the context verbs)
+    pub strip_tail_style: Style,
 }
 
 impl InteractiveTheme {
@@ -145,7 +145,7 @@ impl InteractiveTheme {
             strip_hint_focused_style: Style::default()
                 .bg(to_ratatui(surface_raised))
                 .fg(to_ratatui(muted_fg)),
-            strip_universal_style: Style::default()
+            strip_tail_style: Style::default()
                 .bg(to_ratatui(surface))
                 .fg(to_ratatui(muted_fg)),
         }

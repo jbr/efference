@@ -9,7 +9,7 @@ expression: self.render()
  1 │                                │
  2 │                                │
  3 │                                │
- 4 │   theme t           detach q   │
+ 4 │   pace fast     theme t        │
  5 │› hello                         │
    │       ^                        │
  6 │   efference — ↑ controls       │

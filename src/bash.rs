@@ -83,6 +83,29 @@ struct Input {
     command: String,
 }
 
+/// Whether a call is a `bash` invocation asking to be backgrounded
+/// (docs/supervisor.md) — `{ "command": …, "background": true }`. Such a call is
+/// handled structurally by the loop (it registers a child with the supervisor)
+/// rather than run to completion here.
+pub fn is_background_call(call: &crate::log::ToolCall) -> bool {
+    call.name == NAME
+        && call
+            .input
+            .get("background")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+/// Whether a call is a `bash` command that runs *in the foreground* — the only
+/// call that is ever the interruptible, detachable running tool. `kill` races
+/// [`Bash::run`]'s abort future (no other backend awaits it) and the
+/// foreground→background handoff adopts its live child, so the clients that offer
+/// those verbs ask this before showing them. Lives beside the schema that defines
+/// the `background` flag, so there is one reader of it.
+pub fn is_foreground_call(call: &crate::log::ToolCall) -> bool {
+    call.name == NAME && !is_background_call(call)
+}
+
 impl Bash {
     /// The Anthropic `tools[]` entry — name, description, JSON-Schema input.
     /// Built from a [`serde_json::Value`] so its keys serialize in sorted order
@@ -316,7 +339,8 @@ mod tests {
     #[tokio::test]
     async fn runs_command_and_captures_stdout() {
         let result = done(
-            Bash::default().run(&json!({ "command": "echo hello" }), never(), sink())
+            Bash::default()
+                .run(&json!({ "command": "echo hello" }), never(), sink())
                 .await,
         );
         assert!(!result.is_error);
@@ -326,7 +350,8 @@ mod tests {
     #[tokio::test]
     async fn captures_stderr_without_marking_error() {
         let result = done(
-            Bash::default().run(&json!({ "command": "echo oops 1>&2" }), never(), sink())
+            Bash::default()
+                .run(&json!({ "command": "echo oops 1>&2" }), never(), sink())
                 .await,
         );
         assert!(!result.is_error, "exit 0 even though it wrote to stderr");
@@ -336,7 +361,8 @@ mod tests {
     #[tokio::test]
     async fn nonzero_exit_is_error_and_surfaces_status() {
         let result = done(
-            Bash::default().run(&json!({ "command": "exit 7" }), never(), sink())
+            Bash::default()
+                .run(&json!({ "command": "exit 7" }), never(), sink())
                 .await,
         );
         assert!(result.is_error);
@@ -350,7 +376,8 @@ mod tests {
     #[tokio::test]
     async fn malformed_input_is_an_error_result_not_a_panic() {
         let result = done(
-            Bash::default().run(&json!({ "not_command": true }), never(), sink())
+            Bash::default()
+                .run(&json!({ "not_command": true }), never(), sink())
                 .await,
         );
         assert!(result.is_error);
@@ -363,7 +390,8 @@ mod tests {
     async fn abort_kills_a_running_command_promptly() {
         let start = Instant::now();
         let result = done(
-            Bash::default().run(&json!({ "command": "sleep 30" }), now(), sink())
+            Bash::default()
+                .run(&json!({ "command": "sleep 30" }), now(), sink())
                 .await,
         );
         assert!(result.is_error);
@@ -458,8 +486,14 @@ mod tests {
         )
         .await;
         let rest = String::from_utf8_lossy(&rest);
-        assert!(rest.contains("late"), "post-detach output continues: {rest:?}");
-        assert!(!rest.contains("early"), "no duplicated pre-detach bytes: {rest:?}");
+        assert!(
+            rest.contains("late"),
+            "post-detach output continues: {rest:?}"
+        );
+        assert!(
+            !rest.contains("early"),
+            "no duplicated pre-detach bytes: {rest:?}"
+        );
         detached.child.wait().await.expect("child exits cleanly");
         // Best-effort cleanup if anything lingers in the group.
         kill_group(pgid);

@@ -694,7 +694,9 @@ async fn interrupt(socket: PathBuf) -> CliResult {
 }
 
 async fn background(socket: PathBuf, note: Option<String>) -> CliResult {
-    ControlClient::new(socket).background(note.as_deref()).await?;
+    ControlClient::new(socket)
+        .background(note.as_deref())
+        .await?;
     println!("detach requested (lands only if a foreground tool is running)");
     Ok(())
 }

@@ -34,6 +34,7 @@ use crate::frontend::Approval;
 use crate::log::{
     CallId, ContentBlock, LogEntry, Payload, RawResult, Timestamp, ToolCall, WireState,
 };
+use serde_json::{Value, json};
 
 /// A scripted TUI session: build state, drive input/events, snapshot the screen.
 ///
@@ -259,6 +260,23 @@ impl Screenplay<'_> {
         let call = tool_call(name, call_id, serde_json::json!({ "command": command }));
         self.assistant("", vec![call]);
         self.tool_result(call_id, output, false, WireState::Raw)
+    }
+
+    /// Put a tool call **in flight**: commit the assistant turn that makes it, with
+    /// no paired result, and report the loop as running. This is exactly the shape
+    /// the daemon leaves the log in while a tool executes (`src/agent.rs` appends
+    /// the assistant entry before running the call), so it is what
+    /// [`in_flight_call`](super::InteractiveState::in_flight_call) reads — the
+    /// control strip's foreground-bash-vs-other-tool distinction depends on it.
+    pub(crate) fn running_tool(&mut self, call_id: &str, name: &str, input: Value) -> &mut Self {
+        self.assistant("", vec![tool_call(name, call_id, input)]);
+        self.event(TuiEvent::Running(true))
+    }
+
+    /// The common case of [`running_tool`](Self::running_tool): a foreground `bash`
+    /// command mid-run — the one state that offers `background` and `kill`.
+    pub(crate) fn running_bash(&mut self, call_id: &str, command: &str) -> &mut Self {
+        self.running_tool(call_id, crate::bash::NAME, json!({ "command": command }))
     }
 
     /// Click screen cell `(x, y)` through the real mouse path — the press that
@@ -1395,9 +1413,10 @@ mod scenarios {
             Some((None, Some(true))),
             "the hold pushed its own pace command (drained before the widget checks)"
         );
-        play.route_key(KeyCode::Up, none); // spill → held strip (resume · pace · kill)
+        play.route_key(KeyCode::Up, none); // spill → held strip (interrupt · resume · pace · …)
 
         // Enter the widget on the pace item.
+        play.route_key(KeyCode::Right, none); // interrupt → resume
         play.route_key(KeyCode::Right, none); // resume → pace
         play.route_key(KeyCode::Enter, none); // enter the stepper
         assert!(
@@ -1452,6 +1471,7 @@ mod scenarios {
         play.route_key(KeyCode::Esc, none); // hold
         let _ = play.took_pace(); // drain the hold's own pace command
         play.route_key(KeyCode::Up, none); // → held strip
+        play.route_key(KeyCode::Right, none); // interrupt → resume
         play.route_key(KeyCode::Right, none); // → pace
         play.route_key(KeyCode::Enter, none); // enter (entry speed 0 = fast)
         play.route_key(KeyCode::Up, none); // preview 500ms
@@ -1484,6 +1504,7 @@ mod scenarios {
         play.event(TuiEvent::Running(true));
         play.route_key(KeyCode::Esc, none); // hold
         play.route_key(KeyCode::Up, none); // → held strip
+        play.route_key(KeyCode::Right, none); // interrupt → resume
         play.route_key(KeyCode::Right, none); // → pace
         play.route_key(KeyCode::Enter, none); // enter
         play.snapshot("pace_widget_active");
@@ -1530,16 +1551,18 @@ mod scenarios {
     }
 
     /// The foreground→background handoff, now the strip's `background` item and its
-    /// scoped mnemonic (docs/tui.md, docs/supervisor.md): with the loop running the
-    /// strip shows `background b` and `b` fires the detach (`POST /background`);
-    /// idle, no such item is shown, so `b` matches nothing and sends nothing.
+    /// scoped mnemonic (docs/tui.md, docs/supervisor.md): `b` fires the detach
+    /// (`POST /background`) exactly where the item is shown, and matches nothing
+    /// anywhere else. The handoff only exists for a foreground `bash` child, so the
+    /// item's presence — and therefore the mnemonic's — tracks the in-flight tool,
+    /// not merely "something is running."
     #[test]
-    fn b_mnemonic_backgrounds_a_running_tool_and_noops_idle() {
+    fn b_mnemonic_backgrounds_a_foreground_bash_and_noops_elsewhere() {
         let none = KeyModifiers::NONE;
         let mut play = Screenplay::new(80, 12);
         play.user("run the tests");
 
-        // Idle strip (theme/help/detach): `b` is not a shown mnemonic → nothing sent.
+        // Idle: the tail alone, no `background` item → `b` matches nothing.
         play.route_key(KeyCode::Up, none); // spill → strip
         play.route_key(KeyCode::Char('b'), none);
         assert!(
@@ -1547,12 +1570,21 @@ mod scenarios {
             "idle → no background item, nothing to detach"
         );
 
-        // Loop running: the strip now shows `background b`, so `b` fires the detach.
-        play.event(TuiEvent::Running(true));
+        // A non-bash tool mid-flight: still no handoff to offer.
+        play.running_tool("toolu_r", "read", json!({ "path": "src/log.rs" }));
+        play.route_key(KeyCode::Char('b'), none);
+        assert!(
+            !play.took_background(),
+            "a non-bash tool can't be handed to the supervisor"
+        );
+
+        // Foreground bash: the strip shows `background b`, so `b` fires the detach.
+        play.tool_result("toolu_r", "…", false, WireState::Raw);
+        play.running_bash("toolu_b", "cargo test");
         play.route_key(KeyCode::Char('b'), none);
         assert!(
             play.took_background(),
-            "b detaches the running tool into the supervisor"
+            "b detaches the running command into the supervisor"
         );
     }
 

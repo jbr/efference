@@ -33,7 +33,7 @@ expression: self.render()
 24 │                                                                                │
 25 │                                                                                │
 26 │                                                                                │
-27 │   theme t     help ?                                                detach q   │
+27 │   pace fast     theme t     help ?     detach q                                │
 28 │›                                                                               │
 29 │   navigate — ↑/↓ unit · ←/→ verb · ⏎ act · esc compose                         │
    └────────────────────────────────────────────────────────────────────────────────┘
