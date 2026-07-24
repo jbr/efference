@@ -12,5 +12,5 @@ expression: self.render()
  4 │› the quick brown fox jumps     │
  5 │› over the lazy                 │
    │               ^                │
- 6 │   efference — q:quit ?:help t:t│
+ 6 │   efference — ↑ controls       │
    └────────────────────────────────┘

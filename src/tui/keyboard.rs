@@ -138,10 +138,13 @@ impl<'a> InteractiveState<'a> {
 
     /// Keys while the control strip is focused (docs/tui.md): `←`/`→` (and
     /// `C-b`/`C-f`) move between items, `⏎`/space activates, `↑`/`k` continues
-    /// into the transcript, `↓`/`j` drops back to the composer. Anything else
-    /// falls through to the transcript command keys — those single-letter binds
-    /// remain live everywhere until the strip and block menu fully cover them
-    /// (backlog/tui-control-strip/04).
+    /// into the transcript, `↓`/`j` drops back to the composer. A plain letter
+    /// matching a *shown* item's hint is that item's **scoped mnemonic** — the
+    /// surviving letter-form after the bind purge (unit 04) — so the pace, hold,
+    /// background, and theme verbs answer to their letters only where their item is
+    /// on the strip (e.g. `p` resumes only in the held set), not as buried globals.
+    /// Anything unmatched falls through to the remaining transcript keys (scroll,
+    /// help, quit).
     fn handle_strip_key(
         &mut self,
         key: KeyEvent,
@@ -204,6 +207,23 @@ impl<'a> InteractiveState<'a> {
             KeyCode::Enter | KeyCode::Char(' ') => {
                 self.activate_strip_item(idx);
                 self.ui.quit_requested
+            }
+            // Scoped mnemonic: a plain letter that names a shown item fires it,
+            // wherever focus currently sits (a shortcut, not a focus move). Items
+            // whose hint isn't a bare letter (Esc's `⎋`, `allow…`'s empty hint) are
+            // driven by their own key or the arrows, never matched here.
+            KeyCode::Char(c) if !ctrl => {
+                match self
+                    .strip_items()
+                    .iter()
+                    .position(|it| it.hint == c.to_string())
+                {
+                    Some(i) => {
+                        self.activate_strip_item(i);
+                        self.ui.quit_requested
+                    }
+                    None => self.handle_command_key(key, terminal),
+                }
             }
             _ => self.handle_command_key(key, terminal),
         }
@@ -333,12 +353,6 @@ impl<'a> InteractiveState<'a> {
                 self.activate_block_menu();
             }
 
-            // Flip the focused tool result between its wire (distilled) and raw
-            // output (docs/tui.md). No-op unless a tool-result exchange is focused.
-            (KeyCode::Char('r'), _) => {
-                self.toggle_raw_focused();
-            }
-
             // Page down
             (KeyCode::Char('d'), KeyModifiers::CONTROL) | (KeyCode::PageDown, _) => {
                 let page = terminal.size().map(|s| s.height / 2).unwrap_or(10);
@@ -378,31 +392,16 @@ impl<'a> InteractiveState<'a> {
                 }
             }
 
-            // Theme picker
-            (KeyCode::Char('t'), _) => {
-                self.open_theme_picker();
-            }
-
-            // Pace (docs/tui.md): `+`/`-` step the between-turns speed
-            // dial (slower/faster), `p` toggles the pause overlay. Operator-view controls — the
-            // agent never sees the pacing. `Ctrl-p` (previous unit) is matched earlier, so plain
-            // `p` reaches here.
-            (KeyCode::Char('+'), _) | (KeyCode::Char('='), _) => {
-                self.nudge_pace_speed(true);
-            }
-            (KeyCode::Char('-'), _) | (KeyCode::Char('_'), _) => {
-                self.nudge_pace_speed(false);
-            }
-            (KeyCode::Char('p'), _) => {
-                self.toggle_pace_hold();
-            }
-
-            // Foreground→background handoff (docs/supervisor.md): move the
-            // in-flight tool into the background supervisor instead of killing
-            // it or waiting it out. Daemon-side no-op when nothing is mid-tool.
-            (KeyCode::Char('b'), _) => {
-                self.background_detach();
-            }
+            // Bind purge (backlog/tui-control-strip/04): the transcript-navigation
+            // single-letter verbs — `t` theme, `p` pause, `+`/`-` pace, `b`
+            // background, `r` raw — are gone. Each now lives where it is shown:
+            // pace/hold/background/theme on the control strip (reached with `↑`,
+            // fired by a click or the item's scoped-mnemonic key while the strip is
+            // focused — see `handle_strip_key`), and the raw flip on the block menu
+            // (`←`/`→` on a focused exchange). A plain letter in the transcript now
+            // only ever no-ops (the `_` arm): it never types, and never fires a
+            // buried verb. `Ctrl-b`/`Ctrl-f` (block-menu move) and `Ctrl-p`/`Ctrl-n`
+            // (unit nav) are matched above, so the plain letters can fall through.
 
             // Help
             (KeyCode::Char('?'), _) | (KeyCode::Char('h'), _) => {

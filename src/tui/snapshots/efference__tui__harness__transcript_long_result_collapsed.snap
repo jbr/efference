@@ -31,5 +31,5 @@ expression: self.render()
 23 │   theme t     help ?                                                detach q   │
 24 │›                                                                               │
    │  ^                                                                             │
-25 │   efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand                │
+25 │   efference — ↑ controls                                                       │
    └────────────────────────────────────────────────────────────────────────────────┘

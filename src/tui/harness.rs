@@ -1366,31 +1366,40 @@ mod scenarios {
         );
     }
 
-    /// The pace keys drive the daemon control (docs/tui.md): from the
-    /// transcript context, `p` toggles the hold and `+` slows the dial, each optimistically
-    /// reflected in the status bar on the keypress (the `/state` poll later reconciles).
+    /// The pace verbs answer to their letters only as **scoped strip mnemonics**
+    /// (docs/tui.md) — after the bind purge (unit 04) they are no longer global
+    /// transcript binds. `p`/`+`/`-` appear only in the *held* set, so pausing a
+    /// running loop is Esc; once held, the strip shows `resume p · slower + ·
+    /// faster -` and those letters fire the matching item wherever the selection
+    /// sits.
     #[test]
-    fn pace_keys_toggle_hold_and_slow_the_dial() {
+    fn pace_mnemonics_fire_on_the_held_strip() {
+        let none = KeyModifiers::NONE;
         let mut play = Screenplay::new(80, 12);
         play.user("do a thing");
-        // Spill out of the empty composer (onto the control strip — the letter binds
-        // fall through from there until backlog/tui-control-strip/04 removes them).
-        play.route_key(KeyCode::Up, KeyModifiers::NONE);
+        play.event(TuiEvent::Running(true));
 
-        // `p` pauses.
-        play.route_key(KeyCode::Char('p'), KeyModifiers::NONE);
-        assert!(play.find("HELD").is_some(), "p pauses → HELD");
-
-        // `+` slows the dial one rung (500ms); still held.
-        play.route_key(KeyCode::Char('+'), KeyModifiers::NONE);
+        // From the idle/running strip, `p` is not a shown mnemonic — pausing is Esc.
+        play.route_key(KeyCode::Up, none); // spill → strip
+        play.route_key(KeyCode::Char('p'), none);
         assert!(
-            play.find("HELD").is_some(),
-            "held survives a speed nudge (recolors resume)"
+            play.find("HELD").is_none(),
+            "p does nothing where no pause item is shown"
         );
+        play.route_key(KeyCode::Esc, none); // esc returns to the composer
+        play.route_key(KeyCode::Esc, none); // esc pauses the running loop
+        assert!(play.find("HELD").is_some(), "esc holds the loop");
 
-        // `p` again resumes; the hold drops.
-        play.route_key(KeyCode::Char('p'), KeyModifiers::NONE);
-        assert!(play.find("HELD").is_none(), "p again resumes");
+        // Held: the strip shows resume/slower/faster; `+` slows, `p` resumes.
+        play.route_key(KeyCode::Up, none); // spill → the held strip
+        play.route_key(KeyCode::Char('+'), none);
+        assert!(
+            play.find("HELD").is_some() && play.find("500ms").is_some(),
+            "the + mnemonic slows the dial; still held:\n{}",
+            play.render()
+        );
+        play.route_key(KeyCode::Char('p'), none);
+        assert!(play.find("HELD").is_none(), "the p mnemonic resumes");
     }
 
     /// Graduated Esc (docs/tui.md) is a **state machine**, not a press-count: each Esc's effect
@@ -1433,21 +1442,25 @@ mod scenarios {
         );
     }
 
-    /// The foreground→background handoff key (docs/supervisor.md): with the loop active, `b`
-    /// in transcript navigation fires the detach intent (`POST /background`); idle, it's a
-    /// status-line no-op — nothing to detach, nothing sent.
+    /// The foreground→background handoff, now the strip's `background` item and its
+    /// scoped mnemonic (docs/tui.md, docs/supervisor.md): with the loop running the
+    /// strip shows `background b` and `b` fires the detach (`POST /background`);
+    /// idle, no such item is shown, so `b` matches nothing and sends nothing.
     #[test]
-    fn b_backgrounds_a_running_tool_and_noops_idle() {
+    fn b_mnemonic_backgrounds_a_running_tool_and_noops_idle() {
         let none = KeyModifiers::NONE;
         let mut play = Screenplay::new(80, 12);
         play.user("run the tests");
 
-        // Idle: `b` sends nothing.
-        play.route_key(KeyCode::Up, none);
+        // Idle strip (theme/help/detach): `b` is not a shown mnemonic → nothing sent.
+        play.route_key(KeyCode::Up, none); // spill → strip
         play.route_key(KeyCode::Char('b'), none);
-        assert!(!play.took_background(), "idle → nothing to detach");
+        assert!(
+            !play.took_background(),
+            "idle → no background item, nothing to detach"
+        );
 
-        // Loop active: `b` fires the detach.
+        // Loop running: the strip now shows `background b`, so `b` fires the detach.
         play.event(TuiEvent::Running(true));
         play.route_key(KeyCode::Char('b'), none);
         assert!(

@@ -24,8 +24,10 @@ use crate::tui::{BgProc, PaceCmd, PaceView, PendingGate, TuiEvent, UsageStats};
 use crossbeam_channel::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 
-/// The idle status-bar hint (also restored when an approval gate resolves).
-const IDLE_STATUS: &str = "efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand";
+/// The idle status-bar line (also restored when an approval gate resolves). After
+/// the bind purge (backlog/tui-control-strip/04) the status bar stops enumerating
+/// verb keys — the strip is the legend — and just points there.
+const IDLE_STATUS: &str = "efference — ↑ controls";
 
 /// Cap on a process-panel row's live tail between `/state` polls (TUI-bg-2). The
 /// panel only renders the last line, and a poll reconciles to the authoritative
