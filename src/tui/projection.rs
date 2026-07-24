@@ -508,7 +508,8 @@ fn thinking_block(
 
 /// The inline affordance shown in a pending exchange's body, in place of the
 /// not-yet-existent result (docs/tui.md). The accent-colored lead-in marks "your
-/// turn"; the muted tail spells out how to answer through the composer.
+/// turn"; the muted tail names the composer's two direct answers — the full verb
+/// set (allow…/abort) lives on the control strip, which is the legend now.
 fn gate_affordance() -> DocumentNode<'static> {
     DocumentNode::Paragraph {
         spans: vec![
@@ -518,7 +519,7 @@ fn gate_affordance() -> DocumentNode<'static> {
                 action: None,
             },
             Span {
-                text: "  ·  ⏎ approve · type to redirect · .allow to add a rule · .abort".into(),
+                text: "  ·  ⏎ approve · type to redirect".into(),
                 style: SpanStyle::Comment,
                 action: None,
             },

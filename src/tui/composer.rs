@@ -175,6 +175,19 @@ impl Composer {
         self.goal_col = 0;
     }
 
+    /// Replace the buffer with `text` (split on `\n`), cursor at the end — used by
+    /// the control strip's stager class to park/restore a draft and pre-fill an
+    /// argument (docs/tui.md).
+    pub(super) fn set_text(&mut self, text: &str) {
+        self.lines = text.split('\n').map(|l| l.chars().collect()).collect();
+        if self.lines.is_empty() {
+            self.lines.push(Vec::new());
+        }
+        self.row = self.lines.len() - 1;
+        self.col = self.lines[self.row].len();
+        self.goal_col = self.col;
+    }
+
     /// Feed one key event. Returns whether it was consumed, ignored (caller should
     /// handle), or a submission.
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> ComposerAction {

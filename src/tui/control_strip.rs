@@ -38,6 +38,11 @@ pub(super) enum StripVerb {
     Background,
     /// Approve the pending gate.
     ApproveGate,
+    /// Stage a `.allow` grant spec into the composer for editing (the stager
+    /// class, docs/tui.md).
+    AllowStage,
+    /// Abort the pending gate.
+    AbortGate,
     /// Open the theme picker.
     Theme,
     /// Open the help screen.
@@ -71,10 +76,18 @@ impl InteractiveState<'_> {
     /// happens at state transitions and never while the strip sits stable.
     pub(super) fn strip_items(&self) -> Vec<StripItem> {
         let held = self.pace.is_some_and(|p| p.held);
-        let mut items = if self.pending_gate.is_some() {
-            // Placeholder set — the full gate affordances (allow…/abort and the
-            // stager class) are backlog/tui-control-strip/02.
-            vec![item("approve", "⏎", StripVerb::ApproveGate)]
+        let mut items = if self.staging.is_some() {
+            // Mid-staging the composer owns the interaction (⏎ commits, ⎋
+            // cancels) — the gate verbs leave the strip so `approve ⏎` can't
+            // mislead or be clicked out from under the stager; the row carries
+            // the staging note instead.
+            vec![]
+        } else if self.pending_gate.is_some() {
+            vec![
+                item("approve", "⏎", StripVerb::ApproveGate),
+                item("allow…", "", StripVerb::AllowStage),
+                item("abort", "", StripVerb::AbortGate),
+            ]
         } else if held {
             vec![
                 item("resume", "p", StripVerb::PauseToggle),
@@ -133,6 +146,8 @@ impl InteractiveState<'_> {
             StripVerb::Kill => self.esc_interrupt(),
             StripVerb::Background => self.background_detach(),
             StripVerb::ApproveGate => self.approve_gate(),
+            StripVerb::AllowStage => self.stage_allow(),
+            StripVerb::AbortGate => self.abort_gate(),
             StripVerb::Theme => self.open_theme_picker(),
             StripVerb::Help => self.ui_mode = UiMode::Help,
             StripVerb::Detach => self.ui.quit_requested = true,
@@ -140,10 +155,75 @@ impl InteractiveState<'_> {
         self.dirty = true;
     }
 
+    /// The stager class, `allow…` (docs/tui.md): park the operator's draft, move
+    /// focus into the composer with the derived grant spec pre-filled for editing
+    /// — the bash program for a `bash` gate, empty otherwise (a bare `.allow`
+    /// derives a tool grant at commit). The prompt gains the verb's chip; `⏎`
+    /// commits, Esc cancels; either way the parked draft comes back.
+    pub(super) fn stage_allow(&mut self) {
+        let Some(gate) = &self.pending_gate else {
+            return;
+        };
+        let prefill = if gate.name == "bash" {
+            gate.input
+                .get("command")
+                .and_then(|c| c.as_str())
+                .and_then(|cmd| cmd.split_whitespace().next())
+                .unwrap_or("")
+                .to_string()
+        } else {
+            String::new()
+        };
+        self.staging = Some(super::state::Staging {
+            verb: super::state::StagedVerb::Allow,
+            parked: self.composer.text(),
+        });
+        self.composer.set_text(&prefill);
+        self.strip_focus = None;
+        self.composing = true;
+        self.ui.debug_message = "allow — edit the grant · ⏎ commit · ⎋ cancel".into();
+        self.dirty = true;
+    }
+
+    /// Commit the staged verb with the composer's current text as its argument,
+    /// then restore the parked draft. `Allow` routes through the same `.allow`
+    /// submit path the typed form uses (docs/tui.md), so the grant semantics are
+    /// one mechanism.
+    pub(super) fn commit_staging(&mut self) {
+        let Some(staging) = self.staging.take() else {
+            return;
+        };
+        let spec = self.composer.text();
+        let submit = match staging.verb {
+            super::state::StagedVerb::Allow => {
+                let spec = spec.trim();
+                if spec.is_empty() {
+                    ".allow".to_string()
+                } else {
+                    format!(".allow {spec}")
+                }
+            }
+        };
+        self.submit_composer(submit);
+        self.composer.set_text(&staging.parked);
+    }
+
+    /// Cancel the staged verb and restore the parked draft — Esc's gentlest rung,
+    /// and the path taken when the gate resolves out from under the stager.
+    pub(super) fn cancel_staging(&mut self) {
+        if let Some(staging) = self.staging.take() {
+            self.composer.set_text(&staging.parked);
+            self.ui.debug_message = "canceled — draft restored".into();
+            self.dirty = true;
+        }
+    }
+
     /// Render the strip row: contextual items from the left, universals pinned at
     /// the right edge, the focused item marked with `▸` in its reserved marker
-    /// cell. Rebuilds [`strip_hits`](InteractiveState::strip_hits), the
-    /// column-range → item map mouse clicks resolve against.
+    /// cell. A dim contextual note (redirect hint at a gate, commit/cancel hint
+    /// while staging) fills the slack before the universal block. Rebuilds
+    /// [`strip_hits`](InteractiveState::strip_hits), the column-range → item map
+    /// mouse clicks resolve against.
     pub(super) fn render_control_strip(&mut self, buf: &mut Buffer, area: Rect) {
         let items = self.strip_items();
         // Clamp focus to the current set (a state transition may have shrunk it).
@@ -184,6 +264,23 @@ impl InteractiveState<'_> {
                 break; // fit-to-width: lowest-ranked contextuals drop first
             }
             x = self.render_strip_item(buf, area, x, entry, i) + 2;
+        }
+
+        // The dim contextual note, truncated to the slack before the universals.
+        let note = if self.staging.is_some() {
+            Some("draft saved · ⏎ commit · ⎋ cancel")
+        } else if self.pending_gate.is_some() {
+            Some("type below to redirect")
+        } else {
+            None
+        };
+        if let Some(note) = note {
+            let x = x + 1;
+            if x < budget {
+                let avail = (budget - x) as usize;
+                let text: String = note.chars().take(avail).collect();
+                put_row(buf, area, x, &text, self.theme.muted_style);
+            }
         }
     }
 
@@ -370,16 +467,25 @@ mod scenarios {
         );
     }
 
-    /// A pending gate puts `approve` on the strip's landing slot — `↑ ⏎` approves.
-    /// (The full gate set — allow…/abort — is backlog/tui-control-strip/02.)
+    /// A pending gate populates the strip with its full verb set — `approve` on
+    /// the landing slot (`↑ ⏎` approves), `allow…`, `abort` — plus the dim
+    /// redirect note.
     #[test]
     fn strip_gate_set_leads_with_approve() {
         use serde_json::json;
         let mut play = Screenplay::new(80, 14);
         play.user("clean up");
         play.pending_gate("toolu_g", "bash", json!({ "command": "rm -rf ./build" }));
-        let items = play.state.strip_items();
-        assert_eq!(items[0].label, "approve", "approve is the landing item");
+        let labels: Vec<_> = play.state.strip_items().iter().map(|e| e.label).collect();
+        assert_eq!(
+            labels,
+            vec!["approve", "allow…", "abort", "detach"],
+            "the gate set in rank order plus the universal"
+        );
+        assert!(
+            play.find("type below to redirect").is_some(),
+            "the strip carries the redirect note"
+        );
 
         play.route_key(KeyCode::Up, NONE);
         play.route_key(KeyCode::Enter, NONE);
@@ -387,6 +493,167 @@ mod scenarios {
             play.state.pending_gate.is_none(),
             "⏎ on approve resolved the gate"
         );
+        assert!(
+            matches!(
+                play.took_approval(),
+                Some((id, crate::frontend::Approval::Approve)) if id == "toolu_g"
+            ),
+            "…with an Approve decision"
+        );
+    }
+
+    /// `abort` sends the same decision the typed `.abort` sentinel produces, and
+    /// leaves any drafted text in place.
+    #[test]
+    fn strip_abort_sends_abort_and_keeps_the_draft() {
+        use serde_json::json;
+        let mut play = Screenplay::new(80, 14);
+        play.user("clean up");
+        play.type_str("actually wait");
+        play.pending_gate("toolu_g", "bash", json!({ "command": "rm -rf ./build" }));
+        play.route_key(KeyCode::Up, NONE); // to the 0,0 detent of the draft
+        play.route_key(KeyCode::Up, NONE); // spill → strip: approve
+        play.route_key(KeyCode::Right, NONE); // allow…
+        play.route_key(KeyCode::Right, NONE); // abort
+        play.route_key(KeyCode::Enter, NONE);
+        assert!(
+            matches!(
+                play.took_approval(),
+                Some((_, crate::frontend::Approval::Abort))
+            ),
+            "⏎ on abort sends Abort"
+        );
+        assert_eq!(
+            play.state.composer.text(),
+            "actually wait",
+            "the draft survives an abort from the strip"
+        );
+    }
+
+    /// The stager class end to end (docs/tui.md): activating `allow…` parks the
+    /// draft, pre-fills the derived grant spec (the bash program) in the composer
+    /// under an `allow` chip, `⏎` commits a ConfigEdit through the `.allow` path,
+    /// and the parked draft comes back.
+    #[test]
+    fn allow_stager_prefills_commits_and_restores_the_draft() {
+        use crate::frontend::Approval;
+        use crate::log::ConfigChange;
+        use serde_json::json;
+
+        let mut play = Screenplay::new(80, 14);
+        play.user("show the log");
+        play.type_str("a half-typed thought");
+        play.pending_gate("toolu_g", "bash", json!({ "command": "git log --oneline" }));
+
+        play.route_key(KeyCode::Up, NONE); // to the 0,0 detent of the draft
+        play.route_key(KeyCode::Up, NONE); // spill → strip: approve
+        play.route_key(KeyCode::Right, NONE); // allow…
+        play.route_key(KeyCode::Enter, NONE); // stage
+        assert!(play.state.staging.is_some(), "allow… enters staging");
+        assert!(play.state.composing, "staging edits in the composer");
+        assert_eq!(
+            play.state.composer.text(),
+            "git",
+            "the derived spec (the bash program) is pre-filled for editing"
+        );
+        assert!(
+            play.find("draft saved · ⏎ commit · ⎋ cancel").is_some(),
+            "the strip note explains the staging state"
+        );
+
+        play.type_str(" log"); // widen the prefix: `git` → `git log`
+        play.route_key(KeyCode::Enter, NONE); // commit
+        match play.took_approval() {
+            Some((id, Approval::ConfigEdit { change, .. })) => {
+                assert_eq!(id, "toolu_g");
+                assert_eq!(
+                    change,
+                    ConfigChange::Command {
+                        command: "git log".into()
+                    },
+                    "the edited spec became the command grant"
+                );
+            }
+            other => panic!("expected a ConfigEdit decision, got {other:?}"),
+        }
+        assert!(play.state.staging.is_none(), "staging ends on commit");
+        assert!(play.state.pending_gate.is_none(), "the gate resolved");
+        assert_eq!(
+            play.state.composer.text(),
+            "a half-typed thought",
+            "the parked draft is restored after commit"
+        );
+    }
+
+    /// Esc during staging cancels: the parked draft returns, the gate is still
+    /// pending, and no decision was sent.
+    #[test]
+    fn allow_stager_esc_cancels_and_restores() {
+        use serde_json::json;
+        let mut play = Screenplay::new(80, 14);
+        play.user("show the log");
+        play.type_str("draft in progress");
+        play.pending_gate("toolu_g", "bash", json!({ "command": "git log" }));
+        play.route_key(KeyCode::Up, NONE); // detent
+        play.route_key(KeyCode::Up, NONE); // spill → strip
+        play.route_key(KeyCode::Right, NONE);
+        play.route_key(KeyCode::Enter, NONE); // stage
+        assert_eq!(play.state.composer.text(), "git");
+
+        play.route_key(KeyCode::Esc, NONE); // cancel — the gentlest Esc rung
+        assert!(play.state.staging.is_none(), "esc ends staging");
+        assert_eq!(
+            play.state.composer.text(),
+            "draft in progress",
+            "the parked draft is restored on cancel"
+        );
+        assert!(
+            play.state.pending_gate.is_some(),
+            "the gate is still pending"
+        );
+        assert!(play.took_approval().is_none(), "no decision was sent");
+    }
+
+    /// A gate that resolves out from under the stager (another client, a
+    /// daemon-side abort) cancels the staging rather than letting its commit fall
+    /// through to a normal turn submit.
+    #[test]
+    fn gate_resolving_elsewhere_cancels_staging() {
+        use serde_json::json;
+        let mut play = Screenplay::new(80, 14);
+        play.user("show the log");
+        play.type_str("my draft");
+        play.pending_gate("toolu_g", "bash", json!({ "command": "git log" }));
+        play.route_key(KeyCode::Up, NONE); // detent
+        play.route_key(KeyCode::Up, NONE); // spill → strip
+        play.route_key(KeyCode::Right, NONE);
+        play.route_key(KeyCode::Enter, NONE); // stage
+        assert!(play.state.staging.is_some());
+
+        play.event(TuiEvent::Gate(None)); // resolved elsewhere
+        assert!(
+            play.state.staging.is_none(),
+            "staging cancels when the gate goes away"
+        );
+        assert_eq!(
+            play.state.composer.text(),
+            "my draft",
+            "the parked draft is restored"
+        );
+    }
+
+    /// The staging composer renders the verb's chip at the prompt — the visible
+    /// "your next ⏎ commits an argument, not a message" signal.
+    #[test]
+    fn staging_renders_the_chip_and_prefill() {
+        use serde_json::json;
+        let mut play = Screenplay::new(80, 14);
+        play.user("clean up");
+        play.pending_gate("toolu_g", "bash", json!({ "command": "rm -rf ./build" }));
+        play.route_key(KeyCode::Up, NONE);
+        play.route_key(KeyCode::Right, NONE);
+        play.route_key(KeyCode::Enter, NONE); // stage
+        play.snapshot("gate_allow_staging");
     }
 
     /// Rendering records the items' column ranges for mouse hit-testing.

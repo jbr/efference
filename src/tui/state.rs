@@ -155,6 +155,32 @@ pub(super) struct RenderCache<'a> {
     pub actions: Vec<(Rect, TuiAction<'a>)>,
 }
 
+/// A stager activation in progress (docs/tui.md): the control-strip verb whose
+/// argument the composer is currently editing, plus the operator's parked draft.
+#[derive(Debug)]
+pub(super) struct Staging {
+    pub verb: StagedVerb,
+    /// The composer text at activation, restored on commit or cancel.
+    pub parked: String,
+}
+
+/// The strip verbs that stage an argument into the composer. One so far; the
+/// chip label and commit dispatch match on this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StagedVerb {
+    /// `.allow` — edit the grant spec (a bash command prefix) before committing.
+    Allow,
+}
+
+impl StagedVerb {
+    /// The chip label shown at the prompt while staging.
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            StagedVerb::Allow => "allow",
+        }
+    }
+}
+
 /// UI display state
 #[derive(Debug)]
 pub(super) struct UiState {
@@ -226,6 +252,10 @@ pub(super) struct InteractiveState<'a> {
     /// meaningful while `composing` is false; cleared on every return to the
     /// composer.
     pub strip_focus: Option<usize>,
+    /// An in-progress stager activation (docs/tui.md): the composer is editing a
+    /// strip verb's argument, with the operator's draft parked for restoration on
+    /// commit or cancel. `Some` implies `composing`.
+    pub staging: Option<Staging>,
     /// The strip items' rendered column ranges (`x_start..x_end`, item index),
     /// rebuilt each frame — what mouse clicks on the strip row resolve against.
     pub strip_hits: Vec<(u16, u16, usize)>,
@@ -356,6 +386,7 @@ impl<'a> InteractiveState<'a> {
             composer: Composer::new(),
             composing: true,
             strip_focus: None,
+            staging: None,
             strip_hits: Vec::new(),
             submit_tx,
             pending_turns: Vec::new(),
@@ -528,6 +559,12 @@ impl<'a> InteractiveState<'a> {
     /// So sitting in the composer while the agent works, one Esc pauses and a second interrupts;
     /// and jamming Esc from anywhere still walks return-to-composer → pause → interrupt.
     pub(super) fn handle_escape(&mut self) {
+        // A stager in progress is the gentlest thing Esc can undo: cancel it and
+        // restore the parked draft, before any return/pause/interrupt rung.
+        if self.staging.is_some() {
+            self.cancel_staging();
+            return;
+        }
         let at_rest_composer = self.composing && matches!(self.ui_mode, UiMode::Normal);
         if !at_rest_composer {
             self.normalize_to_composer();
@@ -571,6 +608,16 @@ impl<'a> InteractiveState<'a> {
         if let Some(gate) = self.pending_gate.take() {
             let _ = self.approve_tx.send((gate.call_id, Approval::Approve));
             self.ui.debug_message = "approved".into();
+            self.viewport.stuck_to_bottom = true;
+        }
+    }
+
+    /// Abort the pending gate — the strip's `abort` verb, same decision the typed
+    /// `.abort` sentinel produces, draft likewise left in place.
+    pub(super) fn abort_gate(&mut self) {
+        if let Some(gate) = self.pending_gate.take() {
+            let _ = self.approve_tx.send((gate.call_id, Approval::Abort));
+            self.ui.debug_message = "aborted".into();
             self.viewport.stuck_to_bottom = true;
         }
     }
@@ -709,14 +756,19 @@ impl<'a> InteractiveState<'a> {
                 // reproject — unlike the other ephemeral chrome (processes/usage). The
                 // status bar still mirrors the affordance for the scrolled-away case.
                 self.ui.debug_message = match &gate {
-                    Some(g) => format!(
-                        "approval needed: {} — ⏎ approve · type to redirect · .abort",
-                        g.name
-                    )
-                    .into(),
+                    Some(g) => {
+                        format!("approval needed: {} — ⏎ approve · type to redirect", g.name).into()
+                    }
                     // Gate resolved — drop the stale "approval needed" hint.
                     None => IDLE_STATUS.into(),
                 };
+                // A stager edits an argument *for* the pending gate; if the gate
+                // resolves out from under it (another client, a daemon-side abort),
+                // committing would fall through to a normal turn submit — cancel
+                // instead and restore the parked draft.
+                if gate.is_none() && self.staging.is_some() {
+                    self.cancel_staging();
+                }
                 self.pending_gate = gate;
                 self.mark_reproject();
             }

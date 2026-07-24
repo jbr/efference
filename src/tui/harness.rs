@@ -47,7 +47,9 @@ pub(crate) struct Screenplay<'a> {
     next_seq: u64,
     _event_tx: Sender<TuiEvent>,
     _submit_rx: UnboundedReceiver<String>,
-    _approve_rx: UnboundedReceiver<(String, Approval)>,
+    /// Held un-underscored so a scenario can assert what decision a gate action
+    /// sent ([`took_approval`](Screenplay::took_approval)).
+    approve_rx: UnboundedReceiver<(String, Approval)>,
     _pace_rx: UnboundedReceiver<super::PaceCmd>,
     /// Held un-underscored so a scenario can assert an interrupt intent fired —
     /// the hard rung of graduated Esc ([`took_interrupt`](Screenplay::took_interrupt))
@@ -91,7 +93,7 @@ impl Screenplay<'static> {
             next_seq: 1,
             _event_tx: event_tx,
             _submit_rx: submit_rx,
-            _approve_rx: approve_rx,
+            approve_rx,
             _pace_rx: pace_rx,
             interrupt_rx,
         }
@@ -182,6 +184,13 @@ impl Screenplay<'_> {
             self.interrupt_rx.try_recv(),
             Ok(crate::frontend::Interrupt::Detach)
         )
+    }
+
+    /// The approval decision a gate action sent since the last check (`call_id`,
+    /// decision), if any — drains the channel the UI would have resolved
+    /// `POST /approvals/:call_id` over.
+    pub(crate) fn took_approval(&mut self) -> Option<(String, Approval)> {
+        self.approve_rx.try_recv().ok()
     }
 
     /// Commit a [`Payload`] to the transcript as the next sequential log entry,
@@ -1008,8 +1017,12 @@ mod scenarios {
             "the gate shows the spotter's reason inline:\n{screen}"
         );
         assert!(
-            screen.contains(".allow"),
-            "the gate offers the .allow affordance"
+            screen.contains("allow…"),
+            "the control strip offers the allow… affordance:\n{screen}"
+        );
+        assert!(
+            !screen.contains(".allow"),
+            "the typed .allow form is no longer advertised (the strip is the legend):\n{screen}"
         );
     }
 

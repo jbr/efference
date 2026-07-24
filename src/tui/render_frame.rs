@@ -74,7 +74,17 @@ impl<'a> InteractiveState<'a> {
         };
         let content_width = full.width.saturating_sub(sidebar_width);
 
-        let input_height = (self.composer.line_count(content_width) as u16).clamp(1, 6);
+        // A staged verb's chip (docs/tui.md) sits left of the composer; the
+        // composer wraps within the remaining columns, so height must agree.
+        let chip_w: u16 = self
+            .staging
+            .as_ref()
+            .map(|s| s.verb.label().chars().count() as u16 + 1)
+            .unwrap_or(0);
+        let input_height = (self
+            .composer
+            .line_count(content_width.saturating_sub(chip_w)) as u16)
+            .clamp(1, 6);
         let proc_height: u16 = if sidebar_width > 0 {
             0
         } else {
@@ -176,9 +186,30 @@ impl<'a> InteractiveState<'a> {
         } else {
             self.theme.muted_style
         };
+        // While staging, the verb's chip renders left of the composer prompt
+        // (`allow › rm█`) — the visible "your next ⏎ commits an argument, not a
+        // message" signal (docs/tui.md). The composer itself is untouched chrome.
+        let composer_area = if let Some(staging) = &self.staging {
+            put_cols(
+                frame.buffer_mut(),
+                input_area,
+                input_area.y,
+                0,
+                staging.verb.label(),
+                self.theme.strip_item_focused_style,
+            );
+            Rect {
+                x: input_area.x + chip_w,
+                y: input_area.y,
+                width: input_area.width.saturating_sub(chip_w),
+                height: input_area.height,
+            }
+        } else {
+            input_area
+        };
         let cursor = self.composer.render(
             frame.buffer_mut(),
-            input_area,
+            composer_area,
             self.theme.document_bg_style,
             prompt_style,
         );

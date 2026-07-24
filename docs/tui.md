@@ -129,14 +129,17 @@ ratatui is immediate-mode, so "streaming" is just mutate-and-redraw: there is no
 
 A one-row surface between the transcript and the composer (`tui/control_strip.rs`), always present and never empty: the currently relevant **loop verbs**, rendered as focusable, clickable, button-like items. It is the discoverable slow path and the keybinding legend in one place — each item shows the key that fires the same verb without visiting the strip. Contents are a hand-ranked projection of the same polled `/state` fields the status bar reads, per state family:
 
-- gate pending → `approve ⏎` (the full gate affordances are staged work, backlog/tui-control-strip/)
+- gate pending → `approve ⏎ · allow… · abort`, with a dim `type below to redirect` note
 - held → `resume p · slower + · faster - · kill ⎋`
 - loop running → `pause ⎋ · background b · kill ⎋⎋`
 - idle → `theme t · help ?`
+- staging in progress → no contextual items; the row carries the staging note (below)
 
 plus a right-pinned, dimmer universal block (`detach q` — leave the TUI; the daemon and session keep running). Contextual items rank left→right by relevance, so `↑ ⏎` from the composer always lands on the most relevant verb; items that don't fit the width drop from the right, lowest relevance first, while the universals always render. Because the item list is a pure function of polled state, re-ranking happens only at state transitions — never while the strip sits stable.
 
 The focused item fills a reserved marker cell with `▸` (a space when unfocused), so focus movement never shifts text and stays visible in the character-grid snapshots; the raised-surface color change is what pixels show, asserted in tests via `cell()`. `←`/`→` (or `C-b`/`C-f`) move between items, `⏎`/space or a mouse click activates — clicks resolve against per-frame recorded column ranges (`strip_hits`). Activation dispatches onto the same mechanisms the keybindings use (the pace and interrupt channels, gate approval); `detach` raises a quit flag the UI loop checks alongside the key handler's return, since clicks have no quit return path. The strip is chrome: never projected, never in the log. Unbound keys on the strip currently fall through to the transcript command keys, so the single-letter binds keep working everywhere until the purge unit removes them.
+
+**Item classes.** Most items are *buttons* — `⏎` fires the verb. `allow…` is a *stager*: a verb that takes an argument, edited in the composer. Activating it parks the operator's draft (`Staging` in `tui/state.rs`), pre-fills the derived grant spec — the bash program for a `bash` gate, empty otherwise (bare `.allow` derives a tool grant at commit) — and swaps the prompt to the verb's chip (`allow › rm█`, drawn by `render_frame` left of an untouched composer), with a dim `draft saved · ⏎ commit · ⎋ cancel` note on the strip row. `⏎` commits the edited spec through the same `.allow` submit path the typed form uses, then restores the parked draft; `Esc` cancels and restores — the new gentlest rung of graduated Esc, checked before any return/pause/interrupt step. While staging, the gate verbs leave the strip (the composer owns the interaction — a lingering `approve ⏎` would misstate what `⏎` does, and clicking it would resolve the gate out from under the stager); a gate that resolves elsewhere (another client, a daemon-side abort) likewise cancels the staging rather than letting its commit fall through to a normal turn submit. A third class, *widget* (inline `↑`/`↓` adjustment, e.g. pace), is planned work (backlog/tui-control-strip/).
 
 
 ## Inline approval gates
@@ -148,10 +151,10 @@ The gate renders **inline at the pending call**, not as a bottom banner. Because
 ```
 ⏸ bash · rm -rf /tmp/scratch
 spotter: deletes outside the git tree — not reversible
-awaiting your approval  ·  ⏎ approve · type to redirect · .allow to add a rule · .abort
+awaiting your approval  ·  ⏎ approve · type to redirect
 ```
 
-The status bar mirrors this affordance for the scrolled-away case, and the [control strip](#the-control-strip) simultaneously leads with `approve ⏎`, so `↑ ⏎` approves without typing.
+The status bar mirrors this affordance for the scrolled-away case, and the [control strip](#the-control-strip) simultaneously carries the full verb set (`approve ⏎ · allow… · abort`), so `↑ ⏎` approves without typing and the strip — not instruction text — is the legend for the richer verbs. Strip `approve`/`abort` resolve the gate directly *without* clearing a drafted redirect the operator decided against sending (unlike an empty-composer `⏎`, which routes through the submit path below).
 
 Submitting from the composer while a gate is pending resolves it with the same three-valued `Approval` the loop consumes (from `src/frontend.rs`):
 
@@ -159,6 +162,8 @@ Submitting from the composer while a gate is pending resolves it with the same t
 - `.abort` → `Approval::Abort`
 - `.allow [prefix]` → `Approval::ConfigEdit` — add a rule, then run the call iff it now clears (the mechanism re-checks; nothing rides along unchecked, see [permissions](permissions.md)). An explicit prefix grants that bash command-prefix; bare `.allow` derives the grant from the gated call (the bash program, or a structured tool's name). Written to the session's `config.toml`, like every committed grant.
 - any other text → `Approval::Redirect(text)`
+
+The `.abort` / `.allow` sentinels are retained as the submit *mechanism* — the strip's `allow…` stager commits through the same `.allow` path, so grant semantics live in one place — they're just no longer advertised as things to type.
 
 Resolving replaces the inline affordance with the real result (or, on redirect/abort, an error result), and the call stays in the transcript with that outcome in place of output.
 

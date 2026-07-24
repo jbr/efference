@@ -10,14 +10,14 @@ expression: self.render()
  2 │   Sure — I'll remove it.                                                       │
  3 │                                                                                │
  4 │   ⏸ bash · rm -rf ./build                                                      │
- 5 │   awaiting your approval  ·  ⏎ approve · type to redirect · .allow to add a    │
- 6 │   rule · .abort                                                                │
+ 5 │   awaiting your approval  ·  ⏎ approve · type to redirect                      │
+ 6 │                                                                                │
  7 │                                                                                │
  8 │                                                                                │
  9 │                                                                                │
 10 │                                                                                │
-11 │   approve ⏎                                                         detach q   │
+11 │   approve ⏎     allow…     abort    type below to redirect          detach q   │
 12 │›                                                                               │
    │  ^                                                                             │
-13 │   approval needed: bash — ⏎ approve · type to redirect · .abort                │
+13 │   approval needed: bash — ⏎ approve · type to redirect                         │
    └────────────────────────────────────────────────────────────────────────────────┘
