@@ -20,6 +20,7 @@
 
 pub(crate) mod color_scheme;
 pub(crate) mod composer;
+pub(crate) mod control_strip;
 pub(crate) mod document;
 pub(crate) mod events;
 pub(crate) mod gallery;
@@ -892,7 +893,7 @@ fn ui_loop(
             },
         }
 
-        if exit {
+        if exit || state.ui.quit_requested {
             break Ok(());
         }
         if !redraw {

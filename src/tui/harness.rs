@@ -41,7 +41,7 @@ use crate::log::{
 /// an empty document (`'static`), which is all the composer scenarios need. The
 /// channel far-ends are held so sends from inside the state never error.
 pub(crate) struct Screenplay<'a> {
-    state: InteractiveState<'a>,
+    pub(crate) state: InteractiveState<'a>,
     width: u16,
     height: u16,
     next_seq: u64,
@@ -655,10 +655,11 @@ mod scenarios {
         play.snapshot("replay_real_session_tail");
     }
 
-    /// The composer's top edge spills into the transcript (docs/tui.md): `↑` climbs
-    /// the buffer, snaps to `0,0` (the detent), and only the *next* `↑` crosses into
-    /// navigation. Esc returns home from any depth, preserving the draft. Driven
-    /// through the real `handle_key_event` routing.
+    /// The composer's top edge spills upward (docs/tui.md): `↑` climbs the buffer,
+    /// snaps to `0,0` (the detent), and only the *next* `↑` crosses — onto the
+    /// control strip first, then into transcript navigation. Esc returns home from
+    /// any depth, preserving the draft. Driven through the real `handle_key_event`
+    /// routing.
     #[test]
     fn up_arrow_spills_from_composer_then_esc_returns_home() {
         use crossterm::event::{KeyCode, KeyModifiers};
@@ -694,7 +695,17 @@ mod scenarios {
         play.route_key(KeyCode::Up, none); // spill across the top edge
         assert!(
             !play.state.composing,
-            "↑ at 0,0 spilled focus into the transcript"
+            "↑ at 0,0 spilled focus out of the composer"
+        );
+        assert!(
+            play.state.strip_focus.is_some(),
+            "the spill lands on the control strip first"
+        );
+
+        play.route_key(KeyCode::Up, none); // strip → transcript
+        assert!(
+            play.state.strip_focus.is_none() && !play.state.composing,
+            "↑ from the strip continues into transcript navigation"
         );
 
         play.route_key(KeyCode::Esc, none);
@@ -729,7 +740,8 @@ mod scenarios {
             .join("\n");
         play.tool_result("toolu_fb", &listing, false, WireState::Raw);
 
-        play.route_key(KeyCode::Up, KeyModifiers::NONE); // spill → focus the exchange
+        play.route_key(KeyCode::Up, KeyModifiers::NONE); // spill → the control strip
+        play.route_key(KeyCode::Up, KeyModifiers::NONE); // strip → focus the exchange
         let bar = play.find("▌").expect("the focused unit shows a left bar");
         assert_eq!(bar.0, 0, "the focus bar sits in column 0");
         play.snapshot("transcript_focused_unit");
@@ -760,7 +772,8 @@ mod scenarios {
         );
         play.tool_result("t3", "today", false, WireState::Raw);
 
-        play.route_key(KeyCode::Up, none); // spill → focus the last exchange
+        play.route_key(KeyCode::Up, none); // spill → the control strip
+        play.route_key(KeyCode::Up, none); // strip → focus the last exchange
         let low = play.find("▌").expect("a unit is focused on spill");
         play.route_key(KeyCode::Up, none); // → previous (higher) exchange
         let high = play.find("▌").expect("a unit is still focused");
@@ -790,6 +803,7 @@ mod scenarios {
         );
         play.tool_result("p1", "src/project.rs:12: fold", false, WireState::Raw);
 
+        play.route_key(KeyCode::Up, none); // spill → the control strip
         play.route_key(KeyCode::Up, none); // focus the exchange (last unit)
         let at_exchange = play.find("▌").expect("exchange focused");
         play.route_key(KeyCode::Up, none); // focus the assistant prose
@@ -805,8 +819,8 @@ mod scenarios {
     }
 
     /// The symmetric counterpart: once focus is in the transcript, `↓` past the
-    /// bottom-most unit falls back into the composer (docs/tui.md), so the two read
-    /// as one continuous vertical space.
+    /// bottom-most unit stops at the control strip, and `↓` again falls back into
+    /// the composer (docs/tui.md) — one continuous vertical axis.
     #[test]
     fn down_past_the_last_unit_falls_back_to_the_composer() {
         use crossterm::event::{KeyCode, KeyModifiers};
@@ -828,15 +842,26 @@ mod scenarios {
             .join("\n");
         play.tool_result("toolu_nav2", &listing, false, WireState::Raw);
 
-        // Spill into the transcript (empty buffer → one ↑ crosses immediately).
+        // Spill upward (empty buffer → one ↑ crosses immediately, onto the strip),
+        // then continue into the transcript.
         play.route_key(KeyCode::Up, none);
-        assert!(!play.state.composing, "spilled into the transcript");
+        play.route_key(KeyCode::Up, none);
+        assert!(
+            !play.state.composing && play.state.strip_focus.is_none(),
+            "spilled into the transcript"
+        );
 
-        // ↓ off the bottom unit returns to the composer.
+        // ↓ off the bottom unit stops at the strip…
+        play.route_key(KeyCode::Down, none);
+        assert!(
+            !play.state.composing && play.state.strip_focus.is_some(),
+            "↓ past the last unit stops at the control strip"
+        );
+        // …and ↓ again returns to the composer.
         play.route_key(KeyCode::Down, none);
         assert!(
             play.state.composing,
-            "↓ past the last unit fell back to the composer"
+            "↓ from the strip fell back to the composer"
         );
     }
 
@@ -876,7 +901,8 @@ mod scenarios {
         );
         play.tool_result("z", "out", false, WireState::Raw);
 
-        play.route_key(KeyCode::Up, none); // into navigation
+        play.route_key(KeyCode::Up, none); // spill → the control strip
+        play.route_key(KeyCode::Up, none); // strip → navigation
         assert!(!play.state.composing, "spilled into navigation");
         play.route_key(KeyCode::Char('x'), none); // an unbound letter
         assert!(
@@ -1297,7 +1323,8 @@ mod scenarios {
     fn pace_keys_toggle_hold_and_slow_the_dial() {
         let mut play = Screenplay::new(80, 12);
         play.user("do a thing");
-        // Spill out of the empty composer into transcript command mode, where the pace keys live.
+        // Spill out of the empty composer (onto the control strip — the letter binds
+        // fall through from there until backlog/tui-control-strip/04 removes them).
         play.route_key(KeyCode::Up, KeyModifiers::NONE);
 
         // `p` pauses.
@@ -1329,7 +1356,8 @@ mod scenarios {
         play.event(TuiEvent::Running(true));
 
         // From transcript navigation, Esc returns to the composer — it does not pause.
-        play.route_key(KeyCode::Up, none);
+        play.route_key(KeyCode::Up, none); // spill → strip
+        play.route_key(KeyCode::Up, none); // strip → navigation
         assert!(!play.state.composing, "spilled into navigation");
         play.route_key(KeyCode::Esc, none);
         assert!(play.state.composing, "esc returns to the composer");

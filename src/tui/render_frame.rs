@@ -81,8 +81,12 @@ impl<'a> InteractiveState<'a> {
             (self.processes.len() as u16).min(PROC_PANEL_MAX)
         };
         self.viewport.input_height = input_height;
-        self.viewport.gate_height = 0;
-        let bottom = 1 + input_height + proc_height;
+        // The control strip (docs/tui.md) holds a constant one-row slot directly
+        // above the composer — the old inline-gate slot, whose `gate_height` the
+        // mouse/scroll math still reads, so the strip reuses it.
+        let strip_height: u16 = 1;
+        self.viewport.gate_height = strip_height;
+        let bottom = 1 + input_height + strip_height + proc_height;
 
         let main_area = Rect {
             x: full.x,
@@ -95,6 +99,12 @@ impl<'a> InteractiveState<'a> {
             y: full.height.saturating_sub(bottom),
             width: content_width,
             height: proc_height,
+        };
+        let strip_area = Rect {
+            x: full.x,
+            y: full.height.saturating_sub(1 + input_height + strip_height),
+            width: content_width,
+            height: strip_height,
         };
         let input_area = Rect {
             x: full.x,
@@ -144,6 +154,9 @@ impl<'a> InteractiveState<'a> {
         if proc_height > 0 {
             self.render_processes_panel(frame.buffer_mut(), proc_area);
         }
+
+        // The control strip (docs/tui.md), directly above the composer.
+        self.render_control_strip(frame.buffer_mut(), strip_area);
 
         // Composer: clear its rows, then draw. Place the terminal cursor in it when
         // composing so the user sees where they're typing.

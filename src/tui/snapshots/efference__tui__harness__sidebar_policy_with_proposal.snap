@@ -30,7 +30,7 @@ expression: self.render()
 22 │                                                                                │                             │
 23 │                                                                                │                             │
 24 │                                                                                │                             │
-25 │                                                                                │                             │
+25 │   theme t     help ?                                                detach q   │                             │
 26 │›                                                                               │                             │
    │  ^                                                                                                           │
 27 │   efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand                                              │

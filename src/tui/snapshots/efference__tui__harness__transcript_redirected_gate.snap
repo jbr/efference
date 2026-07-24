@@ -1,6 +1,5 @@
 ---
 source: src/tui/harness.rs
-assertion_line: 288
 expression: self.render()
 ---
     0         1         2         3         4         5         6         7         
@@ -19,7 +18,7 @@ expression: self.render()
 10 │ ┃ use cargo clean instead                                                      │
 11 │                                                                                │
 12 │                                                                                │
-13 │                                                                                │
+13 │   theme t     help ?                                                detach q   │
 14 │›                                                                               │
    │  ^                                                                             │
 15 │   efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand                │

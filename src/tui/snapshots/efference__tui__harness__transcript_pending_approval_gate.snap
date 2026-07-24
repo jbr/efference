@@ -16,7 +16,7 @@ expression: self.render()
  8 │                                                                                │
  9 │                                                                                │
 10 │                                                                                │
-11 │                                                                                │
+11 │   approve ⏎                                                         detach q   │
 12 │›                                                                               │
    │  ^                                                                             │
 13 │   approval needed: bash — ⏎ approve · type to redirect · .abort                │

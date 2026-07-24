@@ -88,6 +88,10 @@ impl<'a> super::InteractiveState<'a> {
                     .saturating_sub(1 + self.viewport.input_height + self.viewport.gate_height); // status row + composer
                 let content_width = size.width.saturating_sub(1); // Exclude scrollbar column
 
+                // The control strip row sits directly above the composer
+                // (docs/tui.md); a click on an item focuses and activates it.
+                let strip_row = terminal_height.saturating_sub(2 + self.viewport.input_height);
+
                 // Check if click is in scrollbar column
                 if row < content_height && column == content_width && self.scrollbar_visible() {
                     // Start scrollbar drag
@@ -98,6 +102,16 @@ impl<'a> super::InteractiveState<'a> {
                     // Click in main content area
                     self.viewport.clicked_position =
                         Some(Position::new(column, row + self.viewport.scroll_offset));
+                } else if row == strip_row
+                    && let Some(idx) = self
+                        .strip_hits
+                        .iter()
+                        .find(|(x0, x1, _)| column >= *x0 && column < *x1)
+                        .map(|(_, _, i)| *i)
+                {
+                    self.composing = false;
+                    self.strip_focus = Some(idx);
+                    self.activate_strip_item(idx);
                 }
             }
 

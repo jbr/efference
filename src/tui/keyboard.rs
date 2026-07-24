@@ -110,13 +110,93 @@ impl<'a> InteractiveState<'a> {
             match self.composer.handle_key(key) {
                 ComposerAction::Submit(text) => self.submit_composer(text),
                 ComposerAction::Consumed => {}
-                ComposerAction::SpillUp => self.focus_transcript_from_composer(),
+                // The `↑`-spill at the 0,0 detent lands on the control strip —
+                // the middle stop of the transcript → strip → composer axis
+                // (docs/tui.md). `↑` again from the strip enters the transcript.
+                ComposerAction::SpillUp => self.focus_strip_from_composer(),
                 ComposerAction::Ignored => self.handle_scroll_key(key, terminal),
             }
             return false;
         }
 
+        if let Some(idx) = self.strip_focus {
+            return self.handle_strip_key(key, idx, terminal);
+        }
+
         self.handle_command_key(key, terminal)
+    }
+
+    /// Keys while the control strip is focused (docs/tui.md): `←`/`→` (and
+    /// `C-b`/`C-f`) move between items, `⏎`/space activates, `↑`/`k` continues
+    /// into the transcript, `↓`/`j` drops back to the composer. Anything else
+    /// falls through to the transcript command keys — those single-letter binds
+    /// remain live everywhere until the strip and block menu fully cover them
+    /// (backlog/tui-control-strip/04).
+    fn handle_strip_key(
+        &mut self,
+        key: KeyEvent,
+        idx: usize,
+        terminal: &mut Terminal<impl Backend + Write>,
+    ) -> bool {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Up | KeyCode::BackTab => {
+                self.strip_focus = None;
+                self.focus_transcript_from_composer();
+                false
+            }
+            KeyCode::Char('k') if !ctrl => {
+                self.strip_focus = None;
+                self.focus_transcript_from_composer();
+                false
+            }
+            KeyCode::Char('p') if ctrl => {
+                self.strip_focus = None;
+                self.focus_transcript_from_composer();
+                false
+            }
+            KeyCode::Down | KeyCode::Tab => {
+                self.strip_focus = None;
+                self.composing = true;
+                self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
+                false
+            }
+            KeyCode::Char('j') if !ctrl => {
+                self.strip_focus = None;
+                self.composing = true;
+                self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
+                false
+            }
+            KeyCode::Char('n') if ctrl => {
+                self.strip_focus = None;
+                self.composing = true;
+                self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
+                false
+            }
+            KeyCode::Left => {
+                self.strip_focus = Some(idx.saturating_sub(1));
+                false
+            }
+            KeyCode::Char('b') if ctrl => {
+                self.strip_focus = Some(idx.saturating_sub(1));
+                false
+            }
+            KeyCode::Right => {
+                let last = self.strip_items().len().saturating_sub(1);
+                self.strip_focus = Some((idx + 1).min(last));
+                false
+            }
+            KeyCode::Char('f') if ctrl => {
+                let last = self.strip_items().len().saturating_sub(1);
+                self.strip_focus = Some((idx + 1).min(last));
+                false
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                self.activate_strip_item(idx);
+                self.ui.quit_requested
+            }
+            _ => self.handle_command_key(key, terminal),
+        }
     }
 
     /// Cross the composer's top edge into transcript navigation (docs/tui.md):
@@ -211,8 +291,10 @@ impl<'a> InteractiveState<'a> {
                     self.viewport.keyboard_cursor,
                     super::state::KeyboardCursor::VirtualBottom
                 ) {
-                    self.composing = true;
-                    self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
+                    // `↓` past the last unit stops at the control strip — the
+                    // symmetric counterpart of the composer's `↑`-spill
+                    // (docs/tui.md); `↓` again reaches the composer.
+                    self.focus_strip_from_transcript();
                 }
             }
 
@@ -277,19 +359,7 @@ impl<'a> InteractiveState<'a> {
 
             // Theme picker
             (KeyCode::Char('t'), _) => {
-                let themes = RenderContext::available_themes();
-                let current_theme = self
-                    .current_theme_name
-                    .clone()
-                    .or_else(|| themes.first().cloned())
-                    .unwrap_or_else(|| "default".to_string());
-                let selected_index = themes.iter().position(|t| t == &current_theme).unwrap_or(0);
-                self.ui_mode = UiMode::ThemePicker {
-                    selected_index,
-                    saved_theme_name: current_theme,
-                };
-                self.ui.debug_message =
-                    "Select theme (↑/↓ to navigate, Enter to save, Esc to cancel)".into();
+                self.open_theme_picker();
             }
 
             // Pace (docs/tui.md): `+`/`-` step the between-turns speed

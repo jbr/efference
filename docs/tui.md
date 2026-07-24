@@ -104,7 +104,7 @@ So sitting in the composer while the agent works, *one* `Esc` pauses and a secon
 
 Alongside kill, transcript-navigation `b` fires the **foreground→background handoff** (`POST /background`, [supervisor.md](supervisor.md)): the in-flight tool keeps running as a `bg#<n>` process instead of being killed or waited out. When the loop is idle the key is a status-line no-op (nothing sent). There is no separate note-capture flow — a message typed after `b` rides the seam-drain to the model alongside the handoff result. Both intents share one channel to the tokio side (`frontend::Interrupt`: `Kill` → `/interrupt`, `Detach` → `/background`).
 
-> **Discoverability (ergonomics-pass work).** Pause is now reachable where the operator lives — `Esc` in the composer. The *speed* keys (`+`/`-`), the `p` hold toggle, and the `b` handoff still live only in transcript-navigation mode, which is hard to find from the composer; they're listed in the `?` help for now. Making these composer-reachable is left to the ergonomics pass.
+> **Discoverability.** Pause is reachable where the operator lives — `Esc` in the composer — and the [control strip](#the-control-strip) now shows the pace, handoff, and kill verbs as visible, focusable items one `↑` from the composer. The single-letter transcript binds remain alongside until the strip and the per-block menu cover them fully (backlog/tui-control-strip/).
 
 
 ## Wiring: two threads, one crossbeam channel
@@ -122,7 +122,21 @@ ratatui is immediate-mode, so "streaming" is just mutate-and-redraw: there is no
 
 `tui-textarea` was the intended first cut but is pinned to an older ratatui/unicode-width ecosystem and does not resolve against ratatui 0.30, hence the hand-rolled editor. The narrow interface makes replacing it later surgical.
 
-**Focus model.** Focus lives in one of two *contexts* — the composer or the transcript — and the same physical key takes a context-dependent meaning (`C-p` is "previous line" composing, "previous unit" navigating), the way an editor's motion keys don't stop existing when you leave the buffer. There is no modal toggle: you cross between contexts by *moving*. `↑` at the top of the composer (the `0,0` detent: one press lands at the start of the first line, the next crosses the edge) spills focus into the transcript; `↓` past the last unit falls back into the composer; `Esc` is a graduated *return to steady state* (see [Graduated Esc](#graduated-esc) below) whose first rung returns to the composer. In the transcript context every block is a focus **unit** — each prose turn and each exchange — and the focused unit is marked by an accent glyph **`▌`** down its full height (a glyph, not reversed-video, so it shows on any theme and in the snapshot grid). `↑/↓` (or `C-p`/`C-n`) move between units, `Enter` expands a focused collapsible block, and other transcript commands (`r` raw, `t` theme, `+`/`-` pace, `p` pause, `b` background the running tool, `?`/`h` help, `g`/`G` top/bottom, `q` quit) are bound here; an unbound key is a clean no-op (typing never leaks into the composer). Submit in the composer drives `POST /turn`; submit while a gate is pending resolves the gate (below); `C-d` on an empty composer quits (shell EOF).
+**Focus model.** Focus lives on one vertical axis — transcript, [control strip](#the-control-strip), composer — and the same physical key takes a context-dependent meaning (`C-p` is "previous line" composing, "previous unit" navigating), the way an editor's motion keys don't stop existing when you leave the buffer. There is no modal toggle: you cross between contexts by *moving*. `↑` at the top of the composer (the `0,0` detent: one press lands at the start of the first line, the next crosses the edge) spills focus onto the control strip, and `↑` again into the transcript; `↓` reverses — past the last unit it stops at the strip, then falls back into the composer; `Esc` is a graduated *return to steady state* (see [Graduated Esc](#graduated-esc) below) whose first rung returns to the composer from any stop. In the transcript context every block is a focus **unit** — each prose turn and each exchange — and the focused unit is marked by an accent glyph **`▌`** down its full height (a glyph, not reversed-video, so it shows on any theme and in the snapshot grid). `↑/↓` (or `C-p`/`C-n`) move between units, `Enter` expands a focused collapsible block, and other transcript commands (`r` raw, `t` theme, `+`/`-` pace, `p` pause, `b` background the running tool, `?`/`h` help, `g`/`G` top/bottom, `q` quit) are bound here; an unbound key is a clean no-op (typing never leaks into the composer). Submit in the composer drives `POST /turn`; submit while a gate is pending resolves the gate (below); `C-d` on an empty composer quits (shell EOF).
+
+
+## The control strip
+
+A one-row surface between the transcript and the composer (`tui/control_strip.rs`), always present and never empty: the currently relevant **loop verbs**, rendered as focusable, clickable, button-like items. It is the discoverable slow path and the keybinding legend in one place — each item shows the key that fires the same verb without visiting the strip. Contents are a hand-ranked projection of the same polled `/state` fields the status bar reads, per state family:
+
+- gate pending → `approve ⏎` (the full gate affordances are staged work, backlog/tui-control-strip/)
+- held → `resume p · slower + · faster - · kill ⎋`
+- loop running → `pause ⎋ · background b · kill ⎋⎋`
+- idle → `theme t · help ?`
+
+plus a right-pinned, dimmer universal block (`detach q` — leave the TUI; the daemon and session keep running). Contextual items rank left→right by relevance, so `↑ ⏎` from the composer always lands on the most relevant verb; items that don't fit the width drop from the right, lowest relevance first, while the universals always render. Because the item list is a pure function of polled state, re-ranking happens only at state transitions — never while the strip sits stable.
+
+The focused item fills a reserved marker cell with `▸` (a space when unfocused), so focus movement never shifts text and stays visible in the character-grid snapshots; the raised-surface color change is what pixels show, asserted in tests via `cell()`. `←`/`→` (or `C-b`/`C-f`) move between items, `⏎`/space or a mouse click activates — clicks resolve against per-frame recorded column ranges (`strip_hits`). Activation dispatches onto the same mechanisms the keybindings use (the pace and interrupt channels, gate approval); `detach` raises a quit flag the UI loop checks alongside the key handler's return, since clicks have no quit return path. The strip is chrome: never projected, never in the log. Unbound keys on the strip currently fall through to the transcript command keys, so the single-letter binds keep working everywhere until the purge unit removes them.
 
 
 ## Inline approval gates
@@ -137,7 +151,7 @@ spotter: deletes outside the git tree — not reversible
 awaiting your approval  ·  ⏎ approve · type to redirect · .allow to add a rule · .abort
 ```
 
-The status bar mirrors this affordance for the scrolled-away case.
+The status bar mirrors this affordance for the scrolled-away case, and the [control strip](#the-control-strip) simultaneously leads with `approve ⏎`, so `↑ ⏎` approves without typing.
 
 Submitting from the composer while a gate is pending resolves it with the same three-valued `Approval` the loop consumes (from `src/frontend.rs`):
 

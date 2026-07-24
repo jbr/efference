@@ -21,9 +21,9 @@ expression: self.render()
 13 │ ╰──────────────────╯                                                          ┃│
 14 │                                                                               ┃│
 15 │                                                                               ┃│
-16 │   There are 13 entries in the current directory:                              ┃│
-17 │                                                                               ┃│
-18 │     1. assets                                                                 ╹│
+16 │   There are 13 entries in the current directory:                              ╹│
+17 │                                                                                │
+18 │     1. assets                                                                  │
 19 │                                                                                │
 20 │     2. backlog                                                                 │
 21 │                                                                                │
@@ -32,7 +32,7 @@ expression: self.render()
 24 │     4. Cargo.lock                                                              │
 25 │                                                                                │
 26 │     5. Cargo.toml                                                              │
-27 │                                                                                │
+27 │   theme t     help ?                                                detach q   │
 28 │›                                                                               │
    │  ^                                                                             │
 29 │   efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand                │

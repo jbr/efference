@@ -162,6 +162,10 @@ pub(super) struct UiState {
     pub debug_message: Cow<'static, str>,
     pub is_hovering: bool,
     pub supports_cursor: bool,
+    /// Raised by an activation that must end the UI loop (the strip's `detach`,
+    /// which mouse clicks can reach — clicks have no quit return path). Checked
+    /// by the loop alongside `handle_key_event`'s return.
+    pub quit_requested: bool,
 }
 
 /// Loading/streaming indicator state
@@ -217,6 +221,14 @@ pub(super) struct InteractiveState<'a> {
     /// mode (M1's single-key transcript commands). Esc toggles; a printable key in
     /// command mode returns to composing. Starts focused.
     pub composing: bool,
+    /// Control-strip focus (docs/tui.md): `Some(i)` while the strip's item `i` is
+    /// focused — the middle stop on the transcript → strip → composer axis. Only
+    /// meaningful while `composing` is false; cleared on every return to the
+    /// composer.
+    pub strip_focus: Option<usize>,
+    /// The strip items' rendered column ranges (`x_start..x_end`, item index),
+    /// rebuilt each frame — what mouse clicks on the strip row resolve against.
+    pub strip_hits: Vec<(u16, u16, usize)>,
     /// Sends a submitted turn to the tokio side, which `POST`s it to the daemon.
     pub submit_tx: UnboundedSender<String>,
     /// Optimistic echoes of just-submitted user turns, in submission order, not yet
@@ -330,6 +342,7 @@ impl<'a> InteractiveState<'a> {
                 debug_message: IDLE_STATUS.into(),
                 is_hovering: false,
                 supports_cursor: supports_cursor_shape(),
+                quit_requested: false,
             },
             loading: LoadingState {
                 pending_request: false,
@@ -342,6 +355,8 @@ impl<'a> InteractiveState<'a> {
             events,
             composer: Composer::new(),
             composing: true,
+            strip_focus: None,
+            strip_hits: Vec::new(),
             submit_tx,
             pending_turns: Vec::new(),
             pending_gate: None,
@@ -496,7 +511,7 @@ impl<'a> InteractiveState<'a> {
     /// the daemon reports it is executing a turn (`loop_running`, polled — the signal that survives
     /// a *silent* long-running tool, where streaming reads false). The union catches both the fast
     /// edge and the silent middle.
-    fn is_loop_active(&self) -> bool {
+    pub(super) fn is_loop_active(&self) -> bool {
         self.loading.pending_request || self.loop_running
     }
 
@@ -541,10 +556,41 @@ impl<'a> InteractiveState<'a> {
             }
             UiMode::Normal => {
                 self.composing = true;
+                self.strip_focus = None;
                 self.viewport.keyboard_cursor = KeyboardCursor::VirtualTop;
                 self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
             }
         }
+    }
+
+    /// Approve the pending gate without touching the composer — the control
+    /// strip's `approve` verb (docs/tui.md). Unlike an empty-composer `⏎` submit,
+    /// this leaves any drafted text in place (the draft may be a redirect the
+    /// operator decided against sending).
+    pub(super) fn approve_gate(&mut self) {
+        if let Some(gate) = self.pending_gate.take() {
+            let _ = self.approve_tx.send((gate.call_id, Approval::Approve));
+            self.ui.debug_message = "approved".into();
+            self.viewport.stuck_to_bottom = true;
+        }
+    }
+
+    /// Open the theme picker on the current theme — shared by the `t` key and the
+    /// strip's `theme` item.
+    pub(super) fn open_theme_picker(&mut self) {
+        let themes = crate::tui::render_context::RenderContext::available_themes();
+        let current_theme = self
+            .current_theme_name
+            .clone()
+            .or_else(|| themes.first().cloned())
+            .unwrap_or_else(|| "default".to_string());
+        let selected_index = themes.iter().position(|t| t == &current_theme).unwrap_or(0);
+        self.ui_mode = UiMode::ThemePicker {
+            selected_index,
+            saved_theme_name: current_theme,
+        };
+        self.ui.debug_message =
+            "Select theme (↑/↓ to navigate, Enter to save, Esc to cancel)".into();
     }
 
     /// The pause step of graduated Esc (docs/tui.md): set the `held` overlay (unit 2) and push it to
@@ -566,7 +612,7 @@ impl<'a> InteractiveState<'a> {
     /// The interrupt step of graduated Esc (docs/tui.md): abort the in-flight tool now — fire
     /// `POST /interrupt`, which kills the running tool's process group (a no-op if nothing is
     /// running). Reaches the one point pace can't (mid-tool).
-    fn esc_interrupt(&mut self) {
+    pub(super) fn esc_interrupt(&mut self) {
         let _ = self.interrupt_tx.send(Interrupt::Kill);
         self.ui.debug_message = "interrupting the running tool…".into();
         self.dirty = true;

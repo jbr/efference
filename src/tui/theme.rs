@@ -39,6 +39,17 @@ pub(super) struct InteractiveTheme {
 
     /// Code block border style
     pub code_block_border_style: Style,
+
+    /// Control strip (docs/tui.md) — an unfocused item's button surface
+    pub strip_item_style: Style,
+    /// Control strip — the focused item (raised surface, accent label)
+    pub strip_item_focused_style: Style,
+    /// Control strip — the dim fast-path hint inside an unfocused item
+    pub strip_hint_style: Style,
+    /// Control strip — the hint inside the focused item
+    pub strip_hint_focused_style: Style,
+    /// Control strip — right-pinned universal items (dimmer than contextuals)
+    pub strip_universal_style: Style,
 }
 
 impl InteractiveTheme {
@@ -59,6 +70,22 @@ impl InteractiveTheme {
         let accent_fg = derive_accent_fg(settings, default_fg);
         let secondary_accent_fg = derive_secondary_accent_fg(settings, accent_fg);
         let code_block_border = derive_code_block_border(settings, muted_fg);
+
+        // Strip button surfaces: a step off the document background toward the
+        // foreground (brighten on dark themes, dim on light), one step for the
+        // resting surface and a larger one for the focused item — so the strip
+        // reads as buttons on the page and focus reads at a glance, in any theme.
+        let dark = luminance(default_bg) < 0.5;
+        let surface = if dark {
+            brighten_color(default_bg, 0.10)
+        } else {
+            dim_color(default_bg, 0.93)
+        };
+        let surface_raised = if dark {
+            brighten_color(default_bg, 0.22)
+        } else {
+            dim_color(default_bg, 0.84)
+        };
 
         Self {
             breadcrumb_style: Style::default()
@@ -104,6 +131,23 @@ impl InteractiveTheme {
                 .fg(to_ratatui(default_fg)),
 
             code_block_border_style: Style::default().fg(to_ratatui(code_block_border)),
+
+            strip_item_style: Style::default()
+                .bg(to_ratatui(surface))
+                .fg(to_ratatui(default_fg)),
+            strip_item_focused_style: Style::default()
+                .bg(to_ratatui(surface_raised))
+                .fg(to_ratatui(accent_fg))
+                .add_modifier(Modifier::BOLD),
+            strip_hint_style: Style::default()
+                .bg(to_ratatui(surface))
+                .fg(to_ratatui(muted_fg)),
+            strip_hint_focused_style: Style::default()
+                .bg(to_ratatui(surface_raised))
+                .fg(to_ratatui(muted_fg)),
+            strip_universal_style: Style::default()
+                .bg(to_ratatui(surface))
+                .fg(to_ratatui(muted_fg)),
         }
     }
 }

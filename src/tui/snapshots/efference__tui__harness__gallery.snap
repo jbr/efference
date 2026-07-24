@@ -67,8 +67,8 @@ expression: self.render()
 59 │ ╭───────────❬rust❭─╮                                                          ┃│
 60 │ │ src/module_01.rs │                                                          ┃│
 61 │ │ src/module_02.rs │                                                          ┃│
-62 │ │ src/module_03.rs │                                                          ┃│
-63 │ │ src/module_04.rs │                                                          ╹│
+62 │ │ src/module_03.rs │                                                          ╹│
+63 │ │ src/module_04.rs │                                                           │
 64 │ │ src/module_05.rs │                                                           │
 65 │ │ src/module_06.rs │                                                           │
 66 │ │ src/module_07.rs │                                                           │
@@ -92,7 +92,7 @@ expression: self.render()
 84 │ │ ⟢   12 direct deps; heaviest subtrees are tokio and trillium. Nothing ou │at │
 85 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
 86 │                                                                                │
-87 │                                                                                │
+87 │   theme t     help ?                                                detach q   │
 88 │›                                                                               │
    │  ^                                                                             │
 89 │   efference — q:quit ?:help t:theme  j/k:scroll  ⏎/space:expand                │
