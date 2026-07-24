@@ -52,7 +52,9 @@ pub(crate) struct Screenplay<'a> {
     /// Held un-underscored so a scenario can assert what decision a gate action
     /// sent ([`took_approval`](Screenplay::took_approval)).
     approve_rx: UnboundedReceiver<(String, Approval)>,
-    _pace_rx: UnboundedReceiver<super::PaceCmd>,
+    /// Held un-underscored so a scenario can assert the pace command a widget
+    /// commit pushed ([`took_pace`](Screenplay::took_pace)).
+    pace_rx: UnboundedReceiver<super::PaceCmd>,
     /// Held un-underscored so a scenario can assert an interrupt intent fired —
     /// the hard rung of graduated Esc ([`took_interrupt`](Screenplay::took_interrupt))
     /// or the background handoff ([`took_background`](Screenplay::took_background)).
@@ -96,7 +98,7 @@ impl Screenplay<'static> {
             _event_tx: event_tx,
             _submit_rx: submit_rx,
             approve_rx,
-            _pace_rx: pace_rx,
+            pace_rx,
             interrupt_rx,
         }
     }
@@ -193,6 +195,13 @@ impl Screenplay<'_> {
     /// `POST /approvals/:call_id` over.
     pub(crate) fn took_approval(&mut self) -> Option<(String, Approval)> {
         self.approve_rx.try_recv().ok()
+    }
+
+    /// The pace command (`speed_ms`, `held`) pushed since the last check, if any —
+    /// drains the channel the UI would `POST /pace` over. `None` means nothing was
+    /// sent (e.g. a widget preview or revert, which never touch the daemon).
+    pub(crate) fn took_pace(&mut self) -> Option<super::PaceCmd> {
+        self.pace_rx.try_recv().ok()
     }
 
     /// Commit a [`Payload`] to the transcript as the next sequential log entry,
@@ -1366,40 +1375,118 @@ mod scenarios {
         );
     }
 
-    /// The pace verbs answer to their letters only as **scoped strip mnemonics**
-    /// (docs/tui.md) — after the bind purge (unit 04) they are no longer global
-    /// transcript binds. `p`/`+`/`-` appear only in the *held* set, so pausing a
-    /// running loop is Esc; once held, the strip shows `resume p · slower + ·
-    /// faster -` and those letters fire the matching item wherever the selection
-    /// sits.
+    /// The pace widget (docs/tui.md), the strip's inline stepper class: from the
+    /// held set, `⏎` on the `pace` item enters it, `↑` steps the dial slower in
+    /// place (preview only — no daemon push), and `⏎` commits the previewed value.
+    /// `p` still resumes (a plain button); the old `slower`/`faster` buttons and
+    /// their `+`/`-` mnemonics are gone (the widget replaced them).
     #[test]
-    fn pace_mnemonics_fire_on_the_held_strip() {
+    fn pace_widget_steps_and_commits() {
         let none = KeyModifiers::NONE;
         let mut play = Screenplay::new(80, 12);
         play.user("do a thing");
         play.event(TuiEvent::Running(true));
 
-        // From the idle/running strip, `p` is not a shown mnemonic — pausing is Esc.
-        play.route_key(KeyCode::Up, none); // spill → strip
+        // At-rest composer + loop active: one Esc holds. Spill up onto the held strip.
+        play.route_key(KeyCode::Esc, none);
+        assert!(play.find("HELD").is_some(), "esc holds the loop");
+        assert_eq!(
+            play.took_pace(),
+            Some((None, Some(true))),
+            "the hold pushed its own pace command (drained before the widget checks)"
+        );
+        play.route_key(KeyCode::Up, none); // spill → held strip (resume · pace · kill)
+
+        // Enter the widget on the pace item.
+        play.route_key(KeyCode::Right, none); // resume → pace
+        play.route_key(KeyCode::Enter, none); // enter the stepper
+        assert!(
+            play.state.pace_widget.is_some(),
+            "⏎ on pace enters the widget"
+        );
+        assert!(
+            play.find("▴ pace").is_some() && play.find("▾").is_some(),
+            "the active stepper shows the ▴ ▾ treatment:\n{}",
+            play.render()
+        );
+        assert!(play.took_pace().is_none(), "entering pushes nothing");
+
+        // `↑` previews the next rung (500ms) without touching the daemon.
+        play.route_key(KeyCode::Up, none);
+        assert!(
+            play.find("500ms").is_some() && play.took_pace().is_none(),
+            "↑ previews the next rung, no push:\n{}",
+            play.render()
+        );
+
+        // `⏎` commits the previewed speed, leaving the hold untouched.
+        play.route_key(KeyCode::Enter, none);
+        assert_eq!(
+            play.took_pace(),
+            Some((Some(500), None)),
+            "⏎ pushes the previewed speed, hold untouched"
+        );
+        assert!(play.state.pace_widget.is_none(), "commit leaves the widget");
+        assert!(
+            play.find("HELD").is_some(),
+            "still held after committing pace"
+        );
+
+        // The resume button is unaffected — `p` still resumes.
         play.route_key(KeyCode::Char('p'), none);
         assert!(
             play.find("HELD").is_none(),
-            "p does nothing where no pause item is shown"
+            "the resume mnemonic still works"
         );
-        play.route_key(KeyCode::Esc, none); // esc returns to the composer
-        play.route_key(KeyCode::Esc, none); // esc pauses the running loop
-        assert!(play.find("HELD").is_some(), "esc holds the loop");
+    }
 
-        // Held: the strip shows resume/slower/faster; `+` slows, `p` resumes.
-        play.route_key(KeyCode::Up, none); // spill → the held strip
-        play.route_key(KeyCode::Char('+'), none);
+    /// Esc while the stepper is active reverts to the entry speed and leaves it —
+    /// the previews were never sent, so nothing reaches the daemon. The gentlest
+    /// rung of graduated Esc, ahead of return/pause/interrupt (docs/tui.md).
+    #[test]
+    fn pace_widget_esc_reverts_without_sending() {
+        let none = KeyModifiers::NONE;
+        let mut play = Screenplay::new(80, 12);
+        play.user("x");
+        play.event(TuiEvent::Running(true));
+        play.route_key(KeyCode::Esc, none); // hold
+        let _ = play.took_pace(); // drain the hold's own pace command
+        play.route_key(KeyCode::Up, none); // → held strip
+        play.route_key(KeyCode::Right, none); // → pace
+        play.route_key(KeyCode::Enter, none); // enter (entry speed 0 = fast)
+        play.route_key(KeyCode::Up, none); // preview 500ms
+        play.route_key(KeyCode::Up, none); // preview 1s
+        assert!(play.find("1s").is_some(), "stepped up to 1s in preview");
+
+        play.route_key(KeyCode::Esc, none); // revert
+        assert!(play.state.pace_widget.is_none(), "esc leaves the widget");
         assert!(
-            play.find("HELD").is_some() && play.find("500ms").is_some(),
-            "the + mnemonic slows the dial; still held:\n{}",
+            play.find("HELD").is_some()
+                && play.find("500ms").is_none()
+                && play.find("1s").is_none(),
+            "reverted to the entry speed (fast), still held:\n{}",
             play.render()
         );
-        play.route_key(KeyCode::Char('p'), none);
-        assert!(play.find("HELD").is_none(), "the p mnemonic resumes");
+        assert!(
+            play.took_pace().is_none(),
+            "the widget (preview + revert) never sent a pace command"
+        );
+    }
+
+    /// The active stepper owns the strip row: `▴ pace <v> ▾` loud, the commit/revert
+    /// note in the slack, the other held verbs gone (only the `detach` universal
+    /// remains at the right).
+    #[test]
+    fn pace_widget_active_row() {
+        let none = KeyModifiers::NONE;
+        let mut play = Screenplay::new(80, 12);
+        play.user("go");
+        play.event(TuiEvent::Running(true));
+        play.route_key(KeyCode::Esc, none); // hold
+        play.route_key(KeyCode::Up, none); // → held strip
+        play.route_key(KeyCode::Right, none); // → pace
+        play.route_key(KeyCode::Enter, none); // enter
+        play.snapshot("pace_widget_active");
     }
 
     /// Graduated Esc (docs/tui.md) is a **state machine**, not a press-count: each Esc's effect

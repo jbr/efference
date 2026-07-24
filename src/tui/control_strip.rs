@@ -29,9 +29,8 @@ use super::{InteractiveState, UiMode};
 pub(super) enum StripVerb {
     /// Toggle the pace hold (pause/resume).
     PauseToggle,
-    /// Step the pace dial one rung slower / faster.
-    Slower,
-    Faster,
+    /// Enter the inline pace stepper (the widget class, docs/tui.md).
+    PaceWidget,
     /// Interrupt the in-flight tool (`POST /interrupt`).
     Kill,
     /// Foreground→background handoff (`POST /background`).
@@ -76,7 +75,12 @@ impl InteractiveState<'_> {
     /// happens at state transitions and never while the strip sits stable.
     pub(super) fn strip_items(&self) -> Vec<StripItem> {
         let held = self.pace.is_some_and(|p| p.held);
-        let mut items = if self.staging.is_some() {
+        let mut items = if self.pace_widget.is_some() {
+            // The active pace stepper owns the row (docs/tui.md): ↑/↓ adjust, ⏎
+            // sets, ⎋ reverts — the other held verbs leave so nothing else can be
+            // focused or reflow behind the changing value, mirroring staging.
+            vec![item("pace", "", StripVerb::PaceWidget)]
+        } else if self.staging.is_some() {
             // Mid-staging the composer owns the interaction (⏎ commits, ⎋
             // cancels) — the gate verbs leave the strip so `approve ⏎` can't
             // mislead or be clicked out from under the stager; the row carries
@@ -89,10 +93,10 @@ impl InteractiveState<'_> {
                 item("abort", "", StripVerb::AbortGate),
             ]
         } else if held {
+            // The pace stepper (a widget) replaces the old slower/faster buttons.
             vec![
                 item("resume", "p", StripVerb::PauseToggle),
-                item("slower", "+", StripVerb::Slower),
-                item("faster", "-", StripVerb::Faster),
+                item("pace", "", StripVerb::PaceWidget),
                 item("kill", "⎋", StripVerb::Kill),
             ]
         } else if self.is_loop_active() {
@@ -141,8 +145,7 @@ impl InteractiveState<'_> {
         };
         match entry.verb {
             StripVerb::PauseToggle => self.toggle_pace_hold(),
-            StripVerb::Slower => self.nudge_pace_speed(true),
-            StripVerb::Faster => self.nudge_pace_speed(false),
+            StripVerb::PaceWidget => self.enter_pace_widget(),
             StripVerb::Kill => self.esc_interrupt(),
             StripVerb::Background => self.background_detach(),
             StripVerb::ApproveGate => self.approve_gate(),
@@ -218,6 +221,74 @@ impl InteractiveState<'_> {
         }
     }
 
+    /// The widget class, the pace stepper (docs/tui.md): `⏎` on the `pace` item
+    /// enters an inline sub-state where `↑`/`↓` step the between-turns dial in
+    /// place. Records the entry speed for revert and keeps focus on the item.
+    /// Idempotent — re-entering while active is a no-op (keeps the original entry
+    /// value for revert).
+    pub(super) fn enter_pace_widget(&mut self) {
+        if self.pace_widget.is_some() {
+            return;
+        }
+        self.pace_widget = Some(super::state::PaceWidget {
+            entry_speed_ms: self.pace.map(|p| p.speed_ms).unwrap_or(0),
+        });
+        self.strip_focus = Some(0);
+        self.composing = false;
+        self.ui.debug_message = "pace — ↑/↓ adjust · ⏎ set · ⎋ revert".into();
+        self.dirty = true;
+    }
+
+    /// Preview one step of the pace dial while the widget is active — mutate the
+    /// live `pace` (so the status bar tracks it) *without* pushing to the daemon;
+    /// only [`commit_pace_widget`](Self::commit_pace_widget) sends. `slower` climbs
+    /// the ladder toward more between-turns delay.
+    pub(super) fn step_pace_widget(&mut self, slower: bool) {
+        if self.pace_widget.is_none() {
+            return;
+        }
+        let cur = self.pace.map(|p| p.speed_ms).unwrap_or(0);
+        let held = self.pace.is_some_and(|p| p.held);
+        let next = super::state::next_pace_rung(cur, slower);
+        self.pace = Some(super::PaceView {
+            speed_ms: next,
+            held,
+        });
+        self.dirty = true;
+    }
+
+    /// Commit the previewed pace: push it to the daemon over the pace channel and
+    /// leave the widget (`self.pace` already holds the previewed value). The `⏎`
+    /// that ends the stepper.
+    pub(super) fn commit_pace_widget(&mut self) {
+        if self.pace_widget.take().is_none() {
+            return;
+        }
+        let speed = self.pace.map(|p| p.speed_ms).unwrap_or(0);
+        let _ = self.pace_tx.send((Some(speed), None));
+        self.ui.debug_message = format!(
+            "pace · {}",
+            super::state::pace_label(speed, self.pace.is_some_and(|p| p.held))
+        )
+        .into();
+        self.dirty = true;
+    }
+
+    /// Revert the stepper to the speed at entry and leave the widget — Esc's
+    /// gentlest rung (the previews were never sent, so nothing to unsend on the
+    /// daemon; just restore the local value the status bar reflects).
+    pub(super) fn revert_pace_widget(&mut self) {
+        if let Some(widget) = self.pace_widget.take() {
+            let held = self.pace.is_some_and(|p| p.held);
+            self.pace = Some(super::PaceView {
+                speed_ms: widget.entry_speed_ms,
+                held,
+            });
+            self.ui.debug_message = "pace reverted".into();
+            self.dirty = true;
+        }
+    }
+
     /// Render the strip row: contextual items from the left, universals pinned at
     /// the right edge, the focused item marked with `▸` in its reserved marker
     /// cell. A dim contextual note (redirect hint at a gate, commit/cancel hint
@@ -260,14 +331,16 @@ impl InteractiveState<'_> {
             if entry.universal {
                 continue;
             }
-            if x + item_width(entry) > budget {
+            if x + self.strip_item_width(entry) > budget {
                 break; // fit-to-width: lowest-ranked contextuals drop first
             }
             x = self.render_strip_item(buf, area, x, entry, i) + 2;
         }
 
         // The dim contextual note, truncated to the slack before the universals.
-        let note = if self.staging.is_some() {
+        let note = if self.pace_widget.is_some() {
+            Some("↑/↓ adjust · ⏎ set · ⎋ revert")
+        } else if self.staging.is_some() {
             Some("draft saved · ⏎ commit · ⎋ cancel")
         } else if self.pending_gate.is_some() {
             Some("type below to redirect")
@@ -309,9 +382,17 @@ impl InteractiveState<'_> {
         } else {
             (self.theme.strip_item_style, self.theme.strip_hint_style)
         };
+        // The pace widget's label is the live value (`pace 2s`, or `▴ pace 2s ▾`
+        // while active) — the `▴`/`▾` are the grid-visible "stepping" tell, the way
+        // `▸` marks focus (docs/tui.md). Every other item's label is its static text.
         let marker = if sel { "▸ " } else { "  " };
+        let label = if entry.verb == StripVerb::PaceWidget {
+            self.pace_item_display()
+        } else {
+            entry.label.to_string()
+        };
         let mut col = put_row(buf, area, x, marker, body);
-        col = put_row(buf, area, col, entry.label, body);
+        col = put_row(buf, area, col, &label, body);
         if !entry.hint.is_empty() {
             col = put_row(buf, area, col, " ", body);
             col = put_row(buf, area, col, entry.hint, hint);
@@ -319,6 +400,29 @@ impl InteractiveState<'_> {
         col = put_row(buf, area, col, " ", body);
         self.strip_hits.push((x, col, i));
         col
+    }
+
+    /// The pace widget item's label: the live speed, wrapped in `▴`/`▾` while the
+    /// stepper is active. Shared by the renderer and the width calc so the recorded
+    /// hit range matches what's drawn.
+    fn pace_item_display(&self) -> String {
+        let val = super::state::pace_label(self.pace.map(|p| p.speed_ms).unwrap_or(0), false);
+        if self.pace_widget.is_some() {
+            format!("▴ pace {val} ▾")
+        } else {
+            format!("pace {val}")
+        }
+    }
+
+    /// Rendered width of one item, accounting for the pace widget's dynamic label
+    /// (the static [`item_width`] can't see the live value).
+    fn strip_item_width(&self, entry: &StripItem) -> u16 {
+        if entry.verb == StripVerb::PaceWidget {
+            // marker (2) + label + trailing space (1); the pace item has no hint.
+            (2 + self.pace_item_display().chars().count() + 1) as u16
+        } else {
+            item_width(entry)
+        }
     }
 }
 
@@ -385,8 +489,9 @@ mod scenarios {
     fn strip_set_follows_the_state_family() {
         let mut play = Screenplay::new(80, 12);
         play.user("run it");
-        let labels =
-            |play: &Screenplay| -> Vec<&str> { play.state.strip_items().iter().map(|e| e.label).collect() };
+        let labels = |play: &Screenplay| -> Vec<&str> {
+            play.state.strip_items().iter().map(|e| e.label).collect()
+        };
         assert!(
             !labels(&play).contains(&"pause"),
             "no loop verbs while idle"

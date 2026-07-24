@@ -151,6 +151,20 @@ impl<'a> InteractiveState<'a> {
         idx: usize,
         terminal: &mut Terminal<impl Backend + Write>,
     ) -> bool {
+        // An active pace widget owns the row (docs/tui.md): only it captures `↑`/`↓`
+        // (step the dial), `⏎`/space commits; everything else is a captured no-op so
+        // the stepper can't be navigated out of mid-adjust (Esc reverts, upstream in
+        // `handle_escape`). `↑` climbs toward more delay, matching the `▴` on top.
+        if self.pace_widget.is_some() {
+            match key.code {
+                KeyCode::Up => self.step_pace_widget(true),
+                KeyCode::Down => self.step_pace_widget(false),
+                KeyCode::Enter | KeyCode::Char(' ') => self.commit_pace_widget(),
+                _ => {}
+            }
+            return false;
+        }
+
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::Up | KeyCode::BackTab => {

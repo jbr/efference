@@ -40,8 +40,20 @@ const BG_TAIL_CAP: usize = 4096;
 /// pass.
 const PACE_LADDER: &[u64] = &[0, 500, 1_000, 2_000, 5_000, 10_000, 30_000];
 
+/// The pace rung one step from `cur` along [`PACE_LADDER`]: `slower` climbs toward
+/// the slowest rung (clamped there), else steps down toward as-fast-as-possible.
+/// Shared by the strip's pace widget stepper (docs/tui.md).
+pub(super) fn next_pace_rung(cur: u64, slower: bool) -> u64 {
+    let idx = PACE_LADDER.iter().rposition(|&ms| ms <= cur).unwrap_or(0);
+    if slower {
+        PACE_LADDER.get(idx + 1).copied().unwrap_or(cur)
+    } else {
+        PACE_LADDER.get(idx.saturating_sub(1)).copied().unwrap_or(0)
+    }
+}
+
 /// A short human label for a speed dial value: `fast` at zero, else `2s` / `500ms`.
-fn pace_label(speed_ms: u64, held: bool) -> String {
+pub(super) fn pace_label(speed_ms: u64, held: bool) -> String {
     let speed = if speed_ms == 0 {
         "fast".to_string()
     } else if speed_ms.is_multiple_of(1000) {
@@ -183,6 +195,17 @@ impl StagedVerb {
     }
 }
 
+/// An active inline widget (docs/tui.md): the *widget* item class's sub-state, a
+/// strip verb whose value is being adjusted in place with `↑`/`↓`. One so far —
+/// the pace stepper — so this holds just what a revert needs; a second widget
+/// would generalise it (backlog note, not now).
+#[derive(Debug)]
+pub(super) struct PaceWidget {
+    /// `speed_ms` at entry, restored on Esc-revert. Stepping previews by mutating
+    /// the live `pace` (so the status bar tracks it); only `⏎` pushes to the daemon.
+    pub entry_speed_ms: u64,
+}
+
 /// UI display state
 #[derive(Debug)]
 pub(super) struct UiState {
@@ -258,6 +281,10 @@ pub(super) struct InteractiveState<'a> {
     /// strip verb's argument, with the operator's draft parked for restoration on
     /// commit or cancel. `Some` implies `composing`.
     pub staging: Option<Staging>,
+    /// An active inline pace widget (docs/tui.md): `Some` while the strip's pace
+    /// stepper captures `↑`/`↓`. Implies strip focus; mutually exclusive with
+    /// `staging` (that is composer-focused). Esc reverts it, `⏎` commits.
+    pub pace_widget: Option<PaceWidget>,
     /// The strip items' rendered column ranges (`x_start..x_end`, item index),
     /// rebuilt each frame — what mouse clicks on the strip row resolve against.
     pub strip_hits: Vec<(u16, u16, usize)>,
@@ -397,6 +424,7 @@ impl<'a> InteractiveState<'a> {
             composing: true,
             strip_focus: None,
             staging: None,
+            pace_widget: None,
             strip_hits: Vec::new(),
             block_menu_focus: 0,
             block_menu_hits: Vec::new(),
@@ -506,30 +534,6 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// Step the between-turns speed dial along [`PACE_LADDER`] and push it to the daemon
-    /// (docs/tui.md — the `+`/`-` keys). `slower` (`+`) moves up the
-    /// ladder, else down toward as-fast-as-possible. The hold overlay is left untouched (a change
-    /// while held recolors resume). Optimistically updates the local pace so the status bar reflects
-    /// it on this keypress; the `/state` poll reconciles.
-    pub(super) fn nudge_pace_speed(&mut self, slower: bool) {
-        let cur = self.pace.map(|p| p.speed_ms).unwrap_or(0);
-        let held = self.pace.map(|p| p.held).unwrap_or(false);
-        // The ladder rung at or just below the current speed, then step off it.
-        let idx = PACE_LADDER.iter().rposition(|&ms| ms <= cur).unwrap_or(0);
-        let next = if slower {
-            PACE_LADDER.get(idx + 1).copied().unwrap_or(cur) // clamp at the slowest rung
-        } else {
-            PACE_LADDER.get(idx.saturating_sub(1)).copied().unwrap_or(0)
-        };
-        let _ = self.pace_tx.send((Some(next), None));
-        self.pace = Some(PaceView {
-            speed_ms: next,
-            held,
-        });
-        self.ui.debug_message = format!("pace · {}", pace_label(next, held)).into();
-        self.dirty = true;
-    }
-
     /// Toggle the pause overlay and push it to the daemon (docs/tui.md —
     /// the hold/resume key). The speed dial is retained underneath (resume returns to it).
     /// Optimistic like [`nudge_pace_speed`](Self::nudge_pace_speed).
@@ -571,8 +575,14 @@ impl<'a> InteractiveState<'a> {
     /// So sitting in the composer while the agent works, one Esc pauses and a second interrupts;
     /// and jamming Esc from anywhere still walks return-to-composer → pause → interrupt.
     pub(super) fn handle_escape(&mut self) {
-        // A stager in progress is the gentlest thing Esc can undo: cancel it and
-        // restore the parked draft, before any return/pause/interrupt rung.
+        // An active inline widget (the pace stepper) and a stager are the gentlest
+        // things Esc can undo — a sub-state revert, before any return/pause/interrupt
+        // rung. The two are mutually exclusive (widget is strip-focused, stager
+        // composer-focused).
+        if self.pace_widget.is_some() {
+            self.revert_pace_widget();
+            return;
+        }
         if self.staging.is_some() {
             self.cancel_staging();
             return;
