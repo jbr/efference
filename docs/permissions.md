@@ -2,7 +2,7 @@
 
 A session is parameterized by `(config, cwd, orchestrator)`. The **config** is the
 portable-policy half: what a session is *for* and what it may do, kept separate from cwd
-(the per-invocation spatial scope, see [env](../env.rs) / the system preamble) so the
+(the per-invocation spatial scope, see [env](../src/env.rs) / the system preamble) so the
 config stays portable. Policy is **data the classifier interprets**, never special-cased in
 code — there are no privileged program names or directories in the mechanism, only config
 the mechanism reads.
@@ -46,8 +46,7 @@ as a first move — a dogfood regression); the session learns the path from the 
 message when a move actually strays, keeping the perimeter out of attention until it's relevant. A
 malformed edit fail-closes *and* is reverted, so the file is never left unparseable (below).
 "Session-only" is thus a matter of geography, not a flag — the file is per-session, and every
-committed grant is written to it. See
-[`../backlog/permissions/session-dir-and-config-as-reviewed-file.md`](../backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+committed grant is written to it.
 
 `GET /state` reports the resolved source *and the full effective policy in force* (scope, watch-for,
 commands, tools, paths) — effective, not boot, so a live config edit (a session grant, an fs-watch
@@ -328,9 +327,7 @@ config-as-reviewed-file mechanism that *replaced* the planned `propose_scope` to
 `write`/`edit` to its `config.toml` is forced to the operator gate (`is_config_write`,
 bypassing fast-path and spotter), and on approval the loop refreshes the file and folds it; the **autonomous flip**
 (`serve --autonomous`), below; and **prefix-promotion** (the spotter files a `Proposed(Command)`),
-below — the last `Proposed`-lifecycle user. See
-[`../backlog/permissions/session-dir-and-config-as-reviewed-file.md`](../backlog/permissions/session-dir-and-config-as-reviewed-file.md)
-and [`../backlog/permissions/proposal-lifecycle.md`](../backlog/permissions/proposal-lifecycle.md).
+below — the last `Proposed`-lifecycle user.
 
 **A config edit has two outcomes, never three (`src/config.rs`).** The file is the session's policy
 interface — the operator reads it to see the perimeter the session ran under — so it must never sit

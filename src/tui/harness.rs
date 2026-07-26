@@ -1668,7 +1668,7 @@ mod scenarios {
 
     /// The phase line is *live*, not transcript: once the assistant entry commits, the committed
     /// record is the thing to read and the phase has nothing left to report. (Rendering committed
-    /// thinking in the transcript is a separate unit — backlog/thinking-blocks.md.)
+    /// thinking in the transcript is a separate unit — docs/transport.md.)
     #[test]
     fn a_committed_turn_clears_the_live_phase() {
         let mut play = Screenplay::new(80, 12);

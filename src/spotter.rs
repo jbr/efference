@@ -55,7 +55,7 @@ const PERSONA: &str = include_str!("../assets/prompts/spotter.md");
 /// the acting session (what it reads to self-correct or petition). When a prefix-promotion probe
 /// rode the call (the loop passed a candidate prefix to [`Spotter::assess`]), the **stance itself**
 /// is the probe's answer: [`Stance::ClearAlways`] = clear the move *and* vote that prefix blanket-safe
-/// (backlog/permissions/prefix-promotion.md). Folding the answer into the stance — not a separate
+/// (docs/permissions.md). Folding the answer into the stance — not a separate
 /// field — makes the contradictory combinations (`watch`/`gate` + "always safe") unrepresentable.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Read {
@@ -97,7 +97,7 @@ pub trait Spotter {
     /// (scope), the boundaries (path grants + cwd), and the spotter-only watch-for list.
     ///
     /// `probe` is an optional command prefix the prefix-promotion descent
-    /// (backlog/permissions/prefix-promotion.md) wants judged *for promotion* alongside this move:
+    /// (docs/permissions.md) wants judged *for promotion* alongside this move:
     /// when `Some`, the move prompt asks whether that prefix is safe for **every** argument, and a
     /// [`Stance::ClearAlways`] is the safe-vote. `None` on most calls (no probe rides along).
     async fn assess(&self, role: &Config, call: &ToolCall, probe: Option<&str>) -> Spotting;
@@ -273,7 +273,7 @@ fn render_context(role: &Config, scratch: Option<&std::path::Path>) -> String {
 /// Render the move the session is about to make. Bash shows its command verbatim; a
 /// structured tool shows its name and input. The instruction to call `spot` rides
 /// here (the fresh tail), not in the cached context. When `probe` is `Some`, a
-/// promotion question for that prefix rides along too (backlog/permissions/prefix-promotion.md) —
+/// promotion question for that prefix rides along too (docs/permissions.md) —
 /// the harness names the prefix; the model answers it via the `clear_always` stance.
 fn render_move(call: &ToolCall, probe: Option<&str>) -> String {
     let body = if call.name == bash::NAME {
@@ -307,7 +307,7 @@ fn render_move(call: &ToolCall, probe: Option<&str>) -> String {
 
 /// The forced `spot` tool: a required `stance` enum + one-line `reason`. The stance is 4-valued —
 /// `clear_always` is the promotion safe-vote, meaningful only when a probe rode the call
-/// (backlog/permissions/prefix-promotion.md); the enum is fixed (never varied per call) so the tool
+/// (docs/permissions.md); the enum is fixed (never varied per call) so the tool
 /// schema stays byte-stable and the spotter's cache holds.
 fn spot_tool() -> Value {
     json!({

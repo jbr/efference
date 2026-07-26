@@ -110,7 +110,7 @@ pub struct Distillation {
     /// filtered to processes actually shown. The loop materializes a `Pin` into a
     /// snapshot `Ambient` and applies a `Mute` to the supervisor.
     pub background: Vec<(String, BgVerdict)>,
-    /// Context-item names this peek chose to surface (backlog/context-surfacing.md) —
+    /// Context-item names this peek chose to surface (docs/redaction-fork.md) —
     /// filtered to the roster actually shown (invented names dropped). Stored on the
     /// `Triage` (`surfaced`); `project` re-renders each as a read-me reminder. Empty
     /// when nothing was surfaced.
@@ -239,7 +239,7 @@ impl Distiller for ForkPeek {
         // prefix, so they never touch the canonical wire (docs/log-and-projection.md). The same
         // builder feeds the standalone idle triage.
         append_inbox_and_background(&mut peek_view, inbox, background);
-        // The surfacing roster (backlog/context-surfacing.md): unloaded `[context]` stub
+        // The surfacing roster (docs/redaction-fork.md): unloaded `[context]` stub
         // files this session hasn't surfaced yet, by `[name]` — the coordinates the
         // `retain.surfaced` field addresses. Folded from the cached prefix, throwaway tail.
         let roster = surfaceable_roster(prefix);
@@ -314,7 +314,7 @@ impl Distiller for ForkPeek {
                     .filter(|(h, _)| shown_bg.contains(h.as_str()))
                     .collect();
                 // Keep only names actually on the roster (drop any the model invented),
-                // deduped — the harness-side guard (backlog/context-surfacing.md).
+                // deduped — the harness-side guard (docs/redaction-fork.md).
                 let offered: HashSet<&str> = roster.iter().map(String::as_str).collect();
                 let mut kept = HashSet::new();
                 let surfaced = p
@@ -477,7 +477,7 @@ fn background_schema_field() -> Value {
 
 /// The `surfaced` schema field (name-keyed) — present only when the roster is non-empty.
 /// A plain string array: names are validated against the roster in code (invented ones
-/// dropped), not by a schema enum, keeping the guard harness-side (backlog/context-surfacing.md).
+/// dropped), not by a schema enum, keeping the guard harness-side (docs/redaction-fork.md).
 fn surfaced_schema_field() -> Value {
     json!({
         "type": "array",
@@ -571,7 +571,7 @@ fn append_inbox_and_background(
     }
 }
 
-/// The fork's surfacing roster (backlog/context-surfacing.md): the names of **listed**
+/// The fork's surfacing roster (docs/redaction-fork.md): the names of **listed**
 /// `[context]` items — stub files carrying a `path`, read on demand — that no prior gate
 /// has surfaced yet. A pure fold over the prefix: the boot `Preamble`'s structured listing
 /// (last one wins on a multi-boot log) minus every name any prior `Triage.surfaced` already
@@ -601,7 +601,7 @@ fn surfaceable_roster(prefix: &[LogEntry]) -> Vec<String> {
         .collect()
 }
 
-/// Render the surfacing roster section of a peek view (backlog/context-surfacing.md): the
+/// Render the surfacing roster section of a peek view (docs/redaction-fork.md): the
 /// available-but-unloaded context items by `[name]`, the coordinates the `retain.surfaced`
 /// field addresses. Only in the tool-result gate — the idle triage rides no work in flight.
 fn append_roster(view: &mut String, roster: &[String]) {
@@ -906,7 +906,7 @@ mod tests {
     #[test]
     fn parse_retain_reads_surfaced_names() {
         // The `surfaced` field carries context-item names the model judged relevant
-        // (backlog/context-surfacing.md); parse_retain reads them unfiltered.
+        // (docs/redaction-fork.md); parse_retain reads them unfiltered.
         let p = parse_retain(&retain_completion(
             RETAIN,
             json!({ "keep": "all", "surfaced": ["ferritin", "jsonl-prose"] }),
@@ -976,7 +976,7 @@ mod tests {
 
     #[test]
     fn roster_excludes_already_surfaced_names() {
-        // Surfaced-once dedup (backlog/context-surfacing.md): a name any prior
+        // Surfaced-once dedup (docs/redaction-fork.md): a name any prior
         // `Triage.surfaced` carried drops out of the roster — folded from the log alone.
         let prefix = vec![
             preamble_with(vec![listed("ferritin"), listed("jsonl-prose")]),

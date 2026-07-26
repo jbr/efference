@@ -50,7 +50,7 @@ impl Client {
     /// Submit a turn and **block until the daemon settles** (`POST /turn?wait`) — the turn
     /// reaches a gate or completes — returning the resulting `/state` JSON. Collapses
     /// "act → poll `/state` in a loop → read" into one round-trip
-    /// (backlog/permissions/proposal-lifecycle.md).
+    /// (docs/permissions.md).
     pub async fn turn_wait(&self, text: &str) -> Result<String> {
         let body = serde_json::json!({ "text": text }).to_string();
         self.post("/turn?wait", body).await
@@ -67,7 +67,7 @@ impl Client {
 
     /// Resolve a gate and **block until the daemon settles** (`POST /approvals/{id}?wait`) — the
     /// turn reaches its next gate or completes — returning the resulting `/state` JSON. The
-    /// "approve → read state" half of synchronous driving (backlog/permissions/proposal-lifecycle.md).
+    /// "approve → read state" half of synchronous driving (docs/permissions.md).
     pub async fn approve_wait(&self, call_id: &str, decision: &Approval) -> Result<String> {
         self.post(
             &format!("/approvals/{call_id}?wait"),
@@ -78,7 +78,7 @@ impl Client {
 
     /// Block until the daemon next reaches a decision point — a gate is pending, or the loop is
     /// idle — and return the `/state` snapshot (`GET /settle`). Returns immediately if already
-    /// settled (backlog/permissions/proposal-lifecycle.md).
+    /// settled (docs/permissions.md).
     pub async fn settle(&self) -> Result<String> {
         self.get("/settle").await
     }
@@ -183,7 +183,7 @@ impl Client {
     }
 
     /// List pending config-edit proposals (`GET /proposals`) — async edits awaiting an
-    /// orchestrator decision (backlog/permissions/proposal-lifecycle.md). Raw JSON array body.
+    /// orchestrator decision (docs/permissions.md). Raw JSON array body.
     pub async fn proposals(&self) -> Result<String> {
         self.get("/proposals").await
     }

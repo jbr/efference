@@ -50,7 +50,7 @@ pub enum Approval {
     /// not tool output.
     Redirect(String),
     /// **Amend policy**, then run this call iff the amended policy now clears it
-    /// (backlog/permissions/config-edit.md). The orchestrator's reply at a gate: extend
+    /// (docs/permissions.md). The orchestrator's reply at a gate: extend
     /// the config with a [`ConfigChange`], written to the session's config file and logged as a
     /// `Payload::ConfigEdit`. The current call does not "ride along" — the loop re-classifies it
     /// against the new policy and only runs it if it clears, so the mechanism (not the

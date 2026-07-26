@@ -406,7 +406,7 @@ impl<'a> InteractiveState<'a> {
                 }
             }
 
-            // Bind purge (backlog/tui-control-strip/04): the transcript-navigation
+            // Bind purge (docs/tui.md): the transcript-navigation
             // single-letter verbs — `t` theme, `p` pause, `+`/`-` pace, `b`
             // background, `r` raw — are gone. Each now lives where it is shown:
             // pace/hold/background/theme on the control strip (reached with `↑`,

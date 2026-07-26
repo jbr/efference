@@ -147,7 +147,7 @@ struct Request<'a> {
     /// keys serialize sorted, so it is.
     tools: &'a [Value],
     tool_choice: ToolChoice,
-    /// Extended thinking (docs/transport.md, backlog/thinking-blocks.md). Rides on
+    /// Extended thinking (docs/transport.md, docs/transport.md). Rides on
     /// `tool_choice` and the model: **adaptive** on the main agent turn (`tool_choice: auto`)
     /// when the model supports it, **disabled** whenever the choice is forced (forced
     /// `tool_choice` is incompatible with thinking — 400 — and the fork forces its distiller)
@@ -166,7 +166,7 @@ struct Request<'a> {
     stream: bool,
 }
 
-/// The `thinking` field (docs/transport.md, backlog/thinking-blocks.md). `Adaptive` lets the
+/// The `thinking` field (docs/transport.md, docs/transport.md). `Adaptive` lets the
 /// model decide when/how much to think and interleaves it across turns; `display: "summarized"`
 /// captures a readable model-authored summary into the log (same token cost as omitted). The
 /// serde tag renders `{"type":"adaptive","display":"summarized"}` / `{"type":"disabled"}`
@@ -190,7 +190,7 @@ impl Thinking {
     /// Thinking rides on `tool_choice` and the model: forced choice ⟺ no thinking (the API
     /// rejects the combination), and a model that can't run adaptive thinking (e.g. Haiku
     /// 4.5) never gets it even on `auto`. Encoding both here makes the illegal pairings
-    /// unrepresentable (backlog/thinking-blocks.md).
+    /// unrepresentable (docs/transport.md).
     fn for_request(model: &str, tool_choice: &ToolChoice) -> Self {
         match tool_choice.kind {
             "auto" if supports_adaptive_thinking(model) => THINKING_ADAPTIVE,
@@ -224,7 +224,7 @@ static THINKING_OVERRIDE: std::sync::LazyLock<Option<bool>> = std::sync::LazyLoc
 });
 
 /// Whether to send `thinking: {type:"adaptive"}` for `model` (docs/transport.md,
-/// backlog/thinking-blocks.md). An explicit `EFFERENCE_THINKING` wins; otherwise this
+/// docs/transport.md). An explicit `EFFERENCE_THINKING` wins; otherwise this
 /// is an **allowlist**, not "everything but haiku": most non-Anthropic models (reached
 /// via OpenRouter) don't accept the Anthropic `thinking` field at all, so the safe
 /// default is off unless the model is a recognized adaptive-capable Claude tier
@@ -335,7 +335,7 @@ pub struct Completion {
 /// One content block being reassembled from the stream, keyed by its `index`.
 enum BlockAccum {
     Text(String),
-    /// An extended-thinking block (docs/transport.md, backlog/thinking-blocks.md): `text`
+    /// An extended-thinking block (docs/transport.md, docs/transport.md): `text`
     /// accumulates `thinking_delta` chunks, `signature` arrives whole in a `signature_delta`
     /// near the block's end. The signature must be preserved verbatim for replay.
     Thinking {
@@ -397,7 +397,7 @@ pub enum Streamed {
 ///   regress the cache-gate metrics to the `message_start` placeholder
 ///   (`output_tokens: 1`) — see docs/log-and-projection.md.
 /// - **Thinking assembled** into leading `ContentBlock::Thinking` / `RedactedThinking`
-///   (docs/transport.md, backlog/thinking-blocks.md), signatures preserved for replay.
+///   (docs/transport.md, docs/transport.md), signatures preserved for replay.
 struct Assembler {
     /// Indexed by content-block `index`; pushed in order as blocks open.
     blocks: Vec<BlockAccum>,
@@ -1221,7 +1221,7 @@ mod tests {
     }
 
     /// A streamed thinking block is assembled into a leading `ContentBlock::Thinking`
-    /// (docs/transport.md, backlog/thinking-blocks.md): `thinking_delta` chunks concatenate,
+    /// (docs/transport.md, docs/transport.md): `thinking_delta` chunks concatenate,
     /// the `signature_delta` is preserved verbatim (mandatory for replay), and the block leads
     /// the turn — before the text block that follows it in the stream.
     #[test]

@@ -122,7 +122,7 @@ struct PendingNotification {
 }
 
 /// One async config edit awaiting an orchestrator decision
-/// (backlog/permissions/proposal-lifecycle.md). Filed by a `Proposed` [`ConfigEdit`] append (the
+/// (docs/permissions.md). Filed by a `Proposed` [`ConfigEdit`] append (the
 /// session's `propose_scope`, the spotter's prefix-promotion); the orchestrator-above commits or
 /// cancels it, which drops it from the queue. Unlike [`PendingNotification`], the proposal **already
 /// has a durable `seq`** (the `Proposed` entry's), so that *is* its id — no queue-local counter.
@@ -132,7 +132,7 @@ struct PendingProposal {
     /// commit/cancel references.
     seq: Seq,
     /// The change being proposed; the committing entry copies it self-contained so the fold stays a
-    /// pure per-entry filter (backlog/permissions/proposal-lifecycle.md).
+    /// pure per-entry filter (docs/permissions.md).
     change: crate::log::ConfigChange,
 }
 
@@ -177,7 +177,7 @@ pub struct Shared {
     appended: Notify,
     /// Whether the loop is **executing a turn** (vs. parked awaiting one). Together with
     /// `queued`, this drives the `/settle` long-poll's "at a decision point?" predicate
-    /// ([`Shared::is_settled`], backlog/permissions/proposal-lifecycle.md). The loop owns it:
+    /// ([`Shared::is_settled`], docs/permissions.md). The loop owns it:
     /// set true when it dequeues a turn, false when it parks.
     running: AtomicBool,
     /// Turns submitted (`POST /turn`) but not yet dequeued by the loop — the submit→dequeue
@@ -210,7 +210,7 @@ pub struct Shared {
     inbox: Mutex<Inbox>,
     /// The pending-proposals queue: async `ConfigEdit`s (the session's `propose_scope`, the
     /// spotter's prefix-promotion) awaiting an orchestrator's commit/cancel
-    /// (backlog/permissions/proposal-lifecycle.md). Ephemeral control state like `inbox` — a
+    /// (docs/permissions.md). Ephemeral control state like `inbox` — a
     /// `Proposed` entry is durable in the log, but its *pending* status lives here until resolved.
     proposals: Mutex<Vec<PendingProposal>>,
     /// The background-process registry (docs/supervisor.md): live children whose running tail
@@ -219,14 +219,14 @@ pub struct Shared {
     /// immutable notification model would pile up stale snapshots). Pinned tails and
     /// exits *do* reach the durable log, but as `Ambient` notifications, not from here.
     supervisor: Mutex<Supervisor>,
-    /// The resolved role config and where it came from (backlog/permissions/README.md).
+    /// The resolved role config and where it came from (docs/permissions.md).
     /// Read-only for the session's lifetime — the scope is already frozen into the
     /// cached preamble; this copy backs the `GET /state` report ("which role am I?") and
     /// is where the cascade rungs (the prefix fast-path and the spotter) read the
     /// allowlist, path grants, scope, and watch-for from. Immutable, so no lock.
     role: LoadedConfig,
     /// The **effective** policy = the base `role` + the fold of every `ConfigEdit` appended so
-    /// far (backlog/permissions/config-edit.md). Maintained incrementally in [`append`]
+    /// far (docs/permissions.md). Maintained incrementally in [`append`]
     /// as grants land, so a gate reads current policy in O(1) without re-scanning the log.
     /// Behind a lock because grants mutate it mid-session (unlike the frozen base `role`);
     /// the gate takes an `Arc` clone, cheap and safe to hold across the spotter's await.
@@ -234,13 +234,13 @@ pub struct Shared {
     /// [`append`]: Shared::append
     effective: Mutex<Arc<crate::config::Config>>,
     /// The live config file — the format-preserving document currently on disk plus what it
-    /// validates to (backlog/permissions/config-edit-validation.md). `None` when the role resolved
+    /// validates to (docs/permissions.md). `None` when the role resolved
     /// to the built-in default (no file to hold). Behind a lock because both the loop thread (a
     /// committed grant, and the check after an approved config write) and the fs-watch task reach
     /// it; every path in and out of the file goes through here, which is what keeps "the disk
     /// always holds the last content that parsed" true of *all* writers rather than some.
     config_file: Mutex<Option<crate::config::ConfigFile>>,
-    /// The prefix-promotion probe ledger (backlog/permissions/prefix-promotion.md): per-prefix
+    /// The prefix-promotion probe ledger (docs/permissions.md): per-prefix
     /// seen-counts + probe votes, the state the descent reads to decide which prefix (if any) to ask
     /// the spotter to vouch for. Derived from the log's `Spot` entries (folded at startup via
     /// [`crate::policy::probe_ledger`], maintained incrementally as the loop assesses moves), never on
@@ -345,7 +345,7 @@ impl Shared {
         // moved into the struct.
         let effective = Arc::new(crate::policy::effective_config(&role.role, log.entries()));
         // Fold the probe ledger from a resumed log (no-op for a fresh one), then maintain it
-        // incrementally as the loop assesses moves (backlog/permissions/prefix-promotion.md).
+        // incrementally as the loop assesses moves (docs/permissions.md).
         let probes = crate::policy::probe_ledger(log.entries());
         // Open the file the role resolved from, if any. Boot has already loaded and validated it,
         // so this parses; a failure here is reported and leaves the session file-less (edits stay
@@ -452,7 +452,7 @@ impl Shared {
     /// Append to the log (durably) and wake SSE tailers. The single appender is
     /// the loop; handlers only read.
     pub fn append(&self, turn: Turn, payload: Payload) -> io::Result<Seq> {
-        // A `ConfigEdit` drives the proposal lifecycle (backlog/permissions/proposal-lifecycle.md):
+        // A `ConfigEdit` drives the proposal lifecycle (docs/permissions.md):
         // capture its `(state, change)` before the payload moves into the log, then act on it
         // *after* a successful append, so a failed write never edits state. Cheap clone, edits only.
         let edit = match &payload {
@@ -478,7 +478,7 @@ impl Shared {
                     }
                     // Session-visible edits (`scope`, `paths`) surface as an `Ambient` notification
                     // so the session learns its perimeter moved — an optional tail append that never
-                    // re-renders the cached preamble (backlog/permissions/config-edit.md). It rides
+                    // re-renders the cached preamble (docs/permissions.md). It rides
                     // the same inbox/triage machinery as any notification, and fires for *every*
                     // committing initiator because this is the single appender. `commands`/`tools`
                     // notify nothing — their effect reaches the model only through the classifier.
@@ -515,14 +515,14 @@ impl Shared {
     }
 
     /// The current pending-proposals queue — async config edits awaiting an orchestrator decision
-    /// (backlog/permissions/proposal-lifecycle.md). Surfaced to the orchestrator-above on `GET
+    /// (docs/permissions.md). Surfaced to the orchestrator-above on `GET
     /// /proposals` and in `/state`, and consumed by the commit/cancel verbs.
     fn pending_proposals(&self) -> Vec<PendingProposal> {
         self.proposals.lock().unwrap().clone()
     }
 
     /// Resolve a pending proposal by `seq` — the orchestrator-above's commit/cancel decision over
-    /// `POST /proposals/:seq` (backlog/permissions/proposal-lifecycle.md). **Commit** appends a
+    /// `POST /proposals/:seq` (docs/permissions.md). **Commit** appends a
     /// `Committed` [`ConfigEdit`] carrying the proposal's `change`, which `append`'s fold applies to
     /// the effective config (and notifies the session for `scope`/`paths`); **cancel** appends a
     /// `Cancelled` entry (audit-only). Both reference the proposal by `seq`, so the fold drops it
@@ -580,14 +580,14 @@ impl Shared {
     }
 
     /// The resolved role's policy, for the loop's fast-path classifier
-    /// (backlog/permissions/prefix-fastpath.md). Immutable for the session, so a borrow
+    /// (docs/permissions.md). Immutable for the session, so a borrow
     /// is fine — no lock.
     pub fn role(&self) -> &crate::config::Config {
         &self.role.role
     }
 
     /// The effective policy the cascade should consult: base role + the fold of every grant
-    /// appended so far (backlog/permissions/config-edit.md). Returns an `Arc` clone of the
+    /// appended so far (docs/permissions.md). Returns an `Arc` clone of the
     /// incrementally-maintained role — O(1), and safe to hold across the spotter's await (a
     /// lock guard would not be). Falls back to the base if no grants have landed.
     pub fn effective_config(&self) -> Arc<crate::config::Config> {
@@ -596,7 +596,7 @@ impl Shared {
 
     /// The turn of the most recent log entry (`0` if empty) — the turn an **out-of-band** append
     /// attaches to (the fs-watch initiator, which has no loop-turn context,
-    /// backlog/permissions/proposal-lifecycle.md). A `ConfigEdit` projects to nothing, so its turn
+    /// docs/permissions.md). A `ConfigEdit` projects to nothing, so its turn
     /// is pure audit grouping; attaching it to the in-flight turn is the honest placement.
     fn latest_turn(&self) -> Turn {
         self.log
@@ -610,7 +610,7 @@ impl Shared {
 
     /// The role config file path, if the role resolved from one (`None` for the built-in
     /// default — nothing to persist to). Where a `Lifetime::Persist` grant is appended
-    /// (backlog/permissions/config-edit.md).
+    /// (docs/permissions.md).
     pub fn config_path(&self) -> Option<&std::path::Path> {
         match &self.role.source {
             ConfigSource::Path(p) => Some(p),
@@ -619,7 +619,7 @@ impl Shared {
     }
 
     /// Edit a committed [`ConfigChange`] into the config file, preserving its formatting
-    /// (backlog/permissions/config-edit.md). Every committed grant goes through here, so the file
+    /// (docs/permissions.md). Every committed grant goes through here, so the file
     /// stays a complete record of the perimeter the session ran under — the artifact an operator
     /// reads, and copies grants up to the origin template from. A session with no config file (the
     /// built-in default role) is a no-op: there is no file to diverge from.
@@ -631,7 +631,7 @@ impl Shared {
     }
 
     /// Re-read the config file, adopting it if it parses and reverting it if it does not
-    /// (backlog/permissions/config-edit-validation.md). `None` when there's no file. Both callers
+    /// (docs/permissions.md). `None` when there's no file. Both callers
     /// — the fs-watch task and the loop, right after an approved config write — go through here,
     /// because the invariant is about the file's state, not about who edited it.
     pub fn refresh_config(&self) -> Option<crate::config::Refreshed> {
@@ -674,7 +674,7 @@ impl Shared {
     }
 
     /// Observe one spotter-assessed bash command and pick the prefix to probe for promotion, if any
-    /// (backlog/permissions/prefix-promotion.md). Bumps the seen-counts for the command's token-prefixes,
+    /// (docs/permissions.md). Bumps the seen-counts for the command's token-prefixes,
     /// then runs the descent against the current effective policy — one lock acquisition.
     pub fn observe_and_pick_probe(
         &self,
@@ -688,7 +688,7 @@ impl Shared {
 
     /// Record a probe's vote (`safe` iff the spotter answered `clear_always`) and report whether the
     /// prefix has now reached the promotion threshold `K` — the loop's signal to file a
-    /// `Proposed(Command)` (backlog/permissions/prefix-promotion.md).
+    /// `Proposed(Command)` (docs/permissions.md).
     pub fn record_probe_vote(&self, prefix: &str, safe: bool) -> bool {
         let mut probes = self.probes.lock().unwrap();
         probes.vote(prefix, safe);
@@ -710,7 +710,7 @@ impl Shared {
     fn submit_turn(&self, text: String) {
         // Count the turn as queued *before* sending, so `is_settled` reads "busy" the instant
         // the turn is accepted — even before the loop dequeues it (the `/settle` submit race,
-        // backlog/permissions/proposal-lifecycle.md).
+        // docs/permissions.md).
         self.queued.fetch_add(1, Ordering::SeqCst);
         // Submit ⇒ resume, always (docs/control-channel.md): drop any hold and wake an
         // in-flight juncture sleep so the message is delivered at the next juncture *immediately*, not
@@ -824,7 +824,7 @@ impl Shared {
 
     /// Whether the daemon is at a **decision point** a client can act on: a gate is pending, or the
     /// loop is idle (parked with nothing queued). Mid-turn — running, no gate — is *not* settled.
-    /// The predicate behind `/settle` and the `?wait` flag (backlog/permissions/proposal-lifecycle.md).
+    /// The predicate behind `/settle` and the `?wait` flag (docs/permissions.md).
     fn is_settled(&self) -> bool {
         self.pending.lock().unwrap().is_some()
             || (!self.running.load(Ordering::SeqCst) && self.queued.load(Ordering::SeqCst) == 0)
@@ -1184,7 +1184,7 @@ impl Shared {
             "pending_approval": pending,
             // Whether the loop is executing a turn (vs. parked idle) — the "is something happening"
             // signal the TUI's graduated Esc reads to decide pause-vs-swallow
-            // (backlog/participation/graduated-esc.md). Unlike streaming deltas, this stays true
+            // (docs/tui.md). Unlike streaming deltas, this stays true
             // through a *silent* long-running tool, so Esc can still reach it.
             "running": self.running.load(Ordering::SeqCst),
             // Autonomous = no synchronous human at the gate (the orchestrator-above wants to know
@@ -1218,7 +1218,7 @@ impl Shared {
 
     /// The **effective** policy report for `GET /state` — the base config plus every committed
     /// config edit folded in, i.e. the *live* perimeter, not the boot config
-    /// (backlog/permissions/proposal-lifecycle.md). It carries full **contents**, not counts: an
+    /// (docs/permissions.md). It carries full **contents**, not counts: an
     /// orchestrator inspecting a subordinate (or a human checking "what am I running?") needs the
     /// actual commands/paths/scope in force — and the config is bounded-small by design, never
     /// projected, with no secret to withhold. `scope` and `watch-for` are surfaced here because the
@@ -1320,7 +1320,7 @@ impl Frontend for RemoteFrontend {
     }
 }
 
-/// The notification a **session-visible** config edit raises (backlog/permissions/config-edit.md),
+/// The notification a **session-visible** config edit raises (docs/permissions.md),
 /// as `(body, slot)`, or `None` for an edit the session need not hear about. `scope` and `paths`
 /// are the perimeter the acting session should learn moved; `commands`/`tools` are classifier-only.
 /// The `slot` lets a later edit of the same key supersede a still-pending notice.
@@ -1362,7 +1362,7 @@ struct BackgroundBody {
 }
 
 /// Body of `POST /proposals/:seq`: the orchestrator's commit/cancel decision on a pending
-/// proposal, with an optional rationale note (backlog/permissions/proposal-lifecycle.md).
+/// proposal, with an optional rationale note (docs/permissions.md).
 #[derive(Deserialize)]
 struct ProposalDecisionBody {
     decision: String,
@@ -1376,7 +1376,7 @@ struct DecisionBody {
     #[serde(default)]
     message: Option<String>,
     /// The config-edit payload (`decision: "config_edit"` only) — the change and a rationale note
-    /// (backlog/permissions/config-edit.md). A committed change is always written to the session's
+    /// (docs/permissions.md). A committed change is always written to the session's
     /// config file, so there is no lifetime to choose; a `lifetime` field from an older client is
     /// ignored rather than rejected.
     #[serde(default)]
@@ -1440,7 +1440,7 @@ fn router() -> Router {
                     shared.submit_turn(text);
                     // `?wait`: hold the connection until the turn reaches a gate or completes,
                     // then answer with the resulting state — "act → read state" in one round-trip
-                    // (backlog/permissions/proposal-lifecycle.md).
+                    // (docs/permissions.md).
                     if wait {
                         settle_and_state(&shared, conn).await
                     } else {
@@ -1619,7 +1619,7 @@ fn router() -> Router {
             }
         })
         // List async config-edit proposals awaiting an orchestrator decision
-        // (backlog/permissions/proposal-lifecycle.md). The same array `/state` carries; a
+        // (docs/permissions.md). The same array `/state` carries; a
         // dedicated GET lets a client poll just this without the rest of the snapshot.
         .get("/proposals", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
@@ -1684,7 +1684,7 @@ fn router() -> Router {
         // Long-poll: block until the daemon reaches a decision point (a gate is pending, or the
         // loop is idle), then return the `/state` snapshot. Lets a client drive the daemon
         // synchronously — "act, read state, act" — instead of polling `/state` in a wall-clock
-        // loop (backlog/permissions/proposal-lifecycle.md). Returns immediately if already settled.
+        // loop (docs/permissions.md). Returns immediately if already settled.
         .get("/settle", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return conn.with_status(500).with_body(MISSING_STATE);
@@ -1912,7 +1912,7 @@ async fn drain_background(
 
 const MISSING_STATE: &str = r#"{"error":"missing shared state"}"#;
 
-/// The fs-watch initiator (backlog/permissions/proposal-lifecycle.md): watch the config file and
+/// The fs-watch initiator (docs/permissions.md): watch the config file and
 /// turn external edits into **committed** `ConfigEdit`s. A human editing the file *is* the
 /// orchestrator committing, so each diff lands directly as `Committed` (not a proposal) and folds
 /// into the effective policy live — no restart.
@@ -1979,12 +1979,12 @@ async fn config_watch_loop(shared: Arc<Shared>, path: PathBuf) {
 }
 
 /// Refresh the config file and emit a `Committed` `ConfigEdit` per additive/replace delta against
-/// the current effective policy (backlog/permissions/proposal-lifecycle.md). Diffing against
+/// the current effective policy (docs/permissions.md). Diffing against
 /// *effective* means only genuinely-new deltas surface, so the harness's own write-back is a no-op
 /// echo.
 ///
 /// A file that doesn't parse is **reverted**, not merely skipped
-/// (backlog/permissions/config-edit-validation.md): the disk always holds the last content that
+/// (docs/permissions.md): the disk always holds the last content that
 /// parsed, so an edit is either adopted or undone-with-a-reason — never approved-but-inert. The
 /// revert is announced on a stable slot, which supersedes, so repeated bad saves collapse to one
 /// live notice rather than piling up.
@@ -2106,7 +2106,7 @@ fn parse_since(query: &str) -> Option<u64> {
 }
 
 /// Whether a request asked to block until settled (`?wait`, `?wait=1`, `?wait=true`) — the
-/// long-poll opt-in on `/turn` and `/approvals` (backlog/permissions/proposal-lifecycle.md).
+/// long-poll opt-in on `/turn` and `/approvals` (docs/permissions.md).
 fn wants_wait(query: &str) -> bool {
     query
         .split('&')
@@ -2184,7 +2184,7 @@ pub async fn serve<D: Distiller, S: Spotter>(
         tools,
     ));
 
-    // The fs-watch initiator (backlog/permissions/proposal-lifecycle.md): if the config resolved
+    // The fs-watch initiator (docs/permissions.md): if the config resolved
     // from a file, watch it so external edits take effect live as committed `ConfigEdit`s. The
     // built-in default has no file to watch.
     if let Some(config_path) = shared.config_path().map(|p| p.to_path_buf()) {
@@ -2274,11 +2274,11 @@ mod tests {
         assert!(v["usage"]["seconds_since_last_request"].is_u64());
     }
 
-    /// `GET /state` reports the resolved role (backlog/permissions/README.md): a
+    /// `GET /state` reports the resolved role (docs/permissions.md): a
     /// `null` source for the built-in default, and the path plus the **effective** config's full
     /// contents (scope, watch-for, commands, tools, paths) when a config is in effect — so "what is
     /// my live perimeter?" is answerable, not just "which file?". The contents track the *effective*
-    /// policy, so a folded config edit shows up (backlog/permissions/proposal-lifecycle.md).
+    /// policy, so a folded config edit shows up (docs/permissions.md).
     #[test]
     fn state_reports_effective_role_contents() {
         // Default role (no config file) → null source, empty everywhere.
@@ -2420,7 +2420,7 @@ mod tests {
 
     /// The effective-policy cache updates incrementally: a `ConfigEdit` appended mid-session
     /// promotes a call the base gated into the fast-path, with no log re-scan at the gate
-    /// (backlog/permissions/config-edit.md).
+    /// (docs/permissions.md).
     #[test]
     fn appending_a_config_edit_updates_the_effective_config() {
         use crate::policy::{Verdict, classify};
@@ -2437,7 +2437,7 @@ mod tests {
 
     /// A session-visible config edit (`scope`, `paths`) also raises a pending notification so the
     /// session learns its perimeter moved; a classifier-only edit (`commands`/`tools`) does not
-    /// (backlog/permissions/config-edit.md).
+    /// (docs/permissions.md).
     #[test]
     fn session_visible_config_edit_enqueues_a_notification() {
         let edit = committed_edit;
@@ -2494,7 +2494,7 @@ mod tests {
         })
     }
 
-    /// The proposal lifecycle (backlog/permissions/proposal-lifecycle.md): a `Proposed` edit is
+    /// The proposal lifecycle (docs/permissions.md): a `Proposed` edit is
     /// **inert** in the effective config but lands in the pending-proposals queue, addressed by its
     /// own `seq`; an orchestrator's `Committed` decision (referencing that `seq` via `resolves`)
     /// both applies the change *and* drains the proposal from the queue.
@@ -2546,7 +2546,7 @@ mod tests {
         );
     }
 
-    /// The fs-watch initiator's core (backlog/permissions/proposal-lifecycle.md): reloading an
+    /// The fs-watch initiator's core (docs/permissions.md): reloading an
     /// edited config file emits a `Committed` edit per delta against effective policy, folding it
     /// in live; a session-visible delta (`scope`) also notifies; re-running against the *same* file
     /// is a no-op echo (the diff is empty). Tests `refresh_and_emit` directly — the synchronous core
@@ -2599,7 +2599,7 @@ mod tests {
 
     /// A config edit that no longer parses keeps the last-good policy, **reverts the file**, and
     /// surfaces the parse error to the session — the two-outcome rule
-    /// (backlog/permissions/config-edit-validation.md). The revert is what makes the file an
+    /// (docs/permissions.md). The revert is what makes the file an
     /// always-valid artifact: the operator reads it to see the perimeter the session ran under.
     #[test]
     fn reload_failure_keeps_policy_reverts_file_and_notifies() {
@@ -2787,7 +2787,7 @@ mod tests {
         );
     }
 
-    /// The `/settle` predicate (backlog/permissions/proposal-lifecycle.md) tracks the loop's
+    /// The `/settle` predicate (docs/permissions.md) tracks the loop's
     /// lifecycle: idle → busy on submit (even before dequeue) → busy mid-turn → *settled* at a gate
     /// → busy after the gate resolves → settled again when the loop parks.
     #[test]
@@ -2854,7 +2854,7 @@ mod tests {
     }
 
     /// A `config_edit` decision body decodes into its change, the wire shape the orchestrator
-    /// posts to upgrade a gate (backlog/permissions/config-edit.md). A `lifetime` from an older
+    /// posts to upgrade a gate (docs/permissions.md). A `lifetime` from an older
     /// client is ignored rather than rejected — every committed change is written to the file now,
     /// so there is no lifetime left to choose.
     #[test]

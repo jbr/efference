@@ -48,7 +48,7 @@ pub enum Payload {
     /// into `text` because thinking is always a *leading group* under efference's
     /// single-tool-per-turn constraint (`disable_parallel_tool_use` → no intra-turn
     /// `think→act→think` interleaving), so field order encodes wire order and `calls` stays a
-    /// first-class handle (backlog/thinking-blocks.md). `#[serde(default)]` keeps pre-thinking
+    /// first-class handle (docs/transport.md). `#[serde(default)]` keeps pre-thinking
     /// log entries deserializable.
     Assistant {
         #[serde(default)]
@@ -93,7 +93,7 @@ pub enum Payload {
     /// logged; the spotter is the first permission rung that earns an entry.
     Spot(Spot),
     /// A config edit — the durable record of one change to the policy table
-    /// (backlog/permissions/config-edit.md). The config-edit loop turns a deny into
+    /// (docs/permissions.md). The config-edit loop turns a deny into
     /// negotiation: an orchestrator (human or coordinating session) edits the session's
     /// config, and the change lands here. Effective policy = base config + the fold of these
     /// (see [`effective_config`]); the log is the source of truth for what changed, exactly as
@@ -119,7 +119,7 @@ pub enum Payload {
     /// `context` carries the **structured** `[context]` listing (name / `path` / description
     /// per item) the flat `system` string was rendered from, snapshotted **additively** so the
     /// listing survives as a fold over the log — the source `project` re-renders a surfaced
-    /// context item from (backlog/context-surfacing.md), the same way it looks up pinned
+    /// context item from (docs/redaction-fork.md), the same way it looks up pinned
     /// notification bodies. `system` stays the byte-exact wire truth; `context` never touches
     /// the wire. `#[serde(default)]`: logs predating the field read back an empty listing.
     Preamble {
@@ -130,7 +130,7 @@ pub enum Payload {
 }
 
 /// A content block authored by the model or user. `Thinking` / `RedactedThinking` carry the
-/// extended-thinking payload (docs/transport.md, backlog/thinking-blocks.md): `signature` is
+/// extended-thinking payload (docs/transport.md, docs/transport.md): `signature` is
 /// the opaque per-block token the API mints and requires echoed **verbatim** on replay (it
 /// rejects a modified block); `redacted_thinking` carries opaque `data` instead of text.
 /// Richer blocks (images, …) come later.
@@ -205,7 +205,7 @@ pub struct Triage {
     pub inbox: Vec<(Seq, Disposition)>,
     /// Context items this peek chose to **surface** — names from the boot `Preamble`'s
     /// structured listing (stub files with a `path`) the model judged relevant to the
-    /// work in flight (backlog/context-surfacing.md). `project` re-renders each as a
+    /// work in flight (docs/redaction-fork.md). `project` re-renders each as a
     /// read-me reminder at this entry's tail-ward position, off the listing (like a
     /// pinned notification's body). Also the surfaced-once dedup source: a later gate's
     /// roster excludes any name already here. `#[serde(default)]`: old logs read empty.
@@ -237,7 +237,7 @@ pub struct Spot {
     pub reason: String,
     pub origin: Origin,
     /// The command prefix this spotter call was also asked to judge for **promotion**, if a
-    /// prefix-promotion probe rode along (backlog/permissions/prefix-promotion.md). The probe's
+    /// prefix-promotion probe rode along (docs/permissions.md). The probe's
     /// answer *is* the stance — `ClearAlways` is the safe-vote for this prefix, any other stance is
     /// not-safe — so the ledger that decides promotion folds from these `Spot` entries: a
     /// `probed_prefix = Some(p)` with `origin = Model` contributes a vote for `p`. `None` when no
@@ -251,7 +251,7 @@ pub struct Spot {
 /// middle setting the unbuilt watch-window will map to an intervention latency — for now
 /// it resolves to the human gate alongside `Gate`), and `Gate`. [`Stance::ClearAlways`]
 /// is a *refinement of `Clear`* the prefix-promotion probe adds: it clears the move **and**
-/// votes the probed prefix blanket-safe (backlog/permissions/prefix-promotion.md). Folding the
+/// votes the probed prefix blanket-safe (docs/permissions.md). Folding the
 /// promotion answer into the stance — rather than a separate flag — makes the contradictory
 /// combinations (`watch`/`gate` + "always safe") unrepresentable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -272,7 +272,7 @@ pub enum Stance {
     Gate,
 }
 
-/// One config edit: a single, durable change to the policy table (backlog/permissions/config-edit.md).
+/// One config edit: a single, durable change to the policy table (docs/permissions.md).
 /// The change vocabulary lives here, in the log types, deliberately — like [`Stance`] and
 /// [`Origin`], the log owns its own serialized types so the wire format isn't hostage to a
 /// config struct's layout. [`crate::policy::apply_config_change`] applies each [`ConfigChange`] to
@@ -280,7 +280,7 @@ pub enum Stance {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigEdit {
     /// Where this edit sits in the propose→commit/cancel lifecycle
-    /// (backlog/permissions/proposal-lifecycle.md). The fold gates on it: only [`EditState::Committed`]
+    /// (docs/permissions.md). The fold gates on it: only [`EditState::Committed`]
     /// takes effect (and, for session-visible keys, notifies); a [`EditState::Proposed`] entry is
     /// inert in the effective config — it sits in the daemon's pending-proposals queue awaiting an
     /// orchestrator's commit. The synchronous human-gate path appends `Committed` directly.
@@ -300,7 +300,7 @@ pub struct ConfigEdit {
 }
 
 /// Where a [`ConfigEdit`] sits in the propose→commit/cancel lifecycle
-/// (backlog/permissions/proposal-lifecycle.md). Append-only means the three states are **distinct
+/// (docs/permissions.md). Append-only means the three states are **distinct
 /// entries sharing the proposal's `seq`**, not a mutated record: an async initiator (the session's
 /// `propose_scope`, the spotter's prefix-promotion) appends a `Proposed`, and the orchestrator later
 /// appends a `Committed` or `Cancelled`. The synchronous human-gate path and fs-watch append
@@ -320,7 +320,7 @@ pub enum EditState {
 }
 
 /// What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape
-/// (backlog/permissions/config-edit.md). Each variant addresses one section of the config table;
+/// (docs/permissions.md). Each variant addresses one section of the config table;
 /// [`crate::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).
 /// Most variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the
 /// narrowing edit append-only KDL couldn't do. The `watch-for` slot is unbuilt (its replace
@@ -347,7 +347,7 @@ pub enum ConfigChange {
     /// Replace the session **scope** (the perimeter prose). **Session-visible** — the boot
     /// preamble stays frozen (re-rendering it would mutate behind the cache breakpoint), so a
     /// live scope edit reaches the session as a notification, not a preamble rewrite
-    /// (backlog/permissions/config-edit.md).
+    /// (docs/permissions.md).
     Scope { text: String },
 }
 

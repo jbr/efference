@@ -36,7 +36,7 @@ const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 /// perimeter as a first move (a dogfood session did exactly that) — attention the guardrails are
 /// designed to spare the agent. The permission perimeter stays invisible until a move actually
 /// strays, at which point the gate-rejection message names the config as the request channel
-/// ([`crate::agent`], backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+/// ([`crate::agent`], docs/permissions.md).
 pub fn system_prompt(context_block: Option<&str>, role_section: Option<&str>) -> String {
     // `include_str!` keeps the file's trailing newline; trim it so the join is clean.
     let mut prompt = PREAMBLE.trim_end().to_string();

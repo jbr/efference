@@ -159,7 +159,7 @@ mod tests {
     }
 
     /// The boot preamble snapshots the **structured** `[context]` listing beside the flat
-    /// `system` string (backlog/context-surfacing.md), so a listed item's name / path /
+    /// `system` string (docs/redaction-fork.md), so a listed item's name / path /
     /// description survive the log's serde and `project` can later fold them back into a
     /// surfacing reminder. The flat `system` stays the byte-exact wire truth; this pins the
     /// additive structured half.

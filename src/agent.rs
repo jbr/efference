@@ -218,7 +218,7 @@ async fn run_idle_triage<D: Distiller>(
             raw_keep: String::new(),
             inbox,
             // The idle triage rides no tool result and shows no surfacing roster — the
-            // nudge is powered by proximity to work in flight (backlog/context-surfacing.md).
+            // nudge is powered by proximity to work in flight (docs/redaction-fork.md).
             surfaced: Vec::new(),
         }),
     )?;
@@ -480,7 +480,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                     }
                 };
                 // The permission cascade (docs/permissions.md). First the
-                // deterministic fast-path (backlog/permissions/prefix-fastpath.md): a
+                // deterministic fast-path (docs/permissions.md): a
                 // `Clear` verdict auto-approves with zero model cost. What it can't
                 // clear falls to the independent spotter — a fresh-context model rung
                 // that re-decides on the residual before the human does, returning a
@@ -489,12 +489,12 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 // log line; fast-path clears stay unlogged), and its usage reads the
                 // shared spotter prefix, so it joins the cache telemetry (docs/log-and-projection.md).
                 // Classify against the *effective* policy — base role + the fold of every
-                // grant so far (backlog/permissions/config-edit.md). A prior amendment can
+                // grant so far (docs/permissions.md). A prior amendment can
                 // promote this very call into the fast-path; the spotter sees the same scope.
                 let role = shared.effective_config();
                 // The session's own config file is its policy *interface*: a write to it is a
                 // proposal that must always reach the operator — never auto-cleared by a path grant,
-                // never spotter-cleared (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+                // never spotter-cleared (docs/permissions.md).
                 // It bypasses the whole cascade straight to the human gate; on approval the write
                 // lands and fs-watch folds the diff into effective policy.
                 let config_write = shared
@@ -515,7 +515,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                             frontend.approve(call).await
                         }
                         Verdict::Gate => {
-                            // Prefix-promotion probe (backlog/permissions/prefix-promotion.md): on a
+                            // Prefix-promotion probe (docs/permissions.md): on a
                             // bash move, observe its recurrence and pick the shortest prefix worth
                             // asking the spotter to vouch for *for all arguments*. The spotter answers
                             // via the stance (`clear_always`), so the probe rides the one spot call.
@@ -577,7 +577,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                                 // Watch/Gate route to the human gate (or, autonomous, the redirect) —
                                 // the watch-window that gives Watch its own latency is a later unit.
                                 Stance::Clear | Stance::ClearAlways => Approval::Approve,
-                                // The autonomous flip (backlog/permissions/session-dir-and-config-as-reviewed-file.md):
+                                // The autonomous flip (docs/permissions.md):
                                 // with no synchronous human, don't block on an absent gate — redirect the
                                 // model to its config file, the one policy interface it has. (The config
                                 // write itself still gates for the orchestrator-above, above.) Supervised:
@@ -596,7 +596,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         }
                     }
                 };
-                // A `ConfigEdit` is the orchestrator legislating policy (backlog/permissions/config-edit.md):
+                // A `ConfigEdit` is the orchestrator legislating policy (docs/permissions.md):
                 // append the change (which folds into the effective config), then re-classify
                 // *this* call against the new policy. The call runs only if the changed rule now
                 // clears it — it never rides along unchecked.
@@ -716,7 +716,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         // result becomes a hard error so the model narrows the call.
                         let result = cap_tool_result(call, result);
                         // A config write is the one call whose *effect* is decided after it runs
-                        // (backlog/permissions/config-edit-validation.md): the file must always
+                        // (docs/permissions.md): the file must always
                         // parse, so we re-read it here — synchronously, before the result is
                         // logged — and either adopt the edit or revert it. Reverting turns the
                         // result into an error carrying the parse failure, so the author learns
@@ -865,7 +865,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
 }
 
 /// The redirect a gated call gets in **autonomous mode**
-/// (backlog/permissions/session-dir-and-config-as-reviewed-file.md). No synchronous human is
+/// (docs/permissions.md). No synchronous human is
 /// present to approve, so rather than block the loop forever the gate hands the decision back to
 /// the model — pointing it at its own per-session config file, the single policy interface it has.
 /// The session may *edit* that file to request the permission, but that write itself gates for the
@@ -893,7 +893,7 @@ fn autonomous_gate_message(config_path: Option<&Path>, reason: &str) -> String {
 }
 
 /// Decide what an approved config write actually *did*
-/// (backlog/permissions/config-edit-validation.md). Re-reads the file through the same refresh the
+/// (docs/permissions.md). Re-reads the file through the same refresh the
 /// fs-watch task uses, so the edit lands in exactly one of two states:
 ///
 /// - **adopted** — it parsed; its deltas are already appended as committed `ConfigEdit`s by the
@@ -931,7 +931,7 @@ fn config_write_outcome(shared: &Shared, result: RawResult) -> RawResult {
     }
 }
 
-/// Legislate a `ConfigEdit` (backlog/permissions/config-edit.md): persist it if asked, append the
+/// Legislate a `ConfigEdit` (docs/permissions.md): persist it if asked, append the
 /// `Payload::ConfigEdit` (which folds it into the effective policy), then re-classify the gated call
 /// against the *new* policy. Returns `Approve` iff the amended rule now clears the call — the
 /// human changes the rule; the mechanism, not the gesture, authorizes the run. If the grant
@@ -941,7 +941,7 @@ fn config_write_outcome(shared: &Shared, result: RawResult) -> RawResult {
 /// **The file gets the grant first, and a failed write fails the grant.** The session's
 /// `config.toml` is the perimeter's readable form — what an operator inspects to see what the
 /// session ran under, and what they copy a useful grant up to the origin template from
-/// (backlog/permissions/session-dir-and-config-as-reviewed-file.md). A grant that folded into
+/// (docs/permissions.md). A grant that folded into
 /// effective policy but never reached the file would be policy in force that the file doesn't
 /// show, the divergence [`crate::config::ConfigFile`] exists to prevent. So the write happens
 /// before the append, and its failure aborts the commit rather than degrading it to something
@@ -967,7 +967,7 @@ fn commit_config_edit(
         )));
     }
     // The human upgrading a gate is a *direct* commit — the gesture is the commit, no prior
-    // proposal to resolve (backlog/permissions/proposal-lifecycle.md).
+    // proposal to resolve (docs/permissions.md).
     shared.append(
         turn,
         Payload::ConfigEdit(ConfigEdit {
@@ -1101,7 +1101,7 @@ mod tests {
     }
 
     /// A committed grant reaches the **file**, not just the log fold
-    /// (backlog/permissions/write-back-every-grant.md). The session's `config.toml` is the
+    /// (docs/permissions.md). The session's `config.toml` is the
     /// perimeter's readable form — what an operator inspects, and copies grants up to the origin
     /// template from — so a grant that folded into effective policy but never appeared there would
     /// make that artifact an incomplete record. Formatting survives, since the operator reads this
@@ -1239,7 +1239,7 @@ mod tests {
         assert!(!msg.contains("config.toml"));
     }
 
-    /// The gate-time half of the two-outcome rule (backlog/permissions/config-edit-validation.md):
+    /// The gate-time half of the two-outcome rule (docs/permissions.md):
     /// an approved config write that doesn't parse comes back to the model as an **error naming
     /// the parse failure**, with the file reverted and policy unchanged — not as the success the
     /// tool reported. This is the specific defect from session 1784334112726, where an approved

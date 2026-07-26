@@ -1,4 +1,4 @@
-//! Config — the cascade's foundational unit (backlog/permissions/README.md).
+//! Config — the cascade's foundational unit (docs/permissions.md).
 //!
 //! A session is parameterized by `(config, cwd, orchestrator)`. The **config** is the
 //! portable-policy half: what a session is *for* and what it may do, reusable across
@@ -14,7 +14,7 @@
 //! expanding the path sugar, and failing the whole file on any unsound entry.
 //!
 //! The schema is **string-keyed maps**, not lists, because the policy is a *table* the
-//! config-edit loop mutates by key (backlog/permissions/config-edit.md): a later edit
+//! config-edit loop mutates by key (docs/permissions.md): a later edit
 //! **replaces at a key** (last-write-wins) rather than appending. That is why the persist
 //! path can use [`toml_edit`]'s format-preserving writes — the harness edits the file *for*
 //! the user at a gate, narrowing a single key while leaving every comment and unrelated
@@ -35,7 +35,7 @@
 //!
 //! ## What the config holds
 //!
-//! One artifact configures every cascade rung (backlog/permissions/README.md):
+//! One artifact configures every cascade rung (docs/permissions.md):
 //!
 //! - [`Config::scope`] — the positive scope, **shared with the acting session** for
 //!   self-alignment. It projects into the cached preamble ([`Config::preamble_section`]).
@@ -44,9 +44,9 @@
 //!   doesn't carry peripheral hazards; the spotter does). Consumed by the spotter
 //!   rung ([`crate::spotter`]).
 //! - [`Config::commands`] — the bash prefix-allowlist the deterministic fast-path matches
-//!   against (backlog/permissions/prefix-fastpath.md). A **set** of command-prefix keys;
+//!   against (docs/permissions.md). A **set** of command-prefix keys;
 //!   membership *is* "clear" (the value will grow into a graded stance later — see
-//!   backlog/permissions/config-edit.md). Consumed by that rung.
+//!   docs/permissions.md). Consumed by that rung.
 //! - [`Config::tools`] — structured tools the fast-path clears by name (also a set).
 //! - [`Config::paths`] — filesystem subtree grants, the one genuine value-bearing map.
 //! - [`Config::trust_threshold`] — where the watch-window/gate cutoffs sit. Consumed by
@@ -60,7 +60,7 @@
 //! The scope projects into the system preamble, which sits in the cached prefix
 //! (`tools → system → messages`). [`Config::preamble_section`] must therefore be
 //! **byte-stable for the whole session** (see the invariant in
-//! backlog/permissions/README.md, kin to `project(log)` in docs/log-and-projection.md). It is —
+//! docs/permissions.md, kin to `project(log)` in docs/log-and-projection.md). It is —
 //! the config is loaded once at startup and frozen, and the rendering is a pure function
 //! of the scope text. Changing configs is a cold cache write, which is fine: configs do
 //! not change mid-session.
@@ -74,7 +74,7 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Value, value};
 
 use crate::log::ConfigChange;
 
-/// The materialized policy table (backlog/permissions/config-edit.md). Built from the TOML
+/// The materialized policy table (docs/permissions.md). Built from the TOML
 /// file by [`validate`]-ing a [`RawConfig`]; every field is optional/empty so a minimal — or
 /// absent — file yields [`Config::default`]. This is what the cascade consults; the config-edit
 /// fold mutates it by key ([`crate::policy::apply_config_change`]).
@@ -96,7 +96,7 @@ pub struct Config {
     pub trust_threshold: Option<f64>,
 
     /// The bash prefix-allowlist as a **set** of command-prefix keys
-    /// (backlog/permissions/prefix-fastpath.md). Membership is the grant — `cargo` blanket-
+    /// (docs/permissions.md). Membership is the grant — `cargo` blanket-
     /// trusts the program, `git diff` trusts only that sub-verb. Each key is guaranteed (at
     /// [`validate`] time) to lex to a single simple-command token vector; [`crate::policy`]
     /// re-lexes at match time to compare token-prefixes. TOML `[commands]` table, all `true`.
@@ -108,7 +108,7 @@ pub struct Config {
     /// sanctioned in code — even `kill_process` is just an entry here. TOML: `tools = ["read"]`.
     pub tools: BTreeSet<String>,
 
-    /// Filesystem permission grants — the one value-bearing map (backlog/permissions/README.md).
+    /// Filesystem permission grants — the one value-bearing map (docs/permissions.md).
     /// Each key is a subtree, its [`Perms`] the read/write it grants; the fast-path clears a
     /// path-bearing tool only when its target resolves under a grant carrying the needed
     /// permission. cwd is not special in code — it is special only because the config says
@@ -322,7 +322,7 @@ impl std::fmt::Display for ValidationError {
 }
 
 /// Where a [`Config`] was resolved from, reported on `GET /state` so "which config am I
-/// running?" is never ambiguous (backlog/permissions/README.md).
+/// running?" is never ambiguous (docs/permissions.md).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum ConfigSource {
     /// No config file found — the built-in [`Config::default`] is in effect.
@@ -409,7 +409,7 @@ pub fn load(explicit: Option<&Path>) -> Result<LoadedConfig, LoadError> {
 }
 
 /// The live config file: the format-preserving TOML document currently on disk, plus the
-/// [`Config`] it validates to (backlog/permissions/config-edit-validation.md).
+/// [`Config`] it validates to (docs/permissions.md).
 ///
 /// ## The invariant
 ///
@@ -495,7 +495,7 @@ impl ConfigFile {
     }
 
     /// Apply a committed [`ConfigChange`] to the held document and write it out
-    /// (backlog/permissions/config-edit.md). **Replaces at a key** while preserving every comment
+    /// (docs/permissions.md). **Replaces at a key** while preserving every comment
     /// and unrelated line — the property that makes "yes, always" auto-persist sound for *every*
     /// slot, including a single `scope` narrowing. Idempotent by construction: setting a
     /// key/array-member that already holds the value is a no-op on disk.
@@ -514,7 +514,7 @@ impl ConfigFile {
     }
 
     /// Re-read the file: **adopt** it if it parses, **revert** it if it doesn't
-    /// (backlog/permissions/config-edit-validation.md). The single entry point for every way the
+    /// (docs/permissions.md). The single entry point for every way the
     /// file can change — a model's gated `write`/`edit`, an operator's hand-edit, the harness's own
     /// write-back echo — because the invariant is about the file's state, not about who authored it.
     ///
@@ -664,7 +664,7 @@ fn validate_context_entry(
 }
 
 /// The additive/replace deltas that carry `from` to `to`, as [`ConfigChange`]s — the diff the
-/// fs-watch initiator emits when the config file changes (backlog/permissions/proposal-lifecycle.md).
+/// fs-watch initiator emits when the config file changes (docs/permissions.md).
 /// `from` is the current effective config, `to` the freshly-reloaded file, so only genuinely-new
 /// deltas surface (the harness's own auto-persist write-back diffs to nothing — the idempotent echo).
 ///
@@ -706,7 +706,7 @@ pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {
 }
 
 /// Edit a committed [`ConfigChange`] into a TOML document in place
-/// (backlog/permissions/config-edit.md). Replaces at a key, leaving every comment and unrelated
+/// (docs/permissions.md). Replaces at a key, leaving every comment and unrelated
 /// line untouched; see [`ConfigFile::apply`], the only caller, for the surrounding invariant.
 fn apply_to_document(doc: &mut DocumentMut, change: &ConfigChange) {
     match change {
@@ -738,7 +738,7 @@ fn apply_to_document(doc: &mut DocumentMut, change: &ConfigChange) {
         }
         // A scope replace: set the `scope` scalar in place. When it already exists, carry its
         // decor over so the author's inline comment survives the narrowing (the auto-persist
-        // guarantee; cf. backlog/permissions/config-edit.md).
+        // guarantee; cf. docs/permissions.md).
         ConfigChange::Scope { text } => match doc.get_mut("scope").and_then(Item::as_value_mut) {
             Some(existing) => {
                 let decor = existing.decor().clone();
@@ -771,7 +771,7 @@ fn path_value(read: bool, write: bool) -> Item {
 
 impl Config {
     /// Render the scope into the byte-stable preamble section appended to the system prompt
-    /// (backlog/permissions/README.md), or `None` if there is no scope. The header is fixed
+    /// (docs/permissions.md), or `None` if there is no scope. The header is fixed
     /// and the body is the scope verbatim (trimmed), so the output is a pure, deterministic
     /// function of the scope — safe for the cached prefix. The watch-for list is deliberately
     /// *not* projected here: it is spotter-only.
@@ -1197,7 +1197,7 @@ mod tests {
     }
 
     /// The held document round-trips to its original bytes. This is the property the whole
-    /// revert path rests on (backlog/permissions/config-edit-validation.md): reverting writes the
+    /// revert path rests on (docs/permissions.md): reverting writes the
     /// held document out, so if `to_string` were lossy, every revert would silently reformat the
     /// author's file — including the schema header comment the parse-error message tells the
     /// model to go read.
@@ -1233,7 +1233,7 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
     }
 
-    /// [`ConfigFile::refresh`] is the two-outcome rule (backlog/permissions/config-edit-validation.md):
+    /// [`ConfigFile::refresh`] is the two-outcome rule (docs/permissions.md):
     /// a file that parses is **adopted**, one that doesn't is **reverted** to the last content that
     /// parsed. Also covers the unreadable case (deleted out from under us), which restores the file
     /// rather than leaving the session with no config on disk.

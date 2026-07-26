@@ -1,5 +1,5 @@
 //! The permission fast-path — the deterministic, zero-model-cost rung of the cascade
-//! (backlog/permissions/prefix-fastpath.md, backlog/permissions/README.md).
+//! (docs/permissions.md, docs/permissions.md).
 //!
 //! [`classify`] is a **pure function** of `(role, tool call)` returning a [`Verdict`]:
 //! `Clear` (auto-approve, no human, no model) or `Gate` (fall through to the spotter
@@ -8,7 +8,7 @@
 //!
 //! ## Why this rung is sound despite being incomplete
 //!
-//! The threat model is **error, not deception** (backlog/permissions/README.md): a
+//! The threat model is **error, not deception** (docs/permissions.md): a
 //! well-intentioned session reaching for the wrong tool, not an adversary obfuscating
 //! bash. So the fast-path only needs to *accept what it is certain about* and pass
 //! everything else down. It classifies **structural simplicity** (decidable) rather than
@@ -140,7 +140,7 @@ pub(crate) enum Perm {
 }
 
 /// Fold the log's [`Payload::ConfigEdit`] changes onto a base config, yielding the **effective
-/// config** the classifier should consult (backlog/permissions/config-edit.md). The effective
+/// config** the classifier should consult (docs/permissions.md). The effective
 /// policy at any point is `base + fold(changes)` — the same fold-over-the-log shape as the wire: this
 /// is materializing a table from an ordered log, exactly as a database replays its write-ahead
 /// log (kin to `project(log)`, docs/log-and-projection.md). The base config is the table's initial state;
@@ -157,7 +157,7 @@ pub fn effective_config(base: &Config, log: &[LogEntry]) -> Config {
     let mut role = base.clone();
     for entry in log {
         // Only a committed edit takes effect; a `Proposed`/`Cancelled` entry is audit-only and
-        // inert in the effective config (backlog/permissions/proposal-lifecycle.md).
+        // inert in the effective config (docs/permissions.md).
         if let Payload::ConfigEdit(edit) = &entry.payload
             && edit.state == crate::log::EditState::Committed
         {
@@ -195,7 +195,7 @@ pub fn apply_config_change(role: &mut Config, change: &ConfigChange) {
 }
 
 /// How many sightings of a command-prefix before a prefix-promotion probe rides along — the
-/// frequency gate (backlog/permissions/prefix-promotion.md). `2` = probe on the *second* time we see
+/// frequency gate (docs/permissions.md). `2` = probe on the *second* time we see
 /// the prefix; "we don't propose promoting a shape we've seen only once." Tuneable — the decay curve
 /// sets the real value.
 pub const MIN_SIGHTINGS_TO_PROBE: u32 = 2;
@@ -206,7 +206,7 @@ pub const MIN_SIGHTINGS_TO_PROBE: u32 = 2;
 /// vote ledger already records the evidence, so it's a threshold change, not a schema one.
 pub const PROMOTE_AFTER_SAFE_VOTES: u32 = 1;
 
-/// The per-prefix tally the prefix-promotion descent reads (backlog/permissions/prefix-promotion.md).
+/// The per-prefix tally the prefix-promotion descent reads (docs/permissions.md).
 /// Derived state, like the effective config: folded from the log's `Spot` entries at startup
 /// ([`probe_ledger`]) and maintained incrementally by the daemon as the loop runs. Never on the wire.
 #[derive(Clone, Debug, Default)]
@@ -257,7 +257,7 @@ impl ProbeLedger {
     }
 
     /// The prefix to probe on the current bash command, or `None`. The descent
-    /// (backlog/permissions/prefix-promotion.md): the **shortest** token-prefix of `tokens` that is
+    /// (docs/permissions.md): the **shortest** token-prefix of `tokens` that is
     /// promotable (lexes + not already covered by `[commands]`), seen at least
     /// [`MIN_SIGHTINGS_TO_PROBE`] times, and not yet [`resolved`]. Shortest-first, so the broadest
     /// (most valuable) promotion is tried before descending to a sub-verb; the descent self-terminates
@@ -276,7 +276,7 @@ impl ProbeLedger {
 }
 
 /// Fold the probe ledger from a whole log (startup / resume) — the batch form of the incremental
-/// updates the daemon makes as the loop runs (backlog/permissions/prefix-promotion.md). Mirrors
+/// updates the daemon makes as the loop runs (docs/permissions.md). Mirrors
 /// [`effective_config`]. Seen-counts come from each `Spot`'s bash command (recovered by `call_id`);
 /// votes from each `Spot` that probed a prefix, counted only when the verdict was the model's — a
 /// fail-closed `Fallback` didn't actually judge, so it casts no vote.
@@ -313,7 +313,7 @@ pub fn probe_ledger(log: &[LogEntry]) -> ProbeLedger {
     ledger
 }
 
-/// Classify a tool call against the role (backlog/permissions/prefix-fastpath.md).
+/// Classify a tool call against the role (docs/permissions.md).
 /// `bash` runs the two-stage check; a structured tool clears on its `tool` grant plus any
 /// `path` grant its target needs. Resolves grants against the process cwd (session-stable,
 /// the fixed root the built-in tools also resolve relative paths against).
@@ -326,7 +326,7 @@ pub fn classify(role: &Config, call: &ToolCall) -> Verdict {
 /// `protected` — the session's own config file. A write to the policy file is a **proposal** that
 /// must always reach the operator, so the loop forces the human gate on it, **bypassing both the
 /// fast-path and the spotter** — neither may auto-clear a permission change
-/// (backlog/permissions/session-dir-and-config-as-reviewed-file.md). This is the one named-meta-file
+/// (docs/permissions.md). This is the one named-meta-file
 /// exception to "no deny carve-out inside an allowed subtree": `.` may grant the tree, but this file
 /// still gates.
 ///
@@ -495,7 +495,7 @@ fn context_granted(role: &Config, target: &str, perm: Perm, cwd: &Path) -> bool 
 /// an operator can still override by naming a *strictly deeper* path. Path matching is
 /// lexical (`..`/`.` collapsed without touching the filesystem), so a symlink inside a
 /// grant that points outside is treated as inside — acceptable under the error-not-deception
-/// threat model (backlog/permissions/README.md).
+/// threat model (docs/permissions.md).
 fn path_granted(role: &Config, path: &str, perm: Perm, cwd: &Path) -> bool {
     let target = lexical_normalize(&absolutize(path, cwd));
     let governing = role
@@ -569,7 +569,7 @@ fn classify_bash(role: &Config, command: &str) -> Verdict {
 }
 
 /// Validate a spotter-proposed command prefix for **promotion** into the `[commands]` allowlist
-/// (backlog/permissions/prefix-fastpath.md, spotter.md). The spotter, fresh-context, judges a
+/// (docs/permissions.md, spotter.md). The spotter, fresh-context, judges a
 /// program-prefix *standing-safe* (reversible/in-scope regardless of args) and suggests adding it;
 /// this is the soundness gate before that suggestion becomes a `Proposed(Command)`:
 ///
@@ -987,7 +987,7 @@ mod tests {
     /// A fixed cwd so path resolution is deterministic in tests (no real filesystem).
     const CWD: &str = "/work";
 
-    /// The config-write carve-out (backlog/permissions/session-dir-and-config-as-reviewed-file.md):
+    /// The config-write carve-out (docs/permissions.md):
     /// a `write`/`edit` whose target resolves to the protected config file is detected (so
     /// the loop forces the operator gate), whether the target is relative or absolute; a write
     /// elsewhere, a *read* of the config, and the path-less `undo_edit` are not.
@@ -1353,7 +1353,7 @@ mod tests {
 
     /// The lifecycle gate: only a `Committed` edit takes effect. A `Proposed` or `Cancelled`
     /// entry with the *same* change is inert in the fold — it stays out of the effective config
-    /// until an orchestrator commits it (backlog/permissions/proposal-lifecycle.md).
+    /// until an orchestrator commits it (docs/permissions.md).
     #[test]
     fn only_committed_edits_fold_into_the_effective_config() {
         let base = sample_role();
@@ -1420,7 +1420,7 @@ mod tests {
         assert_eq!(eff.scope.as_deref(), Some("new perimeter"));
     }
 
-    // --- prefix-promotion: the probe ledger + descent (backlog/permissions/prefix-promotion.md) ---
+    // --- prefix-promotion: the probe ledger + descent (docs/permissions.md) ---
 
     fn toks(command: &str) -> Vec<String> {
         simple_command_tokens(command).expect("lexes")

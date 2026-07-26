@@ -39,7 +39,7 @@ pub(crate) struct LiveTail {
 pub(crate) enum Phase {
     /// Extended thinking, with the text so far. Shown as a live preview, not accumulated
     /// transcript content: it is cleared when the turn commits (rendering committed thinking in
-    /// the transcript is a separate unit — backlog/thinking-blocks.md).
+    /// the transcript is a separate unit — docs/transport.md).
     Thinking { text: String },
     /// A tool call is being emitted: named at `content_block_start`, then its JSON `input`
     /// accumulating. The text is shown verbatim and never parsed — it is a partial slice of a JSON
@@ -215,7 +215,7 @@ pub(crate) fn project(
             Payload::Triage(_) => {}
             // A spotter permission verdict (docs/permissions.md) — audit-only, like Triage.
             Payload::Spot(_) => {}
-            // A grant (backlog/permissions/config-edit.md) — audit-only on the transcript
+            // A grant (docs/permissions.md) — audit-only on the transcript
             // for now; surfacing scope changes to the human lands with the construction sites.
             Payload::ConfigEdit(_) => {}
             // The boot preamble snapshot (docs/context.md) — session boot record,

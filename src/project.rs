@@ -55,7 +55,7 @@ pub enum ApiBlock {
         cache_control: Option<CacheControl>,
     },
     /// An extended-thinking block replayed verbatim (docs/transport.md,
-    /// backlog/thinking-blocks.md). `signature` is the opaque token the API minted and
+    /// docs/transport.md). `signature` is the opaque token the API minted and
     /// requires echoed unchanged; both fields are stored strings projected verbatim, so the
     /// block stays byte-deterministic. Thinking blocks lead the assistant turn, before text
     /// and `tool_use`.
@@ -186,7 +186,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
         })
         .collect();
     // The `[context]` listing by item name — (description, path) for each read-on-demand
-    // stub — so a `Triage` can re-render a surfaced context item (backlog/context-surfacing.md)
+    // stub — so a `Triage` can re-render a surfaced context item (docs/redaction-fork.md)
     // at cache-read cost, mirroring the notification body map. Sourced from the last boot
     // `Preamble`'s structured snapshot (context.md); only looked up by name, so `HashMap`
     // order can't reach the wire.
@@ -298,7 +298,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // A spotter verdict (docs/permissions.md) is audit-only — the permission
             // decision lives in the log, never on the canonical wire.
             Payload::Spot(_) => {}
-            // A grant (backlog/permissions/config-edit.md) is audit-only too — its
+            // A grant (docs/permissions.md) is audit-only too — its
             // *effect* reaches the model through the classifier (the policy fold), never
             // the transcript. So it projects to nothing, and appending one cannot perturb
             // the cached prefix (docs/log-and-projection.md).
@@ -310,7 +310,7 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
             // A fork verdict emits a block per **pinned** notification and per **surfaced**
             // context item at its own position — notification bodies looked up from the
             // `Ambient` arrival (docs/inbox.md), surfaced items re-rendered from the boot
-            // listing (backlog/context-surfacing.md). This tail-ward placement keeps the wire
+            // listing (docs/redaction-fork.md). This tail-ward placement keeps the wire
             // append-only: content acknowledged at a later gate than its origin never splices
             // behind a breakpoint (docs/log-and-projection.md). Dismissed / left / already-surfaced
             // dispositions don't project. The verdict is otherwise audit-only.
@@ -592,7 +592,7 @@ mod tests {
     }
 
     /// Pins the exact wire encoding of a thinking-bearing assistant turn
-    /// (backlog/thinking-blocks.md): thinking leads (before text, before `tool_use`), the
+    /// (docs/transport.md): thinking leads (before text, before `tool_use`), the
     /// `signature` rides verbatim, and `redacted_thinking` renders its opaque `data`. This is
     /// the byte pin the thinking slice moves — reorder/rename a thinking field and it fails
     /// here first, before it can silently break the cache.
@@ -1303,7 +1303,7 @@ mod tests {
     }
 
     /// A surfaced context item projects as a `⟢ context · …` read-me reminder **at its
-    /// `Triage`'s position** (backlog/context-surfacing.md) — the one-line description and
+    /// `Triage`'s position** (docs/redaction-fork.md) — the one-line description and
     /// read path re-rendered from the boot `Preamble` listing, not stored on the verdict.
     /// This is the byte pin the surfacing slice moves: change the render and it fails here
     /// first, before it can silently break the cache. A surfaced name absent from the

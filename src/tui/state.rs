@@ -25,7 +25,7 @@ use crossbeam_channel::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 
 /// The idle status-bar line (also restored when an approval gate resolves). After
-/// the bind purge (backlog/tui-control-strip/04) the status bar stops enumerating
+/// the bind purge (docs/tui.md) the status bar stops enumerating
 /// verb keys — the strip is the legend — and just points there.
 const IDLE_STATUS: &str = "efference — ↑ controls";
 

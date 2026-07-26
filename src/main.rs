@@ -24,7 +24,7 @@ use futures_lite::StreamExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 /// The base directory for all session dirs (gitignored). Each session is `.efference/<id>/`,
-/// holding its standard-named socket, log, and config (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+/// holding its standard-named socket, log, and config (docs/permissions.md).
 const BASE_DIR: &str = ".efference";
 const SOCKET_NAME: &str = "control.sock";
 const LOG_NAME: &str = "log.jsonl";
@@ -34,7 +34,7 @@ const CONFIG_NAME: &str = "config.toml";
 /// teaches the schema, plus the one default that isn't empty: an `Environment at boot` `[context]`
 /// exec entry, orientation expressed as config rather than hardcoded (docs/context.md). It's a real,
 /// visible line in the session's own file, so a session that `cat`s its config sees it and an
-/// operator can edit or delete it (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+/// operator can edit or delete it (docs/permissions.md).
 const CONFIG_SCAFFOLD: &str = "\
 # Your session's permissions config. Edit it to request changes — edits are reviewed before they
 # take effect, and a malformed file is rejected wholesale (fail-closed): if an edit doesn't seem to
@@ -85,7 +85,7 @@ fn default_session_id() -> String {
 
 /// Resolve the control socket a *client* verb should talk to: an explicit `--socket`, else the
 /// named session's socket, else the single **live** daemon discovered by scanning the session dirs
-/// (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+/// (docs/permissions.md).
 fn resolve_client_socket(name: Option<&str>, socket: Option<PathBuf>) -> Result<PathBuf, CliError> {
     if let Some(socket) = socket {
         return Ok(socket);
@@ -144,7 +144,7 @@ enum Command {
         /// cheap band (Haiku) regardless of what the agent runs.
         #[arg(long, default_value = "claude-haiku-4-5")]
         spotter_model: String,
-        /// Path to the config (TOML, see backlog/permissions/README.md). If omitted,
+        /// Path to the config (TOML, see docs/permissions.md). If omitted,
         /// `efference.toml` in the cwd is probed; absent → the built-in default config.
         /// An explicit path that doesn't exist is an error. The resolved path is
         /// reported on `GET /state`.
@@ -154,7 +154,7 @@ enum Command {
         /// becomes a redirect that hands the call back to the model, pointing it at its config
         /// file to request access, instead of blocking on an absent human. A config-file write
         /// still gates — held for the orchestrator-above to review over the control channel
-        /// (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+        /// (docs/permissions.md).
         #[arg(long)]
         autonomous: bool,
         /// Keep the per-session `$TMPDIR` scratch directory on exit instead of
@@ -332,7 +332,7 @@ enum Command {
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
         /// Simulate a prefix-promotion probe riding this call: ask whether `<prefix>` is safe for all
-        /// arguments (backlog/permissions/prefix-promotion.md). The verdict's `clear_always` stance is
+        /// arguments (docs/permissions.md). The verdict's `clear_always` stance is
         /// the safe-vote; the tester reports whether it would queue a promotion.
         #[arg(long)]
         probe: Option<String>,
@@ -974,7 +974,7 @@ async fn serve(
     let endpoint = efference::api::Endpoint::from_env()?;
 
     // Everything for this session is colocated in its own dir (gitignored), standard-named since
-    // the dir is the unique unit (backlog/permissions/session-dir-and-config-as-reviewed-file.md).
+    // the dir is the unique unit (docs/permissions.md).
     // Create it first; a re-`serve` of an existing `--name` reuses it.
     std::fs::create_dir_all(&session_dir)?;
 
@@ -1535,7 +1535,7 @@ fn spotter_log(
 mod tests {
     use super::*;
 
-    /// Socket resolution precedence (backlog/permissions/session-dir-and-config-as-reviewed-file.md):
+    /// Socket resolution precedence (docs/permissions.md):
     /// an explicit `--socket` wins over everything; a `--name` resolves to that session's colocated
     /// socket. (The no-name discovery branch scans the filesystem and is exercised live.)
     #[test]
