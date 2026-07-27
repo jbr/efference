@@ -1,3 +1,4 @@
+use super::thinking::is_recognized_adaptive_claude;
 use super::*;
 
 /// A bare `ANTHROPIC_API_KEY` (no EFFERENCE_* knobs) resolves to today's
