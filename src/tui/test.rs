@@ -1,0 +1,38 @@
+use crate::tui::{DEFAULT_THEME, parse_pending_gate, resolve_theme};
+
+#[test]
+fn default_prefers_catppuccin_frappe() {
+    // The submodule theme set includes it, so the no-override default is it
+    // (not the sort-first "1337").
+    assert_eq!(resolve_theme(None).unwrap(), DEFAULT_THEME);
+}
+
+#[test]
+fn a_known_name_passes_through() {
+    assert_eq!(resolve_theme(Some("Nord".into())).unwrap(), "Nord");
+}
+
+#[test]
+fn an_unknown_name_is_an_error() {
+    assert!(resolve_theme(Some("definitely-not-a-theme".into())).is_err());
+}
+
+#[test]
+fn a_tmtheme_path_is_accepted_without_membership() {
+    let p = "/tmp/Custom.tmTheme";
+    assert_eq!(resolve_theme(Some(p.into())).unwrap(), p);
+}
+#[test]
+fn parses_a_pending_gate() {
+    let body = r#"{"last_seq":1,"pending_approval":{"call_id":"toolu_x","input":{"command":"ls"},"name":"bash"},"usage":{}}"#;
+    let gate = parse_pending_gate(body).expect("a gate");
+    assert_eq!(gate.call_id, "toolu_x");
+    assert_eq!(gate.name, "bash");
+    assert_eq!(gate.input["command"], "ls");
+}
+
+#[test]
+fn null_pending_approval_is_no_gate() {
+    let body = r#"{"last_seq":7,"pending_approval":null,"usage":{}}"#;
+    assert!(parse_pending_gate(body).is_none());
+}
