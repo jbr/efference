@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Socket resolution precedence (docs/permissions.md):
