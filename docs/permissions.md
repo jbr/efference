@@ -182,7 +182,7 @@ contains the target, the *most specific* (deepest) one governs; a no-access gran
 sugar / `Perms::default()`) is a real **deny** once it is the governing prefix. This is what
 lets the standard three-layer stack work: allow `.`, deny `.efference/`, re-allow
 `.efference/<id>/config.toml` read-only. The harness **injects that self-surface stack in
-`serve`** (`main.rs`), layered over the operator's grants: the session dir holds this
+`serve`** (`src/bin/efference/serve.rs`), layered over the operator's grants: the session dir holds this
 session's control socket, its append-only log, and every *other* session's dir, all under the
 operator's `.` grant — so without the deny nothing would stop a session from writing its own
 log (corrupting the session record) or POSTing to its own control socket (approving its own gates,
@@ -273,7 +273,7 @@ fail-closed rate) plus each verdict correlated to the call it judged and its one
 across every `.efference/*/log.jsonl` or one session; `--stance`/`--no-fallback` filter, and
 `--summary`/`--list` pick a half. The dev-facing lens for auditing how the spotter is doing.
 
-## The config-edit loop (`src/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/daemon.rs`)
+## The config-edit loop (`src/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/daemon/config_edits.rs`)
 
 A deny is not a dead-end: the orchestrator can **edit the config** at a gate. A
 `Payload::ConfigEdit` carries one `ConfigChange` (`command` / `path` / `tool` / `scope`).
@@ -350,7 +350,7 @@ did nothing cost one session ~20 turns against a wall it believed it had cleared
 invariant can't reach — the file is invalid *and* the restore failed — is reported as itself
 (`Refreshed::RevertFailed`) rather than claiming a revert that didn't happen.
 
-## The review-level dial (`src/agent.rs`, `src/daemon.rs`)
+## The review-level dial (`src/agent.rs`, `src/daemon/config_edits.rs`)
 
 **Who reviews a call the fast-path didn't clear** is a runtime dial — a [`ReviewLevel`] ordinal on
 `Shared` (`policy.rs`), set over the control channel (`POST /review-level`, `efference review-level`)
