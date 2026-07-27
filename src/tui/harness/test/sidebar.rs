@@ -91,8 +91,10 @@ fn gate_shows_spotter_reason_inline() {
     );
     let screen = play.render();
     assert!(
-        screen.contains("spotter:") && screen.contains("deletes outside the git tree"),
-        "the gate shows the spotter's reason inline:\n{screen}"
+        screen.contains("spotter · ") && screen.contains("deletes outside the git tree"),
+        "the gate shows the spotter's reason beside the exchange. No stance here: this \
+         fixture drives only the live `/state` path, which carries the reason without \
+         the `Spot` entry's stance:\n{screen}"
     );
     assert!(
         screen.contains("allow…"),
@@ -135,7 +137,7 @@ fn gate_survives_a_long_command() {
     );
     let screen = play.render();
     assert!(
-        screen.contains("spotter:") && screen.contains("deletes outside the git tree"),
+        screen.contains("spotter") && screen.contains("deletes outside the git tree"),
         "the reason renders beside the exchange, not inside its collapsed body:\n{screen}"
     );
     assert!(
@@ -146,6 +148,71 @@ fn gate_survives_a_long_command() {
         play.find("⏸").is_some(),
         "the held-call marker rides the affordance, so a collapsible body can't \
          replace it with a disclosure triangle:\n{screen}"
+    );
+}
+
+/// A **cleared** call carries its verdict too (docs/permissions.md). Nothing ever
+/// interrupts for a cleared call, so before this its reason was written to the log and
+/// shown to nobody — and cleared calls are most of what the spotter judges. The stance
+/// leads the line, so `cleared` and `gated` are told apart at a glance; the whole line
+/// stays in the dim register, since after the fact it is a gloss on the call rather than
+/// something to act on.
+#[test]
+fn a_cleared_call_shows_its_verdict() {
+    let mut play = Screenplay::new(80, 16);
+    play.user("How big is the source tree?");
+    play.assistant(
+        "Counting it now.",
+        vec![tool_call(
+            "bash",
+            "toolu_c",
+            json!({ "command": "wc -l src/*.rs" }),
+        )],
+    );
+    play.spot(
+        "toolu_c",
+        Stance::Clear,
+        "read-only line count inside the repo",
+    );
+    play.tool_result("toolu_c", "20191 total", false, WireState::Raw);
+
+    let screen = play.render();
+    assert!(
+        screen.contains("spotter cleared · read-only line count inside the repo"),
+        "a cleared call shows its stance and reason:\n{screen}"
+    );
+    assert!(
+        !screen.contains("awaiting"),
+        "nothing is asked of the human — the call already ran:\n{screen}"
+    );
+}
+
+/// A verdict outlives the gate that carried it: once approved, the pending state is gone,
+/// but the committed `Spot` still renders — so scrolling back shows *why* a call was held,
+/// and (as here) that the human approved something the spotter wanted to stop.
+#[test]
+fn a_resolved_gate_keeps_its_verdict() {
+    let mut play = Screenplay::new(80, 16);
+    play.user("Clean the build directory.");
+    play.assistant(
+        "Sure — I'll remove it.",
+        vec![tool_call(
+            "bash",
+            "toolu_r",
+            json!({ "command": "rm -rf ./build" }),
+        )],
+    );
+    play.spot(
+        "toolu_r",
+        Stance::Gate,
+        "deletes outside the git tree — not reversible",
+    );
+    play.tool_result("toolu_r", "", false, WireState::Raw);
+
+    let screen = play.render();
+    assert!(
+        screen.contains("spotter gated · deletes outside the git tree"),
+        "the verdict survives the gate's resolution:\n{screen}"
     );
 }
 

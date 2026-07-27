@@ -180,11 +180,15 @@ The gate renders **inline at the pending call**, not as a bottom banner. Because
 
 ```
 ❯ bash · rm -rf /tmp/scratch
-spotter: deletes outside the git tree — not reversible
+spotter gated · deletes outside the git tree — not reversible
 ⏸ awaiting your approval  ·  ⏎ approve · type to redirect
 ```
 
-Reading order is call → why it is held → what to do, so the affordance lands adjacent to the strip carrying the verbs.
+Reading order is call → what the spotter made of it → what to do, so the affordance lands adjacent to the strip carrying the verbs.
+
+**Every judged call carries its verdict, not only a held one.** The `Spot` entries are indexed by `call_id` alongside the results and emitted with the exchange they judge, so a *cleared* call shows its reason too — which is most of them, since clearing is the common verdict and nothing ever interrupts for one. The stance leads the line (`spotter cleared · …`, `watching`, `gated`) because it is the scannable part; without it every verdict looks alike. The whole line sits in the dim register: before the decision it is why the call is held, and after it is a gloss on what the call was taken to be, so it never competes with the call or its result for attention. A resolved gate keeps its verdict, which is the only surviving record when a human approves something the spotter wanted to stop. `Origin` is not drawn — a fail-closed verdict's own reason reads "spotter unavailable", so a glyph would only repeat the line. The committed entry is the source; `pending_reason` from `/state` covers only the window where a gate has registered but its log entry hasn't reached the client, so the two never both render (that path has no stance, and reads `spotter · …`).
+
+Whether this much per-call annotation earns its space is an open question the dogfooding loop is meant to answer; a suppression setting is the obvious lever if it turns out to be noise.
 
 **Structured annotations are siblings of the exchange, never children of it.** The exchange's collapsible body holds only what the agent produced — the call's arguments and its result — so the body's truncation can never reach something the harness added *about* the call. This is not a stylistic split: while the reason and the affordance were nested, a multi-line command filled the collapsed body on its own and clipped both, and the `⏸` (then the exchange's resting glyph) was replaced by the disclosure triangle the renderer substitutes once a body is collapsible. A gate on any realistic command therefore showed no reason, no affordance, and no sign the call was held. Anything that can be collapsed away is not a marker, so the `⏸` rides the affordance instead.
 

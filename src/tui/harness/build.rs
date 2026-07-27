@@ -78,6 +78,19 @@ impl Screenplay<'_> {
         self.running_tool(call_id, crate::bash::NAME, json!({ "command": command }))
     }
 
+    /// A committed spotter verdict for `call_id` (docs/permissions.md) — the `Spot` audit
+    /// entry the spotter logs for *every* judged call, cleared ones included, not only the
+    /// gated ones a human ever sees a prompt for.
+    pub(crate) fn spot(&mut self, call_id: &str, stance: Stance, reason: &str) -> &mut Self {
+        self.commit(Payload::Spot(crate::log::Spot {
+            call_id: CallId(call_id.into()),
+            stance,
+            reason: reason.into(),
+            origin: crate::log::Origin::Model,
+            probed_prefix: None,
+        }))
+    }
+
     /// A committed tool result for `call_id`, projected at its `wire` state.
     pub(crate) fn tool_result(
         &mut self,

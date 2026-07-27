@@ -1,5 +1,5 @@
 use super::{Screenplay, tool_call};
-use crate::log::{Keep, WireState};
+use crate::log::{Keep, Stance, WireState};
 use crate::tui::{PaceView, TuiEvent};
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::style::{Color, Modifier};

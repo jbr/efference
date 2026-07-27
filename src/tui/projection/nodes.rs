@@ -188,18 +188,40 @@ pub(in crate::tui) fn gate_affordance() -> DocumentNode<'static> {
     }
 }
 
-/// The spotter's reason for holding a call (docs/permissions.md), so the human sees *why*
-/// before deciding. Muted — context, not a command.
+/// The spotter's verdict on a call (docs/permissions.md), as one muted line. Before the
+/// decision it is *why* the call is held; after, it is a gloss on what the call was taken
+/// to be — so it stays in the dim register either way and never competes with the call or
+/// its result for attention.
+///
+/// `stance` is `None` only for a gate whose `Spot` entry hasn't reached this client yet
+/// (the live `/state` path, which carries the reason but not the stance); the committed
+/// entry supplies it in every other case. It leads the line because it is the part that is
+/// scannable — a `cleared` gloss and a `gated` one are read very differently, and without
+/// it every verdict looks alike. [`Origin`](crate::log::Origin) is deliberately not drawn:
+/// a fail-closed verdict's own reason says "spotter unavailable", so surfacing it again
+/// would cost a glyph to repeat what the line already reads.
 ///
 /// Emitted as a **sibling** of the exchange it judges, never inside it: it is a separate
 /// rung's judgment *about* the call rather than part of the call's content, and nesting it
 /// meant the exchange's own truncation could clip it (which it did, for any command long
 /// enough to fill the collapsed body).
-pub(in crate::tui) fn spotter_reason_line(reason: &str) -> DocumentNode<'static> {
+pub(in crate::tui) fn spotter_line(
+    stance: Option<crate::log::Stance>,
+    reason: &str,
+) -> DocumentNode<'static> {
+    use crate::log::Stance;
+    let label = match stance {
+        // `ClearAlways` refines `Clear` with a prefix-promotion vote (docs/permissions.md).
+        // That vote is policy machinery, not a fact about this call, so both read `cleared`.
+        Some(Stance::Clear | Stance::ClearAlways) => "spotter cleared · ",
+        Some(Stance::Watch) => "spotter watching · ",
+        Some(Stance::Gate) => "spotter gated · ",
+        None => "spotter · ",
+    };
     DocumentNode::Paragraph {
         spans: vec![
             Span {
-                text: "spotter: ".into(),
+                text: label.into(),
                 style: SpanStyle::Comment,
                 action: None,
             },

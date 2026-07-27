@@ -49,9 +49,19 @@ pub(crate) fn project(
     // A result lands in a later entry than the call it answers; index results by
     // `call_id` up front so a call can be paired with its result in one place.
     let mut result_for_call: HashMap<&str, (&RawResult, &WireState)> = HashMap::new();
+    // The spotter's verdicts, indexed the same way (docs/permissions.md). Later entries
+    // overwrite earlier ones, so a re-judged call shows its latest verdict — matching
+    // the daemon's own `latest_spot_reason`, which reads the log in reverse.
+    let mut spot_for_call: HashMap<&str, &crate::log::Spot> = HashMap::new();
     for entry in log {
-        if let Payload::ToolResult { call_id, raw, wire } = &entry.payload {
-            result_for_call.insert(call_id.0.as_str(), (raw, wire));
+        match &entry.payload {
+            Payload::ToolResult { call_id, raw, wire } => {
+                result_for_call.insert(call_id.0.as_str(), (raw, wire));
+            }
+            Payload::Spot(spot) => {
+                spot_for_call.insert(spot.call_id.0.as_str(), spot);
+            }
+            _ => {}
         }
     }
 
@@ -88,12 +98,22 @@ pub(crate) fn project(
                     // reach an annotation the harness added. Nesting these was how a
                     // multi-line command clipped away the whole gate.
                     //
-                    // Reading order is call → why it is held → what to do, so the
-                    // affordance lands last, adjacent to the strip carrying the verbs.
+                    // Reading order is call → what the spotter made of it → what to do,
+                    // so the affordance lands last, adjacent to the strip carrying the
+                    // verbs.
+                    //
+                    // Every judged call carries its verdict, not just a held one: a
+                    // cleared call's reason is the only evidence of what the spotter
+                    // thought, and it is the majority of verdicts. The committed `Spot`
+                    // is the source; `pending_reason` (from `/state`) covers only the
+                    // window where a gate has registered but its log entry hasn't
+                    // reached this client yet, so the two never both render.
+                    if let Some(spot) = spot_for_call.get(call.id.0.as_str()) {
+                        blocks.push(spotter_line(Some(spot.stance), &spot.reason));
+                    } else if is_pending && let Some(reason) = pending_reason {
+                        blocks.push(spotter_line(None, reason));
+                    }
                     if is_pending {
-                        if let Some(reason) = pending_reason {
-                            blocks.push(spotter_reason_line(reason));
-                        }
                         blocks.push(gate_affordance());
                     }
                 }
@@ -120,7 +140,9 @@ pub(crate) fn project(
             }),
             // The verdict is internal — audit-only on the transcript (docs/redaction-fork.md).
             Payload::Triage(_) => {}
-            // A spotter permission verdict (docs/permissions.md) — audit-only, like Triage.
+            // A spotter permission verdict (docs/permissions.md) renders beside the call
+            // it judged, not at its own log position — it is indexed by `call_id` above
+            // and emitted with that exchange, so nothing is drawn here.
             Payload::Spot(_) => {}
             // A grant (docs/permissions.md) — audit-only on the transcript
             // for now; surfacing scope changes to the human lands with the construction sites.

@@ -32,7 +32,7 @@ use super::state::InteractiveState;
 use super::theme::InteractiveTheme;
 use crate::frontend::Approval;
 use crate::log::{
-    CallId, ContentBlock, LogEntry, Payload, RawResult, Timestamp, ToolCall, WireState,
+    CallId, ContentBlock, LogEntry, Payload, RawResult, Stance, Timestamp, ToolCall, WireState,
 };
 use serde_json::{Value, json};
 

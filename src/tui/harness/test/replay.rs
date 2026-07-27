@@ -13,10 +13,12 @@ fn replay_real_session_first_turn() {
 }
 
 /// Filmstrip frame 2: the tail of the whole real session, stream-followed to the
-/// bottom. The session carried a spotter `gate` verdict and `ConfigEdit`s (both
-/// audit-only — they project to nothing on the transcript) plus an `Ambient`
-/// notification (which *does* project). This pins how the permission-bearing tail
-/// of a real session renders, and that the audit-only payloads stay invisible.
+/// bottom. The session carried a spotter `gate` verdict (rendered beside the call it
+/// judged, in the dim register), `ConfigEdit`s (audit-only — they project to nothing on
+/// the transcript), and an `Ambient` notification (which *does* project). This pins how
+/// the permission-bearing tail of a real session renders — including the case worth
+/// seeing, a call the spotter gated that the human then approved, where the verdict is
+/// the only surviving record of the disagreement.
 #[test]
 fn replay_real_session_tail() {
     let entries = replay_fixture();
