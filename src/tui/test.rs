@@ -1,4 +1,5 @@
-use crate::tui::{DEFAULT_THEME, parse_pending_gate, resolve_theme};
+use crate::tui::parse::parse_pending_gate;
+use crate::tui::run::{DEFAULT_THEME, resolve_theme};
 
 #[test]
 fn default_prefers_catppuccin_frappe() {
