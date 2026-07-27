@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::log::{ContentBlock, LogEntry, Payload, Timestamp};
 

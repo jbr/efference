@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// A bare `ANTHROPIC_API_KEY` (no EFFERENCE_* knobs) resolves to today's

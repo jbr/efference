@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::log::{
     ContentBlock, Disposition, Keep, LogEntry, Mark, MarkKind, Notification, Origin, Payload,

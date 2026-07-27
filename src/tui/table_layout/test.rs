@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn plain_cell(text: &'static str) -> TableCell<'static> {

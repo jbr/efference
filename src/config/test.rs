@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Load → apply → sync. The persistence tests below predate [`ConfigFile`]; they exercise the

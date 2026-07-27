@@ -1,4 +1,3 @@
-
 use super::{Screenplay, tool_call};
 use crate::log::{Keep, WireState};
 use crate::tui::{PaceView, TuiEvent};

@@ -1,4 +1,3 @@
-
 use crate::tui::TuiEvent;
 use crate::tui::harness::Screenplay;
 use crossterm::event::{KeyCode, KeyModifiers};

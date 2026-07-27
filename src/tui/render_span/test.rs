@@ -1,4 +1,3 @@
-
 use super::{display_width, wrap_points};
 
 /// Split `text` at the byte boundaries `wrap_points` reports, for legible

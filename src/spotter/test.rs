@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::api::{Completion, Usage};
 use crate::config::{Config, Perms};

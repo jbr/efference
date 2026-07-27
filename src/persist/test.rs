@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::log::{CallId, ContentBlock, RawResult, ToolCall, WireState};
 use crate::project::project;
