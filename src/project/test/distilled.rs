@@ -1,6 +1,7 @@
 //! Rendering a distilled verdict back to wire text (docs/redaction-fork.md).
 
 use super::*;
+use crate::project::render::{normalize, render_hunks};
 
 fn lines(s: &str) -> Vec<&str> {
     s.lines().collect()
