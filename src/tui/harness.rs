@@ -525,6 +525,5 @@ pub(crate) fn tool_call(name: &str, call_id: &str, input: serde_json::Value) -> 
 /// rendered through the full frame, so formatting/rendering changes have a
 /// visible before/after. These are the "what the user sees" fixtures; the
 /// composer-focused scenarios live in `composer.rs`.
-
 #[cfg(test)]
 mod test;
