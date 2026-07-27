@@ -47,3 +47,139 @@ pub enum SpanStyle {
     // Conversation
     UserAccent, // the user turn's gutter / accent — distinguishes the human's voice
 }
+
+impl<'a> Span<'a> {
+    pub fn url(&self) -> Option<Cow<'a, str>> {
+        self.action.as_ref()?.url()
+    }
+}
+
+impl<'a> Span<'a> {
+    // Rust code element constructors
+    pub fn keyword(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::Keyword,
+            action: None,
+        }
+    }
+
+    pub fn type_name(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::TypeName,
+            action: None,
+        }
+    }
+
+    pub fn function_name(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::FunctionName,
+            action: None,
+        }
+    }
+
+    pub fn field_name(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::FieldName,
+            action: None,
+        }
+    }
+
+    pub fn lifetime(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::Lifetime,
+            action: None,
+        }
+    }
+
+    pub fn generic(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::Generic,
+            action: None,
+        }
+    }
+
+    // Structural element constructors
+    pub fn plain(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::Plain,
+            action: None,
+        }
+    }
+
+    pub fn punctuation(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::Punctuation,
+            action: None,
+        }
+    }
+
+    pub fn operator(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::Operator,
+            action: None,
+        }
+    }
+
+    pub fn comment(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::Comment,
+            action: None,
+        }
+    }
+
+    pub fn inline_rust_code(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::InlineRustCode,
+            action: None,
+        }
+    }
+
+    pub fn inline_code(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::InlineCode,
+            action: None,
+        }
+    }
+
+    pub fn strong(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::Strong,
+            action: None,
+        }
+    }
+
+    pub fn emphasis(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::Emphasis,
+            action: None,
+        }
+    }
+
+    pub fn strikethrough(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            style: SpanStyle::Strikethrough,
+            action: None,
+        }
+    }
+
+    /// Chainable method to attach an action to this span
+    pub fn with_action(mut self, action: TuiAction<'a>) -> Self {
+        self.action = Some(action);
+        self
+    }
+}
