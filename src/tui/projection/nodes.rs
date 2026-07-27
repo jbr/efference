@@ -162,15 +162,20 @@ pub(in crate::tui) fn thinking_block(
     ))
 }
 
-/// The inline affordance shown in a pending exchange's body, in place of the
-/// not-yet-existent result (docs/tui.md). The accent-colored lead-in marks "your
-/// turn"; the muted tail names the composer's two direct answers — the full verb
-/// set (allow…/abort) lives on the control strip, which is the legend now.
+/// The affordance shown beside a pending exchange (docs/tui.md), where its result will
+/// land once the gate resolves. The accent-colored lead-in marks "your turn"; the muted
+/// tail names the composer's two direct answers — the full verb set (allow…/abort) lives
+/// on the control strip, which is the legend now.
+///
+/// It carries the `⏸` marker. That marker used to be the exchange's resting glyph, but the
+/// renderer replaces a resting glyph with a disclosure triangle as soon as the body is long
+/// enough to collapse — so a gate on a long call lost the one mark that said it was held.
+/// Here it is a sibling of the exchange and cannot be collapsed or replaced.
 pub(in crate::tui) fn gate_affordance() -> DocumentNode<'static> {
     DocumentNode::Paragraph {
         spans: vec![
             Span {
-                text: "awaiting your approval".into(),
+                text: "⏸ awaiting your approval".into(),
                 style: SpanStyle::UserAccent,
                 action: None,
             },

@@ -80,16 +80,21 @@ pub(crate) fn project(
                 for call in calls {
                     let result = result_for_call.get(call.id.0.as_str()).copied();
                     let is_pending = result.is_none() && pending_call == Some(call.id.0.as_str());
-                    blocks.push(exchange(call, result, view, is_pending));
-                    // The spotter's verdict is a **sibling** of the exchange, never a
-                    // child of it (docs/tui.md). It is an independent rung's judgment
-                    // *about* the call, not part of the call's content — and nesting it
-                    // put it inside the exchange's collapsible body, where a command of
-                    // any length clipped it away. As a sibling there is no state in
-                    // which it can be collapsed. It trails the exchange so it is the
-                    // last thing read before the decision the strip offers.
-                    if is_pending && let Some(reason) = pending_reason {
-                        blocks.push(spotter_reason_line(reason));
+                    blocks.push(exchange(call, result, view));
+                    // Harness-generated structure about a call is a **sibling** of the
+                    // exchange, never a child of it (docs/tui.md). The exchange's
+                    // collapsible body holds only what the agent produced — the call's
+                    // arguments and its result — so the body's truncation can never
+                    // reach an annotation the harness added. Nesting these was how a
+                    // multi-line command clipped away the whole gate.
+                    //
+                    // Reading order is call → why it is held → what to do, so the
+                    // affordance lands last, adjacent to the strip carrying the verbs.
+                    if is_pending {
+                        if let Some(reason) = pending_reason {
+                            blocks.push(spotter_reason_line(reason));
+                        }
+                        blocks.push(gate_affordance());
                     }
                 }
                 if !blocks.is_empty() {
@@ -162,11 +167,15 @@ pub(crate) fn project(
 /// the call (`❯ tool · arg`, or `✗ tool …` when the result errored); the body is
 /// the (tool-specifically rendered) result. No `result #N` label — the result is
 /// obviously the response to the call directly above it.
+///
+/// Agent-generated content only. Whether the call is *pending* is not an input here:
+/// the gate is the harness talking about the call, so it renders as a sibling at the
+/// call site rather than inside this body (docs/tui.md). A pending exchange is simply
+/// one with no result yet — its body is the call's arguments and nothing else.
 fn exchange(
     call: &ToolCall,
     result: Option<(&RawResult, &WireState)>,
     view: &ViewState,
-    is_pending: bool,
 ) -> DocumentNode<'static> {
     let is_error = result.is_some_and(|(raw, _)| raw.is_error);
     let call_id = call.id.0.as_str();
@@ -222,29 +231,15 @@ fn exchange(
             effective_wire,
             &content,
         ));
-    } else if is_pending {
-        // No result yet — the agent is blocked here for approval (docs/tui.md). The
-        // affordance sits where the result will land, so the gate reads as "after the
-        // call, before the result." Resolving it (approve → result; redirect/abort →
-        // an error result) replaces this with the real exchange body. The spotter's
-        // reason is *not* here — it renders as a sibling of the whole exchange, out of
-        // reach of this body's truncation (see the call site).
-        body.push(gate_affordance());
     }
 
-    // The resting marker: `⏸` (accent) when this call is awaiting approval, else the
-    // `❯`/`✗` prompt (the renderer swaps in a ▶/▼ disclosure triangle when the body
-    // is long enough to collapse). The block is keyed by `call_id` so its expand/raw
-    // state survives re-projection.
-    let resting = if is_pending {
-        Span {
-            text: "⏸ ".into(),
-            style: SpanStyle::UserAccent,
-            action: None,
-        }
-    } else {
-        prompt_span(is_error)
-    };
+    // The resting marker is the `❯`/`✗` prompt — the renderer swaps in a ▶/▼
+    // disclosure triangle when the body is long enough to collapse, which is exactly
+    // why the pending `⏸` is *not* here: a marker that a long call replaces is not a
+    // marker. It rides the gate affordance instead, which is a sibling and always
+    // shown (docs/tui.md). The block is keyed by `call_id` so its expand/raw state
+    // survives re-projection.
+    let resting = prompt_span(is_error);
     let level = if view.is_expanded(call_id) {
         TruncationLevel::Full
     } else {

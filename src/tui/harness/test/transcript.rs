@@ -128,10 +128,11 @@ fn user_turn_has_a_blue_accent_gutter() {
 }
 
 /// A pending approval gate, rendered inline at the tail call rather than as a
-/// bottom banner (docs/tui.md): the exchange shows a `⏸` marker and an
-/// `awaiting your approval …` affordance where the result will land — the gate
-/// reads as "after the call, before the result." Resolving it replaces the
-/// affordance with the real (or error) result.
+/// bottom banner (docs/tui.md): a `⏸ awaiting your approval …` affordance sits beside
+/// the exchange, where the result will land — the gate reads as "after the call,
+/// before the result." Resolving it replaces the affordance with the real (or error)
+/// result. The affordance is a sibling of the exchange, so neither it nor its `⏸`
+/// can be collapsed away by a long call.
 #[test]
 fn transcript_pending_approval_gate() {
     let mut play = Screenplay::new(80, 14);

@@ -104,13 +104,15 @@ fn gate_shows_spotter_reason_inline() {
     );
 }
 
-/// The spotter's reason survives a **long** call, because it is a sibling of the
-/// exchange rather than a child of it (docs/tui.md). A multi-line bash command fills
-/// the exchange's collapsed body on its own; when the reason lived inside that body it
-/// was clipped away, so a gate on any realistic command showed no reason at all.
-/// Asserted without expanding anything — the point is that no interaction is required.
+/// The whole gate survives a **long** call, because every part of it is a sibling of
+/// the exchange rather than a child of it (docs/tui.md). A multi-line bash command
+/// fills the exchange's collapsed body on its own; while the spotter's reason and the
+/// affordance lived inside that body they were clipped away, and the `⏸` was replaced
+/// by the disclosure triangle — so a gate on any realistic command showed no reason, no
+/// affordance, and no sign the call was held at all. Asserted without expanding
+/// anything: the point is that no interaction is required.
 #[test]
-fn gate_shows_spotter_reason_past_a_long_command() {
+fn gate_survives_a_long_command() {
     let command = "set -euo pipefail\n\
                    cd ./build\n\
                    for f in *.o; do\n\
@@ -135,6 +137,15 @@ fn gate_shows_spotter_reason_past_a_long_command() {
     assert!(
         screen.contains("spotter:") && screen.contains("deletes outside the git tree"),
         "the reason renders beside the exchange, not inside its collapsed body:\n{screen}"
+    );
+    assert!(
+        screen.contains("awaiting your approval"),
+        "the affordance renders beside the exchange too:\n{screen}"
+    );
+    assert!(
+        play.find("⏸").is_some(),
+        "the held-call marker rides the affordance, so a collapsible body can't \
+         replace it with a disclosure triangle:\n{screen}"
     );
 }
 

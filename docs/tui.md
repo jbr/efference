@@ -176,15 +176,19 @@ The verbs a unit carries are a pure function of the block (`block_menu::menu_ite
 
 The approval gate is ephemeral control state: the daemon gates *after* appending the `tool_use` to the log and *before* running the tool, but there is no SSE event for this transition. A poll task watches `GET /state`'s `pending_approval` field and emits a `TuiEvent::Gate` when it appears or resolves.
 
-The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail result-less exchange. `project` receives `pending_call` + `pending_reason` and marks that exchange with `⏸` and an inline affordance in place of the result, with the spotter's reason (when it gated via the spotter — read from the `Spot` audit entry, see [permissions](permissions.md)) beneath:
+The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail result-less exchange. `project` receives `pending_call` + `pending_reason` and emits the gate beside that exchange, where the result will land — the spotter's reason (when it gated via the spotter — read from the `Spot` audit entry, see [permissions](permissions.md)), then the affordance carrying the `⏸`:
 
 ```
-⏸ bash · rm -rf /tmp/scratch
-awaiting your approval  ·  ⏎ approve · type to redirect
+❯ bash · rm -rf /tmp/scratch
 spotter: deletes outside the git tree — not reversible
+⏸ awaiting your approval  ·  ⏎ approve · type to redirect
 ```
 
-The reason is a **sibling** of the exchange, not part of its body: an independent rung's judgment *about* the call is not the call's content, and while it was nested the exchange's own collapse could clip it — which it did for any command long enough to fill the collapsed body, leaving a gate with no visible reason. Placed as a sibling there is no state in which it can be collapsed away, and it trails the exchange so it is the last thing read before the decision the strip offers.
+Reading order is call → why it is held → what to do, so the affordance lands adjacent to the strip carrying the verbs.
+
+**Structured annotations are siblings of the exchange, never children of it.** The exchange's collapsible body holds only what the agent produced — the call's arguments and its result — so the body's truncation can never reach something the harness added *about* the call. This is not a stylistic split: while the reason and the affordance were nested, a multi-line command filled the collapsed body on its own and clipped both, and the `⏸` (then the exchange's resting glyph) was replaced by the disclosure triangle the renderer substitutes once a body is collapsible. A gate on any realistic command therefore showed no reason, no affordance, and no sign the call was held. Anything that can be collapsed away is not a marker, so the `⏸` rides the affordance instead.
+
+The same split is where per-call structure goes as it lands; the eventual shape is a typed exchange owning its structured sub-items rather than a flat sibling list.
 
 The status bar mirrors this affordance for the scrolled-away case, and the [control strip](#the-control-strip) simultaneously carries the full verb set (`approve ⏎ · allow… · abort`), so `↑ ⏎` approves without typing and the strip — not instruction text — is the legend for the richer verbs. Strip `approve`/`abort` resolve the gate directly *without* clearing a drafted redirect the operator decided against sending (unlike an empty-composer `⏎`, which routes through the submit path below).
 
