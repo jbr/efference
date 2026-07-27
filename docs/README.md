@@ -145,6 +145,11 @@ Read top-down; open the subsystem doc you need.
 | Transport & streaming (upstream SSE, deltas, keepalive) | [transport.md](transport.md) | `src/api.rs` |
 | The TUI client | [tui.md](tui.md) | `src/tui/` |
 
+Where a module has grown a directory beside it (`src/api/`, `src/config/`, `src/policy/`,
+`src/project/`, `src/distill/`, `src/context/`, `src/daemon/`, `src/tui/*/`), the `.rs` file
+holds the subsystem's vocabulary and public surface and the directory holds one file per
+concern; each module's tests live in its own `test.rs`.
+
 The turn engine that ties it together is `src/agent.rs`; the CLI binary is
 `src/bin/efference/`, whose `serve` verb boots the daemon.
 
