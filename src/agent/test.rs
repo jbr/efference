@@ -1,7 +1,7 @@
 use super::*;
 use crate::log::CallId;
 
-fn call(name: &str) -> ToolCall {
+pub(super) fn call(name: &str) -> ToolCall {
     ToolCall {
         id: CallId("toolu_x".into()),
         name: name.into(),
@@ -9,7 +9,7 @@ fn call(name: &str) -> ToolCall {
     }
 }
 
-fn bash_call(command: &str) -> ToolCall {
+pub(super) fn bash_call(command: &str) -> ToolCall {
     ToolCall {
         id: CallId("toolu_b".into()),
         name: crate::bash::NAME.into(),
@@ -31,7 +31,7 @@ fn bash_call(command: &str) -> ToolCall {
 ///    have been. That merge is `project`'s existing seam-drain behavior; this
 ///    pins that it survives the turn boundary an interrupt introduces.
 #[test]
-fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_speaks_next() {
+pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_speaks_next() {
     use crate::project::ApiBlock;
     let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
     let call = bash_call("cat enormous.log");
@@ -114,7 +114,7 @@ fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_speaks_next()
 /// make that artifact an incomplete record. Formatting survives, since the operator reads this
 /// file by hand.
 #[test]
-fn a_committed_grant_is_written_to_the_config_file() {
+pub(super) fn a_committed_grant_is_written_to_the_config_file() {
     use crate::log::ConfigChange;
     let path =
         std::env::temp_dir().join(format!("efference-writeback-{}.toml", std::process::id()));
@@ -162,7 +162,7 @@ fn a_committed_grant_is_written_to_the_config_file() {
 /// Legislating a grant that *covers* the gated call amends the policy and approves the
 /// call (the amended rule clears it on re-classify).
 #[test]
-fn legislate_grants_then_approves_a_covered_call() {
+pub(super) fn legislate_grants_then_approves_a_covered_call() {
     use crate::log::ConfigChange;
     let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
     let call = bash_call("npm install");
@@ -192,7 +192,7 @@ fn legislate_grants_then_approves_a_covered_call() {
 /// The invariant: a grant that does *not* cover the gated call still amends the policy,
 /// but the call does **not** ride along — it's re-checked and stays gated (a redirect).
 #[test]
-fn legislate_does_not_let_an_uncovered_call_ride_along() {
+pub(super) fn legislate_does_not_let_an_uncovered_call_ride_along() {
     use crate::log::ConfigChange;
     let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
     let call = bash_call("npm install");
@@ -219,7 +219,7 @@ fn legislate_does_not_let_an_uncovered_call_ride_along() {
 /// request access), carries the spotter's reason, and makes the held-for-review property
 /// explicit — so the model knows asking is possible but enactment isn't automatic.
 #[test]
-fn autonomous_gate_message_points_at_the_config_and_carries_the_reason() {
+pub(super) fn autonomous_gate_message_points_at_the_config_and_carries_the_reason() {
     let msg = autonomous_gate_message(
         Some(Path::new(".efference/x/config.toml")),
         "writes outside the repo",
@@ -239,7 +239,7 @@ fn autonomous_gate_message_points_at_the_config_and_carries_the_reason() {
 /// With no config file (the built-in default), the redirect still tells the model to ask the
 /// orchestrator — it just can't name a file to edit.
 #[test]
-fn autonomous_gate_message_without_a_config_file_still_redirects() {
+pub(super) fn autonomous_gate_message_without_a_config_file_still_redirects() {
     let msg = autonomous_gate_message(None, "network egress");
     assert!(msg.contains("orchestrator"));
     assert!(msg.contains("network egress"));
@@ -253,7 +253,7 @@ fn autonomous_gate_message_without_a_config_file_still_redirects() {
 /// write reported success, changed nothing, and the model spent ~20 turns against a wall it
 /// believed it had cleared.
 #[test]
-fn a_config_write_that_does_not_parse_is_reverted_and_reported_as_an_error() {
+pub(super) fn a_config_write_that_does_not_parse_is_reverted_and_reported_as_an_error() {
     let path = std::env::temp_dir().join(format!(
         "efference-agent-config-{}.toml",
         std::process::id()
@@ -304,7 +304,7 @@ fn a_config_write_that_does_not_parse_is_reverted_and_reported_as_an_error() {
 }
 
 #[test]
-fn cap_passes_through_results_under_the_limit() {
+pub(super) fn cap_passes_through_results_under_the_limit() {
     let r = ok("a".repeat(MAX_TOOL_RESULT_BYTES));
     let capped = cap_tool_result(&call("search"), r);
     assert!(!capped.is_error);
@@ -312,7 +312,7 @@ fn cap_passes_through_results_under_the_limit() {
 }
 
 #[test]
-fn cap_turns_oversized_results_into_a_hard_error_with_a_head() {
+pub(super) fn cap_turns_oversized_results_into_a_hard_error_with_a_head() {
     let huge = "x".repeat(MAX_TOOL_RESULT_BYTES + 1);
     let capped = cap_tool_result(&call("search"), ok(huge));
     assert!(capped.is_error, "over-cap result must be a hard error");
@@ -334,7 +334,7 @@ fn cap_turns_oversized_results_into_a_hard_error_with_a_head() {
 /// The head is cut on a char boundary, never mid-codepoint (it would panic / produce
 /// invalid UTF-8 otherwise).
 #[test]
-fn cap_head_is_char_boundary_safe() {
+pub(super) fn cap_head_is_char_boundary_safe() {
     // 4-byte chars straddling the 1KB head boundary.
     let huge = "🦀".repeat(MAX_TOOL_RESULT_BYTES); // 4 bytes each → well over the cap
     let capped = cap_tool_result(&call("read"), ok(huge));
