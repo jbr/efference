@@ -80,8 +80,17 @@ pub(crate) fn project(
                 for call in calls {
                     let result = result_for_call.get(call.id.0.as_str()).copied();
                     let is_pending = result.is_none() && pending_call == Some(call.id.0.as_str());
-                    let reason = if is_pending { pending_reason } else { None };
-                    blocks.push(exchange(call, result, view, is_pending, reason));
+                    blocks.push(exchange(call, result, view, is_pending));
+                    // The spotter's verdict is a **sibling** of the exchange, never a
+                    // child of it (docs/tui.md). It is an independent rung's judgment
+                    // *about* the call, not part of the call's content — and nesting it
+                    // put it inside the exchange's collapsible body, where a command of
+                    // any length clipped it away. As a sibling there is no state in
+                    // which it can be collapsed. It trails the exchange so it is the
+                    // last thing read before the decision the strip offers.
+                    if is_pending && let Some(reason) = pending_reason {
+                        blocks.push(spotter_reason_line(reason));
+                    }
                 }
                 if !blocks.is_empty() {
                     nodes.push(turn(Author::Assistant, blocks));
@@ -158,7 +167,6 @@ fn exchange(
     result: Option<(&RawResult, &WireState)>,
     view: &ViewState,
     is_pending: bool,
-    pending_reason: Option<&str>,
 ) -> DocumentNode<'static> {
     let is_error = result.is_some_and(|(raw, _)| raw.is_error);
     let call_id = call.id.0.as_str();
@@ -219,10 +227,8 @@ fn exchange(
         // affordance sits where the result will land, so the gate reads as "after the
         // call, before the result." Resolving it (approve → result; redirect/abort →
         // an error result) replaces this with the real exchange body. The spotter's
-        // reason (docs/permissions.md), if any, renders just above it — *why* it gated.
-        if let Some(reason) = pending_reason {
-            body.push(spotter_reason_line(reason));
-        }
+        // reason is *not* here — it renders as a sibling of the whole exchange, out of
+        // reach of this body's truncation (see the call site).
         body.push(gate_affordance());
     }
 

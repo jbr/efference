@@ -183,9 +183,13 @@ pub(in crate::tui) fn gate_affordance() -> DocumentNode<'static> {
     }
 }
 
-/// The spotter's reason for holding a call, rendered just above the gate affordance
-/// (docs/permissions.md) so the human sees *why* before deciding. Muted — context, not
-/// a command.
+/// The spotter's reason for holding a call (docs/permissions.md), so the human sees *why*
+/// before deciding. Muted — context, not a command.
+///
+/// Emitted as a **sibling** of the exchange it judges, never inside it: it is a separate
+/// rung's judgment *about* the call rather than part of the call's content, and nesting it
+/// meant the exchange's own truncation could clip it (which it did, for any command long
+/// enough to fill the collapsed body).
 pub(in crate::tui) fn spotter_reason_line(reason: &str) -> DocumentNode<'static> {
     DocumentNode::Paragraph {
         spans: vec![

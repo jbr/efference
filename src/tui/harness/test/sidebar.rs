@@ -69,8 +69,8 @@ fn sidebar_slice_excludes_the_transcript() {
     );
 }
 
-/// A spotter-routed gate renders the spotter's reason inline (docs/permissions.md),
-/// just above the affordance, and offers `.allow` to add a rule.
+/// A spotter-routed gate renders the spotter's reason (docs/permissions.md) beside the
+/// exchange it judged, and offers `allow…` on the strip to add a rule.
 #[test]
 fn gate_shows_spotter_reason_inline() {
     let mut play = Screenplay::new(80, 14);
@@ -101,6 +101,40 @@ fn gate_shows_spotter_reason_inline() {
     assert!(
         !screen.contains(".allow"),
         "the typed .allow form is no longer advertised (the strip is the legend):\n{screen}"
+    );
+}
+
+/// The spotter's reason survives a **long** call, because it is a sibling of the
+/// exchange rather than a child of it (docs/tui.md). A multi-line bash command fills
+/// the exchange's collapsed body on its own; when the reason lived inside that body it
+/// was clipped away, so a gate on any realistic command showed no reason at all.
+/// Asserted without expanding anything — the point is that no interaction is required.
+#[test]
+fn gate_shows_spotter_reason_past_a_long_command() {
+    let command = "set -euo pipefail\n\
+                   cd ./build\n\
+                   for f in *.o; do\n\
+                     echo \"removing $f\"\n\
+                     rm -f \"$f\"\n\
+                   done\n\
+                   rm -rf ./build\n\
+                   echo done";
+    let mut play = Screenplay::new(80, 24);
+    play.user("Clean the build directory.");
+    play.assistant(
+        "Sure — I'll remove it.",
+        vec![tool_call("bash", "toolu_g", json!({ "command": command }))],
+    );
+    play.pending_gate_reason(
+        "toolu_g",
+        "bash",
+        json!({ "command": command }),
+        Some("deletes outside the git tree — not reversible"),
+    );
+    let screen = play.render();
+    assert!(
+        screen.contains("spotter:") && screen.contains("deletes outside the git tree"),
+        "the reason renders beside the exchange, not inside its collapsed body:\n{screen}"
     );
 }
 

@@ -176,13 +176,15 @@ The verbs a unit carries are a pure function of the block (`block_menu::menu_ite
 
 The approval gate is ephemeral control state: the daemon gates *after* appending the `tool_use` to the log and *before* running the tool, but there is no SSE event for this transition. A poll task watches `GET /state`'s `pending_approval` field and emits a `TuiEvent::Gate` when it appears or resolves.
 
-The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail result-less exchange. `project` receives `pending_call` + `pending_reason` and marks that exchange with `⏸`, the spotter's reason (when it gated via the spotter — read from the `Spot` audit entry, see [permissions](permissions.md)), and an inline affordance in place of the result:
+The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail result-less exchange. `project` receives `pending_call` + `pending_reason` and marks that exchange with `⏸` and an inline affordance in place of the result, with the spotter's reason (when it gated via the spotter — read from the `Spot` audit entry, see [permissions](permissions.md)) beneath:
 
 ```
 ⏸ bash · rm -rf /tmp/scratch
-spotter: deletes outside the git tree — not reversible
 awaiting your approval  ·  ⏎ approve · type to redirect
+spotter: deletes outside the git tree — not reversible
 ```
+
+The reason is a **sibling** of the exchange, not part of its body: an independent rung's judgment *about* the call is not the call's content, and while it was nested the exchange's own collapse could clip it — which it did for any command long enough to fill the collapsed body, leaving a gate with no visible reason. Placed as a sibling there is no state in which it can be collapsed away, and it trails the exchange so it is the last thing read before the decision the strip offers.
 
 The status bar mirrors this affordance for the scrolled-away case, and the [control strip](#the-control-strip) simultaneously carries the full verb set (`approve ⏎ · allow… · abort`), so `↑ ⏎` approves without typing and the strip — not instruction text — is the legend for the richer verbs. Strip `approve`/`abort` resolve the gate directly *without* clearing a drafted redirect the operator decided against sending (unlike an empty-composer `⏎`, which routes through the submit path below).
 
