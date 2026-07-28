@@ -20,15 +20,15 @@ expression: self.render()
 12 │   Let me confirm the current signature before we touch it.                     │
 13 │                                                                                │
 14 │   ❯ bash · grep -n 'fn project' src/project.rs                                 │
-15 │ ╭───────────────────────────────────────────────────❬rust❭─╮                   │
-16 │ │ 12:pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> { │                   │
-17 │ │ 88:    fn project_coalesces_tool_results() {             │                   │
-18 │ ╰──────────────────────────────────────────────────────────╯                   │
-19 │                                                                                │
+15 │   ✓ 2 lines                                                                    │
+16 │ ╭──────────────────────────────────────────────────────────╮                   │
+17 │ │ 12:pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> { │                   │
+18 │ │ 88:    fn project_coalesces_tool_results() {             │                   │
+19 │ ╰──────────────────────────────────────────────────────────╯                   │
 20 │                                                                                │
-21 │   Right — project(&[LogEntry]) -> Vec<ApiMessage> is the whole surface.        │
-22 │   Caching would have to wrap that, which breaks byte-stability. I'd leave it.  │
-23 │                                                                                │
+21 │                                                                                │
+22 │   Right — project(&[LogEntry]) -> Vec<ApiMessage> is the whole surface.        │
+23 │   Caching would have to wrap that, which breaks byte-stability. I'd leave it.  │
 24 │                                                                                │
 25 │                                                                                │
 26 │                                                                                │

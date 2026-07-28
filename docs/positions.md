@@ -57,6 +57,18 @@ is the instrument that makes friction observable at all. A corollary, held as
 a hedged hypothesis rather than a claim: current model capability may be
 partly *in spite of* tooling, and that possibility is worth attending to.
 
+**The operator cannot perceive agent friction without seeing what the agent
+sees.** This is what the position above requires in practice: friction is only
+observable if the operator's view is the record rather than a summary of it. So
+the default for anything the agent produced or consumed is to render it whole —
+no line budgets, no collapsed-by-default, no eliding. That is a starting
+assumption, not a permanent rule: some content may turn out to be reliably worth
+hiding, and folding on demand or by operator preference can be added once
+reading real sessions says *what*. What the position rules out is assuming the
+answer up front, which is how a generic truncation default came to hide the two
+things most worth reading — the command that ran and what came back. Realized
+as: a flat transcript of untruncated entries ([tui.md](tui.md)).
+
 **Agent behavior is user feedback.** We don't know what, if anything, the
 subjective experience of a model is like — so observe and respond instead of
 assuming. This is the working methodology: the "treat the distillate as the

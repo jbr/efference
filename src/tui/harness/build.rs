@@ -147,48 +147,7 @@ impl Screenplay<'_> {
         })))
     }
 
-    /// Expand every collapsed exchange in the transcript, driving the real
-    /// [`ExpandBlock`](crate::tui::document::TuiAction::ExpandBlock) action the
-    /// `⏎`/`space`/click handlers use. This is how a scenario shows the *expanded*
-    /// result form rather than the default collapsed snippet. Recurses into
-    /// [`Turn`](crate::tui::document::DocumentNode::Turn)s, where exchanges live.
-    pub(crate) fn expand_all(&mut self) -> &mut Self {
-        use crate::tui::document::{DocumentNode, NodePath, TuiAction};
-
-        // Collect the paths of all TruncatedBlocks (exchanges nest one level deep
-        // inside a Turn), then apply each expansion.
-        fn collect(nodes: &[DocumentNode<'_>], prefix: NodePath, out: &mut Vec<NodePath>) {
-            for (i, node) in nodes.iter().enumerate() {
-                let mut path = prefix;
-                path.push(i);
-                match node {
-                    DocumentNode::TruncatedBlock { .. } => out.push(path),
-                    DocumentNode::Turn { blocks, .. } => collect(blocks, path, out),
-                    _ => {}
-                }
-            }
-        }
-        // Events only flag a pending reproject; realise it before inspecting the
-        // document so the collapsed blocks we expand actually exist.
-        self.state.flush_reproject();
-        let mut paths = Vec::new();
-        collect(
-            &self.state.document.document.nodes,
-            NodePath::new(),
-            &mut paths,
-        );
-        for path in paths {
-            crate::tui::events::handle_action(
-                &mut self.state.document,
-                &mut self.state.view,
-                TuiAction::ExpandBlock(path),
-            );
-        }
-        self.state.viewport.cached_layout = None;
-        self
-    }
-
-    /// Flip a tool-result exchange to its raw output (the `r` key, docs/tui.md) —
+    /// Flip a tool result to its raw output (docs/tui.md) —
     /// the view-state toggle that survives re-projection, here driven directly by
     /// `call_id` rather than through keyboard focus.
     pub(crate) fn show_raw(&mut self, call_id: &str) -> &mut Self {

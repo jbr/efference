@@ -8,8 +8,10 @@ use std::borrow::Cow;
 /// domain-agnostic core: expand a collapsed block, open a URL, pick a theme.
 #[derive(Debug, Clone)]
 pub enum TuiAction<'a> {
-    /// Expand a truncated block (identified by index path into document tree)
-    ExpandBlock(NodePath),
+    /// A transcript [`Entry`](DocumentNode::Entry)'s focus target (identified by
+    /// index path into the document tree). Focus is all it does: entries render
+    /// whole, so there is nothing here to expand (docs/tui.md).
+    FocusEntry(NodePath),
     /// Open an external URL in browser
     OpenUrl(Cow<'a, str>),
     /// Select a theme (interactive mode only)
@@ -20,7 +22,7 @@ impl<'a> TuiAction<'a> {
     /// Get the URL for this action, if it has one.
     pub fn url(&self) -> Option<Cow<'a, str>> {
         match self {
-            TuiAction::ExpandBlock(_) => None,
+            TuiAction::FocusEntry(_) => None,
             TuiAction::OpenUrl(cow) => Some(cow.clone()),
             TuiAction::SelectTheme(_) => None,
         }
@@ -148,28 +150,6 @@ pub enum DocumentNode<'a> {
         rows: Vec<Vec<TableCell<'a>>>,
     },
 
-    /// A collapsible block: an optional accordion `header` line (with a disclosure
-    /// triangle the renderer draws) over a body of `nodes`. `level` is the live
-    /// expand/collapse state — `Brief` shows the first few lines with the triangle
-    /// collapsed (`▶`), `Full` shows everything expanded (`▼`). In the transcript
-    /// this wraps each tool call and tool result; `ExpandBlock` flips the level.
-    TruncatedBlock {
-        header: Option<Vec<Span<'a>>>,
-        /// The leading glyph shown when the block is *not* collapsible (e.g. an
-        /// exchange's `❯`/`✗` prompt). When collapsible, the renderer shows a `▶`/`▼`
-        /// disclosure triangle instead. `None` falls back to a neutral `▌`.
-        resting: Option<Span<'a>>,
-        nodes: Vec<DocumentNode<'a>>,
-        level: TruncationLevel,
-        /// A stable identity for this block that survives re-projection (docs/tui.md).
-        /// The transcript re-projects on every streamed token, rebuilding the
-        /// tree, so the *positional* [`NodePath`] is ephemeral — `key` lets
-        /// `tui::state` carry per-block view-state (expand/collapse, raw-vs-wire)
-        /// across rebuilds, keyed by the result's `call_id`. `None` for blocks with
-        /// no durable identity (live tool output, generic truncated bodies).
-        key: Option<Cow<'a, str>>,
-    },
-
     /// Conditionally shown content based on render context
     /// Formatters can use this to include content that only appears in certain modes
     Conditional {
@@ -177,22 +157,77 @@ pub enum DocumentNode<'a> {
         nodes: Vec<DocumentNode<'a>>,
     },
 
-    /// A conversational turn — a contiguous unit authored by the user or the
-    /// assistant. The renderer marks authorship *structurally* (a colored left
-    /// gutter for the user; the assistant is the unmarked default voice) rather
-    /// than with a per-block role label. This is the transcript's top-level unit;
-    /// it replaces the old `▌ you` / `▌ assistant` markers.
-    Turn {
-        author: Author,
+    /// One transcript entry: the top-level unit of the TUI's transcript, and its
+    /// unit of focus (docs/tui.md). The transcript is a **flat** sequence of these,
+    /// one per top-level thing on the wire — a message, a thinking block, a tool
+    /// call, a tool result — decorated for presentation rather than grouped into
+    /// conversational turns.
+    ///
+    /// Every entry renders **whole**: there is no truncation level here, because
+    /// the operator cannot perceive what the agent is dealing with through a
+    /// summary of it (docs/positions.md).
+    Entry {
+        /// What this entry *is* — which drives its whole presentation (marker,
+        /// gutter, register) and which verbs it carries.
+        kind: EntryKind,
+        /// An optional leading glyph on the header row (`❯` for a call, `✓`/`✗` for
+        /// a result). Rendered only when there is a `header`.
+        marker: Option<Span<'a>>,
+        /// The entry's own first line, above its body. `None` for entries that are
+        /// nothing but their content (a message, an annotation).
+        header: Option<Vec<Span<'a>>>,
         blocks: Vec<DocumentNode<'a>>,
+        /// A stable identity that survives re-projection (docs/tui.md). The
+        /// transcript re-projects on every streamed token, rebuilding the tree, so
+        /// the *positional* [`NodePath`] is ephemeral — `key` lets `tui::state`
+        /// carry per-entry view-state (raw-vs-distilled) across rebuilds, keyed by
+        /// the result's `call_id`. `None` for entries with nothing to carry.
+        key: Option<Cow<'a, str>>,
     },
 }
 
-/// Who authored a [`DocumentNode::Turn`].
+/// What a transcript [`Entry`](DocumentNode::Entry) is — the three things an
+/// operator scans for, split so each can be styled to be told apart at a glance:
+/// **what I said** ([`UserMessage`](EntryKind::UserMessage)), **what the agent
+/// said** ([`AssistantMessage`](EntryKind::AssistantMessage),
+/// [`Thinking`](EntryKind::Thinking)), and **what the agent did**
+/// ([`ToolCall`](EntryKind::ToolCall), [`ToolResult`](EntryKind::ToolResult)).
+///
+/// A tool result occupies a `role: user` block on the wire, but it is the harness
+/// speaking rather than the operator, so it is its own kind and never carries the
+/// operator's gutter. The wire's roles are not the taxonomy the reader wants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Author {
-    User,
-    Assistant,
+pub enum EntryKind {
+    /// What the operator said — carries the accent gutter.
+    UserMessage,
+    /// What the agent said, as its committed prose.
+    AssistantMessage,
+    /// What the agent thought, in the dimmed register (docs/tui.md).
+    Thinking,
+    /// A tool call the agent made.
+    ToolCall,
+    /// What a call returned.
+    ToolResult,
+    /// Something the *harness* says about a call — a spotter verdict, the approval
+    /// affordance. Not agent-generated, so it is never a focus stop and never a
+    /// child of the call it annotates (docs/tui.md).
+    Annotation,
+}
+
+impl EntryKind {
+    /// Whether `↑`/`↓` stops here. Everything the agent or operator produced is a
+    /// focus unit; the harness's own annotations are not — they are read beside the
+    /// call, not visited.
+    pub fn is_focusable(self) -> bool {
+        !matches!(self, EntryKind::Annotation)
+    }
+
+    /// Whether this entry opens a new visual group, i.e. gets a blank line above it.
+    /// A result and an annotation are continuations of the call they belong to, so
+    /// the call, what the harness made of it, and what came back read as one unit.
+    pub fn starts_group(self) -> bool {
+        !matches!(self, EntryKind::ToolResult | EntryKind::Annotation)
+    }
 }
 
 /// One classified line of a [`DocumentNode::Diff`]. `text` keeps the original
@@ -229,17 +264,6 @@ pub struct ListItem<'a> {
 pub enum HeadingLevel {
     Title,   // Top-level item name: "Item: Vec"
     Section, // Section header: "Fields:", "Methods:"
-}
-
-/// Truncation level hint for renderers
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TruncationLevel {
-    /// Single-line summary (for listings)
-    SingleLine,
-    /// Brief paragraph (for secondary items like methods/fields)
-    Brief,
-    /// Full documentation (for main requested item)
-    Full,
 }
 
 impl<'a> Document<'a> {
@@ -342,57 +366,48 @@ impl<'a> DocumentNode<'a> {
         DocumentNode::Table { header, rows }
     }
 
-    /// Convenience constructor for a header-less truncated block.
-    pub fn truncated_block(nodes: Vec<DocumentNode<'a>>, level: TruncationLevel) -> Self {
-        DocumentNode::TruncatedBlock {
-            header: None,
-            resting: None,
-            nodes,
-            level,
-            key: None,
-        }
-    }
-
     /// Convenience constructor for a diff node.
     pub fn diff(lines: Vec<DiffLine>) -> Self {
         DocumentNode::Diff { lines }
     }
 
-    /// Convenience constructor for a collapsible block with an accordion `header`
-    /// line and a `resting` leading glyph (shown when not collapsible; replaced by a
-    /// disclosure triangle when there's more than fits).
-    pub fn collapsible(
-        header: Vec<Span<'a>>,
-        resting: Option<Span<'a>>,
-        nodes: Vec<DocumentNode<'a>>,
-        level: TruncationLevel,
-    ) -> Self {
-        DocumentNode::TruncatedBlock {
-            header: Some(header),
-            resting,
-            nodes,
-            level,
+    /// A transcript entry that is nothing but its content — a message, an
+    /// annotation. The kind is what the renderer decorates it by.
+    pub fn entry(kind: EntryKind, blocks: Vec<DocumentNode<'a>>) -> Self {
+        DocumentNode::Entry {
+            kind,
+            marker: None,
+            header: None,
+            blocks,
             key: None,
         }
     }
 
-    /// A collapsible block carrying a stable [`key`](DocumentNode::TruncatedBlock)
-    /// so `tui::state` can persist its view-state across re-projection (docs/tui.md)
-    /// — used for tool-result exchanges, keyed by `call_id`.
-    pub fn collapsible_keyed(
-        key: impl Into<Cow<'a, str>>,
+    /// A transcript entry led by its own header row: a marker glyph, the header
+    /// spans, and the [block menu](crate::tui::block_menu) when focused.
+    pub fn headed_entry(
+        kind: EntryKind,
+        marker: Option<Span<'a>>,
         header: Vec<Span<'a>>,
-        resting: Option<Span<'a>>,
-        nodes: Vec<DocumentNode<'a>>,
-        level: TruncationLevel,
+        blocks: Vec<DocumentNode<'a>>,
     ) -> Self {
-        DocumentNode::TruncatedBlock {
+        DocumentNode::Entry {
+            kind,
+            marker,
             header: Some(header),
-            resting,
-            nodes,
-            level,
-            key: Some(key.into()),
+            blocks,
+            key: None,
         }
+    }
+
+    /// Attach a durable [`key`](DocumentNode::Entry) so `tui::state` can persist
+    /// this entry's view-state across re-projection (docs/tui.md) — used for tool
+    /// results, keyed by `call_id`.
+    pub fn keyed(mut self, entry_key: impl Into<Cow<'a, str>>) -> Self {
+        if let DocumentNode::Entry { key, .. } = &mut self {
+            *key = Some(entry_key.into());
+        }
+        self
     }
 }
 

@@ -2,36 +2,34 @@
 //! renderable [`Document`] (docs/README.md — the transcript is another `project(log)`,
 //! a sibling of the wire projection in `crate::project`).
 //!
-//! This mirrors two rules from the wire projection ([`crate::project`]): a tool
-//! result shows its *distillate* when present, else its raw content
-//! ([`tool_block`]); and long output is collapsible (here via a
-//! [`DocumentNode::TruncatedBlock`] rather than the wire's `[seq]` addressing).
-//! Unlike the wire projection it does not coalesce or elide — every turn renders,
-//! so the human sees the whole record.
+//! This mirrors one rule from the wire projection ([`crate::project`]): a tool
+//! result shows its *distillate* when present, else its raw content. Unlike the
+//! wire projection it does not coalesce or elide — every entry renders, whole, so
+//! the human sees the whole record (docs/positions.md).
 
 use std::collections::{HashMap, HashSet};
 
 use crate::log::{ContentBlock, LogEntry, MarkKind, Payload, RawResult, ToolCall, WireState};
 use crate::tui::document::{
-    Author, DiffLine, DiffLineKind, Document, DocumentNode, ListItem, Span, SpanStyle,
-    TruncationLevel,
+    DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, ListItem, Span, SpanStyle,
 };
 use crate::tui::markdown::MarkdownRenderer;
 
-/// Fold the log + live tail into a transcript document of conversational
-/// [`Turn`](DocumentNode::Turn)s. Authorship is structural (the renderer draws a
-/// gutter for the user; the assistant is unmarked), and each tool call is paired
-/// with its result into one collapsible *exchange* (`❯ tool · arg` over the
-/// result) rather than two separately-labeled blocks. `view` carries the human's
-/// per-exchange toggles (expand, raw-vs-wire) across this rebuild (docs/tui.md).
+/// Fold the log + live tail into a flat sequence of transcript
+/// [`Entry`](DocumentNode::Entry) nodes — one per top-level thing on the wire,
+/// decorated for presentation (docs/tui.md). A tool call and its result are
+/// **separate entries**, as they are separate blocks on the wire; they read as one
+/// unit because a result opens no new group, not because they share a node.
+/// `view` carries the human's per-result raw-vs-distilled flips across this
+/// rebuild.
 ///
 /// `pending_call` is the `call_id` the agent is *blocked on for approval* (docs/tui.md).
 /// The loop appends the assistant `tool_use` **before** it gates (so the
 /// call is already in the log), and one tool call runs per turn (docs/README.md) — so the
-/// pending call is always the tail result-less exchange. That exchange renders
-/// *as if invoked*, with a `⏸` marker and an inline affordance where the result
-/// will land, so the gate reads as "after the call, before the result" rather than
-/// a banner divorced from the call it's gating.
+/// pending call is always the tail call with no result. It renders *as if invoked*,
+/// with an inline affordance carrying the `⏸` where the result will land, so the
+/// gate reads as "after the call, before the result" rather than a banner divorced
+/// from the call it's gating.
 ///
 /// `pending_turns` are just-submitted user messages not yet echoed back as committed
 /// `User` log entries (docs/tui.md). They render **after** the
@@ -85,7 +83,7 @@ pub(crate) struct CallIndex {
 
 impl CallIndex {
     /// Record what entry `idx` says about a call, returning the `call_id` it
-    /// annotates — which is exactly the call whose *exchange* must be rebuilt.
+    /// annotates — which is exactly the call whose entries must be rebuilt.
     /// Later entries overwrite earlier ones, so a re-judged call shows its latest
     /// verdict, matching the daemon's `latest_spot_reason` (which reads in reverse).
     pub(crate) fn absorb<'e>(&mut self, idx: usize, entry: &'e LogEntry) -> Option<&'e str> {
@@ -121,8 +119,10 @@ impl CallIndex {
     }
 }
 
-/// The top-level nodes one committed log entry contributes — 0, 1, or (for a mark)
-/// 2. Each entry's nodes are a pure function of the entry, the annotations indexed
+/// The top-level nodes one committed log entry contributes. An assistant entry
+/// contributes several — its thinking, its prose, and a call/annotation/result run
+/// per call it made — because the transcript is flat (docs/tui.md). Each entry's
+/// nodes are a pure function of the entry, the annotations indexed
 /// against the calls it makes, and the human's per-call view toggles; nothing about
 /// its *neighbours* is read. That independence is what the incremental projection
 /// ([`Transcript`]) rests on, so keep it when adding a payload here.
@@ -140,38 +140,39 @@ pub(crate) fn entry_nodes(
     {
         match &entry.payload {
             Payload::User(blocks) => {
-                nodes.push(turn(Author::User, markdown(&join_text(blocks))));
+                nodes.push(DocumentNode::entry(
+                    EntryKind::UserMessage,
+                    markdown(&join_text(blocks)),
+                ));
             }
             Payload::Assistant {
                 thinking,
                 text,
                 calls,
             } => {
-                let mut blocks = Vec::new();
-                // Thinking leads the turn, as it does on the wire (`thinking` → `text` →
+                // Thinking leads, as it does on the wire (`thinking` → `text` →
                 // `tool_use`). It is the *record* of the reasoning: watching it stream past at
                 // generation speed is not reading it, so the transcript has to keep it.
-                if let Some(block) = thinking_block(entry.seq, thinking, view) {
-                    blocks.push(block);
+                if let Some(node) = thinking_entry(thinking) {
+                    nodes.push(node);
                 }
                 let prose = join_text(text);
                 if !prose.trim().is_empty() {
-                    blocks.extend(markdown(&prose));
+                    nodes.push(DocumentNode::entry(
+                        EntryKind::AssistantMessage,
+                        markdown(&prose),
+                    ));
                 }
                 for call in calls {
                     let result = index.result(log, call.id.0.as_str());
                     let is_pending = result.is_none() && gate.call == Some(call.id.0.as_str());
-                    blocks.push(exchange(call, result, view));
-                    // Harness-generated structure about a call is a **sibling** of the
-                    // exchange, never a child of it (docs/tui.md). The exchange's
-                    // collapsible body holds only what the agent produced — the call's
-                    // arguments and its result — so the body's truncation can never
-                    // reach an annotation the harness added. Nesting these was how a
-                    // multi-line command clipped away the whole gate.
-                    //
-                    // Reading order is call → what the spotter made of it → what to do,
-                    // so the affordance lands last, adjacent to the strip carrying the
-                    // verbs.
+                    nodes.push(call_entry(call));
+                    // Reading order is call → what the spotter made of it → what came
+                    // back. The harness's own lines about a call are their own entries
+                    // (`EntryKind::Annotation`), never children of the call: they are a
+                    // different rung's judgment *about* it, and keeping them separate is
+                    // what stops any presentation choice made for the call's content
+                    // from reaching them (docs/tui.md).
                     //
                     // Every judged call carries its verdict, not just a held one: a
                     // cleared call's reason is the only evidence of what the spotter
@@ -180,19 +181,19 @@ pub(crate) fn entry_nodes(
                     // window where a gate has registered but its log entry hasn't
                     // reached this client yet, so the two never both render.
                     if let Some(spot) = index.spot(log, call.id.0.as_str()) {
-                        blocks.push(spotter_line(Some(spot.stance), &spot.reason));
+                        nodes.push(spotter_line(Some(spot.stance), &spot.reason));
                     } else if is_pending && let Some(reason) = gate.reason {
-                        blocks.push(spotter_line(None, reason));
+                        nodes.push(spotter_line(None, reason));
                     }
                     if is_pending {
-                        blocks.push(gate_affordance());
+                        nodes.push(gate_affordance());
+                    }
+                    if let Some((raw, wire)) = result {
+                        nodes.push(result_entry(call, raw, wire, view));
                     }
                 }
-                if !blocks.is_empty() {
-                    nodes.push(turn(Author::Assistant, blocks));
-                }
             }
-            // Folded into its call's exchange above.
+            // Emitted as its call's result entry above.
             Payload::ToolResult { .. } => {}
             Payload::Mark(mark) => push_mark(&mut nodes, &mark.kind, &mark.note),
             // An ambient notification (docs/inbox.md), rendered as a marked line so the
@@ -213,7 +214,7 @@ pub(crate) fn entry_nodes(
             Payload::Triage(_) => {}
             // A spotter permission verdict (docs/permissions.md) renders beside the call
             // it judged, not at its own log position — it is indexed by `call_id` above
-            // and emitted with that exchange, so nothing is drawn here.
+            // and emitted beside that call, so nothing is drawn here.
             Payload::Spot(_) => {}
             // A grant (docs/permissions.md) — audit-only on the transcript
             // for now; surfacing scope changes to the human lands with the construction sites.
@@ -234,27 +235,24 @@ pub(crate) fn tail_nodes(live: &LiveTail, pending_turns: &[String]) -> Vec<Docum
     let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
 
     // The live tail renders after everything committed: in-flight assistant prose
-    // as its own turn, and each running tool as a result-less exchange.
+    // as its own entry, and each running tool as a peek at its output so far.
     if !live.assistant.is_empty() {
-        nodes.push(turn(Author::Assistant, markdown(&live.assistant)));
+        nodes.push(DocumentNode::entry(
+            EntryKind::AssistantMessage,
+            markdown(&live.assistant),
+        ));
     }
     // A generation phase that produces no prose (thinking, or a tool call's input still
     // arriving). Without this the window between "turn submitted" and "first prose" is silent,
     // and silence is indistinguishable from a hung harness (backlog/dogfooding-friction.md).
     if let Some(phase) = &live.phase {
-        nodes.push(turn(Author::Assistant, phase_blocks(phase)));
-    }
-    for (call_id, buf) in &live.tools {
-        let header = vec![inline_code(call_id.clone())];
-        nodes.push(turn(
-            Author::Assistant,
-            vec![DocumentNode::collapsible(
-                header,
-                Some(prompt_span(false)),
-                vec![code_block(None, buf)],
-                TruncationLevel::Brief,
-            )],
+        nodes.push(DocumentNode::entry(
+            EntryKind::AssistantMessage,
+            phase_blocks(phase),
         ));
+    }
+    for (_, buf) in &live.tools {
+        nodes.push(running_tool_peek(buf));
     }
 
     // Optimistic echoes of just-submitted turns, last of all (docs/tui.md).
@@ -265,23 +263,13 @@ pub(crate) fn tail_nodes(live: &LiveTail, pending_turns: &[String]) -> Vec<Docum
     nodes
 }
 
-/// One tool call paired with its result as a collapsible exchange: the header is
-/// the call (`❯ tool · arg`, or `✗ tool …` when the result errored); the body is
-/// the (tool-specifically rendered) result. No `result #N` label — the result is
-/// obviously the response to the call directly above it.
+/// The call the agent made, as its own entry: `❯ tool · arg`, over whatever the
+/// argument doesn't fit inline (a multi-line `bash` command, a JSON envelope).
 ///
-/// Agent-generated content only. Whether the call is *pending* is not an input here:
-/// the gate is the harness talking about the call, so it renders as a sibling at the
-/// call site rather than inside this body (docs/tui.md). A pending exchange is simply
-/// one with no result yet — its body is the call's arguments and nothing else.
-fn exchange(
-    call: &ToolCall,
-    result: Option<(&RawResult, &WireState)>,
-    view: &ViewState,
-) -> DocumentNode<'static> {
-    let is_error = result.is_some_and(|(raw, _)| raw.is_error);
-    let call_id = call.id.0.as_str();
-
+/// Agent-generated content only, and never marked by what happened *to* it: the
+/// `✗` of a failed result belongs to the result, and the `⏸` of a held call belongs
+/// to the gate affordance — both are entries of their own (docs/tui.md).
+fn call_entry(call: &ToolCall) -> DocumentNode<'static> {
     let mut header = vec![inline_code_styled(
         call.name.clone(),
         SpanStyle::FunctionName,
@@ -295,66 +283,91 @@ fn exchange(
         });
         header.extend(arg_spans);
     }
-
-    let mut body = overflow;
-    if let Some((raw, wire)) = result {
-        // The human can flip a distilled result to its full raw output (docs/tui.md)
-        // — both are already client-side, so this is a pure render choice. A
-        // forced-raw view passes a synthetic `Raw` wire so `result_body` gives it the
-        // same rich tool-specific rendering (diff/read) a natural raw result gets.
-        let show_raw = view.is_raw(call_id);
-        let overriding = show_raw && !matches!(wire, WireState::Raw);
-        let (content, effective_wire) = if show_raw {
-            (raw.content.clone(), &WireState::Raw)
-        } else {
-            let content = match wire {
-                WireState::Raw => raw.content.clone(),
-                // Same renderer as the wire projection — re-derive the distillate from
-                // `raw` + the stored verdict (docs/redaction-fork.md).
-                WireState::Distilled { keep, note } => {
-                    crate::project::render_distilled(&raw.content, keep, note.as_deref())
-                }
-                WireState::Elided => "[elided]".to_string(),
-            };
-            (content, wire)
-        };
-        // Flag that the leaner distilled default is being overridden, so the human
-        // sees they're on raw (`r` to flip back).
-        if overriding {
-            header.push(Span {
-                text: " · raw".into(),
-                style: SpanStyle::Comment,
-                action: None,
-            });
-        }
-        body.extend(result_body(
-            Some(call.name.as_str()),
-            raw,
-            effective_wire,
-            &content,
-        ));
-    }
-
-    // The resting marker is the `❯`/`✗` prompt — the renderer swaps in a ▶/▼
-    // disclosure triangle when the body is long enough to collapse, which is exactly
-    // why the pending `⏸` is *not* here: a marker that a long call replaces is not a
-    // marker. It rides the gate affordance instead, which is a sibling and always
-    // shown (docs/tui.md). The block is keyed by `call_id` so its expand/raw state
-    // survives re-projection.
-    let resting = prompt_span(is_error);
-    let level = if view.is_expanded(call_id) {
-        TruncationLevel::Full
-    } else {
-        TruncationLevel::Brief
-    };
-    DocumentNode::collapsible_keyed(call_id.to_string(), header, Some(resting), body, level)
+    DocumentNode::headed_entry(EntryKind::ToolCall, Some(prompt_span()), header, overflow)
 }
 
-/// Whether a block `key` names a tool call rather than a turn's thinking. The
-/// distinction is what the block menu ranks on: only a tool result has a
-/// distillate/raw fork to flip (docs/redaction-fork.md).
-pub(super) fn is_call_key(key: &str) -> bool {
-    !key.starts_with(THINKING_KEY_PREFIX)
+/// What the call returned, as its own entry, rendered **whole** — no line budget
+/// reaches it, because the operator can't perceive what the agent is dealing with
+/// through a summary of it (docs/positions.md).
+///
+/// The header is a quiet status row: `✓`/`✗` and the size of what came back, plus
+/// the `· raw` flag when the distilled default is being overridden. It earns its
+/// row three times over — it is where the error marker lives now that the call no
+/// longer carries it, it is the focus target the raw/distilled verb hangs off, and
+/// it says how much output follows before the reader scrolls it.
+///
+/// Keyed by `call_id`, which is what carries the raw flip across the re-projection
+/// every streamed token triggers.
+fn result_entry(
+    call: &ToolCall,
+    raw: &RawResult,
+    wire: &WireState,
+    view: &ViewState,
+) -> DocumentNode<'static> {
+    let call_id = call.id.0.as_str();
+    // The human can flip a distilled result to its full raw output (docs/tui.md)
+    // — both are already client-side, so this is a pure render choice. A
+    // forced-raw view passes a synthetic `Raw` wire so `result_body` gives it the
+    // same rich tool-specific rendering (diff/read) a natural raw result gets.
+    let show_raw = view.is_raw(call_id);
+    let overriding = show_raw && !matches!(wire, WireState::Raw);
+    let (content, effective_wire) = if show_raw {
+        (raw.content.clone(), &WireState::Raw)
+    } else {
+        let content = match wire {
+            WireState::Raw => raw.content.clone(),
+            // Same renderer as the wire projection — re-derive the distillate from
+            // `raw` + the stored verdict (docs/redaction-fork.md).
+            WireState::Distilled { keep, note } => {
+                crate::project::render_distilled(&raw.content, keep, note.as_deref())
+            }
+            WireState::Elided => "[elided]".to_string(),
+        };
+        (content, wire)
+    };
+
+    let body = result_body(Some(call.name.as_str()), raw, effective_wire, &content);
+    let mut header = vec![Span {
+        text: line_count(&body).into(),
+        style: SpanStyle::Comment,
+        action: None,
+    }];
+    // Flag that the leaner distilled default is being overridden, so the human
+    // sees they're on raw.
+    if overriding {
+        header.push(Span {
+            text: " · raw".into(),
+            style: SpanStyle::Comment,
+            action: None,
+        });
+    }
+
+    DocumentNode::headed_entry(
+        EntryKind::ToolResult,
+        Some(status_span(raw.is_error)),
+        header,
+        body,
+    )
+    .keyed(call_id.to_string())
+}
+
+/// `"1 line"` / `"N lines"` — the result header's size gloss. Counted over the
+/// *rendered* body rather than the raw content, so it describes what the reader is
+/// about to scroll: a `read` result's sentinel framing is stripped before it is
+/// shown, and a diff's body is the diff alone.
+fn line_count(body: &[DocumentNode<'static>]) -> String {
+    let lines: usize = body
+        .iter()
+        .map(|node| match node {
+            DocumentNode::CodeBlock { code, .. } => code.lines().count().max(1),
+            DocumentNode::Diff { lines } => lines.len().max(1),
+            _ => 1,
+        })
+        .sum();
+    match lines {
+        1 => "1 line".to_string(),
+        n => format!("{n} lines"),
+    }
 }
 
 #[cfg(test)]

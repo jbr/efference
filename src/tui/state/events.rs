@@ -72,7 +72,7 @@ impl<'a> InteractiveState<'a> {
                 self.mark_reproject();
             }
             TuiEvent::Gate(gate) => {
-                // The gate renders inline in the transcript (the tail exchange shows
+                // The gate renders inline in the transcript (the tail call shows
                 // `⏸ awaiting approval`, docs/tui.md), so a gate change must
                 // reproject — unlike the other ephemeral chrome (processes/usage). The
                 // status bar still mirrors the affordance for the scrolled-away case.

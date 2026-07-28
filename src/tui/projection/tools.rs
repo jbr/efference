@@ -3,7 +3,7 @@
 use super::*;
 
 /// The call's argument, split into what goes inline on the `❯ tool · …` header
-/// (a short summary) and what overflows into the exchange body (a multi-line
+/// (a short summary) and what overflows into the call entry's body (a multi-line
 /// `bash` command, or a JSON envelope for an unrecognized tool). Known tools get a
 /// tool-specific summary — the file tools surface their path/pattern; `bash` shows
 /// a single-line command inline, a multi-line one as a shell block.

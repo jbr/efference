@@ -45,53 +45,53 @@ expression: self.render()
 37 │   A link closes it out.                                                       ┃│
 38 │                                                                               ┃│
 39 │   ❯ bash · grep -rn 'fn project' src/ | sort                                  ┃│
-40 │ ╭──────────────────────────────────────────────────────────────────❬rust❭─╮   ┃│
-41 │ │ src/project.rs:12:pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> { │   ┃│
-42 │ ╰─────────────────────────────────────────────────────────────────────────╯   ┃│
-43 │                                                                               ┃│
+40 │   ✓ 1 line                                                                    ┃│
+41 │ ╭─────────────────────────────────────────────────────────────────────────╮   ┃│
+42 │ │ src/project.rs:12:pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> { │   ┃│
+43 │ ╰─────────────────────────────────────────────────────────────────────────╯   ┃│
 44 │                                                                               ┃│
-45 │   Here's a structured edit, shown as a colored diff:                          ┃│
-46 │                                                                               ┃│
-47 │   ❯ edit · fn is_empty                                                        ┃│
-48 │        /// True when the buffer holds no non-whitespace text.                 ┃│
-49 │        pub(super) fn is_empty(&self) -> bool {                                ┃│
-50 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))     ┃│
-51 │   +        self.lines                                                         ┃│
-52 │   +            .iter()                                                        ┃│
-53 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                  ┃│
-54 │        }                                                                      ┃│
-55 │                                                                               ┃│
-56 │   A long listing collapses behind a triangle:                                 ┃│
-57 │                                                                               ┃│
-58 │   ▶ bash · ls src  (+16 lines)                                                ┃│
-59 │ ╭───────────❬rust❭─╮                                                          ┃│
-60 │ │ src/module_01.rs │                                                          ┃│
-61 │ │ src/module_02.rs │                                                          ┃│
-62 │ │ src/module_03.rs │                                                          ╹│
-63 │ │ src/module_04.rs │                                                           │
-64 │ │ src/module_05.rs │                                                           │
-65 │ │ src/module_06.rs │                                                           │
-66 │ │ src/module_07.rs │                                                           │
-67 │ │ src/module_08.rs │                                                           │
-68 │ ╰──────────────────╯                                                           │
-69 │                                                                                │
-70 │                                                                                │
-71 │   And a failing command:                                                       │
-72 │                                                                                │
-73 │   ✗ bash · cargo test --no-run                                                 │
-74 │ ╭──────────────────────────────────────────❬rust❭─╮                            │
-75 │ │ error[E0599]: no method named `reproject` found │                            │
-76 │ │ error: could not compile `efference`            │                            │
-77 │ ╰─────────────────────────────────────────────────╯                            │
-78 │                                                                                │
-79 │                                                                                │
-80 │   A distilled result shows its summary, not the raw bytes:                     │
-81 │                                                                                │
-82 │   ❯ bash · cargo tree                                                          │
-83 │ ╭───────────────────────────────────────────────────────────────────❬rust❭─╮   │
-84 │ │ ⟢   12 direct deps; heaviest subtrees are tokio and trillium. Nothing ou │at │
-85 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
-86 │                                                                                │
+45 │                                                                               ┃│
+46 │   Here's a structured edit, shown as a colored diff:                          ┃│
+47 │                                                                               ┃│
+48 │   ❯ edit · fn is_empty                                                        ┃│
+49 │   ✓ 7 lines                                                                   ┃│
+50 │        /// True when the buffer holds no non-whitespace text.                 ┃│
+51 │        pub(super) fn is_empty(&self) -> bool {                                ╹│
+52 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
+53 │   +        self.lines                                                          │
+54 │   +            .iter()                                                         │
+55 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
+56 │        }                                                                       │
+57 │                                                                                │
+58 │   A long listing collapses behind a triangle:                                  │
+59 │                                                                                │
+60 │   ❯ bash · ls src                                                              │
+61 │   ✓ 24 lines                                                                   │
+62 │ ╭──────────────────╮                                                           │
+63 │ │ src/module_01.rs │                                                           │
+64 │ │ src/module_02.rs │                                                           │
+65 │ │ src/module_03.rs │                                                           │
+66 │ │ src/module_04.rs │                                                           │
+67 │ │ src/module_05.rs │                                                           │
+68 │ │ src/module_06.rs │                                                           │
+69 │ │ src/module_07.rs │                                                           │
+70 │ │ src/module_08.rs │                                                           │
+71 │ │ src/module_09.rs │                                                           │
+72 │ │ src/module_10.rs │                                                           │
+73 │ │ src/module_11.rs │                                                           │
+74 │ │ src/module_12.rs │                                                           │
+75 │ │ src/module_13.rs │                                                           │
+76 │ │ src/module_14.rs │                                                           │
+77 │ │ src/module_15.rs │                                                           │
+78 │ │ src/module_16.rs │                                                           │
+79 │ │ src/module_17.rs │                                                           │
+80 │ │ src/module_18.rs │                                                           │
+81 │ │ src/module_19.rs │                                                           │
+82 │ │ src/module_20.rs │                                                           │
+83 │ │ src/module_21.rs │                                                           │
+84 │ │ src/module_22.rs │                                                           │
+85 │ │ src/module_23.rs │                                                           │
+86 │ │ src/module_24.rs │                                                           │
 87 │   pace fast     theme t     help ?     detach q                                │
 88 │›                                                                               │
    │  ^                                                                             │

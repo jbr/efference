@@ -35,10 +35,10 @@ pub(super) fn find_node_at_path<'a, 'b>(
         return Some(node);
     }
     match node {
-        DocumentNode::Section { nodes, .. }
-        | DocumentNode::BlockQuote { nodes }
-        | DocumentNode::TruncatedBlock { nodes, .. } => find_node_at_path(nodes, rest),
-        DocumentNode::Turn { blocks, .. } => find_node_at_path(blocks, rest),
+        DocumentNode::Section { nodes, .. } | DocumentNode::BlockQuote { nodes } => {
+            find_node_at_path(nodes, rest)
+        }
+        DocumentNode::Entry { blocks, .. } => find_node_at_path(blocks, rest),
         DocumentNode::List { items, .. } => {
             let (&item_idx, rest) = rest.split_first()?;
             find_node_at_path(&items.get(item_idx as usize)?.content, rest)
@@ -68,12 +68,10 @@ pub(super) fn find_node_at_path_mut<'a, 'b>(
     // Recurse into children
     let remaining_path = &path[1..];
     match &mut nodes[idx] {
-        DocumentNode::Section { nodes, .. }
-        | DocumentNode::BlockQuote { nodes }
-        | DocumentNode::TruncatedBlock { nodes, .. } => {
+        DocumentNode::Section { nodes, .. } | DocumentNode::BlockQuote { nodes } => {
             find_node_at_path_mut(nodes, remaining_path)
         }
-        DocumentNode::Turn { blocks, .. } => find_node_at_path_mut(blocks, remaining_path),
+        DocumentNode::Entry { blocks, .. } => find_node_at_path_mut(blocks, remaining_path),
         DocumentNode::List { items, .. } => {
             // Path into list items
             if remaining_path.is_empty() {
@@ -117,9 +115,10 @@ pub(super) fn estimate_node_lines(node: &DocumentNode) -> u16 {
         DocumentNode::HorizontalRule => 1,
         DocumentNode::List { items, .. } => items.len() as u16, // Rough estimate
         DocumentNode::Diff { lines } => lines.len() as u16 + 1,
-        DocumentNode::Turn { blocks, .. } => {
+        DocumentNode::Entry { blocks, header, .. } => {
             blocks.iter().map(estimate_node_lines).sum::<u16>()
                 + blocks.len().saturating_sub(1) as u16
+                + u16::from(header.is_some())
         }
         _ => 2, // Default estimate for other nodes
     }

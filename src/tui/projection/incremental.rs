@@ -36,7 +36,7 @@ pub(crate) struct Transcript {
     /// Its length is how much of the log has been projected.
     counts: Vec<usize>,
     /// `call_id` → the entry that *made* the call, i.e. whose nodes carry its
-    /// exchange and everything rendered beside it.
+    /// call entry, its annotations, and its result.
     owner: HashMap<String, usize>,
     /// Result and spotter-verdict positions for the calls seen so far.
     index: CallIndex,
@@ -101,7 +101,7 @@ impl Transcript {
                 .map(|call| (call.to_string(), gate.reason.map(str::to_string)));
         }
 
-        // Expand / raw toggles, each keyed by the call whose exchange they change.
+        // Raw toggles, each keyed by the call whose result they change.
         for call_id in view.take_dirty() {
             if let Some(&owner) = self.owner.get(&call_id) {
                 self.dirty.insert(owner);

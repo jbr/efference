@@ -10,8 +10,8 @@ expression: self.render()
  2 │   Sure — I'll remove it.                                                       │
  3 │                                                                                │
  4 │   ❯ bash · rm -rf ./build                                                      │
- 5 │                                                                                │
- 6 │   ⏸ awaiting your approval  ·  ⏎ approve · type to redirect                    │
+ 5 │   ⏸ awaiting your approval  ·  ⏎ approve · type to redirect                    │
+ 6 │                                                                                │
  7 │                                                                                │
  8 │                                                                                │
  9 │                                                                                │

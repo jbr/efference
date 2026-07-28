@@ -4,7 +4,17 @@ use ratatui::{
 };
 
 use super::state::{DocumentLayoutCache, InteractiveState, NodeLayout};
-use crate::tui::document::NodePath;
+use crate::tui::document::{DocumentNode, NodePath};
+
+/// Whether a top-level node opens a new visual group (and so gets a blank line
+/// above it). Everything but a continuation entry does; see
+/// [`EntryKind::starts_group`](crate::tui::document::EntryKind::starts_group).
+fn starts_group(node: &DocumentNode<'_>) -> bool {
+    match node {
+        DocumentNode::Entry { kind, .. } => kind.starts_group(),
+        _ => true,
+    }
+}
 
 // Baseline left margin for all content - provides breathing room and space for outdented borders
 pub(super) const BASELINE_LEFT_MARGIN: u16 = 3;
@@ -74,8 +84,11 @@ impl<'a> InteractiveState<'a> {
         let node_count = self.document.document.nodes.len();
 
         for idx in 0..node_count {
-            // Add blank line between consecutive top-level blocks
-            if idx > 0 {
+            // A blank line between consecutive top-level nodes — except where the
+            // node is a *continuation* of the one above it. A tool call, what the
+            // spotter made of it, and what came back are three entries that read as
+            // one unit, so nothing separates them (docs/tui.md).
+            if idx > 0 && starts_group(&self.document.document.nodes[idx]) {
                 self.layout.pos.y += 1;
             }
             let start = self.layout.pos.y;

@@ -10,14 +10,14 @@ expression: self.render()
  2 │   Here's the reformatted version.                                              │
  3 │                                                                                │
  4 │   ❯ edit · fn is_empty                                                         │
- 5 │        /// True when the buffer holds no non-whitespace text.                  │
- 6 │        pub(super) fn is_empty(&self) -> bool {                                 │
- 7 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
- 8 │   +        self.lines                                                          │
- 9 │   +            .iter()                                                         │
-10 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
-11 │        }                                                                       │
-12 │                                                                                │
+ 5 │   ✓ 7 lines                                                                    │
+ 6 │        /// True when the buffer holds no non-whitespace text.                  │
+ 7 │        pub(super) fn is_empty(&self) -> bool {                                 │
+ 8 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
+ 9 │   +        self.lines                                                          │
+10 │   +            .iter()                                                         │
+11 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
+12 │        }                                                                       │
 13 │                                                                                │
 14 │                                                                                │
 15 │                                                                                │

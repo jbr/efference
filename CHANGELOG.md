@@ -7,6 +7,19 @@ behind a change, see [`journal/`](journal/).
 
 ## [Unreleased]
 
+### Changed
+- TUI transcript is a flat sequence of typed entries (message / thinking / call / result /
+  annotation) rendered **whole** — the 8-line collapse budget, the expand toggle, and the
+  turn container are gone; a call and its result are separate, independently focusable units.
+- Code blocks highlight and show their `❬lang❭` tag only when the language is known — untagged
+  tool output is no longer labelled and coloured as Rust (a ferritin rustdoc default).
+
+### Fixed
+- Code-block content wraps to the box's inner width instead of spilling past the right border
+  and being clipped there — through the same `wrap_points` break policy prose already used.
+- Code-block columns are measured in display width, not bytes: a highlighted line containing
+  multi-byte characters no longer pushes its later tokens right (`├── anyhow v1.      0.86`).
+
 ### Added
 - `efference view <session>`: open a recorded session's `log.jsonl` in the TUI, read-only — no
   composer, no loop verbs, no sidebar, no socket.

@@ -10,11 +10,11 @@ expression: self.render()
  2 │   Pulling the tree, then I'll distill it.                                      │
  3 │                                                                                │
  4 │   ❯ bash · cargo tree                                                          │
- 5 │ ╭───────────────────────────────────────────────────────────────────❬rust❭─╮   │
- 6 │ │ ⟢   12 direct deps; heaviest subtrees are tokio and trillium. Nothing ou │at │
- 7 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
- 8 │                                                                                │
- 9 │                                                                                │
+ 5 │   ✓ 1 line                                                                     │
+ 6 │ ╭──────────────────────────────────────────────────────────────────────────╮   │
+ 7 │ │ ⟢ 12 direct deps; heaviest subtrees are tokio and trillium. Nothing      │   │
+ 8 │ │ outdated.                                                                │   │
+ 9 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
 10 │                                                                                │
 11 │                                                                                │
 12 │                                                                                │

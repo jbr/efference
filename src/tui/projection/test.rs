@@ -44,8 +44,34 @@ fn sample_log() -> Vec<LogEntry> {
     ]
 }
 
+/// The kinds of the document's top-level entries, in order.
+fn kinds(doc: &Document<'_>) -> Vec<EntryKind> {
+    doc.nodes
+        .iter()
+        .filter_map(|n| match n {
+            DocumentNode::Entry { kind, .. } => Some(*kind),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The header text of the first entry of `kind`.
+fn header_of(doc: &Document<'_>, want: EntryKind) -> String {
+    doc.nodes
+        .iter()
+        .find_map(|n| match n {
+            DocumentNode::Entry {
+                kind,
+                header: Some(h),
+                ..
+            } if *kind == want => Some(h.iter().map(|s| s.text.as_ref()).collect()),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
 #[test]
-fn projects_turns_and_pairs_call_with_result() {
+fn projects_a_flat_sequence_of_entries() {
     let doc = project(
         &sample_log(),
         &LiveTail::default(),
@@ -54,62 +80,124 @@ fn projects_turns_and_pairs_call_with_result() {
         &[],
     );
 
-    // Top level is a sequence of authored turns: user, then assistant.
-    let authors: Vec<Author> = doc
-        .nodes
-        .iter()
-        .filter_map(|n| match n {
-            DocumentNode::Turn { author, .. } => Some(*author),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(authors, vec![Author::User, Author::Assistant]);
-
-    // The assistant turn holds prose plus exactly one exchange (the call paired
-    // with its result) — not two separately-labeled blocks.
-    let assistant_blocks = doc
-        .nodes
-        .iter()
-        .find_map(|n| match n {
-            DocumentNode::Turn {
-                author: Author::Assistant,
-                blocks,
-            } => Some(blocks),
-            _ => None,
-        })
-        .expect("assistant turn");
-    let exchanges = assistant_blocks
-        .iter()
-        .filter(|n| matches!(n, DocumentNode::TruncatedBlock { .. }))
-        .count();
+    // The transcript is flat: one entry per top-level thing on the wire, with the
+    // call and its result as *separate* entries (they are separate wire blocks, and
+    // a result is not part of the call's content — docs/tui.md).
     assert_eq!(
-        exchanges, 1,
-        "one exchange, not separate call + result blocks"
+        kinds(&doc),
+        vec![
+            EntryKind::UserMessage,
+            EntryKind::AssistantMessage,
+            EntryKind::ToolCall,
+            EntryKind::ToolResult,
+        ]
     );
 
-    // The exchange header names the tool, with no role/seq label.
-    let header_text: String = assistant_blocks
-        .iter()
-        .filter_map(|n| match n {
-            DocumentNode::TruncatedBlock { header, .. } => header.as_ref(),
-            _ => None,
-        })
-        .flatten()
-        .map(|s| s.text.as_ref())
-        .collect();
-    assert!(
-        header_text.contains("bash"),
-        "tool name in header: {header_text}"
-    );
-    assert!(
-        !header_text.contains("result #"),
-        "no result label: {header_text}"
-    );
-    assert!(!header_text.contains("wants to run"), "call already ran");
+    // The call header names the tool, with no role/seq label.
+    let header = header_of(&doc, EntryKind::ToolCall);
+    assert!(header.contains("bash"), "tool name in header: {header}");
+    assert!(!header.contains("result #"), "no result label: {header}");
+    assert!(!header.contains("wants to run"), "call already ran");
 
-    // The result content lives in the exchange body.
+    // The result entry says how much came back, and holds it.
+    assert_eq!(header_of(&doc, EntryKind::ToolResult), "2 lines");
     let code = collect_code(&doc.nodes);
     assert!(code.contains("line one"), "result body present: {code}");
+}
+
+#[test]
+fn a_long_result_renders_whole() {
+    // The position this unit exists for: the operator sees what the agent sees, so
+    // no line budget reaches a tool result (docs/positions.md). Previously a body
+    // over 8 lines was clipped to its first 8 by default.
+    let body: String = (1..=400).map(|n| format!("line {n}\n")).collect();
+    let log = vec![
+        entry(
+            1,
+            Payload::Assistant {
+                thinking: vec![],
+                text: vec![],
+                calls: vec![ToolCall {
+                    id: CallId("toolu_1".into()),
+                    name: "bash".into(),
+                    input: serde_json::json!({ "command": "seq 400" }),
+                }],
+            },
+        ),
+        entry(
+            2,
+            Payload::ToolResult {
+                call_id: CallId("toolu_1".into()),
+                raw: RawResult {
+                    content: body.clone(),
+                    is_error: false,
+                },
+                wire: WireState::Raw,
+            },
+        ),
+    ];
+    let doc = project(
+        &log,
+        &LiveTail::default(),
+        &ViewState::default(),
+        Gate::default(),
+        &[],
+    );
+    let code = collect_code(&doc.nodes);
+    for n in [1, 9, 200, 400] {
+        assert!(code.contains(&format!("line {n}\n")), "line {n} present");
+    }
+}
+
+#[test]
+fn a_failed_result_is_marked_on_the_result_not_the_call() {
+    // The call is a call regardless of how it went; `✗` belongs to the entry that
+    // actually failed, now that the two are separate.
+    let log = vec![
+        entry(
+            1,
+            Payload::Assistant {
+                thinking: vec![],
+                text: vec![],
+                calls: vec![ToolCall {
+                    id: CallId("toolu_1".into()),
+                    name: "bash".into(),
+                    input: serde_json::json!({ "command": "false" }),
+                }],
+            },
+        ),
+        entry(
+            2,
+            Payload::ToolResult {
+                call_id: CallId("toolu_1".into()),
+                raw: RawResult {
+                    content: "boom".into(),
+                    is_error: true,
+                },
+                wire: WireState::Raw,
+            },
+        ),
+    ];
+    let doc = project(
+        &log,
+        &LiveTail::default(),
+        &ViewState::default(),
+        Gate::default(),
+        &[],
+    );
+    let marker = |want: EntryKind| {
+        doc.nodes
+            .iter()
+            .find_map(|n| match n {
+                DocumentNode::Entry { kind, marker, .. } if *kind == want => {
+                    Some(marker.as_ref()?.text.to_string())
+                }
+                _ => None,
+            })
+            .unwrap_or_default()
+    };
+    assert_eq!(marker(EntryKind::ToolCall), "❯ ");
+    assert_eq!(marker(EntryKind::ToolResult), "✗ ");
 }
 
 #[test]
@@ -166,68 +254,6 @@ fn distilled_wire_supersedes_raw() {
     );
 }
 
-/// The (single) exchange block's expand level, for the view-state tests.
-fn exchange_level(doc: &Document<'_>) -> TruncationLevel {
-    for node in &doc.nodes {
-        if let DocumentNode::Turn { blocks, .. } = node {
-            for b in blocks {
-                if let DocumentNode::TruncatedBlock { level, .. } = b {
-                    return *level;
-                }
-            }
-        }
-    }
-    panic!("no exchange block in the document");
-}
-
-/// The (single) exchange block's header text, for the view-state tests.
-fn exchange_header(doc: &Document<'_>) -> String {
-    for node in &doc.nodes {
-        if let DocumentNode::Turn { blocks, .. } = node {
-            for b in blocks {
-                if let DocumentNode::TruncatedBlock {
-                    header: Some(h), ..
-                } = b
-                {
-                    return h.iter().map(|s| s.text.as_ref()).collect();
-                }
-            }
-        }
-    }
-    String::new()
-}
-
-#[test]
-fn expand_state_lives_in_the_view_and_survives_reprojection() {
-    // The docs/tui.md fix: the expand level is read from the view, not stored in the
-    // rebuilt document — so it survives the re-projection a streamed token forces
-    // (where the old in-document level reset to Brief).
-    let log = sample_log(); // one bash exchange, call id toolu_1
-    let mut view = ViewState::default();
-
-    // Default: collapsed.
-    let doc = project(&log, &LiveTail::default(), &view, Gate::default(), &[]);
-    assert_eq!(exchange_level(&doc), TruncationLevel::Brief);
-
-    // Expanding persists in the view.
-    view.toggle_expanded("toolu_1");
-    let doc = project(&log, &LiveTail::default(), &view, Gate::default(), &[]);
-    assert_eq!(exchange_level(&doc), TruncationLevel::Full);
-
-    // A second projection (the streamed-token rebuild) keeps it expanded.
-    let doc = project(&log, &LiveTail::default(), &view, Gate::default(), &[]);
-    assert_eq!(
-        exchange_level(&doc),
-        TruncationLevel::Full,
-        "expand survived reprojection"
-    );
-
-    // Toggling back collapses, and that persists too.
-    view.toggle_expanded("toolu_1");
-    let doc = project(&log, &LiveTail::default(), &view, Gate::default(), &[]);
-    assert_eq!(exchange_level(&doc), TruncationLevel::Brief);
-}
-
 #[test]
 fn raw_toggle_shows_full_raw_over_the_distillate() {
     // A distilled result (the same shape as `distilled_wire_supersedes_raw`).
@@ -270,7 +296,7 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
         "dropped raw line hidden: {code}"
     );
     assert!(
-        !exchange_header(&doc).contains("raw"),
+        !header_of(&doc, EntryKind::ToolResult).contains("raw"),
         "no raw marker by default"
     );
 
@@ -280,8 +306,8 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
     let code = collect_code(&doc.nodes);
     assert!(code.contains("RAW-NOISE"), "full raw now shown: {code}");
     assert!(
-        exchange_header(&doc).contains("raw"),
-        "header marks the raw view"
+        header_of(&doc, EntryKind::ToolResult).contains("raw"),
+        "the result header marks the raw view"
     );
 }
 
@@ -298,8 +324,10 @@ fn live_tail_renders_after_committed_entries_and_clears_on_commit() {
         Gate::default(),
         &[],
     );
-    let code = collect_code(&doc.nodes);
-    assert!(code.contains("partial out"), "live tool output renders");
+    assert!(
+        collect_text(&doc.nodes).contains("partial out"),
+        "live tool output renders"
+    );
 
     // Committing the assistant entry clears the live assistant buffer.
     live.commit(&entry(
@@ -362,6 +390,31 @@ fn renders_transcript_to_a_test_backend() {
     assert!(screen.contains("bash"), "exchange header on screen");
 }
 
+/// All paragraph/header span text in the tree — for content that isn't a code
+/// block (the live tail's dimmed lines, entry headers).
+fn collect_text(nodes: &[DocumentNode<'_>]) -> String {
+    let mut out = String::new();
+    for node in nodes {
+        match node {
+            DocumentNode::Paragraph { spans } => {
+                for span in spans {
+                    out.push_str(&span.text);
+                }
+                out.push('\n');
+            }
+            DocumentNode::Entry { header, blocks, .. } => {
+                for span in header.iter().flatten() {
+                    out.push_str(&span.text);
+                }
+                out.push('\n');
+                out.push_str(&collect_text(blocks));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 fn collect_code(nodes: &[DocumentNode<'_>]) -> String {
     let mut out = String::new();
     for node in nodes {
@@ -370,8 +423,7 @@ fn collect_code(nodes: &[DocumentNode<'_>]) -> String {
                 out.push_str(code);
                 out.push('\n');
             }
-            DocumentNode::TruncatedBlock { nodes, .. } => out.push_str(&collect_code(nodes)),
-            DocumentNode::Turn { blocks, .. } => out.push_str(&collect_code(blocks)),
+            DocumentNode::Entry { blocks, .. } => out.push_str(&collect_code(blocks)),
             _ => {}
         }
     }

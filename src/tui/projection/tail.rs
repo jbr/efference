@@ -1,4 +1,5 @@
-//! The live pre-commit tail and the per-view expand/collapse state (docs/tui.md).
+//! The live pre-commit tail and the per-result raw-vs-distilled view state
+//! (docs/tui.md).
 
 use super::*;
 
@@ -63,15 +64,16 @@ impl LiveTail {
     }
 }
 
-/// Per-exchange view-state the human has toggled, carried in `tui::state` so it
-/// survives re-projection (docs/tui.md). Any exchange can be re-projected at any
-/// time, so a block's collapse/raw state can't live in the rebuilt [`Document`] —
-/// it lives here, keyed by the result's `call_id`, and the projection applies it
-/// when building each exchange.
+/// Per-result view-state the human has toggled, carried in `tui::state` so it
+/// survives re-projection (docs/tui.md). Any entry can be re-projected at any time,
+/// so this can't live in the rebuilt [`Document`] — it lives here, keyed by the
+/// result's `call_id`, and the projection applies it when building each result.
+///
+/// One toggle so far. There was a second — expand/collapse — until entries stopped
+/// being truncated; the raw fork survives because it is a choice between two real
+/// forms of the content, not a choice about how much of one to show.
 #[derive(Debug, Default)]
 pub(crate) struct ViewState {
-    /// `call_id`s whose exchange the human expanded (`▼` Full instead of `▶` Brief).
-    expanded: HashSet<String>,
     /// `call_id`s the human flipped to **raw** output — the wire distillate is the
     /// default, raw is shown on demand (both are already client-side; this is a
     /// pure render choice, no round-trip).
@@ -83,19 +85,8 @@ pub(crate) struct ViewState {
 }
 
 impl ViewState {
-    pub(in crate::tui) fn is_expanded(&self, call_id: &str) -> bool {
-        self.expanded.contains(call_id)
-    }
-
     pub(in crate::tui) fn is_raw(&self, call_id: &str) -> bool {
         self.raw.contains(call_id)
-    }
-
-    /// Flip the expand state for a `call_id`, returning the new state. The
-    /// [`Document`]'s level is recomputed from this on the next projection.
-    pub(crate) fn toggle_expanded(&mut self, call_id: &str) -> bool {
-        self.dirty.insert(call_id.to_string());
-        toggle(&mut self.expanded, call_id)
     }
 
     /// Flip raw-vs-wire for a `call_id`, returning whether it now shows raw.
@@ -104,7 +95,7 @@ impl ViewState {
         toggle(&mut self.raw, call_id)
     }
 
-    /// Take the `call_id`s toggled since the last call — the exchanges the next
+    /// Take the `call_id`s toggled since the last call — the entries the next
     /// projection has to rebuild.
     pub(crate) fn take_dirty(&mut self) -> HashSet<String> {
         std::mem::take(&mut self.dirty)

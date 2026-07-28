@@ -19,7 +19,7 @@ fn session(turns: usize) -> Screenplay<'static> {
             &format!("call-{i}"),
             crate::bash::NAME,
             &format!("cargo test --test t{i}"),
-            // Long enough to be collapsible, so the expand test has something to expand.
+            // Several lines, so a re-render of one result is visible in the frame.
             &(1..=12)
                 .map(|n| format!("test t{i}::case_{n} ... ok"))
                 .collect::<Vec<_>>()
@@ -86,23 +86,44 @@ fn scrolling_costs_the_viewport_not_the_log() {
 
 /// The reverse guarantee: a node whose content changed *is* re-laid-out. A cache
 /// that never invalidated would pass the tests above and paint stale rows forever.
+/// The raw flip is the change to drive it with — it is the one per-entry toggle
+/// that alters what an already-committed entry renders.
 #[test]
-fn expanding_a_block_drops_its_cached_layout() {
-    let mut play = session(3);
+fn a_re_rendered_result_drops_its_cached_layout() {
+    let mut play = Screenplay::new(120, 40);
+    play.user("run it");
+    play.assistant(
+        "on it",
+        vec![crate::tui::harness::test::tool_call(
+            crate::bash::NAME,
+            "call-1",
+            serde_json::json!({ "command": "cargo tree" }),
+        )],
+    );
+    play.tool_result(
+        "call-1",
+        "RAW-ONE\nRAW-TWO\nRAW-THREE",
+        false,
+        crate::log::WireState::Distilled {
+            keep: crate::log::Keep::None,
+            note: Some("three deps".into()),
+        },
+    );
+    play.pin_to_bottom();
     let before = play.render();
     assert!(
         play.state.document.layouts.iter().all(Option::is_some),
         "a drawn document has a layout for every node"
     );
 
-    play.expand_all();
+    play.show_raw("call-1");
     assert!(
         play.state.document.layouts.iter().any(Option::is_none),
-        "expanding a block must drop that node's cached height"
+        "re-projecting an entry must drop that node's cached height"
     );
     assert_ne!(
         before,
         play.render(),
-        "and the next frame must show the expanded body"
+        "and the next frame must show the re-rendered entry"
     );
 }

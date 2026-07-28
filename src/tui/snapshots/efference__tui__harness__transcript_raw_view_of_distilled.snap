@@ -9,14 +9,14 @@ expression: self.render()
  1 │                                                                                │
  2 │   Pulling the tree, then I'll distill it.                                      │
  3 │                                                                                │
- 4 │   ❯ bash · cargo tree · raw                                                    │
- 5 │ ╭───────────────────❬rust❭─╮                                                   │
- 6 │ │ efference v0.1.0         │                                                   │
- 7 │ │ ├── anyhow v1.      0.86 │                                                   │
- 8 │ │ ├── clap v4.      5.4    │                                                   │
- 9 │ │ └── tokio v1.      38.0  │                                                   │
-10 │ ╰──────────────────────────╯                                                   │
-11 │                                                                                │
+ 4 │   ❯ bash · cargo tree                                                          │
+ 5 │   ✓ 4 lines · raw                                                              │
+ 6 │ ╭────────────────────╮                                                         │
+ 7 │ │ efference v0.1.0   │                                                         │
+ 8 │ │ ├── anyhow v1.0.86 │                                                         │
+ 9 │ │ ├── clap v4.5.4    │                                                         │
+10 │ │ └── tokio v1.38.0  │                                                         │
+11 │ ╰────────────────────╯                                                         │
 12 │                                                                                │
 13 │                                                                                │
 14 │                                                                                │

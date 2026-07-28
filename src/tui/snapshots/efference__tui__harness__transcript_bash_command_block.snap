@@ -17,9 +17,9 @@ expression: self.render()
  9 │ │ EOF                   │                                                      │
 10 │ ╰───────────────────────╯                                                      │
 11 │                                                                                │
-12 │                                                                                │
-13 │ ╭───❬rust❭─╮                                                                   │
-14 │ ╰──────────╯                                                                   │
+12 │   ✓ 1 line                                                                     │
+13 │ ╭──╮                                                                           │
+14 │ ╰──╯                                                                           │
 15 │                                                                                │
 16 │                                                                                │
 17 │   pace fast     theme t     help ?     detach q                                │

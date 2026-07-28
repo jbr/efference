@@ -157,12 +157,33 @@ impl<'a> super::InteractiveState<'a> {
                 return;
             }
 
-            let action_opt = self
+            let hit = self
                 .render_cache
                 .actions
                 .iter()
-                .find(|(rect, _)| rect.contains(click_pos))
-                .map(|(_, action)| action.clone());
+                .position(|(rect, _)| rect.contains(click_pos));
+
+            // Clicking a transcript entry *focuses* it — the click and the `↑`/`↓`
+            // cursor address the same units, so the menu that appears is the one the
+            // keyboard would have reached (docs/tui.md). Focus is all an entry
+            // activation does; there is nothing to expand.
+            if let Some(index) = hit
+                && matches!(
+                    self.render_cache.actions.get(index),
+                    Some((_, TuiAction::FocusEntry(_)))
+                )
+            {
+                self.composing = false;
+                self.viewport.keyboard_cursor = super::state::KeyboardCursor::Focused {
+                    action_index: index,
+                };
+                self.block_menu_focus = 0;
+                return;
+            }
+
+            let action_opt = hit
+                .and_then(|i| self.render_cache.actions.get(i).cloned())
+                .map(|(_, action)| action);
 
             if let Some(action) = action_opt {
                 // Handle SelectTheme specially (doesn't go through request thread)
@@ -204,7 +225,9 @@ impl<'a> super::InteractiveState<'a> {
             KeyboardCursor::Focused { action_index } => {
                 if let Some((_, action)) = self.render_cache.actions.get(action_index) {
                     self.ui.debug_message = match action {
-                        TuiAction::ExpandBlock(_) => "Expand block (⏎ to activate)".into(),
+                        TuiAction::FocusEntry(_) => {
+                            "navigate — ↑/↓ unit · ←/→ verb · esc compose".into()
+                        }
                         TuiAction::OpenUrl(url) => format!("Open: {} (⏎ to activate)", url).into(),
                         TuiAction::SelectTheme(theme_name) => {
                             format!("Preview theme: {} (⏎ to activate)", theme_name).into()
@@ -229,7 +252,7 @@ impl<'a> super::InteractiveState<'a> {
                 .find(|(rect, _)| rect.contains(pos))
         {
             self.ui.debug_message = match action {
-                TuiAction::ExpandBlock(_) => "Expand block".into(),
+                TuiAction::FocusEntry(_) => "click to focus this entry".into(),
                 TuiAction::OpenUrl(url) => format!("Open: {}", url).into(),
                 TuiAction::SelectTheme(theme_name) => {
                     format!("Preview theme: {}", theme_name).into()

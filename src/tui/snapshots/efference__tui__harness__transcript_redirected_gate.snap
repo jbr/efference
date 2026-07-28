@@ -9,14 +9,14 @@ expression: self.render()
  1 │                                                                                │
  2 │   Sure — I'll remove it.                                                       │
  3 │                                                                                │
- 4 │   ✗ bash · rm -rf ./build                                                      │
- 5 │ ╭───────────────────────────────────────────────────────────────────❬rust❭─╮   │
- 6 │ │ Not run — the user replied instead of approving  ; see their next messag │   │
- 7 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
- 8 │                                                                                │
+ 4 │   ❯ bash · rm -rf ./build                                                      │
+ 5 │   ✗ 1 line                                                                     │
+ 6 │ ╭──────────────────────────────────────────────────────────────────────────╮   │
+ 7 │ │ Not run — the user replied instead of approving; see their next message. │   │
+ 8 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
  9 │                                                                                │
-10 │ ┃ use cargo clean instead                                                      │
-11 │                                                                                │
+10 │                                                                                │
+11 │ ┃ use cargo clean instead                                                      │
 12 │                                                                                │
 13 │   pace fast     theme t     help ?     detach q                                │
 14 │›                                                                               │

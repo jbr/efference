@@ -31,7 +31,7 @@ pub(in crate::tui) fn pending_turn(text: &str) -> DocumentNode<'static> {
             }],
         });
     }
-    turn(Author::User, blocks)
+    DocumentNode::entry(EntryKind::UserMessage, blocks)
 }
 
 /// The live phase, rendered **in full** — the point is to watch the work happen, so nothing here
@@ -63,9 +63,11 @@ pub(in crate::tui) fn phase_blocks(phase: &Phase) -> Vec<DocumentNode<'static>> 
             vec![dim_line(&format!("❯ calling {name}…"))]
         }
         Phase::CallingTool { name, input } => {
-            // Dimmed lines, not a `code_block`: the boxed render doesn't wrap its content to the
-            // box's inner width, so a long input would be *clipped* at the border — precisely the
-            // content this exists to show (the open box-wrap defect in dogfooding-friction.md).
+            // Dimmed lines, not a `code_block`: the live tail's register is dim
+            // throughout, and a box would claim this is a finished thing to read
+            // rather than bytes still arriving. (It was originally forced — the boxed
+            // render clipped long content at its border — but that is fixed, so this
+            // now rests on the register alone.)
             let mut blocks = vec![dim_line(&format!("❯ calling {name}…"))];
             blocks.extend(input.lines().map(|line| dim_line(&format!("  {line}"))));
             blocks
@@ -84,37 +86,19 @@ pub(in crate::tui) fn dim_line(text: &str) -> DocumentNode<'static> {
     }
 }
 
-/// Wrap a turn's blocks under its author.
-pub(in crate::tui) fn turn(
-    author: Author,
-    blocks: Vec<DocumentNode<'static>>,
-) -> DocumentNode<'static> {
-    DocumentNode::Turn { author, blocks }
-}
-
-/// The prefix a thinking block's `key` carries. Two kinds of block are keyed —
-/// a tool exchange by its `call_id`, a thinking block by `thinking:<seq>` — and
-/// this is what tells them apart (see [`is_call_key`]).
-pub(in crate::tui) const THINKING_KEY_PREFIX: &str = "thinking:";
-
-/// A turn's extended thinking, as a collapsed block that stays in the transcript
+/// A turn's extended thinking, as an entry that stays in the transcript
 /// (docs/tui.md). `None` when the turn did no thinking.
 ///
-/// **Collapsed by default, but never hidden.** A collapsed block still shows its opening lines
-/// (with a `(+N lines)` hint), so the gist of the reasoning is permanently visible and the whole of
-/// it is one keypress away. That is the point: thinking streams past far too fast to read live, so
-/// the live phase is only a "something is happening" signal — this is the part a human actually
-/// reads, at their own pace, afterwards.
+/// **Shown in full.** Thinking streams past far too fast to read at generation
+/// speed, so the live phase is only a "something is happening" signal and this is
+/// the copy a human actually reads, at their own pace, afterwards — which it can
+/// only be if all of it is here. Whether some of it is reliably worth hiding is a
+/// question to answer from reading real sessions, not to assume up front
+/// (docs/positions.md).
 ///
-/// Rendered in the dimmed register, like the live phase it succeeds: thinking is not the
-/// assistant's answer and must never be mistaken for it. The block is keyed by the entry's `seq`
-/// (thinking has no `call_id`), which is what carries its expand state across the re-projection
-/// that every streamed token triggers.
-pub(in crate::tui) fn thinking_block(
-    seq: crate::log::Seq,
-    thinking: &[ContentBlock],
-    view: &ViewState,
-) -> Option<DocumentNode<'static>> {
+/// Rendered in the dimmed register, like the live phase it succeeds: thinking is not
+/// the assistant's answer and must never be mistaken for it.
+pub(in crate::tui) fn thinking_entry(thinking: &[ContentBlock]) -> Option<DocumentNode<'static>> {
     if thinking.is_empty() {
         return None;
     }
@@ -143,49 +127,43 @@ pub(in crate::tui) fn thinking_block(
     if body.is_empty() {
         return None;
     }
-    let key = format!("{THINKING_KEY_PREFIX}{seq}");
-    let level = if view.is_expanded(&key) {
-        TruncationLevel::Full
-    } else {
-        TruncationLevel::Brief
-    };
-    Some(DocumentNode::collapsible_keyed(
-        key,
+    Some(DocumentNode::headed_entry(
+        EntryKind::Thinking,
+        None,
         vec![Span {
             text: "✻ thinking".into(),
             style: SpanStyle::Comment,
             action: None,
         }],
-        None,
         body,
-        level,
     ))
 }
 
-/// The affordance shown beside a pending exchange (docs/tui.md), where its result will
+/// The affordance shown beside a pending call (docs/tui.md), where its result will
 /// land once the gate resolves. The accent-colored lead-in marks "your turn"; the muted
 /// tail names the composer's two direct answers — the full verb set (allow…/abort) lives
 /// on the control strip, which is the legend now.
 ///
-/// It carries the `⏸` marker. That marker used to be the exchange's resting glyph, but the
-/// renderer replaces a resting glyph with a disclosure triangle as soon as the body is long
-/// enough to collapse — so a gate on a long call lost the one mark that said it was held.
-/// Here it is a sibling of the exchange and cannot be collapsed or replaced.
+/// It carries the `⏸` marker, on an entry of its own: the call's marker says what the
+/// agent did, and a gate is something the *harness* did about it.
 pub(in crate::tui) fn gate_affordance() -> DocumentNode<'static> {
-    DocumentNode::Paragraph {
-        spans: vec![
-            Span {
-                text: "⏸ awaiting your approval".into(),
-                style: SpanStyle::UserAccent,
-                action: None,
-            },
-            Span {
-                text: "  ·  ⏎ approve · type to redirect".into(),
-                style: SpanStyle::Comment,
-                action: None,
-            },
-        ],
-    }
+    DocumentNode::entry(
+        EntryKind::Annotation,
+        vec![DocumentNode::Paragraph {
+            spans: vec![
+                Span {
+                    text: "⏸ awaiting your approval".into(),
+                    style: SpanStyle::UserAccent,
+                    action: None,
+                },
+                Span {
+                    text: "  ·  ⏎ approve · type to redirect".into(),
+                    style: SpanStyle::Comment,
+                    action: None,
+                },
+            ],
+        }],
+    )
 }
 
 /// The spotter's verdict on a call (docs/permissions.md), as one muted line. Before the
@@ -201,10 +179,10 @@ pub(in crate::tui) fn gate_affordance() -> DocumentNode<'static> {
 /// a fail-closed verdict's own reason says "spotter unavailable", so surfacing it again
 /// would cost a glyph to repeat what the line already reads.
 ///
-/// Emitted as a **sibling** of the exchange it judges, never inside it: it is a separate
-/// rung's judgment *about* the call rather than part of the call's content, and nesting it
-/// meant the exchange's own truncation could clip it (which it did, for any command long
-/// enough to fill the collapsed body).
+/// Emitted as its own [`Annotation`](EntryKind::Annotation) entry beside the call it
+/// judges, never inside it: it is a separate rung's judgment *about* the call rather
+/// than part of the call's content. It is not a focus stop — it is read beside the
+/// call, not visited.
 pub(in crate::tui) fn spotter_line(
     stance: Option<crate::log::Stance>,
     reason: &str,
@@ -218,25 +196,38 @@ pub(in crate::tui) fn spotter_line(
         Some(Stance::Gate) => "spotter gated · ",
         None => "spotter · ",
     };
-    DocumentNode::Paragraph {
-        spans: vec![
-            Span {
-                text: label.into(),
-                style: SpanStyle::Comment,
-                action: None,
-            },
-            Span {
-                text: reason.to_string().into(),
-                style: SpanStyle::Comment,
-                action: None,
-            },
-        ],
+    DocumentNode::entry(
+        EntryKind::Annotation,
+        vec![DocumentNode::Paragraph {
+            spans: vec![
+                Span {
+                    text: label.into(),
+                    style: SpanStyle::Comment,
+                    action: None,
+                },
+                Span {
+                    text: reason.to_string().into(),
+                    style: SpanStyle::Comment,
+                    action: None,
+                },
+            ],
+        }],
+    )
+}
+
+/// The call marker: `❯`, always. A call is a call regardless of how it went — what
+/// happened to it is the *result*'s marker ([`status_span`]).
+pub(in crate::tui) fn prompt_span() -> Span<'static> {
+    Span {
+        text: "❯ ".into(),
+        style: SpanStyle::Comment,
+        action: None,
     }
 }
 
-/// The exchange prompt glyph: `❯` for a normal call, `✗` (red) when its result
-/// failed — so an error reads as an error without a `[error]` word.
-pub(in crate::tui) fn prompt_span(is_error: bool) -> Span<'static> {
+/// The result marker: `✓` at rest, `✗` (red) when the call failed — so an error
+/// reads as an error without an `[error]` word, on the entry that actually failed.
+pub(in crate::tui) fn status_span(is_error: bool) -> Span<'static> {
     if is_error {
         Span {
             text: "✗ ".into(),
@@ -245,12 +236,50 @@ pub(in crate::tui) fn prompt_span(is_error: bool) -> Span<'static> {
         }
     } else {
         Span {
-            text: "❯ ".into(),
+            text: "✓ ".into(),
             style: SpanStyle::Comment,
             action: None,
         }
     }
 }
+
+/// A running tool's output so far — a **peek**, not a view of the output: the last
+/// [`PEEK_LINES`] lines, dimmed, so the operator can see the process is alive and
+/// roughly where it is. Unlike a committed result (which renders whole), live output
+/// is unbounded and untriaged, and the entry is replaced by the real result the
+/// moment the call lands.
+pub(in crate::tui) fn running_tool_peek(output: &str) -> DocumentNode<'static> {
+    let lines: Vec<&str> = output.lines().collect();
+    let shown = lines.len().min(PEEK_LINES);
+    let header = vec![Span {
+        text: match lines.len() {
+            n if n > shown => format!("running · {n} lines, last {shown}").into(),
+            1 => "running · 1 line".into(),
+            n => format!("running · {n} lines").into(),
+        },
+        style: SpanStyle::Comment,
+        action: None,
+    }];
+    let body = lines[lines.len() - shown..]
+        .iter()
+        .map(|line| dim_line(&format!("  {line}")))
+        .collect();
+    DocumentNode::headed_entry(
+        EntryKind::ToolResult,
+        Some(Span {
+            text: "⋯ ".into(),
+            style: SpanStyle::Comment,
+            action: None,
+        }),
+        header,
+        body,
+    )
+}
+
+/// How many trailing lines of a *running* tool's output the peek shows. Small on
+/// purpose: this is a glance at a live process, not a way to read its output. The
+/// whole output arrives, untruncated, when the call commits.
+const PEEK_LINES: usize = 10;
 
 /// Markdown-render owned prose into nodes. `markdown::render` builds owned spans,
 /// so the result is `'static`.

@@ -3,10 +3,10 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 const NONE: KeyModifiers = KeyModifiers::NONE;
 
-/// The menu is attached to the focused unit: a focused tool exchange shows its
-/// verbs on the header line, and an unfocused one shows none.
+/// The menu is attached to the focused unit: a focused tool *result* shows its one
+/// verb on its header line, and an unfocused one shows none.
 #[test]
-fn menu_rides_the_focused_exchange() {
+fn menu_rides_the_focused_result() {
     let mut play = Screenplay::new(80, 16);
     play.user("look");
     play.tool_exchange("toolu_1", "bash", "ls", "one\ntwo\n");
@@ -17,14 +17,14 @@ fn menu_rides_the_focused_exchange() {
     );
 
     play.route_key(KeyCode::Up, NONE); // composer → strip
-    play.route_key(KeyCode::Up, NONE); // strip → transcript (last unit)
+    play.route_key(KeyCode::Up, NONE); // strip → transcript (last unit: the result)
     let labels: Vec<_> = play
         .state
         .block_menu_items()
         .iter()
         .map(|i| i.label)
         .collect();
-    assert_eq!(labels, vec!["raw"], "a short result has nothing to expand");
+    assert_eq!(labels, vec!["raw"], "the result's one verb");
     assert!(
         play.find("▸ raw").is_some(),
         "the menu renders on the focused unit:\n{}",
@@ -32,12 +32,11 @@ fn menu_rides_the_focused_exchange() {
     );
 }
 
-/// A long result is collapsible, so the menu leads with the collapse toggle —
-/// keeping `⏎` on a focused unit meaning "expand this" — and the label flips
-/// to `collapse` once expanded.
+/// Length earns no verb. A long result carries exactly what a short one does,
+/// because there is no truncation for a verb to undo (docs/tui.md).
 #[test]
-fn expand_leads_and_the_label_flips() {
-    let mut play = Screenplay::new(80, 20);
+fn a_long_result_carries_no_expand_verb() {
+    let mut play = Screenplay::new(80, 44);
     play.user("look");
     let long: String = (0..20).map(|i| format!("line {i}\n")).collect();
     play.tool_exchange("toolu_1", "bash", "cat big", &long);
@@ -49,57 +48,36 @@ fn expand_leads_and_the_label_flips() {
         .iter()
         .map(|i| i.label)
         .collect();
-    assert_eq!(labels, vec!["expand", "raw"], "expand ranks first");
-
-    play.route_key(KeyCode::Enter, NONE); // fire the selected verb
-    assert!(
-        play.state.view.is_expanded("toolu_1"),
-        "⏎ on the menu's first item expands, as it did before the menu"
-    );
-    let labels: Vec<_> = play
-        .state
-        .block_menu_items()
-        .iter()
-        .map(|i| i.label)
-        .collect();
-    assert_eq!(labels[0], "collapse", "the label names the destination");
+    assert_eq!(labels, vec!["raw"], "no expand verb at any length");
 }
 
-/// `→ ⏎` reaches the raw flip without the `r` key — the menu is the new home
-/// for the binding the purge unit removes.
+/// `⏎` on a focused result fires its leading (only) verb — the raw flip, the new
+/// home for the purged `r` binding.
 #[test]
-fn right_then_enter_flips_to_raw() {
-    let mut play = Screenplay::new(80, 20);
+fn enter_flips_to_raw() {
+    let mut play = Screenplay::new(80, 44);
     play.user("look");
     let long: String = (0..20).map(|i| format!("line {i}\n")).collect();
     play.tool_exchange("toolu_1", "bash", "cat big", &long);
     play.route_key(KeyCode::Up, NONE);
     play.route_key(KeyCode::Up, NONE);
-    play.route_key(KeyCode::Right, NONE); // expand → raw
     play.route_key(KeyCode::Enter, NONE);
     assert!(play.state.view.is_raw("toolu_1"), "the raw flip fired");
-    assert!(
-        !play.state.view.is_expanded("toolu_1"),
-        "and only that verb fired"
-    );
     let labels: Vec<_> = play
         .state
         .block_menu_items()
         .iter()
         .map(|i| i.label)
         .collect();
-    assert_eq!(
-        labels,
-        vec!["expand", "distilled"],
-        "the flip back is offered"
-    );
+    assert_eq!(labels, vec!["distilled"], "the flip back is offered");
 }
 
 /// The reserved marker cell means moving the selection never shifts the item
-/// text — the same rule the strip follows, checked here in the grid.
+/// text — the same rule the strip follows, checked here in the grid. With one
+/// verb the move also has to clamp rather than run off the end.
 #[test]
 fn selection_movement_does_not_shift_text() {
-    let mut play = Screenplay::new(80, 20);
+    let mut play = Screenplay::new(80, 44);
     play.user("look");
     let long: String = (0..20).map(|i| format!("line {i}\n")).collect();
     play.tool_exchange("toolu_1", "bash", "cat big", &long);
@@ -107,6 +85,7 @@ fn selection_movement_does_not_shift_text() {
     play.route_key(KeyCode::Up, NONE);
     let before = play.find("raw").expect("the raw item renders");
     play.route_key(KeyCode::Right, NONE);
+    assert_eq!(play.state.block_menu_focus, 0, "→ clamps at the last verb");
     assert_eq!(
         play.find("raw"),
         Some(before),
@@ -115,37 +94,41 @@ fn selection_movement_does_not_shift_text() {
     );
 }
 
-/// Selection clamps at both ends and resets when focus moves to another unit,
-/// so `⏎` after a `↑`/`↓` always means the leading verb again.
+/// The call and the result are separate focus units, and the menu is a function
+/// of which one is focused — the call has no per-entry mechanism behind it, so
+/// `↑` off the result reaches a unit with no verbs at all.
 #[test]
-fn selection_clamps_and_resets_with_focus() {
+fn the_call_and_its_result_are_separate_units() {
     let mut play = Screenplay::new(80, 24);
     play.user("look");
-    let long: String = (0..20).map(|i| format!("line {i}\n")).collect();
-    play.tool_exchange("toolu_1", "bash", "cat big", &long);
-    play.tool_exchange("toolu_2", "bash", "cat big", &long);
+    play.tool_exchange("toolu_1", "bash", "ls", "one\ntwo\n");
     play.route_key(KeyCode::Up, NONE);
     play.route_key(KeyCode::Up, NONE);
+    assert_eq!(
+        play.state
+            .block_menu_items()
+            .iter()
+            .map(|i| i.label)
+            .collect::<Vec<_>>(),
+        vec!["raw"],
+        "the result carries the raw flip"
+    );
 
-    play.route_key(KeyCode::Right, NONE);
-    play.route_key(KeyCode::Right, NONE);
-    assert_eq!(play.state.block_menu_focus, 1, "→ clamps at the last verb");
-    play.route_key(KeyCode::Left, NONE);
-    play.route_key(KeyCode::Left, NONE);
-    assert_eq!(play.state.block_menu_focus, 0, "← clamps at the first");
-
-    play.route_key(KeyCode::Right, NONE);
-    play.route_key(KeyCode::Up, NONE); // to the previous unit
+    play.route_key(KeyCode::Up, NONE); // to the call above it
+    assert!(
+        play.state.block_menu_items().is_empty(),
+        "the call is its own unit, and carries no verbs"
+    );
     assert_eq!(
         play.state.block_menu_focus, 0,
         "a new unit starts on its leading verb"
     );
 }
 
-/// The gated exchange's verbs are the gate's, and they live on the strip: no
-/// raw flip on a call that has no result yet.
+/// The gated call's verbs are the gate's, and they live on the strip: there is no
+/// result entry at all until it resolves, so nothing carries a raw flip.
 #[test]
-fn the_gated_exchange_carries_no_raw_flip() {
+fn a_gated_call_carries_no_raw_flip() {
     use serde_json::json;
     let mut play = Screenplay::new(80, 16);
     play.user("clean up");
@@ -161,7 +144,7 @@ fn the_gated_exchange_carries_no_raw_flip() {
     );
 }
 
-/// A prose unit has no entry verbs yet, and `⏎` there stays the no-op it was.
+/// A prose unit has no entry verbs, and `⏎` there stays the no-op it was.
 #[test]
 fn prose_units_carry_no_menu() {
     let mut play = Screenplay::new(80, 14);
@@ -179,16 +162,16 @@ fn prose_units_carry_no_menu() {
 /// The rendered menu records click targets, and a click fires that item.
 #[test]
 fn clicking_a_menu_item_fires_it() {
-    let mut play = Screenplay::new(80, 20);
+    let mut play = Screenplay::new(80, 44);
     play.user("look");
     let long: String = (0..20).map(|i| format!("line {i}\n")).collect();
     play.tool_exchange("toolu_1", "bash", "cat big", &long);
     play.route_key(KeyCode::Up, NONE);
     play.route_key(KeyCode::Up, NONE);
-    let (x, y) = play.find("▸ expand").expect("the menu renders");
+    let (x, y) = play.find("▸ raw").expect("the menu renders");
     play.click(x + 2, y);
     assert!(
-        play.state.view.is_expanded("toolu_1"),
+        play.state.view.is_raw("toolu_1"),
         "the click fired the item under it"
     );
 }

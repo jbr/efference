@@ -2,14 +2,9 @@ use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 
 use super::state::InteractiveState;
 use crate::tui::document::{
-    Author, DiffLineKind, DocumentNode, HeadingLevel, ShowWhen, Span, SpanStyle, TruncationLevel,
-    TuiAction,
+    DiffLineKind, DocumentNode, EntryKind, HeadingLevel, ShowWhen, Span, SpanStyle, TuiAction,
 };
 use crate::tui::render_document::BASELINE_LEFT_MARGIN;
-
-// A collapsed (`Brief`) tool block reveals this many source lines before the
-// disclosure triangle takes over; more than this earns a "(+N lines)" hint.
-const BRIEF_LINES: usize = 8;
 
 impl<'a> InteractiveState<'a> {
     /// Draw all active blockquote markers at the current row
@@ -295,57 +290,48 @@ impl<'a> InteractiveState<'a> {
                 }
             }
 
-            DocumentNode::TruncatedBlock {
+            DocumentNode::Entry {
+                kind,
+                marker,
                 header,
-                resting,
-                nodes,
-                level,
+                blocks,
                 key,
             } => {
-                // First row of this unit and the index its focus action will take —
-                // captured before any rendering so the focus bar (below) can span the
-                // whole block and match the keyboard cursor. Only a block with a header
-                // pushes a focus action (and so can be focused).
-                let block_start = self.layout.pos.y;
+                // First row of this entry and the index its focus action takes —
+                // captured before anything renders, so the focus bar (below) spans the
+                // whole entry and the index matches the keyboard cursor. The action is
+                // pushed *first* so navigation order equals visual order even when a
+                // header span carries a link of its own.
+                let entry_start = self.layout.pos.y;
                 let my_action_index = self.render_cache.actions.len();
-                let has_action = header.is_some();
-                let is_focused = has_action
+                if kind.is_focusable() {
+                    // The whole first row is the focus/click target. Focus is all it
+                    // is: an entry renders whole, so there is nothing to expand
+                    // (docs/tui.md).
+                    let rect = Rect::new(0, entry_start, self.layout.area.width, 1);
+                    self.render_cache
+                        .actions
+                        .push((rect, TuiAction::FocusEntry(self.layout.node_path)));
+                }
+                let is_focused = kind.is_focusable()
                     && matches!(
                         self.viewport.keyboard_cursor,
                         super::state::KeyboardCursor::Focused { action_index }
                             if action_index == my_action_index
                     );
 
-                // Source lines the body would occupy fully expanded. The transcript's
-                // collapsible body is a single CodeBlock, so this is its line count;
-                // counting newlines (not wrapped rows) keeps the collapse decision
-                // width-independent and deterministic.
-                let total_lines: usize = nodes.iter().map(node_line_count).sum();
-                let collapsible = is_collapsible(nodes);
-                let collapsed = collapsible && matches!(level, TruncationLevel::Brief);
-                let hidden = total_lines.saturating_sub(BRIEF_LINES);
-
-                // Leading glyph: a disclosure triangle (▶ collapsed / ▼ expanded) when
-                // there's more than fits, else the block's resting glyph (an exchange's
-                // `❯`/`✗`), else a neutral ▌. The whole line toggles the block.
+                // The header row: the entry's marker glyph, its header spans, and —
+                // when focused — the block menu trailing them.
                 if let Some(header) = header {
                     self.layout.pos.x = self.layout.indent;
                     self.draw_blockquote_markers(buf);
                     let header_row = self.layout.pos.y;
 
-                    if collapsible {
-                        self.render_span(&muted_span(if collapsed { "▶ " } else { "▼ " }), buf);
-                    } else if let Some(resting) = resting {
-                        self.render_span(resting, buf);
-                    } else {
-                        self.render_span(&muted_span("▌ "), buf);
+                    if let Some(marker) = marker {
+                        self.render_span(marker, buf);
                     }
                     for span in header {
                         self.render_span(span, buf);
-                    }
-                    if collapsed {
-                        let hint = format!("  (+{hidden} lines)");
-                        self.render_span(&muted_span(&hint), buf);
                     }
                     // The block menu (docs/tui.md): the focused unit's own verbs,
                     // trailing its header text — appending clobbers no header
@@ -353,56 +339,25 @@ impl<'a> InteractiveState<'a> {
                     if is_focused {
                         let key = key.as_deref();
                         let items = super::block_menu::menu_items(
+                            *kind,
                             key,
-                            *level,
-                            collapsible,
                             key.is_some_and(|k| self.view.is_raw(k)),
-                            self.gate_is_on(key),
                         );
                         let col = self.layout.pos.x + 2;
                         self.render_block_menu(buf, &items, header_row, col, self.layout.area);
                     }
                     self.layout.pos.y += 1;
-
-                    {
-                        // Every exchange is a focus unit (docs/tui.md), whether or not
-                        // it's long enough to collapse — so `↑/↓` moves between *all*
-                        // of them, not just the collapsible ones (the bug where focus
-                        // got stuck on the only long block). `Enter` still only
-                        // *expands* the collapsible ones; on a short block it's a
-                        // harmless no-op (the render ignores the level when nothing is
-                        // hidden). The whole header line is the click/activate target.
-                        let rect = Rect::new(0, header_row, self.layout.area.width, 1);
-                        self.render_cache
-                            .actions
-                            .push((rect, TuiAction::ExpandBlock(self.layout.node_path)));
-                    }
                 }
 
-                // Body: render children, clipping code to BRIEF_LINES while collapsed.
-                // A *multi-node* body (the thinking block's paragraphs) collapses by stopping
-                // early — `clip_node` can only shrink a single code/diff node, so without this a
-                // paragraph body would render in full no matter the level, and "collapsed" would
-                // differ from "expanded" only by the disclosure triangle. No-op for the
-                // single-code-block bodies an exchange builds.
-                let mut lines_so_far = 0;
-                for (idx, child_node) in nodes.iter().enumerate() {
-                    if collapsed && lines_so_far >= BRIEF_LINES {
-                        break;
-                    }
-                    lines_so_far += node_line_count(child_node);
+                // Body: every child, whole. Nothing here consults a line budget —
+                // if the agent saw it, the operator sees it (docs/positions.md).
+                for (idx, child_node) in blocks.iter().enumerate() {
                     if idx > 0 {
                         self.layout.pos.y += 1;
                     }
                     let saved_path = self.layout.node_path;
                     self.layout.node_path.push(idx);
-
-                    if collapsed {
-                        self.render_node(&clip_node(child_node, BRIEF_LINES), buf);
-                    } else {
-                        self.render_node(child_node, buf);
-                    }
-
+                    self.render_node(child_node, buf);
                     self.layout.node_path = saved_path;
                 }
 
@@ -412,75 +367,22 @@ impl<'a> InteractiveState<'a> {
                 // whose fg/bg are close, and never shows in the no-color snapshot grid.
                 if is_focused {
                     let style = self.style(SpanStyle::UserAccent);
-                    for row in block_start..self.layout.pos.y {
-                        if self.row_visible(row) {
-                            self.write_text(buf, row, 0, "▌", self.layout.area, style);
-                        }
-                    }
-                }
-            }
-
-            DocumentNode::Turn { author, blocks } => {
-                let start_row = self.layout.pos.y;
-
-                // Every block is a focus unit (docs/tui.md), in the flat model: a
-                // turn's *leading prose run* (the blocks before its first exchange) is
-                // one unit, and each exchange is its own. So `↑/↓` stops on the prose
-                // ("Let me check…") and on the bash/search/list calls alike, instead of
-                // skipping prose. The prose unit's action is pushed *before* the blocks
-                // render, so its index precedes the exchanges' — keeping navigation
-                // order equal to visual order. Activating it is a no-op (prose has
-                // nothing to expand); it exists purely to be a focus target.
-                let prose_len = blocks
-                    .iter()
-                    .take_while(|b| !matches!(b, DocumentNode::TruncatedBlock { .. }))
-                    .count();
-                let prose_action_index = self.render_cache.actions.len();
-                if prose_len > 0 {
-                    let rect = Rect::new(0, start_row, self.layout.area.width, 1);
-                    self.render_cache
-                        .actions
-                        .push((rect, TuiAction::ExpandBlock(self.layout.node_path)));
-                }
-
-                let mut prose_end = start_row;
-                for (idx, block) in blocks.iter().enumerate() {
-                    // Blank line between blocks, mirroring the top-level spacing.
-                    if idx > 0 {
-                        self.layout.pos.y += 1;
-                    }
-                    let saved_path = self.layout.node_path;
-                    self.layout.node_path.push(idx);
-                    self.render_node(block, buf);
-                    self.layout.node_path = saved_path;
-                    if idx + 1 == prose_len {
-                        prose_end = self.layout.pos.y;
-                    }
-                }
-
-                // Focus bar for the prose unit (the exchanges paint their own, above).
-                if prose_len > 0
-                    && matches!(
-                        self.viewport.keyboard_cursor,
-                        super::state::KeyboardCursor::Focused { action_index }
-                            if action_index == prose_action_index
-                    )
-                {
-                    let style = self.style(SpanStyle::UserAccent);
-                    for row in start_row..prose_end {
+                    for row in entry_start..self.layout.pos.y {
                         if self.row_visible(row) {
                             self.write_text(buf, row, 0, "▌", self.layout.area, style);
                         }
                     }
                 }
 
-                // Authorship is structural: the user's turn carries an accent gutter
-                // down the reserved left margin; the assistant is the unmarked
-                // default voice. Painted after the blocks so it spans their rows.
-                if matches!(author, Author::User) {
+                // Authorship is structural: what the operator said carries an accent
+                // gutter down the reserved left margin; the agent's own voice is the
+                // unmarked default. Painted after the body so it spans its rows. A
+                // tool result is `role: user` on the wire but is not the operator
+                // speaking, and is a kind of its own — so it never lands here.
+                if matches!(kind, EntryKind::UserMessage) {
                     let gutter_col = BASELINE_LEFT_MARGIN.saturating_sub(2);
                     let style = self.style(SpanStyle::UserAccent);
-                    for row in start_row..self.layout.pos.y {
+                    for row in entry_start..self.layout.pos.y {
                         if self.row_visible(row) {
                             self.write_text(buf, row, gutter_col, "┃", self.layout.area, style);
                         }
@@ -509,52 +411,5 @@ impl<'a> InteractiveState<'a> {
                 // Transparent container: no additional spacing
             }
         }
-    }
-}
-
-/// A muted span for accordion chrome — the disclosure triangle / block marker and
-/// the "(+N lines)" hint.
-fn muted_span(text: &str) -> Span<'static> {
-    Span {
-        text: text.to_string().into(),
-        style: SpanStyle::Comment,
-        action: None,
-    }
-}
-
-/// Source-line count a node would occupy fully expanded — the input to the
-/// collapse decision. Width-independent (counts newlines, not wrapped rows).
-fn node_line_count(node: &DocumentNode<'_>) -> usize {
-    match node {
-        DocumentNode::CodeBlock { code, .. } => code.lines().count().max(1),
-        DocumentNode::Diff { lines } => lines.len().max(1),
-        DocumentNode::List { items, .. } => items.len(),
-        _ => 1,
-    }
-}
-
-/// Whether a block's body has more than a collapsed block shows — i.e. whether it
-/// has anything to expand. The renderer's own collapse decision; the block menu
-/// asks the same question to decide whether to offer the expand verb, so both read
-/// one rule.
-pub(super) fn is_collapsible(nodes: &[DocumentNode<'_>]) -> bool {
-    nodes.iter().map(node_line_count).sum::<usize>() > BRIEF_LINES
-}
-
-/// A copy of `node` clipped to its first `max_lines` source lines (the collapsed
-/// view). Only code blocks clip — the transcript's collapsible body is always one.
-fn clip_node<'a>(node: &DocumentNode<'a>, max_lines: usize) -> DocumentNode<'a> {
-    match node {
-        DocumentNode::CodeBlock { lang, code } => {
-            let clipped = code.lines().take(max_lines).collect::<Vec<_>>().join("\n");
-            DocumentNode::CodeBlock {
-                lang: lang.clone(),
-                code: clipped.into(),
-            }
-        }
-        DocumentNode::Diff { lines } => DocumentNode::Diff {
-            lines: lines.iter().take(max_lines).cloned().collect(),
-        },
-        other => other.clone(),
     }
 }

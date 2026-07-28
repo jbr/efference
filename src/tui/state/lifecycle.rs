@@ -179,16 +179,16 @@ impl<'a> InteractiveState<'a> {
             "Select theme (↑/↓ to navigate, Enter to save, Esc to cancel)".into();
     }
 
-    /// Flip the focused tool-result exchange between its wire (distilled) output and
+    /// Flip the focused tool result between its wire (distilled) output and
     /// its full raw output (docs/tui.md). Both are already client-side, so this is a
-    /// pure re-render — the content source changes, so unlike expand it can't mutate
-    /// in place and must reproject. No-op unless a keyed (tool-result) block is
-    /// focused; the focused block is the one `⏎` would expand.
+    /// pure re-render — but the content source changes, so it reprojects rather than
+    /// editing the document in place. No-op unless a keyed tool-result entry is
+    /// focused.
     pub(in crate::tui) fn toggle_raw_focused(&mut self) {
         let path = match self.viewport.keyboard_cursor {
             KeyboardCursor::Focused { action_index } => {
                 match self.render_cache.actions.get(action_index) {
-                    Some((_, TuiAction::ExpandBlock(p))) => *p,
+                    Some((_, TuiAction::FocusEntry(p))) => *p,
                     _ => return,
                 }
             }
@@ -196,7 +196,7 @@ impl<'a> InteractiveState<'a> {
         };
         let call_id = match find_node_at_path_mut(&mut self.document.document.nodes, path.indices())
         {
-            Some(DocumentNode::TruncatedBlock { key: Some(k), .. }) => k.to_string(),
+            Some(DocumentNode::Entry { key: Some(k), .. }) => k.to_string(),
             _ => return,
         };
         let now_raw = self.view.toggle_raw(&call_id);

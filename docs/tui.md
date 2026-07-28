@@ -1,6 +1,6 @@
 # The TUI client
 
-`efference tui` is the human-facing client. It is just-another-socket-client: it subscribes to the daemon's SSE streams over the same [control channel](control-channel.md) that `attach` uses, and it drives turns and approvals through the same HTTP verbs. The renderer is vendored-and-adapted from ferritin's interactive renderer into `src/tui/`. Ferritin already had the hard parts — a general-purpose document IR, a markdown→IR parser, syntect theming, a custom scrollbar, line wrapping, and collapsible nodes — and its render pipeline was domain-free (it renders an IR, not rustdoc), so the lift was strip-the-shell, not rewrite. Improvements flow back cleanly because the IR stays byte-identical to ferritin.
+`efference tui` is the human-facing client. It is just-another-socket-client: it subscribes to the daemon's SSE streams over the same [control channel](control-channel.md) that `attach` uses, and it drives turns and approvals through the same HTTP verbs. The renderer is vendored-and-adapted from ferritin's interactive renderer into `src/tui/`. Ferritin already had the hard parts — a general-purpose document IR, a markdown→IR parser, syntect theming, a custom scrollbar, and line wrapping — and its render pipeline was domain-free (it renders an IR, not rustdoc), so the lift was strip-the-shell, not rewrite. Improvements flow back cleanly because the IR stays byte-identical to ferritin.
 
 `efference gallery` (`tui/gallery.rs`) launches the real TUI on a fixed "one of each element" transcript with no daemon — a live design page that surfaces rendering gaps (literal `~~strike~~`, ordered-lists-as-bullets) the moment you look.
 
@@ -24,48 +24,78 @@ The log is read once at open, so a session that is still running shows as of the
 Just as the wire is a deterministic projection of the log into an Anthropic `messages` array (see [log-and-projection.md](log-and-projection.md)), `tui/projection.rs`'s
 
 ```rust
-project(&[LogEntry], &LiveTail, &ViewState, pending_call: Option<&str>) -> Document<'static>
+project(&[LogEntry], &LiveTail, &ViewState, Gate<'_>, pending_turns: &[String]) -> Document<'static>
 ```
 
-is a *second* projection of the same log to a different target: a renderable tree instead of a model-facing message list. It reuses the wire projection's rules where they apply — distillate-else-raw for tool results, the streamed-vs-committed dedup (where the wire uses `streamed_*` flags, the TUI projection uses the structural `LiveTail`) — and diverges where a human reader differs from the model: nothing is elided or coalesced (the human sees the whole record), and the projection carries a deliberate **information architecture** rather than a flat dump of labeled blocks.
+is a *second* projection of the same log to a different target: a renderable tree instead of a model-facing message list. It reuses the wire projection's rules where they apply — distillate-else-raw for tool results, the streamed-vs-committed dedup (where the wire uses `streamed_*` flags, the TUI projection uses the structural `LiveTail`) — and diverges where a human reader differs from the model: nothing is elided or coalesced (the human sees the whole record), and the projection carries a deliberate **information architecture** — a typed entry per wire block, decorated by what it is, rather than a dump of labeled blocks.
 
 
-## Information architecture: conversational and minimalist
+## Information architecture: a flat sequence of entries
 
-The projection emits a sequence of `Turn { author, blocks }`. Authorship is **structural, not lexical**: the renderer paints a colored accent gutter for the user's turn and leaves the assistant unmarked as the default voice, so you *see* who's speaking instead of reading a `▌ you` / `▌ assistant` noun.
+The projection emits a **flat** sequence of `Entry { kind, marker, header, blocks, key }` — one per top-level thing on the wire, decorated for presentation. There is no conversational-turn container: a turn's thinking, its prose, and each call it made are separate entries, in wire order.
 
-Each tool call is **paired with its result** into one collapsible *exchange* headed by the call:
+`EntryKind` is the taxonomy an operator actually scans by — **what I said**, **what the agent said**, **what the agent did** — rather than the wire's roles:
+
+| kind | is | rendered |
+|---|---|---|
+| `UserMessage` | what I said | accent gutter down the left margin |
+| `AssistantMessage` | what the agent said | the unmarked default voice |
+| `Thinking` | what the agent thought | `✻ thinking`, dimmed register |
+| `ToolCall` | what the agent did | `❯ tool · arg` |
+| `ToolResult` | what came back | `✓`/`✗` and a size gloss, over the output |
+| `Annotation` | what the *harness* says about a call | dim line, no marker |
+
+A tool result occupies a `role: user` block on the wire, but it is the harness speaking rather than the operator, so it is its own kind and never carries the gutter. Authorship is **structural, not lexical**: you *see* who is speaking instead of reading a `▌ you` / `▌ assistant` noun.
+
+A call and its result are **separate entries**, because they are separate blocks on the wire and a result is not part of a call's content. They read as one unit anyway: a `ToolResult` and an `Annotation` do not open a new visual group (`EntryKind::starts_group`), so no blank line separates a call from what the spotter made of it or from what came back.
 
 ```
 ❯ bash · echo hi
+spotter cleared · reads only, inside the tree
+✓ 2 lines
 line one
 line two
 ```
 
-The result has no `result #N` / `[seq]` label — it is obviously the response to the call directly above it. The leading glyph unifies state and authorship: `❯` at rest, `✗` (red) when the result errored, `▶`/`▼` when the result is long enough to collapse (collapse is a toggle — peek then re-close, keyed by `call_id`). When a call is awaiting approval, the glyph is `⏸` (accent color).
+The result has no `result #N` / `[seq]` label — it is obviously the response to the call directly above it. Its header row carries the three things that have nowhere else to live: the `✓`/`✗` status (on the entry that actually failed, rather than on the call, which is a call regardless of how it went), the size of what follows, and the `· raw` flag when the distilled default is being overridden. It is also the focus target the raw/distilled verb hangs off.
 
 Because all tools are known at compile time, results get **per-tool representations** instead of a raw JSON/text dump:
 
-- `bash` — rendered as a shell code block; a single-line command goes inline on the exchange header, a multi-line command overflows into the body.
+- `bash` — rendered as a shell code block; a single-line command goes inline on the call header, a multi-line command overflows into the call entry's body.
 - `read` — strips the sentinel framing (`==<token> BEGIN <path>, LENGTH: n` … `END`) and highlights the file body by extension.
 - `edit` / `undo_edit` / `retarget_edit` — parses the `===DIFF===` section into a color-coded `DocumentNode::Diff` (added/removed/hunk/context lines).
 - Unrecognized tools — falls back to a plain code block of JSON input.
 
+A code block is highlighted, and carries its `❬lang❭` corner tag, **only when the language is known**. An untagged block is plain text in a bare border. The renderer used to default to `rust`, which was right in ferritin (a rustdoc fence is Rust unless it says otherwise) and wrong here, where the commonest untagged block is a tool result: `ls` output was labelled `❬rust❭` and coloured as Rust.
+
+Content **wraps to the box's inner width** (`render_code_block`), through the same `wrap_points` break policy prose and the composer use — one break oracle, not a second wrap path. A line longer than the frame used to run past the right border and be clipped there, which made untruncated output worth much less than it looks: a stack trace or compiler error is exactly the shape that overflows. Row boundaries partition a line with no gaps, so each highlighter token is clipped to the row it appears on and nothing is dropped between rows.
+
 The throughline: lean on pre-attentive cues (color, gutter, glyph) and tool-specific shape, not repeated labels.
+
+
+## Nothing is truncated
+
+**Every entry renders whole.** No line budget, no collapsed-by-default, no `(+N lines)` hint — the operator cannot perceive what the agent is dealing with through a summary of it ([positions.md](positions.md)), and that applies to a 400-line tool result and a twelve-paragraph thinking block alike.
+
+This is a starting assumption rather than a permanent rule. What it replaced was a generic collapsible-block treatment with a shared 8-line budget, applied to a body built as *the call's argument overflow followed by the result*. A multi-line `bash` command therefore consumed the whole budget on its own and the result was not visible at all — the two things most worth reading, hidden by a default nobody chose for them. The lesson kept here: an on-demand fold, or a preference for what to fold, can be added once reading real sessions says *what* is reliably worth hiding. Deciding that in advance is what produced the defect.
+
+Two consequences worth stating, since both look like omissions otherwise:
+
+- **A focused entry usually has no verb.** Focus is an affordance in itself; `⏎` on an entry with an empty [block menu](#the-block-menu) does nothing, rather than reaching for a verb it doesn't have. Focusable-with-no-action is the ordinary state, not a gap.
+- **There is one exception to "render whole," and it is not a truncation.** A *running* tool's output is unbounded and untriaged, so the live tail shows a **peek** — the last `PEEK_LINES` (10) lines, dimmed, under a `⋯ running · N lines, last 10` header. It is a glance at a live process, not a way to read its output; the whole output arrives, whole, when the call commits. A full-screen pager for a live process is future work.
 
 
 ## View state: surviving re-projection
 
-The transcript re-projects on every streamed token, and any exchange can be re-projected at any time (a result or verdict arriving rebuilds the entry that made the call). That means a `DocumentNode`'s collapse level and raw-vs-wire toggle cannot live inside the rebuilt `Document` — they would reset mid-stream. They live instead in `tui::state` as a `projection::ViewState` keyed by `call_id`, and the projection reads that state when building each exchange. `ViewState` also records which `call_id`s were toggled, since a view flip is not a log event and the incremental projection has no other way to learn of it.
+The transcript re-projects on every streamed token, and any entry can be re-projected at any time (a result or verdict arriving rebuilds the entry that made the call). That means a raw-vs-wire toggle cannot live inside the rebuilt `Document` — it would reset mid-stream. It lives instead in `tui::state` as a `projection::ViewState` keyed by `call_id`, and the projection reads that state when building each result. `ViewState` also records which `call_id`s were toggled, since a view flip is not a log event and the incremental projection has no other way to learn of it.
 
 ```rust
 struct ViewState {
-    expanded: HashSet<String>,   // call_ids the human expanded to Full
-    raw:      HashSet<String>,   // call_ids flipped to raw output
+    raw: HashSet<String>,   // call_ids flipped to raw output
 }
 ```
 
-The `r` key flips a focused tool result between its distilled wire form and its full raw output. Both are already client-side from the log entry's `WireState` and `RawResult` (see [the redaction fork](redaction-fork.md)), so this is a pure render choice with no round-trip. When showing raw over a distillate, the exchange header gains a `· raw` annotation so the human knows they are off the default view.
+One toggle, where there were two: expand/collapse went with the truncation. The raw fork survives because it is a choice between two real forms of the content, not a choice about how much of one to show. It flips a focused tool result between its distilled wire form and its full raw output; both are already client-side from the log entry's `WireState` and `RawResult` (see [the redaction fork](redaction-fork.md)), so this is a pure render choice with no round-trip. When showing raw over a distillate, the result header gains a `· raw` annotation so the human knows they are off the default view.
 
 
 ## The live tail
@@ -80,15 +110,13 @@ struct LiveTail {
 }
 ```
 
-**Thinking is kept, not just streamed.** A committed turn's `thinking` blocks render as a keyed collapsible at the head of the turn, in the same dimmed register as the live phase — thinking is never the answer and must not read as it. Collapsed is the default, but a collapsed block still shows its opening paragraphs with a `(+N)` hint, so the gist is always readable and the whole of it is one keypress away. That asymmetry is the point: reasoning streams past far too fast to read at generation speed, so the live phase is only a "something is happening" signal and *this* is the copy a human actually reads. The block is keyed by the entry's `seq` (thinking has no `call_id`) so its expand state survives the re-projection every streamed token triggers. Encrypted (`RedactedThinking`) blocks render a line saying so rather than nothing, so the record never implies the model didn't think when the provider merely withheld the text.
+**Thinking is kept, not just streamed.** A committed turn's `thinking` blocks render as a `Thinking` entry ahead of the turn's prose, in the same dimmed register as the live phase — thinking is never the answer and must not read as it. It is shown **in full**: reasoning streams past far too fast to read at generation speed, so the live phase is only a "something is happening" signal and *this* is the copy a human actually reads, at their own pace — which it can only be if all of it is here. Encrypted (`RedactedThinking`) blocks render a line saying so rather than nothing, so the record never implies the model didn't think when the provider merely withheld the text.
 
-A note on the accordion this exposed: `clip_node` can only shrink a single code/diff node, so a *multi-node* body (thinking's paragraphs) used to render in full at either level — "collapsed" differed from "expanded" only by the triangle. Collapsed bodies now stop after `BRIEF_LINES` worth of children, which is a no-op for the single-code-block bodies an exchange builds.
-
-`project` renders the committed log first, then appends the live tail — in-flight assistant prose as its own turn, each running tool as a result-less exchange. When a committed `LogEntry` arrives, `LiveTail::commit` clears the superseded buffer (assistant prose on `Payload::Assistant`, tool output on `Payload::ToolResult`), mirroring the wire projection's `streamed_*` dedup flags, now structural.
+`project` renders the committed log first, then appends the live tail — in-flight assistant prose as its own entry, each running tool as an output peek. When a committed `LogEntry` arrives, `LiveTail::commit` clears the superseded buffer (assistant prose on `Payload::Assistant`, tool output on `Payload::ToolResult`), mirroring the wire projection's `streamed_*` dedup flags, now structural.
 
 **The live phase: a turn that produces no prose is still visibly working.** The streaming sink is typed (`api::Streamed` — `Text` / `Thinking` / `ToolStart` / `ToolInput`), so thinking and a tool call's arriving input reach the client as their own `/stream` events (`thinking_delta`, `tool_call_start`, `tool_call_input`) rather than not at all. They fold into `phase`, rendered in the live tail's dimmed register beneath the in-flight prose: `✻ thinking… <the thinking so far>`, or `❯ calling <tool>…` over the JSON input as it accumulates. Three rules:
 
-- **In full, never truncated.** The point is to watch the work as it happens, so the phase shows everything that has arrived — thinking as dimmed prose, the input as dimmed wrapped lines. (Dimmed lines rather than a `code_block` because the boxed render doesn't wrap content to its inner width, so a long input would be clipped at the border — the open box-wrap defect in [backlog/dogfooding-friction.md](../backlog/dogfooding-friction.md).)
+- **In full, never truncated.** The point is to watch the work as it happens, so the phase shows everything that has arrived — thinking as dimmed prose, the input as dimmed wrapped lines. (Dimmed lines rather than a `code_block`: the live tail's register is dim throughout, and a box would present bytes still arriving as a finished thing to read. This was originally forced — the boxed render clipped long content at its border — but that defect is fixed, so the choice now rests on the register alone.)
 - **Shown, never parsed.** A tool call's input is a partial slice of a JSON document mid-stream, so it renders as raw text, which claims no structure. Rendering it *structurally* (`jiter`'s partial mode, `actson`'s push parser) is a real option and its own design question ([backlog/tui-streaming-lifecycle.md](../backlog/tui-streaming-lifecycle.md)); the constraint to keep is that the display must not assert structure the arrived bytes don't support.
 - **Prose supersedes it**, one phase supersedes another, and a committed turn clears it: prose is its own evidence of progress, acting supersedes thinking, and the committed entry is the record — which the transcript now keeps (below).
 
@@ -119,7 +147,7 @@ So sitting in the composer while the agent works, *one* `Esc` pauses and a secon
 
 Alongside kill, transcript-navigation `b` fires the **foreground→background handoff** (`POST /background`, [supervisor.md](supervisor.md)): the in-flight tool keeps running as a `bg#<n>` process instead of being killed or waited out. When the loop is idle the key is a status-line no-op (nothing sent). There is no separate note-capture flow — a message typed after `b` rides the seam-drain to the model alongside the handoff result. Both intents share one channel to the tokio side (`frontend::Interrupt`: `Kill` → `/interrupt`, `Detach` → `/background`).
 
-> **Discoverability.** Pause is reachable where the operator lives — `Esc` in the composer — and the [control strip](#the-control-strip) now shows the pace, handoff, and kill verbs as visible, focusable items one `↑` from the composer. The per-entry expand/raw verbs are on the [block menu](#the-block-menu). The single-letter transcript verb binds (`p`/`+`/`-`/`b`/`r`/`t`) have been purged (backlog/tui-control-strip/): the verbs now answer only on the strip (as scoped mnemonics or clicks) and the block menu, and a plain letter in the transcript no-ops.
+> **Discoverability.** Pause is reachable where the operator lives — `Esc` in the composer — and the [control strip](#the-control-strip) now shows the pace, handoff, and kill verbs as visible, focusable items one `↑` from the composer. The per-entry raw verb is on the [block menu](#the-block-menu). The single-letter transcript verb binds (`p`/`+`/`-`/`b`/`r`/`t`) have been purged (backlog/tui-control-strip/): the verbs now answer only on the strip (as scoped mnemonics or clicks) and the block menu, and a plain letter in the transcript no-ops.
 
 
 ## Wiring: two threads, one crossbeam channel
@@ -139,7 +167,7 @@ A streaming session repaints ~33 times a second against a document that only gro
 
 > A committed entry is re-projected only when a call it owns changes.
 
-Everything that can change about an already-committed entry arrives keyed by `call_id` — a tool result, a spotter verdict, the gate moving, an expand or raw toggle — so each marks one owner dirty (`ViewState` records its own toggles for this, since a view flip is not a log event). The uncommitted tail is rebuilt every time; it is small and changes constantly. A payload that annotates a call in a new way joins the list; `invalidate_all` is the always-correct fallback.
+Everything that can change about an already-committed entry arrives keyed by `call_id` — a tool result, a spotter verdict, the gate moving, a raw toggle — so each marks one owner dirty (`ViewState` records its own toggles for this, since a view flip is not a log event). The uncommitted tail is rebuilt every time; it is small and changes constantly. A payload that annotates a call in a new way joins the list; `invalidate_all` is the always-correct fallback.
 
 **Layout is cached per top-level node** (`DocumentState::layouts`, keyed by render width). A node is laid out when it is *visible* or when its cached layout is missing; otherwise its height advances the cursor and its recorded actions are replayed. The cache lives beside the nodes and moves with them — `splice_nodes` is the only way the document changes, so a replaced node can never keep a stale height. The nodes above the viewport still have to be *walked* (their heights are what says where the viewport starts) but that walk is integer arithmetic, not re-wrapping. Off-screen rows already skipped their cell writes and their syntax highlighting; what they were still paying was span wrapping, and this is what stops that.
 
@@ -154,7 +182,7 @@ Everything that can change about an already-committed entry arrives keyed by `ca
 
 `tui-textarea` was the intended first cut but is pinned to an older ratatui/unicode-width ecosystem and does not resolve against ratatui 0.30, hence the hand-rolled editor. The narrow interface makes replacing it later surgical.
 
-**Focus model.** Focus lives on one vertical axis — transcript, [control strip](#the-control-strip), composer — and the same physical key takes a context-dependent meaning (`C-p` is "previous line" composing, "previous unit" navigating), the way an editor's motion keys don't stop existing when you leave the buffer. There is no modal toggle: you cross between contexts by *moving*. `↑` at the top of the composer (the `0,0` detent: one press lands at the start of the first line, the next crosses the edge) spills focus onto the control strip, and `↑` again into the transcript; `↓` reverses — past the last unit it stops at the strip, then falls back into the composer; `Esc` is a graduated *return to steady state* (see [Graduated Esc](#graduated-esc) below) whose first rung returns to the composer from any stop. In the transcript context every block is a focus **unit** — each prose turn and each exchange — and the focused unit is marked by an accent glyph **`▌`** down its full height (a glyph, not reversed-video, so it shows on any theme and in the snapshot grid). `↑/↓` (or `C-p`/`C-n`) move between units; `←`/`→` choose among the focused unit's [block-menu](#the-block-menu) verbs and `Enter` fires the selected one (the collapse toggle by default). The verb keys — `r` raw, `t` theme, `+`/`-` pace, `p` pause, `b` background — are **not** bound here: after the bind purge (backlog/tui-control-strip/) each lives where it is shown (raw on the block menu, the rest on the strip), so a plain letter in the transcript is a clean no-op. The surviving letter binds are navigation and utility only (`g`/`G` top/bottom, `m` mouse, `?`/`h` help, `q` quit); typing never leaks into the composer. Submit in the composer drives `POST /turn`; submit while a gate is pending resolves the gate (below); `C-d` on an empty composer quits (shell EOF).
+**Focus model.** Focus lives on one vertical axis — transcript, [control strip](#the-control-strip), composer — and the same physical key takes a context-dependent meaning (`C-p` is "previous line" composing, "previous unit" navigating), the way an editor's motion keys don't stop existing when you leave the buffer. There is no modal toggle: you cross between contexts by *moving*. `↑` at the top of the composer (the `0,0` detent: one press lands at the start of the first line, the next crosses the edge) spills focus onto the control strip, and `↑` again into the transcript; `↓` reverses — past the last unit it stops at the strip, then falls back into the composer; `Esc` is a graduated *return to steady state* (see [Graduated Esc](#graduated-esc) below) whose first rung returns to the composer from any stop. In the transcript context every entry is a focus **unit** — each message, each thinking block, each call, each result — and the focused unit is marked by an accent glyph **`▌`** down its full height (a glyph, not reversed-video, so it shows on any theme and in the snapshot grid). `↑/↓` (or `C-p`/`C-n`) move between units; `←`/`→` choose among the focused unit's [block-menu](#the-block-menu) verbs and `Enter` fires the selected one — on most entries there are none, and `Enter` is inert. The verb keys — `r` raw, `t` theme, `+`/`-` pace, `p` pause, `b` background — are **not** bound here: after the bind purge (backlog/tui-control-strip/) each lives where it is shown (raw on the block menu, the rest on the strip), so a plain letter in the transcript is a clean no-op. The surviving letter binds are navigation and utility only (`g`/`G` top/bottom, `m` mouse, `?`/`h` help, `q` quit); typing never leaks into the composer. Submit in the composer drives `POST /turn`; submit while a gate is pending resolves the gate (below); `C-d` on an empty composer quits (shell EOF).
 
 
 ## The control strip
@@ -193,21 +221,22 @@ The focused item fills a reserved marker cell with `▸` (a space when unfocused
 
 ## The block menu
 
-The strip carries *loop verbs* (act on the daemon, matter mid-composition); the **block menu** (`tui/block_menu.rs`) carries the *entry verbs* of one transcript unit — the actions on the entry itself. It travels with `↑`/`↓` focus and renders trailing the focused unit's header line (`❯ bash · ls  ▸ expand  raw`), styled like the strip's items: a reserved marker cell (`▸` selected, a space otherwise, so moving the selection never shifts text) and the same button surface. Trailing the header rather than taking its own row means moving focus never reflows the transcript — a dedicated row would repaint on every `j`/`k`.
+The strip carries *loop verbs* (act on the daemon, matter mid-composition); the **block menu** (`tui/block_menu.rs`) carries the *entry verbs* of one transcript unit — the actions on the entry itself. It travels with `↑`/`↓` focus and renders trailing the focused unit's header line (`✓ 20 lines  ▸ raw`), styled like the strip's items: a reserved marker cell (`▸` selected, a space otherwise, so moving the selection never shifts text) and the same button surface. Trailing the header rather than taking its own row means moving focus never reflows the transcript — a dedicated row would repaint on every `j`/`k`.
 
-The verbs a unit carries are a pure function of the block (`block_menu::menu_items`), computed once and read by two callers with no drift: the renderer (which has the node in hand) and the key/mouse dispatch (which looks it up by focus). The collapse toggle ranks first, so `⏎` on a focused unit still means "expand this," as it did before the menu:
+The verbs a unit carries are a pure function of the entry (`block_menu::menu_items`), computed once and read by two callers with no drift: the renderer (which has the node in hand) and the key/mouse dispatch (which looks it up by focus). There is exactly one verb so far:
 
-- **expand / collapse** — the `ExpandBlock` toggle, offered only when the body has more lines than a collapsed block shows (`render_node::is_collapsible`); the label names the destination state.
-- **raw / distilled** — the `toggle_raw` flip (docs/redaction-fork.md), offered on a tool exchange with a result. The new home for the forgettable `r`.
+- **raw / distilled** — the `toggle_raw` flip (docs/redaction-fork.md), on a keyed `ToolResult`. The new home for the forgettable `r`.
 
-`←`/`→` (and `C-b`/`C-f`) choose among them, clamped at both ends; `⏎`/space or a click fires the selected one — clicks resolve against per-frame document-coordinate rects (`block_menu_hits`) *ahead of* the whole-header expand action underneath, or every menu click would just expand. The selection resets to the leading verb whenever focus moves to another unit, so `⏎` after a move is always the most relevant thing. A block with no durable `key` (a live tool's in-flight output) and a prose `Turn` (no per-entry verbs yet) carry no menu, and `⏎` there stays the no-op / plain-expand it was. The gated exchange's verbs are the gate's — they live on the strip — so it carries no menu either. Later entry verbs (full-screen, open-in-editor, actions on a backgrounded process's entry) attach here as their mechanisms land.
+**Most entries carry no verbs at all**, and that is the ordinary case rather than a gap: there is nothing to expand, and no other per-entry mechanism has been earned yet. `⏎` on an empty menu falls through to a plain activation, which for a transcript entry does nothing. Building the affordance before knowing what it should do is what produced the truncation default this section used to describe.
+
+`←`/`→` (and `C-b`/`C-f`) choose among the items, clamped at both ends; `⏎`/space or a click fires the selected one — clicks resolve against per-frame document-coordinate rects (`block_menu_hits`) *ahead of* the whole-header focus action underneath, or every menu click would just move focus. The selection resets to the leading verb whenever focus moves to another unit. A running tool's peek has no durable `key`, so it carries no menu — the toggle would not survive the next re-projection. A gated call has no result entry at all until it resolves, so nothing there carries a raw flip; its verbs are the gate's, on the strip. Later entry verbs (full-screen, fold, open-in-editor, actions on a backgrounded process's entry) attach here as their mechanisms land.
 
 
 ## Inline approval gates
 
 The approval gate is ephemeral control state: the daemon gates *after* appending the `tool_use` to the log and *before* running the tool, but there is no SSE event for this transition. A poll task watches `GET /state`'s `pending_approval` field and emits a `TuiEvent::Gate` when it appears or resolves.
 
-The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail result-less exchange. `project` receives `pending_call` + `pending_reason` and emits the gate beside that exchange, where the result will land — the spotter's reason (when it gated via the spotter — read from the `Spot` audit entry, see [permissions](permissions.md)), then the affordance carrying the `⏸`:
+The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail call with no result. `project` receives `pending_call` + `pending_reason` and emits the gate beside that call, where the result will land — the spotter's reason (when it gated via the spotter — read from the `Spot` audit entry, see [permissions](permissions.md)), then the affordance carrying the `⏸`:
 
 ```
 ❯ bash · rm -rf /tmp/scratch
@@ -217,13 +246,13 @@ spotter gated · deletes outside the git tree — not reversible
 
 Reading order is call → what the spotter made of it → what to do, so the affordance lands adjacent to the strip carrying the verbs.
 
-**Every judged call carries its verdict, not only a held one.** The `Spot` entries are indexed by `call_id` alongside the results and emitted with the exchange they judge, so a *cleared* call shows its reason too — which is most of them, since clearing is the common verdict and nothing ever interrupts for one. The stance leads the line (`spotter cleared · …`, `watching`, `gated`) because it is the scannable part; without it every verdict looks alike. The whole line sits in the dim register: before the decision it is why the call is held, and after it is a gloss on what the call was taken to be, so it never competes with the call or its result for attention. A resolved gate keeps its verdict, which is the only surviving record when a human approves something the spotter wanted to stop. `Origin` is not drawn — a fail-closed verdict's own reason reads "spotter unavailable", so a glyph would only repeat the line. The committed entry is the source; `pending_reason` from `/state` covers only the window where a gate has registered but its log entry hasn't reached the client, so the two never both render (that path has no stance, and reads `spotter · …`).
+**Every judged call carries its verdict, not only a held one.** The `Spot` entries are indexed by `call_id` alongside the results and emitted with the call they judge, so a *cleared* call shows its reason too — which is most of them, since clearing is the common verdict and nothing ever interrupts for one. The stance leads the line (`spotter cleared · …`, `watching`, `gated`) because it is the scannable part; without it every verdict looks alike. The whole line sits in the dim register: before the decision it is why the call is held, and after it is a gloss on what the call was taken to be, so it never competes with the call or its result for attention. A resolved gate keeps its verdict, which is the only surviving record when a human approves something the spotter wanted to stop. `Origin` is not drawn — a fail-closed verdict's own reason reads "spotter unavailable", so a glyph would only repeat the line. The committed entry is the source; `pending_reason` from `/state` covers only the window where a gate has registered but its log entry hasn't reached the client, so the two never both render (that path has no stance, and reads `spotter · …`).
 
 Whether this much per-call annotation earns its space is an open question the dogfooding loop is meant to answer; a suppression setting is the obvious lever if it turns out to be noise.
 
-**Structured annotations are siblings of the exchange, never children of it.** The exchange's collapsible body holds only what the agent produced — the call's arguments and its result — so the body's truncation can never reach something the harness added *about* the call. This is not a stylistic split: while the reason and the affordance were nested, a multi-line command filled the collapsed body on its own and clipped both, and the `⏸` (then the exchange's resting glyph) was replaced by the disclosure triangle the renderer substitutes once a body is collapsible. A gate on any realistic command therefore showed no reason, no affordance, and no sign the call was held. Anything that can be collapsed away is not a marker, so the `⏸` rides the affordance instead.
+**What the harness says about a call is its own entry, never inside the call.** An `Annotation` entry is a different rung's judgment *about* the call rather than part of the call's content, so it sits beside it — and, not being agent-generated, it is not a focus stop. It is read in place, not visited. The reading order call → verdict → affordance/result comes from entry order alone, and the no-blank-line rule (`starts_group`) is what makes the run read as one unit.
 
-The same split is where per-call structure goes as it lands; the eventual shape is a typed exchange owning its structured sub-items rather than a flat sibling list.
+The split was originally forced: while the reason and the affordance were nested inside the exchange body, a multi-line command filled the collapsed body on its own and clipped both, and the `⏸` was replaced by the disclosure triangle the renderer substituted once a body was collapsible — so a gate on any realistic command showed no reason, no affordance, and no sign the call was held. That truncation is gone, but the split is kept on its own merits: the `⏸` belongs to the gate, which is something the harness did, not to the call.
 
 The status bar mirrors this affordance for the scrolled-away case, and the [control strip](#the-control-strip) simultaneously carries the full verb set (`approve ⏎ · allow… · abort`), so `↑ ⏎` approves without typing and the strip — not instruction text — is the legend for the richer verbs. Strip `approve`/`abort` resolve the gate directly *without* clearing a drafted redirect the operator decided against sending (unlike an empty-composer `⏎`, which routes through the submit path below).
 
@@ -236,7 +265,7 @@ Submitting from the composer while a gate is pending resolves it with the same t
 
 The `.abort` / `.allow` sentinels are retained as the submit *mechanism* — the strip's `allow…` stager commits through the same `.allow` path, so grant semantics live in one place — they're just no longer advertised as things to type.
 
-Resolving replaces the inline affordance with the real result (or, on redirect/abort, an error result), and the call stays in the transcript with that outcome in place of output.
+Resolving replaces the inline affordance with the real result entry (or, on redirect/abort, an error result), and the call stays in the transcript with that outcome in place of output.
 
 ## The sidebar
 

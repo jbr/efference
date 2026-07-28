@@ -1,13 +1,11 @@
-//! Tool-result rendering: expansion, collapse, distilled verdicts, and errors.
+//! Tool-result rendering: whole results, distilled verdicts, and errors.
 
 use super::*;
 
-/// The same coding turn, but with every collapsed block expanded — so the
-/// baseline shows how tool-call JSON input and raw tool output actually render
-/// (a fenced code block inside the outdented `╰─` border), not just the
-/// collapsed `[...]` snippet. This is the form behind every `⏎`-to-expand.
+/// The baseline for how a tool call and its result render: the call's command as a
+/// shell block, the result whole under its own status header.
 #[test]
-fn transcript_expanded_tool_io() {
+fn transcript_tool_io() {
     let mut play = Screenplay::new(80, 30);
     play.user("Show me the project function signature.");
     play.assistant(
@@ -25,37 +23,14 @@ fn transcript_expanded_tool_io() {
         false,
         WireState::Raw,
     );
-    play.expand_all();
-    play.snapshot("transcript_expanded_tool_io");
+    play.snapshot("transcript_tool_io");
 }
 
-/// A result longer than the collapse threshold: by default it shows the first
-/// few lines under a `▶` disclosure triangle with a `(+N lines)` hint, rather
-/// than hiding everything. This is the accordion's collapsed state.
+/// A result far longer than the old 8-line budget renders **whole** — the default
+/// view is the whole thing, because the operator can't perceive what the agent is
+/// dealing with through a summary of it (docs/positions.md).
 #[test]
-fn transcript_long_result_collapsed() {
-    let mut play = Screenplay::new(80, 26);
-    play.user("List the tui module.");
-    play.assistant(
-        "Here's the directory.",
-        vec![tool_call(
-            "bash",
-            "toolu_05",
-            json!({ "command": "ls src/tui" }),
-        )],
-    );
-    let listing = (1..=20)
-        .map(|n| format!("render_module_{n:02}.rs"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    play.tool_result("toolu_05", &listing, false, WireState::Raw);
-    play.snapshot("transcript_long_result_collapsed");
-}
-
-/// The same long result after activating its disclosure triangle: `▼` and the
-/// full body, no `(+N lines)` hint. Drives the real `ExpandBlock` action.
-#[test]
-fn transcript_long_result_expanded() {
+fn transcript_long_result() {
     let mut play = Screenplay::new(80, 32);
     play.user("List the tui module.");
     play.assistant(
@@ -71,8 +46,44 @@ fn transcript_long_result_expanded() {
         .collect::<Vec<_>>()
         .join("\n");
     play.tool_result("toolu_05", &listing, false, WireState::Raw);
-    play.expand_all();
-    play.snapshot("transcript_long_result_expanded");
+    play.snapshot("transcript_long_result");
+}
+
+/// A result line wider than the code box **wraps inside it**, rather than running
+/// past the right border and being clipped there. Untruncated output is worth
+/// little if the long lines are cut at the frame — and a stack-trace or compiler
+/// error is exactly the shape that overflows (docs/tui.md).
+#[test]
+fn transcript_long_line_wraps_inside_the_box() {
+    let mut play = Screenplay::new(80, 20);
+    play.user("Why did it fail?");
+    play.assistant(
+        "Reading the failure.",
+        vec![tool_call(
+            "bash",
+            "toolu_09",
+            json!({ "command": "cargo test --lib" }),
+        )],
+    );
+    play.tool_result(
+        "toolu_09",
+        "thread 'tui::projection::test::projects_a_flat_sequence_of_entries' panicked at \
+         src/tui/projection/test.rs:88:5: assertion `left == right` failed: one entry per \
+         wire block\nshort tail line",
+        true,
+        WireState::Raw,
+    );
+    // Nothing may sit right of the border column, on any row.
+    let frame = play.render();
+    play.snapshot("transcript_long_line_wraps_inside_the_box");
+    assert!(
+        frame.contains("panicked at"),
+        "the head of the long line is shown"
+    );
+    assert!(
+        frame.contains("wire block"),
+        "…and so is its tail, which used to be clipped at the border:\n{frame}"
+    );
 }
 
 /// A distilled tool result — the `WireState::Distilled` path, where the
