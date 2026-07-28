@@ -194,7 +194,7 @@ pub(crate) fn entry_nodes(
                         // — the same rung distinction the spotter's verdict gets — so
                         // it is its own entry rather than a trailing line boxed in
                         // with the output (docs/redaction-fork.md).
-                        nodes.extend(distillate_note(call.id.0.as_str(), raw, wire, view));
+                        nodes.extend(distillate_note(call, raw, wire, view));
                     }
                 }
             }
@@ -322,26 +322,20 @@ fn result_entry(
     // because text is all it has, and a terminal has a gutter (docs/tui.md). Both
     // views resolve the verdict through `project::distillate`, so they can differ in
     // form but never in which lines they show.
-    // A distillate that dropped nothing *is* the raw content, so a tool with its own
-    // representation keeps it rather than becoming numbered lines: the fork keeps
-    // everything more often than not, and a `retain(all)` verdict on an edit was
-    // turning its colored diff into verbatim text with a bare `===DIFF===` line
-    // sitting in the middle of it.
+    // **A tool with its own representation renders the full output through it**, not
+    // the triaged form. A diff is only a diff whole: a subset of its lines is a
+    // mangled diff, not a smaller one, and the same goes for a `read`'s sentinel
+    // framing. Where the triage is the useful view — a long `bash` result — there is
+    // no richer form to fall back to, and the numbered gutter stays, since it is the
+    // coordinate system the verdict was expressed in.
     //
-    // Only for those tools. A complete distillate of, say, a `bash` result has no
-    // richer form to fall back to, and there the numbered gutter is worth keeping —
-    // it is the coordinate system the verdict was expressed in.
-    let complete_distillate = has_rich_rendering(call.name.as_str())
-        && match wire {
-            WireState::Distilled { keep, .. } => {
-                let d = crate::project::distillate(&raw.content, keep);
-                d.dropped == 0 && d.ranges == [(1, d.shown.len())]
-            }
-            _ => false,
-        };
+    // The note still shows either way: it is the distiller's account of the output,
+    // and it is true regardless of which form of the output is on screen.
+    let rich_form = has_rich_rendering(call.name.as_str())
+        && matches!(wire, WireState::Raw | WireState::Distilled { .. });
 
     let (body, size) = match wire {
-        WireState::Distilled { keep, .. } if !show_raw && !complete_distillate => {
+        WireState::Distilled { keep, .. } if !show_raw && !rich_form => {
             let distillate = crate::project::distillate(&raw.content, keep);
             let kept = distillate.numbered_lines();
             // Verb first, so which number is which is unambiguous — `3 of 412` alone
@@ -365,10 +359,10 @@ fn result_entry(
             (body, size)
         }
         _ => {
-            // A forced-raw view and a complete distillate both *are* the raw content,
-            // so both pass a synthetic `Raw` wire and get the same rich tool-specific
-            // rendering (diff/read) a natural raw result gets.
-            let (content, effective_wire) = if show_raw || complete_distillate {
+            // A forced-raw view and a rich-form tool both render the full output, so
+            // both pass a synthetic `Raw` wire to get the tool-specific rendering
+            // (diff / read) a natural raw result gets.
+            let (content, effective_wire) = if show_raw || rich_form {
                 (raw.content.clone(), &WireState::Raw)
             } else {
                 let content = match wire {
@@ -425,7 +419,7 @@ fn result_entry(
 /// Empty while the result is flipped to raw: raw is what the tool actually
 /// returned, and the note is not part of that.
 fn distillate_note(
-    call_id: &str,
+    call: &ToolCall,
     raw: &RawResult,
     wire: &WireState,
     view: &ViewState,
@@ -433,18 +427,35 @@ fn distillate_note(
     let WireState::Distilled { keep, note } = wire else {
         return Vec::new();
     };
-    if view.is_raw(call_id) {
+    if view.is_raw(call.id.0.as_str()) {
         return Vec::new();
     }
     let mut nodes = Vec::new();
     if let Some(note) = note.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
         nodes.push(annotation_line("⟢ ", note));
     }
-    let dropped = crate::project::distillate(&raw.content, keep).dropped;
-    if dropped > 0 {
+    let distillate = crate::project::distillate(&raw.content, keep);
+
+    // A tool with its own representation renders the *full* output, so where triage
+    // actually dropped lines the operator is now seeing more than the agent did.
+    // That gap is exactly the thing this surface exists to make visible
+    // (docs/positions.md), so it is stated rather than left to be inferred from a
+    // line count that no longer describes what is on screen.
+    let kept: usize = distillate.ranges.iter().map(|(s, e)| e + 1 - s).sum();
+    if has_rich_rendering(call.name.as_str()) && kept < distillate.shown.len() {
+        nodes.push(annotation_line(
+            "⟢ ",
+            &format!(
+                "shown whole; the agent's copy kept {kept} of {} lines",
+                distillate.shown.len()
+            ),
+        ));
+    }
+
+    if distillate.dropped > 0 {
         nodes.push(annotation_line(
             "… ",
-            &format!("{dropped} more lines truncated before triage"),
+            &format!("{} more lines truncated before triage", distillate.dropped),
         ));
     }
     nodes

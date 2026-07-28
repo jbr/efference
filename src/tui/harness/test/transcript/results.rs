@@ -154,11 +154,58 @@ fn transcript_distilled_result() {
     play.snapshot("transcript_distilled_result");
 }
 
-/// A distillate that dropped nothing **is** the raw content, so it keeps the
-/// per-tool rendering rather than becoming numbered lines. The fork keeps
-/// everything more often than not, and a `retain(all)` verdict on an edit was
-/// turning its colored diff into verbatim text with a bare `===DIFF===` line
-/// sitting in the middle of it (docs/tui.md).
+/// A tool with its own representation renders the **full** output through it, even
+/// when triage kept only part — a subset of a diff's lines is a mangled diff, not a
+/// smaller one. Where the operator is therefore seeing more than the agent did,
+/// that gap is stated rather than left to be inferred (docs/tui.md).
+#[test]
+fn a_partial_distillate_of_an_edit_still_renders_whole() {
+    let mut play = Screenplay::new(80, 24);
+    play.user("Add the line.");
+    play.assistant(
+        "Editing.",
+        vec![tool_call(
+            "edit",
+            "toolu_e3",
+            json!({ "file_path": "CHANGELOG.md", "operation": "insert_after" }),
+        )],
+    );
+    play.tool_result(
+        "toolu_e3",
+        "Applied insert after — the file has been updated.\n\
+         \n\
+         ===DIFF===\n\
+         @@ -12,3 +12,4 @@\n\
+         \x20- In-process MCP tools (fs-mcp, semantic-edit-mcp).\n\
+         +- `read` tool line-range support in `fs-mcp`.\n\
+         \x20- Interactive TUI (`efference tui`).",
+        false,
+        WireState::Distilled {
+            keep: Keep::Ranges(vec![(1, 1)]),
+            note: Some("inserted the read line-range entry".into()),
+        },
+    );
+
+    let frame = play.render();
+    play.snapshot("transcript_partial_distillate_of_an_edit");
+    assert!(
+        frame.contains("+- `read` tool line-range support"),
+        "the diff renders whole, not clipped to the kept range:\n{frame}"
+    );
+    assert!(
+        frame.contains("inserted the read line-range entry"),
+        "the distiller's note still shows:\n{frame}"
+    );
+    assert!(
+        frame.contains("the agent's copy kept 1 of 7 lines"),
+        "…and so does the fact that the agent saw less than this:\n{frame}"
+    );
+}
+
+/// A distillate that dropped nothing is the same case, and the one that surfaced it:
+/// the fork returns `retain(all)` more often than not, and that was turning an
+/// edit's colored diff into verbatim text with a bare `===DIFF===` line sitting in
+/// the middle of it. Nothing was dropped here, so there is no divergence to state.
 #[test]
 fn a_complete_distillate_keeps_its_per_tool_rendering() {
     let mut play = Screenplay::new(80, 22);
