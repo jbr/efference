@@ -20,7 +20,7 @@ use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
 use crate::daemon::{Shared, StreamDelta};
-use crate::distill::{BgVerdict, Distiller};
+use crate::distill::{BgVerdict, Distiller, Pending};
 use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
@@ -195,21 +195,29 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 break; // model is done with this turn → wait for the next.
             }
 
+            // A completion usually carries one call (docs/README.md), but
+            // `disable_parallel_tool_use` is a *request*, not a guarantee — no
+            // OpenRouter-routed endpoint supports the equivalent knob at all, so a
+            // provider may return several. Run them all here, holding the results, and
+            // triage them together at one gate below. Triaging between calls would build
+            // a fork request whose trailing assistant message still carries unanswered
+            // `tool_use` blocks, which the API rejects (docs/redaction-fork.md).
             let mut abort_turn = false;
             let mut redirect: Option<String> = None;
+            let mut steps: Vec<Step> = Vec::new();
             for call in &calls {
                 // Once we've decided to stop running calls (abort or redirect),
                 // every remaining `tool_use` still needs a paired result or the
                 // wire orphans it and the API rejects the request (docs/README.md).
                 if abort_turn || redirect.is_some() {
-                    shared.append(turn, aborted(call))?;
+                    steps.push(Step::direct(aborted(call)));
                     continue;
                 }
                 // The interrupt's *before* juncture (docs/control-channel.md): the operator
                 // asked out while the model was generating, so this call never runs — the
                 // un-run stand-in already says so, and the turn ends here.
                 if shared.take_interrupt() {
-                    shared.append(turn, aborted(call))?;
+                    steps.push(Step::direct(aborted(call)));
                     abort_turn = true;
                     continue;
                 }
@@ -223,385 +231,199 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 // expand-to-empty. The logged `tool_use` keeps the variable form
                 // the model wrote; only the in-flight call is rewritten.
                 let expanded;
-                let call = match shared.expand_call(call) {
+                let running = match shared.expand_call(call) {
                     Ok(None) => call,
                     Ok(Some(rewritten)) => {
                         expanded = rewritten;
                         &expanded
                     }
                     Err(message) => {
-                        shared.append(turn, expansion_error(call, &message))?;
+                        steps.push(Step::direct(expansion_error(call, &message)));
                         continue;
                     }
                 };
-                // The permission cascade (docs/permissions.md). First the
-                // deterministic fast-path (docs/permissions.md): a
-                // `Clear` verdict auto-approves with zero model cost. What it can't
-                // clear falls to the independent spotter — a fresh-context model rung
-                // that re-decides on the residual before the human does, returning a
-                // graded stance. Its verdict is logged as a `Spot` audit entry
-                // regardless of outcome (the first permission decision that earns a
-                // log line; fast-path clears stay unlogged), and its usage reads the
-                // shared spotter prefix, so it joins the cache telemetry (docs/log-and-projection.md).
-                // Classify against the *effective* policy — base role + the fold of every
-                // grant so far (docs/permissions.md). A prior amendment can
-                // promote this very call into the fast-path; the spotter sees the same scope.
-                let role = shared.effective_config();
-                // The session's own config file is its policy *interface*: a write to it is a
-                // proposal that must always reach the operator — never auto-cleared by a path grant,
-                // never spotter-cleared (docs/permissions.md).
-                // It bypasses the whole cascade straight to the human gate; on approval the write
-                // lands and fs-watch folds the diff into effective policy.
-                let config_write = shared
-                    .config_path()
-                    .is_some_and(|cfg| policy::is_config_write(call, cfg));
-                let approval = if config_write {
-                    frontend.approve(call).await
-                } else {
-                    match policy::classify(&role, call) {
-                        Verdict::Clear => Approval::Approve,
-                        // HumanOnly (docs/permissions.md): the human takes the
-                        // spotter's role *entirely* — skip the spotter (pay no tokens, log no `Spot`)
-                        // and gate straight to the human, who both decides this call and grows the
-                        // allowlist by hand (`approve-always-at-prefix`, the `.allow` grant). Learning
-                        // is relocated to the human, not lost. Autonomous/SpotterHuman fall through to
-                        // the spotter rung below.
-                        Verdict::Gate if shared.review_level() == ReviewLevel::HumanOnly => {
-                            frontend.approve(call).await
-                        }
-                        Verdict::Gate => {
-                            // Prefix-promotion probe (docs/permissions.md): on a
-                            // bash move, observe its recurrence and pick the shortest prefix worth
-                            // asking the spotter to vouch for *for all arguments*. The spotter answers
-                            // via the stance (`clear_always`), so the probe rides the one spot call.
-                            let probe = if call.name == bash::NAME {
-                                call.input
-                                    .get("command")
-                                    .and_then(Value::as_str)
-                                    .and_then(policy::simple_command_tokens)
-                                    .and_then(|tokens| {
-                                        shared.observe_and_pick_probe(&role, &tokens)
-                                    })
-                            } else {
-                                None
-                            };
-                            let spotting = spotter.assess(&role, call, probe.as_deref()).await;
-                            if let Some(u) = spotting.usage {
-                                shared.record_request(u);
-                            }
-                            let stance = spotting.read.stance;
-                            let reason = spotting.read.reason;
-                            let origin = spotting.origin;
-                            shared.append(
-                                turn,
-                                Payload::Spot(Spot {
-                                    call_id: call.id.clone(),
-                                    stance,
-                                    reason: reason.clone(),
-                                    origin,
-                                    probed_prefix: probe.clone(),
-                                }),
-                            )?;
-                            // The probe's answer *is* the stance: `clear_always` is the safe-vote for
-                            // the probed prefix, any other stance is not-safe (a fail-closed fallback
-                            // didn't judge, so it casts no vote). When the safe-votes cross the
-                            // consensus threshold, file a non-blocking `Proposed(Command)` — inert
-                            // until an orchestrator-above commits it; `promotable_command` re-checks it
-                            // lexes and isn't already covered. Nothing rides along: the proposal can't
-                            // clear anything until committed, and this very call is still decided below.
-                            if let Some(prefix) = &probe
-                                && origin == Origin::Model
-                                && shared.record_probe_vote(prefix, stance == Stance::ClearAlways)
-                                && let Some(command) = policy::promotable_command(&role, prefix)
-                            {
-                                shared.append(
+                match run_call(frontend, &shared, &spotter, &toolbox, turn, running).await? {
+                    Decision::Ran { result, handoff } => steps.push(Step::Ran {
+                        call: call.clone(),
+                        result,
+                        handoff,
+                    }),
+                    Decision::Direct(payloads) => steps.push(Step::Direct(payloads)),
+                    Decision::Withheld(payload) => {
+                        // The interrupt's *after* juncture (docs/control-channel.md). The
+                        // call finished but its output stops at the log — taken before the
+                        // gate, so the discarded result is never peeked at and costs no
+                        // round-trip, which is the point of the verb.
+                        steps.push(Step::Direct(vec![payload]));
+                        abort_turn = true;
+                    }
+                    Decision::Abort(payload) => {
+                        steps.push(Step::Direct(vec![payload]));
+                        abort_turn = true;
+                    }
+                    Decision::Redirect { payload, message } => {
+                        steps.push(Step::Direct(vec![payload]));
+                        redirect = Some(message);
+                    }
+                }
+            }
+
+            // The gate (docs/redaction-fork.md): one peek over every result this
+            // completion produced. Nothing to triage means no round-trip.
+            let pending: Vec<Pending<'_>> = steps
+                .iter()
+                .filter_map(|s| match s {
+                    Step::Ran { call, result, .. } => Some(Pending { call, raw: result }),
+                    Step::Direct(_) => None,
+                })
+                .collect();
+            let mut gate = if pending.is_empty() {
+                None
+            } else {
+                // `ForkPeek` re-enters the model here — the prefix is the log through
+                // this completion's `tool_use` blocks, so we snapshot it (can't borrow
+                // across the distiller's await).
+                let entries = shared.snapshot();
+                // Open the triage gate (docs/inbox.md): re-show the still-active
+                // notifications (left at earlier gates), then log any newly arrived
+                // (ephemeral) ones as first-show `Ambient` entries — each entry's seq
+                // becomes its durable id, the handle the verdict pins/dismisses by. (They
+                // project to nothing, so the fork prefix `entries` stays byte-identical,
+                // docs/log-and-projection.md.)
+                let mut shown = active_shown(&entries);
+                for note in shared.drain_inbox() {
+                    let source = note.source.clone();
+                    let body = note.body.clone();
+                    let seq = shared.append(turn, Payload::Ambient(note))?;
+                    shown.push(ShownNotification { seq, source, body });
+                }
+                // The live background processes' fresh tails ride the same peek
+                // (docs/supervisor.md) — re-sampled now, never logged unless pinned.
+                let background = shared.bg_snapshot();
+                Some(
+                    distiller
+                        .distill(client, &entries, &pending, &shown, &background)
+                        .await,
+                )
+            };
+            drop(pending);
+
+            // The gate's usage: each fork request reads the shared canonical prefix
+            // (sliding its TTL), so it belongs in the docs/log-and-projection.md telemetry.
+            if let Some(g) = &gate {
+                for u in &g.usage {
+                    shared.record_request(u.clone());
+                }
+            }
+            // Apply the background verdicts before writing the `Triage`s: a `Pin`
+            // snapshots the process's current tail into an `Ambient` and folds a `Pin`
+            // disposition into the inbox verdict — so it projects at the `Triage`
+            // position, reusing the notification pin path (docs/supervisor.md). A `Mute`
+            // just flags the supervisor.
+            let mut inbox_verdict = gate
+                .as_mut()
+                .map(|g| std::mem::take(&mut g.inbox))
+                .unwrap_or_default();
+            if let Some(g) = &gate {
+                for (handle, verdict) in &g.background {
+                    match verdict {
+                        BgVerdict::Mute => shared.mute_bg(handle),
+                        BgVerdict::Pin => {
+                            if let Some((source, body)) = shared.bg_pin_snapshot(handle) {
+                                let seq = shared.append(
                                     turn,
-                                    Payload::ConfigEdit(ConfigEdit {
-                                        state: EditState::Proposed,
-                                        resolves: None,
-                                        change: ConfigChange::Command { command },
-                                        note: format!(
-                                            "spotter: `{prefix}` judged safe for all arguments — \
-                                             proposed for the allowlist"
-                                        ),
+                                    Payload::Ambient(Notification {
+                                        source,
+                                        body,
+                                        slot: Some(handle.clone()),
                                     }),
                                 )?;
-                            }
-                            match stance {
-                                // Clear (and its promotion refinement) auto-approve the move, no human.
-                                // Watch/Gate route to the human gate (or, autonomous, the redirect) —
-                                // the watch-window that gives Watch its own latency is a later unit.
-                                Stance::Clear | Stance::ClearAlways => Approval::Approve,
-                                // The autonomous flip (docs/permissions.md):
-                                // with no synchronous human, don't block on an absent gate — redirect the
-                                // model to its config file, the one policy interface it has. (The config
-                                // write itself still gates for the orchestrator-above, above.) Supervised:
-                                // route to the human gate as before.
-                                Stance::Watch | Stance::Gate => {
-                                    if shared.autonomous() {
-                                        Approval::Redirect(autonomous_gate_message(
-                                            shared.config_path(),
-                                            &reason,
-                                        ))
-                                    } else {
-                                        frontend.approve(call).await
-                                    }
-                                }
+                                inbox_verdict.push((seq, Disposition::Pin));
                             }
                         }
                     }
-                };
-                // A `ConfigEdit` is the orchestrator legislating policy (docs/permissions.md):
-                // append the change (which folds into the effective config), then re-classify
-                // *this* call against the new policy. The call runs only if the changed rule now
-                // clears it — it never rides along unchecked.
-                let approval = match approval {
-                    Approval::ConfigEdit { change, note } => {
-                        commit_config_edit(&shared, turn, call, change, note)?
+                }
+            }
+
+            // Append in call order: each step's own payloads, and for a triaged result
+            // its `ToolResult` followed by the `Triage` audit entry keyed to that
+            // result's seq (docs/redaction-fork.md). The gate-scoped riders — inbox
+            // dispositions and surfaced context — ride the **last** `Triage` of the batch:
+            // they were decided once for the whole step, and tail-ward placement keeps the
+            // wire append-only (docs/inbox.md), which is exactly where they already land
+            // when a completion carried a single call.
+            let mut verdicts = gate
+                .as_mut()
+                .map(|g| std::mem::take(&mut g.results))
+                .unwrap_or_default()
+                .into_iter();
+            let surfaced = gate
+                .as_ref()
+                .map(|g| g.surfaced.clone())
+                .unwrap_or_default();
+            let last_ran = steps
+                .iter()
+                .rposition(|s| matches!(s, Step::Ran { .. }))
+                .unwrap_or(0);
+            let mut handoffs: Vec<String> = Vec::new();
+            for (index, step) in steps.into_iter().enumerate() {
+                match step {
+                    Step::Direct(payloads) => {
+                        for p in payloads {
+                            shared.append(turn, p)?;
+                        }
                     }
-                    other => other,
-                };
-                match approval {
-                    // `consolidate` acts on the log, not the world (docs/consolidate.md):
-                    // record the boundary mark + pair the `tool_use`. No world-run, no
-                    // distill. Slice 0 — the mark is inert; Slice 1's projection folds
-                    // the span it names (its `upto`).
-                    Approval::Approve if call.name == consolidate::NAME => {
-                        let note = consolidate::summary(&call.input).unwrap_or_default();
-                        let upto = consolidate::extent(&shared.snapshot());
-                        shared.append(
-                            turn,
-                            Payload::Mark(Mark {
-                                kind: MarkKind::Boundary { upto },
-                                note,
-                            }),
-                        )?;
-                        shared.append(
-                            turn,
-                            Payload::ToolResult {
-                                call_id: call.id.clone(),
-                                raw: RawResult {
-                                    content: "consolidated".into(),
-                                    is_error: false,
-                                },
-                                wire: WireState::Raw,
-                            },
-                        )?;
-                    }
-                    Approval::Approve => {
-                        // Acquire the result. A backgrounded bash spawn returns
-                        // immediately — the child runs on under the supervisor and its
-                        // output surfaces at later gates (docs/supervisor.md); everything else
-                        // runs to completion through the toolbox. `interrupted()`
-                        // resolves on a `POST /interrupt` — the tool's kill trigger
-                        // (kills the process group). Tool output streams to `GET
-                        // /stream` chunk-by-chunk as it runs (bash; the MCP tools
-                        // resolve whole), tagged by call id.
-                        // Set only by a foreground→background handoff below: the
-                        // operator's optional note, delivered as a user turn after
-                        // the handoff result (docs/supervisor.md).
-                        let mut handoff_note = None;
-                        let result = if bash::is_background_call(call) {
-                            match background_command(call) {
-                                Some(command) => match shared.spawn_background(command) {
-                                    Ok(handle) => RawResult {
-                                        content: format!(
-                                            "backgrounded as {handle}. its recent output will \
-                                             surface in your inbox at each step, and you'll get a \
-                                             notification when it exits."
-                                        ),
-                                        is_error: false,
-                                    },
-                                    Err(e) => RawResult {
-                                        content: format!("failed to background: {e}"),
-                                        is_error: true,
-                                    },
-                                },
-                                None => RawResult {
-                                    content: "background bash requires a `command`".into(),
-                                    is_error: true,
-                                },
-                            }
-                        } else if let Some(r) = supervisor_tool_result(&shared, call) {
-                            // A supervisor/inbox read/act tool (docs/supervisor.md) — resolves
-                            // against daemon state synchronously, no world run.
-                            r
-                        } else {
-                            if call.name == bash::NAME {
-                                // A detach request that never found a running tool
-                                // must not label this fresh command's (potential)
-                                // handoff — drop any stale note before running.
-                                shared.take_detach_note();
-                            }
-                            let outcome = toolbox
-                                .run(call, frontend.interrupted(), |chunk| {
-                                    shared.publish_delta(StreamDelta::ToolOutput {
-                                        call_id: call.id.0.clone(),
-                                        chunk: chunk.to_string(),
-                                    });
-                                })
-                                .await;
-                            match outcome {
-                                bash::Outcome::Done(result) => result,
-                                // The foreground→background handoff (docs/supervisor.md):
-                                // the operator detached the running command, so adopt the
-                                // live child into the supervisor — seeded with everything
-                                // already streamed — and pair the `tool_use` with a
-                                // handoff result (`is_error: false`; unlike Ctrl-C, the
-                                // command wasn't lost, it moved).
-                                bash::Outcome::Detached(detached) => {
-                                    let handle = shared.adopt_background(*detached);
-                                    handoff_note = shared.take_detach_note();
-                                    RawResult {
-                                        content: format!(
-                                            "the user moved this command to the background as \
-                                             {handle}. it is still running: its recent output \
-                                             will surface in your inbox at each step, you'll get \
-                                             a notification when it exits, and you can \
-                                             read_process/kill_process it like any background \
-                                             process."
-                                        ),
-                                        is_error: false,
-                                    }
-                                }
-                            }
-                        };
-                        // Bound the result before it touches anything (defense in depth):
-                        // the fork peek, the wire, and the logged `raw`. An over-cap
-                        // result becomes a hard error so the model narrows the call.
-                        let result = cap_tool_result(call, result);
-                        // A config write is the one call whose *effect* is decided after it runs
-                        // (docs/permissions.md): the file must always
-                        // parse, so we re-read it here — synchronously, before the result is
-                        // logged — and either adopt the edit or revert it. Reverting turns the
-                        // result into an error carrying the parse failure, so the author learns
-                        // its edit didn't take *in the tool result it's already reading*, rather
-                        // than believing an approved write took effect and thrashing against a
-                        // wall it thinks it cleared. The fs-watch task calls the same refresh, so
-                        // an edit that arrives any other way gets the identical treatment.
-                        let result = if config_write {
-                            config_write_outcome(&shared, result)
-                        } else {
-                            result
-                        };
-                        // The interrupt's *after* juncture (docs/control-channel.md). The
-                        // operator asked out while this call ran; it finished (nothing here
-                        // can suspend a synchronous tool) but its output stops at the log.
-                        // Taken *before* the fork, so the discarded result is never peeked
-                        // at, never distilled, and costs no round-trip — the point of the
-                        // verb is keeping unwanted output out of the context, and a fork
-                        // that read it first would defeat that on the way to the same place.
-                        if shared.take_interrupt() {
-                            shared.append(turn, withheld(call, result))?;
-                            abort_turn = true;
+                    Step::Ran {
+                        call,
+                        result,
+                        handoff,
+                    } => {
+                        let Some(verdict) = verdicts.next() else {
                             continue;
-                        }
-                        // Distill at append: the canonical wire never carries raw;
-                        // `raw` is kept in the log for reversibility (docs/redaction-fork.md).
-                        // `ForkPeek` re-enters the model here (the universal triage fork,
-                        // docs/redaction-fork.md) — the prefix is the log through this
-                        // call's `tool_use`, so we snapshot it (can't borrow across the
-                        // distiller's await).
-                        let entries = shared.snapshot();
-                        // Open the triage gate (docs/inbox.md): re-show the still-active
-                        // notifications (left at earlier gates), then log any newly
-                        // arrived (ephemeral) ones as first-show `Ambient` entries —
-                        // each entry's seq becomes its durable id, the handle the
-                        // verdict pins/dismisses by. (They project to nothing, so the
-                        // fork prefix `entries` stays byte-identical, docs/log-and-projection.md.)
-                        let mut shown = active_shown(&entries);
-                        for note in shared.drain_inbox() {
-                            let source = note.source.clone();
-                            let body = note.body.clone();
-                            let seq = shared.append(turn, Payload::Ambient(note))?;
-                            shown.push(ShownNotification { seq, source, body });
-                        }
-                        // The live background processes' fresh tails ride the same peek
-                        // (docs/supervisor.md) — re-sampled now, never logged unless pinned.
-                        let background = shared.bg_snapshot();
-                        let distilled = distiller
-                            .distill(client, &entries, call, &result, &shown, &background)
-                            .await;
-                        // The fork peek reads the shared canonical prefix (sliding
-                        // its TTL), so its usage belongs in the docs/log-and-projection.md telemetry too.
-                        if let Some(u) = distilled.usage {
-                            shared.record_request(u);
-                        }
-                        // Apply the background verdicts before writing the `Triage`: a
-                        // `Pin` snapshots the process's current tail into an `Ambient`
-                        // and folds a `Pin` disposition into the inbox verdict — so it
-                        // projects at the `Triage` position, reusing the notification
-                        // pin path (docs/supervisor.md). A `Mute` just flags the supervisor.
-                        let mut inbox = distilled.inbox;
-                        for (handle, verdict) in distilled.background {
-                            match verdict {
-                                BgVerdict::Mute => shared.mute_bg(&handle),
-                                BgVerdict::Pin => {
-                                    if let Some((source, body)) = shared.bg_pin_snapshot(&handle) {
-                                        let seq = shared.append(
-                                            turn,
-                                            Payload::Ambient(Notification {
-                                                source,
-                                                body,
-                                                slot: Some(handle),
-                                            }),
-                                        )?;
-                                        inbox.push((seq, Disposition::Pin));
-                                    }
-                                }
-                            }
-                        }
-                        // Append the result, then the fork verdict as a `Triage` audit
-                        // entry keyed by the result's seq (docs/redaction-fork.md): the
-                        // throwaway peek's *decision* is logged even though its transcript isn't.
+                        };
                         let result_seq = shared.append(
                             turn,
                             Payload::ToolResult {
                                 call_id: call.id.clone(),
                                 raw: result,
-                                wire: distilled.wire,
+                                wire: verdict.wire,
                             },
                         )?;
+                        let last = index == last_ran;
                         shared.append(
                             turn,
                             Payload::Triage(Triage {
                                 for_result: Some(result_seq),
-                                origin: distilled.origin,
-                                raw_keep: distilled.raw_keep,
-                                inbox,
-                                surfaced: distilled.surfaced,
+                                origin: verdict.origin,
+                                raw_keep: verdict.raw_keep,
+                                inbox: if last {
+                                    std::mem::take(&mut inbox_verdict)
+                                } else {
+                                    Vec::new()
+                                },
+                                surfaced: if last { surfaced.clone() } else { Vec::new() },
                             }),
                         )?;
-                        // The operator note attached to a handoff lands as a real
-                        // user turn right after the handoff's result — direction,
-                        // not tool output (docs/supervisor.md). Same canonical
-                        // `Payload::User` as the seam-drain; `project` merges it
-                        // into the trailing tool_result message.
-                        if let Some(note) = handoff_note {
-                            turn += 1;
-                            shared.append(
-                                turn,
-                                Payload::User(vec![ContentBlock::Text(format!(
-                                    "[on backgrounding the command, the user says:] {note}"
-                                ))]),
-                            )?;
+                        if let Some(note) = handoff {
+                            handoffs.push(note);
                         }
                     }
-                    Approval::Abort => {
-                        shared.append(turn, aborted(call))?;
-                        abort_turn = true;
-                    }
-                    Approval::Redirect(message) => {
-                        // Reject this call but keep the turn alive: the human's
-                        // message becomes the next user turn so the model can
-                        // course-correct instead of bailing (docs/README.md).
-                        shared.append(turn, rejected(call))?;
-                        redirect = Some(message);
-                    }
-                    // Resolved into Approve/Redirect by `commit_config_edit` above before this match.
-                    Approval::ConfigEdit { .. } => unreachable!("grant is legislated above"),
                 }
             }
+            // The operator note attached to a handoff lands as a real user turn after the
+            // step's results — direction, not tool output (docs/supervisor.md). Same
+            // canonical `Payload::User` as the seam-drain; `project` merges it into the
+            // trailing tool_result message.
+            for note in handoffs {
+                turn += 1;
+                shared.append(
+                    turn,
+                    Payload::User(vec![ContentBlock::Text(format!(
+                        "[on backgrounding the command, the user says:] {note}"
+                    ))]),
+                )?;
+            }
+
             if abort_turn {
                 eprintln!("[turn aborted]");
                 break;
@@ -624,8 +446,10 @@ mod test;
 
 mod config_edit;
 mod results;
+mod step;
 mod triage;
 
 use config_edit::*;
 use results::*;
+use step::*;
 use triage::*;

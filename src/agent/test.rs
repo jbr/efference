@@ -343,3 +343,82 @@ pub(super) fn cap_head_is_char_boundary_safe() {
     // assert the head contains whole crabs).
     assert!(capped.content.contains('🦀'));
 }
+
+/// A completion that carried several calls produces a **fully-paired** log, and
+/// `project` merges the results into one user message (docs/README.md).
+///
+/// One tool call per turn is *requested* of the provider via
+/// `disable_parallel_tool_use`, but it is only a request: no OpenRouter-routed endpoint
+/// lists the equivalent knob in its supported parameters, so a provider may return
+/// several calls and the flag is ignored by design. The loop therefore has to handle
+/// N ≥ 1 rather than assume N = 1 — every `tool_use` gets exactly one `tool_result`, or
+/// projection orphans it and the API rejects the request.
+#[test]
+pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
+    use crate::project::ApiBlock;
+    let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
+    let first = ToolCall {
+        id: crate::log::CallId("search_2".into()),
+        name: "search".into(),
+        input: serde_json::json!({}),
+    };
+    let second = ToolCall {
+        id: crate::log::CallId("bash_3".into()),
+        name: crate::bash::NAME.into(),
+        input: serde_json::json!({ "command": "ls" }),
+    };
+    shared
+        .append(
+            1,
+            Payload::Assistant {
+                thinking: vec![],
+                text: vec![],
+                calls: vec![first.clone(), second.clone()],
+            },
+        )
+        .unwrap();
+    for (call, content) in [(&first, "hits"), (&second, "listing")] {
+        shared
+            .append(
+                1,
+                Payload::ToolResult {
+                    call_id: call.id.clone(),
+                    raw: RawResult {
+                        content: content.into(),
+                        is_error: false,
+                    },
+                    wire: WireState::Raw,
+                },
+            )
+            .unwrap();
+    }
+
+    let messages = shared.project_messages();
+    let assistant = &messages[messages.len() - 2];
+    let uses: Vec<&str> = assistant
+        .content
+        .iter()
+        .filter_map(|b| match b {
+            ApiBlock::ToolUse { id, .. } => Some(id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(uses, vec!["search_2", "bash_3"]);
+
+    // Both results land in a *single* trailing user message, in call order — the shape
+    // Anthropic expects for a multi-call turn, and the one the fork peek reproduces.
+    let last = messages.last().expect("a trailing user message");
+    assert_eq!(last.role, crate::project::Role::User);
+    let answered: Vec<&str> = last
+        .content
+        .iter()
+        .filter_map(|b| match b {
+            ApiBlock::ToolResult { tool_use_id, .. } => Some(tool_use_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        answered, uses,
+        "every tool_use is answered exactly once, in order"
+    );
+}

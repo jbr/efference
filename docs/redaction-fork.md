@@ -4,6 +4,33 @@ Every tool result enters the canonical lineage through a fork: a throwaway branc
 that shares a cached prefix with canonical but whose raw content and extraction
 prompt are never appended to it.
 
+## The gate covers a completion's results, not one result
+
+A gate is opened once per completion and carries every result that completion produced.
+Usually that is one, since every request asks for a single call
+([README.md](README.md)) — but the ask is not enforceable, so the loop runs all of a
+completion's calls first and opens the gate over the batch.
+
+This grouping is load-bearing, not a convenience. The peek's prefix ends with the
+assistant message, which carries one `tool_use` per call; the API rejects a request that
+leaves any of them unanswered. A peek fired *between* calls therefore builds an invalid
+request whenever a completion made more than one — the later calls have no results yet.
+Running every call before opening the gate means the tail can answer all of them with
+real output, so nothing is orphaned and no placeholder is needed.
+
+Each result is rendered as its own block, headed by its `[call id]` and **numbering from
+1**. A single continuous coordinate system across results would invite the model to keep
+lines from one result under another's verdict — a mis-attribution that renders exactly
+like a correct verdict, so nothing downstream could detect it. The `retain` verdict is
+correspondingly an array keyed by `call_id`; a verdict naming an id that was never
+offered is dropped, the same harness-side guard applied to notification ids and roster
+names.
+
+The inbox, background tails, and surfacing roster are **gate-scoped** — decided once per
+step rather than per result — so they ride the trailing text block and their dispositions
+land on the last `Triage` of the batch. That placement is tail-ward, keeping the wire
+append-only, and is identical to where they land when a completion carried one call.
+
 ```
 [cached prefix through tool_use]  ──┬──►  + [full raw result] + [retain prompt]   (throwaway: 1 turn, tail uncached)
                                     └──►  + [distilled result]                     (canonical: appended, cached)
@@ -38,7 +65,17 @@ is one of three forms:
 doesn't re-run what it just disowned — inline dead-end shedding at the source.
 
 On any failure (the peek errors, or calls something other than `retain`), the
-gate falls back to keep-all. Data is never lost.
+gate falls back to keep-all. Data is never lost — but this is a failure, not a neutral
+default. `WireState` is fixed once, so an uncurated result stays in the cached prefix for
+the rest of the session and every later turn pays for it. The fallback is therefore
+logged at error, and the `Triage` records a **breadcrumb** in `raw_keep` describing what
+came back: the model's unparseable `retain` input, the tool it called instead, or the
+transport error. Without that, a malformed verdict, a wrong-tool call and a 429 are
+indistinguishable in the log after the fact.
+
+Surfacing an exhausted failure to the operator as a session-visible error — rather than
+only a log line — is deferred to the turn-failure work, which needs the same mechanism
+for upstream request failures.
 
 ## Line numbers are the coordinate system
 

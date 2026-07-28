@@ -9,12 +9,14 @@ context and be acted on now, `dismiss` the noise, and leave anything you're defe
 unlisted. If you pin nothing you simply go back to idle and nothing changes — so pin only \
 what truly warrants picking the work back up.";
 
-pub(super) const RETAIN_INSTRUCTION: &str = "Above is the FULL, line-numbered output of the \
-tool call you just made. Call `retain` to choose what stays on the record going \
-forward: \"all\", \"none\", or comma-separated 1-based inclusive line ranges like \
-\"40-52,310-318\". Whatever you drop is gone from the working context — so keep \
-anything that might matter for the rest of the task, while staying as lean as you \
-can. Always add a one-line `note` summarizing what the output showed.";
+pub(super) const RETAIN_INSTRUCTION: &str = "Above is the FULL, line-numbered output of every \
+tool call you just made, each under a header naming its [call id]. Line numbers restart at 1 \
+within each result, so ranges are always relative to the result you are deciding. Call \
+`retain` with one `results` entry per output — every [call id] above must be answered, and \
+`call_id` must be copied exactly. For each, `keep` is \"all\", \"none\", or comma-separated \
+1-based inclusive line ranges like \"40-52,310-318\". Whatever you drop is gone from the \
+working context — so keep anything that might matter for the rest of the task, while staying \
+as lean as you can. Always add a one-line `note` summarizing what that output showed.";
 
 pub(super) const INBOX_INSTRUCTION: &str = " You also have pending notifications, listed under \
 \"inbox\" above with an [id] each. In the `inbox` field, `pin` the ids worth carrying \
@@ -106,6 +108,28 @@ pub(super) fn append_roster(view: &mut String, roster: &[String]) {
     for name in roster {
         view.push_str(&format!("\n[{name}]"));
     }
+}
+
+/// One result's block in a peek view (docs/redaction-fork.md): a header naming the
+/// `[call id]` and tool, then the capped, line-numbered output.
+///
+/// Numbering restarts at 1 in every block, and the header is what the `retain`
+/// verdict's `call_id` addresses. A gate can carry several results, so a single
+/// continuous coordinate system would invite the model to keep lines from one result
+/// under another's verdict — a silent mis-attribution, since a wrong verdict renders
+/// exactly like a right one. Per-block numbering makes the coordinate systems visibly
+/// separate. The cap matches `render_distilled`'s, so the verdict's coordinates stay
+/// aligned with what the model saw.
+pub(super) fn result_view(call: &ToolCall, raw: &RawResult) -> String {
+    let all: Vec<&str> = raw.content.lines().collect();
+    let lines = &all[..all.len().min(PEEK_LINE_CAP)];
+    let dropped = all.len() - lines.len();
+    let mut view = format!("═══ result · [{}] {} ═══\n", call.id.0, call.name);
+    view.push_str(&number_lines(lines));
+    if dropped > 0 {
+        view.push_str(&format!("\n       … [{dropped} more lines truncated] …"));
+    }
+    view
 }
 
 /// Render every line `cat -n`-style (1-based, 6-wide, tab-separated). This is the

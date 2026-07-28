@@ -8,6 +8,11 @@ fn lines(s: &str) -> Vec<&str> {
 
 /// A `Completion` whose assistant turn made a single `retain` call carrying
 /// `input` — the shape `ForkPeek` forces and `parse_retain` reads.
+/// The id of the result a single-result gate is triaging. Arbitrary — what matters is
+/// that exactly one id is offered, which is the condition under which `parse_retain`
+/// adopts the legacy flat `keep`/`note` form.
+const CALL_ID: &str = "toolu_x";
+
 fn retain_completion(name: &str, input: Value) -> Completion {
     Completion {
         assistant: Payload::Assistant {
@@ -56,32 +61,40 @@ fn parse_keep_handles_keywords_ranges_and_garbage() {
 
 #[test]
 fn parse_retain_reads_keep_note_and_raw_keep() {
-    let p = parse_retain(&retain_completion(
-        RETAIN,
-        json!({"keep": "all", "note": "the gist"}),
-    ))
+    let offered = [CALL_ID.to_string()];
+    let p = parse_retain(
+        &retain_completion(RETAIN, json!({"keep": "all", "note": "the gist"})),
+        &offered,
+    )
     .expect("a retain call parses");
-    assert_eq!(p.keep, Keep::All);
-    assert_eq!(p.note.as_deref(), Some("the gist"));
+    assert_eq!(p.results[0].keep, Keep::All);
+    assert_eq!(p.results[0].note.as_deref(), Some("the gist"));
     assert_eq!(
-        p.raw_keep, "all",
+        p.results[0].raw_keep, "all",
         "the model's exact string is kept for audit"
     );
     assert!(p.inbox.is_empty(), "no inbox field → no dispositions");
 
-    let p = parse_retain(&retain_completion(RETAIN, json!({"keep": "40-52,310-318"})))
-        .expect("ranges parse");
-    assert_eq!(p.keep, Keep::Ranges(vec![(40, 52), (310, 318)]));
-    assert_eq!(p.raw_keep, "40-52,310-318");
-    assert_eq!(p.note, None);
+    let p = parse_retain(
+        &retain_completion(RETAIN, json!({"keep": "40-52,310-318"})),
+        &offered,
+    )
+    .expect("ranges parse");
+    assert_eq!(p.results[0].keep, Keep::Ranges(vec![(40, 52), (310, 318)]));
+    assert_eq!(p.results[0].raw_keep, "40-52,310-318");
+    assert_eq!(p.results[0].note, None);
 }
 
 #[test]
 fn parse_retain_reads_inbox_dispositions() {
-    let p = parse_retain(&retain_completion(
-        RETAIN,
-        json!({ "keep": "all", "inbox": { "pin": [5, 7], "dismiss": [6] } }),
-    ))
+    let offered = [CALL_ID.to_string()];
+    let p = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "keep": "all", "inbox": { "pin": [5, 7], "dismiss": [6] } }),
+        ),
+        &offered,
+    )
     .expect("parses");
     assert_eq!(
         p.inbox,
@@ -120,22 +133,30 @@ fn parse_dispositions_reads_triage_inbox_and_background() {
 fn parse_retain_is_none_without_a_retain_call() {
     // The peek is force-called to `retain`, but guard anyway: a turn that called
     // something else yields no verdict → keep-all fallback.
-    assert!(parse_retain(&retain_completion("bash", json!({"command": "ls"}))).is_none());
+    assert!(parse_retain(&retain_completion("bash", json!({"command": "ls"})), &[]).is_none());
 }
 
 #[test]
 fn parse_retain_reads_surfaced_names() {
+    let offered = [CALL_ID.to_string()];
     // The `surfaced` field carries context-item names the model judged relevant
     // (docs/redaction-fork.md); parse_retain reads them unfiltered.
-    let p = parse_retain(&retain_completion(
-        RETAIN,
-        json!({ "keep": "all", "surfaced": ["ferritin", "jsonl-prose"] }),
-    ))
+    let p = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "keep": "all", "surfaced": ["ferritin", "jsonl-prose"] }),
+        ),
+        &offered,
+    )
     .expect("parses");
     assert_eq!(p.surfaced, vec!["ferritin", "jsonl-prose"]);
 
     // Absent field → no surfacing (the lean default).
-    let p = parse_retain(&retain_completion(RETAIN, json!({ "keep": "all" }))).unwrap();
+    let p = parse_retain(
+        &retain_completion(RETAIN, json!({ "keep": "all" })),
+        &offered,
+    )
+    .unwrap();
     assert!(p.surfaced.is_empty());
 }
 
@@ -222,4 +243,146 @@ fn roster_excludes_already_surfaced_names() {
 fn roster_is_empty_without_a_preamble() {
     // No listing → nothing to offer (the pre-snapshot / config-less case).
     assert!(surfaceable_roster(&[]).is_empty());
+}
+
+/// The invariant the batched gate exists to hold (docs/redaction-fork.md): when a
+/// completion carries several calls, the peek's request must answer **every** one of
+/// them.
+///
+/// This is the regression guard for the observed failure. Peeking between calls built a
+/// request whose trailing assistant message still carried unanswered `tool_use` blocks;
+/// the API rejected it, `ForkPeek` fell back to keep-all, and — because `WireState` is
+/// fixed once — the uncurated result stayed in the cached prefix for the rest of the
+/// session. In the corpus that accounted for the first N−1 peeks of every multi-call
+/// turn.
+#[test]
+fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
+    let calls = vec![
+        ToolCall {
+            id: CallId("search_2".into()),
+            name: "search".into(),
+            input: json!({}),
+        },
+        ToolCall {
+            id: CallId("bash_3".into()),
+            name: "bash".into(),
+            input: json!({}),
+        },
+    ];
+    let prefix = vec![
+        entry(
+            1,
+            Payload::User(vec![crate::log::ContentBlock::Text("go".into())]),
+        ),
+        entry(
+            2,
+            Payload::Assistant {
+                thinking: vec![],
+                text: vec![],
+                calls: calls.clone(),
+            },
+        ),
+    ];
+    let raws = [
+        RawResult {
+            content: "alpha\nbeta".into(),
+            is_error: false,
+        },
+        RawResult {
+            content: "gamma".into(),
+            is_error: false,
+        },
+    ];
+    let pending: Vec<Pending<'_>> = calls
+        .iter()
+        .zip(&raws)
+        .map(|(call, raw)| Pending { call, raw })
+        .collect();
+
+    let messages = peek_messages(&prefix, &pending, &[], &[], &[]);
+    let tail = messages.last().expect("a tail message");
+    assert_eq!(tail.role, Role::User);
+
+    // Every `tool_use` in the trailing assistant message is answered, in call order.
+    let answered: Vec<&str> = tail
+        .content
+        .iter()
+        .filter_map(|b| match b {
+            ApiBlock::ToolResult { tool_use_id, .. } => Some(tool_use_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        answered,
+        vec!["search_2", "bash_3"],
+        "both calls must be paired or the API rejects the request"
+    );
+
+    // Each result carries its own header and restarts numbering at 1, so the model
+    // cannot address one result's lines under another's verdict.
+    let views: Vec<&str> = tail
+        .content
+        .iter()
+        .filter_map(|b| match b {
+            ApiBlock::ToolResult { content, .. } => Some(content.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(views[0].contains("[search_2] search"), "{}", views[0]);
+    assert!(views[1].contains("[bash_3] bash"), "{}", views[1]);
+    assert!(views[0].contains("     1\talpha") && views[0].contains("     2\tbeta"));
+    assert!(
+        views[1].contains("     1\tgamma"),
+        "the second result numbers from 1, not 3: {}",
+        views[1]
+    );
+
+    // The gate-scoped riders and the instruction ride the trailing text block — they
+    // belong to the step, not to any one result.
+    assert!(matches!(tail.content.last(), Some(ApiBlock::Text { .. })));
+}
+
+/// A verdict addressed to a call that was never offered finds no home, and the result it
+/// failed to cover is reported as unanswered rather than silently keeping nothing.
+#[test]
+fn parse_retain_keys_verdicts_by_call_id() {
+    let offered = ["a".to_string(), "b".to_string()];
+    let p = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "results": [
+                { "call_id": "a", "keep": "1-2", "note": "first" },
+                { "call_id": "invented", "keep": "all" },
+            ] }),
+        ),
+        &offered,
+    )
+    .expect("parses");
+    assert_eq!(p.results.len(), 2);
+    let a = p.results.iter().find(|v| v.call_id == "a").unwrap();
+    assert_eq!(a.keep, Keep::Ranges(vec![(1, 2)]));
+    assert_eq!(a.note.as_deref(), Some("first"));
+    assert!(
+        !p.results.iter().any(|v| v.call_id == "b"),
+        "`b` was offered but never addressed — the caller keeps it uncurated, loudly"
+    );
+}
+
+/// The legacy flat form is adopted only when it is unambiguous — exactly one result in
+/// flight. With several offered there is no way to know which it meant, so it is dropped
+/// rather than guessed onto the wrong result.
+#[test]
+fn flat_keep_is_adopted_only_for_a_single_result_gate() {
+    let one = ["only".to_string()];
+    let p = parse_retain(&retain_completion(RETAIN, json!({ "keep": "all" })), &one).unwrap();
+    assert_eq!(p.results.len(), 1);
+    assert_eq!(p.results[0].call_id, "only");
+    assert_eq!(p.results[0].keep, Keep::All);
+
+    let two = ["a".to_string(), "b".to_string()];
+    let p = parse_retain(&retain_completion(RETAIN, json!({ "keep": "all" })), &two).unwrap();
+    assert!(
+        p.results.is_empty(),
+        "ambiguous flat form must not be guessed onto a result"
+    );
 }

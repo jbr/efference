@@ -97,9 +97,17 @@ Violating any one silently breaks caching or correctness:
    fold — is exactly one deliberate cache write.
 3. **raw is never overwritten; only `wire` flips.** This is what makes every redaction
    reversible and the log a complete audit record.
-4. **One tool call per assistant turn.** The request forces at most one `tool_use` per
-   turn, so the redaction fork is always single-result, the approval gate is
-   one-command-per-turn, and the log stays strictly alternating `U → A·t → R → …`.
+4. **One tool call per assistant turn — requested, not guaranteed.** Every request sets
+   `disable_parallel_tool_use`, so the usual shape is one `tool_use` per turn: the
+   approval gate is one-command-per-turn and the log reads `U → A·t → R → …`. But the
+   flag is a *request*. A provider that doesn't implement it returns several calls and
+   nothing reports that it was ignored — on OpenRouter-routed models the knob is absent
+   from every serving endpoint's supported parameters, in either API dialect, so there
+   is no provider-side way to enforce it. The loop therefore handles N ≥ 1: it runs every
+   call a completion made, then triages their results at one gate
+   ([redaction-fork.md](redaction-fork.md)). What *is* invariant is the pairing — every
+   `tool_use` gets exactly one `tool_result`, or projection orphans it and the API
+   rejects the request.
 5. **No privileged client.** The loop's only input is the HTTP control channel; the human
    TUI, the driver, and subagents are all equal clients of the same socket. See
    [control-channel.md](control-channel.md).

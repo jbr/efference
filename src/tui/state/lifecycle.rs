@@ -107,9 +107,16 @@ impl<'a> InteractiveState<'a> {
     /// No daemon round-trip: the loop appends the `Assistant` entry *before* it
     /// runs the call and the `ToolResult` after (`src/agent.rs`), so the unpaired
     /// tail of the log the TUI already holds is exactly "what is running now."
-    /// `disable_parallel_tool_use` means at most one call per turn, so the last
-    /// entry's first call is the whole answer. A gate pending on the call looks
-    /// the same from here; callers that care check `pending_gate` first.
+    ///
+    /// `disable_parallel_tool_use` asks for one call per turn but cannot enforce it
+    /// (docs/README.md), so an entry may carry several — and the loop appends *no*
+    /// result until every call has run and the gate has closed
+    /// (docs/redaction-fork.md). So on a multi-call step this reports the entry's first
+    /// call for the whole step, not whichever call is currently executing. Exact in the
+    /// single-call case, which is the norm; approximate on the rare multi-call one, where
+    /// the cost is a slightly stale label rather than a wrong lifecycle state. A gate
+    /// pending on the call looks the same from here; callers that care check
+    /// `pending_gate` first.
     pub(in crate::tui) fn in_flight_call(&self) -> Option<&crate::log::ToolCall> {
         let (idx, call) = self
             .log

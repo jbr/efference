@@ -8,6 +8,9 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Batched triage gate: a completion's calls all run before one fork peek triages their
+  results together, so a provider that ignores `disable_parallel_tool_use` no longer
+  orphans the peek's request (which silently put uncurated output on the wire).
 - Append-only annotated log + byte-stable deterministic projection — the context substrate.
 - Durable JSONL persistence of the log, resumable across restarts.
 - Universal redaction fork: every tool result is distilled at append; raw output never reaches the wire.

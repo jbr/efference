@@ -67,16 +67,30 @@ pub(super) fn retain_tool(
     let mut input_schema = json!({
         "type": "object",
         "properties": {
-            "keep": {
-                "type": "string",
-                "description": "\"all\", \"none\", or comma-separated 1-based inclusive line ranges, e.g. \"40-52,310-318\" (a single line is \"7\")."
-            },
-            "note": {
-                "type": "string",
-                "description": "One-line summary of what the output showed; the breadcrumb kept when little or nothing is retained."
+            "results": {
+                "type": "array",
+                "description": "One entry per tool result shown above — answer every one, addressing each by its [call id] header. Line numbers restart at 1 within each result.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "call_id": {
+                            "type": "string",
+                            "description": "The [call id] of the result this entry decides, copied exactly from its header above."
+                        },
+                        "keep": {
+                            "type": "string",
+                            "description": "\"all\", \"none\", or comma-separated 1-based inclusive line ranges, e.g. \"40-52,310-318\" (a single line is \"7\"). Numbered within this result only."
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "One-line summary of what this output showed; the breadcrumb kept when little or nothing is retained."
+                        }
+                    },
+                    "required": ["call_id", "keep"]
+                }
             }
         },
-        "required": ["keep"]
+        "required": ["results"]
     });
     if !shown.is_empty() {
         input_schema["properties"]["inbox"] = inbox_schema_field();
