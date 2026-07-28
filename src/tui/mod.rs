@@ -230,9 +230,9 @@ mod parse;
 mod run;
 mod ui_loop;
 
-pub use run::{run, run_gallery};
+pub use run::{run, run_gallery, run_view};
 
 use bridge::bridge;
 use parse::*;
 use run::DEFAULT_THEME;
-use ui_loop::ui_loop;
+use ui_loop::{Senders, ui_loop};

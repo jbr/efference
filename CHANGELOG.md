@@ -8,6 +8,8 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- `efference view <session>`: open a recorded session's `log.jsonl` in the TUI, read-only — no
+  composer, no loop verbs, no sidebar, no socket.
 - TUI transcript as a materialized view: the projection splices only the entries whose calls
   changed, layout is cached per node, and a measure pass pins the stream-following viewport
   before a single paint — a streamed frame now costs the viewport, not the log.

@@ -68,6 +68,7 @@ impl<'a> InteractiveState<'a> {
             transcript: projection::Transcript::default(),
             view: projection::ViewState::default(),
             events,
+            viewing: None,
             composer: Composer::new(),
             composing: true,
             strip_focus: None,
@@ -93,6 +94,28 @@ impl<'a> InteractiveState<'a> {
             theme,
             current_theme_name,
         }
+    }
+
+    /// Make this a **read-only view** of the recorded session `label` (docs/tui.md —
+    /// `efference view`). Set after construction rather than as a `new` parameter, so
+    /// the live construction site and every existing scenario stay untouched.
+    ///
+    /// Focus starts on the control strip: with no composer rendered there is no
+    /// composer to rest in, and the strip is the only surface that still carries
+    /// verbs (theme, help, close).
+    pub(in crate::tui) fn set_viewing(&mut self, label: impl Into<String>) {
+        let label = label.into();
+        self.ui.debug_message = view_status(&label).into();
+        self.viewing = Some(label);
+        self.composing = false;
+        self.strip_focus = Some(0);
+    }
+
+    /// Whether this is a read-only view of a recorded log (no daemon behind it):
+    /// every path that would send to a daemon, or focus the composer that sends,
+    /// checks this.
+    pub(in crate::tui) fn read_only(&self) -> bool {
+        self.viewing.is_some()
     }
 
     /// Whether the loop is doing something an Esc could pause or interrupt

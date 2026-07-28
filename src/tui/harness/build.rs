@@ -32,6 +32,15 @@ impl Screenplay<'_> {
         self
     }
 
+    /// Run the scenario as a **read-only view** of the recorded session `label`
+    /// (docs/tui.md — `efference view`), the way `efference view` launches it: no
+    /// composer, no loop verbs, focus resting on the strip. Pair with
+    /// [`replay`](Self::replay) to snapshot what opening a real log actually shows.
+    pub(crate) fn viewing(&mut self, label: &str) -> &mut Self {
+        self.state.set_viewing(label);
+        self
+    }
+
     /// A committed user turn (markdown prose).
     pub(crate) fn user(&mut self, text: &str) -> &mut Self {
         self.commit(Payload::User(vec![ContentBlock::Text(text.into())]))

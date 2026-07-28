@@ -49,7 +49,9 @@ pub(crate) struct Screenplay<'a> {
     height: u16,
     next_seq: u64,
     _event_tx: Sender<TuiEvent>,
-    _submit_rx: UnboundedReceiver<String>,
+    /// Held un-underscored so a scenario can assert what a submit put on the wire —
+    /// or, for a read-only view, that nothing did ([`took_turn`](Screenplay::took_turn)).
+    submit_rx: UnboundedReceiver<String>,
     /// Held un-underscored so a scenario can assert what decision a gate action
     /// sent ([`took_approval`](Screenplay::took_approval)).
     approve_rx: UnboundedReceiver<(String, Approval)>,
@@ -97,7 +99,7 @@ impl Screenplay<'static> {
             height,
             next_seq: 1,
             _event_tx: event_tx,
-            _submit_rx: submit_rx,
+            submit_rx,
             approve_rx,
             pace_rx,
             interrupt_rx,
@@ -189,6 +191,12 @@ impl Screenplay<'_> {
             self.interrupt_rx.try_recv(),
             Ok(crate::frontend::Interrupt::Detach)
         )
+    }
+
+    /// The user turn a submit sent since the last check, if any — drains the channel
+    /// the UI would `POST /turn` over. `None` means nothing was sent.
+    pub(crate) fn took_turn(&mut self) -> Option<String> {
+        self.submit_rx.try_recv().ok()
     }
 
     /// The approval decision a gate action sent since the last check (`call_id`,

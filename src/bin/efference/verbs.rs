@@ -103,6 +103,32 @@ pub(crate) async fn wire(
     Ok(())
 }
 
+/// Read a recorded session in the TUI, inert (docs/tui.md): resolve the session to
+/// a `log.jsonl`, load it with the same `persist::load` a live attach's entries come
+/// through, and hand the entries to the read-only TUI. No socket, no network, no
+/// writes — and no config, so it works on a session whose config no longer parses or
+/// that ran in another directory.
+pub(crate) async fn view(
+    session: Option<String>,
+    name: Option<String>,
+    theme: Option<String>,
+) -> CliResult {
+    let Some(target) = session.or(name) else {
+        return Err(format!(
+            "which session? pass a session name, a session dir, or a log.jsonl path.{}",
+            session_listing()
+        )
+        .into());
+    };
+    let (path, label) = resolve_session_log(&target)?;
+    let entries = efference::persist::load(&path)?;
+    if entries.is_empty() {
+        return Err(format!("{} holds no entries", path.display()).into());
+    }
+    efference::tui::run_view(entries, label, theme).await?;
+    Ok(())
+}
+
 /// Launch the TUI on the fixed element gallery — no daemon, no socket.
 pub(crate) async fn gallery(theme: Option<String>) -> CliResult {
     efference::tui::run_gallery(theme).await?;

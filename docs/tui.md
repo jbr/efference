@@ -4,6 +4,20 @@
 
 `efference gallery` (`tui/gallery.rs`) launches the real TUI on a fixed "one of each element" transcript with no daemon — a live design page that surfaces rendering gaps (literal `~~strike~~`, ordered-lists-as-bullets) the moment you look.
 
+`efference view <session>` opens a **recorded** session the same way: the entries come from a session's `log.jsonl` (via `persist::load`, the same decode a live attach's entries arrive as) rather than from a daemon's event streams. The session is named — a session id under `.efference/`, a session directory, or a path to a log — and an unresolvable name lists the recent ones rather than opening an empty view. Both offline entry points share one runner (`tui/run.rs`'s `run_offline`), which seeds the event channel and holds every channel far-end for the session's life, so the UI never sees a closed channel where a daemon would be.
+
+
+## Read-only: what a view drops
+
+`efference view` is inert by construction, not by disabled buttons. `InteractiveState::viewing` holds the session's label and is what `read_only()` reports; four things follow from it, each because the thing it removes only exists relative to a running daemon:
+
+- **No composer.** It reserves no rows (`render_frame`), so the transcript takes them. An input that cannot send is not chrome worth drawing.
+- **No loop verbs on the [control strip](#the-control-strip).** The whole strip is the client-only tail — `theme t · help ? · close q`, with `detach` reading `close` because there is no daemon left running behind it. Pace goes with the rest: it is a control over a loop, and there isn't one.
+- **No sidebar.** Every section of it (processes, stats, policy) is fed by the `/state` poll, which has nothing to poll.
+- **The strip is the resting focus,** in place of the composer: focus starts there, `Esc` returns there, and `↓` off its bottom stops rather than falling into a composer that isn't rendered.
+
+The log is read once at open, so a session that is still running shows as of the moment it was opened — a snapshot, not a tail. Reading a live session's log is allowed for that reason rather than refused; nothing in the view can write to it.
+
 
 ## The transcript is another `project(log)`
 

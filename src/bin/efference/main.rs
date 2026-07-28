@@ -97,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         } => spotter_log(path, stances, summary, list, no_fallback),
         Command::Attach => attach(client_socket()?).await,
         Command::Tui { theme } => tui(client_socket()?, theme).await,
+        Command::View { session, theme } => view(session, name.clone(), theme).await,
         Command::Gallery { theme } => gallery(theme).await,
         Command::Wire {
             path,

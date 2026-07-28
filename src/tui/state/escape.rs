@@ -55,10 +55,18 @@ impl<'a> InteractiveState<'a> {
                 let _ = self.apply_theme(&saved_theme_name);
             }
             UiMode::Normal => {
-                self.composing = true;
-                self.strip_focus = None;
                 self.viewport.keyboard_cursor = KeyboardCursor::VirtualTop;
-                self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
+                // A read-only view has no composer to return to (docs/tui.md), so its
+                // steady state is the strip — the only surface still carrying verbs.
+                if let Some(label) = &self.viewing {
+                    self.composing = false;
+                    self.strip_focus = Some(0);
+                    self.ui.debug_message = super::view_status(label).into();
+                } else {
+                    self.composing = true;
+                    self.strip_focus = None;
+                    self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
+                }
             }
         }
     }

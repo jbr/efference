@@ -183,21 +183,15 @@ impl<'a> InteractiveState<'a> {
                 false
             }
             KeyCode::Down | KeyCode::Tab => {
-                self.strip_focus = None;
-                self.composing = true;
-                self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
+                self.leave_strip_down();
                 false
             }
             KeyCode::Char('j') if !ctrl => {
-                self.strip_focus = None;
-                self.composing = true;
-                self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
+                self.leave_strip_down();
                 false
             }
             KeyCode::Char('n') if ctrl => {
-                self.strip_focus = None;
-                self.composing = true;
-                self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
+                self.leave_strip_down();
                 false
             }
             KeyCode::Left => {
@@ -241,6 +235,18 @@ impl<'a> InteractiveState<'a> {
             }
             _ => self.handle_command_key(key, terminal),
         }
+    }
+
+    /// `↓` off the bottom of the strip — the last stop on the way down, which is
+    /// the composer. In a read-only view (docs/tui.md) there is no composer below,
+    /// so the strip keeps focus and the key is a no-op.
+    fn leave_strip_down(&mut self) {
+        if self.read_only() {
+            return;
+        }
+        self.strip_focus = None;
+        self.composing = true;
+        self.ui.debug_message = "compose — ⏎ send · ^J newline · ↑ navigate".into();
     }
 
     /// Capture the live screen to a timestamped framed-grid file under

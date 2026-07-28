@@ -248,7 +248,13 @@ impl<'a> InteractiveState<'a> {
         self.composing = false;
         self.viewport.keyboard_cursor = KeyboardCursor::VirtualBottom;
         self.handle_navigate_up();
-        self.ui.debug_message = "navigate — ↑/↓ unit · ←/→ verb · ⏎ act · esc compose".into();
+        // The home Esc returns to differs in a read-only view (no composer, so the
+        // strip is the steady state) — the hint names whichever one applies.
+        self.ui.debug_message = if self.read_only() {
+            "navigate — ↑/↓ unit · ←/→ verb · ⏎ act · esc controls".into()
+        } else {
+            "navigate — ↑/↓ unit · ←/→ verb · ⏎ act · esc compose".into()
+        };
     }
 
     /// While composing, the few transcript-scroll keys the composer passes through.

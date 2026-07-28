@@ -82,6 +82,16 @@ const TAIL: [StripItem; 4] = [
     item("detach", "q", StripVerb::Detach),
 ];
 
+/// The whole strip in a read-only view (docs/tui.md — `efference view`): the tail
+/// verbs that act on the client alone, with `detach` reading `close` because there
+/// is no daemon to leave running. `pace` is dropped with the rest of the loop verbs
+/// — it is a control over a running loop, and there isn't one.
+const VIEW_TAIL: [StripItem; 3] = [
+    item("theme", "t", StripVerb::Theme),
+    item("help", "?", StripVerb::Help),
+    item("close", "q", StripVerb::Detach),
+];
+
 impl InteractiveState<'_> {
     /// The ranked item list for the current state. Re-evaluated per frame;
     /// contents only change when the underlying state does, so re-ranking happens
@@ -91,6 +101,12 @@ impl InteractiveState<'_> {
     /// `⏎`/`⎋` belong to the sub-state, and a clickable tail beside them would
     /// invite acting out from under it.
     pub(super) fn strip_items(&self) -> Vec<StripItem> {
+        if self.read_only() {
+            // No daemon behind the transcript: every loop verb would be an
+            // affordance that does nothing, and the two sub-states below are
+            // unreachable (neither a gate nor a pace dial exists here).
+            return VIEW_TAIL.to_vec();
+        }
         if self.pace_widget.is_some() {
             // The active pace stepper (docs/tui.md): ↑/↓ adjust, ⏎ sets, ⎋ reverts.
             return vec![item("pace", "", StripVerb::PaceWidget)];
@@ -159,7 +175,13 @@ impl InteractiveState<'_> {
     /// the symmetric stop on the way back down to the composer.
     pub(super) fn focus_strip_from_transcript(&mut self) {
         self.strip_focus = Some(0);
-        self.ui.debug_message = "controls — ←/→ choose · ⏎ act · ↓ compose · esc compose".into();
+        // In a read-only view the strip is the bottom of the axis — nothing to
+        // fall into below it, so the hint offers only the way back up.
+        self.ui.debug_message = if self.read_only() {
+            "controls — ←/→ choose · ⏎ act · ↑ transcript".into()
+        } else {
+            "controls — ←/→ choose · ⏎ act · ↓ compose · esc compose".into()
+        };
     }
 
     /// Fire the verb of item `idx`. Verbs dispatch onto the same mechanisms the

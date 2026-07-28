@@ -20,6 +20,38 @@ fn session_dir_is_under_the_base() {
     assert_eq!(session_dir("abc"), Path::new(".efference/abc"));
 }
 
+/// What `view` opens (docs/tui.md): a path to a log file is taken as given, a
+/// directory resolves to the log inside it, and a bare name is read as a session id
+/// under `.efference/`. A name that resolves to nothing is an error that lists what
+/// there is — never a silent empty view. Uses a temp dir as the "session dir" so the
+/// test doesn't depend on the repo's own `.efference/` contents.
+#[test]
+fn view_resolves_a_path_a_dir_or_a_name() {
+    let dir = std::env::temp_dir().join(format!("efference-view-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let log_path = dir.join(LOG_NAME);
+    write_fixture_log(&log_path);
+
+    let (path, label) = resolve_session_log(log_path.to_str().unwrap()).unwrap();
+    assert_eq!(path, log_path, "an explicit log path is taken as given");
+    assert_eq!(label, log_path.to_str().unwrap());
+
+    let (path, _) = resolve_session_log(dir.to_str().unwrap()).unwrap();
+    assert_eq!(
+        path, log_path,
+        "a session dir resolves to the log inside it"
+    );
+
+    let err = resolve_session_log("definitely-not-a-session").unwrap_err();
+    assert!(
+        err.to_string().contains("no session"),
+        "an unresolvable name errors: {err}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A minimal session log fixture: one user turn, one assistant reply. Written
 /// via [`Log::create`]/[`Log::append`] (like a real session) so `persist::load`
 /// reads back exactly what `wire` would see.

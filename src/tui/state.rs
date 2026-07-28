@@ -29,6 +29,13 @@ use tokio::sync::mpsc::UnboundedSender;
 /// verb keys — the strip is the legend — and just points there.
 const IDLE_STATUS: &str = "efference — ↑ controls";
 
+/// The status-bar line for a read-only view of a recorded log (docs/tui.md): it
+/// names the session being read and says the view is inert, since the transcript
+/// itself looks identical to a live one.
+pub(super) fn view_status(label: &str) -> String {
+    format!("viewing {label} · read-only — ↑ controls")
+}
+
 /// Cap on a process-panel row's live tail between `/state` polls (TUI-bg-2). The
 /// panel only renders the last line, and a poll reconciles to the authoritative
 /// snapshot every ~400ms, so this just bounds the gap-filling append.
@@ -334,6 +341,14 @@ pub(super) struct InteractiveState<'a> {
     pub view: projection::ViewState,
     /// Inbound events from the SSE bridge (durable entries + ephemeral deltas).
     pub events: Receiver<TuiEvent>,
+
+    /// `Some(label)` when this is a **read-only view** of a recorded log with no
+    /// daemon behind it (docs/tui.md — `efference view`): the label names the
+    /// session in the status bar, and its presence is what
+    /// [`read_only`](Self::read_only) reports. In that mode the composer is not
+    /// rendered, the strip carries no loop verbs, and the resting focus is the
+    /// strip rather than the composer — nothing in the UI can send.
+    pub viewing: Option<String>,
 
     /// The input composer (M2). The swappable input interface (docs/tui.md).
     pub composer: Composer,

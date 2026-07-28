@@ -2,17 +2,28 @@
 
 use super::*;
 
+/// The four channels the UI sends the operator's intent over, carried together
+/// because every entry point builds all four at once and hands them straight to the
+/// state. The tokio side turns each into its control-channel `POST`; an offline run
+/// (the gallery, a read-only view) holds the far-ends so a send can't error.
+pub(super) struct Senders {
+    pub submit: tokio::sync::mpsc::UnboundedSender<String>,
+    pub approve: tokio::sync::mpsc::UnboundedSender<(String, crate::frontend::Approval)>,
+    pub pace: tokio::sync::mpsc::UnboundedSender<PaceCmd>,
+    pub interrupt: tokio::sync::mpsc::UnboundedSender<crate::frontend::Interrupt>,
+}
+
 /// The blocking crossterm UI loop. Owns the terminal, the [`InteractiveState`],
 /// and a crossterm event-reader thread; renders each frame from the projected
 /// transcript. Adapted from ferritin's `ui_thread_loop` (the request-thread
 /// plumbing is gone; inbound data is [`TuiEvent`]s from the bridge).
 pub(super) fn ui_loop(
     events: Receiver<TuiEvent>,
-    submit_tx: tokio::sync::mpsc::UnboundedSender<String>,
-    approve_tx: tokio::sync::mpsc::UnboundedSender<(String, crate::frontend::Approval)>,
-    pace_tx: tokio::sync::mpsc::UnboundedSender<PaceCmd>,
-    interrupt_tx: tokio::sync::mpsc::UnboundedSender<crate::frontend::Interrupt>,
+    senders: Senders,
     theme_name: String,
+    // `Some(label)` runs the loop as a read-only view of a recorded log
+    // (docs/tui.md): no composer, no loop verbs, nothing that can send.
+    viewing: Option<String>,
 ) -> io::Result<()> {
     // Build the render context: interactive TTY, sized to the terminal.
     let width = crossterm::terminal::size()
@@ -57,13 +68,16 @@ pub(super) fn ui_loop(
 
     let mut state = InteractiveState::new(
         events,
-        submit_tx,
-        approve_tx,
-        pace_tx,
-        interrupt_tx,
+        senders.submit,
+        senders.approve,
+        senders.pace,
+        senders.interrupt,
         render_context,
         theme,
     );
+    if let Some(label) = viewing {
+        state.set_viewing(label);
+    }
 
     // Event reader thread: blocks on crossterm reads, forwards to a channel.
     let (event_tx, event_rx) = crossbeam_channel::unbounded();

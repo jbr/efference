@@ -67,7 +67,10 @@ impl<'a> InteractiveState<'a> {
         // and composer share the remaining left column. Processes move *into* the sidebar,
         // so the bottom process strip only appears in the narrow (no-sidebar) fallback
         // until the drawer lands.
-        let sidebar_width: u16 = if full.width >= SIDEBAR_MIN_TOTAL {
+        // Every sidebar section (processes, stats, policy) is fed by the `/state`
+        // poll, which a read-only view has no daemon to run — so there the sidebar
+        // would be a column of empty headings, and the transcript takes the width.
+        let sidebar_width: u16 = if full.width >= SIDEBAR_MIN_TOTAL && !self.read_only() {
             SIDEBAR_WIDTH
         } else {
             0
@@ -81,10 +84,16 @@ impl<'a> InteractiveState<'a> {
             .as_ref()
             .map(|s| s.verb.label().chars().count() as u16 + 1)
             .unwrap_or(0);
-        let input_height = (self
-            .composer
-            .line_count(content_width.saturating_sub(chip_w)) as u16)
-            .clamp(1, 6);
+        // A read-only view renders no composer at all (docs/tui.md): the row would
+        // be an input that cannot send. The transcript takes the rows instead.
+        let input_height = if self.read_only() {
+            0
+        } else {
+            (self
+                .composer
+                .line_count(content_width.saturating_sub(chip_w)) as u16)
+                .clamp(1, 6)
+        };
         let proc_height: u16 = if sidebar_width > 0 {
             0
         } else {
@@ -177,8 +186,34 @@ impl<'a> InteractiveState<'a> {
         // The control strip (docs/tui.md), directly above the composer.
         self.render_control_strip(frame.buffer_mut(), strip_area);
 
-        // Composer: clear its rows, then draw. Place the terminal cursor in it when
-        // composing so the user sees where they're typing.
+        // Composer — skipped entirely in a read-only view, which reserved it no rows
+        // above (`input_height` is 0 there): an input that cannot send is not chrome
+        // worth drawing.
+        if !self.read_only() {
+            self.render_composer(frame, input_area, chip_w);
+        }
+
+        self.render_status_bar(frame.buffer_mut(), status_area);
+
+        if let Some(layout_cache) = self.viewport.cached_layout {
+            self.render_scrollbar(frame.buffer_mut(), main_area, layout_cache.document_height);
+        }
+
+        if let Some(sb) = sidebar_area {
+            self.render_sidebar(frame.buffer_mut(), sb);
+        }
+
+        if let UiMode::ThemePicker { selected_index, .. } = self.ui_mode {
+            self.render_theme_picker(frame.buffer_mut(), full, selected_index);
+        }
+    }
+
+    /// Draw the composer into its reserved rows and place the terminal cursor in it
+    /// while composing, so the user sees where they are typing. While staging, the
+    /// verb's chip renders left of the prompt (`allow › rm█`) — the visible "your
+    /// next ⏎ commits an argument, not a message" signal (docs/tui.md); the composer
+    /// itself is untouched chrome, drawn in the columns the chip leaves.
+    fn render_composer(&mut self, frame: &mut Frame, input_area: Rect, chip_w: u16) {
         for y in 0..input_area.height {
             for x in 0..input_area.width {
                 if let Some(cell) = frame
@@ -195,9 +230,6 @@ impl<'a> InteractiveState<'a> {
         } else {
             self.theme.muted_style
         };
-        // While staging, the verb's chip renders left of the composer prompt
-        // (`allow › rm█`) — the visible "your next ⏎ commits an argument, not a
-        // message" signal (docs/tui.md). The composer itself is untouched chrome.
         let composer_area = if let Some(staging) = &self.staging {
             put_cols(
                 frame.buffer_mut(),
@@ -224,20 +256,6 @@ impl<'a> InteractiveState<'a> {
         );
         if self.composing {
             frame.set_cursor_position(cursor);
-        }
-
-        self.render_status_bar(frame.buffer_mut(), status_area);
-
-        if let Some(layout_cache) = self.viewport.cached_layout {
-            self.render_scrollbar(frame.buffer_mut(), main_area, layout_cache.document_height);
-        }
-
-        if let Some(sb) = sidebar_area {
-            self.render_sidebar(frame.buffer_mut(), sb);
-        }
-
-        if let UiMode::ThemePicker { selected_index, .. } = self.ui_mode {
-            self.render_theme_picker(frame.buffer_mut(), full, selected_index);
         }
     }
 

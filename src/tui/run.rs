@@ -138,7 +138,13 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
 
     // The crossterm UI loop is blocking — run it off the async runtime.
     let ui = tokio::task::spawn_blocking(move || {
-        ui_loop(rx, submit_tx, approve_tx, pace_tx, interrupt_tx, theme)
+        let senders = Senders {
+            submit: submit_tx,
+            approve: approve_tx,
+            pace: pace_tx,
+            interrupt: interrupt_tx,
+        };
+        ui_loop(rx, senders, theme, None)
     });
 
     let result = ui.await.context("the TUI thread panicked")?;
@@ -152,11 +158,31 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
 }
 
 /// Launch the TUI on the fixed [`gallery`] transcript — every element type, no
-/// daemon. The events channel is pre-seeded and its sender held for the session's
-/// life so the UI never sees a `Disconnected` (which would exit immediately); the
-/// submit/approve far-ends are likewise held so the composer doesn't error. Real
-/// `ui_loop`, real rendering — just a synthetic, offline log to look at.
+/// daemon.
 pub async fn run_gallery(theme: Option<String>) -> Result<()> {
+    run_offline(gallery::log(), None, theme).await
+}
+
+/// Launch the TUI **read-only** on a recorded session's log (`efference view`,
+/// docs/tui.md): the same transcript rendering as a live attach, over entries
+/// loaded from a jsonl file rather than a daemon's event stream. `label` names the
+/// session in the status bar. Nothing here can write — the log is read once, and
+/// the read-only state renders no composer and carries no loop verbs.
+pub async fn run_view(entries: Vec<LogEntry>, label: String, theme: Option<String>) -> Result<()> {
+    run_offline(entries, Some(label), theme).await
+}
+
+/// The shared offline runner behind [`run_gallery`] and [`run_view`]: seed the
+/// events channel with a fixed entry list and run the real [`ui_loop`] over it with
+/// no daemon behind it. The events sender is held for the session's life so the UI
+/// never sees a `Disconnected` (which would exit immediately); the
+/// submit/approve/pace/interrupt far-ends are likewise held so a send from inside
+/// the state can't error. Real `ui_loop`, real rendering — just an offline log.
+async fn run_offline(
+    entries: Vec<LogEntry>,
+    viewing: Option<String>,
+    theme: Option<String>,
+) -> Result<()> {
     let theme = resolve_theme(theme)?;
 
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
@@ -167,12 +193,18 @@ pub async fn run_gallery(theme: Option<String>) -> Result<()> {
     let (interrupt_tx, interrupt_rx) =
         tokio::sync::mpsc::unbounded_channel::<crate::frontend::Interrupt>();
 
-    for entry in gallery::log() {
+    for entry in entries {
         let _ = tx.send(TuiEvent::Entry(entry));
     }
 
     let ui = tokio::task::spawn_blocking(move || {
-        ui_loop(rx, submit_tx, approve_tx, pace_tx, interrupt_tx, theme)
+        let senders = Senders {
+            submit: submit_tx,
+            approve: approve_tx,
+            pace: pace_tx,
+            interrupt: interrupt_tx,
+        };
+        ui_loop(rx, senders, theme, viewing)
     });
     let result = ui.await.context("the TUI thread panicked")?;
 

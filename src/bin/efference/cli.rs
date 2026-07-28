@@ -114,6 +114,75 @@ pub(crate) fn discover_live_socket() -> Result<PathBuf, CliError> {
     }
 }
 
+/// Resolve what a *reader* verb should open: an explicit path (to a `log.jsonl` or
+/// to a session directory), else a session name under `.efference/`. Returns the log
+/// path and the label to show for it — the session id when the log was reached by
+/// name, the path as given otherwise.
+///
+/// Liveness is not consulted: reading a live session's log is a snapshot of it, which
+/// is a thing to allow rather than an error.
+pub(crate) fn resolve_session_log(target: &str) -> Result<(PathBuf, String), CliError> {
+    let as_path = Path::new(target);
+    if as_path.is_file() {
+        return Ok((as_path.to_path_buf(), target.to_string()));
+    }
+    if as_path.is_dir() {
+        let log = as_path.join(LOG_NAME);
+        if log.is_file() {
+            return Ok((log, target.to_string()));
+        }
+        return Err(format!("{target} holds no {LOG_NAME}").into());
+    }
+    let log = session_dir(target).join(LOG_NAME);
+    if log.is_file() {
+        return Ok((log, target.to_string()));
+    }
+    Err(format!("no session {target:?}.{}", session_listing()).into())
+}
+
+/// How many sessions a listing names before it just counts the rest. A long-running
+/// project accumulates dozens of session dirs, and an error that prints all of them
+/// buries the error.
+const LISTED_SESSIONS: usize = 10;
+
+/// The session ids under `.efference/` that have a log, **most recently written
+/// first** — what a reader verb offers when it was given no session, or one that
+/// doesn't resolve. Ordered by the log's mtime rather than by name, since the
+/// default ids are timestamps but a `--name`d session is whatever the operator
+/// called it.
+pub(crate) fn session_ids() -> Vec<String> {
+    let mut found = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(BASE_DIR) {
+        for entry in entries.flatten() {
+            let log = entry.path().join(LOG_NAME);
+            if let Ok(meta) = log.metadata()
+                && meta.is_file()
+                && let Some(name) = entry.file_name().to_str()
+            {
+                found.push((meta.modified().ok(), name.to_string()));
+            }
+        }
+    }
+    found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    found.into_iter().map(|(_, name)| name).collect()
+}
+
+/// The recorded sessions as an error-message tail — the most recent
+/// [`LISTED_SESSIONS`] by name, a count for any beyond them, and a plain note when
+/// the directory holds none.
+pub(crate) fn session_listing() -> String {
+    let ids = session_ids();
+    if ids.is_empty() {
+        return format!(" No recorded sessions under {BASE_DIR}/.");
+    }
+    let shown = ids.len().min(LISTED_SESSIONS);
+    let mut listing = format!(" Recent sessions: {}", ids[..shown].join(", "));
+    if ids.len() > shown {
+        listing.push_str(&format!(" (+{} older)", ids.len() - shown));
+    }
+    listing
+}
+
 #[derive(Subcommand)]
 pub(crate) enum Command {
     /// Run the daemon: bind the control socket and drive the agent loop. Waits for
@@ -239,6 +308,21 @@ pub(crate) enum Command {
         /// Syntax/UI theme: a built-in theme name (e.g. "Catppuccin Frappe",
         /// "Nord", "gruvbox-dark") or a path to a `.tmTheme` file. An unknown name
         /// lists the available ones. Defaults to "Catppuccin Frappe".
+        #[arg(long, env = "EFFERENCE_THEME")]
+        theme: Option<String>,
+    },
+    /// Read a recorded session in the TUI, inert: the same transcript rendering as
+    /// `tui`, over a session's `log.jsonl` instead of a live daemon. Nothing can be
+    /// sent — no composer, no approvals, no loop verbs — and the log is read once,
+    /// so a session that is still running shows as of the moment it was opened.
+    /// q closes, ? for help, t for the theme picker.
+    View {
+        /// Which session to read: a session name (`.efference/<name>/log.jsonl`), a
+        /// session directory, or a path to a `log.jsonl`. Omit to use `--name`;
+        /// with neither, the available session names are listed.
+        session: Option<String>,
+        /// Syntax/UI theme — a built-in name or a `.tmTheme` path. Defaults to
+        /// "Catppuccin Frappe".
         #[arg(long, env = "EFFERENCE_THEME")]
         theme: Option<String>,
     },
