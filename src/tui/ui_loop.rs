@@ -108,28 +108,50 @@ pub(super) fn ui_loop(
                 redraw = state.dirty || state.loading.pending_request;
             }
             recv(event_rx) -> event => match event {
-                Ok(Event::Key(key)) if !key.is_release() => {
+                // Apply the whole arriving burst, then paint once — the same fold
+                // the daemon arm does above, for the same reason. A wheel notch or a
+                // held key delivers many events between frames; giving each its own
+                // full frame is what makes fast scrolling lag behind the wheel, since
+                // the reader thread keeps queueing while the loop paints.
+                Ok(first) => {
                     // A key may act on the transcript (expand/scroll), so realise any
-                    // pending reproject first; then paint immediately for responsiveness.
+                    // pending reproject before the burst is applied.
                     state.flush_reproject();
-                    exit = state.handle_key_event(key, &mut terminal);
-                    redraw = true;
+                    let mut next = Some(first);
+                    while let Some(event) = next.take() {
+                        match event {
+                            Event::Key(key) if !key.is_release() => {
+                                exit = state.handle_key_event(key, &mut terminal);
+                                redraw = true;
+                            }
+                            Event::Mouse(mouse_event) => {
+                                state.handle_mouse_event(mouse_event, &terminal);
+                                redraw = true;
+                            }
+                            Event::Resize(_, _) => {
+                                // The terminal changed size: the cached layout (wrap +
+                                // document height) is width-dependent, so drop it and
+                                // repaint now. Without this the resize only takes on the
+                                // *next* unrelated event (a mouse re-enter), which read as
+                                // "resize does nothing until I wiggle the mouse." The
+                                // sidebar dock threshold makes this especially visible.
+                                state.viewport.cached_layout = None;
+                                redraw = true;
+                            }
+                            _ => {}
+                        }
+                        // Stop the fold where an event can't be folded: a quit, or a
+                        // click, which the paint below has to consume before another
+                        // can be recorded in its place.
+                        if exit
+                            || state.ui.quit_requested
+                            || state.viewport.clicked_position.is_some()
+                        {
+                            break;
+                        }
+                        next = event_rx.try_recv().ok();
+                    }
                 }
-                Ok(Event::Mouse(mouse_event)) => {
-                    state.flush_reproject();
-                    state.handle_mouse_event(mouse_event, &terminal);
-                    redraw = true;
-                }
-                Ok(Event::Resize(_, _)) => {
-                    // The terminal changed size: the cached layout (wrap + document
-                    // height) is width-dependent, so drop it and repaint now. Without
-                    // this the resize only takes on the *next* unrelated event (a mouse
-                    // re-enter), which read as "resize does nothing until I wiggle the
-                    // mouse." The sidebar dock threshold makes this especially visible.
-                    state.viewport.cached_layout = None;
-                    redraw = true;
-                }
-                Ok(_) => {}
                 Err(_) => exit = true,
             },
         }

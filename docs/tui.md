@@ -114,6 +114,8 @@ crossterm's event read blocks, so the UI runs on a dedicated OS thread (`tui::ui
 
 The UI loop drains arriving events through `InteractiveState::handle_event` and sets a `reproject_pending` flag rather than re-projecting per event. Before each paint it calls `flush_reproject`, which brings the transcript up to date once and clears the flag. A reattach replay that delivers N entries therefore costs O(N) event folds and O(1) projections, not O(N²).
 
+**Terminal input folds the same way.** A wheel notch or a held key delivers a burst of crossterm events, and the reader thread keeps queueing while the loop paints — so painting per event makes fast scrolling lag behind the wheel by however far the queue has run ahead. The loop applies the whole burst, then paints once. Two events stop the fold: a quit, and a click, which the paint has to consume before another can be recorded in its place.
+
 
 ## What a frame costs
 
