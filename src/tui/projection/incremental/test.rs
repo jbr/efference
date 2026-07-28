@@ -56,6 +56,7 @@ fn empty_doc() -> DocumentState<'static> {
         layouts: Vec::new(),
         layout_width: 0,
         laid_out: 0,
+        highlighted: 0,
     }
 }
 

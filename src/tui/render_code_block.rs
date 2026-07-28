@@ -1,3 +1,8 @@
+use std::collections::VecDeque;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::rc::Rc;
+
 use ratatui::{
     buffer::Buffer,
     style::{Color, Style},
@@ -12,6 +17,64 @@ use super::state::InteractiveState;
 /// a highlighter token, or the whole line when there is no highlighting. A wrapped
 /// row clips each of these to the slice of the line it shows.
 type Segment = (usize, usize, Style);
+
+/// A block's highlighting, one `Vec<Segment>` per source line.
+type Highlighting = Rc<Vec<Vec<Segment>>>;
+
+/// How many segments the memo holds before it starts evicting. Roughly 5 MB at
+/// ~24 bytes a segment; a 2000-line source file runs about 30k.
+const MEMO_SEGMENT_CAP: usize = 200_000;
+
+/// Computed highlighting, kept between frames (docs/tui.md — what a frame costs).
+///
+/// A *visible* top-level node is re-laid-out on every frame, and a multi-screen code
+/// block is one node — so without this, syntect re-parses the whole block ~33 times
+/// a second while the operator scrolls past it, and parse state has to be carried
+/// from the block's first line every time, so the cost is worst exactly where the
+/// operator has scrolled furthest. Colours are a pure function of (theme, language,
+/// text), so they are computed once and kept.
+///
+/// Keyed by a hash of those three inputs, so a theme change or an edited block
+/// misses and recomputes rather than showing stale colour. Bounded by
+/// [`MEMO_SEGMENT_CAP`], evicting oldest-first.
+#[derive(Debug, Default)]
+pub(super) struct HighlightMemo {
+    entries: VecDeque<(u64, Highlighting)>,
+    segments: usize,
+}
+
+impl HighlightMemo {
+    fn get(&self, key: u64) -> Option<Highlighting> {
+        self.entries
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| Rc::clone(v))
+    }
+
+    fn insert(&mut self, key: u64, lines: Vec<Vec<Segment>>) -> Highlighting {
+        let count: usize = lines.iter().map(Vec::len).sum();
+        let value: Highlighting = Rc::new(lines);
+        self.entries.push_back((key, Rc::clone(&value)));
+        self.segments += count;
+        while self.segments > MEMO_SEGMENT_CAP && self.entries.len() > 1 {
+            if let Some((_, evicted)) = self.entries.pop_front() {
+                self.segments = self
+                    .segments
+                    .saturating_sub(evicted.iter().map(Vec::len).sum::<usize>());
+            }
+        }
+        value
+    }
+}
+
+/// The memo key: what the colours are a function of.
+fn memo_key(theme: Option<&str>, lang: Option<&str>, code: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    theme.hash(&mut hasher);
+    lang.hash(&mut hasher);
+    code.hash(&mut hasher);
+    hasher.finish()
+}
 
 /// The box a code block draws itself inside — the columns every row of content has
 /// to agree on. Passed as one value so the per-line render can't drift from the
@@ -209,59 +272,72 @@ impl<'a> InteractiveState<'a> {
             gutter_width,
         };
 
-        // Highlighting runs first, over the whole block, because the highlighter
-        // borrows `self` for the syntax set and theme while `render_code_line` needs
-        // it mutably for the layout cursor. Lines are borrowed from `code`, so this
+        // Highlighting runs first, over the block, because the highlighter borrows
+        // `self` for the syntax set and theme while `render_code_line` needs it
+        // mutably for the layout cursor. Lines are borrowed from `code`, so this
         // costs one small `Vec` of byte ranges per line and copies no text.
         //
-        // Only a *tagged* block is highlighted; an untagged one is one plain segment
-        // per line rather than being read as some default language.
-        let lines: Vec<(&str, Vec<Segment>)> = match lang_display
-            .and_then(|l| self.render_context.syntax_set().find_syntax_by_token(l))
-        {
-            Some(syntax) => {
-                let mut highlighter = HighlightLines::new(syntax, self.render_context.theme());
-                LinesWithEndings::from(code)
-                    .map(|line| {
-                        // syntect needs the line ending to keep its state machine
-                        // right, but the newline is never drawn.
-                        let drawn = line.trim_end_matches('\n');
-                        let segments = match highlighter
-                            .highlight_line(line, self.render_context.syntax_set())
-                        {
-                            // Byte offsets into `drawn`, so a wrapped row can clip
-                            // each token to the slice of the line it actually shows.
-                            Ok(ranges) => {
-                                let mut segments = Vec::with_capacity(ranges.len());
-                                let mut at = 0;
-                                for (style, text) in ranges {
-                                    let end = (at + text.len()).min(drawn.len());
-                                    if at < end {
-                                        let fg = style.foreground;
-                                        segments.push((
-                                            at,
-                                            end,
-                                            Style::default().fg(Color::Rgb(fg.r, fg.g, fg.b)),
-                                        ));
+        // Only a *tagged* block is highlighted; an untagged one renders as plain text
+        // rather than being read as some default language. The measure pass draws
+        // nothing at all, so it highlights nothing.
+        let syntax = lang_display
+            .filter(|_| !self.layout.measuring)
+            .and_then(|l| self.render_context.syntax_set().find_syntax_by_token(l));
+
+        let key = memo_key(self.current_theme_name.as_deref(), lang_display, code);
+        let highlighting: Option<Highlighting> = match self.highlight_memo.get(key) {
+            hit @ Some(_) => hit,
+            None => syntax.map(|syntax| {
+                // Computed whole, in one pass, because syntect carries parse state
+                // line to line — a block can't be coloured from its middle. This is
+                // the pass the memo exists to run only once.
+                let lines: Vec<Vec<Segment>> = {
+                    let mut highlighter = HighlightLines::new(syntax, self.render_context.theme());
+                    LinesWithEndings::from(code)
+                        .map(|line| {
+                            // syntect needs the line ending to keep its state machine
+                            // right, but the newline is never drawn.
+                            let drawn = line.trim_end_matches('\n');
+                            match highlighter.highlight_line(line, self.render_context.syntax_set())
+                            {
+                                // Byte offsets into `drawn`, so a wrapped row can clip
+                                // each token to the slice of the line it shows.
+                                Ok(ranges) => {
+                                    let mut segments = Vec::with_capacity(ranges.len());
+                                    let mut at = 0;
+                                    for (style, text) in ranges {
+                                        let end = (at + text.len()).min(drawn.len());
+                                        if at < end {
+                                            let fg = style.foreground;
+                                            segments.push((
+                                                at,
+                                                end,
+                                                Style::default().fg(Color::Rgb(fg.r, fg.g, fg.b)),
+                                            ));
+                                        }
+                                        at += text.len();
                                     }
-                                    at += text.len();
+                                    segments
                                 }
-                                segments
+                                Err(_) => vec![(0, drawn.len(), Style::default())],
                             }
-                            Err(_) => vec![(0, drawn.len(), Style::default())],
-                        };
-                        (drawn, segments)
-                    })
-                    .collect()
-            }
-            None => code
-                .lines()
-                .map(|line| (line, vec![(0, line.len(), Style::default())]))
-                .collect(),
+                        })
+                        .collect()
+                };
+                // What the scroll-cost test asserts on (docs/tui.md): a frame that
+                // hits the memo colours nothing at all.
+                self.document.highlighted += lines.len();
+                self.highlight_memo.insert(key, lines)
+            }),
         };
 
         // Render code content with side borders (no background color).
-        for (i, (line, segments)) in lines.iter().enumerate() {
+        for (i, line) in code.lines().enumerate() {
+            let plain = [(0, line.len(), Style::default())];
+            let segments = highlighting
+                .as_ref()
+                .and_then(|h| h.get(i))
+                .map_or(&plain[..], Vec::as_slice);
             let number = numbers.and_then(|ns| ns.get(i)).copied();
             self.render_code_line(buf, line, segments, number, &frame);
         }

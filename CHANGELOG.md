@@ -18,6 +18,8 @@ behind a change, see [`journal/`](journal/).
   pre-triage truncation breadcrumb are their own annotations beside the result, not lines in it.
 
 ### Fixed
+- Syntax highlighting is memoized per block, so scrolling past a long highlighted code block no
+  longer re-parses it on every frame (1.57 s → 8.4 ms a frame on a 2000-line block, debug).
 - A tool with its own representation (the diff tools, `read`) renders its full output through
   it rather than the triaged form, so a distilled edit result is a colored diff again instead of
   verbatim text with a bare `===DIFF===` line in it; where triage dropped lines, the transcript

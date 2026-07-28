@@ -122,6 +122,11 @@ pub(super) struct DocumentState<'a> {
     /// reusing. The number a growing transcript must not grow: it is what the
     /// render-cost test asserts on.
     pub laid_out: usize,
+    /// How many source lines the last walk actually ran syntect over — i.e. how
+    /// many missed the [highlight memo](crate::tui::render_code_block). A *visible*
+    /// node is re-laid-out every frame, so a multi-screen code block would re-parse
+    /// itself on each one; this is what the scroll-cost test pins (docs/tui.md).
+    pub highlighted: usize,
 }
 
 impl<'a> DocumentState<'a> {
@@ -349,6 +354,10 @@ pub(super) struct InteractiveState<'a> {
     /// rendered, the strip carries no loop verbs, and the resting focus is the
     /// strip rather than the composer — nothing in the UI can send.
     pub viewing: Option<String>,
+
+    /// Computed syntax highlighting, kept between frames so a visible multi-screen
+    /// code block is parsed once rather than on every paint (docs/tui.md).
+    pub highlight_memo: super::render_code_block::HighlightMemo,
 
     /// The input composer (M2). The swappable input interface (docs/tui.md).
     pub composer: Composer,

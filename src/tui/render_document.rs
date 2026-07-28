@@ -78,6 +78,7 @@ impl<'a> InteractiveState<'a> {
         };
         self.layout.indent = BASELINE_LEFT_MARGIN;
         self.document.laid_out = 0;
+        self.document.highlighted = 0;
 
         // Use raw pointer to avoid borrow checker issues when calling render_node
         let nodes_ptr = self.document.document.nodes.as_ptr();

@@ -182,7 +182,9 @@ Everything that can change about an already-committed entry arrives keyed by `ca
 
 **Measure, then paint — once.** `render_frame` runs the walk in `measuring` mode first (`row_visible` is false for every row, so nothing is written and no highlighting runs), which fills in any missing heights and yields the document height. A stream-following viewport is then pinned to the new bottom *before* the paint, so there is no stale-offset frame to correct with a second full draw.
 
-`document.laid_out` — how many nodes the last walk actually laid out — is what the cost tests in `harness/test/render_cost.rs` assert on: an 8× longer log must not lay out more nodes for one streamed token. That is the regression guard, in place of a timing test.
+**Syntax highlighting is computed once per block, not once per frame** (`render_code_block`'s `HighlightMemo`). The layout cache is per *top-level node*, and a multi-screen code block is one node — so while any part of it is on screen it is re-laid-out on every paint, and re-parsing it each time is what made scrolling past a long highlighted block drag. Worse, syntect carries parse state line to line, so a block cannot be coloured from its middle: the cost peaked exactly where the operator had scrolled furthest into it. Colours are a pure function of (theme, language, text), so they are memoized under a hash of those three — a theme change or an edited block misses and recomputes rather than showing stale colour — bounded by a segment cap and evicted oldest-first. Measured on a 2000-line highlighted block, debug build: 1.57 s a frame before, 8.4 ms after.
+
+`document.laid_out` — how many nodes the last walk actually laid out — and `document.highlighted` — how many source lines it actually ran syntect over — are what the cost tests in `harness/test/render_cost.rs` assert on: an 8× longer log must not lay out more nodes for one streamed token, and a repaint or a scroll must highlight *nothing*. Those are the regression guards, in place of timing tests.
 
 
 ## The composer

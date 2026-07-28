@@ -84,6 +84,97 @@ fn scrolling_costs_the_viewport_not_the_log() {
     );
 }
 
+/// **A block is syntax-highlighted once, not once a frame.** A *visible* top-level
+/// node is re-laid-out on every paint, and a multi-screen code block is one node —
+/// so without the memo, syntect re-parses the whole block ~33 times a second while
+/// the operator scrolls past it. Worse, parse state has to be carried from the
+/// block's first line each time, so the cost peaks exactly where the operator has
+/// scrolled furthest into it: the observed symptom was a long highlighted block
+/// scrolling more slowly than anything else.
+#[test]
+fn a_block_is_highlighted_once_not_once_a_frame() {
+    let mut play = Screenplay::new(100, 30);
+    play.user("read it");
+    play.assistant(
+        "here",
+        vec![tool_call(
+            "read",
+            "call-hl",
+            serde_json::json!({ "paths": ["src/tui/state.rs"] }),
+        )],
+    );
+    let body: String = (1..=2000)
+        .map(|n| format!("    let value_{n} = compute(&state, {n});\n"))
+        .collect();
+    play.tool_result(
+        "call-hl",
+        &format!(
+            "==MK BEGIN /src/tui/state.rs, LENGTH: 9 MK==\n{body}==MK END /src/tui/state.rs MK=="
+        ),
+        false,
+        crate::log::WireState::Raw,
+    );
+
+    // The first paint pays for the block, once.
+    let _ = play.draw();
+    let first = play.state.document.highlighted;
+    assert!(first > 0, "the first paint has to actually highlight it");
+
+    // Every later frame — including one that scrolls — pays nothing.
+    let _ = play.draw();
+    assert_eq!(
+        play.state.document.highlighted, 0,
+        "a repaint re-parsed the block"
+    );
+
+    for offset in [1900, 1500, 900, 300, 0] {
+        play.state.set_scroll_offset(offset);
+        let _ = play.draw();
+        assert_eq!(
+            play.state.document.highlighted, 0,
+            "scrolling to row {offset} re-parsed the block"
+        );
+    }
+}
+
+/// The memo is keyed on what the colours are a function of, so a theme change
+/// misses it rather than painting the old theme's colours forever.
+#[test]
+fn a_theme_change_misses_the_highlight_memo() {
+    let mut play = Screenplay::new(100, 30);
+    play.user("read it");
+    play.assistant(
+        "here",
+        vec![tool_call(
+            "read",
+            "call-hl",
+            serde_json::json!({ "paths": ["a.rs"] }),
+        )],
+    );
+    play.tool_result(
+        "call-hl",
+        "==MK BEGIN /a.rs, LENGTH: 9 MK==\nfn main() {}\n==MK END /a.rs MK==",
+        false,
+        crate::log::WireState::Raw,
+    );
+    let _ = play.draw();
+    let _ = play.draw();
+    assert_eq!(play.state.document.highlighted, 0, "warm");
+
+    let themes = crate::tui::render_context::RenderContext::available_themes();
+    let other = themes
+        .iter()
+        .find(|t| Some(t.as_str()) != play.state.current_theme_name.as_deref())
+        .expect("a second theme to switch to");
+    play.state.apply_theme(other).expect("theme applies");
+    play.state.document.invalidate_all();
+    let _ = play.draw();
+    assert!(
+        play.state.document.highlighted > 0,
+        "the new theme's colours must be recomputed, not served from the memo"
+    );
+}
+
 /// The reverse guarantee: a node whose content changed *is* re-laid-out. A cache
 /// that never invalidated would pass the tests above and paint stale rows forever.
 /// The raw flip is the change to drive it with — it is the one per-entry toggle

@@ -24,6 +24,7 @@ impl<'a> InteractiveState<'a> {
                 layouts: Vec::new(),
                 layout_width: 0,
                 laid_out: 0,
+                highlighted: 0,
             },
             viewport: ViewportState {
                 scroll_offset: 0,
@@ -69,6 +70,7 @@ impl<'a> InteractiveState<'a> {
             view: projection::ViewState::default(),
             events,
             viewing: None,
+            highlight_memo: Default::default(),
             composer: Composer::new(),
             composing: true,
             strip_focus: None,
