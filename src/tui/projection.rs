@@ -322,8 +322,26 @@ fn result_entry(
     // because text is all it has, and a terminal has a gutter (docs/tui.md). Both
     // views resolve the verdict through `project::distillate`, so they can differ in
     // form but never in which lines they show.
+    // A distillate that dropped nothing *is* the raw content, so a tool with its own
+    // representation keeps it rather than becoming numbered lines: the fork keeps
+    // everything more often than not, and a `retain(all)` verdict on an edit was
+    // turning its colored diff into verbatim text with a bare `===DIFF===` line
+    // sitting in the middle of it.
+    //
+    // Only for those tools. A complete distillate of, say, a `bash` result has no
+    // richer form to fall back to, and there the numbered gutter is worth keeping —
+    // it is the coordinate system the verdict was expressed in.
+    let complete_distillate = has_rich_rendering(call.name.as_str())
+        && match wire {
+            WireState::Distilled { keep, .. } => {
+                let d = crate::project::distillate(&raw.content, keep);
+                d.dropped == 0 && d.ranges == [(1, d.shown.len())]
+            }
+            _ => false,
+        };
+
     let (body, size) = match wire {
-        WireState::Distilled { keep, .. } if !show_raw => {
+        WireState::Distilled { keep, .. } if !show_raw && !complete_distillate => {
             let distillate = crate::project::distillate(&raw.content, keep);
             let kept = distillate.numbered_lines();
             // Verb first, so which number is which is unambiguous — `3 of 412` alone
@@ -347,10 +365,10 @@ fn result_entry(
             (body, size)
         }
         _ => {
-            // A forced-raw view passes a synthetic `Raw` wire so `result_body` gives
-            // it the same rich tool-specific rendering (diff/read) a natural raw
-            // result gets.
-            let (content, effective_wire) = if show_raw {
+            // A forced-raw view and a complete distillate both *are* the raw content,
+            // so both pass a synthetic `Raw` wire and get the same rich tool-specific
+            // rendering (diff/read) a natural raw result gets.
+            let (content, effective_wire) = if show_raw || complete_distillate {
                 (raw.content.clone(), &WireState::Raw)
             } else {
                 let content = match wire {

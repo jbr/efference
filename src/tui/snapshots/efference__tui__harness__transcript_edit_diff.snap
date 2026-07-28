@@ -9,7 +9,7 @@ expression: self.render()
  1 │                                                                                │
  2 │   Here's the reformatted version.                                              │
  3 │                                                                                │
- 4 │   ❯ edit · fn is_empty                                                         │
+ 4 │   ❯ edit · src/tui/composer.rs · replace                                       │
  5 │   ✓ 7 lines                                                                    │
  6 │        /// True when the buffer holds no non-whitespace text.                  │
  7 │        pub(super) fn is_empty(&self) -> bool {                                 │

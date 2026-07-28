@@ -28,7 +28,12 @@ fn edit_scenario(w: u16, h: u16) -> Screenplay<'static> {
         vec![tool_call(
             "edit",
             "toolu_08",
-            json!({ "anchor": "fn is_empty", "content": "…" }),
+            json!({
+                "file_path": "src/tui/composer.rs",
+                "operation": "replace",
+                "anchor": "fn is_empty",
+                "content": "…",
+            }),
         )],
     );
     play.tool_result("toolu_08", EDIT_RESULT, false, WireState::Raw);

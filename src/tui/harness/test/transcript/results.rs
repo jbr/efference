@@ -154,6 +154,61 @@ fn transcript_distilled_result() {
     play.snapshot("transcript_distilled_result");
 }
 
+/// A distillate that dropped nothing **is** the raw content, so it keeps the
+/// per-tool rendering rather than becoming numbered lines. The fork keeps
+/// everything more often than not, and a `retain(all)` verdict on an edit was
+/// turning its colored diff into verbatim text with a bare `===DIFF===` line
+/// sitting in the middle of it (docs/tui.md).
+#[test]
+fn a_complete_distillate_keeps_its_per_tool_rendering() {
+    let mut play = Screenplay::new(80, 22);
+    play.user("Add the line.");
+    play.assistant(
+        "Editing.",
+        vec![tool_call(
+            "edit",
+            "toolu_e2",
+            json!({
+                "file_path": "CHANGELOG.md",
+                "operation": "insert_after",
+                "anchor": "- In-process MCP tools (fs-mcp, semantic-edit-mcp) reusing the enums.",
+            }),
+        )],
+    );
+    play.tool_result(
+        "toolu_e2",
+        "Applied insert after — the file has been updated.\n\
+         \n\
+         ===DIFF===\n\
+         @@ -12,3 +12,4 @@\n\
+         \x20- In-process MCP tools (fs-mcp, semantic-edit-mcp).\n\
+         +- `read` tool line-range support in `fs-mcp`.\n\
+         \x20- Interactive TUI (`efference tui`).",
+        false,
+        WireState::Distilled {
+            keep: Keep::All,
+            note: None,
+        },
+    );
+
+    let frame = play.render();
+    play.snapshot("transcript_complete_distillate_of_an_edit");
+    assert!(
+        !frame.contains("===DIFF==="),
+        "the marker is consumed by the diff renderer, not printed:\n{frame}"
+    );
+    assert!(
+        frame.contains("+- `read` tool line-range support"),
+        "the added line renders as a diff line:\n{frame}"
+    );
+    // The call header names the file and what was done to it — not a fragment of
+    // the anchor, which the diff below shows in full anyway.
+    assert!(
+        frame.contains("edit · CHANGELOG.md · insert_after"),
+        "the header names the file and the operation:\n{frame}"
+    );
+}
+
 /// A distillate that keeps **non-contiguous** ranges renders them as numbered
 /// lines, with the gaps stated by the jump in the gutter rather than by a
 /// `@@ lines a-b @@` header (docs/tui.md). The wire still gets the headers — it has

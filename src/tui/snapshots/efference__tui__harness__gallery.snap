@@ -53,7 +53,7 @@ expression: self.render()
 45 │                                                                               ┃│
 46 │   Here's a structured edit, shown as a colored diff:                          ┃│
 47 │                                                                               ┃│
-48 │   ❯ edit · fn is_empty                                                        ┃│
+48 │   ❯ edit · src/tui/composer.rs · replace                                      ┃│
 49 │   ✓ 7 lines                                                                   ┃│
 50 │        /// True when the buffer holds no non-whitespace text.                 ┃│
 51 │        pub(super) fn is_empty(&self) -> bool {                                ┃│

@@ -73,18 +73,30 @@ pub(in crate::tui) fn call_args(
         }
         name if is_diff_tool(name) => {
             // The diff result is the representation — never dump the (verbose) edit
-            // input. Show a concise anchor hint inline if present, else just the name.
-            let inline = input("anchor").map(|anchor| {
-                let snippet: String = anchor
-                    .lines()
-                    .next()
-                    .unwrap_or(anchor)
-                    .chars()
-                    .take(48)
-                    .collect();
-                vec![inline_code(snippet)]
-            });
-            return (inline, vec![]);
+            // input. What the header owes the reader is *which file* changed and how:
+            // the anchor snippet that used to sit here answered neither (it is a
+            // fragment of the old text, which the diff below shows in full anyway),
+            // and at 48 characters it read as a truncated sentence.
+            let mut spans = Vec::new();
+            if let Some(path) = input("file_path") {
+                spans.push(inline_code(path.to_string()));
+            }
+            if let Some(operation) = input("operation") {
+                if !spans.is_empty() {
+                    spans.push(Span {
+                        text: " · ".into(),
+                        style: SpanStyle::Comment,
+                        action: None,
+                    });
+                }
+                spans.push(Span {
+                    text: operation.to_string().into(),
+                    style: SpanStyle::Comment,
+                    action: None,
+                });
+            }
+            // `undo_edit` takes no arguments at all, so it is only ever its name.
+            return ((!spans.is_empty()).then_some(spans), vec![]);
         }
         _ => {}
     }
@@ -125,6 +137,13 @@ pub(in crate::tui) fn result_body(
 /// The known tools whose result carries a `===DIFF===` section.
 pub(in crate::tui) fn is_diff_tool(name: &str) -> bool {
     matches!(name, "edit" | "undo_edit" | "retarget_edit")
+}
+
+/// Whether [`result_body`] has a representation for this tool's output beyond a
+/// plain code block — the tools whose result would lose something real if it were
+/// rendered as lines of text.
+pub(in crate::tui) fn has_rich_rendering(name: &str) -> bool {
+    is_diff_tool(name) || name == "read"
 }
 
 /// Strip a `read` result's sentinel framing (`==<token> BEGIN <path>, LENGTH: n

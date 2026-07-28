@@ -143,7 +143,11 @@ pub(super) fn log() -> Vec<LogEntry> {
             vec![call(
                 "edit",
                 "toolu_g2",
-                serde_json::json!({ "anchor": "fn is_empty" }),
+                serde_json::json!({
+                    "file_path": "src/tui/composer.rs",
+                    "operation": "replace",
+                    "anchor": "fn is_empty",
+                }),
             )],
         ),
         result(5, "toolu_g2", DIFF_RESULT, false, WireState::Raw),

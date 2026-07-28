@@ -18,6 +18,9 @@ behind a change, see [`journal/`](journal/).
   pre-triage truncation breadcrumb are their own annotations beside the result, not lines in it.
 
 ### Fixed
+- An edit result distilled with `retain(all)` renders as its colored diff again, instead of as
+  verbatim text with a bare `===DIFF===` line in it; edit calls name the file and the operation
+  (`edit · src/tui/composer.rs · replace`) in place of a 48-character anchor fragment.
 - Code-block content wraps to the box's inner width instead of spilling past the right border
   and being clipped there — through the same `wrap_points` break policy prose already used.
 - Code-block columns are measured in display width, not bytes: a highlighted line containing
