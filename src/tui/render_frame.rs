@@ -158,6 +158,15 @@ impl<'a> InteractiveState<'a> {
         self.layout.node_path = NodePath::new();
         self.layout.area = main_area;
 
+        // Lay out (without drawing) first, so the document height is known before
+        // anything is painted: a stream-following viewport can then be pinned to the
+        // new bottom and painted *once*, instead of painting at the stale offset and
+        // repainting at the corrected one (docs/tui.md).
+        self.measure_document(main_area);
+        if self.viewport.stuck_to_bottom {
+            self.scroll_to_bottom();
+        }
+
         self.render_document(main_area, frame.buffer_mut());
 
         // Live background-process panel, between the transcript and the gate (docs/supervisor.md).

@@ -104,6 +104,67 @@ pub(super) enum UiMode {
 #[derive(Debug)]
 pub(super) struct DocumentState<'a> {
     pub document: Document<'a>,
+    /// Per-top-level-node layout, parallel to `document.nodes` and valid only at
+    /// [`layout_width`](Self::layout_width) (docs/tui.md — the layout cache).
+    /// `None` means "not laid out yet at this width"; the next pass computes it.
+    pub layouts: Vec<Option<NodeLayout<'a>>>,
+    /// The render width `layouts` was computed at. A width change invalidates all
+    /// of them, since wrapping is width-dependent.
+    pub layout_width: u16,
+    /// How many top-level nodes the last walk actually laid out, as opposed to
+    /// reusing. The number a growing transcript must not grow: it is what the
+    /// render-cost test asserts on.
+    pub laid_out: usize,
+}
+
+impl<'a> DocumentState<'a> {
+    /// Drop every cached node layout (a width change, or a wholesale rebuild).
+    pub fn invalidate_all(&mut self) {
+        self.layouts.clear();
+        self.layouts.resize_with(self.document.nodes.len(), || None);
+    }
+
+    /// Drop one top-level node's cached layout — used where a node changes on its
+    /// own, e.g. an in-place `ExpandBlock` (`tui/events.rs`), which changes that
+    /// node's height and nothing else's.
+    pub fn invalidate_node(&mut self, idx: usize) {
+        if let Some(slot) = self.layouts.get_mut(idx) {
+            *slot = None;
+        }
+    }
+
+    /// Replace a run of top-level nodes, keeping the parallel layout cache aligned.
+    /// The **only** way the incremental projection (`tui/projection/incremental.rs`)
+    /// changes the document, so a replaced node can never keep a stale height: the
+    /// nodes and their layouts move together or not at all.
+    pub fn splice_nodes(
+        &mut self,
+        range: std::ops::Range<usize>,
+        nodes: Vec<DocumentNode<'a>>,
+    ) -> bool {
+        if range.is_empty() && nodes.is_empty() {
+            return false;
+        }
+        self.layouts.resize_with(self.document.nodes.len(), || None);
+        self.layouts
+            .splice(range.clone(), std::iter::repeat_n(None, nodes.len()));
+        self.document.nodes.splice(range, nodes);
+        true
+    }
+}
+
+/// One top-level node's laid-out result, reused on frames where the node itself
+/// did not change and it falls outside the viewport (docs/tui.md).
+///
+/// `actions` carries the node's focus/click targets with **`y` relative to the
+/// node's first row**, so replaying them costs one add per action when the nodes
+/// above have shifted. Registering them for skipped nodes is what keeps
+/// [`RenderCache::actions`] — and therefore the `action_index` the keyboard cursor
+/// is expressed in — identical to a full walk's.
+#[derive(Debug, Clone)]
+pub(super) struct NodeLayout<'a> {
+    pub height: u16,
+    pub actions: Vec<(Rect, TuiAction<'a>)>,
 }
 
 /// Cached document layout information
@@ -240,6 +301,11 @@ pub(super) struct LayoutState {
     /// Stack of x positions where blockquote markers should be drawn
     /// When rendering content, markers are drawn at each of these positions
     pub blockquote_markers: Vec<u16>,
+    /// True during the **measure** pass (docs/tui.md): the walk runs for its
+    /// heights only, so every row counts as off-screen — no cell is written and no
+    /// syntax highlighting runs. [`row_visible`](InteractiveState::row_visible) is
+    /// the single place that reads it.
+    pub measuring: bool,
 }
 
 /// Main interactive state - composes all UI state
@@ -258,6 +324,9 @@ pub(super) struct InteractiveState<'a> {
     pub log: Vec<LogEntry>,
     /// In-flight streaming deltas not yet committed to the log.
     pub live: LiveTail,
+    /// What the transcript document currently reflects, so the next projection can
+    /// splice rather than rebuild (docs/tui.md).
+    pub transcript: projection::Transcript,
     /// Per-exchange view-state the human has toggled (expand/collapse, raw-vs-wire),
     /// kept here so it survives re-projection (docs/tui.md): the transcript rebuilds
     /// on every streamed token, so a block's toggles can't live in the rebuilt

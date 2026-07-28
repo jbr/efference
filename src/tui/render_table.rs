@@ -65,9 +65,7 @@ impl<'a> InteractiveState<'a> {
         border_style: Style,
     ) {
         let y = self.layout.pos.y;
-        if y < self.viewport.scroll_offset
-            || y >= self.viewport.scroll_offset + self.layout.area.height
-        {
+        if !self.row_visible(y) {
             return;
         }
         let mut buf_str = String::new();
@@ -94,8 +92,7 @@ impl<'a> InteractiveState<'a> {
     /// Draw an empty content row that preserves column borders. Advances `pos.y`.
     fn draw_blank_row(&mut self, buf: &mut Buffer, col_widths: &[usize]) {
         let y = self.layout.pos.y;
-        let in_view = y >= self.viewport.scroll_offset
-            && y < self.viewport.scroll_offset + self.layout.area.height;
+        let in_view = self.row_visible(y);
         let border_style = self.theme.muted_style;
 
         let mut col_pos = self.layout.indent;
@@ -135,8 +132,7 @@ impl<'a> InteractiveState<'a> {
 
         for line_idx in 0..row_height {
             let y = self.layout.pos.y;
-            let in_view = y >= self.viewport.scroll_offset
-                && y < self.viewport.scroll_offset + self.layout.area.height;
+            let in_view = self.row_visible(y);
 
             // Always traverse to register actions; skip text writes if off-screen.
             let mut col_pos = self.layout.indent;

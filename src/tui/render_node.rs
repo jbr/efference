@@ -81,9 +81,7 @@ impl<'a> InteractiveState<'a> {
                 // Draw blockquote markers on underline row
                 self.draw_blockquote_markers(buf);
 
-                if self.layout.pos.y >= self.viewport.scroll_offset
-                    && self.layout.pos.y < self.viewport.scroll_offset + self.layout.area.height
-                {
+                if self.row_visible(self.layout.pos.y) {
                     for c in self.layout.indent..self.layout.area.width {
                         buf.cell_mut((c, self.layout.pos.y - self.viewport.scroll_offset))
                             .unwrap()
@@ -213,9 +211,7 @@ impl<'a> InteractiveState<'a> {
                 // Draw blockquote markers if we're inside a blockquote
                 self.draw_blockquote_markers(buf);
 
-                if self.layout.pos.y >= self.viewport.scroll_offset
-                    && self.layout.pos.y < self.viewport.scroll_offset + self.layout.area.height
-                {
+                if self.row_visible(self.layout.pos.y) {
                     let rule_style = self.theme.muted_style;
                     // Use a decorative pattern: ─── • ───
                     let pattern = ['─', '─', '─', ' ', '•', ' '];
@@ -417,9 +413,7 @@ impl<'a> InteractiveState<'a> {
                 if is_focused {
                     let style = self.style(SpanStyle::UserAccent);
                     for row in block_start..self.layout.pos.y {
-                        if row >= self.viewport.scroll_offset
-                            && row < self.viewport.scroll_offset + self.layout.area.height
-                        {
+                        if self.row_visible(row) {
                             self.write_text(buf, row, 0, "▌", self.layout.area, style);
                         }
                     }
@@ -474,9 +468,7 @@ impl<'a> InteractiveState<'a> {
                 {
                     let style = self.style(SpanStyle::UserAccent);
                     for row in start_row..prose_end {
-                        if row >= self.viewport.scroll_offset
-                            && row < self.viewport.scroll_offset + self.layout.area.height
-                        {
+                        if self.row_visible(row) {
                             self.write_text(buf, row, 0, "▌", self.layout.area, style);
                         }
                     }
@@ -489,9 +481,7 @@ impl<'a> InteractiveState<'a> {
                     let gutter_col = BASELINE_LEFT_MARGIN.saturating_sub(2);
                     let style = self.style(SpanStyle::UserAccent);
                     for row in start_row..self.layout.pos.y {
-                        if row >= self.viewport.scroll_offset
-                            && row < self.viewport.scroll_offset + self.layout.area.height
-                        {
+                        if self.row_visible(row) {
                             self.write_text(buf, row, gutter_col, "┃", self.layout.area, style);
                         }
                     }

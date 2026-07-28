@@ -146,17 +146,10 @@ pub(super) fn ui_loop(
         state.dirty = false;
         state.handle_hover();
         state.handle_click();
+        // One draw per frame: `render_frame` measures the document and re-pins a
+        // stream-following viewport to the bottom before it paints (docs/tui.md),
+        // so there is no stale-offset paint to correct afterwards.
         terminal.draw(|frame| state.render_frame(frame))?;
-
-        // Keep pinned to the bottom while following the stream. The layout cache
-        // is fresh after the draw above, so max_scroll is now known.
-        if state.viewport.stuck_to_bottom {
-            let max = state.max_scroll();
-            if state.viewport.scroll_offset != max {
-                state.set_scroll_offset(max);
-                terminal.draw(|frame| state.render_frame(frame))?;
-            }
-        }
 
         state.update_cursor(&mut terminal);
     };

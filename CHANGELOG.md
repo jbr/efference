@@ -8,6 +8,9 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- TUI transcript as a materialized view: the projection splices only the entries whose calls
+  changed, layout is cached per node, and a measure pass pins the stream-following viewport
+  before a single paint — a streamed frame now costs the viewport, not the log.
 - Batched triage gate: a completion's calls all run before one fork peek triages their
   results together, so a provider that ignores `disable_parallel_tool_use` no longer
   orphans the peek's request (which silently put uncurated output on the wire).

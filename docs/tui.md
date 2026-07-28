@@ -42,7 +42,7 @@ The throughline: lean on pre-attentive cues (color, gutter, glyph) and tool-spec
 
 ## View state: surviving re-projection
 
-The transcript re-projects on every streamed token. That means a `DocumentNode`'s collapse level and raw-vs-wire toggle cannot live inside the rebuilt `Document` — they would reset mid-stream. They live instead in `tui::state` as a `projection::ViewState` keyed by `call_id`, and `project` reads that state when building each exchange.
+The transcript re-projects on every streamed token, and any exchange can be re-projected at any time (a result or verdict arriving rebuilds the entry that made the call). That means a `DocumentNode`'s collapse level and raw-vs-wire toggle cannot live inside the rebuilt `Document` — they would reset mid-stream. They live instead in `tui::state` as a `projection::ViewState` keyed by `call_id`, and the projection reads that state when building each exchange. `ViewState` also records which `call_id`s were toggled, since a view flip is not a log event and the incremental projection has no other way to learn of it.
 
 ```rust
 struct ViewState {
@@ -112,9 +112,24 @@ Alongside kill, transcript-navigation `b` fires the **foreground→background ha
 
 crossterm's event read blocks, so the UI runs on a dedicated OS thread (`tui::ui_loop`). A tokio task (`tui::bridge`) subscribes to `/events` (durable `LogEntry` entries) and `/stream` (ephemeral `assistant_delta` / `tool_output` deltas) over the [transport](transport.md), decodes them into `TuiEvent`s, and forwards them over a crossbeam channel into the UI thread.
 
-The UI loop drains arriving events through `InteractiveState::handle_event` and sets a `reproject_pending` flag rather than re-projecting per event. Before each paint it calls `flush_reproject`, which runs `tui/projection.rs::project` once and clears the flag. A reattach replay that delivers N entries therefore costs O(N) event folds and O(1) projections, not O(N²).
+The UI loop drains arriving events through `InteractiveState::handle_event` and sets a `reproject_pending` flag rather than re-projecting per event. Before each paint it calls `flush_reproject`, which brings the transcript up to date once and clears the flag. A reattach replay that delivers N entries therefore costs O(N) event folds and O(1) projections, not O(N²).
 
-ratatui is immediate-mode, so "streaming" is just mutate-and-redraw: there is no in-place document mutation and no node-level diffing.
+
+## What a frame costs
+
+A streaming session repaints ~33 times a second against a document that only grows, so the property to hold is that **a frame costs the viewport, not the log**. Three mechanisms, each with a measured reason:
+
+**The transcript is a materialized view, not a rebuild** (`tui/projection/incremental.rs`). `project` — the from-scratch fold above — stays the reference definition and the thing tests compare against, but `Transcript::update` keeps the document between repaints and replaces only what changed. It rests on `entry_nodes` being independent per entry: a committed entry's nodes are a function of that entry, the annotations indexed against the calls it makes, and the human's per-call view toggles — never of its neighbours. So the invalidation rule is one sentence:
+
+> A committed entry is re-projected only when a call it owns changes.
+
+Everything that can change about an already-committed entry arrives keyed by `call_id` — a tool result, a spotter verdict, the gate moving, an expand or raw toggle — so each marks one owner dirty (`ViewState` records its own toggles for this, since a view flip is not a log event). The uncommitted tail is rebuilt every time; it is small and changes constantly. A payload that annotates a call in a new way joins the list; `invalidate_all` is the always-correct fallback.
+
+**Layout is cached per top-level node** (`DocumentState::layouts`, keyed by render width). A node is laid out when it is *visible* or when its cached layout is missing; otherwise its height advances the cursor and its recorded actions are replayed. The cache lives beside the nodes and moves with them — `splice_nodes` is the only way the document changes, so a replaced node can never keep a stale height. The nodes above the viewport still have to be *walked* (their heights are what says where the viewport starts) but that walk is integer arithmetic, not re-wrapping. Off-screen rows already skipped their cell writes and their syntax highlighting; what they were still paying was span wrapping, and this is what stops that.
+
+**Measure, then paint — once.** `render_frame` runs the walk in `measuring` mode first (`row_visible` is false for every row, so nothing is written and no highlighting runs), which fills in any missing heights and yields the document height. A stream-following viewport is then pinned to the new bottom *before* the paint, so there is no stale-offset frame to correct with a second full draw.
+
+`document.laid_out` — how many nodes the last walk actually laid out — is what the cost tests in `harness/test/render_cost.rs` assert on: an 8× longer log must not lay out more nodes for one streamed token. That is the regression guard, in place of a timing test.
 
 
 ## The composer
@@ -223,7 +238,7 @@ Two facilities close the gap between *what a snapshot shows* and *what is actual
 
 ## Lifetimes
 
-The IR keeps ferritin's `Cow<'a>` borrowing, used as `Document<'static>` over owned strings. Streaming re-projects the whole document rather than mutating nodes in place, so owned-mutation would buy nothing, and staying byte-identical to ferritin keeps improvements backportable both ways.
+The IR keeps ferritin's `Cow<'a>` borrowing, used as `Document<'static>` over owned strings. Nodes are replaced wholesale rather than edited in place — the incremental projection splices a rebuilt entry's nodes over its old ones — so the borrowing costs nothing here, and staying byte-identical to ferritin keeps improvements backportable both ways.
 
 
 ## Backlog

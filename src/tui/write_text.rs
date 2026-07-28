@@ -13,8 +13,13 @@ impl<'a> InteractiveState<'a> {
         area: Rect,
         style: Style,
     ) {
-        if row < self.viewport.scroll_offset || row >= self.viewport.scroll_offset + area.height {
-            return; // Outside visible area
+        // Outside the visible area — or a measure pass, which lays out without
+        // drawing (docs/tui.md).
+        if self.layout.measuring
+            || row < self.viewport.scroll_offset
+            || row >= self.viewport.scroll_offset + area.height
+        {
+            return;
         }
 
         let screen_row = row - self.viewport.scroll_offset;

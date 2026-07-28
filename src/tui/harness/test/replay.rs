@@ -8,7 +8,7 @@ use super::*;
 fn replay_real_session_first_turn() {
     let entries = replay_fixture();
     let mut play = Screenplay::new(80, 30);
-    play.replay(&entries[..=4]);
+    play.replay(&entries[..=4]).scroll_to_top();
     play.snapshot("replay_real_session_first_turn");
 }
 

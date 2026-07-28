@@ -170,7 +170,7 @@ impl Screenplay<'_> {
         );
         for path in paths {
             crate::tui::events::handle_action(
-                &mut self.state.document.document,
+                &mut self.state.document,
                 &mut self.state.view,
                 TuiAction::ExpandBlock(path),
             );

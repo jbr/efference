@@ -64,10 +64,10 @@ impl LiveTail {
 }
 
 /// Per-exchange view-state the human has toggled, carried in `tui::state` so it
-/// survives re-projection (docs/tui.md). The transcript rebuilds on every
-/// streamed token, so a block's collapse/raw state can't live in the rebuilt
-/// [`Document`] — it lives here, keyed by the result's `call_id`, and `project`
-/// applies it when building each exchange.
+/// survives re-projection (docs/tui.md). Any exchange can be re-projected at any
+/// time, so a block's collapse/raw state can't live in the rebuilt [`Document`] —
+/// it lives here, keyed by the result's `call_id`, and the projection applies it
+/// when building each exchange.
 #[derive(Debug, Default)]
 pub(crate) struct ViewState {
     /// `call_id`s whose exchange the human expanded (`▼` Full instead of `▶` Brief).
@@ -76,6 +76,10 @@ pub(crate) struct ViewState {
     /// default, raw is shown on demand (both are already client-side; this is a
     /// pure render choice, no round-trip).
     raw: HashSet<String>,
+    /// `call_id`s toggled since the last projection read this. The incremental
+    /// projection (`tui/projection/incremental.rs`) rebuilds only the entries that
+    /// own them, so a toggle has to announce itself rather than be diffed for.
+    dirty: HashSet<String>,
 }
 
 impl ViewState {
@@ -90,12 +94,20 @@ impl ViewState {
     /// Flip the expand state for a `call_id`, returning the new state. The
     /// [`Document`]'s level is recomputed from this on the next projection.
     pub(crate) fn toggle_expanded(&mut self, call_id: &str) -> bool {
+        self.dirty.insert(call_id.to_string());
         toggle(&mut self.expanded, call_id)
     }
 
     /// Flip raw-vs-wire for a `call_id`, returning whether it now shows raw.
     pub(crate) fn toggle_raw(&mut self, call_id: &str) -> bool {
+        self.dirty.insert(call_id.to_string());
         toggle(&mut self.raw, call_id)
+    }
+
+    /// Take the `call_id`s toggled since the last call — the exchanges the next
+    /// projection has to rebuild.
+    pub(crate) fn take_dirty(&mut self) -> HashSet<String> {
+        std::mem::take(&mut self.dirty)
     }
 }
 

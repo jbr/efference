@@ -56,6 +56,7 @@ fn replay_fixture() -> Vec<crate::log::LogEntry> {
 mod lifecycle;
 mod navigation;
 mod pace;
+mod render_cost;
 mod replay;
 mod robustness;
 mod sidebar;

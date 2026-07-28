@@ -42,31 +42,102 @@ pub(crate) fn project(
     log: &[LogEntry],
     live: &LiveTail,
     view: &ViewState,
-    pending_call: Option<&str>,
-    pending_reason: Option<&str>,
+    gate: Gate<'_>,
     pending_turns: &[String],
 ) -> Document<'static> {
-    // A result lands in a later entry than the call it answers; index results by
-    // `call_id` up front so a call can be paired with its result in one place.
-    let mut result_for_call: HashMap<&str, (&RawResult, &WireState)> = HashMap::new();
-    // The spotter's verdicts, indexed the same way (docs/permissions.md). Later entries
-    // overwrite earlier ones, so a re-judged call shows its latest verdict — matching
-    // the daemon's own `latest_spot_reason`, which reads the log in reverse.
-    let mut spot_for_call: HashMap<&str, &crate::log::Spot> = HashMap::new();
-    for entry in log {
-        match &entry.payload {
-            Payload::ToolResult { call_id, raw, wire } => {
-                result_for_call.insert(call_id.0.as_str(), (raw, wire));
-            }
-            Payload::Spot(spot) => {
-                spot_for_call.insert(spot.call_id.0.as_str(), spot);
-            }
-            _ => {}
-        }
+    let mut index = CallIndex::default();
+    for (idx, entry) in log.iter().enumerate() {
+        index.absorb(idx, entry);
     }
 
     let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
-    for entry in log {
+    for idx in 0..log.len() {
+        nodes.extend(entry_nodes(log, idx, &index, view, gate));
+    }
+    nodes.extend(tail_nodes(live, pending_turns));
+    Document::with_nodes(nodes)
+}
+
+/// The pending approval gate as the transcript sees it (docs/tui.md): the call the
+/// loop is blocked on, and the spotter's reason when the client learned it from
+/// `/state` before the `Spot` entry arrived. Ephemeral control state — it is not in
+/// the log, so it travels alongside it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct Gate<'g> {
+    /// The `call_id` awaiting approval.
+    pub call: Option<&'g str>,
+    /// The reason to show beside it, when no committed `Spot` carries one.
+    pub reason: Option<&'g str>,
+}
+
+/// Where a call's *late-arriving* annotations live: `call_id` → the log index of
+/// the entry carrying its result, and of the entry carrying the spotter's verdict.
+/// Both land in a later entry than the call they are about, so pairing them with
+/// the call needs this one indirection.
+///
+/// Holding indices rather than borrows is what lets the incremental projection
+/// ([`Transcript`]) keep the index across rebuilds without borrowing the log.
+#[derive(Debug, Default)]
+pub(crate) struct CallIndex {
+    result_at: HashMap<String, usize>,
+    spot_at: HashMap<String, usize>,
+}
+
+impl CallIndex {
+    /// Record what entry `idx` says about a call, returning the `call_id` it
+    /// annotates — which is exactly the call whose *exchange* must be rebuilt.
+    /// Later entries overwrite earlier ones, so a re-judged call shows its latest
+    /// verdict, matching the daemon's `latest_spot_reason` (which reads in reverse).
+    pub(crate) fn absorb<'e>(&mut self, idx: usize, entry: &'e LogEntry) -> Option<&'e str> {
+        match &entry.payload {
+            Payload::ToolResult { call_id, .. } => {
+                self.result_at.insert(call_id.0.clone(), idx);
+                Some(call_id.0.as_str())
+            }
+            Payload::Spot(spot) => {
+                self.spot_at.insert(spot.call_id.0.clone(), idx);
+                Some(spot.call_id.0.as_str())
+            }
+            _ => None,
+        }
+    }
+
+    fn result<'l>(
+        &self,
+        log: &'l [LogEntry],
+        call_id: &str,
+    ) -> Option<(&'l RawResult, &'l WireState)> {
+        match &log.get(*self.result_at.get(call_id)?)?.payload {
+            Payload::ToolResult { raw, wire, .. } => Some((raw, wire)),
+            _ => None,
+        }
+    }
+
+    fn spot<'l>(&self, log: &'l [LogEntry], call_id: &str) -> Option<&'l crate::log::Spot> {
+        match &log.get(*self.spot_at.get(call_id)?)?.payload {
+            Payload::Spot(spot) => Some(spot),
+            _ => None,
+        }
+    }
+}
+
+/// The top-level nodes one committed log entry contributes — 0, 1, or (for a mark)
+/// 2. Each entry's nodes are a pure function of the entry, the annotations indexed
+/// against the calls it makes, and the human's per-call view toggles; nothing about
+/// its *neighbours* is read. That independence is what the incremental projection
+/// ([`Transcript`]) rests on, so keep it when adding a payload here.
+pub(crate) fn entry_nodes(
+    log: &[LogEntry],
+    idx: usize,
+    index: &CallIndex,
+    view: &ViewState,
+    gate: Gate<'_>,
+) -> Vec<DocumentNode<'static>> {
+    let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
+    let Some(entry) = log.get(idx) else {
+        return nodes;
+    };
+    {
         match &entry.payload {
             Payload::User(blocks) => {
                 nodes.push(turn(Author::User, markdown(&join_text(blocks))));
@@ -88,8 +159,8 @@ pub(crate) fn project(
                     blocks.extend(markdown(&prose));
                 }
                 for call in calls {
-                    let result = result_for_call.get(call.id.0.as_str()).copied();
-                    let is_pending = result.is_none() && pending_call == Some(call.id.0.as_str());
+                    let result = index.result(log, call.id.0.as_str());
+                    let is_pending = result.is_none() && gate.call == Some(call.id.0.as_str());
                     blocks.push(exchange(call, result, view));
                     // Harness-generated structure about a call is a **sibling** of the
                     // exchange, never a child of it (docs/tui.md). The exchange's
@@ -108,9 +179,9 @@ pub(crate) fn project(
                     // is the source; `pending_reason` (from `/state`) covers only the
                     // window where a gate has registered but its log entry hasn't
                     // reached this client yet, so the two never both render.
-                    if let Some(spot) = spot_for_call.get(call.id.0.as_str()) {
+                    if let Some(spot) = index.spot(log, call.id.0.as_str()) {
                         blocks.push(spotter_line(Some(spot.stance), &spot.reason));
-                    } else if is_pending && let Some(reason) = pending_reason {
+                    } else if is_pending && let Some(reason) = gate.reason {
                         blocks.push(spotter_line(None, reason));
                     }
                     if is_pending {
@@ -152,6 +223,15 @@ pub(crate) fn project(
             Payload::Preamble { .. } => {}
         }
     }
+    nodes
+}
+
+/// The uncommitted end of the transcript: the in-flight streaming tail, then the
+/// optimistic echoes of just-submitted turns. It depends on nothing committed, and
+/// it changes on nearly every event — so the incremental projection ([`Transcript`])
+/// rebuilds exactly this and reuses everything before it.
+pub(crate) fn tail_nodes(live: &LiveTail, pending_turns: &[String]) -> Vec<DocumentNode<'static>> {
+    let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
 
     // The live tail renders after everything committed: in-flight assistant prose
     // as its own turn, and each running tool as a result-less exchange.
@@ -182,7 +262,7 @@ pub(crate) fn project(
         nodes.push(pending_turn(text));
     }
 
-    Document::with_nodes(nodes)
+    nodes
 }
 
 /// One tool call paired with its result as a collapsible exchange: the header is
@@ -280,10 +360,12 @@ pub(super) fn is_call_key(key: &str) -> bool {
 #[cfg(test)]
 mod test;
 
+mod incremental;
 mod nodes;
 mod tail;
 mod tools;
 
+pub(crate) use incremental::Transcript;
 pub(crate) use nodes::join_text;
 pub(crate) use tail::{LiveTail, Phase, ViewState};
 

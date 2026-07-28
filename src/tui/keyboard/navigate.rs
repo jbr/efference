@@ -224,14 +224,9 @@ impl<'a> InteractiveState<'a> {
                 }
                 self.ui.debug_message = format!("Selected theme: {theme_name}").into();
             } else {
-                // ExpandBlock mutates the document in place; invalidate the
-                // layout cache so the next frame re-measures.
-                crate::tui::events::handle_action(
-                    &mut self.document.document,
-                    &mut self.view,
-                    action,
-                );
-                self.viewport.cached_layout = None;
+                // ExpandBlock mutates the document in place; `handle_action`
+                // drops the affected node's cached layout.
+                crate::tui::events::handle_action(&mut self.document, &mut self.view, action);
             }
         }
     }

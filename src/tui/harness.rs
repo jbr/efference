@@ -264,12 +264,22 @@ impl Screenplay<'_> {
     }
 
     /// Pin the viewport to the bottom — the way a stream-following TUI sits while a
-    /// session is live (`stuck_to_bottom`). Bottom-pinning normally happens in the
-    /// `ui_loop` after a reproject; the harness has no loop, so this draws once to
-    /// populate the cached layout, then scrolls to the computed max.
+    /// session is live (`stuck_to_bottom`, the default). `render_frame` re-pins on
+    /// every paint, so this is only an explicit restatement of the default; keep it
+    /// where a scenario means "following the stream" rather than "happens to be".
     pub(crate) fn pin_to_bottom(&mut self) -> &mut Self {
+        self.state.viewport.stuck_to_bottom = true;
         let _ = self.draw();
         self.state.scroll_to_bottom();
+        self
+    }
+
+    /// Detach from the stream and show the *head* of the transcript — what a human
+    /// sees after scrolling up. Needed wherever a scenario snapshots content that a
+    /// bottom-pinned viewport would have scrolled past.
+    pub(crate) fn scroll_to_top(&mut self) -> &mut Self {
+        self.state.viewport.stuck_to_bottom = false;
+        self.state.set_scroll_offset(0);
         self
     }
 

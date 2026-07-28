@@ -167,18 +167,24 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// Rebuild the transcript document from the log + live tail unconditionally.
+    /// Bring the transcript document up to date with the log + live tail.
     /// Prefer [`flush_reproject`](Self::flush_reproject) on the hot path; this is
     /// for callers that must reproject immediately (e.g. tests, an expand action).
+    ///
+    /// The update is incremental (docs/tui.md): committed entries keep their nodes —
+    /// and, through them, their cached layout — unless a call they own changed, so a
+    /// streamed token costs the tail rather than the whole log.
     pub(in crate::tui) fn reproject(&mut self) {
-        let pending_call = self.pending_gate.as_ref().map(|g| g.call_id.as_str());
-        let pending_reason = self.pending_gate.as_ref().and_then(|g| g.reason.as_deref());
-        self.document.document = projection::project(
+        let gate = projection::Gate {
+            call: self.pending_gate.as_ref().map(|g| g.call_id.as_str()),
+            reason: self.pending_gate.as_ref().and_then(|g| g.reason.as_deref()),
+        };
+        self.transcript.update(
+            &mut self.document,
             &self.log,
             &self.live,
-            &self.view,
-            pending_call,
-            pending_reason,
+            &mut self.view,
+            gate,
             &self.pending_turns,
         );
         self.viewport.cached_layout = None;

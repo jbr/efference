@@ -50,8 +50,7 @@ fn projects_turns_and_pairs_call_with_result() {
         &sample_log(),
         &LiveTail::default(),
         &ViewState::default(),
-        None,
-        None,
+        Gate::default(),
         &[],
     );
 
@@ -149,8 +148,7 @@ fn distilled_wire_supersedes_raw() {
         &log,
         &LiveTail::default(),
         &ViewState::default(),
-        None,
-        None,
+        Gate::default(),
         &[],
     );
     let code: String = collect_code(&doc.nodes);
@@ -208,16 +206,16 @@ fn expand_state_lives_in_the_view_and_survives_reprojection() {
     let mut view = ViewState::default();
 
     // Default: collapsed.
-    let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
+    let doc = project(&log, &LiveTail::default(), &view, Gate::default(), &[]);
     assert_eq!(exchange_level(&doc), TruncationLevel::Brief);
 
     // Expanding persists in the view.
     view.toggle_expanded("toolu_1");
-    let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
+    let doc = project(&log, &LiveTail::default(), &view, Gate::default(), &[]);
     assert_eq!(exchange_level(&doc), TruncationLevel::Full);
 
     // A second projection (the streamed-token rebuild) keeps it expanded.
-    let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
+    let doc = project(&log, &LiveTail::default(), &view, Gate::default(), &[]);
     assert_eq!(
         exchange_level(&doc),
         TruncationLevel::Full,
@@ -226,7 +224,7 @@ fn expand_state_lives_in_the_view_and_survives_reprojection() {
 
     // Toggling back collapses, and that persists too.
     view.toggle_expanded("toolu_1");
-    let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
+    let doc = project(&log, &LiveTail::default(), &view, Gate::default(), &[]);
     assert_eq!(exchange_level(&doc), TruncationLevel::Brief);
 }
 
@@ -264,7 +262,7 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
     let mut view = ViewState::default();
 
     // Default: the distillate, raw hidden, no `· raw` marker on the header.
-    let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
+    let doc = project(&log, &LiveTail::default(), &view, Gate::default(), &[]);
     let code = collect_code(&doc.nodes);
     assert!(code.contains("the kept line"), "distillate shown: {code}");
     assert!(
@@ -278,7 +276,7 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
 
     // Flip to raw: the full raw content, and the header flags the override.
     view.toggle_raw("toolu_9");
-    let doc = project(&log, &LiveTail::default(), &view, None, None, &[]);
+    let doc = project(&log, &LiveTail::default(), &view, Gate::default(), &[]);
     let code = collect_code(&doc.nodes);
     assert!(code.contains("RAW-NOISE"), "full raw now shown: {code}");
     assert!(
@@ -293,7 +291,13 @@ fn live_tail_renders_after_committed_entries_and_clears_on_commit() {
     live.assistant.push_str("streaming…");
     live.push_tool_output("toolu_1", "partial out");
 
-    let doc = project(&sample_log(), &live, &ViewState::default(), None, None, &[]);
+    let doc = project(
+        &sample_log(),
+        &live,
+        &ViewState::default(),
+        Gate::default(),
+        &[],
+    );
     let code = collect_code(&doc.nodes);
     assert!(code.contains("partial out"), "live tool output renders");
 
@@ -337,8 +341,7 @@ fn renders_transcript_to_a_test_backend() {
         &sample_log(),
         &LiveTail::default(),
         &ViewState::default(),
-        None,
-        None,
+        Gate::default(),
         &[],
     );
 

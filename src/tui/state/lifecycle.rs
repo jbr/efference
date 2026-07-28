@@ -21,6 +21,9 @@ impl<'a> InteractiveState<'a> {
         Self {
             document: DocumentState {
                 document: Document::new(),
+                layouts: Vec::new(),
+                layout_width: 0,
+                laid_out: 0,
             },
             viewport: ViewportState {
                 scroll_offset: 0,
@@ -45,6 +48,7 @@ impl<'a> InteractiveState<'a> {
                 node_path: NodePath::new(),
                 area: Rect::default(),
                 blockquote_markers: Vec::new(),
+                measuring: false,
             },
             ui_mode: UiMode::Normal,
             ui: UiState {
@@ -61,6 +65,7 @@ impl<'a> InteractiveState<'a> {
             },
             log: Vec::new(),
             live: LiveTail::default(),
+            transcript: projection::Transcript::default(),
             view: projection::ViewState::default(),
             events,
             composer: Composer::new(),

@@ -50,9 +50,7 @@ impl<'a> InteractiveState<'a> {
         let border_style = self.theme.code_block_border_style;
 
         // Top border with language label: ╭─────❬rust❭─╮
-        if self.layout.pos.y >= self.viewport.scroll_offset
-            && self.layout.pos.y < self.viewport.scroll_offset + self.layout.area.height
-        {
+        if self.row_visible(self.layout.pos.y) {
             self.write_text(
                 buf,
                 self.layout.pos.y,
@@ -125,9 +123,7 @@ impl<'a> InteractiveState<'a> {
             let mut highlighter = HighlightLines::new(syntax, theme);
 
             for line in LinesWithEndings::from(code) {
-                if self.layout.pos.y >= self.viewport.scroll_offset
-                    && self.layout.pos.y < self.viewport.scroll_offset + self.layout.area.height
-                {
+                if self.row_visible(self.layout.pos.y) {
                     // Left border and padding
                     self.write_text(
                         buf,
@@ -184,9 +180,7 @@ impl<'a> InteractiveState<'a> {
             }
         } else {
             for line in code.lines() {
-                if self.layout.pos.y >= self.viewport.scroll_offset
-                    && self.layout.pos.y < self.viewport.scroll_offset + self.layout.area.height
-                {
+                if self.row_visible(self.layout.pos.y) {
                     // Left border and padding
                     self.write_text(
                         buf,
@@ -222,9 +216,7 @@ impl<'a> InteractiveState<'a> {
         }
 
         // Bottom border: ╰─────╯
-        if self.layout.pos.y >= self.viewport.scroll_offset
-            && self.layout.pos.y < self.viewport.scroll_offset + self.layout.area.height
-        {
+        if self.row_visible(self.layout.pos.y) {
             self.write_text(
                 buf,
                 self.layout.pos.y,

@@ -277,6 +277,7 @@ fn gallery() {
     for entry in crate::tui::gallery::log() {
         play.event(TuiEvent::Entry(entry));
     }
+    play.scroll_to_top();
     play.snapshot("gallery");
 }
 
