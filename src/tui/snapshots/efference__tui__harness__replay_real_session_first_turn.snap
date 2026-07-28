@@ -9,29 +9,29 @@ expression: self.render()
  1 │ ┃ many entries there are.                                                     ┃│
  2 │                                                                               ┃│
  3 │   ❯ bash · ls                                                                 ┃│
- 4 │   ✓ 15 lines                                                                  ┃│
- 5 │ ╭──────────────────────────────────────────────────────────────────────────╮  ┃│
- 6 │ │ @@ lines 1-13 @@                                                         │  ┃│
- 7 │ │ assets                                                                   │  ┃│
- 8 │ │ backlog                                                                  │  ┃│
- 9 │ │ build.rs                                                                 │  ┃│
-10 │ │ Cargo.lock                                                               │  ┃│
-11 │ │ Cargo.toml                                                               │  ┃│
-12 │ │ CHANGELOG.md                                                             │  ┃│
-13 │ │ CLAUDE.md                                                                │  ╹│
-14 │ │ docs                                                                     │   │
-15 │ │ efference.toml                                                           │   │
-16 │ │ feedback                                                                 │   │
-17 │ │ journal                                                                  │   │
-18 │ │ src                                                                      │   │
-19 │ │ target                                                                   │   │
-20 │ │ ⟢ 13 entries in root directory: assets, backlog, build.rs, Cargo.lock,   │   │
-21 │ │ Cargo.toml, CHANGELOG.md, CLAUDE.md, docs, efference.toml, feedback,     │   │
-22 │ │ journal, src, target                                                     │   │
-23 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
+ 4 │   ✓ kept 13 of 13 lines                                                       ┃│
+ 5 │ ╭───────────────────╮                                                         ┃│
+ 6 │ │  1 assets         │                                                         ┃│
+ 7 │ │  2 backlog        │                                                         ┃│
+ 8 │ │  3 build.rs       │                                                         ┃│
+ 9 │ │  4 Cargo.lock     │                                                         ┃│
+10 │ │  5 Cargo.toml     │                                                         ┃│
+11 │ │  6 CHANGELOG.md   │                                                         ┃│
+12 │ │  7 CLAUDE.md      │                                                         ┃│
+13 │ │  8 docs           │                                                         ┃│
+14 │ │  9 efference.toml │                                                         ╹│
+15 │ │ 10 feedback       │                                                          │
+16 │ │ 11 journal        │                                                          │
+17 │ │ 12 src            │                                                          │
+18 │ │ 13 target         │                                                          │
+19 │ ╰───────────────────╯                                                          │
+20 │                                                                                │
+21 │   ⟢ 13 entries in root directory: assets, backlog, build.rs, Cargo.lock,       │
+22 │   Cargo.toml, CHANGELOG.md, CLAUDE.md, docs, efference.toml, feedback,         │
+23 │   journal, src, target                                                         │
 24 │                                                                                │
-25 │                                                                                │
-26 │   There are 13 entries in the current directory:                               │
+25 │   There are 13 entries in the current directory:                               │
+26 │                                                                                │
 27 │   pace fast     theme t     help ?     detach q                                │
 28 │›                                                                               │
    │  ^                                                                             │

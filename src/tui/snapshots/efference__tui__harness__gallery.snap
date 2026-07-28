@@ -56,8 +56,8 @@ expression: self.render()
 48 │   ❯ edit · fn is_empty                                                        ┃│
 49 │   ✓ 7 lines                                                                   ┃│
 50 │        /// True when the buffer holds no non-whitespace text.                 ┃│
-51 │        pub(super) fn is_empty(&self) -> bool {                                ╹│
-52 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
+51 │        pub(super) fn is_empty(&self) -> bool {                                ┃│
+52 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))     ╹│
 53 │   +        self.lines                                                          │
 54 │   +            .iter()                                                         │
 55 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │

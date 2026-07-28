@@ -335,5 +335,5 @@ mod test;
 mod render;
 mod wire;
 
-pub use render::render_distilled;
+pub use render::{Distillate, distillate, render_distilled};
 pub use wire::{ApiBlock, ApiMessage, CacheControl, Role, place_trailing_cache_breakpoint};

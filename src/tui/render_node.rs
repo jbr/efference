@@ -185,6 +185,16 @@ impl<'a> InteractiveState<'a> {
                 self.layout.pos.y += 1;
             }
 
+            DocumentNode::NumberedCode { lang, lines } => {
+                // Block element: unconditionally position at indent
+                self.layout.pos.x = self.layout.indent;
+
+                self.render_numbered_code(lang.as_deref(), lines, buf);
+
+                // Block element: increment y when done
+                self.layout.pos.y += 1;
+            }
+
             DocumentNode::GeneratedCode { spans } => {
                 // Block element: unconditionally position at indent
                 self.layout.pos.x = self.layout.indent;

@@ -13,6 +13,9 @@ behind a change, see [`journal/`](journal/).
   turn container are gone; a call and its result are separate, independently focusable units.
 - Code blocks highlight and show their `❬lang❭` tag only when the language is known — untagged
   tool output is no longer labelled and coloured as Rust (a ferritin rustdoc default).
+- A distilled result renders its kept lines with dimmed original line numbers, gaps implied by
+  the jump, in place of the wire's `@@ lines a-b @@` headers; the distiller's note and the
+  pre-triage truncation breadcrumb are their own annotations beside the result, not lines in it.
 
 ### Fixed
 - Code-block content wraps to the box's inner width instead of spilling past the right border
@@ -21,6 +24,8 @@ behind a change, see [`journal/`](journal/).
   multi-byte characters no longer pushes its later tokens right (`├── anyhow v1.      0.86`).
 
 ### Added
+- `write` calls render as the file they write: path inline, contents as a syntax-highlighted
+  code block, instead of a JSON envelope with the body as one escaped string.
 - `efference view <session>`: open a recorded session's `log.jsonl` in the TUI, read-only — no
   composer, no loop verbs, no sidebar, no socket.
 - TUI transcript as a materialized view: the projection splices only the entries whose calls

@@ -132,6 +132,20 @@ pub enum DocumentNode<'a> {
     /// Generated code with pre-styled spans (for signatures, etc.)
     GeneratedCode { spans: Vec<Span<'a>> },
 
+    /// A code block whose lines carry their **original line numbers**, in a dimmed
+    /// gutter. Gaps between non-contiguous runs are implied by the jump in the
+    /// numbers, the way a `@@` header would have stated them (docs/tui.md).
+    ///
+    /// This is the TUI's form for a distilled tool result. The wire has to say
+    /// "these lines came from there" in text, so it uses `@@ lines a-b @@` headers
+    /// (docs/redaction-fork.md); a terminal has a gutter, and can say the same thing
+    /// without spending a row on it.
+    NumberedCode {
+        lang: Option<Cow<'a, str>>,
+        /// `(original line number, text)`, ascending.
+        lines: Vec<(u32, Cow<'a, str>)>,
+    },
+
     /// A unified-style diff: each line is classified (added / removed / context /
     /// hunk) so the renderer can color it (green / red / muted). Produced by the
     /// transcript projection from an edit tool's `===DIFF===` output. A leaf node
@@ -369,6 +383,17 @@ impl<'a> DocumentNode<'a> {
     /// Convenience constructor for a diff node.
     pub fn diff(lines: Vec<DiffLine>) -> Self {
         DocumentNode::Diff { lines }
+    }
+
+    /// Convenience constructor for a line-numbered code block.
+    pub fn numbered_code(
+        lang: Option<impl Into<Cow<'a, str>>>,
+        lines: Vec<(u32, Cow<'a, str>)>,
+    ) -> Self {
+        DocumentNode::NumberedCode {
+            lang: lang.map(Into::into),
+            lines,
+        }
     }
 
     /// A transcript entry that is nothing but its content — a message, an

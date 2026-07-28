@@ -8,21 +8,64 @@ use super::*;
 /// projection and the TUI projection share this one renderer. **Deterministic** — part
 /// of the byte-stability contract (docs/log-and-projection.md): a pure function of its inputs.
 pub fn render_distilled(content: &str, keep: &Keep, note: Option<&str>) -> String {
-    let all: Vec<&str> = content.lines().collect();
+    let Distillate {
+        shown,
+        ranges,
+        dropped,
+    } = distillate(content, keep);
+    let mut out = render_hunks(&shown, &ranges, note);
+    if dropped > 0 {
+        out.push('\n');
+        out.push_str(&format!("… [{dropped} more lines truncated before triage]"));
+    }
+    out
+}
+
+/// Which lines a verdict actually keeps, as structure rather than as text.
+///
+/// The wire has to say "these lines came from there" in words, so it formats this
+/// as `@@` hunks; the TUI has a gutter and renders the same lines numbered
+/// (docs/tui.md). Both go through here, because the one thing that must not drift
+/// is *which lines* each shows — an operator comparing their view against the
+/// agent's is the whole point of the view (docs/positions.md).
+pub struct Distillate<'c> {
+    /// The peek the model was shown: the content capped at [`PEEK_LINE_CAP`] lines.
+    pub shown: Vec<&'c str>,
+    /// Kept ranges over `shown`, 1-based and inclusive, normalized (clamped,
+    /// sorted, overlaps merged).
+    pub ranges: Vec<(usize, usize)>,
+    /// Lines the cap dropped before triage ever saw them.
+    pub dropped: usize,
+}
+
+impl Distillate<'_> {
+    /// The kept lines paired with their original 1-based numbers, ascending. Gaps
+    /// in the numbering are the gaps between ranges.
+    pub fn numbered_lines(&self) -> Vec<(u32, &str)> {
+        self.ranges
+            .iter()
+            .flat_map(|&(start, end)| (start..=end).map(|i| (i as u32, self.shown[i - 1])))
+            .collect()
+    }
+}
+
+/// Resolve a verdict against its raw content — the cap, then the kept ranges.
+pub fn distillate<'c>(content: &'c str, keep: &Keep) -> Distillate<'c> {
+    let all: Vec<&'c str> = content.lines().collect();
     let total = all.len();
-    let shown = &all[..total.min(PEEK_LINE_CAP)];
+    let shown = all[..total.min(PEEK_LINE_CAP)].to_vec();
     let dropped = total - shown.len();
     let ranges: Vec<(usize, usize)> = match keep {
         Keep::All => vec![(1, shown.len())],
         Keep::None => vec![],
         Keep::Ranges(rs) => rs.clone(),
     };
-    let mut out = render_hunks(shown, &ranges, note);
-    if dropped > 0 {
-        out.push('\n');
-        out.push_str(&format!("… [{dropped} more lines truncated before triage]"));
+    let ranges = normalize(&ranges, shown.len());
+    Distillate {
+        shown,
+        ranges,
+        dropped,
     }
-    out
 }
 
 /// Render kept ranges as diff-style hunks: a `@@ lines a-b @@` header per contiguous

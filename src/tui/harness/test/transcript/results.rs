@@ -86,6 +86,45 @@ fn transcript_long_line_wraps_inside_the_box() {
     );
 }
 
+/// A `write` call shows the file it is writing *as a file*: the path inline, the
+/// contents as a code block highlighted by extension. The JSON envelope rendered
+/// `contents` as one escaped string with literal `\n`s — the least readable form of
+/// the only thing worth reading in the call.
+#[test]
+fn transcript_write_call() {
+    let mut play = Screenplay::new(80, 22);
+    play.user("Write a counter script.");
+    play.assistant(
+        "Writing it now.",
+        vec![tool_call(
+            "write",
+            "toolu_w1",
+            json!({
+                "path": "/tmp/counter.sh",
+                "contents": "#!/bin/bash\n\n# Print a counter once per second\n\
+                             for i in {1..60}; do\n  echo \"Counter: $i\"\n  sleep 1\ndone\n",
+            }),
+        )],
+    );
+    play.tool_result(
+        "toolu_w1",
+        "wrote 7 lines to /tmp/counter.sh",
+        false,
+        WireState::Raw,
+    );
+
+    let frame = play.render();
+    play.snapshot("transcript_write_call");
+    assert!(
+        !frame.contains("\\n"),
+        "contents render as lines, not as an escaped JSON string:\n{frame}"
+    );
+    assert!(
+        frame.contains("❬bash❭"),
+        "…highlighted by the path's extension:\n{frame}"
+    );
+}
+
 /// A distilled tool result — the `WireState::Distilled` path, where the
 /// transcript shows the curated summary in place of the raw output.
 #[test]
@@ -113,6 +152,52 @@ fn transcript_distilled_result() {
         },
     );
     play.snapshot("transcript_distilled_result");
+}
+
+/// A distillate that keeps **non-contiguous** ranges renders them as numbered
+/// lines, with the gaps stated by the jump in the gutter rather than by a
+/// `@@ lines a-b @@` header (docs/tui.md). The wire still gets the headers — it has
+/// only text to say it with; a terminal has a gutter.
+#[test]
+fn transcript_distilled_keeps_numbered_lines() {
+    let mut play = Screenplay::new(80, 24);
+    play.user("Which tests failed?");
+    play.assistant(
+        "Running them.",
+        vec![tool_call(
+            "bash",
+            "toolu_04",
+            json!({ "command": "cargo test" }),
+        )],
+    );
+    let output: String = (1..=40)
+        .map(|n| match n {
+            7 => "test tui::wrap::breaks_on_whitespace ... FAILED\n".to_string(),
+            22 => "test tui::gutter::numbers_are_dimmed ... FAILED\n".to_string(),
+            23 => "test result: FAILED. 38 passed; 2 failed\n".to_string(),
+            other => format!("test case_{other:02} ... ok\n"),
+        })
+        .collect();
+    play.tool_result(
+        "toolu_04",
+        &output,
+        false,
+        WireState::Distilled {
+            keep: Keep::Ranges(vec![(7, 7), (22, 23)]),
+            note: Some("2 failures, both in the tui wrap/gutter work.".into()),
+        },
+    );
+
+    let frame = play.render();
+    play.snapshot("transcript_distilled_keeps_numbered_lines");
+    assert!(
+        !frame.contains("@@"),
+        "no hunk headers in the TUI form:\n{frame}"
+    );
+    assert!(
+        frame.contains("kept 3 of 40 lines"),
+        "the header says how much of the output survived:\n{frame}"
+    );
 }
 
 /// The same distilled result after flipping it to raw (`r`, docs/tui.md): the

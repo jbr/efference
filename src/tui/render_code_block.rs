@@ -21,8 +21,11 @@ struct BoxFrame {
     content_col: u16,
     border_width: u16,
     border_style: Style,
-    /// Columns available between the borders — what content wraps to.
+    /// Columns available between the borders for *content* — what it wraps to,
+    /// already less whatever the gutter takes.
     inner_width: usize,
+    /// Columns reserved left of the content for line numbers; 0 when unnumbered.
+    gutter_width: usize,
 }
 
 // Code block borders are outdented to the left of content so that the code text
@@ -40,6 +43,38 @@ impl<'a> InteractiveState<'a> {
     /// commonest untagged block is a tool result. `ls` output was being labelled
     /// `❬rust❭` and highlighted as Rust.
     pub(super) fn render_code_block(&mut self, lang: Option<&str>, code: &str, buf: &mut Buffer) {
+        self.render_code_frame(lang, code, None, buf);
+    }
+
+    /// The same box, with each line's **original number** in a dimmed gutter — the
+    /// TUI's form for a distilled result (docs/tui.md). `numbers` is parallel to
+    /// `code`'s lines; a gap in it is a gap in the source, stated by the jump rather
+    /// than by a `@@` header.
+    pub(super) fn render_numbered_code(
+        &mut self,
+        lang: Option<&str>,
+        lines: &[(u32, std::borrow::Cow<'a, str>)],
+        buf: &mut Buffer,
+    ) {
+        let code = lines
+            .iter()
+            .map(|(_, text)| text.as_ref())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let numbers: Vec<u32> = lines.iter().map(|(n, _)| *n).collect();
+        self.render_code_frame(lang, &code, Some(&numbers), buf);
+    }
+
+    /// The shared box render. `numbers`, when present, is one original line number
+    /// per line of `code`, drawn in a dimmed right-aligned gutter that continuation
+    /// rows leave blank — so a wrapped line reads as one line.
+    fn render_code_frame(
+        &mut self,
+        lang: Option<&str>,
+        code: &str,
+        numbers: Option<&[u32]>,
+        buf: &mut Buffer,
+    ) {
         // The rustdoc fence attributes still mean Rust wherever they appear, which
         // includes model-written markdown about Rust.
         let lang_display = match lang {
@@ -57,6 +92,11 @@ impl<'a> InteractiveState<'a> {
             .saturating_add_signed(CODE_BLOCK_BORDER_OUTDENT);
         let content_col = self.layout.indent; // Code content stays at indent
 
+        // The gutter is as wide as the widest number it has to show, plus a space.
+        let gutter_width = numbers
+            .and_then(|ns| ns.iter().max())
+            .map_or(0, |n| n.to_string().len() + 1);
+
         // Calculate code block dimensions accounting for content position
         let available_width = self.layout.area.width.saturating_sub(content_col);
         // Display width, not byte length: a line of box-drawing or accented text is
@@ -66,7 +106,7 @@ impl<'a> InteractiveState<'a> {
         // actually lands in the buffer.
         let max_line_width = code
             .lines()
-            .map(display_width)
+            .map(|line| display_width(line) + gutter_width)
             .max()
             .unwrap_or(0)
             .min((available_width.saturating_sub(4)) as usize); // Leave room for border and padding
@@ -157,13 +197,16 @@ impl<'a> InteractiveState<'a> {
         // Columns available *inside* the box: the border eats "│ " on the left and
         // " │" on the right. Content wraps to this rather than running past the
         // border, which is what used to clip the tail of every long line.
-        let inner_width = border_width.saturating_sub(4).max(1) as usize;
+        let inner_width = (border_width as usize)
+            .saturating_sub(4 + gutter_width)
+            .max(1);
         let frame = BoxFrame {
             border_col,
             content_col,
             border_width,
             border_style,
             inner_width,
+            gutter_width,
         };
 
         // Highlighting runs first, over the whole block, because the highlighter
@@ -218,8 +261,9 @@ impl<'a> InteractiveState<'a> {
         };
 
         // Render code content with side borders (no background color).
-        for (line, segments) in &lines {
-            self.render_code_line(buf, line, segments, &frame);
+        for (i, (line, segments)) in lines.iter().enumerate() {
+            let number = numbers.and_then(|ns| ns.get(i)).copied();
+            self.render_code_line(buf, line, segments, number, &frame);
         }
 
         // Bottom border: ╰─────╯
@@ -267,6 +311,7 @@ impl<'a> InteractiveState<'a> {
         buf: &mut Buffer,
         line: &str,
         segments: &[Segment],
+        number: Option<u32>,
         frame: &BoxFrame,
     ) {
         let mut row_starts = vec![0usize];
@@ -285,8 +330,26 @@ impl<'a> InteractiveState<'a> {
                     frame.border_style,
                 );
 
+                // The line number, on the line's *first* row only — a continuation
+                // row leaves the gutter blank, so a wrapped line still reads as one
+                // line rather than as an unnumbered neighbour.
+                if frame.gutter_width > 0 {
+                    let gutter = match number.filter(|_| i == 0) {
+                        Some(n) => format!("{n:>width$} ", width = frame.gutter_width - 1),
+                        None => " ".repeat(frame.gutter_width),
+                    };
+                    self.write_text(
+                        buf,
+                        self.layout.pos.y,
+                        frame.content_col,
+                        &gutter,
+                        self.layout.area,
+                        self.theme.muted_style,
+                    );
+                }
+
                 // Each token, clipped to the slice of the line this row shows.
-                let mut col = frame.content_col;
+                let mut col = frame.content_col + frame.gutter_width as u16;
                 for &(seg_start, seg_end, style) in segments {
                     let start = seg_start.max(row_start);
                     let end = seg_end.min(row_end);

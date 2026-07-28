@@ -5,23 +5,23 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │   There are 20,191 total lines of Rust code in the src/ directory.             │
- 1 │                                                                                │
- 2 │ ┃ Create an empty file at /tmp/efference-smoke-test using the touch command.   │
- 3 │                                                                                │
- 4 │   ❯ bash · touch /tmp/efference-smoke-test                                     │
- 5 │   spotter gated · Writing to `/tmp` is outside the repository and outside the  │
- 6 │   allowed scope; keep artifacts and tests within the working directory.        │
- 7 │   ✓ 1 line                                                                     │
- 8 │ ╭──────────────────────────────────────────────────────────────────────────╮   │
- 9 │ │ ⟢ touch command succeeded with no output; file created at                │   │
-10 │ │ /tmp/efference-smoke-test                                                │   │
-11 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
-12 │                                                                                │
+ 0 │                                                                                │
+ 1 │   ⟢ 20,191 total lines of Rust code in src/ directory                          │
+ 2 │                                                                                │
+ 3 │   There are 20,191 total lines of Rust code in the src/ directory.             │
+ 4 │                                                                                │
+ 5 │ ┃ Create an empty file at /tmp/efference-smoke-test using the touch command.   │
+ 6 │                                                                                │
+ 7 │   ❯ bash · touch /tmp/efference-smoke-test                                     │
+ 8 │   spotter gated · Writing to `/tmp` is outside the repository and outside the  │
+ 9 │   allowed scope; keep artifacts and tests within the working directory.        │
+10 │   ✓ kept 0 of 1 line                                                           │
+11 │   ⟢ touch command succeeded with no output; file created at                    │
+12 │   /tmp/efference-smoke-test                                                    │
 13 │                                                                                │
 14 │   Done! I've created an empty file at /tmp/efference-smoke-test using the      │
-15 │   touch command.                                                               │
-16 │                                                                               ╻│
+15 │   touch command.                                                              ╻│
+16 │                                                                               ┃│
 17 │   ⟢ config · Your session scope was updated by the orchestrator:              ┃│
 18 │                                                                               ┃│
 19 │   Develop the efference Rust harness in this repository: read and edit its    ┃│

@@ -98,7 +98,11 @@ therefore split:
   contiguous kept span, then those lines verbatim. One header per range (not per
   line); gaps between hunks are implied by the jump in headers, as in a unified
   diff. A keep-all result is one header plus verbatim body, approximately equal to
-  raw. `render_hunks` runs at **projection time** over the stored verdict
+  raw. This is the form for a reader that has only text; the TUI resolves the same
+  verdict through the shared `distillate` and renders the kept lines with their
+  numbers in a gutter instead ([tui.md](tui.md)). Both go through `distillate`, so
+  the two views can differ in form but never in *which* lines they show.
+  `render_hunks` runs at **projection time** over the stored verdict
     (`WireState::Distilled { keep, note }`), not at append — the wire form is
   re-derived from `raw` plus the verdict each turn, so the kept bytes are never
   stored twice. When a note survives, `render_hunks` prefixes it with the `⟢`

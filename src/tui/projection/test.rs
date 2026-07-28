@@ -241,16 +241,37 @@ fn distilled_wire_supersedes_raw() {
     );
     let code: String = collect_code(&doc.nodes);
     assert!(
-        code.contains("the distilled summary"),
-        "shows the note: {code}"
-    );
-    assert!(
         code.contains("the kept line"),
         "shows the kept line: {code}"
     );
     assert!(
         !code.contains("RAW-NOISE"),
         "hides the dropped raw line: {code}"
+    );
+
+    // The distiller's note is *about* the result, so it is its own annotation entry
+    // beside it rather than a line inside the result's body (docs/tui.md).
+    assert!(
+        !code.contains("the distilled summary"),
+        "the note is not part of the result's content: {code}"
+    );
+    let annotations: String = doc
+        .nodes
+        .iter()
+        .filter(|n| {
+            matches!(
+                n,
+                DocumentNode::Entry {
+                    kind: EntryKind::Annotation,
+                    ..
+                }
+            )
+        })
+        .map(|n| collect_text(std::slice::from_ref(n)))
+        .collect();
+    assert!(
+        annotations.contains("the distilled summary"),
+        "the note renders as its own annotation: {annotations}"
     );
 }
 
@@ -422,6 +443,14 @@ fn collect_code(nodes: &[DocumentNode<'_>]) -> String {
             DocumentNode::CodeBlock { code, .. } => {
                 out.push_str(code);
                 out.push('\n');
+            }
+            // A distilled result's kept lines (docs/tui.md) — content like any other
+            // code body, just carrying its original line numbers.
+            DocumentNode::NumberedCode { lines, .. } => {
+                for (_, text) in lines {
+                    out.push_str(text);
+                    out.push('\n');
+                }
             }
             DocumentNode::Entry { blocks, .. } => out.push_str(&collect_code(blocks)),
             _ => {}

@@ -46,6 +46,31 @@ pub(in crate::tui) fn call_args(
                 return (Some(vec![inline_code(path.to_string())]), vec![]);
             }
         }
+        "write" => {
+            // The file being written *is* the call, so show it as the file: the path
+            // inline, the contents as a code block highlighted by its extension. The
+            // JSON envelope rendered `contents` as one escaped string — the `\n`s
+            // literal, no highlighting — which is the least readable form of the one
+            // thing worth reading here.
+            if let Some(path) = input("path") {
+                let mut spans = vec![inline_code(path.to_string())];
+                // `append` and `overwrite` change what the call *does* to an existing
+                // file, so they belong beside the path rather than in a dropped envelope.
+                for (key, label) in [("append", " · append"), ("overwrite", " · overwrite")] {
+                    if call.input.get(key).and_then(|v| v.as_bool()) == Some(true) {
+                        spans.push(Span {
+                            text: label.into(),
+                            style: SpanStyle::Comment,
+                            action: None,
+                        });
+                    }
+                }
+                let body = input("contents")
+                    .map(|contents| vec![code_block(lang_for_path(path), contents)])
+                    .unwrap_or_default();
+                return (Some(spans), body);
+            }
+        }
         name if is_diff_tool(name) => {
             // The diff result is the representation — never dump the (verbose) edit
             // input. Show a concise anchor hint inline if present, else just the name.

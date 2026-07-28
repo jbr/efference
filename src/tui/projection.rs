@@ -190,6 +190,11 @@ pub(crate) fn entry_nodes(
                     }
                     if let Some((raw, wire)) = result {
                         nodes.push(result_entry(call, raw, wire, view));
+                        // The distiller's note is *about* the result, not part of it
+                        // — the same rung distinction the spotter's verdict gets — so
+                        // it is its own entry rather than a trailing line boxed in
+                        // with the output (docs/redaction-fork.md).
+                        nodes.extend(distillate_note(call.id.0.as_str(), raw, wire, view));
                     }
                 }
             }
@@ -311,24 +316,62 @@ fn result_entry(
     // same rich tool-specific rendering (diff/read) a natural raw result gets.
     let show_raw = view.is_raw(call_id);
     let overriding = show_raw && !matches!(wire, WireState::Raw);
-    let (content, effective_wire) = if show_raw {
-        (raw.content.clone(), &WireState::Raw)
-    } else {
-        let content = match wire {
-            WireState::Raw => raw.content.clone(),
-            // Same renderer as the wire projection — re-derive the distillate from
-            // `raw` + the stored verdict (docs/redaction-fork.md).
-            WireState::Distilled { keep, note } => {
-                crate::project::render_distilled(&raw.content, keep, note.as_deref())
-            }
-            WireState::Elided => "[elided]".to_string(),
-        };
-        (content, wire)
+
+    // A distilled result is built from the *verdict*, not from the wire's rendering
+    // of it: the wire says "these lines came from there" as `@@ lines a-b @@` headers
+    // because text is all it has, and a terminal has a gutter (docs/tui.md). Both
+    // views resolve the verdict through `project::distillate`, so they can differ in
+    // form but never in which lines they show.
+    let (body, size) = match wire {
+        WireState::Distilled { keep, .. } if !show_raw => {
+            let distillate = crate::project::distillate(&raw.content, keep);
+            let kept = distillate.numbered_lines();
+            // Verb first, so which number is which is unambiguous — `3 of 412` alone
+            // could be read either way round.
+            let total = distillate.shown.len() + distillate.dropped;
+            let size = format!(
+                "kept {} of {total} line{}",
+                kept.len(),
+                if total == 1 { "" } else { "s" }
+            );
+            let body = if kept.is_empty() {
+                Vec::new()
+            } else {
+                vec![DocumentNode::numbered_code(
+                    None::<&str>,
+                    kept.into_iter()
+                        .map(|(n, text)| (n, text.to_string().into()))
+                        .collect(),
+                )]
+            };
+            (body, size)
+        }
+        _ => {
+            // A forced-raw view passes a synthetic `Raw` wire so `result_body` gives
+            // it the same rich tool-specific rendering (diff/read) a natural raw
+            // result gets.
+            let (content, effective_wire) = if show_raw {
+                (raw.content.clone(), &WireState::Raw)
+            } else {
+                let content = match wire {
+                    WireState::Raw => raw.content.clone(),
+                    WireState::Elided => "[elided]".to_string(),
+                    // Unreachable: a distilled result is handled above unless it is
+                    // being shown raw, which this branch already excluded.
+                    WireState::Distilled { keep, note } => {
+                        crate::project::render_distilled(&raw.content, keep, note.as_deref())
+                    }
+                };
+                (content, wire)
+            };
+            let body = result_body(Some(call.name.as_str()), raw, effective_wire, &content);
+            let size = line_count(&body);
+            (body, size)
+        }
     };
 
-    let body = result_body(Some(call.name.as_str()), raw, effective_wire, &content);
     let mut header = vec![Span {
-        text: line_count(&body).into(),
+        text: size.into(),
         style: SpanStyle::Comment,
         action: None,
     }];
@@ -349,6 +392,44 @@ fn result_entry(
         body,
     )
     .keyed(call_id.to_string())
+}
+
+/// The distiller's note on a result, and the breadcrumb for lines the peek cap
+/// dropped before triage ever saw them — each as its own [`Annotation`] entry
+/// beside the result (docs/tui.md).
+///
+/// The wire has to fold these into the result text, because a tool result is one
+/// string there. The transcript doesn't: the note is the *distiller's* account of
+/// the output, a rung above it, and reads as one — so it sits beside the result in
+/// the dim register rather than inside its box, where it looked like a line the
+/// tool had printed.
+///
+/// Empty while the result is flipped to raw: raw is what the tool actually
+/// returned, and the note is not part of that.
+fn distillate_note(
+    call_id: &str,
+    raw: &RawResult,
+    wire: &WireState,
+    view: &ViewState,
+) -> Vec<DocumentNode<'static>> {
+    let WireState::Distilled { keep, note } = wire else {
+        return Vec::new();
+    };
+    if view.is_raw(call_id) {
+        return Vec::new();
+    }
+    let mut nodes = Vec::new();
+    if let Some(note) = note.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+        nodes.push(annotation_line("⟢ ", note));
+    }
+    let dropped = crate::project::distillate(&raw.content, keep).dropped;
+    if dropped > 0 {
+        nodes.push(annotation_line(
+            "… ",
+            &format!("{dropped} more lines truncated before triage"),
+        ));
+    }
+    nodes
 }
 
 /// `"1 line"` / `"N lines"` — the result header's size gloss. Counted over the

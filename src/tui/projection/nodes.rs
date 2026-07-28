@@ -166,6 +166,30 @@ pub(in crate::tui) fn gate_affordance() -> DocumentNode<'static> {
     )
 }
 
+/// One harness annotation beside a call or its result: a marker glyph and a muted
+/// line, as its own non-focusable [`Annotation`](EntryKind::Annotation) entry
+/// (docs/tui.md). The shared shape behind the spotter's verdict and the distiller's
+/// note — both are a different rung's account *of* the content, not the content.
+pub(in crate::tui) fn annotation_line(marker: &str, text: &str) -> DocumentNode<'static> {
+    DocumentNode::entry(
+        EntryKind::Annotation,
+        vec![DocumentNode::Paragraph {
+            spans: vec![
+                Span {
+                    text: marker.to_string().into(),
+                    style: SpanStyle::Comment,
+                    action: None,
+                },
+                Span {
+                    text: text.to_string().into(),
+                    style: SpanStyle::Comment,
+                    action: None,
+                },
+            ],
+        }],
+    )
+}
+
 /// The spotter's verdict on a call (docs/permissions.md), as one muted line. Before the
 /// decision it is *why* the call is held; after, it is a gloss on what the call was taken
 /// to be — so it stays in the dim register either way and never competes with the call or

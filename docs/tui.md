@@ -64,7 +64,12 @@ Because all tools are known at compile time, results get **per-tool representati
 - `bash` — rendered as a shell code block; a single-line command goes inline on the call header, a multi-line command overflows into the call entry's body.
 - `read` — strips the sentinel framing (`==<token> BEGIN <path>, LENGTH: n` … `END`) and highlights the file body by extension.
 - `edit` / `undo_edit` / `retarget_edit` — parses the `===DIFF===` section into a color-coded `DocumentNode::Diff` (added/removed/hunk/context lines).
+- `write` — the path inline (plus `append`/`overwrite` when set), the `contents` as a code block highlighted by the path's extension. The JSON envelope rendered the file body as one escaped string with literal `\n`s, which is the least readable form of the only thing worth reading in the call.
 - Unrecognized tools — falls back to a plain code block of JSON input.
+
+A **distilled** result is a case of its own. The wire renders a verdict as `@@ lines a-b @@` headers over the kept lines, because text is all it has to say "these came from there" with (see [the redaction fork](redaction-fork.md)); a terminal has a gutter, so the transcript renders the same lines in a `DocumentNode::NumberedCode` — each carrying its original line number, dimmed, with the gaps stated by the jump in the numbers instead of by a header row. Both views resolve the verdict through the one `project::distillate`, so they can differ in form but never in *which lines* they show — an operator comparing their view against the agent's is the whole point of the view.
+
+The distiller's **note** is not part of the result. It is that rung's account *of* the output, the way a spotter verdict is an account of a call, so it renders as its own `Annotation` entry beside the result rather than as a trailing line inside its box — where it read as something the tool had printed. The breadcrumb for lines the peek cap dropped before triage is a second such annotation. Both disappear when the result is flipped to raw: raw is what the tool actually returned.
 
 A code block is highlighted, and carries its `❬lang❭` corner tag, **only when the language is known**. An untagged block is plain text in a bare border. The renderer used to default to `rust`, which was right in ferritin (a rustdoc fence is Rust unless it says otherwise) and wrong here, where the commonest untagged block is a tool result: `ls` output was labelled `❬rust❭` and coloured as Rust.
 
