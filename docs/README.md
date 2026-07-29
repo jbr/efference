@@ -167,6 +167,18 @@ serves lives in a `src/daemon/` submodule named for its governing doc — `http.
 inbox), `background.rs` (the supervisor), plus `pace.rs`, `approvals.rs`, `metrics.rs`,
 `keepalive.rs`, `watch.rs`, and `views.rs` (the `/state` and `/log` readouts).
 
+## Repository layout
+
+Everything is one crate in one repository — daemon, clients, CLI, and the four records.
+A workspace split waits for a build target that cannot link the full dependency set; none
+currently exists, because rendering for thin clients is daemon-side (the human-wire render
+document) rather than a shared client library. Two roads considered and not taken: a
+browser-side wasm core (superseded by daemon-side rendering) and multiple repositories
+(the control API is unversioned and co-evolves with its clients, wire-format changes want
+atomic commits alongside the byte-stability pin, and the records in `docs/`, `backlog/`,
+`CHANGELOG.md`, and `journal/` are repo-scoped). Client code in other languages lives
+in-tree and is embedded in the serving binary.
+
 ## Conventions for this tree
 
 - **Present tense.** Describe what *is*, not what landed when. The dated narrative lives
