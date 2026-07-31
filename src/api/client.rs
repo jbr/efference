@@ -212,7 +212,7 @@ impl Client {
         messages: &[ApiMessage],
         tools: &[Value],
         tool_choice: ToolChoice,
-    ) -> Result<Usage, Error> {
+    ) -> Result<RequestUsage, Error> {
         let request = Request {
             model: &self.model,
             max_tokens: 0,
@@ -242,9 +242,14 @@ impl Client {
         }
         #[derive(Deserialize)]
         struct KeepaliveResponse {
+            #[serde(default)]
+            id: Option<String>,
             usage: Usage,
         }
         let parsed: KeepaliveResponse = serde_json::from_str(&text)?;
-        Ok(parsed.usage)
+        Ok(RequestUsage {
+            id: parsed.id,
+            usage: parsed.usage,
+        })
     }
 }

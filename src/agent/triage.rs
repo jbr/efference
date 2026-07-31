@@ -30,6 +30,7 @@ impl IdleWake {
 /// byte-identical (audit-only), so the agent returns to idle with its cache still hot.
 pub(super) async fn run_idle_triage<D: Distiller>(
     client: &Client,
+    tools: &[Value],
     shared: &Arc<Shared>,
     distiller: &D,
     turn: &mut Turn,
@@ -53,10 +54,10 @@ pub(super) async fn run_idle_triage<D: Distiller>(
     }
 
     let triage = distiller
-        .triage(client, &entries, &shown, &background)
+        .triage(client, tools, &entries, &shown, &background)
         .await;
-    if let Some(u) = triage.usage {
-        shared.record_request(u);
+    for u in triage.usage {
+        shared.record_request(RequestOrigin::Triage, u);
     }
 
     // Apply dispositions; escalate iff anything was pinned (the wire grew, docs/inbox.md).

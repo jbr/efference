@@ -1,4 +1,17 @@
-//! The JSON tool schemas the fork offers the distilling model (docs/redaction-fork.md).
+//! The JSON tool schemas of the peek tools (docs/redaction-fork.md).
+//!
+//! Both schemas are **static** — zero-argument builders, every field unconditional —
+//! because they ride the agent turn's `tools[]` (docs/redaction-fork.md): a schema that
+//! varied with the inbox, the background set, or the roster would re-key the request
+//! envelope mid-session and split the cache lineage, which is the exact defect the
+//! shared array exists to close. Field descriptions are self-contained ("if a section
+//! named X appears above…") since their referent sections aren't always shown; invented
+//! dispositions are dropped harness-side regardless (docs/redaction-fork.md).
+//!
+//! Both descriptions carry the same standing clause — the tools are answered only when
+//! the peek's tail instruction asks. Phrased as permission ("do not call unless asked"),
+//! not identity: the same model reads this description and, later, the ask, so the
+//! clause must resolve as "now is when" rather than contradict the ask.
 
 use super::*;
 
@@ -7,7 +20,7 @@ use super::*;
 pub(super) fn inbox_schema_field() -> Value {
     json!({
         "type": "object",
-        "description": "Triage your pending notifications by [id]. Unlisted ids are left for the next decision point.",
+        "description": "If a section named \"inbox\" appears above, triage those pending notifications by [id]. Unlisted ids are left for the next decision point. Omit when no inbox section is shown.",
         "properties": {
             "pin": {
                 "type": "array",
@@ -28,7 +41,7 @@ pub(super) fn inbox_schema_field() -> Value {
 pub(super) fn background_schema_field() -> Value {
     json!({
         "type": "object",
-        "description": "Triage live background processes by [bg#n] handle. Unlisted handles keep streaming their tail at the next decision point.",
+        "description": "If a section named \"background\" appears above, triage those live background processes by [bg#n] handle. Unlisted handles keep streaming their tail at the next decision point. Omit when no background section is shown.",
         "properties": {
             "pin": {
                 "type": "array",
@@ -44,84 +57,69 @@ pub(super) fn background_schema_field() -> Value {
     })
 }
 
-/// The `surfaced` schema field (name-keyed) — present only when the roster is non-empty.
-/// A plain string array: names are validated against the roster in code (invented ones
-/// dropped), not by a schema enum, keeping the guard harness-side (docs/redaction-fork.md).
+/// The `surfaced` schema field (name-keyed). A plain string array: names are validated
+/// against the roster in code (invented ones dropped), not by a schema enum, keeping
+/// the guard harness-side (docs/redaction-fork.md).
 pub(super) fn surfaced_schema_field() -> Value {
     json!({
         "type": "array",
         "items": { "type": "string" },
-        "description": "Names of available context items (listed under \"context\" above) that genuinely bear on what you're doing now — each is surfaced as a reminder to read it. Omit or leave empty if none apply."
+        "description": "If a section named \"context\" appears above, the names of the items listed there that genuinely bear on what you're doing now — each is surfaced as a reminder to read it. Omit when no context section is shown or none apply."
     })
 }
 
-/// The forced fork tool. Its `input_schema` gains an `inbox` field only when there are
-/// notifications to triage, a `background` field only when processes are running, and a
-/// `surfaced` field only when there are unloaded context items to offer — each absent case
-/// stays lean (and the model isn't prompted to invent dispositions).
-pub(super) fn retain_tool(
-    shown: &[ShownNotification],
-    background: &[BgView],
-    roster: &[String],
-) -> Value {
-    let mut input_schema = json!({
-        "type": "object",
-        "properties": {
-            "results": {
-                "type": "array",
-                "description": "One entry per tool result shown above — answer every one, addressing each by its [call id] header. Line numbers restart at 1 within each result.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "call_id": {
-                            "type": "string",
-                            "description": "The [call id] of the result this entry decides, copied exactly from its header above."
-                        },
-                        "keep": {
-                            "type": "string",
-                            "description": "\"all\", \"none\", or comma-separated 1-based inclusive line ranges, e.g. \"40-52,310-318\" (a single line is \"7\"). Numbered within this result only."
-                        },
-                        "note": {
-                            "type": "string",
-                            "description": "One-line summary of what this output showed; the breadcrumb kept when little or nothing is retained."
-                        }
-                    },
-                    "required": ["call_id", "keep"]
-                }
-            }
-        },
-        "required": ["results"]
-    });
-    if !shown.is_empty() {
-        input_schema["properties"]["inbox"] = inbox_schema_field();
-    }
-    if !background.is_empty() {
-        input_schema["properties"]["background"] = background_schema_field();
-    }
-    if !roster.is_empty() {
-        input_schema["properties"]["surfaced"] = surfaced_schema_field();
-    }
+/// The fork gate's tool (docs/redaction-fork.md). Static — see the module doc.
+pub fn retain_tool() -> Value {
     json!({
         "name": RETAIN,
-        "description": "Choose what of the tool output to keep on the record going forward. The output is line-numbered. Whatever you drop is gone from the working context, so keep anything that might matter — but stay lean.",
-        "input_schema": input_schema
+        "description": "Choose what of the tool output to keep on the record going forward. The output is line-numbered. Whatever you drop is gone from the working context, so keep anything that might matter — but stay lean. Do not call this tool unless asked to do so by the harness.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "description": "One entry per tool result shown above — answer every one, addressing each by its [call id] header. Line numbers restart at 1 within each result.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "call_id": {
+                                "type": "string",
+                                "description": "The [call id] of the result this entry decides, copied exactly from its header above."
+                            },
+                            "keep": {
+                                "type": "string",
+                                "description": "\"all\", \"none\", or comma-separated 1-based inclusive line ranges, e.g. \"40-52,310-318\" (a single line is \"7\"). Numbered within this result only."
+                            },
+                            "note": {
+                                "type": "string",
+                                "description": "One-line summary of what this output showed; the breadcrumb kept when little or nothing is retained."
+                            }
+                        },
+                        "required": ["call_id", "keep"]
+                    }
+                },
+                "inbox": inbox_schema_field(),
+                "background": background_schema_field(),
+                "surfaced": surfaced_schema_field()
+            },
+            "required": ["results"]
+        }
     })
 }
 
-/// The forced tool of the standalone idle-triage peek (docs/supervisor.md, docs/inbox.md):
-/// inbox/background dispositions only, no `keep` (there's no tool output). At least one
-/// section is always present (the loop skips the peek when both are empty).
-pub(super) fn triage_tool(shown: &[ShownNotification], background: &[BgView]) -> Value {
-    let mut properties = serde_json::Map::new();
-    if !shown.is_empty() {
-        properties.insert("inbox".into(), inbox_schema_field());
-    }
-    if !background.is_empty() {
-        properties.insert("background".into(), background_schema_field());
-    }
+/// The standalone idle-triage peek's tool (docs/supervisor.md, docs/inbox.md):
+/// inbox/background dispositions only, no `keep` (there's no tool output). Static —
+/// see the module doc.
+pub fn triage_tool() -> Value {
     json!({
         "name": TRIAGE,
-        "description": "Triage your pending notifications and running background processes. Pin what needs to enter your working context and be acted on now; dismiss noise; leave anything you're deferring unlisted (pinning nothing returns you to idle, unchanged).",
-        "input_schema": { "type": "object", "properties": properties }
+        "description": "Triage your pending notifications and running background processes. Pin what needs to enter your working context and be acted on now; dismiss noise; leave anything you're deferring unlisted (pinning nothing returns you to idle, unchanged). Do not call this tool unless asked to do so by the harness.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "inbox": inbox_schema_field(),
+                "background": background_schema_field()
+            }
+        }
     })
 }

@@ -45,6 +45,7 @@ pub(super) enum BlockAccum {
 pub(super) struct Assembler {
     /// Indexed by content-block `index`; pushed in order as blocks open.
     blocks: Vec<BlockAccum>,
+    id: Option<String>,
     model: String,
     stop_reason: Option<String>,
     usage: Usage,
@@ -54,6 +55,7 @@ impl Assembler {
     pub(super) fn new() -> Self {
         Self {
             blocks: Vec::new(),
+            id: None,
             model: String::new(),
             stop_reason: None,
             usage: Usage::default(),
@@ -87,10 +89,16 @@ impl Assembler {
                 }
                 #[derive(Deserialize)]
                 struct Msg {
+                    #[serde(default)]
+                    id: Option<String>,
                     model: String,
                     usage: Usage,
                 }
                 let Env { message } = serde_json::from_str(data)?;
+                // The upstream response/generation id — persisted with the usage
+                // record (docs/log-and-projection.md); lenient because it is
+                // telemetry, not content.
+                self.id = message.id;
                 self.model = message.model;
                 // input + cache_* land here; output_tokens is the initial
                 // placeholder, overwritten by message_delta.
@@ -276,6 +284,7 @@ impl Assembler {
                 text,
                 calls,
             },
+            id: self.id,
             model: self.model,
             stop_reason: self.stop_reason,
             usage: self.usage,

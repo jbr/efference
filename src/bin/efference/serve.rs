@@ -238,10 +238,10 @@ pub(crate) async fn spotter_check(
     if let Some(u) = spotting.usage {
         println!(
             "usage:  in {} · out {} · cache read {} · cache write {}",
-            u.input_tokens,
-            u.output_tokens,
-            u.cache_read_input_tokens,
-            u.cache_creation_input_tokens
+            u.usage.input_tokens,
+            u.usage.output_tokens,
+            u.usage.cache_read_input_tokens,
+            u.usage.cache_creation_input_tokens
         );
     }
     Ok(())

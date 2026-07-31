@@ -37,7 +37,9 @@ use trillium_router::{Router, RouterConnExt};
 use trillium_sse::{Eventable, SseConnExt};
 
 use crate::agent;
-use crate::api::{Client, Error, ToolChoice, UpstreamFailureState, Usage, upstream_failure_state};
+use crate::api::{
+    Client, Error, RequestUsage, ToolChoice, UpstreamFailureState, Usage, upstream_failure_state,
+};
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
 use crate::distill::Distiller;
@@ -152,6 +154,12 @@ pub struct Shared {
     /// stamp, surfaced by `GET /state` so clients can see cache hit/miss and
     /// predict TTL eviction (docs/log-and-projection.md). Transport-only: never touches the log.
     metrics: Mutex<Metrics>,
+    /// The per-request usage record (docs/log-and-projection.md): one JSONL line per
+    /// upstream request — origin-tagged, carrying the upstream response id — appended
+    /// to the session dir's `usage.jsonl`. Transport-only, **never** the canonical
+    /// log: usage must stay out of the projection. `None` (tests, offline) drops the
+    /// lines; the in-memory `metrics` fold is unaffected.
+    usage_log: Mutex<Option<io::BufWriter<std::fs::File>>>,
     /// The last non-success upstream response, shared with the HTTP client and
     /// surfaced by `GET /state`. Transport-only: never touches the log or projection
     /// (docs/transport.md).
@@ -314,6 +322,7 @@ impl Shared {
             notified: Notify::new(),
             stream_tx,
             metrics: Mutex::new(Metrics::default()),
+            usage_log: Mutex::new(None),
             upstream_failure,
             inbox: Mutex::new(Inbox::default()),
 
@@ -479,6 +488,7 @@ pub(crate) use watch::refresh_and_emit;
 use approvals::Pending;
 use config_edits::{PendingProposal, session_visible_notice};
 use metrics::Metrics;
+pub use metrics::RequestOrigin;
 use notifications::Inbox;
 use pace::Pace;
 

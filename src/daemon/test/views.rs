@@ -45,19 +45,31 @@ fn state_reports_cache_telemetry() {
     assert!(v["usage"]["seconds_since_last_request"].is_null());
 
     // Cold prefix: all creation, no read.
-    shared.record_request(Usage {
-        input_tokens: 6,
-        output_tokens: 10,
-        cache_creation_input_tokens: 9407,
-        cache_read_input_tokens: 0,
-    });
+    shared.record_request(
+        RequestOrigin::Turn,
+        RequestUsage {
+            id: None,
+            usage: Usage {
+                input_tokens: 6,
+                output_tokens: 10,
+                cache_creation_input_tokens: 9407,
+                cache_read_input_tokens: 0,
+            },
+        },
+    );
     // Now hot: reads climb, creation collapses (the cache gate signature, docs/README.md).
-    shared.record_request(Usage {
-        input_tokens: 6,
-        output_tokens: 12,
-        cache_creation_input_tokens: 165,
-        cache_read_input_tokens: 9407,
-    });
+    shared.record_request(
+        RequestOrigin::Turn,
+        RequestUsage {
+            id: None,
+            usage: Usage {
+                input_tokens: 6,
+                output_tokens: 12,
+                cache_creation_input_tokens: 165,
+                cache_read_input_tokens: 9407,
+            },
+        },
+    );
 
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     // `last` is the most recent request.

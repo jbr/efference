@@ -159,9 +159,34 @@ where
 pub struct Completion {
     /// Always a [`Payload::Assistant`], ready to append to the log.
     pub assistant: Payload,
+    /// The upstream response id from `message_start` (Anthropic `msg_…`; an
+    /// OpenRouter-fronted request carries its generation id) — the key that joins a
+    /// usage record to the provider's own accounting (docs/log-and-projection.md).
+    /// Optional defensively: a provider that omits it still completes.
+    pub id: Option<String>,
     pub model: String,
     pub stop_reason: Option<String>,
     pub usage: Usage,
+}
+
+/// One request's [`Usage`] paired with its upstream response id — what the daemon
+/// persists per request (docs/log-and-projection.md). Carried instead of a bare
+/// `Usage` wherever a request's spend is reported upward, so the id survives to the
+/// usage record.
+#[derive(Debug, Clone)]
+pub struct RequestUsage {
+    pub id: Option<String>,
+    pub usage: Usage,
+}
+
+impl Completion {
+    /// This completion's [`RequestUsage`] — the per-request record the daemon persists.
+    pub fn request_usage(&self) -> RequestUsage {
+        RequestUsage {
+            id: self.id.clone(),
+            usage: self.usage.clone(),
+        }
+    }
 }
 
 /// What a single SSE event contributed to the *live* view, if anything

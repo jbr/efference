@@ -19,8 +19,8 @@ use crate::api::{Client, Error, Streamed, ToolChoice};
 use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
-use crate::daemon::{Shared, StreamDelta};
-use crate::distill::{BgVerdict, Distiller, Pending};
+use crate::daemon::{RequestOrigin, Shared, StreamDelta};
+use crate::distill::{BgVerdict, Distiller, Pending, is_peek_tool};
 use crate::frontend::{Approval, Frontend};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
@@ -42,6 +42,14 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     let mut tools = toolbox.definitions();
     tools.push(consolidate::definition());
     tools.extend(supervisor::tool_definitions());
+    // The peek tools (docs/redaction-fork.md) stand in every turn's array even though
+    // only a fork peek's tail instruction ever asks for them: with the tools array,
+    // `tool_choice`, and thinking policy identical, the fork peek is the same
+    // conversation continued with a different tail and reads the agent lineage's cache
+    // instead of keying its own (docs/log-and-projection.md). Their schemas are static
+    // for the same reason. An un-asked call is paired with a nudge result in the loop.
+    tools.push(crate::distill::retain_tool());
+    tools.push(crate::distill::triage_tool());
     tools
 }
 
@@ -91,7 +99,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             IdleWake::Event => {
                 // Standalone triage. Escalate to a trajectory only if it changed the
                 // wire (pinned something); otherwise back to idle, the prefix still hot.
-                if !run_idle_triage(client, &shared, &distiller, &mut turn).await? {
+                if !run_idle_triage(client, &tools, &shared, &distiller, &mut turn).await? {
                     continue;
                 }
                 // Escalated: fall into the trajectory with no new user turn — the model
@@ -198,7 +206,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 u.cache_read_input_tokens,
                 u.cache_creation_input_tokens
             );
-            shared.record_request(completion.usage.clone());
+            shared.record_request(RequestOrigin::Turn, completion.request_usage());
             shared.append(turn, completion.assistant)?;
 
             if calls.is_empty() {
@@ -312,7 +320,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 let background = shared.bg_snapshot();
                 Some(
                     distiller
-                        .distill(client, &entries, &pending, &shown, &background)
+                        .distill(client, &tools, &entries, &pending, &shown, &background)
                         .await,
                 )
             };
@@ -322,7 +330,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             // (sliding its TTL), so it belongs in the docs/log-and-projection.md telemetry.
             if let Some(g) = &gate {
                 for u in &g.usage {
-                    shared.record_request(u.clone());
+                    shared.record_request(RequestOrigin::Peek, u.clone());
                 }
             }
             // Apply the background verdicts before writing the `Triage`s: a `Pin`

@@ -27,6 +27,11 @@ pub async fn serve<D: Distiller, S: Spotter>(
     // Set before the loop spawns: the gate reads it on the loop's thread (backlog/permissions/
     // session-dir-and-config-as-reviewed-file.md — the autonomous flip).
     shared.set_autonomous(autonomous);
+    // The per-request usage record (docs/log-and-projection.md) lives beside the
+    // canonical log in the session dir — the socket's parent by construction.
+    if let Some(session_dir) = socket.parent() {
+        shared.attach_usage_log(&session_dir.join("usage.jsonl"));
+    }
     // Share the client between the loop and the keepalive task. `tools` is computed
     // once here for the ping; `agent::run` recomputes the same (byte-stable, docs/log-and-projection.md)
     // definitions internally, so both send an identical prefix.

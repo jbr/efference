@@ -60,6 +60,11 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     turn: Turn,
     call: &ToolCall,
 ) -> Result<Decision, Error> {
+    // An un-asked peek tool (docs/redaction-fork.md) never enters the cascade — there
+    // is nothing to judge or run; the paired nudge result tells the model to carry on.
+    if is_peek_tool(&call.name) {
+        return Ok(Decision::Direct(vec![unasked(call)]));
+    }
     // The permission cascade (docs/permissions.md). First the deterministic fast-path: a
     // `Clear` verdict auto-approves with zero model cost. What it can't clear falls to
     // the independent spotter — a fresh-context model rung that re-decides on the
@@ -106,7 +111,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 };
                 let spotting = spotter.assess(&role, call, probe.as_deref()).await;
                 if let Some(u) = spotting.usage {
-                    shared.record_request(u);
+                    shared.record_request(RequestOrigin::Spot, u);
                 }
                 let stance = spotting.read.stance;
                 let reason = spotting.read.reason;

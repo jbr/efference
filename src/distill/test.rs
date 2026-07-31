@@ -7,7 +7,7 @@ fn lines(s: &str) -> Vec<&str> {
 }
 
 /// A `Completion` whose assistant turn made a single `retain` call carrying
-/// `input` — the shape `ForkPeek` forces and `parse_retain` reads.
+/// `input` — the shape `ForkPeek` asks for and `parse_retain` reads.
 /// The id of the result a single-result gate is triaging. Arbitrary — what matters is
 /// that exactly one id is offered, which is the condition under which `parse_retain`
 /// adopts the legacy flat `keep`/`note` form.
@@ -24,6 +24,7 @@ fn retain_completion(name: &str, input: Value) -> Completion {
                 input,
             }],
         },
+        id: None,
         model: "test".into(),
         stop_reason: None,
         usage: Usage {
@@ -131,9 +132,126 @@ fn parse_dispositions_reads_triage_inbox_and_background() {
 
 #[test]
 fn parse_retain_is_none_without_a_retain_call() {
-    // The peek is force-called to `retain`, but guard anyway: a turn that called
-    // something else yields no verdict → keep-all fallback.
+    // The peek asks for `retain` via its tail instruction (never a forced
+    // tool_choice), so a turn that called something else yields no verdict — the
+    // in-fork retry's trigger.
     assert!(parse_retain(&retain_completion("bash", json!({"command": "ls"})), &[]).is_none());
+}
+
+/// The in-fork retry (docs/redaction-fork.md) must keep the fork conversation
+/// API-valid: replay the non-compliant assistant turn, answer each of its calls with an
+/// error `tool_result`, and renew the ask — so the retry extends the warm prefix
+/// instead of opening a new request shape.
+#[test]
+fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
+    let completion = retain_completion("bash", json!({"command": "ls"}));
+    let mut messages = vec![ApiMessage {
+        role: Role::User,
+        content: vec![ApiBlock::Text {
+            text: "the peek tail".into(),
+            cache_control: None,
+        }],
+    }];
+    assert!(extend_with_retry(&mut messages, &completion.assistant, RETAIN));
+    assert_eq!(messages.len(), 3, "assistant turn + reply appended");
+
+    let assistant = &messages[1];
+    assert_eq!(assistant.role, Role::Assistant);
+    assert!(
+        matches!(&assistant.content[..], [ApiBlock::ToolUse { id, name, .. }] if id == "r" && name == "bash"),
+        "the wrong call is replayed verbatim"
+    );
+
+    let reply = &messages[2];
+    assert_eq!(reply.role, Role::User);
+    match &reply.content[..] {
+        [
+            ApiBlock::ToolResult {
+                tool_use_id,
+                is_error,
+                content,
+                ..
+            },
+            ApiBlock::Text { text, .. },
+        ] => {
+            assert_eq!(tool_use_id, "r", "the wrong call is answered, not orphaned");
+            assert!(*is_error);
+            assert!(content.contains("call `retain`"), "{content}");
+            assert!(text.contains("Call `retain` now"), "{text}");
+        }
+        other => panic!("expected [error tool_result, renewed ask], got {other:?}"),
+    }
+}
+
+/// A prose-only non-compliant response (no tool call) still yields a valid retry tail:
+/// the text turn is replayed and the renewed ask follows — no `tool_result` to pair.
+#[test]
+fn a_prose_only_response_retries_with_just_the_renewed_ask() {
+    let completion = Completion {
+        assistant: Payload::Assistant {
+            thinking: vec![],
+            text: vec![crate::log::ContentBlock::Text("hmm, let me think".into())],
+            calls: vec![],
+        },
+        id: None,
+        model: "test".into(),
+        stop_reason: None,
+        usage: Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        },
+    };
+    let mut messages = Vec::new();
+    assert!(extend_with_retry(&mut messages, &completion.assistant, TRIAGE));
+    assert_eq!(messages.len(), 2);
+    assert!(
+        matches!(&messages[1].content[..], [ApiBlock::Text { text, .. }] if text.contains("Call `triage` now"))
+    );
+}
+
+/// An empty assistant payload has nothing appendable — terminal, not an invalid
+/// (empty-content) message on the wire.
+#[test]
+fn an_empty_response_is_terminal_not_an_invalid_retry() {
+    let empty = Payload::Assistant {
+        thinking: vec![],
+        text: vec![],
+        calls: vec![],
+    };
+    let mut messages = Vec::new();
+    assert!(!extend_with_retry(&mut messages, &empty, RETAIN));
+    assert!(messages.is_empty());
+}
+
+/// The peek tools' schemas are static (docs/redaction-fork.md): they ride every turn's
+/// `tools[]`, so any variation would re-key the request envelope and split the cache
+/// lineage. Byte-identical across calls, every rider field unconditional, and the
+/// standing description defers use until the harness asks.
+#[test]
+fn peek_tool_schemas_are_static_and_permission_phrased() {
+    assert_eq!(
+        serde_json::to_string(&retain_tool()).unwrap(),
+        serde_json::to_string(&retain_tool()).unwrap()
+    );
+    let retain = retain_tool();
+    for field in ["results", "inbox", "background", "surfaced"] {
+        assert!(
+            retain["input_schema"]["properties"].get(field).is_some(),
+            "`{field}` is unconditional"
+        );
+    }
+    let triage = triage_tool();
+    for tool in [&retain, &triage] {
+        let description = tool["description"].as_str().unwrap();
+        assert!(
+            description.contains("unless asked to do so by the harness"),
+            "permission-phrased, not identity-phrased: {description}"
+        );
+    }
+    assert!(is_peek_tool("retain") && is_peek_tool("triage"));
+    assert!(!is_peek_tool("bash"));
 }
 
 #[test]

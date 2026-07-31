@@ -72,10 +72,14 @@ so a signature always returns to the model that minted it.
 The `thinking` **request** field rides on `tool_choice`, which makes the one
 illegal pairing unrepresentable: forced `tool_choice` is incompatible with
 thinking (400), so a forced choice → `disabled`, `auto` → `adaptive`
-(`display: "summarized"`). The main agent turn is `auto` → thinks; the fork
-forces its distiller → thinking off; the keepalive is `disabled` independently
-(`max_tokens: 0` rejects thinking-on). Toggling thinking keeps the tools+system
-cache tier valid (see [log-and-projection.md](log-and-projection.md)), and it's set once per
+(`display: "summarized"`). The main agent turn and the fork peek both send `auto` —
+the shared envelope ([redaction-fork.md](redaction-fork.md)): identical
+`tool_choice` and thinking are part of what lets the peek read the agent lineage's
+cache — so both may think (the fork's thinking is discarded with its throwaway
+tail); the spotter still forces its `spot` tool → thinking off; the keepalive is
+`disabled` independently (`max_tokens: 0` rejects thinking-on). Toggling thinking
+keeps the tools+system cache tier valid (see
+[log-and-projection.md](log-and-projection.md)), and it's set once per
 call-type and never flipped turn-to-turn, so it stays out of the cached
 prefix's way. The wire encoding is pinned by
 `project::tests::thinking_turn_matches_expected_wire_bytes`. Thinking blocks are

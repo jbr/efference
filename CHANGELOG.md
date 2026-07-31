@@ -8,9 +8,13 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Fixed
+- The fork peek sends the agent turn's exact request envelope (shared tools array, `tool_choice: auto`, same thinking policy), so peeks read the agent lineage's prompt cache instead of re-writing the transcript cold on every gate.
+- The trailing cache breakpoint marks the last *text* block — a marker on a `tool_use`/`tool_result` block bills an unreadable cache write on OpenAI-fronted endpoints.
 - Transient upstream 429/5xx responses retry with a bounded backoff, and an exhausted completion now returns the session to idle instead of terminating the daemon.
 
 ### Added
+- A non-compliant fork peek retries in-fork (bounded, API-valid tail extension) before falling back to keep-all.
+- Per-request usage record: each upstream request appends an origin-tagged line with its generation id to the session dir's `usage.jsonl`.
 - The TUI status bar shows the last non-2xx upstream response and consecutive-attempt count while retries are in flight.
 
 ### Changed

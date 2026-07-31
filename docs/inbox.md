@@ -54,7 +54,7 @@ shown-and-active layer reconstructs from the log.
 ## Triage: pin · dismiss · leave
 
 Pending and active-shown notifications appear in the fork peek view beneath the
-line-numbered tool output, each item labelled with its arrival `seq` handle. The forced
+line-numbered tool output, each item labelled with its arrival `seq` handle. The
 `retain` verdict (see `redaction-fork.md`) gains an `inbox` field; the model may give
 each notification one of three dispositions:
 

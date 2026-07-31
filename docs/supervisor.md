@@ -124,7 +124,7 @@ over `GET /state`: one view, two consumers.
 
 ## Triage of a live process
 
-The forced triage gate tool carries a `background` verdict keyed by handle (distinct
+The triage gate tool carries a `background` verdict keyed by handle (distinct
 from the `inbox` verdict keyed by arrival seq — live handles and frozen arrival seqs
 are different identity models). Three dispositions:
 
@@ -146,8 +146,10 @@ running, and its *exit still notifies*. Killing is separate and explicit
 A gate fires on a tool result, so without an explicit mechanism an idle agent cannot
 perceive an arriving event without manufacturing a spurious tool call. The fix: when
 the loop is parked, an arriving event wakes a **triage gate that rides no tool
-result** — the inbox/background section plus a triage-only forced tool (`keep`
-absent; nothing to retain), appended as a plain user message. It is a throwaway
+result** — the inbox/background section plus an ask for the triage-only tool (`keep`
+absent; nothing to retain), appended as a plain user message; like every peek the
+ask rides the tail instruction, never a forced `tool_choice`
+([redaction-fork.md](redaction-fork.md), the shared envelope). It is a throwaway
 fork: it logs `Ambient` + `Triage` (audit grows) but **projects to nothing unless
 it pins** — the prefix stays byte-identical and cache-hot.
 

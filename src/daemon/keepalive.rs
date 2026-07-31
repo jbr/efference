@@ -36,12 +36,12 @@ pub(crate) async fn keepalive_loop(client: Arc<Client>, shared: Arc<Shared>, too
             .keepalive(&messages, &tools, ToolChoice::auto())
             .await
         {
-            Ok(usage) => {
+            Ok(request) => {
                 eprintln!(
                     "[keepalive: cache read {} — TTL refreshed]",
-                    usage.cache_read_input_tokens
+                    request.usage.cache_read_input_tokens
                 );
-                shared.record_keepalive(usage);
+                shared.record_keepalive(request);
             }
             Err(e) => eprintln!("[keepalive failed: {e}]"),
         }

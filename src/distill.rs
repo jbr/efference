@@ -19,32 +19,50 @@
 //! - [`HeadTail`] — a deterministic stub (first `head` + last `tail` lines).
 //! - [`ForkPeek`] — the universal triage gate (docs/redaction-fork.md): fork a
 //!   throwaway branch off the cached prefix, show the model the line-numbered raw
-//!   output + the inbox, and let it call `retain` to choose what the canonical wire
-//!   keeps and which notifications to pin. One tool call per turn (docs/README.md).
-//!   On any failure it keeps everything and leaves the inbox untouched — never loses
-//!   data.
+//!   output + the inbox, and ask it (via the tail instruction, never a forced
+//!   `tool_choice`) to call `retain` to choose what the canonical wire keeps and which
+//!   notifications to pin. The peek sends the *same* request envelope as an agent turn —
+//!   one shared `tools[]`, `tool_choice: auto`, the same thinking policy — so both
+//!   shapes read one cache lineage (docs/redaction-fork.md, docs/log-and-projection.md).
+//!   A non-compliant response gets a bounded in-fork retry; exhaustion keeps everything
+//!   and leaves the inbox untouched — never loses data.
 
 use std::collections::HashSet;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::api::{Client, Completion, ToolChoice, Usage};
+use crate::api::{Client, Completion, RequestUsage, ToolChoice};
 use crate::context::Item;
 use crate::inbox::ShownNotification;
 use crate::log::{
     Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall, WireState,
 };
 use crate::project::{
-    ApiBlock, ApiMessage, PEEK_LINE_CAP, Role, place_trailing_cache_breakpoint, project,
+    ApiBlock, ApiMessage, PEEK_LINE_CAP, Role, block_to_api, place_trailing_cache_breakpoint,
+    project,
 };
 use crate::supervisor::BgView;
 
 const RETAIN: &str = "retain";
 
-/// The forced tool of the **standalone** idle-triage peek (docs/supervisor.md): no `keep`
+/// The tool of the **standalone** idle-triage peek (docs/supervisor.md): no `keep`
 /// (there's no tool output to retain), only inbox/background dispositions.
 const TRIAGE: &str = "triage";
+
+/// Whether `name` is a peek tool. Both stand in every turn's `tools[]` (the shared
+/// envelope, docs/redaction-fork.md) but are answered only when a peek's tail
+/// instruction asks — the agent loop pairs an un-asked call with a nudge result
+/// instead of running the cascade.
+pub fn is_peek_tool(name: &str) -> bool {
+    name == RETAIN || name == TRIAGE
+}
+
+/// Fork round-trips per gate: the ask plus bounded in-fork retries
+/// (docs/redaction-fork.md). Each retry re-reads the warm prefix and appends only to
+/// the throwaway tail; exhaustion falls back to keep-all, which bloats the canonical
+/// wire for the rest of the session — so retrying is cheaper than falling back.
+const PEEK_ATTEMPTS: usize = 3;
 
 /// A live-process triage disposition (docs/supervisor.md) — distinct from the seq-keyed
 /// notification [`Disposition`] because a running process is addressed by its live
@@ -109,12 +127,11 @@ pub struct GateOutcome {
     /// `Triage` (`surfaced`); `project` re-renders each as a read-me reminder. Empty
     /// when nothing was surfaced.
     pub surfaced: Vec<String>,
-    /// The [`Usage`] of every request this gate made — empty for a model-free
-    /// distiller, one entry for a fork peek. A `Vec` rather than an `Option` so a gate
-    /// that ever makes more than one request reports what it actually spent: each fork
+    /// The [`RequestUsage`] of every request this gate made — empty for a model-free
+    /// distiller, one entry per fork round-trip (in-fork retries included). Each fork
     /// request reads the shared canonical prefix (sliding its cache TTL), and the loop
     /// folds them all into the cache telemetry (docs/log-and-projection.md).
-    pub usage: Vec<Usage>,
+    pub usage: Vec<RequestUsage>,
 }
 
 impl GateOutcome {
@@ -132,7 +149,7 @@ impl GateOutcome {
     /// malformed verdict, a wrong-tool call, and a transport error all read identically
     /// after the fact, which is exactly the gap that made the observed fallbacks
     /// unclassifiable. Empty for a model-free distiller, which never failed at anything.
-    pub fn keep_all(count: usize, usage: Vec<Usage>, breadcrumb: &str) -> Self {
+    pub fn keep_all(count: usize, usage: Vec<RequestUsage>, breadcrumb: &str) -> Self {
         Self {
             results: (0..count)
                 .map(|_| Distillation {
@@ -160,14 +177,18 @@ pub struct InboxTriage {
     pub inbox: Vec<(Seq, Disposition)>,
     pub background: Vec<(String, BgVerdict)>,
     pub origin: Origin,
-    pub usage: Option<Usage>,
+    /// One entry per request the peek made (in-fork retries included), like
+    /// [`GateOutcome::usage`]; empty for a model-free distiller or a transport failure.
+    pub usage: Vec<RequestUsage>,
 }
 
 /// Decide the wire form of the results a completion produced, and triage the inbox +
 /// live background processes (docs/redaction-fork.md, docs/inbox.md, docs/supervisor.md).
-/// `prefix` is the log through the assistant turn that made the calls (the fork's cached
-/// head); `pending` is every result that turn produced, in call order; `inbox` is the
-/// pending notifications and `background` the running processes' fresh tails to show.
+/// `tools` is the turn's full `tools[]` — the fork sends the *same* array as the agent
+/// turn so both shapes share one cache lineage (docs/redaction-fork.md); `prefix` is the
+/// log through the assistant turn that made the calls (the fork's cached head);
+/// `pending` is every result that turn produced, in call order; `inbox` is the pending
+/// notifications and `background` the running processes' fresh tails to show.
 ///
 /// Taking `pending` as a slice rather than one result is what makes the peek valid for a
 /// multi-call completion: the trailing assistant message carries N `tool_use` blocks, so
@@ -177,6 +198,7 @@ pub trait Distiller {
     async fn distill(
         &self,
         client: &Client,
+        tools: &[Value],
         prefix: &[LogEntry],
         pending: &[Pending<'_>],
         inbox: &[ShownNotification],
@@ -190,6 +212,7 @@ pub trait Distiller {
     async fn triage(
         &self,
         _client: &Client,
+        _tools: &[Value],
         _prefix: &[LogEntry],
         _inbox: &[ShownNotification],
         _background: &[BgView],
@@ -198,7 +221,7 @@ pub trait Distiller {
             inbox: Vec::new(),
             background: Vec::new(),
             origin: Origin::Fallback,
-            usage: None,
+            usage: Vec::new(),
         }
     }
 }
@@ -215,6 +238,7 @@ impl Distiller for HeadTail {
     async fn distill(
         &self,
         _client: &Client,
+        _tools: &[Value],
         _prefix: &[LogEntry],
         pending: &[Pending<'_>],
         _inbox: &[ShownNotification],
@@ -252,49 +276,119 @@ impl Distiller for HeadTail {
 /// The model peek — the universal triage gate (docs/redaction-fork.md) realized.
 pub struct ForkPeek;
 
-/// One fork round-trip: force `retain` and decode the verdict, pushing the request's
-/// [`Usage`] onto `usage` whether or not the verdict was usable (the request happened
-/// and slid the prefix's TTL; only a transport error yields none).
+/// Run one peek to a usable verdict, with bounded in-fork retries
+/// (docs/redaction-fork.md). `tool` is the asked-for tool (`retain` or `triage`);
+/// `parse` decodes a usable verdict out of a completion. Every request's [`RequestUsage`] is
+/// pushed onto `usage` whether or not its verdict was usable (the request happened and
+/// slid the prefix's TTL; only a transport error yields none).
+///
+/// A usable response carrying an unusable verdict — the wrong tool, no tool, a
+/// malformed input — extends the throwaway tail and goes again: the non-compliant
+/// assistant turn is appended verbatim (thinking blocks and all), each of its calls is
+/// answered with an error `tool_result`, and the ask is renewed. That keeps the fork
+/// API-valid and the retry a warm prefix-extension rather than a new request shape.
 ///
 /// Transport errors are deliberately *not* retried here — a failed request is the
 /// transport's problem, and retrying transient statuses belongs on the `Client`
-/// (backlog/transient-api-failures.md). What this retries is a *usable response
-/// carrying an unusable verdict*, which is a different failure with a different fix.
-async fn peek_once(
+/// (docs/transport.md). The returned `Err` is the `Triage` breadcrumb.
+async fn peek_with_retries<T>(
     client: &Client,
-    messages: &[ApiMessage],
+    mut messages: Vec<ApiMessage>,
     tools: &[Value],
-    offered: &[String],
-    usage: &mut Vec<Usage>,
-) -> Result<ParsedRetain, String> {
-    // No-op sink: the fork peek's triage tokens are internal and must never surface on
-    // `GET /stream` — only the main thread's prose streams.
-    match client
-        .complete(messages, tools, ToolChoice::force(RETAIN), |_| {})
-        .await
-    {
-        Ok(completion) => {
-            let parsed = parse_retain(&completion, offered);
-            let outcome = parsed.ok_or_else(|| unusable(&completion));
-            usage.push(completion.usage);
-            outcome
+    tool: &str,
+    parse: impl Fn(&Completion) -> Option<T>,
+    usage: &mut Vec<RequestUsage>,
+) -> Result<T, String> {
+    for attempt in 1..=PEEK_ATTEMPTS {
+        // No-op sink: the fork peek's triage tokens are internal and must never surface
+        // on `GET /stream` — only the main thread's prose streams.
+        let completion = match client
+            .complete(&messages, tools, ToolChoice::auto(), |_| {})
+            .await
+        {
+            Ok(completion) => completion,
+            Err(e) => return Err(format!("peek request failed: {e}")),
+        };
+        let parsed = parse(&completion);
+        usage.push(completion.request_usage());
+        match parsed {
+            Some(verdict) => return Ok(verdict),
+            None => {
+                let why = unusable(&completion, tool);
+                if attempt == PEEK_ATTEMPTS
+                    || !extend_with_retry(&mut messages, &completion.assistant, tool)
+                {
+                    return Err(format!("{why} (attempt {attempt} of {PEEK_ATTEMPTS})"));
+                }
+                log::warn!("fork peek attempt {attempt}: {why}; retrying in-fork");
+            }
         }
-        Err(e) => Err(format!("peek request failed: {e}")),
     }
+    unreachable!("the loop returns on the final attempt")
+}
+
+/// Extend the fork's throwaway tail past a non-compliant response, keeping the
+/// conversation API-valid: the assistant turn is replayed verbatim, every `tool_use` it
+/// made is answered with an error `tool_result`, and a renewed ask closes the tail.
+/// Returns `false` when nothing appendable came back (no assistant payload, or an empty
+/// one) — the caller treats that as terminal rather than sending an invalid message.
+fn extend_with_retry(messages: &mut Vec<ApiMessage>, assistant: &Payload, tool: &str) -> bool {
+    let Payload::Assistant {
+        thinking,
+        text,
+        calls,
+    } = assistant
+    else {
+        return false;
+    };
+    let mut content: Vec<ApiBlock> = thinking.iter().chain(text.iter()).map(block_to_api).collect();
+    for call in calls {
+        content.push(ApiBlock::ToolUse {
+            id: call.id.0.clone(),
+            name: call.name.clone(),
+            input: call.input.clone(),
+            cache_control: None,
+        });
+    }
+    if content.is_empty() {
+        return false;
+    }
+    messages.push(ApiMessage {
+        role: Role::Assistant,
+        content,
+    });
+    let mut reply: Vec<ApiBlock> = calls
+        .iter()
+        .map(|call| ApiBlock::ToolResult {
+            tool_use_id: call.id.0.clone(),
+            content: format!("not run — the harness is asking you to call `{tool}` here."),
+            is_error: true,
+            cache_control: None,
+        })
+        .collect();
+    reply.push(ApiBlock::Text {
+        text: format!("That response didn't answer the ask. Call `{tool}` now, as instructed above."),
+        cache_control: None,
+    });
+    messages.push(ApiMessage {
+        role: Role::User,
+        content: reply,
+    });
+    true
 }
 
 /// Describe a completion that produced no usable verdict, for the `Triage` breadcrumb.
-/// The model's actual `retain` input is the most useful form when there was one — that
-/// is what a future reader needs to tell a malformed verdict from a wrong-tool call.
-fn unusable(completion: &Completion) -> String {
+/// The model's actual input is the most useful form when the asked-for tool was called —
+/// that is what a future reader needs to tell a malformed verdict from a wrong-tool call.
+fn unusable(completion: &Completion, tool: &str) -> String {
     let Payload::Assistant { calls, .. } = &completion.assistant else {
         return "peek returned no assistant payload".into();
     };
-    match calls.iter().find(|c| c.name == RETAIN) {
-        Some(c) => format!("unparseable retain input: {}", c.input),
+    match calls.iter().find(|c| c.name == tool) {
+        Some(c) => format!("unparseable {tool} input: {}", c.input),
         None if calls.is_empty() => "peek called no tool".into(),
         None => format!(
-            "peek called {} instead of retain",
+            "peek called {} instead of {tool}",
             calls
                 .iter()
                 .map(|c| c.name.as_str())
@@ -368,6 +462,7 @@ impl Distiller for ForkPeek {
     async fn distill(
         &self,
         client: &Client,
+        tools: &[Value],
         prefix: &[LogEntry],
         pending: &[Pending<'_>],
         inbox: &[ShownNotification],
@@ -383,9 +478,16 @@ impl Distiller for ForkPeek {
         let roster = surfaceable_roster(prefix);
         let messages = peek_messages(prefix, pending, inbox, background, &roster);
 
-        let tools = [retain_tool(inbox, background, &roster)];
         let mut usage = Vec::new();
-        let parsed = peek_once(client, &messages, &tools, &offered, &mut usage).await;
+        let parsed = peek_with_retries(
+            client,
+            messages,
+            tools,
+            RETAIN,
+            |c| parse_retain(c, &offered),
+            &mut usage,
+        )
+        .await;
 
         let verdict = match parsed {
             Ok(v) => v,
@@ -476,14 +578,15 @@ impl Distiller for ForkPeek {
     }
 
     /// The standalone idle-triage peek (docs/supervisor.md, docs/inbox.md): fork off
-    /// the cached prefix, show the inbox + background with no tool result, and force
-    /// the `triage` tool (no
-    /// `keep`). The caller wakes this when an event arrives while idle and escalates to
+    /// the cached prefix, show the inbox + background with no tool result, and ask for
+    /// the `triage` tool via the tail instruction (no `keep` — there is no tool
+    /// output). The caller wakes this when an event arrives while idle and escalates to
     /// a real turn iff it pins something. On any failure it pins/dismisses nothing —
     /// the agent simply goes back to idle, losing no data.
     async fn triage(
         &self,
         client: &Client,
+        tools: &[Value],
         prefix: &[LogEntry],
         inbox: &[ShownNotification],
         background: &[BgView],
@@ -503,24 +606,19 @@ impl Distiller for ForkPeek {
             }],
         });
 
-        let (parsed, usage) = match client
-            .complete(
-                &messages,
-                &[triage_tool(inbox, background)],
-                ToolChoice::force(TRIAGE),
-                |_| {},
-            )
-            .await
-        {
-            Ok(completion) => (
-                parse_dispositions(&completion, TRIAGE),
-                Some(completion.usage),
-            ),
-            Err(_) => (None, None),
-        };
+        let mut usage = Vec::new();
+        let parsed = peek_with_retries(
+            client,
+            messages,
+            tools,
+            TRIAGE,
+            |c| parse_dispositions(c, TRIAGE),
+            &mut usage,
+        )
+        .await;
 
         match parsed {
-            Some((ibx, bg)) => {
+            Ok((ibx, bg)) => {
                 let shown: HashSet<Seq> = inbox.iter().map(|n| n.seq).collect();
                 let shown_bg: HashSet<&str> =
                     background.iter().map(|b| b.handle.as_str()).collect();
@@ -534,12 +632,15 @@ impl Distiller for ForkPeek {
                     usage,
                 }
             }
-            None => InboxTriage {
-                inbox: Vec::new(),
-                background: Vec::new(),
-                origin: Origin::Fallback,
-                usage,
-            },
+            Err(why) => {
+                log::warn!("idle triage peek produced no usable verdict; back to idle — {why}");
+                InboxTriage {
+                    inbox: Vec::new(),
+                    background: Vec::new(),
+                    origin: Origin::Fallback,
+                    usage,
+                }
+            }
         }
     }
 }
@@ -560,4 +661,5 @@ mod schema;
 
 use parse::*;
 use prompt::*;
-use schema::*;
+
+pub use schema::{retain_tool, triage_tool};

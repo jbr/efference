@@ -14,6 +14,7 @@ fn spot_completion(name: &str, input: Value) -> Completion {
                 input,
             }],
         },
+        id: None,
         model: "test".into(),
         stop_reason: None,
         usage: Usage {

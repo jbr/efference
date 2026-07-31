@@ -74,27 +74,28 @@ pub enum ApiBlock {
     },
 }
 
-impl ApiBlock {
-    /// Set (or clear) this block's cache breakpoint, whatever its variant.
-    fn set_cache_control(&mut self, cc: Option<CacheControl>) {
-        match self {
-            ApiBlock::Text { cache_control, .. }
-            | ApiBlock::Thinking { cache_control, .. }
-            | ApiBlock::RedactedThinking { cache_control, .. }
-            | ApiBlock::ToolUse { cache_control, .. }
-            | ApiBlock::ToolResult { cache_control, .. } => *cache_control = cc,
-        }
-    }
-}
-
-/// Place the single trailing cache breakpoint (docs/log-and-projection.md): mark the last
-/// block of the last message `ephemeral`. Kept out of [`project`] so projection
-/// stays a pure, byte-stable function (the breakpoint moves every request; the
-/// prefix it caches does not). Idempotent re-placement on an identical wire is
-/// byte-identical.
+/// Place the single trailing cache breakpoint (docs/log-and-projection.md): walk back
+/// from the wire tail and mark the last **text** block `ephemeral`; blocks after it (a
+/// trailing tool loop's `tool_use`/`tool_result` suffix) simply go unmarked, and a wire
+/// with no text block at all gets no marker. Text-only because that is where a marker
+/// is portable: OpenAI's explicit prompt caching attaches breakpoints only to text
+/// blocks, and a marker converted onto any other block type bills the full cache write
+/// on every request without ever creating a readable entry
+/// (docs/log-and-projection.md). On Anthropic the unmarked suffix is re-billed at the
+/// input rate until a text block reappears — a bounded cost accepted deliberately;
+/// provider-conditional placement belongs to the provider-awareness layer.
+///
+/// Kept out of [`project`] so projection stays a pure, byte-stable function (the
+/// breakpoint moves every request; the prefix it caches does not). Idempotent
+/// re-placement on an identical wire is byte-identical.
 pub fn place_trailing_cache_breakpoint(messages: &mut [ApiMessage]) {
-    if let Some(block) = messages.last_mut().and_then(|m| m.content.last_mut()) {
-        block.set_cache_control(Some(CacheControl::Ephemeral));
+    for message in messages.iter_mut().rev() {
+        for block in message.content.iter_mut().rev() {
+            if let ApiBlock::Text { cache_control, .. } = block {
+                *cache_control = Some(CacheControl::Ephemeral);
+                return;
+            }
+        }
     }
 }
 

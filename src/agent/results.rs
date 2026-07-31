@@ -83,6 +83,26 @@ pub(super) fn background_command(call: &ToolCall) -> Option<String> {
         .map(str::to_string)
 }
 
+/// A `tool_result` for an un-asked peek-tool call (docs/redaction-fork.md): `retain`
+/// and `triage` stand in every turn's `tools[]` for cache-lineage sharing, but on an
+/// agent turn nothing is asked of them, so the call is paired with this nudge instead
+/// of entering the cascade. One call per turn means the cost is a wasted round-trip,
+/// not corruption. The stable "nothing is being asked" phrase is the compliance
+/// breadcrumb — the rate of un-asked calls is a grep over the logged raw results.
+pub(super) fn unasked(call: &ToolCall) -> Payload {
+    Payload::ToolResult {
+        call_id: call.id.clone(),
+        raw: RawResult {
+            content: format!(
+                "not run — nothing is being asked of `{}` right now; continue with your task.",
+                call.name
+            ),
+            is_error: true,
+        },
+        wire: WireState::Raw,
+    }
+}
+
 /// A `tool_result` standing in for a call that didn't run (aborted). Every
 /// assistant `tool_use` needs exactly one paired result or projection orphans it
 /// and the API rejects the request (docs/README.md).

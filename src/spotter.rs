@@ -37,7 +37,7 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::api::{Client, Endpoint, Usage};
+use crate::api::{Client, Endpoint, RequestUsage};
 use crate::bash;
 use crate::config::Config;
 use crate::log::{Origin, Stance, ToolCall};
@@ -65,19 +65,19 @@ pub struct Read {
 
 /// The outcome of one spotter assessment: the [`Read`], its [`Origin`] (model vs the
 /// fail-closed fallback — the audit signal the stance alone erases), and the request
-/// [`Usage`] if a round-trip happened (folded into the docs/log-and-projection.md cache
-/// telemetry, since it reads the shared spotter prefix). `None` usage for a
-/// model-free spotter or a transport error.
+/// [`RequestUsage`] if a round-trip happened (persisted origin-tagged and folded into
+/// the docs/log-and-projection.md cache telemetry, since it reads the shared spotter
+/// prefix). `None` usage for a model-free spotter or a transport error.
 pub struct Spotting {
     pub read: Read,
     pub origin: Origin,
-    pub usage: Option<Usage>,
+    pub usage: Option<RequestUsage>,
 }
 
 impl Spotting {
     /// The fail-closed verdict (docs/permissions.md): route to the human gate, never
     /// auto-clear. `usage` carried separately because a transport error has none.
-    fn fail_closed(usage: Option<Usage>) -> Self {
+    fn fail_closed(usage: Option<RequestUsage>) -> Self {
         Spotting {
             read: Read {
                 stance: Stance::Gate,
@@ -167,7 +167,7 @@ impl Spotter for ForkSpot {
             .await
         {
             Ok(completion) => {
-                let usage = Some(completion.usage.clone());
+                let usage = Some(completion.request_usage());
                 match parse_spot(&completion) {
                     Some(read) => Spotting {
                         read,

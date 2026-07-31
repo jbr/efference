@@ -4,7 +4,7 @@ use super::*;
 
 pub(super) const TRIAGE_INSTRUCTION: &str = "You're between tasks and have been woken to triage \
 out-of-band events. Review the pending notifications (and any running background \
-processes) above and call `triage`: `pin` what genuinely needs to enter your working \
+processes) above and call `triage` now: `pin` what genuinely needs to enter your working \
 context and be acted on now, `dismiss` the noise, and leave anything you're deferring \
 unlisted. If you pin nothing you simply go back to idle and nothing changes — so pin only \
 what truly warrants picking the work back up.";
@@ -12,7 +12,7 @@ what truly warrants picking the work back up.";
 pub(super) const RETAIN_INSTRUCTION: &str = "Above is the FULL, line-numbered output of every \
 tool call you just made, each under a header naming its [call id]. Line numbers restart at 1 \
 within each result, so ranges are always relative to the result you are deciding. Call \
-`retain` with one `results` entry per output — every [call id] above must be answered, and \
+`retain` now, with one `results` entry per output — every [call id] above must be answered, and \
 `call_id` must be copied exactly. For each, `keep` is \"all\", \"none\", or comma-separated \
 1-based inclusive line ranges like \"40-52,310-318\". Whatever you drop is gone from the \
 working context — so keep anything that might matter for the rest of the task, while staying \

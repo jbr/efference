@@ -276,7 +276,9 @@ fn flush_pending_user(pending: &mut Vec<ApiBlock>, messages: &mut Vec<ApiMessage
     }
 }
 
-fn block_to_api(block: &ContentBlock) -> ApiBlock {
+/// `pub(crate)` for the fork peek's in-fork retry (docs/redaction-fork.md), which
+/// replays a non-compliant assistant turn onto its throwaway tail.
+pub(crate) fn block_to_api(block: &ContentBlock) -> ApiBlock {
     match block {
         ContentBlock::Text(text) => ApiBlock::Text {
             text: text.clone(),

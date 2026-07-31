@@ -168,6 +168,44 @@ the expected-bytes pin deliberately.
 
 ---
 
+## Breakpoint placement — the last text block
+
+`place_trailing_cache_breakpoint` (`src/project/wire.rs`) marks one block per
+request, walking back from the wire tail to the last **text** block; trailing
+`tool_use`/`tool_result` blocks stay unmarked, and a wire with no text block at all
+gets no marker. Anthropic accepts `cache_control` on any block type, but OpenAI's
+explicit prompt caching — which OpenRouter converts Anthropic-format markers into on
+OpenAI-fronted endpoints — attaches breakpoints only to text blocks: a marker
+converted onto any other block type bills the full 1.25× write on **every** request
+and never produces a readable entry (measured; this was most of an audited session's
+bill). Text-only placement is required there and a bounded cost on Anthropic: the
+unmarked suffix re-bills at the input rate each request until a text block (a user
+turn, a pinned notification, a surfaced-context reminder) reappears. Making
+placement provider-conditional awaits the provider-awareness work in the backlog.
+
+One request shape rides this marker everywhere: agent turns, fork peeks, and
+keepalive pings send the same `tools[]`, `tool_choice: auto`, and thinking policy
+([redaction-fork.md](redaction-fork.md), the shared envelope), so a session's
+requests read and extend a **single cache lineage** rather than keying one per
+request shape.
+
+---
+
+## The per-request usage record
+
+Every upstream request appends one JSONL line to the session dir's `usage.jsonl`:
+a wall-clock stamp, the request's origin (`turn` / `peek` / `triage` / `spot` /
+`keepalive`), the upstream response id (Anthropic `msg_…`; an OpenRouter-fronted
+request's generation id), and the four token counts. Implemented in
+`src/daemon/metrics.rs` (`record_request` / `record_keepalive`), fed by
+`Completion::request_usage`. Transport-only and **never** the canonical log —
+usage must stay out of the projection. The in-memory `Metrics` fold surfaced by
+`GET /state` is unchanged; the file is what makes spend reconciliation a query
+(joinable on the response id against provider accounting) rather than a
+reconstruction from the canonical log.
+
+---
+
 ## The invariant tying caching to redaction
 
 **Committed regions are immutable on the wire; all mutation happens in the

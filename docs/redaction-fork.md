@@ -50,10 +50,51 @@ one extra round-trip per result — latency, not tokens — explicitly accepted.
 point is agent-facing: the agent never has to fear reading a whole file, because
 only the relevant parts come back (see [positions.md](positions.md)).
 
+## One request shape — the shared envelope
+
+The peek sends the **same request envelope as an agent turn**: the turn's full
+`tools[]` (the world tools plus the `retain`/`triage` schemas, one shared array built
+by `agent::tool_definitions`), `tool_choice: auto`, and consequently the same thinking
+policy. Nothing cache-keyed differs between the two shapes, so the fork is the same
+conversation continued with a different tail and reads the agent lineage's transcript
+cache directly. The alternative — a peek-only tools array and a forced `tool_choice` —
+keys a **second cache lineage** over the same transcript: on Anthropic the
+messages-tier cache is keyed on `tool_choice` and the thinking setting, and everywhere
+a differing tools array splits the prefix, so the fork's whole transcript re-billed at
+the cache-write price on every peek ([log-and-projection.md](log-and-projection.md)).
+What forcing bought is re-bought harness-side:
+
+- **The peek schemas are static.** `retain`/`triage` are zero-argument builders; the
+  `inbox`/`background`/`surfaced` fields are unconditional, with self-contained
+  descriptions ("if a section named X appears above…"), because a schema that varied
+  with session state would re-key the envelope mid-session. Invented dispositions were
+  already dropped harness-side, so conditionality guarded nothing the filters don't.
+- **A standing permission clause** on both descriptions — "do not call this tool
+  unless asked to do so by the harness." Permission-phrased, not identity-phrased
+  ("harness-invoked only"), because the same model reads the standing description and,
+  later, the peek's tail ask: a permission clause resolves as "now is when"; an
+  identity claim contradicts the ask and costs deliberation.
+- **An un-asked call** — the agent calling `retain`/`triage` on a normal turn — never
+  enters the permission cascade; the loop pairs it directly with a stable error result
+  ("not run — nothing is being asked of `…` right now; continue with your task").
+  Single-call turns make this a wasted round-trip, not corruption, and the stable
+  phrase keeps the un-asked rate greppable from the logged raws.
+- **A non-compliant peek** — the wrong tool, no tool, a malformed verdict — gets a
+  bounded **in-fork retry**: the non-compliant assistant turn is appended to the
+  throwaway tail verbatim (thinking blocks included), each of its calls is answered
+  with an error `tool_result`, the ask is renewed, and the request goes again — a warm
+  prefix re-read on the same lineage. Only exhaustion falls back to keep-all, with the
+  breadcrumb below. Implemented in `src/distill.rs`.
+
+Un-forcing also lifts the forced-choice-excludes-thinking constraint
+([transport.md](transport.md)): the fork may think, and the thinking is discarded with
+the tail.
+
 ## The `retain` verdict
 
-The fork forces a single structured tool call — no freeform parsing. The verdict
-is one of three forms:
+The fork asks for a single structured tool call — the ask rides the tail
+instruction, never a forced `tool_choice` (see the shared envelope above) — so there
+is no freeform parsing. The verdict is one of three forms:
 
 | form | meaning |
 | --- | --- |
@@ -64,14 +105,15 @@ is one of three forms:
 `retain(none)` is not silent: the note stays on the canonical wire so the agent
 doesn't re-run what it just disowned — inline dead-end shedding at the source.
 
-On any failure (the peek errors, or calls something other than `retain`), the
-gate falls back to keep-all. Data is never lost — but this is a failure, not a neutral
-default. `WireState` is fixed once, so an uncurated result stays in the cached prefix for
-the rest of the session and every later turn pays for it. The fallback is therefore
-logged at error, and the `Triage` records a **breadcrumb** in `raw_keep` describing what
-came back: the model's unparseable `retain` input, the tool it called instead, or the
-transport error. Without that, a malformed verdict, a wrong-tool call and a 429 are
-indistinguishable in the log after the fact.
+On a transport error, or when the in-fork retries are exhausted without a usable
+verdict, the gate falls back to keep-all. Data is never lost — but this is a failure,
+not a neutral default. `WireState` is fixed once, so an uncurated result stays in the
+cached prefix for the rest of the session and every later turn pays for it. The
+fallback is therefore logged at error, and the `Triage` records a **breadcrumb** in
+`raw_keep` describing what came back: the model's unparseable `retain` input, the tool
+it called instead, or the transport error — plus which attempt gave up. Without that, a
+malformed verdict, a wrong-tool call and a 429 are indistinguishable in the log after
+the fact.
 
 Surfacing an exhausted failure to the operator as a session-visible error — rather than
 only a log line — is deferred to the turn-failure work, which needs the same mechanism
