@@ -90,6 +90,28 @@ never elided today — that's a deferred generalization of the redaction model
 negotiates HTTP/2 — Anthropic is fronted by Cloudflare, which does not
 advertise `alt-svc: h3`, so HTTP/3 is not a live option. HTTP/2 is the path.
 
+## Transient upstream failures
+
+`Client` installs `trillium-client-retry`'s `RetryHandler` around every upstream
+request. The handler retries the replay-safe Messages POSTs (their serialized
+request body is an owned `String`) on 429, 500, 502, 503, and 504. Other 4xx
+responses remain terminal, so malformed or oversized requests fail without
+replaying them. It makes at most four total attempts and has a 30-second
+wall-clock budget; an HTTP `Retry-After` is honored only within that same
+budget.
+
+The retry handler covers failures while opening a response, before an SSE stream
+has yielded any deltas. A connection that has returned 200 and then drops
+mid-stream is not resumed: it may already have published live deltas and left a
+partially assembled completion.
+
+An exhausted `complete` request fails the current trajectory rather than the
+daemon. No assistant payload is appended, so the projection remains unchanged;
+the failure is written to the daemon's stderr and the loop returns to idle,
+where the operator can submit another turn or change session configuration.
+Keepalive failures are likewise transport-only and leave the log unchanged.
+
+
 ---
 
 ## Providers
@@ -149,6 +171,17 @@ gets no `thinking` block by default. `EFFERENCE_THINKING=adaptive|off|auto`
 overrides per session (there is no portable capability query: OpenRouter's
 `supported_parameters` describes its normalized `reasoning` param, not the
 Anthropic `thinking` block).
+
+Two reasons that metadata stays out of `supports_adaptive_thinking`, even though its
+`reasoning.supported_efforts` field happens to track the adaptive-capable Claude generation
+cleanly (present on 4.6+, absent on haiku-4.5 and the 4.5/4.1 tier). First, it describes
+OpenRouter's *normalized* interface, not the block efference sends — proof:
+`thinkingmachines/inkling` advertises `supported_efforts` but rejects an Anthropic `thinking`
+block, so the field is strictly broader than "accepts `thinking:{type:adaptive}`" and cannot
+replace the Claude-family gate. Second, reading it is an **OpenRouter-only boot-time network
+query**, absent on the direct-Anthropic path — reintroducing exactly the provider-specific
+startup coupling the env-resolved `Endpoint` removed. It stays useful offline, as a reference
+for setting `EFFERENCE_THINKING` by hand.
 
 ---
 

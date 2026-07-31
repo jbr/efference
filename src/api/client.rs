@@ -2,7 +2,19 @@
 
 use super::*;
 
-/// A thin Anthropic Messages client: holds the HTTP stack, the [`Endpoint`] (URL +
+use std::time::Duration;
+
+use trillium::Status;
+use trillium_client_retry::RetryHandler;
+
+/// Retry policy for requests that did not receive a successful response
+/// (docs/transport.md). Every upstream request is a replay-safe POST carrying
+/// an owned `String` body. The elapsed ceiling bounds an outage from the
+/// operator's perspective; exhaustion still surfaces the final response.
+const RETRY_MAX_ATTEMPTS: u32 = 4;
+const RETRY_MAX_ELAPSED: Duration = Duration::from_secs(30);
+
+/// A thin Anthropic Messages client
 /// auth), the model, and the stable system prompt. The system is byte-stable across
 /// the session, so it stays in the cached prefix (docs/log-and-projection.md); the fork
 /// (docs/redaction-fork.md) shares the same endpoint and system, so its prefix matches
@@ -19,7 +31,24 @@ impl Client {
         Self {
             // TLS over the tokio TCP connector; ALPN negotiates HTTP/2 (no h3
             // advertised by Anthropic/Cloudflare as of 2026-06). See main.rs.
-            http: HttpClient::new(RustlsConfig::<ClientConfig>::default()),
+            http: HttpClient::new(RustlsConfig::<ClientConfig>::default()).with_handler(
+                RetryHandler::default()
+                    // Messages POSTs are replay-safe: an unsuccessful open produced no
+                    // assistant entry or provider-side completion.
+                    .with_all_methods()
+                    // `with_statuses` replaces the default (429, 503), so enumerate the
+                    // whole transient set. Other 4xx responses remain immediate errors.
+                    .with_statuses([
+                        Status::TooManyRequests,
+                        Status::InternalServerError,
+                        Status::BadGateway,
+                        Status::ServiceUnavailable,
+                        Status::GatewayTimeout,
+                    ])
+                    .with_max_attempts(RETRY_MAX_ATTEMPTS)
+                    .with_max_elapsed(RETRY_MAX_ELAPSED)
+                    .with_max_retry_after(RETRY_MAX_ELAPSED),
+            ),
             endpoint,
             model: model.into(),
             system: system.into(),
