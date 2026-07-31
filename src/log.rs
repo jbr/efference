@@ -194,9 +194,10 @@ pub struct Triage {
     /// **standalone** triage (the idle-triggered inbox-only peek, docs/inbox.md: a gate
     /// that rides no tool result). Backward-compatible: serde reads an old bare `seq` as `Some`.
     pub for_result: Option<Seq>,
-    /// Whether the verdict came from the model or the keep-all fallback — the one
-    /// signal the rendered artifact erases (a deliberate keep-all and a failed peek
-    /// render identically).
+    /// Whether the verdict came from the model or a harness fallback. For a
+    /// model-free stub distiller this is the one signal the rendered artifact
+    /// erases (its head/tail verdict renders like a deliberate one); a failed peek
+    /// additionally projects a withheld-output error (docs/redaction-fork.md).
     pub origin: Origin,
     /// The model's exact `keep` string, pre-parse (empty for a model-free distiller).
     pub raw_keep: String,
@@ -218,7 +219,8 @@ pub struct Triage {
 pub enum Origin {
     /// A real `retain` call from the peek model.
     Model,
-    /// The keep-all fallback — the peek failed, or a model-free stub distiller ran.
+    /// The harness fallback — the peek failed (the result projects a withheld-output
+    /// error, docs/redaction-fork.md), or a model-free stub distiller ran.
     Fallback,
 }
 
@@ -394,6 +396,13 @@ pub enum WireState {
     Distilled { keep: Keep, note: Option<String> },
     /// Project nothing of substance; still recoverable from the log.
     Elided,
+    /// The gate could not elicit a usable triage verdict — a transport failure or
+    /// in-fork retry exhaustion (docs/redaction-fork.md). Projects a **hard error**
+    /// in place of the output (`is_error` forced true), never the untriaged raw,
+    /// which would weld the bloat into the cached prefix for the rest of the
+    /// session. `why` is the same breadcrumb the `Triage` entry records; `raw`
+    /// stays in the log.
+    TriageFailed { why: String },
 }
 
 /// What of a tool result survives on the canonical wire (docs/redaction-fork.md).

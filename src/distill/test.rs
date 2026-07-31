@@ -152,7 +152,8 @@ fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
             cache_control: None,
         }],
     }];
-    assert!(extend_with_retry(&mut messages, &completion.assistant, RETAIN));
+    let why = unusable(&completion, RETAIN);
+    assert!(extend_with_retry(&mut messages, &completion.assistant, &why, RETAIN));
     assert_eq!(messages.len(), 3, "assistant turn + reply appended");
 
     let assistant = &messages[1];
@@ -176,7 +177,10 @@ fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
         ] => {
             assert_eq!(tool_use_id, "r", "the wrong call is answered, not orphaned");
             assert!(*is_error);
-            assert!(content.contains("call `retain`"), "{content}");
+            assert!(
+                content.contains("not accepted — peek called bash instead of retain"),
+                "the error result carries the why: {content}"
+            );
             assert!(text.contains("Call `retain` now"), "{text}");
         }
         other => panic!("expected [error tool_result, renewed ask], got {other:?}"),
@@ -204,7 +208,12 @@ fn a_prose_only_response_retries_with_just_the_renewed_ask() {
         },
     };
     let mut messages = Vec::new();
-    assert!(extend_with_retry(&mut messages, &completion.assistant, TRIAGE));
+    assert!(extend_with_retry(
+        &mut messages,
+        &completion.assistant,
+        "peek called no tool",
+        TRIAGE
+    ));
     assert_eq!(messages.len(), 2);
     assert!(
         matches!(&messages[1].content[..], [ApiBlock::Text { text, .. }] if text.contains("Call `triage` now"))
@@ -221,8 +230,56 @@ fn an_empty_response_is_terminal_not_an_invalid_retry() {
         calls: vec![],
     };
     let mut messages = Vec::new();
-    assert!(!extend_with_retry(&mut messages, &empty, RETAIN));
+    assert!(!extend_with_retry(&mut messages, &empty, "peek called no tool", RETAIN));
     assert!(messages.is_empty());
+}
+
+/// Coverage is part of verdict validity (docs/redaction-fork.md): a verdict that
+/// leaves any offered result unanswered is rejected — naming the missing ids so the
+/// retry nudge is actionable — rather than letting the result fall through untriaged.
+#[test]
+fn an_incomplete_verdict_is_rejected_naming_the_missing_ids() {
+    let offered = ["a".to_string(), "b".to_string()];
+    let complete = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "results": [
+                { "call_id": "a", "keep": "all" },
+                { "call_id": "b", "keep": "none", "note": "n" },
+            ] }),
+        ),
+        &offered,
+    )
+    .unwrap();
+    assert!(require_coverage(complete, &offered).is_ok());
+
+    let partial = parse_retain(
+        &retain_completion(RETAIN, json!({ "results": [{ "call_id": "a", "keep": "all" }] })),
+        &offered,
+    )
+    .unwrap();
+    let Err(why) = require_coverage(partial, &offered) else {
+        panic!("a partial verdict must be rejected");
+    };
+    assert!(why.contains("[b]"), "names the unanswered id: {why}");
+}
+
+/// A failed gate (docs/redaction-fork.md) withholds every result as a hard error —
+/// `WireState::TriageFailed`, `Origin::Fallback`, the why in `raw_keep` — never the
+/// untriaged raw.
+#[test]
+fn a_failed_gate_withholds_every_result_as_an_error() {
+    let outcome = GateOutcome::failed(2, Vec::new(), "peek called no tool (attempt 3 of 3)");
+    assert_eq!(outcome.results.len(), 2);
+    for d in &outcome.results {
+        assert!(
+            matches!(&d.wire, WireState::TriageFailed { why } if why.contains("peek called no tool")),
+            "withheld, not kept"
+        );
+        assert_eq!(d.origin, Origin::Fallback);
+        assert!(d.raw_keep.contains("peek called no tool"));
+    }
+    assert!(outcome.inbox.is_empty() && outcome.background.is_empty());
 }
 
 /// The peek tools' schemas are static (docs/redaction-fork.md): they ride every turn's
@@ -369,10 +426,11 @@ fn roster_is_empty_without_a_preamble() {
 ///
 /// This is the regression guard for the observed failure. Peeking between calls built a
 /// request whose trailing assistant message still carried unanswered `tool_use` blocks;
-/// the API rejected it, `ForkPeek` fell back to keep-all, and — because `WireState` is
-/// fixed once — the uncurated result stayed in the cached prefix for the rest of the
-/// session. In the corpus that accounted for the first N−1 peeks of every multi-call
-/// turn.
+/// the API rejected it, `ForkPeek` fell back to keep-all (the fallback of the time —
+/// today the same failure would withhold the results as hard errors), and — because
+/// `WireState` is fixed once — the uncurated result stayed in the cached prefix for the
+/// rest of the session. In the corpus that accounted for the first N−1 peeks of every
+/// multi-call turn.
 #[test]
 fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
     let calls = vec![

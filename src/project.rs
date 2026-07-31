@@ -312,6 +312,10 @@ fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireSta
         // flagged here before it had one — elision keeps the pair; the placeholder
         // exists precisely so the `tool_use` stays answered.
         WireState::Elided => ("[elided]".to_string(), false),
+        // A gate that couldn't elicit a verdict projects a hard error, never the
+        // untriaged raw (docs/redaction-fork.md). `is_error` is forced true so the
+        // agent treats it as a failed call and decides whether to re-issue.
+        WireState::TriageFailed { why } => (render_triage_failure(why), true),
     };
     // Prefix with [seq] handle so tool results are describable as 'reread 14' /
     // 'branch from 14' — the entry's stable seq. The wire never carries seq
@@ -337,5 +341,5 @@ mod test;
 mod render;
 mod wire;
 
-pub use render::{Distillate, distillate, render_distilled};
+pub use render::{Distillate, distillate, render_distilled, render_triage_failure};
 pub use wire::{ApiBlock, ApiMessage, CacheControl, Role, place_trailing_cache_breakpoint};

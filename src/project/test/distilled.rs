@@ -166,3 +166,65 @@ fn distilled_projects_the_verdict_not_raw() {
         "dropped lines stay off the wire: {wire}"
     );
 }
+
+/// A [`WireState::TriageFailed`] result projects a **hard error in place of the
+/// output** (docs/redaction-fork.md): the untriaged raw never reaches the wire,
+/// `is_error` is forced true regardless of the tool's own outcome, and the message
+/// carries the why plus the stable greppable prefix.
+#[test]
+fn triage_failed_projects_an_error_never_the_raw() {
+    let log = vec![
+        entry(
+            0,
+            0,
+            Payload::Assistant {
+                thinking: vec![],
+                text: vec![],
+                calls: vec![ToolCall {
+                    id: CallId("x".into()),
+                    name: "bash".into(),
+                    input: json!({}),
+                }],
+            },
+        ),
+        entry(
+            1,
+            0,
+            Payload::ToolResult {
+                call_id: CallId("x".into()),
+                raw: RawResult {
+                    content: "ten thousand lines of output".into(),
+                    is_error: false,
+                },
+                wire: WireState::TriageFailed {
+                    why: "peek called no tool (attempt 3 of 3)".into(),
+                },
+            },
+        ),
+    ];
+    let messages = project(&log);
+    let block = messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .find_map(|b| match b {
+            ApiBlock::ToolResult {
+                content, is_error, ..
+            } => Some((content, is_error)),
+            _ => None,
+        })
+        .expect("the tool_use stays answered");
+    let (content, is_error) = block;
+    assert!(*is_error, "surfaced as a failed call: {content}");
+    assert!(
+        content.contains("result withheld — triage failed (peek called no tool (attempt 3 of 3))"),
+        "stable prefix + why: {content}"
+    );
+    assert!(
+        content.contains("ran to completion"),
+        "the agent is told the call did run (side effects stand): {content}"
+    );
+    assert!(
+        !content.contains("ten thousand lines"),
+        "the untriaged raw never reaches the wire: {content}"
+    );
+}

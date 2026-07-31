@@ -408,6 +408,40 @@ fn transcript_error_result() {
     play.snapshot("transcript_error_result");
 }
 
+/// A `WireState::TriageFailed` result (docs/redaction-fork.md) surfaces to the
+/// operator like a failed call: the error prompt shows even though the tool itself
+/// succeeded (`is_error: false` on the raw), the withheld message is on screen, and
+/// the untriaged raw is not.
+#[test]
+fn a_triage_failed_result_reads_as_a_failed_call() {
+    let mut play = Screenplay::new(80, 16);
+    play.user("Run it.");
+    play.assistant(
+        "",
+        vec![tool_call("bash", "toolu_tf", json!({ "command": "ls" }))],
+    );
+    play.tool_result(
+        "toolu_tf",
+        "ten thousand lines of untriaged output",
+        false,
+        WireState::TriageFailed {
+            why: "peek called no tool (attempt 3 of 3)".into(),
+        },
+    );
+    assert!(
+        play.find("✗").is_some(),
+        "surfaced as an error despite the tool succeeding"
+    );
+    assert!(
+        play.find("result withheld — triage failed").is_some(),
+        "the withheld message is on screen"
+    );
+    assert!(
+        play.find("ten thousand lines").is_none(),
+        "the untriaged raw stays off the default view"
+    );
+}
+
 /// A failed exchange reads as an error via a red `✗` prompt (replacing the
 /// normal `❯`) — and explicitly NOT strikethrough (which now means deletion).
 /// The character grid can't show color; `cell` asserts it.

@@ -24,8 +24,10 @@
 //!   notifications to pin. The peek sends the *same* request envelope as an agent turn —
 //!   one shared `tools[]`, `tool_choice: auto`, the same thinking policy — so both
 //!   shapes read one cache lineage (docs/redaction-fork.md, docs/log-and-projection.md).
-//!   A non-compliant response gets a bounded in-fork retry; exhaustion keeps everything
-//!   and leaves the inbox untouched — never loses data.
+//!   A non-compliant response gets a bounded in-fork retry; exhaustion is a **hard
+//!   error** — the results project [`WireState::TriageFailed`] (an error in place of
+//!   the output; the raw stays in the log) and the inbox is left untouched. The full
+//!   untriaged raw is never welded onto the canonical wire.
 
 use std::collections::HashSet;
 
@@ -60,8 +62,9 @@ pub fn is_peek_tool(name: &str) -> bool {
 
 /// Fork round-trips per gate: the ask plus bounded in-fork retries
 /// (docs/redaction-fork.md). Each retry re-reads the warm prefix and appends only to
-/// the throwaway tail; exhaustion falls back to keep-all, which bloats the canonical
-/// wire for the rest of the session — so retrying is cheaper than falling back.
+/// the throwaway tail; exhaustion withholds the output as a hard error, which the
+/// agent may answer by re-issuing the call — so retrying here is cheaper than making
+/// the agent recover.
 const PEEK_ATTEMPTS: usize = 3;
 
 /// A live-process triage disposition (docs/supervisor.md) — distinct from the seq-keyed
@@ -93,7 +96,7 @@ pub struct Distillation {
     /// The canonical wire form — a [`WireState::Distilled`] verdict (kept ranges +
     /// note), re-rendered from `raw` at projection time (docs/redaction-fork.md).
     pub wire: WireState,
-    /// Whether the verdict is the model's or the keep-all fallback (docs/redaction-fork.md).
+    /// Whether the verdict is the model's or a harness fallback (docs/redaction-fork.md).
     pub origin: Origin,
     /// The model's exact `keep` string, pre-parse — empty for a model-free distiller.
     pub raw_keep: String,
@@ -108,11 +111,12 @@ pub struct Distillation {
 ///
 /// The inbox / background / surfacing riders are **gate-scoped**, not per-result: they
 /// are decided once for the step, which is why they sit here rather than on
-/// [`Distillation`].
+/// [`Distillation`]. `Default` is the outcome of a gate with nothing to triage.
+#[derive(Default)]
 pub struct GateOutcome {
     /// One verdict per [`Pending`] handed in, in the same order. Always the same
-    /// length as the input — a failed peek yields keep-all verdicts, never a short
-    /// vector, so the loop can zip them without checking.
+    /// length as the input — a failed peek yields [`WireState::TriageFailed`]
+    /// verdicts, never a short vector, so the loop can zip them without checking.
     pub results: Vec<Distillation>,
     /// Per-notification dispositions this peek chose, by arrival `seq` (docs/inbox.md) —
     /// filtered to notifications actually shown. Empty when nothing was pinned or
@@ -135,30 +139,29 @@ pub struct GateOutcome {
 }
 
 impl GateOutcome {
-    /// The keep-all fallback for a whole gate (docs/redaction-fork.md): every result
-    /// survives intact, the inbox is untouched. Used when the peek fails outright or a
-    /// model-free distiller runs.
+    /// The hard-error outcome for a whole gate (docs/redaction-fork.md): the peek
+    /// could not elicit a usable verdict (a transport failure, or in-fork retry
+    /// exhaustion), so every result projects [`WireState::TriageFailed`] — an error
+    /// in place of the output, `is_error` forced true, exactly as if the call itself
+    /// had failed. The full untriaged raw is **never** the fallback: `WireState` is
+    /// fixed once, so an uncurated result would stay in the cached prefix for the
+    /// rest of the session with every later turn paying for it. `raw` stays in the
+    /// log; the agent decides whether to re-issue the call, and the error is visible
+    /// to the operator in the transcript like any failed call.
     ///
-    /// Data is never lost, but this is not a free outcome: `WireState` is fixed once,
-    /// so an uncurated result stays in the cached prefix for the rest of the session
-    /// and every later turn pays for it. `Origin::Fallback` is the one signal the
-    /// rendered artifact erases, which is why it is stamped here.
-    ///
-    /// `breadcrumb` records **why** — it lands in each result's `raw_keep`, the field the
-    /// `Triage` entry carries for audit. Without it a fallback is anonymous in the log: a
-    /// malformed verdict, a wrong-tool call, and a transport error all read identically
-    /// after the fact, which is exactly the gap that made the observed fallbacks
-    /// unclassifiable. Empty for a model-free distiller, which never failed at anything.
-    pub fn keep_all(count: usize, usage: Vec<RequestUsage>, breadcrumb: &str) -> Self {
+    /// `why` records the cause — it renders in each error result and lands in each
+    /// result's `raw_keep`, the field the `Triage` entry carries for audit. Without
+    /// it a failure is anonymous: a malformed verdict, a wrong-tool call, and a
+    /// transport error all read identically after the fact.
+    pub fn failed(count: usize, usage: Vec<RequestUsage>, why: &str) -> Self {
         Self {
             results: (0..count)
                 .map(|_| Distillation {
-                    wire: WireState::Distilled {
-                        keep: Keep::All,
-                        note: None,
+                    wire: WireState::TriageFailed {
+                        why: why.to_string(),
                     },
                     origin: Origin::Fallback,
-                    raw_keep: breadcrumb.to_string(),
+                    raw_keep: why.to_string(),
                 })
                 .collect(),
             inbox: Vec::new(),
@@ -278,25 +281,28 @@ pub struct ForkPeek;
 
 /// Run one peek to a usable verdict, with bounded in-fork retries
 /// (docs/redaction-fork.md). `tool` is the asked-for tool (`retain` or `triage`);
-/// `parse` decodes a usable verdict out of a completion. Every request's [`RequestUsage`] is
-/// pushed onto `usage` whether or not its verdict was usable (the request happened and
-/// slid the prefix's TTL; only a transport error yields none).
+/// `parse` decodes a usable verdict out of a completion, or says why it couldn't —
+/// the `Err` doubles as the retry nudge and, on exhaustion, the failure breadcrumb.
+/// Every request's [`RequestUsage`] is pushed onto `usage` whether or not its verdict
+/// was usable (the request happened and slid the prefix's TTL; only a transport error
+/// yields none).
 ///
 /// A usable response carrying an unusable verdict — the wrong tool, no tool, a
-/// malformed input — extends the throwaway tail and goes again: the non-compliant
-/// assistant turn is appended verbatim (thinking blocks and all), each of its calls is
-/// answered with an error `tool_result`, and the ask is renewed. That keeps the fork
-/// API-valid and the retry a warm prefix-extension rather than a new request shape.
+/// malformed or incomplete input — extends the throwaway tail and goes again: the
+/// non-compliant assistant turn is appended verbatim (thinking blocks and all), each
+/// of its calls is answered with an error `tool_result` carrying the why, and the ask
+/// is renewed. That keeps the fork API-valid and the retry a warm prefix-extension
+/// rather than a new request shape.
 ///
 /// Transport errors are deliberately *not* retried here — a failed request is the
 /// transport's problem, and retrying transient statuses belongs on the `Client`
-/// (docs/transport.md). The returned `Err` is the `Triage` breadcrumb.
+/// (docs/transport.md).
 async fn peek_with_retries<T>(
     client: &Client,
     mut messages: Vec<ApiMessage>,
     tools: &[Value],
     tool: &str,
-    parse: impl Fn(&Completion) -> Option<T>,
+    parse: impl Fn(&Completion) -> Result<T, String>,
     usage: &mut Vec<RequestUsage>,
 ) -> Result<T, String> {
     for attempt in 1..=PEEK_ATTEMPTS {
@@ -312,11 +318,10 @@ async fn peek_with_retries<T>(
         let parsed = parse(&completion);
         usage.push(completion.request_usage());
         match parsed {
-            Some(verdict) => return Ok(verdict),
-            None => {
-                let why = unusable(&completion, tool);
+            Ok(verdict) => return Ok(verdict),
+            Err(why) => {
                 if attempt == PEEK_ATTEMPTS
-                    || !extend_with_retry(&mut messages, &completion.assistant, tool)
+                    || !extend_with_retry(&mut messages, &completion.assistant, &why, tool)
                 {
                     return Err(format!("{why} (attempt {attempt} of {PEEK_ATTEMPTS})"));
                 }
@@ -329,10 +334,16 @@ async fn peek_with_retries<T>(
 
 /// Extend the fork's throwaway tail past a non-compliant response, keeping the
 /// conversation API-valid: the assistant turn is replayed verbatim, every `tool_use` it
-/// made is answered with an error `tool_result`, and a renewed ask closes the tail.
-/// Returns `false` when nothing appendable came back (no assistant payload, or an empty
-/// one) — the caller treats that as terminal rather than sending an invalid message.
-fn extend_with_retry(messages: &mut Vec<ApiMessage>, assistant: &Payload, tool: &str) -> bool {
+/// made is answered with an error `tool_result` carrying `why`, and a renewed ask
+/// closes the tail. Returns `false` when nothing appendable came back (no assistant
+/// payload, or an empty one) — the caller treats that as terminal rather than sending
+/// an invalid message.
+fn extend_with_retry(
+    messages: &mut Vec<ApiMessage>,
+    assistant: &Payload,
+    why: &str,
+    tool: &str,
+) -> bool {
     let Payload::Assistant {
         thinking,
         text,
@@ -361,7 +372,7 @@ fn extend_with_retry(messages: &mut Vec<ApiMessage>, assistant: &Payload, tool: 
         .iter()
         .map(|call| ApiBlock::ToolResult {
             tool_use_id: call.id.0.clone(),
-            content: format!("not run — the harness is asking you to call `{tool}` here."),
+            content: format!("not accepted — {why}."),
             is_error: true,
             cache_control: None,
         })
@@ -375,6 +386,25 @@ fn extend_with_retry(messages: &mut Vec<ApiMessage>, assistant: &Payload, tool: 
         content: reply,
     });
     true
+}
+
+/// Verdict validity includes **coverage** (docs/redaction-fork.md): every offered call
+/// id must be answered, or the verdict is rejected and retried in-fork — a result
+/// silently left untriaged is exactly the fallback this gate no longer has.
+fn require_coverage(verdict: ParsedRetain, offered: &[String]) -> Result<ParsedRetain, String> {
+    let unanswered: Vec<&str> = offered
+        .iter()
+        .filter(|id| !verdict.results.iter().any(|v| &v.call_id == *id))
+        .map(String::as_str)
+        .collect();
+    if unanswered.is_empty() {
+        Ok(verdict)
+    } else {
+        Err(format!(
+            "verdict answered no result for [{}]",
+            unanswered.join("], [")
+        ))
+    }
 }
 
 /// Describe a completion that produced no usable verdict, for the `Triage` breadcrumb.
@@ -469,10 +499,12 @@ impl Distiller for ForkPeek {
         background: &[BgView],
     ) -> GateOutcome {
         if pending.is_empty() {
-            return GateOutcome::keep_all(0, Vec::new(), "");
+            return GateOutcome::default();
         }
         // The ids this gate is asking about, in call order — the `retain` verdict's
-        // coordinate system, and what the reconcile below checks coverage against.
+        // coordinate system. Coverage of every offered id is part of verdict
+        // *validity* ([`require_coverage`]): an incomplete verdict retries in-fork
+        // rather than leaving a result untriaged.
         let offered: Vec<String> = pending.iter().map(|p| p.call.id.0.clone()).collect();
 
         let roster = surfaceable_roster(prefix);
@@ -484,7 +516,10 @@ impl Distiller for ForkPeek {
             messages,
             tools,
             RETAIN,
-            |c| parse_retain(c, &offered),
+            |c| {
+                let verdict = parse_retain(c, &offered).ok_or_else(|| unusable(c, RETAIN))?;
+                require_coverage(verdict, &offered)
+            },
             &mut usage,
         )
         .await;
@@ -492,27 +527,25 @@ impl Distiller for ForkPeek {
         let verdict = match parsed {
             Ok(v) => v,
             Err(why) => {
-                // No usable verdict. Keep everything rather than drop data — but this is
-                // a real failure, not a neutral default: the uncurated output is now
-                // durable on the wire (`WireState` is fixed once), so every later turn
-                // pays for it. Logged at error, stamped `Origin::Fallback`, and the
-                // breadcrumb records what came back so the next occurrence is
-                // classifiable rather than anonymous. Surfacing it to the operator as a
-                // session-visible failure is tracked with the turn-failure work
-                // (backlog/transient-api-failures.md).
+                // No usable verdict. The results are withheld as hard errors
+                // (docs/redaction-fork.md) — never kept untriaged, which would weld
+                // the full raw into the cached prefix for the rest of the session.
+                // The error is on the wire, so the agent can re-issue the call and
+                // the operator sees the failure in the transcript; the raw stays in
+                // the log, and the breadcrumb classifies what came back.
                 log::error!(
-                    "fork peek produced no usable verdict for {} result(s); keeping all \
-                     output uncurated on the wire — {why}",
+                    "fork peek produced no usable verdict for {} result(s); withholding \
+                     output as a hard error — {why}",
                     offered.len()
                 );
-                return GateOutcome::keep_all(pending.len(), usage, &why);
+                return GateOutcome::failed(pending.len(), usage, &why);
             }
         };
 
-        // Reconcile the model's verdicts against what was actually offered, in call order.
-        // A result the model never addressed keeps everything (loudly); ids it invented
-        // simply find no home — the same harness-side guard applied to notification ids
-        // and roster names below.
+        // Apply the model's verdicts in call order. Coverage was validated above, so
+        // every pending result finds its verdict; ids the model invented simply find
+        // no home — the same harness-side guard applied to notification ids and
+        // roster names below.
         let results = pending
             .iter()
             .map(
@@ -525,21 +558,15 @@ impl Distiller for ForkPeek {
                         origin: Origin::Model,
                         raw_keep: v.raw_keep.clone(),
                     },
-                    None => {
-                        log::error!(
-                            "fork peek returned no verdict for `{}` ({}); keeping it uncurated",
-                            p.call.name,
-                            p.call.id.0
-                        );
-                        Distillation {
-                            wire: WireState::Distilled {
-                                keep: Keep::All,
-                                note: None,
-                            },
-                            origin: Origin::Fallback,
-                            raw_keep: String::new(),
-                        }
-                    }
+                    // Unreachable in practice (coverage validated); defensively
+                    // withhold rather than keep untriaged output.
+                    None => Distillation {
+                        wire: WireState::TriageFailed {
+                            why: "no verdict for this result".into(),
+                        },
+                        origin: Origin::Fallback,
+                        raw_keep: String::new(),
+                    },
                 },
             )
             .collect();
@@ -612,7 +639,7 @@ impl Distiller for ForkPeek {
             messages,
             tools,
             TRIAGE,
-            |c| parse_dispositions(c, TRIAGE),
+            |c| parse_dispositions(c, TRIAGE).ok_or_else(|| unusable(c, TRIAGE)),
             &mut usage,
         )
         .await;

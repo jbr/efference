@@ -368,6 +368,11 @@ fn result_entry(
                 let content = match wire {
                     WireState::Raw => raw.content.clone(),
                     WireState::Elided => "[elided]".to_string(),
+                    // The same message the agent sees on the wire; the operator can
+                    // flip to raw — the withheld output is still in the log.
+                    WireState::TriageFailed { why } => {
+                        crate::project::render_triage_failure(why)
+                    }
                     // Unreachable: a distilled result is handled above unless it is
                     // being shown raw, which this branch already excluded.
                     WireState::Distilled { keep, note } => {
@@ -399,7 +404,11 @@ fn result_entry(
 
     DocumentNode::headed_entry(
         EntryKind::ToolResult,
-        Some(status_span(raw.is_error)),
+        // A withheld-output result is surfaced as an error even when the tool
+        // itself succeeded — the same signal the agent gets on the wire.
+        Some(status_span(
+            raw.is_error || matches!(wire, WireState::TriageFailed { .. }),
+        )),
         header,
         body,
     )

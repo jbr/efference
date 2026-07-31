@@ -2,6 +2,22 @@
 
 use super::*;
 
+/// Render a [`WireState::TriageFailed`] result (docs/redaction-fork.md): a hard error
+/// in place of the output, phrased for the agent exactly as a failed call would be —
+/// naming that the call *did* run, so a mutation isn't blindly re-issued. The stable
+/// "result withheld — triage failed" prefix is the greppable marker. The wire
+/// projection and the TUI projection share this one renderer; like
+/// [`render_distilled`] it is deterministic, a pure function of its input.
+///
+/// [`WireState::TriageFailed`]: crate::log::WireState::TriageFailed
+pub fn render_triage_failure(why: &str) -> String {
+    format!(
+        "result withheld — triage failed ({why}). The call ran to completion and its \
+         side effects stand, but its output was not recorded. Re-issue the call if the \
+         output is still needed."
+    )
+}
+
 /// Render a distilled tool result for the canonical wire from `raw` + the stored
 /// verdict (docs/redaction-fork.md): the kept ranges as diff-style `@@`-hunks over the verbatim
 /// lines, the optional `note`, and a truncation breadcrumb past the cap. The wire

@@ -287,9 +287,10 @@ addressed to the session as a teammate. `Clear` (and `ClearAlways`) auto-approve
 intervention latency is a later unit). `ClearAlways` is the prefix-promotion safe-vote, below.
 
 **Fail closed.** Any failure — transport error, no `spot` call — yields `Gate` with
-`Origin::Fallback`: uncertainty routes to the human, never to auto-clear. (Contrast the
-distiller, which fails *open* to keep-all, because dropping output loses data whereas wrongly
-clearing a move does harm.)
+`Origin::Fallback`: uncertainty routes to the human, never to auto-clear. (The distiller
+fails the same direction with a different artifact: a failed triage gate withholds the
+output as a hard error on the wire — [redaction-fork.md](redaction-fork.md) — never a
+silent keep-all.)
 
 **Each verdict is logged** as a `Payload::Spot` audit entry (the audit answer to "why did
 this get through — or stop?", and the corpus for any future distilled approval model). It

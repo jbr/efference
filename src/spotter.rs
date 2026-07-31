@@ -31,8 +31,9 @@
 //!
 //! Any failure — transport error, no `spot` call — yields `Stance::Gate` with
 //! [`Origin::Fallback`]. Uncertainty routes to the human; the spotter never
-//! auto-clears on a failure (contrast the distiller, which fails *open* to keep-all
-//! because dropping output loses data, whereas wrongly clearing a move does harm).
+//! auto-clears on a failure. The distiller fails the same direction with a different
+//! artifact: a failed gate withholds the output as a hard error on the wire
+//! (docs/redaction-fork.md), never silently keeps or silently clears.
 
 use serde::Deserialize;
 use serde_json::{Value, json};

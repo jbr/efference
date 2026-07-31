@@ -79,12 +79,13 @@ What forcing bought is re-bought harness-side:
   ("not run — nothing is being asked of `…` right now; continue with your task").
   Single-call turns make this a wasted round-trip, not corruption, and the stable
   phrase keeps the un-asked rate greppable from the logged raws.
-- **A non-compliant peek** — the wrong tool, no tool, a malformed verdict — gets a
+- **A non-compliant peek** — the wrong tool, no tool, a malformed verdict, or one
+  that leaves an offered result unanswered (coverage is part of validity) — gets a
   bounded **in-fork retry**: the non-compliant assistant turn is appended to the
   throwaway tail verbatim (thinking blocks included), each of its calls is answered
-  with an error `tool_result`, the ask is renewed, and the request goes again — a warm
-  prefix re-read on the same lineage. Only exhaustion falls back to keep-all, with the
-  breadcrumb below. Implemented in `src/distill.rs`.
+  with an error `tool_result` carrying the why, the ask is renewed, and the request
+  goes again — a warm prefix re-read on the same lineage. Exhaustion is a hard error
+  (below), never a keep-all. Implemented in `src/distill.rs`.
 
 Un-forcing also lifts the forced-choice-excludes-thinking constraint
 ([transport.md](transport.md)): the fork may think, and the thinking is discarded with
@@ -106,18 +107,20 @@ is no freeform parsing. The verdict is one of three forms:
 doesn't re-run what it just disowned — inline dead-end shedding at the source.
 
 On a transport error, or when the in-fork retries are exhausted without a usable
-verdict, the gate falls back to keep-all. Data is never lost — but this is a failure,
-not a neutral default. `WireState` is fixed once, so an uncurated result stays in the
-cached prefix for the rest of the session and every later turn pays for it. The
-fallback is therefore logged at error, and the `Triage` records a **breadcrumb** in
-`raw_keep` describing what came back: the model's unparseable `retain` input, the tool
-it called instead, or the transport error — plus which attempt gave up. Without that, a
-malformed verdict, a wrong-tool call and a 429 are indistinguishable in the log after
-the fact.
-
-Surfacing an exhausted failure to the operator as a session-visible error — rather than
-only a log line — is deferred to the turn-failure work, which needs the same mechanism
-for upstream request failures.
+verdict, the gate **withholds the output as a hard error** — there is no keep-all
+fallback. Each result's wire form becomes `WireState::TriageFailed`: an error
+`tool_result` (`is_error` forced true) saying the output was withheld and why, and
+that the call itself ran to completion — so the agent treats it exactly like a failed
+call, deciding whether to re-issue it with side effects in mind, and the operator sees
+the same error in the transcript. The full untriaged raw is never the fallback:
+`WireState` is fixed once, so an uncurated result would sit in the cached prefix for
+the rest of the session with every later turn paying for it. `raw` stays in the log
+(the TUI can flip the result to raw), and the `Triage` records the same **breadcrumb**
+in `raw_keep`: the model's unparseable `retain` input, the tool it called instead, or
+the transport error — plus which attempt gave up. Without that, a malformed verdict, a
+wrong-tool call and a 429 are indistinguishable in the log after the fact. The message
+is rendered by one shared function (`render_triage_failure`, stable
+"result withheld — triage failed" prefix) so the wire and the TUI say the same thing.
 
 ## Line numbers are the coordinate system
 
@@ -166,13 +169,15 @@ caching. But the fork's *decision* is logged as a `Triage` entry (in `src/log.rs
 | field | meaning |
 | --- | --- |
 | `for_result` | `seq` of the `ToolResult` this verdict distilled (`None` for a standalone idle triage) |
-| `origin` | `Model` (a real `retain` call) or `Fallback` (keep-all; the peek failed or a model-free stub ran) |
+| `origin` | `Model` (a real `retain` call) or `Fallback` (the peek failed — the result projects a withheld-output error — or a model-free stub ran) |
 | `raw_keep` | the model's exact `keep` string, pre-parse — the audit breadcrumb |
 | `inbox` | per-notification dispositions chosen in this peek, by arrival `seq` |
 
-`origin` carries the one signal the rendered artifact erases: a deliberate
-keep-all and a failed peek render identically, so only `Triage.origin` distinguishes
-them. `project` reads `Triage` only as audit (it emits pinned-notification blocks
+For a model-free stub distiller, `origin` carries the one signal the rendered
+artifact erases: the stub's head/tail verdict renders like a deliberate one, so only
+`Triage.origin` distinguishes them. (A failed peek is not erased — its
+withheld-output error is visible on the wire — but the breadcrumb still classifies
+*what kind* of failure it was.) `project` reads `Triage` only as audit (it emits pinned-notification blocks
 from `inbox`) and skips it otherwise. Every fork decision is reconstructable from
 the log — including ones only ever visible inside the throwaway branch — for
 observability and distiller-quality work, with none of the fork's context touching
