@@ -7,9 +7,11 @@ use super::*;
 /// is left untouched.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn review_level_over_the_socket() {
-    let dir = std::env::temp_dir();
-    let log_path = dir.join("efference-review-level-test.jsonl");
-    let socket = dir.join("efference-review-level-test.sock");
+    // Darwin limits Unix-socket pathnames to `SUN_LEN` (104 bytes). The harness
+    // supplies a deliberately long per-session `$TMPDIR`, so bind under `/tmp`.
+    let dir = std::path::Path::new("/tmp");
+    let log_path = dir.join("eff-review-level.jsonl");
+    let socket = dir.join("eff-review-level.sock");
     let _ = std::fs::remove_file(&log_path);
     let _ = std::fs::remove_file(&socket);
 

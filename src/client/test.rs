@@ -59,10 +59,13 @@ fn stub_router() -> Router {
 /// Bind the stub on a scratch UDS, returning its path. The socket file appears
 /// synchronously on `bind_uds`, so a client may dial immediately.
 fn spawn_stub(rec: Recorder) -> PathBuf {
-    let dir = std::env::temp_dir();
+    // Darwin limits Unix-socket pathnames to `SUN_LEN` (104 bytes). The harness
+    // supplies a deliberately long per-session `$TMPDIR`, so tests bind under
+    // the system's short `/tmp` instead of `temp_dir()`.
+    let dir = PathBuf::from("/tmp");
     // A per-test unique-ish name without Date/rand: use the Arc pointer.
     let nonce = Arc::as_ptr(&rec.turns) as usize;
-    let socket = dir.join(format!("efference-client-test-{nonce}.sock"));
+    let socket = dir.join(format!("eff-client-{nonce}.sock"));
     let _ = std::fs::remove_file(&socket);
     trillium_tokio::config()
         .with_shared_state(rec)
