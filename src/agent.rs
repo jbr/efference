@@ -379,6 +379,13 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 .as_ref()
                 .map(|g| g.surfaced.clone())
                 .unwrap_or_default();
+            // Gate-scoped like the inbox riders: the non-compliant-attempt breadcrumbs
+            // land on the last `Triage` of the batch — durable even when a retry
+            // recovered (docs/redaction-fork.md).
+            let mut retries = gate
+                .as_mut()
+                .map(|g| std::mem::take(&mut g.retries))
+                .unwrap_or_default();
             let last_ran = steps
                 .iter()
                 .rposition(|s| matches!(s, Step::Ran { .. }))
@@ -420,6 +427,11 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                                     Vec::new()
                                 },
                                 surfaced: if last { surfaced.clone() } else { Vec::new() },
+                                retries: if last {
+                                    std::mem::take(&mut retries)
+                                } else {
+                                    Vec::new()
+                                },
                             }),
                         )?;
                         if let Some(note) = handoff {

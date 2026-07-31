@@ -212,6 +212,14 @@ pub struct Triage {
     /// roster excludes any name already here. `#[serde(default)]`: old logs read empty.
     #[serde(default)]
     pub surfaced: Vec<String>,
+    /// One breadcrumb per **non-compliant peek attempt** this gate saw, in order,
+    /// attempt-stamped — recorded even when an in-fork retry recovered
+    /// (docs/redaction-fork.md). A runtime triage failure is a harness defect
+    /// signal, so it must survive to the log rather than only the daemon's stderr;
+    /// the compliance record is a fold over this field. Gate-scoped: rides the last
+    /// `Triage` of a batch, like `inbox`. `#[serde(default)]`: old logs read empty.
+    #[serde(default)]
+    pub retries: Vec<String>,
 }
 
 /// Where a [`Triage`] verdict came from (docs/redaction-fork.md).

@@ -93,6 +93,7 @@ pub(super) async fn run_idle_triage<D: Distiller>(
             // The idle triage rides no tool result and shows no surfacing roster — the
             // nudge is powered by proximity to work in flight (docs/redaction-fork.md).
             surfaced: Vec::new(),
+            retries: triage.retries,
         }),
     )?;
     Ok(escalate)

@@ -28,6 +28,7 @@ fn triage(seq: Seq, inbox: Vec<(Seq, Disposition)>) -> LogEntry {
             raw_keep: "all".into(),
             inbox,
             surfaced: Vec::new(),
+            retries: Vec::new(),
         }),
     )
 }

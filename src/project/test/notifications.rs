@@ -53,6 +53,7 @@ fn pinned_notification_projects_at_triage_position() {
                 raw_keep: "all".into(),
                 inbox: vec![(1, Disposition::Pin), (2, Disposition::Dismiss)],
                 surfaced: Vec::new(),
+                retries: Vec::new(),
             }),
         ),
     ];
@@ -135,6 +136,7 @@ fn surfaced_context_item_projects_at_triage_position() {
                 inbox: Vec::new(),
                 // "unknown" isn't in the listing → drops; only ferritin renders.
                 surfaced: vec!["ferritin".into(), "unknown".into()],
+                retries: Vec::new(),
             }),
         ),
     ];

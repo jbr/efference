@@ -215,8 +215,15 @@ pub(crate) fn entry_nodes(
                     Span::plain(n.body.clone()),
                 ],
             }),
-            // The verdict is internal — audit-only on the transcript (docs/redaction-fork.md).
-            Payload::Triage(_) => {}
+            // The verdict is internal — audit-only on the transcript — except the
+            // compliance signal (docs/redaction-fork.md): a peek that needed retries
+            // is a harness defect worth the operator's eyes even when a retry
+            // recovered, so each non-compliant attempt renders as an annotation.
+            Payload::Triage(t) => {
+                for why in &t.retries {
+                    nodes.push(annotation_line("⚠ triage retry · ", why));
+                }
+            }
             // A spotter permission verdict (docs/permissions.md) renders beside the call
             // it judged, not at its own log position — it is indexed by `call_id` above
             // and emitted beside that call, so nothing is drawn here.

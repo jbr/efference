@@ -442,6 +442,33 @@ fn a_triage_failed_result_reads_as_a_failed_call() {
     );
 }
 
+/// A recovered in-fork retry is not silent (docs/redaction-fork.md): the `Triage`
+/// entry's `retries` breadcrumbs render as annotations beside the result, so the
+/// operator sees the compliance signal even though the gate ultimately succeeded.
+#[test]
+fn a_recovered_retry_surfaces_as_an_annotation() {
+    use crate::log::{Payload, Triage};
+    let mut play = Screenplay::new(80, 16);
+    play.user("Run it.");
+    play.assistant(
+        "",
+        vec![tool_call("bash", "toolu_rt", json!({ "command": "ls" }))],
+    );
+    play.tool_result("toolu_rt", "file.txt", false, WireState::Raw);
+    play.commit(Payload::Triage(Triage {
+        for_result: Some(3),
+        origin: crate::log::Origin::Model,
+        raw_keep: "all".into(),
+        inbox: Vec::new(),
+        surfaced: Vec::new(),
+        retries: vec!["attempt 1 of 3: peek called bash instead of retain".into()],
+    }));
+    assert!(
+        play.find("⚠ triage retry").is_some(),
+        "the non-compliant attempt is on screen despite the recovery"
+    );
+}
+
 /// A failed exchange reads as an error via a red `✗` prompt (replacing the
 /// normal `❯`) — and explicitly NOT strikethrough (which now means deletion).
 /// The character grid can't show color; `cell` asserts it.

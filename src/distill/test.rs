@@ -404,6 +404,7 @@ fn roster_excludes_already_surfaced_names() {
                 raw_keep: "all".into(),
                 inbox: Vec::new(),
                 surfaced: vec!["ferritin".into()],
+                retries: Vec::new(),
             }),
         ),
     ];

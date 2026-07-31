@@ -136,6 +136,11 @@ pub struct GateOutcome {
     /// request reads the shared canonical prefix (sliding its cache TTL), and the loop
     /// folds them all into the cache telemetry (docs/log-and-projection.md).
     pub usage: Vec<RequestUsage>,
+    /// One attempt-stamped breadcrumb per non-compliant peek attempt — recorded even
+    /// when a retry recovered (docs/redaction-fork.md). The loop lands these on the
+    /// gate's `Triage` (`retries`), the durable compliance record; a runtime triage
+    /// failure is never accepted silently.
+    pub retries: Vec<String>,
 }
 
 impl GateOutcome {
@@ -168,6 +173,7 @@ impl GateOutcome {
             background: Vec::new(),
             surfaced: Vec::new(),
             usage,
+            retries: Vec::new(),
         }
     }
 }
@@ -183,6 +189,8 @@ pub struct InboxTriage {
     /// One entry per request the peek made (in-fork retries included), like
     /// [`GateOutcome::usage`]; empty for a model-free distiller or a transport failure.
     pub usage: Vec<RequestUsage>,
+    /// Non-compliant-attempt breadcrumbs, like [`GateOutcome::retries`].
+    pub retries: Vec<String>,
 }
 
 /// Decide the wire form of the results a completion produced, and triage the inbox +
@@ -225,6 +233,7 @@ pub trait Distiller {
             background: Vec::new(),
             origin: Origin::Fallback,
             usage: Vec::new(),
+            retries: Vec::new(),
         }
     }
 }
@@ -272,6 +281,7 @@ impl Distiller for HeadTail {
             background: Vec::new(),
             surfaced: Vec::new(),
             usage: Vec::new(),
+            retries: Vec::new(),
         }
     }
 }
@@ -304,6 +314,7 @@ async fn peek_with_retries<T>(
     tool: &str,
     parse: impl Fn(&Completion) -> Result<T, String>,
     usage: &mut Vec<RequestUsage>,
+    retries: &mut Vec<String>,
 ) -> Result<T, String> {
     for attempt in 1..=PEEK_ATTEMPTS {
         // No-op sink: the fork peek's triage tokens are internal and must never surface
@@ -320,6 +331,10 @@ async fn peek_with_retries<T>(
         match parsed {
             Ok(verdict) => return Ok(verdict),
             Err(why) => {
+                // Durable even when the next attempt recovers: a runtime triage
+                // failure is a harness defect signal (docs/redaction-fork.md), so
+                // it lands on the gate's `Triage`, not just the daemon's stderr.
+                retries.push(format!("attempt {attempt} of {PEEK_ATTEMPTS}: {why}"));
                 if attempt == PEEK_ATTEMPTS
                     || !extend_with_retry(&mut messages, &completion.assistant, &why, tool)
                 {
@@ -511,6 +526,7 @@ impl Distiller for ForkPeek {
         let messages = peek_messages(prefix, pending, inbox, background, &roster);
 
         let mut usage = Vec::new();
+        let mut retries = Vec::new();
         let parsed = peek_with_retries(
             client,
             messages,
@@ -521,6 +537,7 @@ impl Distiller for ForkPeek {
                 require_coverage(verdict, &offered)
             },
             &mut usage,
+            &mut retries,
         )
         .await;
 
@@ -538,7 +555,9 @@ impl Distiller for ForkPeek {
                      output as a hard error — {why}",
                     offered.len()
                 );
-                return GateOutcome::failed(pending.len(), usage, &why);
+                let mut outcome = GateOutcome::failed(pending.len(), usage, &why);
+                outcome.retries = retries;
+                return outcome;
             }
         };
 
@@ -601,6 +620,7 @@ impl Distiller for ForkPeek {
             background: bg,
             surfaced,
             usage,
+            retries,
         }
     }
 
@@ -634,6 +654,7 @@ impl Distiller for ForkPeek {
         });
 
         let mut usage = Vec::new();
+        let mut retries = Vec::new();
         let parsed = peek_with_retries(
             client,
             messages,
@@ -641,6 +662,7 @@ impl Distiller for ForkPeek {
             TRIAGE,
             |c| parse_dispositions(c, TRIAGE).ok_or_else(|| unusable(c, TRIAGE)),
             &mut usage,
+            &mut retries,
         )
         .await;
 
@@ -657,6 +679,7 @@ impl Distiller for ForkPeek {
                         .collect(),
                     origin: Origin::Model,
                     usage,
+                    retries,
                 }
             }
             Err(why) => {
@@ -666,6 +689,7 @@ impl Distiller for ForkPeek {
                     background: Vec::new(),
                     origin: Origin::Fallback,
                     usage,
+                    retries,
                 }
             }
         }

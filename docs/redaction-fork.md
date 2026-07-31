@@ -85,7 +85,11 @@ What forcing bought is re-bought harness-side:
   throwaway tail verbatim (thinking blocks included), each of its calls is answered
   with an error `tool_result` carrying the why, the ask is renewed, and the request
   goes again — a warm prefix re-read on the same lineage. Exhaustion is a hard error
-  (below), never a keep-all. Implemented in `src/distill.rs`.
+  (below), never a keep-all. Every non-compliant attempt — **including ones a retry
+  recovered from** — is recorded attempt-stamped on the gate's `Triage` (`retries`)
+  and rendered as a `⚠ triage retry` annotation in the TUI transcript: a runtime
+  triage failure is a harness defect signal, never silently accepted, and the
+  compliance record is a fold over that field. Implemented in `src/distill.rs`.
 
 Un-forcing also lifts the forced-choice-excludes-thinking constraint
 ([transport.md](transport.md)): the fork may think, and the thinking is discarded with
@@ -172,6 +176,7 @@ caching. But the fork's *decision* is logged as a `Triage` entry (in `src/log.rs
 | `origin` | `Model` (a real `retain` call) or `Fallback` (the peek failed — the result projects a withheld-output error — or a model-free stub ran) |
 | `raw_keep` | the model's exact `keep` string, pre-parse — the audit breadcrumb |
 | `inbox` | per-notification dispositions chosen in this peek, by arrival `seq` |
+| `retries` | one attempt-stamped breadcrumb per non-compliant peek attempt, recovered or not — the durable compliance record (gate-scoped; rides the last `Triage` of a batch, like `inbox`) |
 
 For a model-free stub distiller, `origin` carries the one signal the rendered
 artifact erases: the stub's head/tail verdict renders like a deliberate one, so only
