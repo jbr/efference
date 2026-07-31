@@ -11,7 +11,7 @@ pub(crate) struct LiveTail {
     pub assistant: String,
     pub(super) tools: Vec<(String, String)>,
     /// What the model is doing *right now*, when that isn't emitting prose
-    /// (backlog/dogfooding-friction.md). `None` between turns and while prose streams — prose is
+    /// (docs/tui.md). `None` between turns and while prose streams — prose is
     /// its own evidence of progress, so it needs no phase line.
     pub phase: Option<Phase>,
 }

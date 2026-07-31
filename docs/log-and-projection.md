@@ -110,7 +110,7 @@ entries into one user message — and a `User` entry that directly follows them
 merges into that *same* message as `[tool_result…, text]` rather than forming a
 second consecutive user-role message, so role-alternation and byte-stability
 hold when a user turn is appended right after a turn's results (the seam-drain,
-backlog/participation/README.md — the mid-trajectory injection and
+[operator participation](control-channel.md#operator-participation--the-intervention-points) — the mid-trajectory injection and
 the redirect steer both rely on this shape). It omits `is_error: false` for a
 lean wire and re-renders `Distilled` wire states from their `keep` + `raw` pair.
 A pre-pass over `Mark::Boundary` entries drives the compaction fold; no external

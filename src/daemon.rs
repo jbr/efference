@@ -66,7 +66,7 @@ pub enum StreamDelta {
     /// [`ThinkingText`](Self::ThinkingText) this is what makes a generation phase visible at all:
     /// before these existed only prose reached the stream, so a turn spent thinking or emitting a
     /// large tool input published nothing and read as a hung harness
-    /// (backlog/dogfooding-friction.md).
+    /// (docs/transport.md).
     ToolCallStart { name: String },
     /// A fragment of a tool call's JSON input, verbatim. The bytes are passed through rather than
     /// summarized as a count: they are a partial slice of a JSON document, so a client must not

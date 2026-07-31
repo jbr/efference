@@ -38,7 +38,7 @@ fn submitted_turn_echoes_pending_then_resolves_on_commit() {
     );
 }
 
-/// **A turn with no prose is still visibly working** (backlog/dogfooding-friction.md). Thinking
+/// **A turn with no prose is still visibly working** (docs/tui.md). Thinking
 /// and a tool call's streaming input used to reach the TUI not at all — the sink carried only
 /// `text_delta` — so the whole window between submitting a turn and the first prose token was
 /// blank, and blank is indistinguishable from hung. Each phase shows what it honestly can:

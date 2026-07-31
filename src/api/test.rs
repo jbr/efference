@@ -116,7 +116,7 @@ fn live(events: &[(&str, &str)]) -> Vec<Streamed> {
 }
 
 /// **Every generation phase reaches the live sink**, not just prose
-/// (backlog/dogfooding-friction.md). The sink used to carry a bare text fragment, so a turn
+/// (docs/transport.md). The sink used to carry a bare text fragment, so a turn
 /// that thought and then emitted a tool call published *nothing* until prose arrived — and a
 /// turn with no prose at all published nothing, full stop, which is indistinguishable from a
 /// hung harness. The tool call is named at `content_block_start`, before its arguments,

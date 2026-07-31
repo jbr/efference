@@ -249,7 +249,7 @@ pub(crate) fn tail_nodes(live: &LiveTail, pending_turns: &[String]) -> Vec<Docum
     }
     // A generation phase that produces no prose (thinking, or a tool call's input still
     // arriving). Without this the window between "turn submitted" and "first prose" is silent,
-    // and silence is indistinguishable from a hung harness (backlog/dogfooding-friction.md).
+    // and silence is indistinguishable from a hung harness (docs/tui.md).
     if let Some(phase) = &live.phase {
         nodes.push(DocumentNode::entry(
             EntryKind::AssistantMessage,

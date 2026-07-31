@@ -112,7 +112,7 @@ async fn verbs_round_trip_over_the_unix_connector() {
     let _ = std::fs::remove_file(&socket);
 }
 
-/// Regression test for the UTF-8 mis-decode mojibake (backlog/dogfooding-friction.md):
+/// Regression test for the UTF-8 mis-decode mojibake (docs/control-channel.md):
 /// `conn.request_body_string()` — the same call the real daemon's `/turn` handler
 /// uses — decodes the body according to the request's `Content-Type` charset,
 /// defaulting away from UTF-8 when none is given. `Client::post` must pin

@@ -20,7 +20,7 @@ Ephemeral control state — a pending approval, current status, live process tai
 
 **`Arc<Mutex<Log>>`** — the persisted, append-only log (see [log-and-projection.md](log-and-projection.md)). The loop appends under this lock via `Shared::append`, which also pings the append notifier so SSE tailers wake. The lock is never held across an `await`; code that needs to call the model on a snapshot calls `Shared::snapshot()` to clone the entries first.
 
-**Turn inbox** — an unbounded MPSC channel. `POST /turn` enqueues a string; `RemoteFrontend::read_user_turn()` awaits the next pop. This also seeds turn 1: an idle daemon parks at `read_user_turn` waiting for the first `POST /turn`, which retired argv-seeding and the "backgrounded run can't get its opening prompt" problem. A turn submitted while the loop is *mid-trajectory* doesn't wait for the whole trajectory to end: `RemoteFrontend::drain_injected_turns()` non-blockingly pulls the queued turns at the next juncture (top of the inner loop, after the last tool's results land) and the loop appends each as a canonical `Payload::User` — the seam-drain (backlog/participation/README.md). A user turn is undismissable; it never routes through the inbox/triage path.
+**Turn inbox** — an unbounded MPSC channel. `POST /turn` enqueues a string; `RemoteFrontend::read_user_turn()` awaits the next pop. This also seeds turn 1: an idle daemon parks at `read_user_turn` waiting for the first `POST /turn`, which retired argv-seeding and the "backgrounded run can't get its opening prompt" problem. A turn submitted while the loop is *mid-trajectory* doesn't wait for the whole trajectory to end: `RemoteFrontend::drain_injected_turns()` non-blockingly pulls the queued turns at the next juncture (top of the inner loop, after the last tool's results land) and the loop appends each as a canonical `Payload::User` — the seam-drain ([operator participation](#operator-participation--the-intervention-points)). A user turn is undismissable; it never routes through the inbox/triage path.
 
 **Pending-approval registry** — a `HashMap<CallId, oneshot::Sender<Approval>>`. When the loop reaches a tool call requiring approval, it calls `Shared::register_pending`, which creates a oneshot channel, stores the sender keyed by the call's `CallId` (the same id already on the wire — no new id scheme), and returns the receiver. The loop blocks on that receiver. `POST /approvals/{call_id}` looks up the sender and fulfills it.
 
@@ -28,7 +28,7 @@ Ephemeral control state — a pending approval, current status, live process tai
 
 `POST /interrupt` *also* sets an **`interrupt_latch: AtomicBool`**, and that is what makes it reach tools the race can't. `Notify::notify_waiters` wakes only currently-registered waiters and stores no permit; only the bash backend awaits the abort future (`src/tools.rs` — the MCP providers are synchronous and resolve whole), so during any other call the wakeup has nowhere to land and is dropped. The latch survives it. See **[the interrupt](#the-interrupt)** below for what the loop does with it.
 
-**Pace state** — `Mutex<Pace>` (`{ speed: Duration, held: bool }`) plus a `pace_interrupt` `Notify` (backlog/participation/README.md). The operator's between-turns wall-clock dial: `effective_sleep = held ? ∞ : speed`, `held` an overlay that retains `speed` underneath (resume returns to it, never to zero). `Shared::pace_at_seam` applies an interruptible sleep at the between-step juncture; `set_pace` (via `POST /pace`) moves the dials, and a **release** or a **submit** fires `pace_interrupt` so the wait ends immediately. It is **operator-view only — never a log entry, never projected**, so a held or slowed loop is byte-identical on the wire to a fast one (that, plus timestamps-never-projected, is the whole invisibility guarantee: loud to the operator's TUI, silent to the agent).
+**Pace state** — `Mutex<Pace>` (`{ speed: Duration, held: bool }`) plus a `pace_interrupt` `Notify` ([operator participation](#operator-participation--the-intervention-points)). The operator's between-turns wall-clock dial: `effective_sleep = held ? ∞ : speed`, `held` an overlay that retains `speed` underneath (resume returns to it, never to zero). `Shared::pace_at_seam` applies an interruptible sleep at the between-step juncture; `set_pace` (via `POST /pace`) moves the dials, and a **release** or a **submit** fires `pace_interrupt` so the wait ends immediately. It is **operator-view only — never a log entry, never projected**, so a held or slowed loop is byte-identical on the wire to a fast one (that, plus timestamps-never-projected, is the whole invisibility guarantee: loud to the operator's TUI, silent to the agent).
 
 **Append `Notify`** — pinged by every `Shared::append` call; the `GET /events` tail arms a `Notified` before each catch-up read so an append landing between the read and the await cannot be lost (the lost-wakeup-safe pattern).
 
@@ -42,7 +42,7 @@ Ephemeral control state — a pending approval, current status, live process tai
 - `POST /approvals/{call_id} {decision: approve|abort|redirect|config_edit, message?, change?, note?}` — resolves a pending gate by the tool call's id (`config_edit` carries the `change`, see Approval below). With `?wait`, holds until the daemon settles again (the turn's *next* gate or completion) and returns that `/state` — so a multi-gate turn is driven as a clean approve→read loop.
 - `POST /interrupt` — fires the interrupt notifier (kill).
 - `POST /background {note?}` → 202. Fires the detach notifier — the foreground→background handoff (see [supervisor.md](supervisor.md)); the optional note is delivered as a user message alongside the handoff result. No-op when nothing is mid-tool.
-- `POST /pace {speed_ms?, held?}` → 200, returns the resulting `{speed_ms, held}`. Sets the operator's pace dial and/or hold overlay (backlog/participation/README.md). Both optional: slow, pause, or resume in one call. Reflected in `GET /state`'s `pace`; never touches the log.
+- `POST /pace {speed_ms?, held?}` → 200, returns the resulting `{speed_ms, held}`. Sets the operator's pace dial and/or hold overlay ([operator participation](#operator-participation--the-intervention-points)). Both optional: slow, pause, or resume in one call. Reflected in `GET /state`'s `pace`; never touches the log.
 - `POST /review-level {level}` → 200, returns the resulting `{review_level}`. Sets the review-level dial — `autonomous` / `spotter_human` / `human_only` — deciding who reviews a gated call (see [permissions](permissions.md)). Runtime-mutable; reflected in `GET /state`'s `review_level`.
 - `POST /notify {source, body, slot?, replaces?}` → 202, returns `{id}`. Enqueues an ambient notification into the ephemeral inbox (see [the inbox](inbox.md)). A `slot` binds the notification to a logical channel; a later notify on the same slot supersedes the old one (archive-and-replace, not edit — records are immutable). `replaces` supersedes a specific pending id by its queue-local id.
 - `POST /notifications/:id/dismiss` — removes a pending notification from the ephemeral inbox before it reaches a triage gate.
@@ -58,6 +58,8 @@ Ephemeral control state — a pending approval, current status, live process tai
 ## Transport and binding
 
 The daemon binds with trillium's `bind_uds(path)`. Each session lives in its own directory — `.efference/<id>/` (the id is `serve --name <id>`, or a generated timestamp) — holding standard-named files: `control.sock`, `log.jsonl`, and (the snapshot) `config.toml` (see [permissions](permissions.md)). A client verb finds the socket by `--name`, or by scanning the session dirs for the single **live** (connectable) one — liveness, not mere existence, so a stale dir from a dead daemon doesn't shadow the running one; `--socket <path>` is an explicit override. Clients dial via `UnixClientConfig`, which routes requests to a fixed path — the URL host is a placeholder; only path and headers matter.
+
+**Request bodies pin `charset=utf-8` explicitly.** `request_body_string()` — what the `/turn` handler uses — decodes according to the request's `Content-Type` charset and defaults *away* from UTF-8 when none is given, so an unlabeled body silently mojibakes any non-ASCII text (em-dashes, smart quotes, accents) on its way into the log. Every client `POST` sets the charset; this is a correctness requirement on the client side, not a nicety.
 
 The cross-host TCP+TLS case (see [transport](transport.md)) is the same code path: `bind_tcp` or `bind_env` instead of `bind_uds`, a configuration switch rather than a new abstraction.
 
@@ -102,7 +104,26 @@ pace_at_seam (interruptible sleep) → drain injected user turns → project →
 → repeat
 ```
 
-The between-step juncture — top of the inner loop, after a step's results land, before the next model call — is where three participation affordances act (backlog/participation/): the pace sleep (`pace_at_seam`), the mid-trajectory turn drain (`drain_injected_turns`), and (future) the soft-Esc hold. Both are skipped on the first step so a fresh user turn / escalated event gets a prompt first response; pacing is a *between-turns* delay.
+The between-step juncture — top of the inner loop, after a step's results land, before the next model call — is where the participation affordances act (below): the pace sleep (`pace_at_seam`), the mid-trajectory turn drain (`drain_injected_turns`), and the soft-Esc hold. Both are skipped on the first step so a fresh user turn / escalated event gets a prompt first response; pacing is a *between-turns* delay.
+
+## Operator participation — the intervention points
+
+One intent sits behind the pace dial, the seam-drain, graduated Esc, and the review-level gears: **"wait and/or slow down — I have input and want to participate."** The underlying friction is that the **operator runs in wall-clock time, the agent runs in turns.** Turns fly past in wall time, so operator input arrives at an arbitrary moment and has to be *quantized* onto the loop.
+
+Four points where an operator intent can take effect:
+
+1. **Mid-tool** — a bash process is running. Only a *preemptive* intervention reaches here: kill the process. Nothing else can.
+2. **Juncture** — a tool's results just landed, before the next model call (top of the inner-loop iteration). The natural place to deliver input and to hold.
+3. **Turn boundary** — the assistant finished its calls; about to loop or go idle.
+4. **Idle** — the outer `select!`, between trajectories.
+
+These are one continuum. Pace moves *continuously* along the between-turns part of it (points 2/3); Esc is the *discrete* escalation that also reaches the one point pace can't (point 1). That is what "Esc is graduated by intervention point, not a menu" means — the rungs answer *"is my input for the **next** step, or about **this** one?"*
+
+Three commitments hold across all of them:
+
+- **User messages are canonical, never triageable.** A user turn lands as `Payload::User`, undismissable — *not* through the inbox/triage path. Triageability is the inbox's defining feature (pin/dismiss/leave); routing a user turn through it would let the model *dismiss the operator*. Wrong by construction.
+- **Pace/hold is operator-view state, never logged — so it is structurally invisible to the agent.** It lives in daemon/frontend state and never becomes a log entry, so it cannot reach `project(log)`; and even the timing that *is* logged (each entry's `at`) is never projected. Two independent guarantees, hence no "Paused/Resumed" trace: there is nowhere in the projection for one to appear.
+- **Resume = drop the `held` overlay; return to the retained speed.** Hold is an overlay on the dial, not a position of it. Two triggers both resume — silent release, and submit (saying something always resumes); there is no "submit but stay paused." Dials are freely settable *during* a hold and outlive it, so a mode or speed change made while paused recolors what resume does.
 
 A redirect does not break the loop. The model receives the rejection and the steering text and responds — the loop continues from `project` with the new state. The approval gate sits in exactly the right spot for the eventual concurrent TUI, which will have it in this same position.
 

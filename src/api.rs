@@ -147,7 +147,7 @@ pub struct Completion {
 }
 
 /// What a single SSE event contributed to the *live* view, if anything
-/// (backlog/dogfooding-friction.md — the invisible-generation-phase defect). The assembler folds
+/// (docs/transport.md — the invisible-generation-phase defect). The assembler folds
 /// every event into the [`Completion`] regardless; this is the parallel, transport-only channel
 /// that lets a client show what the model is doing **while** it does it.
 ///

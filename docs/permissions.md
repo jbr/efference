@@ -19,10 +19,28 @@ reaches for the wrong tool, directory, or egress — *not* a subverted, deceivin
 Obfuscated bash defeats any in-harness check, so real adversary-resistance is
 virtualization's job (run the daemon in a container). This boundary is
 *why* the fast-path can be incomplete-but-sound. Mistakes are transparent; only malice
-obfuscates, and obfuscation is out of scope. The axis the policy decides on is therefore
-**reversibility/containment** ("can the harness undo this; is it confined to scope?"), a
-question often decidable from observable facts, not "is this command dangerous?", which is
-undecidable from a bash string.
+obfuscates, and obfuscation is out of scope.
+
+### The axis: scope first, reversibility as the silent default
+
+"Is this command dangerous?" is undecidable from a bash string and is the wrong question.
+The question the policy decides on is **"is this move inside the mission?"** — the **scope**
+is the authority, *including over how much permanence is sanctioned* (a teardown scope
+clears `terraform destroy`). **Reversibility/containment** ("can the harness undo this; is
+it confined?") is the **default heuristic when the scope is silent**, not the law. The
+fast-path's curation rule (below) applies the reversibility default because a
+`[commands]` allowlist is scope-silent by construction; the spotter, which *is* handed the
+scope, judges against it directly.
+
+### Scope vs. brief — different altitudes, kept distinct
+
+**Scope** is the config's broad, set-and-forget **perimeter**: human-authored,
+cross-session, rendered into the cached preamble, and the authority the spotter judges
+against. **Brief** is the **specific session assignment** — the first user message —
+ephemeral, living in the conversation, and **never in the config**. The spotter
+deliberately sees *scope, not brief*: its value is judging against a fixed external
+authority, not the session's own narration of what it is doing. The two words are not
+interchangeable.
 
 ## The config (`src/config.rs`)
 
@@ -197,6 +215,13 @@ too. Path matching is lexical (`..`/`.` collapsed without touching the filesyste
 for not-yet-existing write targets), which means a symlink inside a grant pointing outside is
 treated as inside — acceptable under the error-not-deception model.
 
+**No privileged client, enforced by reachability.** A session must never hand-roll
+control-channel HTTP from bash; every legitimate control interaction is a tool. The deny
+layers above are what enforce that, and the rule is written to cover a session's *own*
+socket, a *peer's*, and a *parent's* uniformly — so the property survives into multiagent
+topologies without a second mechanism (see
+[`../backlog/multiagent/`](../backlog/multiagent/README.md)).
+
 `serve` injects one more grant alongside the self-surface stack: the per-session **scratch
 dir** ([tools.md](tools.md)) is always granted rw. It lives outside `.` and outside the
 session dir, so it interacts with neither the operator's grants nor the deny; structured-tool
@@ -235,6 +260,11 @@ one-shot, **fresh-context** model call (Haiku band, on its own `Client`, model-i
 of the acting session) that re-decides the residual. Independence is the point: the
 acting session can't check its own folly because it shares its own trajectory; the spotter
 can, precisely because its context is built from scratch — *not* `project(log)`.
+
+**Spotter independence is contextual, not process-level.** It runs inside the acting
+session's own daemon; the independence comes from its *fresh context*, not from isolation.
+Only an in-process compromise of the daemon itself defeats it — which is the same
+container-shaped tail the threat model already leaves to virtualization.
 
 **The frame is collaborative on purpose.** The spotter is the climber's *spotter*, not a
 tribunal: it exists to let the session move fast and commit hard, intervening only on the
@@ -354,7 +384,7 @@ invariant can't reach — the file is invalid *and* the restore failed — is re
 
 **Who reviews a call the fast-path didn't clear** is a runtime dial — a [`ReviewLevel`] ordinal on
 `Shared` (`policy.rs`), set over the control channel (`POST /review-level`, `efference review-level`)
-and reported on `GET /state`, orthogonal to pace (backlog/participation/README.md). Three
+and reported on `GET /state`, orthogonal to pace ([operator participation](control-channel.md#operator-participation--the-intervention-points)). Three
 positions of increasing human involvement:
 
 - **`Autonomous`** — no synchronous human. The spotter still runs and can `Clear`; what changes is
