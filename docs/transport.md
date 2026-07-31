@@ -111,8 +111,16 @@ the failure is written to the daemon's stderr and the loop returns to idle,
 where the operator can submit another turn or change session configuration.
 Keepalive failures are likewise transport-only and leave the log unchanged.
 
+Every non-2xx response also updates one shared diagnostic: its numeric status and
+how many consecutive responses carried that status. `RetryHandler` is outermost
+and the observer is inside it, so reverse response handling records each failed
+attempt before the retry handler queues its follow-up. The daemon exposes this
+optional value as `upstream_failure` on `GET /state`; the TUI polls it and shows
+`upstream 429 ×2` in its status bar. It remains after a later success: there is
+no transport lifecycle boundary chosen as an all-clear event.
 
 ---
+
 
 ## Providers
 

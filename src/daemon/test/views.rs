@@ -2,6 +2,32 @@
 
 use super::*;
 
+/// `GET /state` exposes the optional last upstream failure without putting a
+/// transport diagnostic into the log (docs/transport.md).
+#[test]
+fn state_reports_upstream_failure() {
+    let failure = crate::api::upstream_failure_state();
+    let (shared, _turns_rx) = Shared::with_role_scratch_and_upstream_failure(
+        Log::in_memory(),
+        LoadedConfig::default(),
+        None,
+        Arc::clone(&failure),
+    );
+
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert!(v["upstream_failure"].is_null());
+
+    *failure.lock().unwrap() = Some(crate::api::UpstreamFailure {
+        status: 429,
+        count: 2,
+    });
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(
+        v["upstream_failure"],
+        serde_json::json!({ "status": 429, "count": 2 })
+    );
+}
+
 /// `GET /state` reports cache telemetry: the latest `usage`, running totals,
 /// and a seconds-since stamp. Drives the cache gate signature through it (docs/README.md) —
 /// a cold first request (all creation) then a hot one (reads climb, creation

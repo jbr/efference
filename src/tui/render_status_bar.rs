@@ -29,10 +29,19 @@ impl<'a> InteractiveState<'a> {
         } else {
             self.ui.debug_message.to_string()
         };
-        let text = match super::state::pace_indicator(self.pace) {
-            Some(ind) => format!("{ind}  {base}"),
-            None => base,
+        let indicators = [
+            super::state::pace_indicator(self.pace),
+            super::state::upstream_failure_indicator(self.upstream_failure),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        let text = if indicators.is_empty() {
+            base
+        } else {
+            format!("{}  {base}", indicators.join("  "))
         };
+
         for (col, ch) in (BASELINE_LEFT_MARGIN..).zip(text.chars()) {
             if col >= area.width {
                 break;

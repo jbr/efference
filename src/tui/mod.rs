@@ -97,6 +97,10 @@ pub(crate) enum TuiEvent {
     /// The usage statistics changed (polled from `GET /state` alongside the gate
     /// and processes). Reflects cumulative token counts and cache telemetry.
     Usage(UsageStats),
+    /// The last non-success upstream response changed (polled from `GET /state`).
+    /// Ephemeral transport diagnostic, rendered in the status bar.
+    UpstreamFailure(Option<UpstreamFailureView>),
+
     /// The effective policy + its pending proposals changed (polled from `GET /state`'s
     /// `role` + `proposals`). Drives the sidebar's POLICY section (docs/permissions.md).
     Policy(PolicyView),
@@ -157,6 +161,13 @@ pub(crate) struct UsageStats {
     pub cache_read_input_tokens: u64,
     pub cache_creation_input_tokens: u64,
     pub seconds_since_last_request: Option<u64>,
+}
+
+/// The last non-success upstream response, as surfaced by `GET /state`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct UpstreamFailureView {
+    pub status: u16,
+    pub count: u32,
 }
 
 /// One line in the sidebar's POLICY section: a committed grant, or a *proposed* one

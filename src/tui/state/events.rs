@@ -125,6 +125,13 @@ impl<'a> InteractiveState<'a> {
                 self.usage = Some(usage);
                 return false;
             }
+            TuiEvent::UpstreamFailure(failure) => {
+                // Ephemeral transport diagnostic, not transcript content — update and
+                // repaint the status bar without reprojection.
+                self.upstream_failure = failure;
+                self.dirty = true;
+            }
+
             TuiEvent::Policy(policy) => {
                 // Ephemeral chrome (the sidebar POLICY section), not transcript content —
                 // update and repaint, no reproject.

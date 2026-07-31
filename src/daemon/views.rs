@@ -58,6 +58,7 @@ impl Shared {
             // TUI process panel, docs/tui.md). Ephemeral, like the rest of `/state`.
             "processes": self.bg_snapshot(),
             "usage": usage,
+            "upstream_failure": *self.upstream_failure.lock().unwrap(),
         })
         .to_string()
     }

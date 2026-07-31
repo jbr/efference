@@ -37,7 +37,8 @@ use trillium_router::{Router, RouterConnExt};
 use trillium_sse::{Eventable, SseConnExt};
 
 use crate::agent;
-use crate::api::{Client, Error, ToolChoice, Usage};
+use crate::api::{Client, Error, ToolChoice, UpstreamFailureState, Usage, upstream_failure_state};
+
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
 use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend, Interrupt};
@@ -151,6 +152,11 @@ pub struct Shared {
     /// stamp, surfaced by `GET /state` so clients can see cache hit/miss and
     /// predict TTL eviction (docs/log-and-projection.md). Transport-only: never touches the log.
     metrics: Mutex<Metrics>,
+    /// The last non-success upstream response, shared with the HTTP client and
+    /// surfaced by `GET /state`. Transport-only: never touches the log or projection
+    /// (docs/transport.md).
+    upstream_failure: UpstreamFailureState,
+
     /// The ephemeral inbox of pending ambient notifications (docs/inbox.md): out-of-band
     /// events awaiting their first triage gate. Control state, *not* a log payload —
     /// a notification only becomes a durable `Ambient` entry when a fork peek first
@@ -250,7 +256,20 @@ impl Shared {
         role: LoadedConfig,
         scratch: Option<PathBuf>,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
+        Self::with_role_scratch_and_upstream_failure(log, role, scratch, upstream_failure_state())
+    }
+
+    /// The daemon constructor with the upstream client's shared transport
+    /// diagnostic (docs/transport.md). Tests normally use the public convenience
+    /// constructors above, which allocate an empty cell.
+    pub(crate) fn with_role_scratch_and_upstream_failure(
+        log: Log,
+        role: LoadedConfig,
+        scratch: Option<PathBuf>,
+        upstream_failure: UpstreamFailureState,
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
         let (turns_tx, turns_rx) = mpsc::unbounded_channel();
+
         // Bounded ring: a consumer that falls this far behind drops the oldest
         // deltas (a `Lagged` on `recv`) rather than stalling the loop — the log is
         // the durable record, so a dropped delta is only a momentary gap in the
@@ -295,7 +314,9 @@ impl Shared {
             notified: Notify::new(),
             stream_tx,
             metrics: Mutex::new(Metrics::default()),
+            upstream_failure,
             inbox: Mutex::new(Inbox::default()),
+
             proposals: Mutex::new(Vec::new()),
             supervisor: Mutex::new(Supervisor::new()),
             role,

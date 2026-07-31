@@ -172,6 +172,19 @@ pub(super) fn parse_pace(body: &str) -> Option<PaceView> {
     })
 }
 
+/// Parse the optional last non-success upstream response from `GET /state`.
+pub(super) fn parse_upstream_failure(body: &str) -> Option<UpstreamFailureView> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let failure = value.get("upstream_failure")?;
+    if failure.is_null() {
+        return None;
+    }
+    Some(UpstreamFailureView {
+        status: u16::try_from(failure.get("status")?.as_u64()?).ok()?,
+        count: u32::try_from(failure.get("count")?.as_u64()?).ok()?,
+    })
+}
+
 pub(super) fn parse_usage(body: &str) -> Option<UsageStats> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
     let usage = value.get("usage")?;

@@ -20,7 +20,10 @@ use crate::tui::composer::Composer;
 use crate::tui::document::{Document, DocumentNode, NodePath, TuiAction};
 use crate::tui::projection::{self, LiveTail, Phase};
 use crate::tui::render_context::{RenderContext, ThemeError};
-use crate::tui::{BgProc, PaceCmd, PaceView, PendingGate, TuiEvent, UsageStats};
+use crate::tui::{
+    BgProc, PaceCmd, PaceView, PendingGate, TuiEvent, UpstreamFailureView, UsageStats,
+};
+
 use crossbeam_channel::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -86,6 +89,13 @@ pub(super) fn pace_indicator(pace: Option<PaceView>) -> Option<String> {
         (true, ms) => Some(format!("⏸ HELD · {}", pace_label(ms, false))),
         (false, ms) => Some(format!("⏱ {}", pace_label(ms, false))),
     }
+}
+
+/// The status-bar upstream diagnostic. It records the last non-success response;
+/// a later successful request intentionally does not remove it (docs/transport.md).
+pub(super) fn upstream_failure_indicator(failure: Option<UpstreamFailureView>) -> Option<String> {
+    let failure = failure?;
+    Some(format!("upstream {} ×{}", failure.status, failure.count))
 }
 
 /// UI mode — the modal structure of the interface. ferritin's `DevLog` and
@@ -428,6 +438,10 @@ pub(super) struct InteractiveState<'a> {
     /// The cumulative usage statistics (polled from `GET /state`). Rendered in the
     /// status bar. Ephemeral chrome — reflects API telemetry from the daemon.
     pub usage: Option<UsageStats>,
+    /// The last non-success upstream response, polled from `GET /state`. It remains
+    /// visible after recovery as a transport diagnostic; never transcript content.
+    pub upstream_failure: Option<UpstreamFailureView>,
+
     /// The effective policy + pending proposals (polled from `GET /state`). Drives the
     /// sidebar's POLICY section (docs/permissions.md). Ephemeral chrome.
     pub policy: Option<super::PolicyView>,

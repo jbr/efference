@@ -89,7 +89,9 @@ impl<'a> InteractiveState<'a> {
             pace: None,
             processes: Vec::new(),
             usage: None,
+            upstream_failure: None,
             policy: None,
+
             dirty: false,
             reproject_pending: false,
             render_context,

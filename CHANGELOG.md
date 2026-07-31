@@ -10,7 +10,11 @@ behind a change, see [`journal/`](journal/).
 ### Fixed
 - Transient upstream 429/5xx responses retry with a bounded backoff, and an exhausted completion now returns the session to idle instead of terminating the daemon.
 
+### Added
+- The TUI status bar shows the last non-2xx upstream response and consecutive-attempt count while retries are in flight.
+
 ### Changed
+
 - TUI transcript is a flat sequence of typed entries (message / thinking / call / result /
   annotation) rendered **whole** — the 8-line collapse budget, the expand toggle, and the
   turn container are gone; a call and its result are separate, independently focusable units.

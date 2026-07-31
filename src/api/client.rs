@@ -2,9 +2,11 @@
 
 use super::*;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use trillium::Status;
+use trillium_client::ClientHandler;
 use trillium_client_retry::RetryHandler;
 
 /// Retry policy for requests that did not receive a successful response
@@ -13,6 +15,37 @@ use trillium_client_retry::RetryHandler;
 /// operator's perspective; exhaustion still surfaces the final response.
 const RETRY_MAX_ATTEMPTS: u32 = 4;
 const RETRY_MAX_ELAPSED: Duration = Duration::from_secs(30);
+
+/// Record one non-success upstream status. Matching statuses increment the
+/// diagnostic's count; a different one starts a new run (docs/transport.md).
+pub(super) fn record_upstream_failure(failure: &UpstreamFailureState, status: u16) {
+    let mut failure = failure.lock().unwrap();
+    match failure.as_mut() {
+        Some(previous) if previous.status == status => {
+            previous.count = previous.count.saturating_add(1);
+        }
+        _ => {
+            *failure = Some(UpstreamFailure { status, count: 1 });
+        }
+    }
+}
+
+/// Records non-success upstream responses before the outer retry handler queues
+/// another attempt. The cell retains the most recent status and counts repeated
+/// occurrences; it deliberately does not clear on success because recovery has
+/// no single transport lifecycle boundary (docs/transport.md).
+struct UpstreamStatusHandler {
+    failure: UpstreamFailureState,
+}
+
+impl ClientHandler for UpstreamStatusHandler {
+    async fn after_response(&self, conn: &mut Conn) -> trillium_client::Result<()> {
+        if let Some(status) = conn.status().filter(|status| !status.is_success()) {
+            record_upstream_failure(&self.failure, u16::from(status));
+        }
+        Ok(())
+    }
+}
 
 /// A thin Anthropic Messages client
 /// auth), the model, and the stable system prompt. The system is byte-stable across
@@ -24,35 +57,49 @@ pub struct Client {
     endpoint: Endpoint,
     model: String,
     system: String,
+    upstream_failure: UpstreamFailureState,
 }
 
 impl Client {
     pub fn new(endpoint: Endpoint, model: impl Into<String>, system: impl Into<String>) -> Self {
+        let upstream_failure = upstream_failure_state();
+        let retry = RetryHandler::default()
+            // Messages POSTs are replay-safe: an unsuccessful open produced no
+            // assistant entry or provider-side completion.
+            .with_all_methods()
+            // `with_statuses` replaces the default (429, 503), so enumerate the
+            // whole transient set. Other 4xx responses remain immediate errors.
+            .with_statuses([
+                Status::TooManyRequests,
+                Status::InternalServerError,
+                Status::BadGateway,
+                Status::ServiceUnavailable,
+                Status::GatewayTimeout,
+            ])
+            .with_max_attempts(RETRY_MAX_ATTEMPTS)
+            .with_max_elapsed(RETRY_MAX_ELAPSED)
+            .with_max_retry_after(RETRY_MAX_ELAPSED);
         Self {
             // TLS over the tokio TCP connector; ALPN negotiates HTTP/2 (no h3
             // advertised by Anthropic/Cloudflare as of 2026-06). See main.rs.
-            http: HttpClient::new(RustlsConfig::<ClientConfig>::default()).with_handler(
-                RetryHandler::default()
-                    // Messages POSTs are replay-safe: an unsuccessful open produced no
-                    // assistant entry or provider-side completion.
-                    .with_all_methods()
-                    // `with_statuses` replaces the default (429, 503), so enumerate the
-                    // whole transient set. Other 4xx responses remain immediate errors.
-                    .with_statuses([
-                        Status::TooManyRequests,
-                        Status::InternalServerError,
-                        Status::BadGateway,
-                        Status::ServiceUnavailable,
-                        Status::GatewayTimeout,
-                    ])
-                    .with_max_attempts(RETRY_MAX_ATTEMPTS)
-                    .with_max_elapsed(RETRY_MAX_ELAPSED)
-                    .with_max_retry_after(RETRY_MAX_ELAPSED),
-            ),
+            // Retry remains outermost: reverse response handling records a failed
+            // attempt before retry schedules the next one (docs/transport.md).
+            http: HttpClient::new(RustlsConfig::<ClientConfig>::default()).with_handler((
+                retry,
+                UpstreamStatusHandler {
+                    failure: Arc::clone(&upstream_failure),
+                },
+            )),
             endpoint,
             model: model.into(),
             system: system.into(),
+            upstream_failure,
         }
+    }
+
+    /// Clone the transport diagnostic cell the daemon exposes through `GET /state`.
+    pub fn upstream_failure(&self) -> UpstreamFailureState {
+        Arc::clone(&self.upstream_failure)
     }
 
     /// One streaming round-trip: serialize `messages`, POST with `stream: true`,

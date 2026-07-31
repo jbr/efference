@@ -1,3 +1,4 @@
+use super::client::record_upstream_failure;
 use super::thinking::is_recognized_adaptive_claude;
 use super::*;
 
@@ -175,6 +176,32 @@ fn every_phase_reaches_the_live_sink_not_just_prose() {
     );
     // A signature delta carries no live signal — it's replay metadata, not progress.
     assert!(!seen.iter().any(|s| matches!(s, Streamed::Text(_))));
+}
+
+/// Consecutive equal statuses increment the diagnostic counter; a different
+/// status starts a new run (docs/transport.md).
+#[test]
+fn upstream_failure_counts_consecutive_statuses() {
+    let failure = upstream_failure_state();
+
+    record_upstream_failure(&failure, 429);
+    record_upstream_failure(&failure, 429);
+
+    assert_eq!(
+        *failure.lock().unwrap(),
+        Some(UpstreamFailure {
+            status: 429,
+            count: 2,
+        })
+    );
+    record_upstream_failure(&failure, 503);
+    assert_eq!(
+        *failure.lock().unwrap(),
+        Some(UpstreamFailure {
+            status: 503,
+            count: 1,
+        })
+    );
 }
 
 /// Prose still streams as before, and is typed as prose — the regression guard on the

@@ -28,7 +28,9 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
         let mut last: Option<String> = None;
         let mut last_procs = String::new();
         let mut last_usage = String::new();
+        let mut last_upstream_failure: Option<UpstreamFailureView> = None;
         let mut last_policy = String::new();
+
         let mut last_pace: Option<PaceView> = None;
         let mut last_running: Option<bool> = None;
         loop {
@@ -63,6 +65,18 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
                     if gate_tx.send(TuiEvent::Usage(usage)).is_err() {
                         break;
                     }
+                }
+            }
+            // The last upstream failure is a transport diagnostic, not transcript content.
+            // Emit both its first appearance and changes; it remains visible after recovery.
+            let upstream_failure = parse_upstream_failure(&body);
+            if upstream_failure != last_upstream_failure {
+                last_upstream_failure = upstream_failure;
+                if gate_tx
+                    .send(TuiEvent::UpstreamFailure(upstream_failure))
+                    .is_err()
+                {
+                    break;
                 }
             }
             // The effective policy + proposals from the same poll. Emit on change

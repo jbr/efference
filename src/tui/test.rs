@@ -1,4 +1,5 @@
-use crate::tui::parse::parse_pending_gate;
+use crate::tui::parse::{parse_pending_gate, parse_upstream_failure};
+
 use crate::tui::run::{DEFAULT_THEME, resolve_theme};
 
 #[test]
@@ -36,4 +37,17 @@ fn parses_a_pending_gate() {
 fn null_pending_approval_is_no_gate() {
     let body = r#"{"last_seq":7,"pending_approval":null,"usage":{}}"#;
     assert!(parse_pending_gate(body).is_none());
+}
+
+#[test]
+fn parses_upstream_failure() {
+    let body = r#"{"upstream_failure":{"status":429,"count":2}}"#;
+    let failure = parse_upstream_failure(body).expect("upstream failure");
+    assert_eq!(failure.status, 429);
+    assert_eq!(failure.count, 2);
+}
+
+#[test]
+fn null_upstream_failure_is_absent() {
+    assert!(parse_upstream_failure(r#"{"upstream_failure":null}"#).is_none());
 }

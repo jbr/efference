@@ -41,6 +41,24 @@ const MAX_TOKENS: u32 = 4096;
 /// the raw body in the message so failures are legible.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
+/// The last non-success status received from the upstream API, plus consecutive
+/// occurrences of that status. Ephemeral transport diagnostics: never appended
+/// to the log or projected (docs/transport.md).
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+pub struct UpstreamFailure {
+    pub status: u16,
+    pub count: u32,
+}
+
+/// Shared state written by the HTTP client and read through the daemon's
+/// `GET /state` view (docs/transport.md).
+pub type UpstreamFailureState = std::sync::Arc<std::sync::Mutex<Option<UpstreamFailure>>>;
+
+/// Construct an empty upstream-failure diagnostic cell.
+pub fn upstream_failure_state() -> UpstreamFailureState {
+    std::sync::Arc::new(std::sync::Mutex::new(None))
+}
+
 #[derive(Serialize)]
 struct Request<'a> {
     model: &'a str,

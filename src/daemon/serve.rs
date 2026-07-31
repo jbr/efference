@@ -17,11 +17,13 @@ pub async fn serve<D: Distiller, S: Spotter>(
     role: LoadedConfig,
     autonomous: bool,
 ) -> Result<(), Error> {
-    let (shared, turns) = Shared::with_role_and_scratch(
+    let (shared, turns) = Shared::with_role_scratch_and_upstream_failure(
         log,
         role,
         toolbox.scratch_dir().map(std::path::Path::to_path_buf),
+        client.upstream_failure(),
     );
+
     // Set before the loop spawns: the gate reads it on the loop's thread (backlog/permissions/
     // session-dir-and-config-as-reviewed-file.md — the autonomous flip).
     shared.set_autonomous(autonomous);

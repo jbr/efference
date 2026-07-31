@@ -141,8 +141,10 @@ A submitted turn is not lost while a trajectory runs. `submit_composer` pushes t
 
 The operator's pace ([operator participation](control-channel.md#operator-participation--the-intervention-points)) is polled from `GET /state`'s `pace` into a `PaceView` and surfaced **loud** in the status bar: a `⏸ HELD` / `⏱ 10s` indicator ahead of the status text whenever the pace is non-default (the default fast-and-unheld state adds no chrome). It is status-bar chrome, never transcript content — pacing never reaches the log or the wire. The transcript keys `+`/`-` step the speed dial along a coarse ladder and `p` toggles the hold, each optimistically updating the local `PaceView` on the keypress (the poll reconciles) and issuing `POST /pace` over a dedicated pace channel. Because a slow pace *is* the window during which the operator has room to read and type, pacing and the mid-trajectory injection compose: the sleep is exactly when a message can be interjected.
 
+The same poll carries an optional upstream-failure diagnostic. A non-2xx response renders as `upstream 429 ×2` ahead of the status text; the count covers consecutive matching statuses. It remains after a success as the last observed transport failure, and is never transcript content.
 
 ## Graduated Esc
+
 
 `Esc` is a **state machine, not a press-count** ([operator participation](control-channel.md#operator-participation--the-intervention-points)): each press's effect is a pure function of the current state — so there is no counter, no timing debounce, and nothing to reset. Precedence, gentlest first (`handle_escape` in `tui/state.rs`):
 
