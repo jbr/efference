@@ -130,41 +130,96 @@ no transport lifecycle boundary chosen as an all-clear event.
 
 The request **body** is always the Anthropic Messages wire — `project(log)`
 output — so the entire log, projection, assembler, and cache-breakpoint
-model are provider-independent. What varies between providers is only **where**
-the POST goes and **how** it authenticates. That is the whole of `api::Endpoint`
-(`url` + `auth_header` + `auth_value`), resolved once at boot from the
-environment and shared by the agent `Client` and the fork's spotter client so
-both hit the same endpoint over the same cached prefix.
+model are provider-independent. What varies between providers is **where** the
+POST goes, **how** it authenticates, and **which metadata endpoint** answers
+questions about the selected model. All three derive from one declared
+identity: `api::Provider`, a closed enum (`anthropic`, `openrouter`) set by
+`EFFERENCE_PROVIDER` and grown in code as providers are added. Identity is an
+input, never inferred from URL shape (sniffing fails for proxies and custom
+URLs). `api::Endpoint` carries the derived `url` + `auth_header` + `auth_value`
+alongside the provider, resolved once at boot and shared by the agent `Client`
+and the fork's spotter client so both hit the same endpoint over the same
+cached prefix.
 
-Env knobs, all optional so a pre-existing `ANTHROPIC_API_KEY`-only setup is
-unchanged:
+Env knobs:
 
-- `EFFERENCE_ENDPOINT` — the full messages URL (default: Anthropic's).
-- `EFFERENCE_API_KEY` — the **raw secret**, and nothing else.
-- `EFFERENCE_AUTH_HEADER` — the auth header *name* (default `x-api-key`).
-- `EFFERENCE_AUTH_PREFIX` — a literal prepended to the secret to form the header
-  value (default empty; `"Bearer "` for OpenRouter's `authorization: Bearer …`).
+- `EFFERENCE_PROVIDER` — `anthropic` (the default when unset) or `openrouter`.
+  An unrecognized value is a hard error naming the valid ones, never a silent
+  fallback to a host the key doesn't belong to.
+- `EFFERENCE_API_KEY` — the **raw secret**, and nothing else. The auth header
+  name and any scheme prefix come from the provider (`x-api-key` for Anthropic;
+  `authorization` + `"Bearer "` for OpenRouter), so the secret stays a **whole
+  value** — a 1Password reference that `op run` resolves (`op run` only
+  substitutes an `op://…` reference that is the entire value, never one
+  embedded mid-string).
+- `ANTHROPIC_API_KEY` — fallback secret for the Anthropic provider only. Under
+  `openrouter` it is rejected at resolve with a message naming
+  `EFFERENCE_API_KEY`: an Anthropic key is the wrong credential there, and the
+  early error beats a confusing 401.
 
-Header name and scheme prefix are split *off* the secret deliberately: it keeps
-the secret a **whole value**, so it can be a 1Password reference that `op run`
-resolves (`op run` only substitutes an `op://…` reference that is the entire
-value, never one embedded mid-string). Provider identity stays entirely in the
-environment — `x-api-key` + no prefix (Anthropic) and `authorization` +
-`"Bearer "` (OpenRouter) are the same code path, differing only in data. The
-`EFFERENCE_AUTH_*` knobs apply only to the `EFFERENCE_API_KEY` path; a bare
-`ANTHROPIC_API_KEY` is always sent as `x-api-key`.
+An earlier design assembled the endpoint from data instead — URL, header name,
+and prefix each their own env knob, with no provider identity in the code. It
+was replaced because the provider knowledge didn't disappear, it moved into the
+operator's head (three knobs to reach OpenRouter), and because every
+model-conditional decision (the context ceiling first, more behind it) was
+unanswerable without knowing which metadata endpoint to ask. Those knobs
+(`EFFERENCE_ENDPOINT`, `EFFERENCE_AUTH_HEADER`, `EFFERENCE_AUTH_PREFIX`) are
+now hard errors naming the replacement — silently ignoring a set one would
+post somewhere other than where the operator's environment says.
 
-**OpenRouter** is reached this way with no code change: `EFFERENCE_ENDPOINT` =
-`https://openrouter.ai/api/v1/messages`, `EFFERENCE_AUTH_HEADER=authorization`,
-`EFFERENCE_AUTH_PREFIX="Bearer "`, `EFFERENCE_API_KEY=sk-or-…`, with a
-provider-scoped model slug (`anthropic/claude-opus-4.1`). Its `/api/v1/messages`
-skin is the Anthropic
+**The boot capability query.** `serve` fetches the selected model's metadata
+from the provider before the daemon starts (`Endpoint::fetch_capabilities`,
+`api::provider`), and a failed lookup — network, non-2xx, missing fields —
+**aborts startup** with the URL and body in the message. The query is required
+rather than best-effort because capability conditionals hang off the result
+and "unknown" would silently disable them; there is no offline mode to
+regress (serve already requires the live messages endpoint). Per provider:
+
+- `anthropic`: `GET /v1/models/{model}` — `max_input_tokens` is the context
+  window, `max_tokens` the output cap.
+- `openrouter`: `GET /api/v1/models/{author}/{slug}/endpoints` — one entry per
+  upstream currently serving the model, each with its own `context_length` /
+  `max_completion_tokens`. Routing is unpinned, so the effective ceiling is
+  the **min** across endpoints until provider pinning lands.
+
+The parsed `ModelCapabilities` (`context_length`, `max_output_tokens`; grown
+one field per consumer) is transport-only — held in `Shared`, never logged or
+projected. `GET /state` surfaces it as `usage.context = {limit, used}`, where
+`used` is the last request's total prompt tokens (`input_tokens` +
+`cache_read_input_tokens` + `cache_creation_input_tokens` — `input_tokens`
+alone is only the uncached remainder; null until the first request). The TUI
+sidebar renders it as the `ctx 7% · 14k/200k` line leading STATS.
+
+**Session cost telemetry.** Where the provider has a per-request accounting
+surface, every recorded request (all four origins — turn, peek, spot,
+keepalive — plus keepalive pings funnel through the same two record methods)
+spawns a best-effort fetch of its **billed** cost, folded into a running total
+that `GET /state` reports as `usage.cost = {usd, unpriced}` and the sidebar
+renders as `cost $0.0421`. Cost is fetched, never modeled from a rate card —
+cache read/write/TTL multipliers and per-endpoint price variance make modeling
+brittle. OpenRouter is the one provider with such a surface today:
+`GET /api/v1/generation?id=…` returns `total_cost`, keyed by the generation id
+each response carries (the same id `usage.jsonl` records — the join to the
+provider's own accounting). The record lands shortly after the response
+completes and a too-early GET 404s, so the fetch makes two delayed attempts
+(2s, 10s); exhaustion increments `unpriced`, so the total is a legible
+undercount rather than a silent one. On direct Anthropic there is no
+per-request cost surface (the Models API has no pricing; the Usage & Cost
+Admin API reports realized org costs in daily buckets under a separate admin
+key) — `usage.cost` is null there and the sidebar omits the line.
+
+**OpenRouter** is reached by declaring it: `EFFERENCE_PROVIDER=openrouter`,
+`EFFERENCE_API_KEY=sk-or-…`, and a provider-scoped model slug
+(`anthropic/claude-haiku-4.5` — the `author/slug` shape is also what the
+metadata route takes as path segments; a slash-less model id fails the boot
+lookup before any request). Its `/api/v1/messages` skin is the Anthropic
 Messages wire: it honors per-block `cache_control` breakpoints (across all
 Anthropic-compatible providers), emits Anthropic-shaped SSE `error` events, and
 its `: OPENROUTER PROCESSING` keepalive comments are skipped by the SSE decoder
 (leading-colon lines are comments). The one Anthropic-dialect header efference
 sends besides auth, `anthropic-version`, is part of the *wire dialect*, not a
-provider identity — OpenRouter tolerates it — so it stays a constant.
+provider identity — OpenRouter tolerates it (on the metadata GET too) — so it
+stays a constant.
 
 **Caching portability.** Only Anthropic's *explicit* `cache_control` breakpoints
 are Anthropic-specific; every other major model does **automatic prefix
@@ -184,16 +239,18 @@ overrides per session (there is no portable capability query: OpenRouter's
 `supported_parameters` describes its normalized `reasoning` param, not the
 Anthropic `thinking` block).
 
-Two reasons that metadata stays out of `supports_adaptive_thinking`, even though its
-`reasoning.supported_efforts` field happens to track the adaptive-capable Claude generation
-cleanly (present on 4.6+, absent on haiku-4.5 and the 4.5/4.1 tier). First, it describes
-OpenRouter's *normalized* interface, not the block efference sends — proof:
-`thinkingmachines/inkling` advertises `supported_efforts` but rejects an Anthropic `thinking`
-block, so the field is strictly broader than "accepts `thinking:{type:adaptive}`" and cannot
-replace the Claude-family gate. Second, reading it is an **OpenRouter-only boot-time network
-query**, absent on the direct-Anthropic path — reintroducing exactly the provider-specific
-startup coupling the env-resolved `Endpoint` removed. It stays useful offline, as a reference
-for setting `EFFERENCE_THINKING` by hand.
+That metadata stays out of `supports_adaptive_thinking` even though a boot-time
+capability query now exists (above) and OpenRouter's `reasoning.supported_efforts`
+field happens to track the adaptive-capable Claude generation cleanly (present on
+4.6+, absent on haiku-4.5 and the 4.5/4.1 tier). The signal is invalid, not just
+inconvenient: it describes OpenRouter's *normalized* interface, not the block
+efference sends — proof: `thinkingmachines/inkling` advertises `supported_efforts`
+but rejects an Anthropic `thinking` block, so the field is strictly broader than
+"accepts `thinking:{type:adaptive}`" and cannot replace the Claude-family gate.
+It stays useful offline, as a reference for setting `EFFERENCE_THINKING` by
+hand. Whether acceptance can instead be determined from the response JSON
+itself (a probe, or first-turn observation) is an open question parked in the
+backlog.
 
 ---
 

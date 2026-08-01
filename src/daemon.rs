@@ -164,6 +164,20 @@ pub struct Shared {
     /// surfaced by `GET /state`. Transport-only: never touches the log or projection
     /// (docs/transport.md).
     upstream_failure: UpstreamFailureState,
+    /// The selected model's capabilities, fetched from the provider's metadata
+    /// endpoint at boot (a required serve step — docs/transport.md) and set once
+    /// via [`Shared::set_capabilities`]. `None` only in tests and offline verbs
+    /// that never fetched; `GET /state` then reports `context: null`.
+    /// Transport-only: never logged or projected.
+    capabilities: Mutex<Option<crate::api::ModelCapabilities>>,
+    /// Session cost telemetry (docs/transport.md): the running sum of
+    /// per-generation **billed** costs fetched from the provider's accounting
+    /// endpoint — authoritative, never modeled from a rate card. Behind its own
+    /// `Arc` (like [`UpstreamFailureState`]) because the fetch runs as a spawned
+    /// task after each recorded request. Armed only when the provider has a
+    /// per-request cost surface (OpenRouter today); otherwise `GET /state`
+    /// reports `cost: null`. Transport-only: never logged or projected.
+    cost: Arc<Mutex<CostCell>>,
 
     /// The ephemeral inbox of pending ambient notifications (docs/inbox.md): out-of-band
     /// events awaiting their first triage gate. Control state, *not* a log payload —
@@ -324,6 +338,8 @@ impl Shared {
             metrics: Mutex::new(Metrics::default()),
             usage_log: Mutex::new(None),
             upstream_failure,
+            capabilities: Mutex::new(None),
+            cost: Arc::new(Mutex::new(CostCell::default())),
             inbox: Mutex::new(Inbox::default()),
 
             proposals: Mutex::new(Vec::new()),
@@ -344,6 +360,21 @@ impl Shared {
             scratch,
         });
         (shared, turns_rx)
+    }
+
+    /// Store the boot-fetched model capabilities (docs/transport.md). Called once
+    /// by the daemon's `serve` before the loop starts; the value is immutable
+    /// thereafter and read by `GET /state`'s context readout.
+    pub fn set_capabilities(&self, capabilities: crate::api::ModelCapabilities) {
+        *self.capabilities.lock().unwrap() = Some(capabilities);
+    }
+
+    /// Arm session cost telemetry (docs/transport.md): every recorded request
+    /// spawns a fetch of its billed cost from this endpoint's accounting
+    /// surface. Called by the daemon's `serve` only when the provider has one
+    /// (OpenRouter today); unarmed, `GET /state` reports `cost: null`.
+    pub fn enable_cost_tracking(&self, endpoint: crate::api::Endpoint) {
+        self.cost.lock().unwrap().endpoint = Some(endpoint);
     }
 
     /// Resolve `$TMPDIR` in a structured call's path fields against the frozen
@@ -487,7 +518,7 @@ pub(crate) use watch::refresh_and_emit;
 
 use approvals::Pending;
 use config_edits::{PendingProposal, session_visible_notice};
-use metrics::Metrics;
+use metrics::{CostCell, Metrics};
 pub use metrics::RequestOrigin;
 use notifications::Inbox;
 use pace::Pace;

@@ -19,13 +19,33 @@ pub(crate) async fn serve(
     )
     .try_init();
 
-    // Provider resolution (docs/transport.md): endpoint URL + auth header, resolved once from
-    // the environment. Defaults to Anthropic when only ANTHROPIC_API_KEY is set; point
-    // EFFERENCE_ENDPOINT + EFFERENCE_API_KEY (raw secret) + EFFERENCE_AUTH_HEADER /
-    // EFFERENCE_AUTH_PREFIX at OpenRouter's /api/v1/messages (or any Anthropic-Messages-
-    // compatible endpoint) to switch, no code change. Secret kept alone so it can be a
+    // Provider resolution (docs/transport.md): the declared EFFERENCE_PROVIDER
+    // (default anthropic) implies the messages URL and auth shape; the secret arrives
+    // alone via EFFERENCE_API_KEY (or the ANTHROPIC_API_KEY fallback) so it can be a
     // whole-value `op://…` reference under `op run`.
     let endpoint = efference::api::Endpoint::from_env()?;
+
+    // The required model-metadata lookup (docs/transport.md): capability conditionals
+    // (the context ceiling now; more as they land) must not run on guesses, so a failed
+    // lookup fails serve rather than starting blind.
+    let capabilities = match endpoint.fetch_capabilities(model).await {
+        Ok(caps) => caps,
+        Err(e) => {
+            return Err(format!(
+                "model metadata lookup for {model:?} on {} failed: {e}",
+                endpoint.provider.name()
+            )
+            .into());
+        }
+    };
+    eprintln!(
+        "model: {model} · context {} tokens{}",
+        capabilities.context_length,
+        capabilities
+            .max_output_tokens
+            .map(|m| format!(" · max output {m}"))
+            .unwrap_or_default()
+    );
 
     // Everything for this session is colocated in its own dir (gitignored), standard-named since
     // the dir is the unique unit (docs/permissions.md).
@@ -175,7 +195,15 @@ pub(crate) async fn serve(
         );
     }
     let result = daemon::serve(
-        client, toolbox, ForkPeek, spotter, log, socket, loaded, autonomous,
+        client,
+        toolbox,
+        ForkPeek,
+        spotter,
+        log,
+        socket,
+        loaded,
+        autonomous,
+        capabilities,
     )
     .await;
     // Scratch lifecycle (docs/tools.md): cleaned on session end unless retained as

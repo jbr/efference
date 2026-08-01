@@ -13,6 +13,10 @@ behind a change, see [`journal/`](journal/).
 - Transient upstream 429/5xx responses retry with a bounded backoff, and an exhausted completion now returns the session to idle instead of terminating the daemon.
 
 ### Added
+- Provider identity is declared (`EFFERENCE_PROVIDER=anthropic|openrouter`, default `anthropic`) and the endpoint URL + auth shape derived from it; the `EFFERENCE_ENDPOINT`/`EFFERENCE_AUTH_*` knobs are retired (setting one is an error naming the replacement).
+- `serve` fetches the model's capabilities (context window, max output tokens) from the provider's metadata endpoint at boot; a failed lookup aborts startup.
+- `GET /state` reports context-window occupancy (`usage.context`), and the TUI sidebar renders it as a `ctx 7% · 14k/200k` line leading STATS.
+- Session cost telemetry on OpenRouter: each request's billed cost is fetched from the generation accounting endpoint and surfaced as `usage.cost` on `/state` and a `cost $0.0421` line in the sidebar (with an unpriced-request count when fetches fail).
 - A non-compliant fork peek retries in-fork (bounded, API-valid tail extension); exhaustion withholds the output as a hard error visible to both agent and operator — the full untriaged result is never kept on the wire.
 - Every non-compliant peek attempt — recovered or not — is recorded attempt-stamped on the gate's `Triage` (`retries`) and shown as a `⚠ triage retry` annotation in the TUI transcript.
 - Per-request usage record: each upstream request appends an origin-tagged line with its generation id to the session dir's `usage.jsonl`.

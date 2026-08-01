@@ -161,6 +161,20 @@ pub(crate) struct UsageStats {
     pub cache_read_input_tokens: u64,
     pub cache_creation_input_tokens: u64,
     pub seconds_since_last_request: Option<u64>,
+    /// The model's context-window limit, from `usage.context.limit` — the
+    /// boot-fetched capability (docs/transport.md). `None` when the daemon
+    /// reports no capabilities (offline verbs, tests).
+    pub context_limit: Option<u64>,
+    /// The last request's total prompt tokens, from `usage.context.used`.
+    /// `None` until the first request of the session.
+    pub context_used: Option<u64>,
+    /// The session's billed cost so far in USD, from `usage.cost.usd` — the
+    /// provider's own accounting (docs/transport.md). `None` when the provider
+    /// has no per-request cost surface (direct Anthropic).
+    pub cost_usd: Option<f64>,
+    /// Requests the cost fetch could not price, from `usage.cost.unpriced` —
+    /// nonzero marks `cost_usd` as an undercount.
+    pub cost_unpriced: Option<u64>,
 }
 
 /// The last non-success upstream response, as surfaced by `GET /state`.

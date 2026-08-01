@@ -2,81 +2,183 @@ use super::client::record_upstream_failure;
 use super::thinking::is_recognized_adaptive_claude;
 use super::*;
 
-/// A bare `ANTHROPIC_API_KEY` (no EFFERENCE_* knobs) resolves to today's
-/// behavior: Anthropic's endpoint, `x-api-key` auth. This is the
-/// backward-compat contract.
+/// A bare `ANTHROPIC_API_KEY` and no `EFFERENCE_PROVIDER` resolves to the
+/// Anthropic provider: its endpoint, `x-api-key` auth, key verbatim.
 #[test]
 fn endpoint_defaults_to_anthropic_from_bare_key() {
-    let e = Endpoint::resolve(None, None, None, None, Some("sk-ant-xyz".into())).unwrap();
-    assert_eq!(e.url, DEFAULT_ENDPOINT);
+    let e = Endpoint::resolve(None, None, Some("sk-ant-xyz".into())).unwrap();
+    assert_eq!(e.provider, Provider::Anthropic);
+    assert_eq!(e.url, "https://api.anthropic.com/v1/messages");
     assert_eq!(e.auth_header, "x-api-key");
     assert_eq!(e.auth_value, "sk-ant-xyz");
 }
 
-/// OpenRouter: a custom endpoint, `authorization` header, and a `Bearer ` scheme
-/// prefix — all from the environment, and each a *whole* value (so the secret can
-/// be an `op://…` reference `op run` resolves). No provider knowledge in the code.
+/// One declared word derives the whole OpenRouter endpoint: URL,
+/// `authorization` header, `Bearer ` prefix. The secret arrives alone and
+/// stays a *whole* value (an `op://…` reference `op run` resolves).
 #[test]
-fn endpoint_openrouter_via_prefix_and_header() {
+fn endpoint_openrouter_derived_from_declared_provider() {
     let e = Endpoint::resolve(
-        Some("https://openrouter.ai/api/v1/messages".into()),
+        Some("openrouter".into()),
         Some("sk-or-v1-abc".into()),
-        Some("authorization".into()),
-        Some("Bearer ".into()),
         None,
     )
     .unwrap();
+    assert_eq!(e.provider, Provider::OpenRouter);
     assert_eq!(e.url, "https://openrouter.ai/api/v1/messages");
     assert_eq!(e.auth_header, "authorization");
     assert_eq!(e.auth_value, "Bearer sk-or-v1-abc");
 }
 
-/// `EFFERENCE_API_KEY` with no header/prefix defaults to a bare `x-api-key`, and
-/// the key rides through verbatim (base64 `=` padding intact).
+/// `EFFERENCE_API_KEY` wins over a lingering `ANTHROPIC_API_KEY`, and rides
+/// through verbatim (base64 `=` padding intact).
 #[test]
-fn endpoint_api_key_defaults_to_bare_x_api_key() {
-    let e = Endpoint::resolve(None, Some("abc==".into()), None, None, None).unwrap();
+fn endpoint_api_key_overrides_anthropic_key() {
+    let e = Endpoint::resolve(None, Some("abc==".into()), Some("sk-ant".into())).unwrap();
     assert_eq!(e.auth_header, "x-api-key");
     assert_eq!(e.auth_value, "abc==");
 }
 
-/// `EFFERENCE_API_KEY` wins over a lingering `ANTHROPIC_API_KEY`.
+/// The `ANTHROPIC_API_KEY` fallback covers the Anthropic provider only — an
+/// Anthropic key at OpenRouter would 401 confusingly, so it errors at resolve,
+/// naming the variable to set.
 #[test]
-fn endpoint_api_key_overrides_anthropic_key() {
-    let e = Endpoint::resolve(None, Some("z".into()), None, None, Some("sk-ant".into())).unwrap();
-    assert_eq!(e.auth_header, "x-api-key");
-    assert_eq!(e.auth_value, "z");
+fn endpoint_openrouter_rejects_anthropic_key_fallback() {
+    let err = Endpoint::resolve(Some("openrouter".into()), None, Some("sk-ant".into()))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("EFFERENCE_API_KEY"), "{err}");
 }
 
-/// A blank `EFFERENCE_AUTH_HEADER` falls back to `x-api-key` rather than sending
-/// an empty header name.
+/// An unrecognized provider is a hard error naming the valid values — never a
+/// silent fallback to a host the key doesn't belong to.
 #[test]
-fn endpoint_blank_header_falls_back_to_x_api_key() {
-    let e = Endpoint::resolve(None, Some("k".into()), Some("   ".into()), None, None).unwrap();
-    assert_eq!(e.auth_header, "x-api-key");
-    assert_eq!(e.auth_value, "k");
+fn endpoint_unknown_provider_is_loud() {
+    let err = Endpoint::resolve(Some("openai".into()), Some("k".into()), None)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("anthropic"), "{err}");
+    assert!(err.contains("openrouter"), "{err}");
 }
 
-/// The `EFFERENCE_AUTH_*` knobs apply only to the `EFFERENCE_API_KEY` path — a
-/// stray prefix never mutates the `ANTHROPIC_API_KEY` fallback.
+/// A blank `EFFERENCE_PROVIDER` means unset, not an unknown provider.
 #[test]
-fn endpoint_prefix_ignored_on_anthropic_fallback() {
-    let e = Endpoint::resolve(
-        None,
-        None,
-        None,
-        Some("Bearer ".into()),
-        Some("sk-ant".into()),
-    )
-    .unwrap();
-    assert_eq!(e.auth_header, "x-api-key");
-    assert_eq!(e.auth_value, "sk-ant");
+fn endpoint_blank_provider_defaults_to_anthropic() {
+    let e = Endpoint::resolve(Some("  ".into()), Some("k".into()), None).unwrap();
+    assert_eq!(e.provider, Provider::Anthropic);
 }
 
 /// No credentials at all is an error naming both ways to provide them.
 #[test]
 fn endpoint_errors_with_no_credentials() {
-    assert!(Endpoint::resolve(None, None, None, None, None).is_err());
+    assert!(Endpoint::resolve(None, None, None).is_err());
+}
+
+/// The Anthropic Models API shape: `max_input_tokens` is the context window,
+/// `max_tokens` the output cap; unknown fields (`capabilities`, …) ignored.
+#[test]
+fn anthropic_capabilities_parse_models_api_shape() {
+    let body = r#"{
+        "id": "claude-haiku-4-5",
+        "display_name": "Claude Haiku 4.5",
+        "created_at": "2025-10-01T00:00:00Z",
+        "type": "model",
+        "max_input_tokens": 200000,
+        "max_tokens": 64000,
+        "capabilities": {"image_input": {"supported": true}}
+    }"#;
+    let caps = Provider::Anthropic.parse_capabilities(body).unwrap();
+    assert_eq!(caps.context_length, 200000);
+    assert_eq!(caps.max_output_tokens, Some(64000));
+}
+
+/// A Models API response without `max_input_tokens` fails the (required) boot
+/// lookup rather than defaulting — the ceiling would otherwise be a guess.
+#[test]
+fn anthropic_capabilities_missing_context_is_an_error() {
+    let err = Provider::Anthropic
+        .parse_capabilities(r#"{"id": "m", "display_name": "M"}"#)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("max_input_tokens"), "{err}");
+}
+
+/// The OpenRouter endpoints shape: `context_length` is per serving endpoint
+/// (routing is unpinned), so the effective ceiling is the **min** across them;
+/// likewise `max_completion_tokens`. Trimmed from a live
+/// `GET /api/v1/models/anthropic/claude-haiku-4.5/endpoints` response.
+#[test]
+fn openrouter_capabilities_take_min_across_endpoints() {
+    let body = r#"{
+        "data": {
+            "id": "anthropic/claude-haiku-4.5",
+            "architecture": {"input_modalities": ["text", "image", "file"]},
+            "endpoints": [
+                {"provider_name": "Google", "context_length": 200000,
+                 "max_completion_tokens": 64000, "supports_implicit_caching": false},
+                {"provider_name": "Anthropic", "context_length": 195000,
+                 "max_completion_tokens": 32000, "supports_implicit_caching": false},
+                {"provider_name": "Azure", "context_length": null,
+                 "max_completion_tokens": null, "supports_implicit_caching": false}
+            ]
+        }
+    }"#;
+    let caps = Provider::OpenRouter.parse_capabilities(body).unwrap();
+    assert_eq!(caps.context_length, 195000);
+    assert_eq!(caps.max_output_tokens, Some(32000));
+}
+
+/// A model no endpoint currently serves (or that reports no context length at
+/// all) fails the boot lookup with a legible message.
+#[test]
+fn openrouter_capabilities_no_endpoints_is_an_error() {
+    let err = Provider::OpenRouter
+        .parse_capabilities(r#"{"data": {"endpoints": []}}"#)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("context_length"), "{err}");
+}
+
+/// OpenRouter's generation record prices one request authoritatively —
+/// `total_cost` is what the account was billed (docs/transport.md). Unknown
+/// fields ride through; a record without the field is an error the daemon
+/// counts as unpriced, never a silent zero.
+#[test]
+fn generation_cost_parses_total_cost() {
+    let body = r#"{
+        "data": {
+            "id": "gen-abc123",
+            "model": "anthropic/claude-haiku-4.5",
+            "total_cost": 0.0421,
+            "cache_discount": 0.011,
+            "tokens_prompt": 9407,
+            "tokens_completion": 120
+        }
+    }"#;
+    assert_eq!(provider::parse_generation_cost(body).unwrap(), 0.0421);
+
+    let err = provider::parse_generation_cost(r#"{"data": {"id": "gen-x"}}"#)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("total_cost"), "{err}");
+}
+
+/// OpenRouter model ids are `author/slug`; a slash-less id can't address the
+/// metadata route and errors before any request is made.
+#[test]
+fn openrouter_capabilities_url_requires_author_slug() {
+    let err = Provider::OpenRouter
+        .capabilities_url("claude-haiku-4-5")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("author/slug"), "{err}");
+    let url = Provider::OpenRouter
+        .capabilities_url("anthropic/claude-haiku-4.5")
+        .unwrap();
+    assert_eq!(
+        url,
+        "https://openrouter.ai/api/v1/models/anthropic/claude-haiku-4.5/endpoints"
+    );
 }
 
 /// The `auto` thinking default is a Claude allowlist, not "everything but haiku":

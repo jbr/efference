@@ -19,11 +19,6 @@ use trillium_tokio::ClientConfig;
 use crate::log::{CallId, ContentBlock, Payload, ToolCall};
 use crate::project::ApiMessage;
 
-/// The default upstream: Anthropic's own Messages endpoint. Used when neither
-/// `EFFERENCE_ENDPOINT` nor `EFFERENCE_API_KEY` is set, so a bare `ANTHROPIC_API_KEY`
-/// keeps working exactly as it did (docs/transport.md).
-const DEFAULT_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
-
 /// The `anthropic-version` header value. This is part of the Anthropic Messages
 /// *wire dialect*, not a provider identity — OpenRouter's `/api/v1/messages` skin
 /// speaks the same dialect and tolerates the header — so it rides every request
@@ -221,11 +216,13 @@ mod test;
 mod assembler;
 mod client;
 mod endpoint;
+mod provider;
 mod render;
 mod thinking;
 
 pub use client::Client;
 pub use endpoint::Endpoint;
+pub use provider::{ModelCapabilities, Provider};
 pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,
 };

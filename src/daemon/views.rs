@@ -15,6 +15,29 @@ impl Shared {
             .checked_sub(1)
             .map(|i| i as u64);
         let metrics = self.metrics.lock().unwrap();
+        // Context-window occupancy (docs/transport.md): the last request's total
+        // prompt tokens — uncached input + cache reads + cache writes; `input_tokens`
+        // alone is only the uncached remainder — against the boot-fetched limit.
+        // `used` is null until the first request; `context` is null entirely when no
+        // capabilities were fetched (tests, offline verbs).
+        let context = self.capabilities.lock().unwrap().as_ref().map(|caps| {
+            serde_json::json!({
+                "limit": caps.context_length,
+                "used": metrics.last_usage.as_ref().map(|u| {
+                    u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
+                }),
+            })
+        });
+        // Session cost (docs/transport.md): the billed running total from the
+        // provider's accounting endpoint, null when the provider has none
+        // (direct Anthropic). `unpriced` counts requests the fetch couldn't
+        // price, so a nonzero value marks the total as an undercount.
+        let cost = {
+            let cell = self.cost.lock().unwrap();
+            cell.endpoint.as_ref().map(|_| {
+                serde_json::json!({ "usd": cell.total_usd, "unpriced": cell.unpriced })
+            })
+        };
         let usage = serde_json::json!({
             "last": metrics.last_usage,
             "cumulative": {
@@ -24,6 +47,8 @@ impl Shared {
                 "cache_creation_input_tokens": metrics.total_cache_creation,
             },
             "seconds_since_last_request": metrics.last_request_at.map(|t| t.elapsed().as_secs()),
+            "context": context,
+            "cost": cost,
         });
         serde_json::json!({
             "last_seq": last_seq,

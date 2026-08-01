@@ -98,6 +98,41 @@ impl<'a> InteractiveState<'a> {
         {
             put(buf, x0, y, max_w, "▾ STATS", header);
             y += 1;
+            // Context-window occupancy leads (docs/transport.md): the percentage is
+            // the "am I close?" answer; the limit alone renders before the first
+            // request (occupancy unknown, not zero).
+            if let Some(limit) = u.context_limit.filter(|l| *l > 0)
+                && y < bottom
+            {
+                let line = match u.context_used {
+                    Some(used) => format!(
+                        "ctx {}% · {}/{}",
+                        used * 100 / limit,
+                        num(used),
+                        num(limit)
+                    ),
+                    None => format!("ctx {}", num(limit)),
+                };
+                put(buf, x0 + 1, y, max_w.saturating_sub(1), &line, text);
+                y += 1;
+            }
+            // Session cost (docs/transport.md): billed dollars from the provider's
+            // accounting, absent where no per-request surface exists (direct
+            // Anthropic). A nonzero unpriced count marks the total an undercount.
+            if let Some(usd) = u.cost_usd
+                && y < bottom
+            {
+                let mut line = if usd >= 1.0 {
+                    format!("cost ${usd:.2}")
+                } else {
+                    format!("cost ${usd:.4}")
+                };
+                if let Some(n) = u.cost_unpriced.filter(|n| *n > 0) {
+                    line.push_str(&format!(" · {n} unpriced"));
+                }
+                put(buf, x0 + 1, y, max_w.saturating_sub(1), &line, text);
+                y += 1;
+            }
             if y < bottom {
                 put(
                     buf,

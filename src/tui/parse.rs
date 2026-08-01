@@ -192,6 +192,11 @@ pub(super) fn parse_usage(body: &str) -> Option<UsageStats> {
         return None;
     }
     let cumulative = usage.get("cumulative")?;
+    // Context-window occupancy (docs/transport.md): `context` is null when the
+    // daemon fetched no capabilities; `used` is null before the first request.
+    let context = usage.get("context").filter(|c| !c.is_null());
+    // Session cost: null when the provider has no per-request accounting surface.
+    let cost = usage.get("cost").filter(|c| !c.is_null());
     Some(UsageStats {
         input_tokens: cumulative.get("input_tokens")?.as_u64()?,
         output_tokens: cumulative.get("output_tokens")?.as_u64()?,
@@ -200,5 +205,11 @@ pub(super) fn parse_usage(body: &str) -> Option<UsageStats> {
         seconds_since_last_request: usage
             .get("seconds_since_last_request")
             .and_then(|v| v.as_u64()),
+        context_limit: context
+            .and_then(|c| c.get("limit"))
+            .and_then(|v| v.as_u64()),
+        context_used: context.and_then(|c| c.get("used")).and_then(|v| v.as_u64()),
+        cost_usd: cost.and_then(|c| c.get("usd")).and_then(|v| v.as_f64()),
+        cost_unpriced: cost.and_then(|c| c.get("unpriced")).and_then(|v| v.as_u64()),
     })
 }

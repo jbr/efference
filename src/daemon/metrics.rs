@@ -21,6 +21,18 @@ pub(super) struct Metrics {
     pub(super) total_cache_creation: u64,
 }
 
+/// Session cost telemetry (docs/transport.md): the endpoint whose accounting
+/// surface prices requests (armed by [`Shared::enable_cost_tracking`], only when
+/// the provider has one — OpenRouter today), the running sum of billed USD, and
+/// how many requests couldn't be priced (so the total is legibly an
+/// undercount rather than silently wrong).
+#[derive(Default)]
+pub(super) struct CostCell {
+    pub(super) endpoint: Option<crate::api::Endpoint>,
+    pub(super) total_usd: f64,
+    pub(super) unpriced: u32,
+}
+
 /// Which request shape spent the tokens (docs/log-and-projection.md) — the tag on each
 /// persisted usage line, so per-shape spend is a query over `usage.jsonl` rather than a
 /// reconstruction from the canonical log.
@@ -100,6 +112,7 @@ impl Shared {
     /// no projection change.
     pub fn record_request(&self, origin: RequestOrigin, request: RequestUsage) {
         self.persist_usage(origin, &request);
+        self.spawn_cost_fetch(&request);
         let mut m = self.metrics.lock().unwrap();
         Self::fold_usage(&mut m, request.usage);
         m.last_real_turn_at = Some(Instant::now());
@@ -111,8 +124,45 @@ impl Shared {
     /// stop pinging.
     pub fn record_keepalive(&self, request: RequestUsage) {
         self.persist_usage(RequestOrigin::Keepalive, &request);
+        self.spawn_cost_fetch(&request);
         let mut m = self.metrics.lock().unwrap();
         Self::fold_usage(&mut m, request.usage);
+    }
+
+    /// Price one recorded request off the provider's accounting endpoint
+    /// (docs/transport.md) — a spawned, best-effort fetch keyed by the same
+    /// generation id `persist_usage` just wrote. No-op unless cost tracking is
+    /// armed, the request carried an id, and a tokio runtime is present (tests
+    /// call the record methods synchronously). The generation record lands
+    /// shortly after the response completes and a too-early GET 404s, so two
+    /// delayed attempts; exhaustion counts the request `unpriced` — the total
+    /// stays a legible undercount instead of a silent one.
+    fn spawn_cost_fetch(&self, request: &RequestUsage) {
+        let (endpoint, id) = {
+            let cell = self.cost.lock().unwrap();
+            match (&cell.endpoint, &request.id) {
+                (Some(endpoint), Some(id)) => (endpoint.clone(), id.clone()),
+                _ => return,
+            }
+        };
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let cost = Arc::clone(&self.cost);
+        handle.spawn(async move {
+            for delay in [Duration::from_secs(2), Duration::from_secs(10)] {
+                tokio::time::sleep(delay).await;
+                match endpoint.fetch_generation_cost(&id).await {
+                    Ok(usd) => {
+                        cost.lock().unwrap().total_usd += usd;
+                        return;
+                    }
+                    Err(e) => log::debug!("pricing generation {id}: {e}"),
+                }
+            }
+            cost.lock().unwrap().unpriced += 1;
+            log::warn!("could not price generation {id}; the session cost undercounts");
+        });
     }
 
     pub(super) fn fold_usage(m: &mut Metrics, usage: Usage) {

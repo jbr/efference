@@ -24,6 +24,13 @@ fn sidebar_shows_processes_and_stats() {
         cache_read_input_tokens: 8900,
         cache_creation_input_tokens: 5200,
         seconds_since_last_request: Some(8),
+        // The boot-fetched window and the last request's occupancy
+        // (docs/transport.md): 14.1k of 200k → the `ctx 7% · 14k/200k` line.
+        context_limit: Some(200_000),
+        context_used: Some(14_106),
+        // Billed session cost from the provider's accounting → `cost $0.0421`.
+        cost_usd: Some(0.0421),
+        cost_unpriced: Some(0),
     }));
     play.snapshot("sidebar_processes_and_stats");
 }

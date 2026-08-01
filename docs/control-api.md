@@ -161,7 +161,15 @@ The ephemeral control snapshot. The single most-polled endpoint.
     "last": { "input_tokens": …, "output_tokens": …,
               "cache_read_input_tokens": …, "cache_creation_input_tokens": … },
     "cumulative": { …same four fields… },
-    "seconds_since_last_request": 12        // or null
+    "seconds_since_last_request": 12,       // or null
+    "context": {                            // null when no capabilities were fetched
+      "limit": 200000,                      // the boot-fetched context window (transport.md)
+      "used": 9578                          // last request's total prompt tokens; null before the first
+    },
+    "cost": {                               // null when the provider has no per-request accounting (transport.md)
+      "usd": 0.0421,                        // billed session total from the provider's accounting endpoint
+      "unpriced": 0                         // requests the fetch couldn't price (total is an undercount if > 0)
+    }
   }
 }
 ```

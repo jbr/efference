@@ -86,6 +86,76 @@ fn state_reports_cache_telemetry() {
     assert!(v["usage"]["seconds_since_last_request"].is_u64());
 }
 
+/// `GET /state` reports context-window occupancy (docs/transport.md): null with
+/// no boot-fetched capabilities (tests, offline verbs), `{limit, used: null}`
+/// once set but before any request, and `used` = the last request's total
+/// prompt tokens — uncached input + cache reads + cache writes, not
+/// `input_tokens` alone (that is only the uncached remainder).
+#[test]
+fn state_reports_context_occupancy_against_the_boot_limit() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+
+    // No capabilities fetched → the whole readout is null, not a guessed limit.
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert!(v["usage"]["context"].is_null());
+
+    shared.set_capabilities(crate::api::ModelCapabilities {
+        context_length: 200_000,
+        max_output_tokens: Some(64_000),
+    });
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["context"]["limit"], 200_000);
+    assert!(v["usage"]["context"]["used"].is_null());
+
+    // A hot cached request: 6 uncached + 165 written + 9407 read = 9578 prompt
+    // tokens actually occupying the window.
+    shared.record_request(
+        RequestOrigin::Turn,
+        RequestUsage {
+            id: None,
+            usage: Usage {
+                input_tokens: 6,
+                output_tokens: 12,
+                cache_creation_input_tokens: 165,
+                cache_read_input_tokens: 9407,
+            },
+        },
+    );
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["context"]["limit"], 200_000);
+    assert_eq!(v["usage"]["context"]["used"], 6 + 165 + 9407);
+}
+
+/// `GET /state` reports session cost only when a provider accounting surface
+/// armed it (docs/transport.md): null unarmed (direct Anthropic, tests), and
+/// `{usd, unpriced}` once armed — `unpriced > 0` marks the total an undercount.
+#[test]
+fn state_reports_session_cost_only_when_armed() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert!(v["usage"]["cost"].is_null());
+
+    shared.enable_cost_tracking(crate::api::Endpoint {
+        provider: crate::api::Provider::OpenRouter,
+        url: "https://openrouter.ai/api/v1/messages".into(),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer sk-or-test".into(),
+    });
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["cost"], serde_json::json!({ "usd": 0.0, "unpriced": 0 }));
+
+    // Fold what the spawned per-generation fetches would write (the fetch
+    // itself is network; the fold and readout are what this pins).
+    {
+        let mut cell = shared.cost.lock().unwrap();
+        cell.total_usd += 0.0421;
+        cell.unpriced += 1;
+    }
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["cost"]["usd"], 0.0421);
+    assert_eq!(v["usage"]["cost"]["unpriced"], 1);
+}
+
 /// `GET /state` reports the resolved role (docs/permissions.md): a
 /// `null` source for the built-in default, and the path plus the **effective** config's full
 /// contents (scope, watch-for, commands, tools, paths) when a config is in effect — so "what is

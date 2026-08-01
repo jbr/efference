@@ -102,6 +102,12 @@ impl Client {
         Arc::clone(&self.upstream_failure)
     }
 
+    /// The resolved endpoint this client posts to. The daemon reads it for
+    /// provider-conditional telemetry (cost tracking, docs/transport.md).
+    pub fn endpoint(&self) -> &Endpoint {
+        &self.endpoint
+    }
+
     /// One streaming round-trip: serialize `messages`, POST with `stream: true`,
     /// and fold the SSE event stream back into a [`Completion`]. Each live signal — prose,
     /// thinking, a tool call opening, its arguments arriving — is handed to `on_delta` as a
