@@ -344,14 +344,18 @@ impl<'a> InteractiveState<'a> {
             }
 
             // Page down
-            (KeyCode::Char('d'), KeyModifiers::CONTROL) | (KeyCode::PageDown, _) => {
+            (KeyCode::Char('d'), KeyModifiers::CONTROL)
+            | (KeyCode::Char('v'), KeyModifiers::CONTROL)
+            | (KeyCode::PageDown, _) => {
                 let page = terminal.size().map(|s| s.height / 2).unwrap_or(10);
                 self.set_scroll_offset(self.viewport.scroll_offset.saturating_add(page));
                 self.sync_stuck_to_bottom();
             }
 
             // Page up
-            (KeyCode::Char('u'), KeyModifiers::CONTROL) | (KeyCode::PageUp, _) => {
+            (KeyCode::Char('u'), KeyModifiers::CONTROL)
+            | (KeyCode::Char('v'), KeyModifiers::ALT)
+            | (KeyCode::PageUp, _) => {
                 let page = terminal.size().map(|s| s.height / 2).unwrap_or(10);
                 self.set_scroll_offset(self.viewport.scroll_offset.saturating_sub(page));
                 self.sync_stuck_to_bottom();

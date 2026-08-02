@@ -240,6 +240,7 @@ impl Composer {
             KeyCode::Char('k') if ctrl => self.kill_to_line_end(),
             KeyCode::Char('u') if ctrl => self.kill_to_line_start(),
             KeyCode::Char('w') if ctrl => self.delete_word_back(),
+            KeyCode::Char('d') if alt => self.delete_word_forward(),
 
             // Printable insertion (ignore other control combos so they fall
             // through to the caller as commands).
@@ -321,6 +322,12 @@ impl Composer {
         }
     }
 
+    /// ASCII letters and digits form a word; all other scalar values separate words.
+    /// Grapheme-aware editing is tracked separately in docs/tui.md's backlog.
+    fn is_word_char(c: char) -> bool {
+        c.is_ascii_alphanumeric()
+    }
+
     fn move_word_left(&mut self) {
         let line = &self.lines[self.row];
         if self.col == 0 {
@@ -328,10 +335,10 @@ impl Composer {
             return;
         }
         let mut c = self.col;
-        while c > 0 && line[c - 1].is_whitespace() {
+        while c > 0 && !Self::is_word_char(line[c - 1]) {
             c -= 1;
         }
-        while c > 0 && !line[c - 1].is_whitespace() {
+        while c > 0 && Self::is_word_char(line[c - 1]) {
             c -= 1;
         }
         self.col = c;
@@ -345,10 +352,10 @@ impl Composer {
         }
         let line = &self.lines[self.row];
         let mut c = self.col;
-        while c < len && line[c].is_whitespace() {
+        while c < len && !Self::is_word_char(line[c]) {
             c += 1;
         }
-        while c < len && !line[c].is_whitespace() {
+        while c < len && Self::is_word_char(line[c]) {
             c += 1;
         }
         self.col = c;
@@ -397,6 +404,22 @@ impl Composer {
         let end = self.col;
         if end < start {
             self.lines[self.row].drain(end..start);
+        }
+    }
+
+    /// Delete the next word and any leading separators, retaining following separators.
+    fn delete_word_forward(&mut self) {
+        let start = self.col;
+        let len = self.line_len();
+        let mut end = start;
+        while end < len && !Self::is_word_char(self.lines[self.row][end]) {
+            end += 1;
+        }
+        while end < len && Self::is_word_char(self.lines[self.row][end]) {
+            end += 1;
+        }
+        if start < end {
+            self.lines[self.row].drain(start..end);
         }
     }
 

@@ -10,6 +10,9 @@ fn ctrl(c: char) -> KeyEvent {
 fn alt_backspace() -> KeyEvent {
     KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT)
 }
+fn alt(c: char) -> KeyEvent {
+    KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT)
+}
 
 /// Screenplay scenario: a line longer than the composer width. This captures
 /// the *current* render so the wrap fix has a visible before/after. Watch the
@@ -122,6 +125,30 @@ fn alt_backspace_deletes_word_back() {
     }
     c.handle_key(alt_backspace());
     assert_eq!(c.text(), "foo ");
+}
+
+#[test]
+fn word_motion_treats_punctuation_as_separators() {
+    let mut c = Composer::new();
+    c.set_text("multi-word");
+    c.handle_key(alt('b'));
+    assert_eq!(c.col, 6);
+
+    c.set_text("multi_word");
+    c.handle_key(alt('b'));
+    assert_eq!(c.col, 6);
+}
+
+#[test]
+fn alt_d_deletes_only_the_next_word() {
+    let mut c = Composer::new();
+    c.set_text("word---next");
+    c.handle_key(ctrl('a'));
+    c.handle_key(alt('d'));
+    assert_eq!(c.text(), "---next");
+
+    c.handle_key(alt('d'));
+    assert_eq!(c.text(), "");
 }
 
 #[test]

@@ -264,12 +264,12 @@ impl<'a> InteractiveState<'a> {
         terminal: &mut Terminal<impl Backend + Write>,
     ) {
         let page = terminal.size().map(|s| s.height / 2).unwrap_or(10);
-        match key.code {
-            KeyCode::PageDown => {
+        match (key.code, key.modifiers) {
+            (KeyCode::PageDown, _) | (KeyCode::Char('v'), KeyModifiers::CONTROL) => {
                 self.set_scroll_offset(self.viewport.scroll_offset.saturating_add(page));
                 self.sync_stuck_to_bottom();
             }
-            KeyCode::PageUp => {
+            (KeyCode::PageUp, _) | (KeyCode::Char('v'), KeyModifiers::ALT) => {
                 self.set_scroll_offset(self.viewport.scroll_offset.saturating_sub(page));
                 self.sync_stuck_to_bottom();
             }
