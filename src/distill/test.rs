@@ -10,7 +10,7 @@ fn lines(s: &str) -> Vec<&str> {
 /// `input` — the shape `ForkPeek` asks for and `parse_retain` reads.
 /// The id of the result a single-result gate is triaging. Arbitrary — what matters is
 /// that exactly one id is offered, which is the condition under which `parse_retain`
-/// adopts the legacy flat `keep`/`note` form.
+/// adopts the id-free shapes — the flat `keep`/`note`, or a lone mis-keyed entry.
 const CALL_ID: &str = "toolu_x";
 
 fn retain_completion(name: &str, input: Value) -> Completion {
@@ -153,7 +153,12 @@ fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
         }],
     }];
     let why = unusable(&completion, RETAIN);
-    assert!(extend_with_retry(&mut messages, &completion.assistant, &why, RETAIN));
+    assert!(extend_with_retry(
+        &mut messages,
+        &completion.assistant,
+        &why,
+        RETAIN
+    ));
     assert_eq!(messages.len(), 3, "assistant turn + reply appended");
 
     let assistant = &messages[1];
@@ -230,7 +235,12 @@ fn an_empty_response_is_terminal_not_an_invalid_retry() {
         calls: vec![],
     };
     let mut messages = Vec::new();
-    assert!(!extend_with_retry(&mut messages, &empty, "peek called no tool", RETAIN));
+    assert!(!extend_with_retry(
+        &mut messages,
+        &empty,
+        "peek called no tool",
+        RETAIN
+    ));
     assert!(messages.is_empty());
 }
 
@@ -254,7 +264,10 @@ fn an_incomplete_verdict_is_rejected_naming_the_missing_ids() {
     assert!(require_coverage(complete, &offered).is_ok());
 
     let partial = parse_retain(
-        &retain_completion(RETAIN, json!({ "results": [{ "call_id": "a", "keep": "all" }] })),
+        &retain_completion(
+            RETAIN,
+            json!({ "results": [{ "call_id": "a", "keep": "all" }] }),
+        ),
         &offered,
     )
     .unwrap();
@@ -545,7 +558,7 @@ fn parse_retain_keys_verdicts_by_call_id() {
     );
 }
 
-/// The legacy flat form is adopted only when it is unambiguous — exactly one result in
+/// The flat form is adopted only when it is unambiguous — exactly one result in
 /// flight. With several offered there is no way to know which it meant, so it is dropped
 /// rather than guessed onto the wrong result.
 #[test]
@@ -561,5 +574,151 @@ fn flat_keep_is_adopted_only_for_a_single_result_gate() {
     assert!(
         p.results.is_empty(),
         "ambiguous flat form must not be guessed onto a result"
+    );
+}
+
+/// A single-result gate asks for the flat form and names no call id at all: copying an
+/// id when only one result is in question is transcription with no decision in it, and
+/// it is the token most likely to come back wrong (docs/redaction-fork.md).
+#[test]
+fn a_single_result_gate_asks_for_the_flat_form_and_no_call_id() {
+    let instruction = retain_instruction(&["call_abc123".to_string()]);
+    assert!(
+        !instruction.contains("call_abc123"),
+        "nothing to copy: {instruction}"
+    );
+    assert!(instruction.contains("`keep` and `note`"));
+    assert!(
+        instruction.contains("no `results` array and no call id"),
+        "names the shape: {instruction}"
+    );
+}
+
+/// A multi-result gate asks for the keyed form and interpolates exactly the ids this
+/// gate offered — the tail is discarded with the fork, so nothing here is cache-keyed.
+#[test]
+fn a_multi_result_gate_lists_every_offered_id_and_the_count() {
+    let offered = ["call_a".to_string(), "call_b".to_string()];
+    let instruction = retain_instruction(&offered);
+    assert!(instruction.contains("[call_a], [call_b]"), "{instruction}");
+    assert!(
+        instruction.contains("exactly 2 `results` entries"),
+        "{instruction}"
+    );
+}
+
+/// Both shapes bound the ask to *this* gate. Every prior `tool_result` on the canonical
+/// wire carries a `[seq]` block-addressing tag in the same bracket syntax as a
+/// `[call id]` header, and an unbounded "every [call id] above" was read by a live model
+/// as "re-triage the whole transcript" — twenty-odd entries keyed by `[seq]` tags and
+/// invented ids, with the gate's own id missing, so coverage failed and the gate
+/// hard-errored (docs/redaction-fork.md).
+#[test]
+fn every_retain_ask_excludes_the_transcript_behind_it() {
+    for offered in [
+        vec!["only".to_string()],
+        vec!["a".to_string(), "b".to_string()],
+    ] {
+        let instruction = retain_instruction(&offered);
+        assert!(
+            instruction.contains("Nothing earlier in this conversation is being triaged"),
+            "the ask must say what is out of scope: {instruction}"
+        );
+        assert!(
+            instruction.contains("[n] tags are not call ids"),
+            "and must disown the block-addressing tags: {instruction}"
+        );
+    }
+}
+
+/// A lone keyed entry whose `call_id` doesn't match is re-keyed on a single-result gate:
+/// with one target there is nothing to mis-attribute *to*, so withholding output the
+/// model plainly triaged over a mistyped id buys nothing. With several offered the same
+/// entry stays where the model put it — there the id is the only attribution there is.
+#[test]
+fn a_lone_mis_keyed_verdict_is_re_keyed_only_for_a_single_result_gate() {
+    let one = ["only".to_string()];
+    let p = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "results": [{ "call_id": "functions.read", "keep": "1-4", "note": "n" }] }),
+        ),
+        &one,
+    )
+    .unwrap();
+    assert_eq!(p.results.len(), 1);
+    assert_eq!(p.results[0].call_id, "only");
+    assert_eq!(p.results[0].keep, Keep::Ranges(vec![(1, 4)]));
+    assert!(require_coverage(p, &one).is_ok());
+
+    // Two entries is no longer unambiguous, even on a single gate.
+    let p = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "results": [
+                { "call_id": "wrong", "keep": "all" },
+                { "call_id": "alsowrong", "keep": "none" },
+            ] }),
+        ),
+        &one,
+    )
+    .unwrap();
+    assert!(require_coverage(p, &one).is_err());
+
+    let two = ["a".to_string(), "b".to_string()];
+    let p = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "results": [{ "call_id": "wrong", "keep": "all" }] }),
+        ),
+        &two,
+    )
+    .unwrap();
+    assert!(
+        !p.results
+            .iter()
+            .any(|v| v.call_id == "a" || v.call_id == "b")
+    );
+}
+
+/// The coverage rejection names what the verdict *did* answer, not only what it missed.
+/// "Answered nothing" and "answered a pile of ids that were never offered" are different
+/// defects — the second is a prompt-scoping failure — and the breadcrumb is the only
+/// place a later reader can tell them apart (docs/redaction-fork.md).
+#[test]
+fn a_coverage_rejection_reports_what_was_answered() {
+    let offered = ["wanted".to_string()];
+    let empty = parse_retain(
+        &retain_completion(RETAIN, json!({ "results": [] })),
+        &offered,
+    )
+    .unwrap();
+    let Err(why) = require_coverage(empty, &offered) else {
+        panic!("an empty verdict must be rejected");
+    };
+    assert!(
+        why.contains("[wanted]") && why.contains("answered nothing"),
+        "{why}"
+    );
+
+    let elsewhere = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "results": [
+                { "call_id": "6", "keep": "all" },
+                { "call_id": "multi_tool_use.parallel", "keep": "all" },
+                { "call_id": "8", "keep": "all" },
+            ] }),
+        ),
+        &offered,
+    )
+    .unwrap();
+    let Err(why) = require_coverage(elsewhere, &offered) else {
+        panic!("a verdict covering none of the offered ids must be rejected");
+    };
+    assert!(why.contains("[wanted]"), "{why}");
+    assert!(
+        why.contains("[6], [multi_tool_use.parallel], [8]"),
+        "the wrong ids are the diagnosis: {why}"
     );
 }

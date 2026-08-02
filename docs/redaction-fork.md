@@ -21,10 +21,11 @@ real output, so nothing is orphaned and no placeholder is needed.
 Each result is rendered as its own block, headed by its `[call id]` and **numbering from
 1**. A single continuous coordinate system across results would invite the model to keep
 lines from one result under another's verdict — a mis-attribution that renders exactly
-like a correct verdict, so nothing downstream could detect it. The `retain` verdict is
+like a correct verdict, so nothing downstream could detect it. A multi-result verdict is
 correspondingly an array keyed by `call_id`; a verdict naming an id that was never
 offered is dropped, the same harness-side guard applied to notification ids and roster
-names.
+names. A **single-result** gate — the overwhelming majority — asks for no id at all; see
+[the two answer shapes](#two-answer-shapes-and-one-scoped-ask) below.
 
 The inbox, background tails, and surfacing roster are **gate-scoped** — decided once per
 step rather than per result — so they ride the trailing text block and their dispositions
@@ -69,6 +70,9 @@ What forcing bought is re-bought harness-side:
   descriptions ("if a section named X appears above…"), because a schema that varied
   with session state would re-key the envelope mid-session. Invented dispositions were
   already dropped harness-side, so conditionality guarded nothing the filters don't.
+  The **tail instruction** is under no such constraint — it is discarded with the fork —
+  so what varies per gate (the ask's scope, its answer shape, the offered ids) lives
+  there, and the schema carries every shape unconditionally with nothing `required`.
 - **A standing permission clause** on both descriptions — "do not call this tool
   unless asked to do so by the harness." Permission-phrased, not identity-phrased
   ("harness-invoked only"), because the same model reads the standing description and,
@@ -94,6 +98,40 @@ What forcing bought is re-bought harness-side:
 Un-forcing also lifts the forced-choice-excludes-thinking constraint
 ([transport.md](transport.md)): the fork may think, and the thinking is discarded with
 the tail.
+
+## Two answer shapes, and one scoped ask
+
+The schema is static while gate size is not, so `retain` carries both shapes and the
+tail instruction (`retain_instruction` in `src/distill/prompt.rs`) names which one this
+gate wants.
+
+- **One result** — top-level `keep`/`note`, **no call id**. Naming the one call whose
+  output is right there is transcription with no decision in it, and it is the single
+  most failure-prone token in the response.
+- **Several results** — the `results` array, one entry per `call_id`. Here the id is the
+  only attribution there is, so it is asked for and the gate's ids are listed verbatim
+  in the ask.
+
+Neither field is `required`; the harness accepts either shape for either size, because
+nothing enforces the schema and a parse failure costs a withheld result. On a
+single-result gate two id-free shapes resolve unambiguously and are adopted: a bare
+top-level `keep`, and a **lone** `results` entry whose `call_id` doesn't match, which is
+re-keyed onto the one offered id — with a single target there is nothing to
+mis-attribute *to*, so rejecting a decided verdict over a mistyped id withholds output
+for nothing. Neither applies once several results are in flight.
+
+**The ask states what is out of scope.** Both shapes carry a line disowning the
+transcript behind them. The earlier phrasing — "every `[call id]` **above** must be
+answered" — is unbounded, and every prior `tool_result` on the canonical wire already
+carries a `[seq]` block-addressing tag (below) in the same bracket syntax as a
+`[call id]` header. Observed against a live model on a long transcript: it answered by
+re-triaging the whole conversation — twenty-odd entries keyed by `[seq]` tags, its own
+dialect's internal tool names (`functions.read`, `multi_tool_use.parallel`), and
+fabricated ids — with the gate's own id usually absent, so coverage failed, the retries
+exhausted, and the result's output was withheld. The pull scaled with transcript length:
+clean early in a session, then most gates failing. Gates that happened to pass were no
+better, deciding the real result inside a pile of invented ones. Naming the count, the
+ids, and the exclusion is what bounds it.
 
 ## The `retain` verdict
 
@@ -122,7 +160,11 @@ the rest of the session with every later turn paying for it. `raw` stays in the 
 (the TUI can flip the result to raw), and the `Triage` records the same **breadcrumb**
 in `raw_keep`: the model's unparseable `retain` input, the tool it called instead, or
 the transport error — plus which attempt gave up. Without that, a malformed verdict, a
-wrong-tool call and a 429 are indistinguishable in the log after the fact. The message
+wrong-tool call and a 429 are indistinguishable in the log after the fact. A **coverage**
+rejection names what the verdict did answer as well as what it missed, for the same
+reason: "answered nothing" and "answered twenty-six ids that were never offered" are
+different defects, and the second is a prompt-scoping failure the first gives no hint
+of — a session's worth of gates failed that way with nothing in the log to say so. The message
 is rendered by one shared function (`render_triage_failure`, stable
 "result withheld — triage failed" prefix) so the wire and the TUI say the same thing.
 
@@ -281,6 +323,11 @@ Each tool result carries its `seq` as a visible handle on the wire: `tool_result
 content is prefixed `[<seq>] …` (e.g. `[2] file.txt`), a render-time tag requiring
 no schema change. This is what makes "reread 14" / "branch from 14" / "compare to
 block 14" describable across the model wire, the TUI, and the control plane.
+
+These tags share their bracket syntax with the peek's `[call id]` headers, which is what
+made an unbounded peek ask resolve against them; the ask is scoped rather than the syntax
+changed, since `[n]` is the handle the agent, the TUI, and the control plane all use
+([two answer shapes](#two-answer-shapes-and-one-scoped-ask)).
 
 The **stable `seq`** is used, not a positional wire-index. A positional count
 renumbers on elision or consolidation, which would bust the cache. `seq` is

@@ -38,13 +38,14 @@ pub(super) struct ResultInput {
 
 /// The `retain` tool's input.
 ///
-/// `keep` / `note` at the top level are the **legacy flat form**, which the schema no
-/// longer asks for. They are still accepted because nothing enforces the schema (the
-/// tool isn't `strict`), and a single-result gate — the overwhelming majority — can
-/// plausibly answer in the shape the model finds most natural. Being liberal here is
-/// what lets the schema stay uniform across gate sizes without risking a parse failure
-/// on the common path; a failure would mean an uncurated result welded into the cached
-/// prefix (docs/redaction-fork.md).
+/// Both answer shapes stand in one static schema (docs/redaction-fork.md). `keep` /
+/// `note` at the top level are the **flat form**, which the tail instruction asks for on
+/// a single-result gate — the overwhelming majority — since naming the one call in
+/// question is transcription with no decision in it. `results` is the keyed form, asked
+/// for when a gate carries several. Either may arrive for either gate size (nothing
+/// enforces the schema — the tool isn't `strict`), so both are always accepted; a parse
+/// failure would mean the result's output withheld as a hard error
+/// (docs/redaction-fork.md).
 #[derive(Deserialize)]
 pub(super) struct RetainInput {
     #[serde(default)]
@@ -109,9 +110,17 @@ pub(super) fn collect_dispositions(
 /// didn't call `retain` (or called something else).
 ///
 /// `offered` is the call ids the peek actually showed, in order. It is used only to
-/// interpret the legacy flat form: a bare `keep`/`note` is unambiguous exactly when
-/// one result is in flight, so it is adopted as that result's verdict and ignored
-/// otherwise. Verdicts naming an id that was never offered are left in place — the
+/// resolve verdicts that carry no usable id, both of which are unambiguous exactly when
+/// one result is in flight and are ignored otherwise:
+///
+/// - a bare top-level `keep`/`note` — the **flat form**, which is what the tail
+///   instruction asks for on a single-result gate;
+/// - a lone `results` entry whose `call_id` doesn't match, which is re-keyed to the one
+///   offered id. With a single target there is nothing to mis-attribute *to*, so
+///   rejecting a decided verdict over a mistyped id would withhold output the model
+///   plainly triaged (docs/redaction-fork.md).
+///
+/// Verdicts naming an id that was never offered are otherwise left in place — the
 /// caller reconciles, the same harness-side guard used for invented notification ids
 /// and roster names (docs/redaction-fork.md).
 pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Option<ParsedRetain> {
@@ -137,17 +146,24 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
             raw_keep: r.keep,
         })
         .collect();
-    // Legacy flat form: only adoptable when exactly one result is in flight, and only
-    // when the array didn't already answer it.
-    if let (Some(keep), [only]) = (keep, offered)
-        && !verdicts.iter().any(|v| &v.call_id == only)
+    // Both id-free shapes resolve only against a single-result gate, and only when the
+    // array didn't already answer it.
+    if let [only] = offered
+        && !verdicts.iter().any(|v| v.call_id == *only)
     {
-        verdicts.push(ResultVerdict {
-            call_id: only.clone(),
-            keep: parse_keep(&keep),
-            note,
-            raw_keep: keep,
-        });
+        match (keep, verdicts.as_mut_slice()) {
+            // Flat form — the shape the tail instruction asks for on a single gate.
+            (Some(keep), _) => verdicts.push(ResultVerdict {
+                call_id: only.clone(),
+                keep: parse_keep(&keep),
+                note,
+                raw_keep: keep,
+            }),
+            // A lone keyed entry with the wrong id: unambiguous, so re-key it rather
+            // than withhold a result the model plainly decided.
+            (None, [lone]) => lone.call_id = only.clone(),
+            (None, _) => {}
+        }
     }
 
     let (dispositions, bg) = collect_dispositions(inbox, background);

@@ -9,14 +9,53 @@ context and be acted on now, `dismiss` the noise, and leave anything you're defe
 unlisted. If you pin nothing you simply go back to idle and nothing changes — so pin only \
 what truly warrants picking the work back up.";
 
-pub(super) const RETAIN_INSTRUCTION: &str = "Above is the FULL, line-numbered output of every \
-tool call you just made, each under a header naming its [call id]. Line numbers restart at 1 \
-within each result, so ranges are always relative to the result you are deciding. Call \
-`retain` now, with one `results` entry per output — every [call id] above must be answered, and \
-`call_id` must be copied exactly. For each, `keep` is \"all\", \"none\", or comma-separated \
-1-based inclusive line ranges like \"40-52,310-318\". Whatever you drop is gone from the \
-working context — so keep anything that might matter for the rest of the task, while staying \
-as lean as you can. Always add a one-line `note` summarizing what that output showed.";
+/// The shared tail of the `retain` ask — what `keep` means and how to choose it. The
+/// shape-specific opening is prepended by [`retain_instruction`].
+const RETAIN_TAIL: &str = " `keep` is \"all\", \"none\", or comma-separated 1-based inclusive \
+line ranges like \"40-52,310-318\". Whatever you drop is gone from the working context — so keep \
+anything that might matter for the rest of the task, while staying as lean as you can. Always \
+add a one-line `note` summarizing what that output showed.";
+
+/// The `retain` ask, scoped to the results **this gate** is deciding
+/// (docs/redaction-fork.md).
+///
+/// Two things the earlier static text got wrong, both observed against a live model on a
+/// long transcript:
+///
+/// - **The ask must be bounded.** "Every [call id] above" reads as the whole
+///   conversation, and every prior `tool_result` on the canonical wire already carries a
+///   `[seq]` block-addressing tag in the same bracket syntax as a `[call id]` header. A
+///   model deep in a session answered by re-triaging the entire transcript — twenty-odd
+///   entries keyed by `[seq]` tags, its own dialect's internal tool names, and invented
+///   ids — and the id actually under the gate was often not among them, so coverage
+///   failed and the gate hard-errored. Saying what is *not* in scope is what stops it.
+/// - **A single-result gate should not ask for a call id at all.** Copying an id when
+///   only one result is in question is transcription with no decision in it, and it is
+///   the single most failure-prone token in the response. The flat top-level
+///   `keep`/`note` is asked for instead; the `results` array is for gates that genuinely
+///   carry several. The ids are interpolated in that case — the peek's tail is thrown
+///   away, so nothing here is cache-keyed (docs/log-and-projection.md), unlike the
+///   static schema it drives.
+pub(super) fn retain_instruction(offered: &[String]) -> String {
+    let scope = "Nothing earlier in this conversation is being triaged — those results are \
+already decided, and their [n] tags are not call ids.";
+    match offered {
+        [_one] => format!(
+            "This message carries the FULL, line-numbered output of the one tool call you just \
+made. {scope} Call `retain` now with a top-level `keep` and `note` for that output — no \
+`results` array and no call id: there is only one result in question.{RETAIN_TAIL}"
+        ),
+        many => format!(
+            "This message carries the FULL, line-numbered output of the {n} tool calls you just \
+made, each under a header naming its [call id]. Line numbers restart at 1 within each result, so \
+ranges are always relative to the result you are deciding. {scope} Call `retain` now with exactly \
+{n} `results` entries, one per call id listed here and no others: [{ids}]. Copy each `call_id` \
+exactly.{RETAIN_TAIL}",
+            n = many.len(),
+            ids = many.join("], ["),
+        ),
+    }
+}
 
 pub(super) const INBOX_INSTRUCTION: &str = " You also have pending notifications, listed under \
 \"inbox\" above with an [id] each. In the `inbox` field, `pin` the ids worth carrying \

@@ -69,6 +69,15 @@ pub(super) fn surfaced_schema_field() -> Value {
 }
 
 /// The fork gate's tool (docs/redaction-fork.md). Static — see the module doc.
+///
+/// Two answer shapes, because the schema is static while gate size is not. A gate
+/// carrying one result — the overwhelming majority — is answered with the **flat**
+/// top-level `keep`/`note`: naming the one call whose result is right there is
+/// transcription work with no decision in it, and the id it asks for is the id most
+/// likely to come back wrong. A gate carrying several is answered with the `results`
+/// array, where a `call_id` per entry is what makes the verdicts attributable.
+/// Neither is `required`: the schema can't know the gate size, so the peek's tail
+/// instruction ([`retain_instruction`](super::retain_instruction)) names the shape.
 pub fn retain_tool() -> Value {
     json!({
         "name": RETAIN,
@@ -76,15 +85,23 @@ pub fn retain_tool() -> Value {
         "input_schema": {
             "type": "object",
             "properties": {
+                "keep": {
+                    "type": "string",
+                    "description": "The verdict when the harness asked about a single result: \"all\", \"none\", or comma-separated 1-based inclusive line ranges, e.g. \"40-52,310-318\" (a single line is \"7\"). No call id needed — there is only one result in question."
+                },
+                "note": {
+                    "type": "string",
+                    "description": "One-line summary of what that output showed; the breadcrumb kept when little or nothing is retained."
+                },
                 "results": {
                     "type": "array",
-                    "description": "One entry per tool result shown above — answer every one, addressing each by its [call id] header. Line numbers restart at 1 within each result.",
+                    "description": "The verdict when the harness asked about several results at once — one entry per result it named, and only those. Line numbers restart at 1 within each result.",
                     "items": {
                         "type": "object",
                         "properties": {
                             "call_id": {
                                 "type": "string",
-                                "description": "The [call id] of the result this entry decides, copied exactly from its header above."
+                                "description": "The [call id] of the result this entry decides, copied exactly from the header the harness showed it under."
                             },
                             "keep": {
                                 "type": "string",
@@ -101,8 +118,7 @@ pub fn retain_tool() -> Value {
                 "inbox": inbox_schema_field(),
                 "background": background_schema_field(),
                 "surfaced": surfaced_schema_field()
-            },
-            "required": ["results"]
+            }
         }
     })
 }

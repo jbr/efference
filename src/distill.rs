@@ -318,7 +318,11 @@ fn extend_with_retry(
     else {
         return false;
     };
-    let mut content: Vec<ApiBlock> = thinking.iter().chain(text.iter()).map(block_to_api).collect();
+    let mut content: Vec<ApiBlock> = thinking
+        .iter()
+        .chain(text.iter())
+        .map(block_to_api)
+        .collect();
     for call in calls {
         content.push(ApiBlock::ToolUse {
             id: call.id.0.clone(),
@@ -344,7 +348,9 @@ fn extend_with_retry(
         })
         .collect();
     reply.push(ApiBlock::Text {
-        text: format!("That response didn't answer the ask. Call `{tool}` now, as instructed above."),
+        text: format!(
+            "That response didn't answer the ask. Call `{tool}` now, as instructed above."
+        ),
         cache_control: None,
     });
     messages.push(ApiMessage {
@@ -357,6 +363,12 @@ fn extend_with_retry(
 /// Verdict validity includes **coverage** (docs/redaction-fork.md): every offered call
 /// id must be answered, or the verdict is rejected and retried in-fork — a result
 /// silently left untriaged is exactly the fallback this gate no longer has.
+///
+/// The rejection names what the verdict *did* answer, not only what it missed. Without
+/// that, "answered nothing" and "answered twenty-six results that were never offered"
+/// are the same line in the log, and the second is a prompt-scoping defect the first
+/// gives no hint of — which is how a session's worth of gates failed this way before
+/// anyone could read the cause off the record (docs/redaction-fork.md on the breadcrumb).
 fn require_coverage(verdict: ParsedRetain, offered: &[String]) -> Result<ParsedRetain, String> {
     let unanswered: Vec<&str> = offered
         .iter()
@@ -364,13 +376,23 @@ fn require_coverage(verdict: ParsedRetain, offered: &[String]) -> Result<ParsedR
         .map(String::as_str)
         .collect();
     if unanswered.is_empty() {
-        Ok(verdict)
-    } else {
-        Err(format!(
-            "verdict answered no result for [{}]",
-            unanswered.join("], [")
-        ))
+        return Ok(verdict);
     }
+    let answered = match verdict.results.as_slice() {
+        [] => "nothing".to_string(),
+        answered => format!(
+            "[{}]",
+            answered
+                .iter()
+                .map(|v| v.call_id.as_str())
+                .collect::<Vec<_>>()
+                .join("], [")
+        ),
+    };
+    Err(format!(
+        "verdict answered no result for [{}] — it answered {answered}",
+        unanswered.join("], [")
+    ))
 }
 
 /// Describe a completion that produced no usable verdict, for the `Triage` breadcrumb.
@@ -419,7 +441,10 @@ fn peek_messages(
     append_inbox_and_background(&mut sections, inbox, background);
     append_roster(&mut sections, roster);
 
-    let mut instruction = RETAIN_INSTRUCTION.to_string();
+    // Scoped to exactly this gate's ids, and shape-selected on its size — the tail is
+    // discarded with the fork, so nothing here is cache-keyed (docs/redaction-fork.md).
+    let offered: Vec<String> = pending.iter().map(|p| p.call.id.0.clone()).collect();
+    let mut instruction = retain_instruction(&offered);
     if !inbox.is_empty() {
         instruction.push_str(INBOX_INSTRUCTION);
     }

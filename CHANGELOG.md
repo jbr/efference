@@ -8,6 +8,8 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Fixed
+- The fork peek's ask is scoped to the results of the gate it opened, and a single-result gate asks for a bare `keep`/`note` with no call id; an unbounded ask had models re-triaging the whole transcript against prior results' `[seq]` tags, failing coverage and withholding output.
+- A coverage rejection records which ids the verdict *did* answer, so a scoping failure is distinguishable from an empty verdict in the log.
 - The fork peek sends the agent turn's exact request envelope (shared tools array, `tool_choice: auto`, same thinking policy), so peeks read the agent lineage's prompt cache instead of re-writing the transcript cold on every gate.
 - The trailing cache breakpoint marks the last *text* block — a marker on a `tool_use`/`tool_result` block bills an unreadable cache write on OpenAI-fronted endpoints.
 - Transient upstream 429/5xx responses retry with a bounded backoff, and an exhausted completion now returns the session to idle instead of terminating the daemon.
