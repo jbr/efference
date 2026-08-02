@@ -25,7 +25,7 @@ live network connection.
 | `content_block_start` | opens a `text` or `tool_use` accumulator at a given index |
 | `content_block_delta` | `text_delta` appends to a text block; `input_json_delta` appends a raw JSON fragment to a tool block |
 | `content_block_stop` | block boundary; no-op (finalization happens in `finish`) |
-| `message_delta` | final `stop_reason`; final `output_tokens` (overwrites the placeholder from `message_start`) |
+| `message_delta` | final `stop_reason`; final `usage` (merged into the `message_start` counts, per field) |
 | `message_stop` | terminal; no-op |
 | `ping` | keepalive; no-op |
 | `error` | in-stream error (e.g. `overloaded_error` after a 200); surfaced verbatim |
@@ -48,13 +48,28 @@ hard error, never a silent drop. The API surface is explicit about what the
 assembler knows how to handle; anything outside that set fails immediately and
 loudly rather than silently losing data.
 
-*Usage merge.* `input_tokens` and the `cache_*` fields arrive in
-`message_start`; the final `output_tokens` arrives in `message_delta`. Both
-events must be read and merged. Reading only `message_start` regresses the
-cache-gate metrics — `message_start` carries a placeholder `output_tokens: 1`
-that `message_delta` overwrites with the real count. The `Usage` struct captures
-all four fields (`input_tokens`, `output_tokens`, `cache_creation_input_tokens`,
-`cache_read_input_tokens`), defaulting the cache fields to zero when absent.
+*Usage merge.* Both usage-bearing events are read and folded into one `Usage` by
+per-field maximum (`Usage::merge_max`); which event carries a given count is
+provider-dependent, so neither can be skipped.
+
+- Anthropic reports `input_tokens` and the `cache_*` fields in `message_start`,
+  with a placeholder `output_tokens: 1` that the real count in `message_delta`
+  replaces.
+- OpenRouter's skin reports all four as zero or `null` in `message_start` and
+  the real counts — including `cache_read_input_tokens` and
+  `cache_creation_input_tokens` — in `message_delta`. Reading only
+  `message_start` there yielded `in 0 · cache read 0 · cache write 0` on every
+  turn, which reads as a permanently cold cache.
+
+The merge is a maximum rather than "later event wins" because both events report
+per-response *totals*, not increments: neither can legitimately report less than
+the other for the same field, so a placeholder or zero from either side is
+harmless. This is one code path for both providers — nothing about the usage
+merge switches on `Provider`.
+
+The `Usage` struct captures all four fields (`input_tokens`, `output_tokens`,
+`cache_creation_input_tokens`, `cache_read_input_tokens`), folding both an absent
+field and an explicit `null` to zero.
 
 ---
 

@@ -138,6 +138,28 @@ pub struct Usage {
     pub cache_read_input_tokens: u64,
 }
 
+impl Usage {
+    /// Fold another `usage` object from the same response into this one, keeping
+    /// the larger count per field. Used by the [`Assembler`] to merge the
+    /// `message_start` and `message_delta` usages without either event's
+    /// placeholder clobbering the other's real number: Anthropic's
+    /// `message_start` carries the input/cache counts and `output_tokens: 1`,
+    /// while OpenRouter's carries all-zero/null and puts every real count in
+    /// `message_delta`. Max rather than "last non-zero wins" because these are
+    /// per-response totals, not increments — neither event can legitimately
+    /// report *less* than the other for the same field.
+    pub(crate) fn merge_max(&mut self, other: &Usage) {
+        self.input_tokens = self.input_tokens.max(other.input_tokens);
+        self.output_tokens = self.output_tokens.max(other.output_tokens);
+        self.cache_creation_input_tokens = self
+            .cache_creation_input_tokens
+            .max(other.cache_creation_input_tokens);
+        self.cache_read_input_tokens = self
+            .cache_read_input_tokens
+            .max(other.cache_read_input_tokens);
+    }
+}
+
 /// Deserialize a `u64` that a provider may send as an explicit JSON `null` (or omit
 /// entirely, when paired with `#[serde(default)]`), folding both to 0. Anthropic
 /// omits; OpenRouter-fronted upstreams null it out — see [`Usage`]. Not part of any

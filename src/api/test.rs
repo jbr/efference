@@ -393,10 +393,34 @@ fn openrouter_null_cache_usage_does_not_crash() {
         ])
         .unwrap();
     assert_eq!(completion.model, "thinkingmachines/inkling");
-    assert_eq!(completion.usage.input_tokens, 0);
+    // Every count comes from `message_delta` here: `message_start` reported zeros
+    // and nulls for all four, so the max-merge keeps the delta's numbers.
+    assert_eq!(completion.usage.input_tokens, 17);
     assert_eq!(completion.usage.cache_creation_input_tokens, 0); // null → 0
     assert_eq!(completion.usage.cache_read_input_tokens, 0); // null → 0
     assert_eq!(completion.usage.output_tokens, 64); // message_delta, non-null
+}
+
+/// OpenRouter fronting a caching upstream reports the real token counts —
+/// including `cache_read`/`cache_creation` — only in `message_delta`; its
+/// `message_start` usage is all zeros and nulls. Reading `message_start` alone
+/// printed `in 0 · cache read 0 · cache write 0` on every OpenRouter turn, so
+/// the max-merge is what makes the cache metrics exist off Anthropic.
+#[test]
+fn openrouter_cache_counts_arrive_in_message_delta() {
+    let completion = feed(&[
+            ("message_start", r#"{"type":"message_start","message":{"id":"gen-2","model":"anthropic/claude-haiku-4.5","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":null,"cache_read_input_tokens":null}}}"#),
+            ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
+            ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#),
+            ("content_block_stop", r#"{"index":0}"#),
+            ("message_delta", r#"{"delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":12,"output_tokens":26,"cache_creation_input_tokens":165,"cache_read_input_tokens":9407}}"#),
+            ("message_stop", r#"{"type":"message_stop"}"#),
+        ])
+        .unwrap();
+    assert_eq!(completion.usage.input_tokens, 12);
+    assert_eq!(completion.usage.output_tokens, 26);
+    assert_eq!(completion.usage.cache_creation_input_tokens, 165);
+    assert_eq!(completion.usage.cache_read_input_tokens, 9407);
 }
 
 /// A tool call with no `input_json_delta` fragments projects to `{}`, not a

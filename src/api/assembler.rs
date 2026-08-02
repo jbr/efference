@@ -36,10 +36,13 @@ pub(super) enum BlockAccum {
 /// - **Loud on unknown.** An unrecognized event, block, or delta type is a hard
 ///   error, never silently dropped (mirrors the old enum's deliberate parse
 ///   failure on unmodelled block types).
-/// - **Usage merge.** `input_tokens` + `cache_*` come from `message_start`; the
-///   final `output_tokens` from `message_delta`. Reading only one event would
-///   regress the cache-gate metrics to the `message_start` placeholder
-///   (`output_tokens: 1`) — see docs/log-and-projection.md.
+/// - **Usage merge.** Both usage-bearing events fold into one [`Usage`] by
+///   per-field max ([`Usage::merge_max`]). Anthropic reports `input_tokens` +
+///   `cache_*` in `message_start` and the final `output_tokens` in
+///   `message_delta`; OpenRouter's skin zeroes/nulls the whole object in
+///   `message_start` and reports every field in `message_delta`. Reading either
+///   event alone loses half the picture for one of the two providers — see
+///   docs/log-and-projection.md.
 /// - **Thinking assembled** into leading `ContentBlock::Thinking` / `RedactedThinking`
 ///   (docs/transport.md, docs/transport.md), signatures preserved for replay.
 pub(super) struct Assembler {
@@ -214,23 +217,18 @@ impl Assembler {
                 #[derive(Deserialize)]
                 struct Env {
                     delta: Delta,
-                    usage: DeltaUsage,
+                    usage: Usage,
                 }
                 #[derive(Deserialize)]
                 struct Delta {
                     #[serde(default)]
                     stop_reason: Option<String>,
                 }
-                #[derive(Deserialize)]
-                struct DeltaUsage {
-                    #[serde(default, deserialize_with = "null_or_missing")]
-                    output_tokens: u64,
-                }
                 let Env { delta, usage } = serde_json::from_str(data)?;
                 if let Some(reason) = delta.stop_reason {
                     self.stop_reason = Some(reason);
                 }
-                self.usage.output_tokens = usage.output_tokens;
+                self.usage.merge_max(&usage);
             }
             // Terminal; the body ends after it, so the stream closes on its own.
             Some("message_stop") => {}
