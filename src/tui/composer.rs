@@ -500,11 +500,6 @@ impl Composer {
                     self.delete_back();
                 }
             }
-            KeyCode::Char('h') if ctrl => {
-                if !self.delete_selection() {
-                    self.delete_back();
-                }
-            }
             KeyCode::Delete => {
                 if !self.delete_selection() {
                     self.delete_forward();

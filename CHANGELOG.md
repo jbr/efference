@@ -17,6 +17,7 @@ behind a change, see [`journal/`](journal/).
 - Transient upstream 429/5xx responses retry with a bounded backoff, and an exhausted completion now returns the session to idle instead of terminating the daemon.
 
 ### Added
+- The TUI composer supports grapheme-safe text selection, mouse selection, and plain-text copy, cut, and paste with a process-local clipboard fallback.
 - Provider identity is declared (`EFFERENCE_PROVIDER=anthropic|openrouter`, default `anthropic`) and the endpoint URL + auth shape derived from it; the `EFFERENCE_ENDPOINT`/`EFFERENCE_AUTH_*` knobs are retired (setting one is an error naming the replacement).
 - `serve` fetches the model's capabilities (context window, max output tokens) from the provider's metadata endpoint at boot; a failed lookup aborts startup.
 - `GET /state` reports context-window occupancy (`usage.context`), and the TUI sidebar renders it as a `ctx 7% · 14k/200k` line leading STATS.
