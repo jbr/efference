@@ -142,7 +142,10 @@ fn state_reports_session_cost_only_when_armed() {
         auth_value: "Bearer sk-or-test".into(),
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
-    assert_eq!(v["usage"]["cost"], serde_json::json!({ "usd": 0.0, "unpriced": 0 }));
+    assert_eq!(
+        v["usage"]["cost"],
+        serde_json::json!({ "usd": 0.0, "unpriced": 0 })
+    );
 
     // Fold what the spawned per-generation fetches would write (the fetch
     // itself is network; the fold and readout are what this pins).

@@ -377,9 +377,7 @@ fn result_entry(
                     WireState::Elided => "[elided]".to_string(),
                     // The same message the agent sees on the wire; the operator can
                     // flip to raw — the withheld output is still in the log.
-                    WireState::TriageFailed { why } => {
-                        crate::project::render_triage_failure(why)
-                    }
+                    WireState::TriageFailed { why } => crate::project::render_triage_failure(why),
                     // Unreachable: a distilled result is handled above unless it is
                     // being shown raw, which this branch already excluded.
                     WireState::Distilled { keep, note } => {

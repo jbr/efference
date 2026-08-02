@@ -37,9 +37,9 @@ impl Shared {
         // price, so a nonzero value marks the total as an undercount.
         let cost = {
             let cell = self.cost.lock().unwrap();
-            cell.endpoint.as_ref().map(|_| {
-                serde_json::json!({ "usd": cell.total_usd, "unpriced": cell.unpriced })
-            })
+            cell.endpoint
+                .as_ref()
+                .map(|_| serde_json::json!({ "usd": cell.total_usd, "unpriced": cell.unpriced }))
         };
         let usage = serde_json::json!({
             "last": metrics.last_usage,

@@ -22,7 +22,13 @@ fn keepalive_advances_touch_clock_not_cap_clock() {
         cache_creation_input_tokens: 0,
         cache_read_input_tokens: 100,
     };
-    shared.record_request(RequestOrigin::Turn, RequestUsage { id: None, usage: usage.clone() }); // real turn → stamps both clocks
+    shared.record_request(
+        RequestOrigin::Turn,
+        RequestUsage {
+            id: None,
+            usage: usage.clone(),
+        },
+    ); // real turn → stamps both clocks
     std::thread::sleep(Duration::from_millis(5));
     shared.record_keepalive(RequestUsage { id: None, usage }); // ping → advances the touch clock only
 

@@ -105,12 +105,9 @@ impl<'a> InteractiveState<'a> {
                 && y < bottom
             {
                 let line = match u.context_used {
-                    Some(used) => format!(
-                        "ctx {}% · {}/{}",
-                        used * 100 / limit,
-                        num(used),
-                        num(limit)
-                    ),
+                    Some(used) => {
+                        format!("ctx {}% · {}/{}", used * 100 / limit, num(used), num(limit))
+                    }
                     None => format!("ctx {}", num(limit)),
                 };
                 put(buf, x0 + 1, y, max_w.saturating_sub(1), &line, text);

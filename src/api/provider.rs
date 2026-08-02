@@ -198,9 +198,11 @@ impl Endpoint {
     pub async fn fetch_capabilities(&self, model: &str) -> Result<ModelCapabilities, Error> {
         let url = self.provider.capabilities_url(model)?;
         let body = self.authed_get(&url).await?;
-        self.provider.parse_capabilities(&body).map_err(|e| -> Error {
-            format!("could not parse model metadata from {url}: {e}").into()
-        })
+        self.provider
+            .parse_capabilities(&body)
+            .map_err(|e| -> Error {
+                format!("could not parse model metadata from {url}: {e}").into()
+            })
     }
 
     /// One request's billed cost in USD, from the provider's own accounting —

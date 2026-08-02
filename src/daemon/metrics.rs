@@ -71,7 +71,11 @@ impl Shared {
     /// offline verbs — just drops the lines; a failure to open is reported and
     /// likewise degrades to in-memory telemetry only, never a dead daemon.
     pub fn attach_usage_log(&self, path: &std::path::Path) {
-        match std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
             Ok(file) => *self.usage_log.lock().unwrap() = Some(io::BufWriter::new(file)),
             Err(e) => eprintln!("[usage record: could not open {}: {e}]", path.display()),
         }

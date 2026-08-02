@@ -68,7 +68,11 @@ fn overlapping_ranges_are_not_double_counted() {
     // The verdict is normalized before counting, as it is before rendering — a model
     // that writes `1-10,5-15` kept 15 lines, not 25.
     let mut r = Retention::default();
-    r.fold(&result(0, 100, distilled(Keep::Ranges(vec![(1, 10), (5, 15)]))));
+    r.fold(&result(
+        0,
+        100,
+        distilled(Keep::Ranges(vec![(1, 10), (5, 15)])),
+    ));
     assert_eq!(r.kept_lines, 15);
 }
 
@@ -106,7 +110,11 @@ fn lines_past_the_cap_are_truncated_not_dropped_silently() {
     // Beyond the cap the lines were never offered, so they belong to neither side of
     // the ratio — but they are reported, not silently absent.
     let mut r = Retention::default();
-    r.fold(&result(0, super::super::PEEK_LINE_CAP + 25, distilled(Keep::All)));
+    r.fold(&result(
+        0,
+        super::super::PEEK_LINE_CAP + 25,
+        distilled(Keep::All),
+    ));
     assert_eq!(r.shown_lines as usize, super::super::PEEK_LINE_CAP);
     assert_eq!(r.kept_lines as usize, super::super::PEEK_LINE_CAP);
     assert_eq!(r.truncated_lines, 25);

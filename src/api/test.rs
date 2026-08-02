@@ -18,12 +18,8 @@ fn endpoint_defaults_to_anthropic_from_bare_key() {
 /// stays a *whole* value (an `op://…` reference `op run` resolves).
 #[test]
 fn endpoint_openrouter_derived_from_declared_provider() {
-    let e = Endpoint::resolve(
-        Some("openrouter".into()),
-        Some("sk-or-v1-abc".into()),
-        None,
-    )
-    .unwrap();
+    let e =
+        Endpoint::resolve(Some("openrouter".into()), Some("sk-or-v1-abc".into()), None).unwrap();
     assert_eq!(e.provider, Provider::OpenRouter);
     assert_eq!(e.url, "https://openrouter.ai/api/v1/messages");
     assert_eq!(e.auth_header, "authorization");

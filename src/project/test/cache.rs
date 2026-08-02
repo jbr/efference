@@ -28,9 +28,7 @@ fn trailing_cache_breakpoint_marks_only_the_last_text_block() {
     let marked: Vec<&ApiBlock> = messages
         .iter()
         .flat_map(|m| &m.content)
-        .filter(|b| {
-            serde_json::to_string(b).unwrap().contains("cache_control")
-        })
+        .filter(|b| serde_json::to_string(b).unwrap().contains("cache_control"))
         .collect();
     assert!(
         matches!(marked.as_slice(), [ApiBlock::Text { .. }]),

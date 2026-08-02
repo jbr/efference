@@ -48,7 +48,11 @@ impl Retention {
         match wire {
             WireState::Distilled { keep, .. } => {
                 let d = distillate(&raw.content, keep);
-                self.kept_lines += d.ranges.iter().map(|&(s, e)| (e + 1 - s) as u64).sum::<u64>();
+                self.kept_lines += d
+                    .ranges
+                    .iter()
+                    .map(|&(s, e)| (e + 1 - s) as u64)
+                    .sum::<u64>();
                 self.shown_lines += d.shown.len() as u64;
                 self.truncated_lines += d.dropped as u64;
             }

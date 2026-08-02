@@ -219,7 +219,9 @@ pub(super) fn parse_usage(body: &str) -> Option<UsageStats> {
             .and_then(|v| v.as_u64()),
         context_used: context.and_then(|c| c.get("used")).and_then(|v| v.as_u64()),
         cost_usd: cost.and_then(|c| c.get("usd")).and_then(|v| v.as_f64()),
-        cost_unpriced: cost.and_then(|c| c.get("unpriced")).and_then(|v| v.as_u64()),
+        cost_unpriced: cost
+            .and_then(|c| c.get("unpriced"))
+            .and_then(|v| v.as_u64()),
         kept_lines: retention("kept_lines"),
         shown_lines: retention("shown_lines"),
         withheld_results: retention("withheld"),
