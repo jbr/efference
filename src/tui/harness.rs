@@ -216,7 +216,17 @@ impl Screenplay<'_> {
     /// Click screen cell `(x, y)` through the real mouse path — the press that
     /// records a target, then the deferred `handle_click` the UI loop runs.
     pub(crate) fn click(&mut self, x: u16, y: u16) -> &mut Self {
-        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        self.click_with_modifiers(x, y, KeyModifiers::NONE)
+    }
+
+    /// Click through the real mouse path with explicit modifiers.
+    pub(crate) fn click_with_modifiers(
+        &mut self,
+        x: u16,
+        y: u16,
+        modifiers: KeyModifiers,
+    ) -> &mut Self {
+        use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
         // As with keys: paint first, so the frame's hit maps exist to resolve against.
         let _ = self.draw();
         let terminal = Terminal::new(TestBackend::new(self.width, self.height)).unwrap();
@@ -225,11 +235,35 @@ impl Screenplay<'_> {
                 kind: MouseEventKind::Down(MouseButton::Left),
                 column: x,
                 row: y,
-                modifiers: KeyModifiers::NONE,
+                modifiers,
             },
             &terminal,
         );
         self.state.handle_click();
+        self
+    }
+
+    /// Drag from `(from_x, from_y)` to `(to_x, to_y)` through the real mouse path.
+    /// The press, drag, and release share the same terminal geometry as live events.
+    pub(crate) fn drag(&mut self, from_x: u16, from_y: u16, to_x: u16, to_y: u16) -> &mut Self {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        let _ = self.draw();
+        let terminal = Terminal::new(TestBackend::new(self.width, self.height)).unwrap();
+        for (kind, column, row) in [
+            (MouseEventKind::Down(MouseButton::Left), from_x, from_y),
+            (MouseEventKind::Drag(MouseButton::Left), to_x, to_y),
+            (MouseEventKind::Up(MouseButton::Left), to_x, to_y),
+        ] {
+            self.state.handle_mouse_event(
+                MouseEvent {
+                    kind,
+                    column,
+                    row,
+                    modifiers: KeyModifiers::NONE,
+                },
+                &terminal,
+            );
+        }
         self
     }
 

@@ -248,6 +248,7 @@ impl<'a> InteractiveState<'a> {
         } else {
             input_area
         };
+        self.viewport.composer_area = Some(composer_area);
         let cursor = self.composer.render(
             frame.buffer_mut(),
             composer_area,

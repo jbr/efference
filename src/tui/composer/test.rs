@@ -70,6 +70,33 @@ fn selected_text_is_replaced_or_deleted_before_ordinary_edits() {
 }
 
 #[test]
+fn mouse_hit_testing_and_drag_selection_follow_wrapped_rows() {
+    let mut c = Composer::new();
+    c.set_text("a🏳️‍🌈bcdef");
+    let area = Rect::new(0, 0, 6, 2); // prompt leaves four content columns
+
+    c.set_cursor_from_mouse(c.cursor_for_screen_position(area, 2, 0), false);
+    c.extend_selection_from_mouse(c.cursor_for_screen_position(area, 3, 1));
+    assert_eq!(c.selection_range(), Some(0..17));
+
+    c.set_cursor_from_mouse(c.cursor_for_screen_position(area, 3, 0), false);
+    assert_eq!(c.cursor, 1);
+    assert_eq!(c.selection_range(), None);
+}
+
+#[test]
+fn screenplay_mouse_drag_and_shift_click_select_composer_text() {
+    use crate::tui::harness::Screenplay;
+
+    let mut play = Screenplay::new(24, 7);
+    play.type_str("abcdef").drag(2, 5, 5, 5);
+    assert_eq!(play.state.composer.selection_range(), Some(0..3));
+
+    play.click_with_modifiers(7, 5, KeyModifiers::SHIFT);
+    assert_eq!(play.state.composer.selection_range(), Some(0..5));
+}
+
+#[test]
 fn ctrl_x_h_selects_the_whole_buffer() {
     let mut c = Composer::new();
     c.set_text("a🏳️‍🌈\nb");

@@ -39,6 +39,8 @@ impl<'a> InteractiveState<'a> {
                 input_height: 1,
                 gate_height: 0,
                 sidebar_area: None,
+                composer_area: None,
+                composer_dragging: false,
             },
             render_cache: RenderCache {
                 actions: Vec::new(),

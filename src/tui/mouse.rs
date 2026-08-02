@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use crossterm::event::{MouseEvent, MouseEventKind};
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, layout::Position, prelude::Backend};
 
 use super::events::handle_action;
@@ -74,11 +74,23 @@ impl<'a> super::InteractiveState<'a> {
             }
 
             MouseEvent {
-                kind: MouseEventKind::Down(_),
+                kind: MouseEventKind::Down(MouseButton::Left),
                 column,
                 row,
-                ..
+                modifiers,
             } => {
+                if let Some(area) = self.viewport.composer_area
+                    && area.contains(Position::new(column, row))
+                {
+                    let cursor = self.composer.cursor_for_screen_position(area, column, row);
+                    self.composer
+                        .set_cursor_from_mouse(cursor, modifiers.contains(KeyModifiers::SHIFT));
+                    self.viewport.composer_dragging = true;
+                    self.composing = true;
+                    self.strip_focus = None;
+                    return;
+                }
+
                 let Ok(size) = terminal.size() else {
                     return;
                 };
@@ -113,6 +125,25 @@ impl<'a> super::InteractiveState<'a> {
                     self.strip_focus = Some(idx);
                     self.activate_strip_item(idx);
                 }
+            }
+
+            MouseEvent {
+                kind: MouseEventKind::Drag(MouseButton::Left),
+                column,
+                row,
+                ..
+            } if self.viewport.composer_dragging => {
+                if let Some(area) = self.viewport.composer_area {
+                    let cursor = self.composer.cursor_for_screen_position(area, column, row);
+                    self.composer.extend_selection_from_mouse(cursor);
+                }
+            }
+
+            MouseEvent {
+                kind: MouseEventKind::Up(MouseButton::Left),
+                ..
+            } if self.viewport.composer_dragging => {
+                self.viewport.composer_dragging = false;
             }
 
             MouseEvent {

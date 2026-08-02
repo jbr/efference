@@ -158,6 +158,63 @@ impl Composer {
         (anchor != self.cursor).then(|| anchor.min(self.cursor)..anchor.max(self.cursor))
     }
 
+    /// Position the cursor at a byte offset already known to be a grapheme
+    /// boundary. A mouse press either clears or starts a selection; a drag keeps
+    /// the press position as its anchor.
+    pub(super) fn set_cursor_from_mouse(&mut self, cursor: usize, extend: bool) {
+        debug_assert!(self.text.is_char_boundary(cursor));
+        if extend {
+            self.extend_selection();
+        } else {
+            self.anchor = Some(cursor);
+        }
+        self.cursor = cursor;
+        if self.anchor == Some(self.cursor) && !extend {
+            self.clear_selection();
+        }
+        self.goal_col = self.cursor_col();
+    }
+
+    /// Update the active mouse drag, preserving its press position as the anchor.
+    pub(super) fn extend_selection_from_mouse(&mut self, cursor: usize) {
+        debug_assert!(self.text.is_char_boundary(cursor));
+        self.extend_selection();
+        self.cursor = cursor;
+        if self.anchor == Some(self.cursor) {
+            self.clear_selection();
+        }
+        self.goal_col = self.cursor_col();
+    }
+
+    /// Map a screen cell in the rendered composer text rectangle to the closest
+    /// grapheme boundary. Rows and wrapping are shared with rendering.
+    pub(super) fn cursor_for_screen_position(&self, area: Rect, column: u16, row: u16) -> usize {
+        let rows = self.visual_rows(Self::content_width(area.width));
+        if rows.is_empty() {
+            return 0;
+        }
+        let (cursor_vr, _) = self.locate_cursor(&rows);
+        let visible = area.height as usize;
+        let top = cursor_vr.saturating_sub(visible.saturating_sub(1));
+        let screen_row = row.saturating_sub(area.y) as usize;
+        let row_index = (top + screen_row).min(top + visible.saturating_sub(1));
+        let Some(vr) = rows.get(row_index) else {
+            return rows.last().map_or(0, |row| row.end);
+        };
+
+        let target = column.saturating_sub(area.x + Self::prompt_cols()) as usize;
+        let mut width = 0;
+        for (offset, grapheme) in self.text[vr.start..vr.end].grapheme_indices(true) {
+            let start = vr.start + offset;
+            let grapheme_width = UnicodeWidthStr::width(grapheme);
+            if target < width + grapheme_width {
+                return start;
+            }
+            width += grapheme_width;
+        }
+        vr.end
+    }
+
     fn clear_selection(&mut self) {
         self.anchor = None;
     }

@@ -244,6 +244,11 @@ pub(super) struct ViewportState {
     /// hidden (narrow terminal). Remembered so the sidebar-only dev screenshot can
     /// slice exactly those columns (docs/tui.md).
     pub sidebar_area: Option<Rect>,
+    /// The composer's text rectangle as of the last frame, after a staged-verb chip
+    /// has claimed its left columns. Mouse hit testing uses this rendered geometry.
+    pub composer_area: Option<Rect>,
+    /// True while a primary-button drag is extending the composer selection.
+    pub composer_dragging: bool,
 }
 
 /// Rendering state computed each frame
