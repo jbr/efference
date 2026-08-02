@@ -34,6 +34,12 @@ impl<'a> InteractiveState<'a> {
         } else if char_with('v') && super_key && !alt {
             self.paste_clipboard();
             ComposerAction::Consumed
+        } else if char_with('z') && super_key && key.modifiers.contains(KeyModifiers::SHIFT) {
+            self.composer.redo();
+            ComposerAction::Consumed
+        } else if char_with('z') && super_key && !alt {
+            self.composer.undo();
+            ComposerAction::Consumed
         } else {
             self.composer.handle_key(key)
         }

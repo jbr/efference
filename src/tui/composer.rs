@@ -14,7 +14,10 @@
 //! constrained to extended-grapheme boundaries, so edits cannot split a
 //! user-perceived character.
 
-use std::ops::Range;
+use std::{
+    ops::Range,
+    time::{Duration, Instant},
+};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{buffer::Buffer, layout::Position, layout::Rect, style::Style};
@@ -43,6 +46,37 @@ pub(super) enum ComposerAction {
 /// the wrappable content width is measured against (see [`Composer::content_width`]).
 const PROMPT: &str = "› ";
 
+/// Maximum number of text changes retained for undo and redo.
+const HISTORY_LIMIT: usize = 200;
+
+/// Idle time after which ordinary typing begins a new undoable burst.
+const TYPING_BURST_IDLE: Duration = Duration::from_millis(750);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ComposerState {
+    text: String,
+    cursor: usize,
+    anchor: Option<usize>,
+    goal_col: usize,
+}
+
+#[derive(Debug, Clone)]
+struct HistoryEntry {
+    before: ComposerState,
+    after: ComposerState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CoalescingRun {
+    None,
+    Typing {
+        last_inserted_at: Instant,
+        end_cursor: usize,
+    },
+    Backspace,
+    DeleteForward,
+}
+
 /// One wrapped row of the composer: a byte range `[start, end)` within logical
 /// line `line`. Produced by [`Composer::visual_rows`].
 #[derive(Debug, Clone, Copy)]
@@ -65,6 +99,12 @@ pub(super) struct Composer {
     anchor: Option<usize>,
     /// Preferred grapheme column for vertical motion (emacs "goal column").
     goal_col: usize,
+    /// Text-changing operations before and after the current history position.
+    history: Vec<HistoryEntry>,
+    /// Number of entries from `history` currently applied to the buffer.
+    history_position: usize,
+    /// The edit kind eligible to extend the latest history entry.
+    coalescing_run: CoalescingRun,
 }
 
 impl Composer {
@@ -75,6 +115,9 @@ impl Composer {
             cursor: 0,
             anchor: None,
             goal_col: 0,
+            history: Vec::new(),
+            history_position: 0,
+            coalescing_run: CoalescingRun::None,
         }
     }
 
@@ -153,6 +196,116 @@ impl Composer {
         );
     }
 
+    fn state(&self) -> ComposerState {
+        ComposerState {
+            text: self.text.clone(),
+            cursor: self.cursor,
+            anchor: self.anchor,
+            goal_col: self.goal_col,
+        }
+    }
+
+    fn restore_state(&mut self, state: ComposerState) {
+        self.text = state.text;
+        self.line_starts = std::iter::once(0)
+            .chain(
+                self.text
+                    .bytes()
+                    .enumerate()
+                    .filter_map(|(offset, byte)| (byte == b'\n').then_some(offset + 1)),
+            )
+            .collect();
+        self.cursor = state.cursor;
+        self.anchor = state.anchor;
+        self.goal_col = state.goal_col;
+    }
+
+    fn reset_history(&mut self) {
+        self.history.clear();
+        self.history_position = 0;
+        self.coalescing_run = CoalescingRun::None;
+    }
+
+    /// Record one edit, optionally extending the immediately preceding run.
+    fn record_edit(&mut self, before: ComposerState, run: CoalescingRun) {
+        let after = self.state();
+        if before == after {
+            self.coalescing_run = CoalescingRun::None;
+            return;
+        }
+
+        let extends_previous = match (self.coalescing_run, run) {
+            (
+                CoalescingRun::Typing {
+                    last_inserted_at,
+                    end_cursor,
+                },
+                CoalescingRun::Typing {
+                    last_inserted_at: now,
+                    ..
+                },
+            ) => {
+                self.history_position == self.history.len()
+                    && self
+                        .history
+                        .last()
+                        .is_some_and(|entry| entry.after.cursor == end_cursor)
+                    && now.duration_since(last_inserted_at) <= TYPING_BURST_IDLE
+            }
+            (CoalescingRun::Backspace, CoalescingRun::Backspace)
+            | (CoalescingRun::DeleteForward, CoalescingRun::DeleteForward) => {
+                self.history_position == self.history.len()
+            }
+
+            _ => false,
+        };
+
+        if extends_previous {
+            self.history.last_mut().unwrap().after = after;
+        } else {
+            self.history.truncate(self.history_position);
+            self.history.push(HistoryEntry { before, after });
+
+            if self.history.len() > HISTORY_LIMIT {
+                self.history.remove(0);
+            }
+            self.history_position = self.history.len();
+        }
+
+        self.coalescing_run = run;
+    }
+
+    fn edit(&mut self, run: CoalescingRun, edit: impl FnOnce(&mut Self)) {
+        let before = self.state();
+        edit(self);
+        self.record_edit(before, run);
+    }
+
+    fn break_coalescing(&mut self) {
+        self.coalescing_run = CoalescingRun::None;
+    }
+
+    /// Restore the state before the previous text-changing operation.
+    pub(super) fn undo(&mut self) {
+        let Some(position) = self.history_position.checked_sub(1) else {
+            return;
+        };
+        let entry = self.history[position].clone();
+        self.restore_state(entry.before);
+        self.history_position = position;
+        self.break_coalescing();
+    }
+
+    /// Restore the state after the next text-changing operation.
+    pub(super) fn redo(&mut self) {
+        let Some(entry) = self.history.get(self.history_position).cloned() else {
+            return;
+        };
+        self.restore_state(entry.after);
+        self.history_position += 1;
+        self.break_coalescing();
+    }
+
     fn selection_range(&self) -> Option<Range<usize>> {
         let anchor = self.anchor?;
         (anchor != self.cursor).then(|| anchor.min(self.cursor)..anchor.max(self.cursor))
@@ -168,17 +321,21 @@ impl Composer {
     pub(super) fn cut_selection(&mut self) -> Option<String> {
         let range = self.selection_range()?;
         let text = self.text[range.clone()].to_string();
-        self.replace_range(range.clone(), "");
-        self.cursor = range.start;
-        self.clear_selection();
-        self.goal_col = self.cursor_col();
+        self.edit(CoalescingRun::None, |this| {
+            this.replace_range(range.clone(), "");
+            this.cursor = range.start;
+            this.clear_selection();
+            this.goal_col = this.cursor_col();
+        });
         Some(text)
     }
 
     /// Insert externally supplied plain text, replacing a selection when present.
     pub(super) fn paste_text(&mut self, text: &str) {
-        self.insert_text(text);
-        self.goal_col = self.cursor_col();
+        self.edit(CoalescingRun::None, |this| {
+            this.insert_text(text);
+            this.goal_col = this.cursor_col();
+        });
     }
 
     /// Position the cursor at a byte offset already known to be a grapheme
@@ -186,6 +343,7 @@ impl Composer {
     /// the press position as its anchor.
     pub(super) fn set_cursor_from_mouse(&mut self, cursor: usize, extend: bool) {
         debug_assert!(self.text.is_char_boundary(cursor));
+        self.break_coalescing();
         if extend {
             self.extend_selection();
         } else {
@@ -201,6 +359,7 @@ impl Composer {
     /// Update the active mouse drag, preserving its press position as the anchor.
     pub(super) fn extend_selection_from_mouse(&mut self, cursor: usize) {
         debug_assert!(self.text.is_char_boundary(cursor));
+        self.break_coalescing();
         self.extend_selection();
         self.cursor = cursor;
         if self.anchor == Some(self.cursor) {
@@ -259,6 +418,16 @@ impl Composer {
 
     fn delete_selection(&mut self) -> bool {
         self.replace_selection("")
+    }
+
+    fn delete_selection_as_edit(&mut self) -> bool {
+        if self.selection_range().is_none() {
+            return false;
+        }
+        self.edit(CoalescingRun::None, |this| {
+            this.delete_selection();
+        });
+        true
     }
 
     fn insert_text(&mut self, text: &str) {
@@ -394,6 +563,7 @@ impl Composer {
         self.cursor = 0;
         self.anchor = None;
         self.goal_col = 0;
+        self.reset_history();
     }
 
     /// Replace the buffer with `text`, cursor at the end — used by the control
@@ -413,6 +583,7 @@ impl Composer {
         self.cursor = self.text.len();
         self.anchor = None;
         self.goal_col = self.cursor_col();
+        self.reset_history();
     }
 
     /// Feed one key event. Returns whether it was consumed, ignored (caller should
@@ -421,8 +592,22 @@ impl Composer {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+        let ordinary_insertion = matches!(key.code, KeyCode::Char(_))
+            && !ctrl
+            && !alt
+            && !shift
+            && self.selection_range().is_none();
+        let keeps_coalescing = ordinary_insertion
+            || matches!(key.code, KeyCode::Backspace | KeyCode::Delete)
+            || (ctrl && matches!(key.code, KeyCode::Char('d')));
 
         match key.code {
+            // Undo stays on the composer so the non-Super terminal bindings work
+            // without keyboard enhancement support.
+            KeyCode::Char('/') if ctrl => self.undo(),
+            KeyCode::Char('_') if ctrl => self.undo(),
+            KeyCode::Char('_') if alt => self.redo(),
+
             // Submit on plain Enter; insert a newline on C-j / Alt-Enter (Enter is
             // ambiguous for newline across terminals, so the explicit keys win).
             KeyCode::Enter if alt => self.insert_newline(),
@@ -434,6 +619,7 @@ impl Composer {
             }
             // C-j is a literal newline — the reliable multiline key.
             KeyCode::Char('j') if ctrl => self.insert_newline(),
+            KeyCode::Tab => self.insert_tab(),
 
             // Emacs motion.
             KeyCode::Char('a') if ctrl => self.move_with_selection(shift, |this| {
@@ -491,42 +677,42 @@ impl Composer {
 
             // Emacs editing.
             KeyCode::Backspace if alt => {
-                if !self.delete_selection() {
+                if !self.delete_selection_as_edit() {
                     self.delete_word_back();
                 }
             }
             KeyCode::Backspace => {
-                if !self.delete_selection() {
+                if !self.delete_selection_as_edit() {
                     self.delete_back();
                 }
             }
             KeyCode::Delete => {
-                if !self.delete_selection() {
+                if !self.delete_selection_as_edit() {
                     self.delete_forward();
                 }
             }
             KeyCode::Char('d') if ctrl => {
-                if !self.delete_selection() {
+                if !self.delete_selection_as_edit() {
                     self.delete_forward();
                 }
             }
             KeyCode::Char('k') if ctrl => {
-                if !self.delete_selection() {
+                if !self.delete_selection_as_edit() {
                     self.kill_to_line_end();
                 }
             }
             KeyCode::Char('u') if ctrl => {
-                if !self.delete_selection() {
+                if !self.delete_selection_as_edit() {
                     self.kill_to_line_start();
                 }
             }
             KeyCode::Char('w') if ctrl => {
-                if !self.delete_selection() {
+                if !self.delete_selection_as_edit() {
                     self.delete_word_back();
                 }
             }
             KeyCode::Char('d') if alt => {
-                if !self.delete_selection() {
+                if !self.delete_selection_as_edit() {
                     self.delete_word_forward();
                 }
             }
@@ -534,8 +720,6 @@ impl Composer {
             // Printable insertion (ignore other control combos so they fall
             // through to the caller as commands).
             KeyCode::Char(c) if !ctrl && !alt => self.insert_char(c),
-            KeyCode::Char(' ') => self.insert_char(' '),
-            KeyCode::Tab => self.insert_char('\t'),
 
             // Anything else (PgUp/PgDn, F-keys, unbound Ctrl combos) belongs to the
             // caller.
@@ -548,16 +732,35 @@ impl Composer {
         {
             self.goal_col = self.cursor_col();
         }
+        if !keeps_coalescing {
+            self.break_coalescing();
+        }
         ComposerAction::Consumed
     }
 
     fn insert_char(&mut self, c: char) {
         let mut text = [0; 4];
-        self.insert_text(c.encode_utf8(&mut text));
+        let text = c.encode_utf8(&mut text);
+        let now = Instant::now();
+        self.edit(
+            CoalescingRun::Typing {
+                last_inserted_at: now,
+                end_cursor: self.cursor,
+            },
+            |this| this.insert_text(text),
+        );
+        self.coalescing_run = CoalescingRun::Typing {
+            last_inserted_at: now,
+            end_cursor: self.cursor,
+        };
     }
 
     fn insert_newline(&mut self) {
-        self.insert_text("\n");
+        self.edit(CoalescingRun::None, |this| this.insert_text("\n"));
+    }
+
+    fn insert_tab(&mut self) {
+        self.edit(CoalescingRun::None, |this| this.insert_text("\t"));
     }
 
     fn move_left(&mut self) {
@@ -657,64 +860,76 @@ impl Composer {
     }
 
     fn delete_back(&mut self) {
-        let row = self.cursor_row();
-        let line = self.line_range(row);
-        if self.cursor > line.start {
-            let start = self.previous_grapheme_boundary(self.cursor);
-            self.replace_range(start..self.cursor, "");
-            self.cursor = start;
-        } else if row > 0 {
-            let newline = line.start - 1;
-            self.replace_range(newline..line.start, "");
-            self.cursor = newline;
-        }
+        self.edit(CoalescingRun::Backspace, |this| {
+            let row = this.cursor_row();
+            let line = this.line_range(row);
+            if this.cursor > line.start {
+                let start = this.previous_grapheme_boundary(this.cursor);
+                this.replace_range(start..this.cursor, "");
+                this.cursor = start;
+            } else if row > 0 {
+                let newline = line.start - 1;
+                this.replace_range(newline..line.start, "");
+                this.cursor = newline;
+            }
+        });
     }
 
     fn delete_forward(&mut self) {
-        let row = self.cursor_row();
-        let line = self.line_range(row);
-        if self.cursor < line.end {
-            let end = self.next_grapheme_boundary(self.cursor);
-            self.replace_range(self.cursor..end, "");
-        } else if row + 1 < self.line_starts.len() {
-            self.replace_range(line.end..line.end + 1, "");
-        }
+        self.edit(CoalescingRun::DeleteForward, |this| {
+            let row = this.cursor_row();
+            let line = this.line_range(row);
+            if this.cursor < line.end {
+                let end = this.next_grapheme_boundary(this.cursor);
+                this.replace_range(this.cursor..end, "");
+            } else if row + 1 < this.line_starts.len() {
+                this.replace_range(line.end..line.end + 1, "");
+            }
+        });
     }
 
     fn kill_to_line_end(&mut self) {
-        let row = self.cursor_row();
-        let line = self.line_range(row);
-        if self.cursor < line.end {
-            self.replace_range(self.cursor..line.end, "");
-        } else if row + 1 < self.line_starts.len() {
-            self.replace_range(line.end..line.end + 1, "");
-        }
+        self.edit(CoalescingRun::None, |this| {
+            let row = this.cursor_row();
+            let line = this.line_range(row);
+            if this.cursor < line.end {
+                this.replace_range(this.cursor..line.end, "");
+            } else if row + 1 < this.line_starts.len() {
+                this.replace_range(line.end..line.end + 1, "");
+            }
+        });
     }
 
     fn kill_to_line_start(&mut self) {
-        let start = self.line_range(self.cursor_row()).start;
-        self.replace_range(start..self.cursor, "");
-        self.cursor = start;
+        self.edit(CoalescingRun::None, |this| {
+            let start = this.line_range(this.cursor_row()).start;
+            this.replace_range(start..this.cursor, "");
+            this.cursor = start;
+        });
     }
 
     fn delete_word_back(&mut self) {
-        let end = self.cursor;
-        self.move_word_left();
-        let start = self.cursor;
-        if start < end {
-            self.replace_range(start..end, "");
-        }
+        self.edit(CoalescingRun::None, |this| {
+            let end = this.cursor;
+            this.move_word_left();
+            let start = this.cursor;
+            if start < end {
+                this.replace_range(start..end, "");
+            }
+        });
     }
 
     /// Delete the next word and any leading separators, retaining following separators.
     fn delete_word_forward(&mut self) {
-        let start = self.cursor;
-        self.move_word_right();
-        let end = self.cursor;
-        if start < end {
-            self.replace_range(start..end, "");
-            self.cursor = start;
-        }
+        self.edit(CoalescingRun::None, |this| {
+            let start = this.cursor;
+            this.move_word_right();
+            let end = this.cursor;
+            if start < end {
+                this.replace_range(start..end, "");
+                this.cursor = start;
+            }
+        });
     }
 
     /// Render the composer into `area`, returning the on-screen cursor position so

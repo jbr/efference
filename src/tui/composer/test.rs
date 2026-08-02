@@ -16,6 +16,158 @@ fn alt(c: char) -> KeyEvent {
 fn shift(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::SHIFT)
 }
+fn undo(c: &mut Composer) {
+    c.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::CONTROL));
+}
+fn redo(c: &mut Composer) {
+    c.handle_key(KeyEvent::new(KeyCode::Char('_'), KeyModifiers::ALT));
+}
+
+#[test]
+fn undo_and_redo_restore_a_typing_burst() {
+    let mut c = Composer::new();
+    for ch in "hello".chars() {
+        c.handle_key(key(ch));
+    }
+
+    undo(&mut c);
+    assert_eq!(c.text(), "");
+    redo(&mut c);
+    assert_eq!(c.text(), "hello");
+}
+
+#[test]
+fn cursor_motion_splits_typing_bursts() {
+    let mut c = Composer::new();
+    c.handle_key(key('a'));
+    c.handle_key(key('b'));
+    c.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+    c.handle_key(key('X'));
+
+    undo(&mut c);
+    assert_eq!(c.text(), "ab");
+    undo(&mut c);
+    assert_eq!(c.text(), "");
+}
+
+#[test]
+fn newline_and_tab_are_separate_history_entries() {
+    let mut c = Composer::new();
+    c.handle_key(key('a'));
+    c.handle_key(ctrl('j'));
+    c.handle_key(key('b'));
+    c.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+
+    undo(&mut c);
+    assert_eq!(c.text(), "a\nb");
+    undo(&mut c);
+    assert_eq!(c.text(), "a\n");
+    undo(&mut c);
+    assert_eq!(c.text(), "a");
+    undo(&mut c);
+    assert_eq!(c.text(), "");
+}
+
+#[test]
+fn selection_replacement_undo_restores_selection() {
+    let mut c = Composer::new();
+    c.set_text("hello");
+    c.handle_key(shift(KeyCode::Left));
+    c.handle_key(shift(KeyCode::Left));
+    c.handle_key(key('X'));
+
+    undo(&mut c);
+    assert_eq!(c.text(), "hello");
+    assert_eq!(c.selection_range(), Some(3..5));
+    redo(&mut c);
+    assert_eq!(c.text(), "helX");
+    assert_eq!(c.selection_range(), None);
+}
+
+#[test]
+fn paste_and_cut_are_atomic_history_entries() {
+    let mut c = Composer::new();
+    c.paste_text("one\ntwo");
+    undo(&mut c);
+    assert_eq!(c.text(), "");
+    redo(&mut c);
+    assert_eq!(c.text(), "one\ntwo");
+
+    c.handle_key(ctrl('h'));
+    assert_eq!(c.cut_selection(), Some("one\ntwo".into()));
+    undo(&mut c);
+    assert_eq!(c.text(), "one\ntwo");
+    assert_eq!(c.selection_range(), Some(0..c.text.len()));
+}
+
+#[test]
+fn backward_and_forward_deletions_coalesce_separately() {
+    let mut c = Composer::new();
+    c.set_text("abcdef");
+    c.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+    c.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+    undo(&mut c);
+    assert_eq!(c.text(), "abcdef");
+
+    c.handle_key(ctrl('a'));
+    c.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+    c.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+    undo(&mut c);
+    assert_eq!(c.text(), "abcdef");
+}
+
+#[test]
+fn new_edit_after_undo_discards_redo() {
+    let mut c = Composer::new();
+    c.handle_key(key('a'));
+    c.handle_key(ctrl('j'));
+    c.handle_key(key('b'));
+    undo(&mut c);
+    c.handle_key(key('X'));
+    redo(&mut c);
+    assert_eq!(c.text(), "a\nX");
+}
+
+#[test]
+fn clear_and_set_text_reset_history() {
+    let mut c = Composer::new();
+    c.handle_key(key('a'));
+    c.clear();
+    undo(&mut c);
+    assert_eq!(c.text(), "");
+
+    c.handle_key(key('b'));
+    c.set_text("staged");
+    undo(&mut c);
+    assert_eq!(c.text(), "staged");
+}
+
+#[test]
+fn history_is_bounded() {
+    let mut c = Composer::new();
+    for _ in 0..=HISTORY_LIMIT {
+        c.handle_key(key('a'));
+        c.handle_key(ctrl('j'));
+    }
+    for _ in 0..HISTORY_LIMIT {
+        undo(&mut c);
+    }
+    let after_retained_undos = c.text();
+    undo(&mut c);
+    assert_eq!(c.text(), after_retained_undos);
+}
+
+#[test]
+fn unicode_undo_restores_cursor_and_selection() {
+    let mut c = Composer::new();
+    c.set_text("e\u{301}🏳️‍🌈");
+    c.handle_key(shift(KeyCode::Left));
+    c.handle_key(key('x'));
+    undo(&mut c);
+    assert_eq!(c.text(), "e\u{301}🏳️‍🌈");
+    assert_eq!(c.selection_range(), Some(3..c.text.len()));
+    assert_eq!(c.cursor_col(), 1);
+}
 
 #[test]
 fn unicode_width_handles_representative_graphemes() {
@@ -94,6 +246,22 @@ fn screenplay_mouse_drag_and_shift_click_select_composer_text() {
 
     play.click_with_modifiers(7, 5, KeyModifiers::SHIFT);
     assert_eq!(play.state.composer.selection_range(), Some(0..5));
+}
+
+#[test]
+fn super_z_routes_undo_and_redo() {
+    use crate::tui::harness::Screenplay;
+
+    let mut play = Screenplay::new(24, 7);
+    play.type_str("hello")
+        .route_key(KeyCode::Char('z'), KeyModifiers::SUPER);
+    assert_eq!(play.state.composer.text(), "");
+
+    play.route_key(
+        KeyCode::Char('z'),
+        KeyModifiers::SUPER | KeyModifiers::SHIFT,
+    );
+    assert_eq!(play.state.composer.text(), "hello");
 }
 
 #[test]
