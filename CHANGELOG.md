@@ -20,6 +20,10 @@ behind a change, see [`journal/`](journal/).
 - A non-compliant fork peek retries in-fork (bounded, API-valid tail extension); exhaustion withholds the output as a hard error visible to both agent and operator — the full untriaged result is never kept on the wire.
 - Every non-compliant peek attempt — recovered or not — is recorded attempt-stamped on the gate's `Triage` (`retries`) and shown as a `⚠ triage retry` annotation in the TUI transcript.
 - Per-request usage record: each upstream request appends an origin-tagged line with its generation id to the session dir's `usage.jsonl`.
+- Cumulative triage retention on `/state` (`usage.retention`, derived from the log) and as a `kept 55% · 13k/24k lines` line in the sidebar; results a failed gate withheld are counted apart from the ratio.
+
+### Removed
+- The unused `HeadTail` stub distiller (no call sites, including in tests); `ForkPeek` is the only distiller.
 - The TUI status bar shows the last non-2xx upstream response and consecutive-attempt count while retries are in flight.
 
 ### Changed

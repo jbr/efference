@@ -144,6 +144,38 @@ impl<'a> InteractiveState<'a> {
                 );
                 y += 1;
             }
+            // Triage retention (docs/redaction-fork.md): how much of what the gate
+            // showed is still on the agent's record. Absent until the first distilled
+            // result — zero shown is unknown, not 0%.
+            if u.shown_lines > 0 && y < bottom {
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &format!(
+                        "kept {}% · {}/{} lines",
+                        u.kept_lines * 100 / u.shown_lines,
+                        num(u.kept_lines),
+                        num(u.shown_lines)
+                    ),
+                    text,
+                );
+                y += 1;
+            }
+            // A failed gate withholds its result's output entirely — a distinct
+            // condition from a low ratio, so it is stated rather than folded into one.
+            if u.withheld_results > 0 && y < bottom {
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &format!("{} withheld", u.withheld_results),
+                    muted,
+                );
+                y += 1;
+            }
             if u.cache_read_input_tokens > 0 && y < bottom {
                 put(
                     buf,

@@ -339,7 +339,9 @@ pub const PEEK_LINE_CAP: usize = 2000;
 mod test;
 
 mod render;
+mod retention;
 mod wire;
 
 pub use render::{Distillate, distillate, render_distilled, render_triage_failure};
+pub use retention::Retention;
 pub use wire::{ApiBlock, ApiMessage, CacheControl, Role, place_trailing_cache_breakpoint};

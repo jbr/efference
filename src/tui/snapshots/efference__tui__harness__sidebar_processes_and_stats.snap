@@ -1,6 +1,5 @@
 ---
 source: src/tui/harness.rs
-assertion_line: 338
 expression: self.render()
 ---
     0         1         2         3         4         5         6         7         8         9         0         
@@ -14,9 +13,9 @@ expression: self.render()
  5 │                                                                                │  ctx 7% · 14k/200k          │
  6 │                                                                                │  cost $0.0421               │
  7 │                                                                                │  in 12k · out 3k            │
- 8 │                                                                                │  cache read 8k              │
- 9 │                                                                                │  idle 8s                    │
-10 │                                                                                │                             │
+ 8 │                                                                                │  kept 55% · 13k/24k lines   │
+ 9 │                                                                                │  cache read 8k              │
+10 │                                                                                │  idle 8s                    │
 11 │                                                                                │                             │
 12 │                                                                                │                             │
 13 │                                                                                │                             │

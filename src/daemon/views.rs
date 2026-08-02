@@ -14,6 +14,9 @@ impl Shared {
             .len()
             .checked_sub(1)
             .map(|i| i as u64);
+        // Taken before `metrics` is locked: it locks the log, and nothing else in the
+        // daemon acquires the two in the other order.
+        let retention = self.retention();
         let metrics = self.metrics.lock().unwrap();
         // Context-window occupancy (docs/transport.md): the last request's total
         // prompt tokens — uncached input + cache reads + cache writes; `input_tokens`
@@ -49,6 +52,12 @@ impl Shared {
             "seconds_since_last_request": metrics.last_request_at.map(|t| t.elapsed().as_secs()),
             "context": context,
             "cost": cost,
+            // Triage retention (docs/redaction-fork.md): how much of what the gate
+            // showed survives on the wire, derived from the log rather than from
+            // transport telemetry. `withheld` counts results whose output a failed
+            // gate suppressed — a distinct condition from a low ratio, and kept out
+            // of it, so a failing gate can't read as excellent compression.
+            "retention": retention,
         });
         serde_json::json!({
             "last_seq": last_seq,

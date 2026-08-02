@@ -31,8 +31,52 @@ fn sidebar_shows_processes_and_stats() {
         // Billed session cost from the provider's accounting → `cost $0.0421`.
         cost_usd: Some(0.0421),
         cost_unpriced: Some(0),
+        // Triage retention (docs/redaction-fork.md): 13.2k of 24.1k lines kept →
+        // the `kept 55% · 13k/24k lines` line. No gate failed, so nothing withheld.
+        kept_lines: 13_276,
+        shown_lines: 24_114,
+        withheld_results: 0,
     }));
     play.snapshot("sidebar_processes_and_stats");
+}
+
+/// Retention is absent, not 0%, before the first result is triaged — and a withheld
+/// result is reported as its own condition rather than folded into the ratio
+/// (docs/redaction-fork.md).
+#[test]
+fn sidebar_retention_before_any_triage_and_after_a_failed_gate() {
+    use crate::tui::{TuiEvent, UsageStats};
+    let stats = |kept, shown, withheld| UsageStats {
+        input_tokens: 100,
+        output_tokens: 50,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        seconds_since_last_request: None,
+        context_limit: None,
+        context_used: None,
+        cost_usd: None,
+        cost_unpriced: None,
+        kept_lines: kept,
+        shown_lines: shown,
+        withheld_results: withheld,
+    };
+
+    let mut play = Screenplay::new(110, 16);
+    play.user("go");
+    play.event(TuiEvent::Usage(stats(0, 0, 0)));
+    let before = play.sidebar_grid();
+    assert!(
+        !before.contains("kept"),
+        "nothing triaged yet — an unknown ratio must not render as 0%:\n{before}"
+    );
+
+    play.event(TuiEvent::Usage(stats(30, 120, 2)));
+    let after = play.sidebar_grid();
+    assert!(after.contains("kept 25% · 30/120 lines"), "{after}");
+    assert!(
+        after.contains("2 withheld"),
+        "a failed gate is its own line, not a lower ratio:\n{after}"
+    );
 }
 
 /// The sidebar-only screenshot slice (`Alt-S`) frames just the sidebar columns:

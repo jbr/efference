@@ -197,6 +197,15 @@ pub(super) fn parse_usage(body: &str) -> Option<UsageStats> {
     let context = usage.get("context").filter(|c| !c.is_null());
     // Session cost: null when the provider has no per-request accounting surface.
     let cost = usage.get("cost").filter(|c| !c.is_null());
+    // Triage retention (docs/redaction-fork.md). Absent on a daemon predating the
+    // field; a missing counter reads as 0, which the sidebar renders as absent.
+    let retention = |field: &str| {
+        usage
+            .get("retention")
+            .and_then(|r| r.get(field))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+    };
     Some(UsageStats {
         input_tokens: cumulative.get("input_tokens")?.as_u64()?,
         output_tokens: cumulative.get("output_tokens")?.as_u64()?,
@@ -211,5 +220,8 @@ pub(super) fn parse_usage(body: &str) -> Option<UsageStats> {
         context_used: context.and_then(|c| c.get("used")).and_then(|v| v.as_u64()),
         cost_usd: cost.and_then(|c| c.get("usd")).and_then(|v| v.as_f64()),
         cost_unpriced: cost.and_then(|c| c.get("unpriced")).and_then(|v| v.as_u64()),
+        kept_lines: retention("kept_lines"),
+        shown_lines: retention("shown_lines"),
+        withheld_results: retention("withheld"),
     })
 }

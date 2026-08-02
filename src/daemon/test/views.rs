@@ -284,3 +284,81 @@ async fn state_json_surfaces_running_processes() {
     );
     shared.kill_all_bg();
 }
+
+/// `GET /state` reports cumulative triage retention (docs/redaction-fork.md), folded
+/// from the log behind a cursor. Drives the two things the unit tests can't reach: that
+/// the cursor *advances* across successive polls rather than refolding or freezing, and
+/// that a withheld result stays out of the ratio it would otherwise flatter.
+#[test]
+fn state_reports_triage_retention() {
+    use crate::log::{CallId, Keep, RawResult, WireState};
+
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let result = |seq: u64, lines: usize, wire: WireState| {
+        let content = (1..=lines)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        shared
+            .append(
+                0,
+                Payload::ToolResult {
+                    call_id: CallId(format!("call_{seq}")),
+                    raw: RawResult {
+                        content,
+                        is_error: false,
+                    },
+                    wire,
+                },
+            )
+            .expect("append");
+    };
+
+    // Nothing triaged yet: the counters are zero, so a client renders the ratio as
+    // absent rather than as 0%.
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["retention"]["shown_lines"], 0);
+    assert_eq!(v["usage"]["retention"]["kept_lines"], 0);
+
+    result(
+        0,
+        100,
+        WireState::Distilled {
+            keep: Keep::Ranges(vec![(1, 40)]),
+            note: None,
+        },
+    );
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["retention"]["kept_lines"], 40);
+    assert_eq!(v["usage"]["retention"]["shown_lines"], 100);
+    assert_eq!(v["usage"]["retention"]["withheld"], 0);
+
+    // A second poll after a second result: the fold advanced by exactly the new entry.
+    // A cursor that failed to advance would report 40/100 again; one that reset would
+    // refold the first result and report 80/200.
+    result(
+        1,
+        100,
+        WireState::Distilled {
+            keep: Keep::All,
+            note: None,
+        },
+    );
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["retention"]["kept_lines"], 140);
+    assert_eq!(v["usage"]["retention"]["shown_lines"], 200);
+
+    // A failed gate withheld 900 lines. Counted, but on neither side of the ratio —
+    // folding it in would read as compression rather than as failure.
+    result(
+        2,
+        900,
+        WireState::TriageFailed {
+            why: "retries exhausted".into(),
+        },
+    );
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["retention"]["withheld"], 1);
+    assert_eq!(v["usage"]["retention"]["kept_lines"], 140);
+    assert_eq!(v["usage"]["retention"]["shown_lines"], 200);
+}

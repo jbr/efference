@@ -175,6 +175,14 @@ pub(crate) struct UsageStats {
     /// Requests the cost fetch could not price, from `usage.cost.unpriced` —
     /// nonzero marks `cost_usd` as an undercount.
     pub cost_unpriced: Option<u64>,
+    /// Lines kept vs. lines triage was shown, cumulative over the session, from
+    /// `usage.retention` (docs/redaction-fork.md). `(0, 0)` before the first
+    /// distilled result — unknown, and rendered as absent rather than as 0%.
+    pub kept_lines: u64,
+    pub shown_lines: u64,
+    /// Results whose output a failed gate withheld, from `usage.retention.withheld`.
+    /// Not folded into the ratio; rendered only when nonzero.
+    pub withheld_results: u64,
 }
 
 /// The last non-success upstream response, as surfaced by `GET /state`.

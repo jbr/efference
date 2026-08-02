@@ -173,20 +173,42 @@ caching. But the fork's *decision* is logged as a `Triage` entry (in `src/log.rs
 | field | meaning |
 | --- | --- |
 | `for_result` | `seq` of the `ToolResult` this verdict distilled (`None` for a standalone idle triage) |
-| `origin` | `Model` (a real `retain` call) or `Fallback` (the peek failed — the result projects a withheld-output error — or a model-free stub ran) |
+| `origin` | `Model` (a real `retain` call) or `Fallback` (the peek failed — the result projects a withheld-output error) |
 | `raw_keep` | the model's exact `keep` string, pre-parse — the audit breadcrumb |
 | `inbox` | per-notification dispositions chosen in this peek, by arrival `seq` |
 | `retries` | one attempt-stamped breadcrumb per non-compliant peek attempt, recovered or not — the durable compliance record (gate-scoped; rides the last `Triage` of a batch, like `inbox`) |
 
-For a model-free stub distiller, `origin` carries the one signal the rendered
-artifact erases: the stub's head/tail verdict renders like a deliberate one, so only
-`Triage.origin` distinguishes them. (A failed peek is not erased — its
-withheld-output error is visible on the wire — but the breadcrumb still classifies
-*what kind* of failure it was.) `project` reads `Triage` only as audit (it emits pinned-notification blocks
+A failed peek is not erased — its withheld-output error is visible on the wire — but
+`origin` still classifies *what kind* of failure it was, which the rendered artifact
+cannot say. `project` reads `Triage` only as audit (it emits pinned-notification blocks
 from `inbox`) and skips it otherwise. Every fork decision is reconstructable from
 the log — including ones only ever visible inside the throwaway branch — for
 observability and distiller-quality work, with none of the fork's context touching
 the wire or the cache.
+
+## Retention — how much of the peek survives
+
+`Retention` (`src/project/retention.rs`) folds the log into cumulative
+`kept_lines` / `shown_lines`, the lines the peek cap dropped before triage saw them,
+and a count of results whose output a failed gate withheld. `GET /state` reports it as
+`usage.retention` and the TUI sidebar renders a `kept 55% · 13k/24k lines` line
+([tui.md](tui.md)).
+
+Two properties make the fold the cheap kind. It reads **only** `ToolResult` entries —
+`raw.content` and `wire` are both on the one entry, so it joins nothing and resolves
+each verdict through the same `distillate` the transcript renders from, rather than
+becoming a second definition of "kept" that can drift from what the gutter shows. And
+it is **monotone**: the log is append-only and a result's `wire` is fixed at append, so
+a caller folds from a cursor and never invalidates. The daemon keeps that cursor, which
+is why a resumed session reports the whole session's ratio instead of restarting at
+zero — this is derived from the canonical record, unlike the transport telemetry beside
+it in STATS.
+
+A withheld result is **not** low retention. It retained nothing because nothing was
+recorded, so folding it into the ratio would make a failing gate read as excellent
+compression; it is counted separately and stays out of both sides. Lines past the peek
+cap are likewise excluded from both sides — nobody decided about them — but are
+reported rather than silently absent.
 
 ## The fork manages perception, not the world
 

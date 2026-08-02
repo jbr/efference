@@ -46,7 +46,7 @@ use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend, Interrupt};
 use crate::log::{CallId, EditState, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
-use crate::project::{ApiMessage, place_trailing_cache_breakpoint, project};
+use crate::project::{ApiMessage, Retention, place_trailing_cache_breakpoint, project};
 use crate::spotter::Spotter;
 use crate::supervisor::{BgView, Supervisor};
 use crate::tools::Toolbox;
@@ -164,6 +164,13 @@ pub struct Shared {
     /// surfaced by `GET /state`. Transport-only: never touches the log or projection
     /// (docs/transport.md).
     upstream_failure: UpstreamFailureState,
+    /// Cumulative triage retention (docs/redaction-fork.md), folded lazily from the
+    /// log behind a cursor rather than accumulated at the append sites. Unlike the
+    /// transport telemetry above this is **derived from the canonical record**, so a
+    /// resumed session reports the whole session's ratio instead of restarting at
+    /// zero. The fold is monotone (a result's `wire` is fixed at append), so the
+    /// cursor never needs invalidating — see [`Shared::retention`].
+    retention: Mutex<(usize, Retention)>,
     /// The selected model's capabilities, fetched from the provider's metadata
     /// endpoint at boot (a required serve step — docs/transport.md) and set once
     /// via [`Shared::set_capabilities`]. `None` only in tests and offline verbs
@@ -338,6 +345,7 @@ impl Shared {
             metrics: Mutex::new(Metrics::default()),
             usage_log: Mutex::new(None),
             upstream_failure,
+            retention: Mutex::new((0, Retention::default())),
             capabilities: Mutex::new(None),
             cost: Arc::new(Mutex::new(CostCell::default())),
             inbox: Mutex::new(Inbox::default()),
@@ -367,6 +375,26 @@ impl Shared {
     /// thereafter and read by `GET /state`'s context readout.
     pub fn set_capabilities(&self, capabilities: crate::api::ModelCapabilities) {
         *self.capabilities.lock().unwrap() = Some(capabilities);
+    }
+
+    /// Cumulative triage retention over the whole session (docs/redaction-fork.md),
+    /// advancing the fold over entries appended since the last call.
+    ///
+    /// Deriving this from the log rather than accumulating it at the gate's append
+    /// sites keeps one definition of "kept" (the projection's) and makes a resumed
+    /// session report the whole session, not just what this process watched. Cheap
+    /// to call per `GET /state` poll: steady state folds the handful of entries
+    /// appended since the previous poll, and only a fresh process folds the backlog.
+    pub fn retention(&self) -> Retention {
+        let log = self.log.lock().unwrap();
+        let entries = log.entries();
+        let mut cell = self.retention.lock().unwrap();
+        let (cursor, retention) = &mut *cell;
+        if let Some(fresh) = entries.get(*cursor..) {
+            retention.fold_all(fresh);
+            *cursor = entries.len();
+        }
+        *retention
     }
 
     /// Arm session cost telemetry (docs/transport.md): every recorded request

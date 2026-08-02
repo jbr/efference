@@ -14,9 +14,8 @@
 //! ambient notifications are shown under the output, and the `retain` verdict's
 //! `inbox` field pins / dismisses them by `[seq]`. The dispositions ride back on the
 //! [`Distillation`] and land on the logged [`Triage`](crate::log::Triage). The
-//! distiller is the pluggable policy (docs/tools.md) behind a trait:
+//! distiller sits behind a trait with one implementation:
 //!
-//! - [`HeadTail`] — a deterministic stub (first `head` + last `tail` lines).
 //! - [`ForkPeek`] — the universal triage gate (docs/redaction-fork.md): fork a
 //!   throwaway branch off the cached prefix, show the model the line-numbered raw
 //!   output + the inbox, and ask it (via the tail instruction, never a forced
@@ -232,54 +231,6 @@ pub trait Distiller {
             inbox: Vec::new(),
             background: Vec::new(),
             origin: Origin::Fallback,
-            usage: Vec::new(),
-            retries: Vec::new(),
-        }
-    }
-}
-
-/// Deterministic stub: keep the first `head` + last `tail` lines. Ignores the fork
-/// context, the inbox, and the background processes — for tests and as the
-/// model-free fallback.
-pub struct HeadTail {
-    pub head: usize,
-    pub tail: usize,
-}
-
-impl Distiller for HeadTail {
-    async fn distill(
-        &self,
-        _client: &Client,
-        _tools: &[Value],
-        _prefix: &[LogEntry],
-        pending: &[Pending<'_>],
-        _inbox: &[ShownNotification],
-        _background: &[BgView],
-    ) -> GateOutcome {
-        // Model-free: a `Fallback` verdict per result, no usage, inbox + background +
-        // surfacing untouched. Each result is head/tailed independently — the stub has
-        // no cross-result judgment to make.
-        let results = pending
-            .iter()
-            .map(|p| {
-                let n = p.raw.content.lines().count();
-                let keep = if n <= self.head + self.tail {
-                    Keep::All
-                } else {
-                    Keep::Ranges(vec![(1, self.head), (n - self.tail + 1, n)])
-                };
-                Distillation {
-                    wire: WireState::Distilled { keep, note: None },
-                    origin: Origin::Fallback,
-                    raw_keep: String::new(),
-                }
-            })
-            .collect();
-        GateOutcome {
-            results,
-            inbox: Vec::new(),
-            background: Vec::new(),
-            surfaced: Vec::new(),
             usage: Vec::new(),
             retries: Vec::new(),
         }
