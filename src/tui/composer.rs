@@ -10,12 +10,16 @@
 //! pinned to the older ratatui/unicode-width ecosystem and won't resolve against
 //! ratatui 0.30 — hence this small hand-rolled editor.
 //!
-//! The buffer is `Vec<Vec<char>>` (one row per line) so cursor columns are plain
-//! char indices — correct across UTF-8 without byte-boundary juggling.
+//! The buffer is one UTF-8 string. Cursor and layout positions are byte offsets
+//! constrained to extended-grapheme boundaries, so edits cannot split a
+//! user-perceived character.
+
+use std::ops::Range;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{buffer::Buffer, layout::Position, layout::Rect, style::Style};
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use super::render_span::wrap_points;
 
@@ -39,7 +43,7 @@ pub(super) enum ComposerAction {
 /// the wrappable content width is measured against (see [`Composer::content_width`]).
 const PROMPT: &str = "› ";
 
-/// One wrapped row of the composer: a char range `[start, end)` within logical
+/// One wrapped row of the composer: a byte range `[start, end)` within logical
 /// line `line`. Produced by [`Composer::visual_rows`].
 #[derive(Debug, Clone, Copy)]
 struct VisualRow {
@@ -50,31 +54,105 @@ struct VisualRow {
 
 #[derive(Debug)]
 pub(super) struct Composer {
-    /// One entry per line; never empty (always at least one, possibly-empty line).
-    lines: Vec<Vec<char>>,
-    /// Cursor line index.
-    row: usize,
-    /// Cursor column as a char index within `lines[row]`.
-    col: usize,
-    /// Preferred column for vertical motion (emacs "goal column").
+    /// UTF-8 text for all logical lines, separated by `\n`.
+    text: String,
+    /// Byte offset of each logical line's first byte; always starts with zero.
+    line_starts: Vec<usize>,
+    /// Byte offset in `text`, always an extended-grapheme boundary.
+    cursor: usize,
+    /// Preferred grapheme column for vertical motion (emacs "goal column").
     goal_col: usize,
 }
 
 impl Composer {
     pub(super) fn new() -> Self {
         Self {
-            lines: vec![Vec::new()],
-            row: 0,
-            col: 0,
+            text: String::new(),
+            line_starts: vec![0],
+            cursor: 0,
             goal_col: 0,
         }
     }
 
     /// True when the buffer holds no non-whitespace text.
     pub(super) fn is_empty(&self) -> bool {
-        self.lines
-            .iter()
-            .all(|l| l.iter().all(|c| c.is_whitespace()))
+        self.text.chars().all(char::is_whitespace)
+    }
+
+    /// The current logical line and its byte range, excluding its trailing newline.
+    fn line_range(&self, row: usize) -> Range<usize> {
+        let start = self.line_starts[row];
+        let end = self
+            .line_starts
+            .get(row + 1)
+            .map_or(self.text.len(), |next| next - 1);
+        start..end
+    }
+
+    fn cursor_row(&self) -> usize {
+        self.line_starts
+            .partition_point(|&start| start <= self.cursor)
+            - 1
+    }
+
+    fn cursor_col(&self) -> usize {
+        let range = self.line_range(self.cursor_row());
+        self.text[range.start..self.cursor].graphemes(true).count()
+    }
+
+    fn line_offset(&self, row: usize, col: usize) -> usize {
+        let range = self.line_range(row);
+        self.text[range.clone()]
+            .grapheme_indices(true)
+            .nth(col)
+            .map_or(range.end, |(offset, _)| range.start + offset)
+    }
+
+    fn previous_grapheme_boundary(&self, offset: usize) -> usize {
+        self.text[..offset]
+            .grapheme_indices(true)
+            .next_back()
+            .map_or(0, |(start, _)| start)
+    }
+
+    fn next_grapheme_boundary(&self, offset: usize) -> usize {
+        self.text[offset..]
+            .grapheme_indices(true)
+            .nth(1)
+            .map_or(self.text.len(), |(end, _)| offset + end)
+    }
+
+    fn replace_range(&mut self, range: Range<usize>, replacement: &str) {
+        let old_len = range.end - range.start;
+        let delta = replacement.len() as isize - old_len as isize;
+        let added_line_starts: Vec<_> = replacement
+            .bytes()
+            .enumerate()
+            .filter_map(|(offset, byte)| (byte == b'\n').then_some(range.start + offset + 1))
+            .collect();
+
+        self.text.replace_range(range.clone(), replacement);
+        self.line_starts
+            .retain(|&start| start <= range.start || start > range.end);
+        for start in self
+            .line_starts
+            .iter_mut()
+            .filter(|start| **start > range.start)
+        {
+            *start = start.saturating_add_signed(delta);
+        }
+        self.line_starts.extend(added_line_starts);
+        self.line_starts.sort_unstable();
+        debug_assert_eq!(
+            self.line_starts.len(),
+            self.text.bytes().filter(|&b| b == b'\n').count() + 1
+        );
+    }
+
+    fn insert_text(&mut self, text: &str) {
+        let start = self.cursor;
+        self.replace_range(start..start, text);
+        self.cursor = start + text.len();
     }
 
     /// The number of *visual* rows the buffer occupies once wrapped to the input
@@ -107,85 +185,84 @@ impl Composer {
     /// Always at least one (possibly empty) row per logical line.
     fn visual_rows(&self, content_width: usize) -> Vec<VisualRow> {
         let mut rows = Vec::new();
-        for (line_idx, line) in self.lines.iter().enumerate() {
-            if line.is_empty() || content_width == 0 {
+        for line_idx in 0..self.line_starts.len() {
+            let range = self.line_range(line_idx);
+            let text = &self.text[range.clone()];
+            if text.is_empty() || content_width == 0 {
                 rows.push(VisualRow {
                     line: line_idx,
-                    start: 0,
-                    end: 0,
+                    start: range.start,
+                    end: range.start,
                 });
                 continue;
             }
-            let text: String = line.iter().collect();
-            let mut start = 0;
-            for byte_break in wrap_points(&text, content_width) {
-                let char_break = text[..byte_break].chars().count();
+            let mut start = range.start;
+            for byte_break in wrap_points(text, content_width) {
+                let end = range.start + byte_break;
                 rows.push(VisualRow {
                     line: line_idx,
                     start,
-                    end: char_break,
+                    end,
                 });
-                start = char_break;
+                start = end;
             }
             rows.push(VisualRow {
                 line: line_idx,
                 start,
-                end: line.len(),
+                end: range.end,
             });
         }
         rows
     }
 
-    /// Find the visual row holding the caret and the caret's char offset within
-    /// it. A caret resting on a wrap boundary belongs to the *next* row's start,
-    /// except on a line's final row where it sits just past the last char.
+    /// Find the visual row holding the caret and its byte offset within that row.
+    /// A caret resting on a wrap boundary belongs to the *next* row's start,
+    /// except on a line's final row where it sits just past the final grapheme.
     fn locate_cursor(&self, rows: &[VisualRow]) -> (usize, usize) {
         for (i, vr) in rows.iter().enumerate() {
-            if vr.line != self.row {
+            if vr.line != self.cursor_row() {
                 continue;
             }
-            let last_seg = i + 1 >= rows.len() || rows[i + 1].line != self.row;
-            let upper = if last_seg { vr.end + 1 } else { vr.end };
-            if (vr.start..upper).contains(&self.col) {
-                return (i, self.col - vr.start);
+            let last_seg = i + 1 >= rows.len() || rows[i + 1].line != vr.line;
+            if self.cursor >= vr.start
+                && (self.cursor < vr.end || (last_seg && self.cursor == vr.end))
+            {
+                return (i, self.cursor - vr.start);
             }
         }
         let i = rows.len().saturating_sub(1);
-        (
-            i,
-            rows.get(i)
-                .map_or(0, |vr| self.col.saturating_sub(vr.start)),
-        )
+        (i, 0)
     }
 
-    /// The current text (lines joined with `\n`).
+    /// The current text.
     pub(super) fn text(&self) -> String {
-        self.lines
-            .iter()
-            .map(|l| l.iter().collect::<String>())
-            .collect::<Vec<_>>()
-            .join("\n")
+        self.text.clone()
     }
 
     /// Reset to an empty single line.
     pub(super) fn clear(&mut self) {
-        self.lines = vec![Vec::new()];
-        self.row = 0;
-        self.col = 0;
+        self.text.clear();
+        self.line_starts = vec![0];
+        self.cursor = 0;
         self.goal_col = 0;
     }
 
-    /// Replace the buffer with `text` (split on `\n`), cursor at the end — used by
-    /// the control strip's stager class to park/restore a draft and pre-fill an
-    /// argument (docs/tui.md).
+    /// Replace the buffer with `text`, cursor at the end — used by the control
+    /// strip's stager class to park/restore a draft and pre-fill an argument
+    /// (docs/tui.md).
     pub(super) fn set_text(&mut self, text: &str) {
-        self.lines = text.split('\n').map(|l| l.chars().collect()).collect();
-        if self.lines.is_empty() {
-            self.lines.push(Vec::new());
-        }
-        self.row = self.lines.len() - 1;
-        self.col = self.lines[self.row].len();
-        self.goal_col = self.col;
+        self.text.clear();
+        self.text.push_str(text);
+        self.line_starts = std::iter::once(0)
+            .chain(
+                self.text
+                    .bytes()
+                    .enumerate()
+                    .filter_map(|(offset, byte)| (byte == b'\n').then_some(offset + 1)),
+            )
+            .collect();
+        self.cursor = self.text.len();
+        self.goal_col = self.cursor_col();
     }
 
     /// Feed one key event. Returns whether it was consumed, ignored (caller should
@@ -208,8 +285,8 @@ impl Composer {
             KeyCode::Char('j') if ctrl => self.insert_newline(),
 
             // Emacs motion.
-            KeyCode::Char('a') if ctrl => self.col = 0,
-            KeyCode::Char('e') if ctrl => self.col = self.line_len(),
+            KeyCode::Char('a') if ctrl => self.cursor = self.line_range(self.cursor_row()).start,
+            KeyCode::Char('e') if ctrl => self.cursor = self.line_range(self.cursor_row()).end,
             KeyCode::Char('b') if ctrl => self.move_left(),
             KeyCode::Char('f') if ctrl => self.move_right(),
             KeyCode::Char('p') if ctrl => {
@@ -226,8 +303,8 @@ impl Composer {
                 }
             }
             KeyCode::Down => self.move_down(),
-            KeyCode::Home => self.col = 0,
-            KeyCode::End => self.col = self.line_len(),
+            KeyCode::Home => self.cursor = self.line_range(self.cursor_row()).start,
+            KeyCode::End => self.cursor = self.line_range(self.cursor_row()).end,
             KeyCode::Char('b') if alt => self.move_word_left(),
             KeyCode::Char('f') if alt => self.move_word_right(),
 
@@ -257,42 +334,37 @@ impl Composer {
         if !matches!(key.code, KeyCode::Up | KeyCode::Down)
             && !(ctrl && matches!(key.code, KeyCode::Char('p') | KeyCode::Char('n')))
         {
-            self.goal_col = self.col;
+            self.goal_col = self.cursor_col();
         }
         ComposerAction::Consumed
     }
 
-    fn line_len(&self) -> usize {
-        self.lines[self.row].len()
-    }
-
     fn insert_char(&mut self, c: char) {
-        self.lines[self.row].insert(self.col, c);
-        self.col += 1;
+        let mut text = [0; 4];
+        self.insert_text(c.encode_utf8(&mut text));
     }
 
     fn insert_newline(&mut self) {
-        let tail = self.lines[self.row].split_off(self.col);
-        self.lines.insert(self.row + 1, tail);
-        self.row += 1;
-        self.col = 0;
+        self.insert_text("\n");
     }
 
     fn move_left(&mut self) {
-        if self.col > 0 {
-            self.col -= 1;
-        } else if self.row > 0 {
-            self.row -= 1;
-            self.col = self.line_len();
+        let row = self.cursor_row();
+        let line = self.line_range(row);
+        if self.cursor > line.start {
+            self.cursor = self.previous_grapheme_boundary(self.cursor);
+        } else if row > 0 {
+            self.cursor = self.line_range(row - 1).end;
         }
     }
 
     fn move_right(&mut self) {
-        if self.col < self.line_len() {
-            self.col += 1;
-        } else if self.row + 1 < self.lines.len() {
-            self.row += 1;
-            self.col = 0;
+        let row = self.cursor_row();
+        let line = self.line_range(row);
+        if self.cursor < line.end {
+            self.cursor = self.next_grapheme_boundary(self.cursor);
+        } else if row + 1 < self.line_starts.len() {
+            self.cursor = self.line_range(row + 1).start;
         }
     }
 
@@ -302,12 +374,12 @@ impl Composer {
     /// on the first line with the caret mid-line it snaps to the start (the `0,0`
     /// detent); only at `0,0` (or empty) does it report a spill.
     fn move_up_or_spill(&mut self) -> bool {
-        if self.row > 0 {
-            self.row -= 1;
-            self.col = self.goal_col.min(self.line_len());
+        let row = self.cursor_row();
+        if row > 0 {
+            self.cursor = self.line_offset(row - 1, self.goal_col);
             true
-        } else if self.col > 0 {
-            self.col = 0;
+        } else if self.cursor > 0 {
+            self.cursor = 0;
             self.goal_col = 0;
             true
         } else {
@@ -316,110 +388,120 @@ impl Composer {
     }
 
     fn move_down(&mut self) {
-        if self.row + 1 < self.lines.len() {
-            self.row += 1;
-            self.col = self.goal_col.min(self.line_len());
+        let row = self.cursor_row();
+        if row + 1 < self.line_starts.len() {
+            self.cursor = self.line_offset(row + 1, self.goal_col);
         }
     }
 
-    /// ASCII letters and digits form a word; all other scalar values separate words.
-    /// Grapheme-aware editing is tracked separately in docs/tui.md's backlog.
-    fn is_word_char(c: char) -> bool {
-        c.is_ascii_alphanumeric()
+    /// ASCII letters and digits form a word; all other grapheme clusters separate
+    /// words.
+    fn is_word_grapheme(grapheme: &str) -> bool {
+        grapheme.len() == 1 && grapheme.as_bytes()[0].is_ascii_alphanumeric()
     }
 
     fn move_word_left(&mut self) {
-        let line = &self.lines[self.row];
-        if self.col == 0 {
+        let line_start = self.line_range(self.cursor_row()).start;
+        if self.cursor == line_start {
             self.move_left();
             return;
         }
-        let mut c = self.col;
-        while c > 0 && !Self::is_word_char(line[c - 1]) {
-            c -= 1;
+        while self.cursor > line_start {
+            let start = self.previous_grapheme_boundary(self.cursor);
+            if Self::is_word_grapheme(&self.text[start..self.cursor]) {
+                break;
+            }
+            self.cursor = start;
         }
-        while c > 0 && Self::is_word_char(line[c - 1]) {
-            c -= 1;
+        while self.cursor > line_start {
+            let start = self.previous_grapheme_boundary(self.cursor);
+            if !Self::is_word_grapheme(&self.text[start..self.cursor]) {
+                break;
+            }
+            self.cursor = start;
         }
-        self.col = c;
     }
 
     fn move_word_right(&mut self) {
-        let len = self.line_len();
-        if self.col >= len {
+        let line_end = self.line_range(self.cursor_row()).end;
+        if self.cursor >= line_end {
             self.move_right();
             return;
         }
-        let line = &self.lines[self.row];
-        let mut c = self.col;
-        while c < len && !Self::is_word_char(line[c]) {
-            c += 1;
+        while self.cursor < line_end {
+            let end = self.next_grapheme_boundary(self.cursor);
+            if Self::is_word_grapheme(&self.text[self.cursor..end]) {
+                break;
+            }
+            self.cursor = end;
         }
-        while c < len && Self::is_word_char(line[c]) {
-            c += 1;
+        while self.cursor < line_end {
+            let end = self.next_grapheme_boundary(self.cursor);
+            if !Self::is_word_grapheme(&self.text[self.cursor..end]) {
+                break;
+            }
+            self.cursor = end;
         }
-        self.col = c;
     }
 
     fn delete_back(&mut self) {
-        if self.col > 0 {
-            self.lines[self.row].remove(self.col - 1);
-            self.col -= 1;
-        } else if self.row > 0 {
-            // Merge with the previous line.
-            let cur = self.lines.remove(self.row);
-            self.row -= 1;
-            self.col = self.line_len();
-            self.lines[self.row].extend(cur);
+        let row = self.cursor_row();
+        let line = self.line_range(row);
+        if self.cursor > line.start {
+            let start = self.previous_grapheme_boundary(self.cursor);
+            self.replace_range(start..self.cursor, "");
+            self.cursor = start;
+        } else if row > 0 {
+            let newline = line.start - 1;
+            self.replace_range(newline..line.start, "");
+            self.cursor = newline;
         }
     }
 
     fn delete_forward(&mut self) {
-        if self.col < self.line_len() {
-            self.lines[self.row].remove(self.col);
-        } else if self.row + 1 < self.lines.len() {
-            let next = self.lines.remove(self.row + 1);
-            self.lines[self.row].extend(next);
+        let row = self.cursor_row();
+        let line = self.line_range(row);
+        if self.cursor < line.end {
+            let end = self.next_grapheme_boundary(self.cursor);
+            self.replace_range(self.cursor..end, "");
+        } else if row + 1 < self.line_starts.len() {
+            self.replace_range(line.end..line.end + 1, "");
         }
     }
 
     fn kill_to_line_end(&mut self) {
-        if self.col < self.line_len() {
-            self.lines[self.row].truncate(self.col);
-        } else if self.row + 1 < self.lines.len() {
-            // At end of line: pull up the next line.
-            let next = self.lines.remove(self.row + 1);
-            self.lines[self.row].extend(next);
+        let row = self.cursor_row();
+        let line = self.line_range(row);
+        if self.cursor < line.end {
+            self.replace_range(self.cursor..line.end, "");
+        } else if row + 1 < self.line_starts.len() {
+            self.replace_range(line.end..line.end + 1, "");
         }
     }
 
     fn kill_to_line_start(&mut self) {
-        self.lines[self.row].drain(0..self.col);
-        self.col = 0;
+        let start = self.line_range(self.cursor_row()).start;
+        self.replace_range(start..self.cursor, "");
+        self.cursor = start;
     }
 
     fn delete_word_back(&mut self) {
-        let start = self.col;
+        let end = self.cursor;
         self.move_word_left();
-        let end = self.col;
-        if end < start {
-            self.lines[self.row].drain(end..start);
+        let start = self.cursor;
+        if start < end {
+            self.replace_range(start..end, "");
         }
     }
 
     /// Delete the next word and any leading separators, retaining following separators.
     fn delete_word_forward(&mut self) {
-        let start = self.col;
-        let len = self.line_len();
-        let mut end = start;
-        while end < len && !Self::is_word_char(self.lines[self.row][end]) {
-            end += 1;
-        }
-        while end < len && Self::is_word_char(self.lines[self.row][end]) {
-            end += 1;
-        }
+        let start = self.cursor;
+        self.move_word_right();
+        let end = self.cursor;
         if start < end {
-            self.lines[self.row].drain(start..end);
+            self.replace_range(start..end, "");
+            self.cursor = start;
         }
     }
 
@@ -457,26 +539,24 @@ impl Composer {
                 }
                 x += 1;
             }
-            for &ch in &self.lines[vr.line][vr.start..vr.end] {
-                let w = ch.width().unwrap_or(0) as u16;
+            for grapheme in self.text[vr.start..vr.end].graphemes(true) {
+                let w = UnicodeWidthStr::width(grapheme) as u16;
                 if x + w > area.right() {
                     break;
                 }
                 if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_char(ch).set_style(text_style);
+                    cell.set_symbol(grapheme).set_style(text_style);
                 }
                 x += w.max(1);
             }
         }
 
-        // Cursor screen position: prompt + display width up to the caret column
-        // within its visual row.
+        // Cursor screen position: prompt + display width up to the caret within
+        // its visual row.
         let cursor_screen_row = cursor_vr.saturating_sub(top) as u16;
         let vr = rows[cursor_vr];
         let mut cursor_x = area.x + prompt_w;
-        for &ch in &self.lines[vr.line][vr.start..vr.start + cursor_off] {
-            cursor_x += ch.width().unwrap_or(0).max(1) as u16;
-        }
+        cursor_x += UnicodeWidthStr::width(&self.text[vr.start..vr.start + cursor_off]) as u16;
         Position::new(
             cursor_x.min(area.right().saturating_sub(1)),
             area.y + cursor_screen_row,

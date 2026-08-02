@@ -237,9 +237,22 @@ impl<'a> InteractiveState<'a> {
     }
 }
 
-/// Calculate the display width of text, accounting for tabs rendered as 4 spaces
+/// Calculate the display width of text, accounting for tabs rendered as 4 spaces.
+/// Extended grapheme clusters are measured as a unit so layout never assigns
+/// independent cells to the scalars composing an emoji or combining sequence.
 pub(super) fn display_width(text: &str) -> usize {
-    text.chars().map(|ch| if ch == '\t' { 4 } else { 1 }).sum()
+    use unicode_segmentation::UnicodeSegmentation;
+    use unicode_width::UnicodeWidthStr;
+
+    text.graphemes(true)
+        .map(|grapheme| {
+            if grapheme == "\t" {
+                4
+            } else {
+                grapheme.width()
+            }
+        })
+        .sum()
 }
 
 /// Block-wrap `text` into visual rows of at most `width` display columns,
@@ -295,22 +308,30 @@ pub(super) fn wrap_points(text: &str, width: usize) -> Vec<usize> {
     breaks
 }
 
-/// Largest char-aligned byte prefix of `text` whose display width fits `width`,
-/// but always at least one char so wrapping makes progress on an over-wide glyph.
+/// Largest grapheme-aligned byte prefix of `text` whose display width fits
+/// `width`, but always at least one cluster so wrapping makes progress on an
+/// over-wide glyph.
 fn hard_cut(text: &str, width: usize) -> usize {
+    use unicode_segmentation::UnicodeSegmentation;
+    use unicode_width::UnicodeWidthStr;
+
     let mut cols = 0;
     let mut end = 0;
-    for (i, ch) in text.char_indices() {
-        let w = if ch == '\t' { 4 } else { 1 };
+    for (i, grapheme) in text.grapheme_indices(true) {
+        let w = if grapheme == "\t" {
+            4
+        } else {
+            grapheme.width()
+        };
         if cols + w > width {
             break;
         }
         cols += w;
-        end = i + ch.len_utf8();
+        end = i + grapheme.len();
     }
     if end == 0 {
-        // First glyph already exceeds width — take it whole so we advance.
-        text.chars().next().map_or(text.len(), char::len_utf8)
+        // First cluster already exceeds width — take it whole so we advance.
+        text.graphemes(true).next().map_or(text.len(), str::len)
     } else {
         end
     }
@@ -323,16 +344,20 @@ pub(super) fn find_wrap_position(text: &str, max_width: usize) -> Option<usize> 
         return None;
     }
 
-    // Find the byte position that corresponds to max_width display columns (accounting for tabs)
+    // Find the byte position that corresponds to max_width display columns.
     let mut display_cols = 0;
     let mut search_end = 0;
-    for (idx, ch) in text.char_indices() {
-        let char_width = if ch == '\t' { 4 } else { 1 };
-        if display_cols + char_width > max_width {
+    for (idx, grapheme) in unicode_segmentation::UnicodeSegmentation::grapheme_indices(text, true) {
+        let width = if grapheme == "\t" {
+            4
+        } else {
+            unicode_width::UnicodeWidthStr::width(grapheme)
+        };
+        if display_cols + width > max_width {
             break;
         }
-        display_cols += char_width;
-        search_end = idx + ch.len_utf8();
+        display_cols += width;
+        search_end = idx + grapheme.len();
     }
 
     if search_end == 0 {
@@ -341,41 +366,52 @@ pub(super) fn find_wrap_position(text: &str, max_width: usize) -> Option<usize> 
 
     let search_range = &text[..search_end];
 
-    // First priority: break at whitespace
-    if let Some(pos) = search_range.rfind(char::is_whitespace) {
-        // Avoid breaking if it would leave a very short word (< 3 display cols) on next line
-        // This prevents orphans like "a" or "is" at the start of a line
+    // First priority: break at whitespace.
+    if let Some((pos, _)) =
+        unicode_segmentation::UnicodeSegmentation::grapheme_indices(search_range, true)
+            .rev()
+            .find(|(_, grapheme)| grapheme.chars().all(char::is_whitespace))
+    {
+        // Avoid breaking if it would leave a very short word (< 3 display cols) on next line.
+        // This prevents orphans like "a" or "is" at the start of a line.
         let remaining_width = display_width(&text[pos..]);
         if pos > 0 && remaining_width > 3 {
             return Some(pos);
         }
-        // If the remaining part is short enough, it's ok to break here
+        // If the remaining part is short enough, it's ok to break here.
         if remaining_width <= max_width / 2 {
             return Some(pos);
         }
     }
 
-    // Second priority: break after certain punctuation (., ,, ;, :, ), ])
-    // This helps with long sentences without spaces
-    for (i, ch) in search_range.char_indices().rev() {
-        if matches!(ch, '.' | ',' | ';' | ':' | ')' | ']' | '}') {
-            // Break after the punctuation
-            if i + 1 < search_range.len() {
-                return Some(i + 1);
+    // Second priority: break after certain punctuation (., ,, ;, :, ), ]).
+    // This helps with long sentences without spaces.
+    for (i, grapheme) in
+        unicode_segmentation::UnicodeSegmentation::grapheme_indices(search_range, true).rev()
+    {
+        if grapheme
+            .chars()
+            .last()
+            .is_some_and(|ch| matches!(ch, '.' | ',' | ';' | ':' | ')' | ']' | '}'))
+        {
+            let end = i + grapheme.len();
+            if end < search_range.len() {
+                return Some(end);
             }
         }
     }
 
     // Third priority: break at word boundaries (after lowercase before uppercase)
-    // This helps with camelCase or PascalCase identifiers
-    for i in (1..search_range.len()).rev() {
-        let chars: Vec<char> = search_range.chars().collect();
-        if i < chars.len() - 1 {
-            let prev = chars[i - 1];
-            let curr = chars[i];
-            if prev.is_lowercase() && curr.is_uppercase() {
-                return Some(i);
-            }
+    // This helps with camelCase or PascalCase identifiers.
+    let graphemes: Vec<_> =
+        unicode_segmentation::UnicodeSegmentation::grapheme_indices(search_range, true).collect();
+    for pair in graphemes.windows(2).rev() {
+        let (_, prev) = pair[0];
+        let (curr_offset, curr) = pair[1];
+        if prev.chars().last().is_some_and(char::is_lowercase)
+            && curr.chars().next().is_some_and(char::is_uppercase)
+        {
+            return Some(curr_offset);
         }
     }
 

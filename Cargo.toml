@@ -65,6 +65,7 @@ syntect = { version = "5.3", default-features = false, features = [
 fieldwork = "0.5.2"
 thiserror = "2"
 unicode-width = "0.2.2"
+unicode-segmentation = "1.12"
 yash-syntax = "=0.14.1"
 # Config (docs/permissions.md): the file is TOML, decoded via `toml_edit`'s
 # serde layer and edited in place via its format-preserving `DocumentMut` — the same crate both

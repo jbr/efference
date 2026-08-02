@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Fixed
+- Composer movement, deletion, visual-row wrapping, and caret measurement use extended grapheme clusters, so combining characters and emoji sequences are not split by editing or layout.
 - Token usage merges `message_start` and `message_delta` per field, so OpenRouter turns report real input and cache read/write counts instead of the all-zero `message_start` placeholder.
 - The fork peek's ask is scoped to the results of the gate it opened, and a single-result gate asks for a bare `keep`/`note` with no call id; an unbounded ask had models re-triaging the whole transcript against prior results' `[seq]` tags, failing coverage and withholding output.
 - A coverage rejection records which ids the verdict *did* answer, so a scoping failure is distinguishable from an empty verdict in the log.

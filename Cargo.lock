@@ -810,6 +810,7 @@ dependencies = [
  "trillium-rustls",
  "trillium-sse",
  "trillium-tokio",
+ "unicode-segmentation",
  "unicode-width",
  "yash-syntax",
 ]

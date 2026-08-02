@@ -14,6 +14,93 @@ fn alt(c: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT)
 }
 
+#[test]
+fn unicode_width_handles_representative_graphemes() {
+    use unicode_segmentation::UnicodeSegmentation;
+    use unicode_width::UnicodeWidthStr;
+
+    for (text, expected_width) in [("e\u{301}", 1), ("🏳️‍🌈", 2), ("🇺🇸", 2), ("👨‍👩‍👧‍👦", 2)]
+    {
+        assert_eq!(text.graphemes(true).collect::<Vec<_>>(), vec![text]);
+        assert_eq!(text.width(), expected_width, "{text:?}");
+    }
+}
+
+#[test]
+fn grapheme_motion_and_deletion_are_atomic() {
+    let mut c = Composer::new();
+    c.set_text("e\u{301}🏳️‍🌈🇺🇸");
+    assert_eq!(c.cursor_col(), 3);
+
+    c.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+    assert_eq!(c.cursor_col(), 2);
+    c.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+    assert_eq!(c.text(), "e\u{301}🏳️‍🌈");
+    assert_eq!(c.cursor_col(), 2);
+
+    c.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+    assert_eq!(c.text(), "e\u{301}");
+    assert_eq!(c.cursor_col(), 1);
+
+    c.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+    assert_eq!(c.text(), "");
+    assert_eq!(c.cursor, 0);
+}
+
+#[test]
+fn combining_key_events_leave_the_cursor_after_the_combined_grapheme() {
+    let mut c = Composer::new();
+    c.handle_key(key('e'));
+    c.handle_key(key('\u{301}'));
+    assert_eq!(c.text(), "e\u{301}");
+    assert_eq!(c.cursor_col(), 1);
+
+    c.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+    assert_eq!(c.cursor, 0);
+    c.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+    assert_eq!(c.text(), "");
+}
+
+#[test]
+fn vertical_motion_uses_grapheme_columns() {
+    let mut c = Composer::new();
+    c.set_text("a🏳️‍🌈b\nxy\n🇺🇸z");
+    c.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    assert_eq!(c.cursor_col(), 2);
+    c.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    assert_eq!(c.cursor_col(), 2);
+    c.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    assert_eq!(c.cursor_col(), 2);
+    c.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    assert_eq!(c.cursor_col(), 2);
+}
+
+#[test]
+fn visual_rows_do_not_split_graphemes() {
+    use unicode_segmentation::UnicodeSegmentation;
+
+    let mut c = Composer::new();
+    c.set_text("🏳️‍🌈🇺🇸");
+    let rows = c.visual_rows(2);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        rows.iter()
+            .map(|row| &c.text[row.start..row.end])
+            .collect::<String>(),
+        c.text()
+    );
+    let boundaries: Vec<_> = c
+        .text
+        .grapheme_indices(true)
+        .map(|(offset, _)| offset)
+        .chain(std::iter::once(c.text.len()))
+        .collect();
+    for row in rows {
+        assert!(boundaries.contains(&row.start));
+        assert!(boundaries.contains(&row.end));
+    }
+}
+
 /// Screenplay scenario: a line longer than the composer width. This captures
 /// the *current* render so the wrap fix has a visible before/after. Watch the
 /// right border in the snapshot — today the long line is clipped at the edge
@@ -132,11 +219,11 @@ fn word_motion_treats_punctuation_as_separators() {
     let mut c = Composer::new();
     c.set_text("multi-word");
     c.handle_key(alt('b'));
-    assert_eq!(c.col, 6);
+    assert_eq!(c.cursor_col(), 6);
 
     c.set_text("multi_word");
     c.handle_key(alt('b'));
-    assert_eq!(c.col, 6);
+    assert_eq!(c.cursor_col(), 6);
 }
 
 #[test]

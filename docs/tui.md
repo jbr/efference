@@ -191,7 +191,7 @@ Everything that can change about an already-committed entry arrives keyed by `ca
 
 ## The composer
 
-`tui/composer.rs` is a dependency-free, emacs-keybind multiline editor. Its interface is deliberately swappable: `handle_key` / `render` / `take` (or `clear`). The buffer is `Vec<Vec<char>>` — one row per line — so cursor columns are plain char indices, correct across UTF-8 without byte-boundary juggling.
+`tui/composer.rs` is a dependency-free, emacs-keybind multiline editor. Its interface is deliberately swappable: `handle_key` / `render` / `take` (or `clear`). The buffer is one UTF-8 string with byte offsets for each logical-line start. The cursor, edit ranges, and visual-row boundaries are extended-grapheme boundaries; grapheme counts are derived for vertical goal-column motion. This lets combining marks, variation selectors, ZWJ emoji, and regional-indicator flags move and delete as one unit. The composer shares `render_span::wrap_points` with the document renderer; its width and hard-break traversal measure grapheme clusters with `unicode-width`, although an individual terminal can use a different emoji cell width.
 
 `tui-textarea` was the intended first cut but is pinned to an older ratatui/unicode-width ecosystem and does not resolve against ratatui 0.30, hence the hand-rolled editor. The narrow interface makes replacing it later surgical.
 
