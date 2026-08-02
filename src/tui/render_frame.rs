@@ -253,6 +253,7 @@ impl<'a> InteractiveState<'a> {
             composer_area,
             self.theme.document_bg_style,
             prompt_style,
+            self.theme.composer_selection_style,
         );
         if self.composing {
             frame.set_cursor_position(cursor);

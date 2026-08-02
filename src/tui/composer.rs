@@ -60,6 +60,9 @@ pub(super) struct Composer {
     line_starts: Vec<usize>,
     /// Byte offset in `text`, always an extended-grapheme boundary.
     cursor: usize,
+    /// Fixed endpoint of an in-progress selection. `None` means no selection.
+    /// When equal to `cursor`, it is normalized back to `None`.
+    anchor: Option<usize>,
     /// Preferred grapheme column for vertical motion (emacs "goal column").
     goal_col: usize,
 }
@@ -70,6 +73,7 @@ impl Composer {
             text: String::new(),
             line_starts: vec![0],
             cursor: 0,
+            anchor: None,
             goal_col: 0,
         }
     }
@@ -149,10 +153,74 @@ impl Composer {
         );
     }
 
+    fn selection_range(&self) -> Option<Range<usize>> {
+        let anchor = self.anchor?;
+        (anchor != self.cursor).then(|| anchor.min(self.cursor)..anchor.max(self.cursor))
+    }
+
+    fn clear_selection(&mut self) {
+        self.anchor = None;
+    }
+
+    fn extend_selection(&mut self) {
+        self.anchor.get_or_insert(self.cursor);
+    }
+
+    fn replace_selection(&mut self, replacement: &str) -> bool {
+        let Some(range) = self.selection_range() else {
+            return false;
+        };
+        let start = range.start;
+        self.replace_range(range, replacement);
+        self.cursor = start + replacement.len();
+        self.clear_selection();
+        true
+    }
+
+    fn delete_selection(&mut self) -> bool {
+        self.replace_selection("")
+    }
+
     fn insert_text(&mut self, text: &str) {
-        let start = self.cursor;
-        self.replace_range(start..start, text);
-        self.cursor = start + text.len();
+        if !self.replace_selection(text) {
+            let start = self.cursor;
+            self.replace_range(start..start, text);
+            self.cursor = start + text.len();
+        }
+    }
+
+    fn move_with_selection(&mut self, extend: bool, move_cursor: impl FnOnce(&mut Self)) {
+        if extend {
+            self.extend_selection();
+            move_cursor(self);
+            if self.anchor == Some(self.cursor) {
+                self.clear_selection();
+            }
+            return;
+        }
+
+        if let Some(range) = self.selection_range() {
+            self.cursor = range.start;
+            self.clear_selection();
+        } else {
+            self.clear_selection();
+            move_cursor(self);
+        }
+    }
+
+    fn move_right_with_selection(&mut self, extend: bool) {
+        if extend {
+            self.extend_selection();
+            self.move_right();
+            if self.anchor == Some(self.cursor) {
+                self.clear_selection();
+            }
+        } else if let Some(range) = self.selection_range() {
+            self.cursor = range.end;
+            self.clear_selection();
+        } else {
+            self.move_right();
+        }
     }
 
     /// The number of *visual* rows the buffer occupies once wrapped to the input
@@ -244,6 +312,7 @@ impl Composer {
         self.text.clear();
         self.line_starts = vec![0];
         self.cursor = 0;
+        self.anchor = None;
         self.goal_col = 0;
     }
 
@@ -262,6 +331,7 @@ impl Composer {
             )
             .collect();
         self.cursor = self.text.len();
+        self.anchor = None;
         self.goal_col = self.cursor_col();
     }
 
@@ -270,6 +340,7 @@ impl Composer {
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> ComposerAction {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
 
         match key.code {
             // Submit on plain Enter; insert a newline on C-j / Alt-Enter (Enter is
@@ -285,39 +356,105 @@ impl Composer {
             KeyCode::Char('j') if ctrl => self.insert_newline(),
 
             // Emacs motion.
-            KeyCode::Char('a') if ctrl => self.cursor = self.line_range(self.cursor_row()).start,
-            KeyCode::Char('e') if ctrl => self.cursor = self.line_range(self.cursor_row()).end,
-            KeyCode::Char('b') if ctrl => self.move_left(),
-            KeyCode::Char('f') if ctrl => self.move_right(),
+            KeyCode::Char('a') if ctrl => self.move_with_selection(shift, |this| {
+                this.cursor = this.line_range(this.cursor_row()).start;
+            }),
+            KeyCode::Char('e') if ctrl => self.move_with_selection(shift, |this| {
+                this.cursor = this.line_range(this.cursor_row()).end;
+            }),
+            KeyCode::Char('b') if ctrl => self.move_with_selection(shift, Self::move_left),
+            KeyCode::Char('f') if ctrl => self.move_right_with_selection(shift),
             KeyCode::Char('p') if ctrl => {
-                if !self.move_up_or_spill() {
+                if shift {
+                    self.extend_selection();
+                    if !self.move_up_or_spill() {
+                        self.clear_selection();
+                        return ComposerAction::SpillUp;
+                    }
+                } else if let Some(range) = self.selection_range() {
+                    self.cursor = range.start;
+                    self.clear_selection();
+                } else if !self.move_up_or_spill() {
                     return ComposerAction::SpillUp;
                 }
             }
-            KeyCode::Char('n') if ctrl => self.move_down(),
-            KeyCode::Left => self.move_left(),
-            KeyCode::Right => self.move_right(),
+            KeyCode::Char('n') if ctrl => self.move_with_selection(shift, Self::move_down),
+            KeyCode::Left => self.move_with_selection(shift, Self::move_left),
+            KeyCode::Right => self.move_right_with_selection(shift),
             KeyCode::Up => {
-                if !self.move_up_or_spill() {
+                if shift {
+                    self.extend_selection();
+                    if !self.move_up_or_spill() {
+                        self.clear_selection();
+                        return ComposerAction::SpillUp;
+                    }
+                } else if let Some(range) = self.selection_range() {
+                    self.cursor = range.start;
+                    self.clear_selection();
+                } else if !self.move_up_or_spill() {
                     return ComposerAction::SpillUp;
                 }
             }
-            KeyCode::Down => self.move_down(),
-            KeyCode::Home => self.cursor = self.line_range(self.cursor_row()).start,
-            KeyCode::End => self.cursor = self.line_range(self.cursor_row()).end,
-            KeyCode::Char('b') if alt => self.move_word_left(),
-            KeyCode::Char('f') if alt => self.move_word_right(),
+            KeyCode::Down => self.move_with_selection(shift, Self::move_down),
+            KeyCode::Home => self.move_with_selection(shift, |this| {
+                this.cursor = this.line_range(this.cursor_row()).start;
+            }),
+            KeyCode::End => self.move_with_selection(shift, |this| {
+                this.cursor = this.line_range(this.cursor_row()).end;
+            }),
+            KeyCode::Char('b') if alt => self.move_with_selection(shift, Self::move_word_left),
+            KeyCode::Char('f') if alt => self.move_with_selection(shift, Self::move_word_right),
+            KeyCode::Char('h') if ctrl => {
+                self.cursor = self.text.len();
+                self.anchor = Some(0);
+            }
 
             // Emacs editing.
-            KeyCode::Backspace if alt => self.delete_word_back(),
-            KeyCode::Backspace => self.delete_back(),
-            KeyCode::Char('h') if ctrl => self.delete_back(),
-            KeyCode::Delete => self.delete_forward(),
-            KeyCode::Char('d') if ctrl => self.delete_forward(),
-            KeyCode::Char('k') if ctrl => self.kill_to_line_end(),
-            KeyCode::Char('u') if ctrl => self.kill_to_line_start(),
-            KeyCode::Char('w') if ctrl => self.delete_word_back(),
-            KeyCode::Char('d') if alt => self.delete_word_forward(),
+            KeyCode::Backspace if alt => {
+                if !self.delete_selection() {
+                    self.delete_word_back();
+                }
+            }
+            KeyCode::Backspace => {
+                if !self.delete_selection() {
+                    self.delete_back();
+                }
+            }
+            KeyCode::Char('h') if ctrl => {
+                if !self.delete_selection() {
+                    self.delete_back();
+                }
+            }
+            KeyCode::Delete => {
+                if !self.delete_selection() {
+                    self.delete_forward();
+                }
+            }
+            KeyCode::Char('d') if ctrl => {
+                if !self.delete_selection() {
+                    self.delete_forward();
+                }
+            }
+            KeyCode::Char('k') if ctrl => {
+                if !self.delete_selection() {
+                    self.kill_to_line_end();
+                }
+            }
+            KeyCode::Char('u') if ctrl => {
+                if !self.delete_selection() {
+                    self.kill_to_line_start();
+                }
+            }
+            KeyCode::Char('w') if ctrl => {
+                if !self.delete_selection() {
+                    self.delete_word_back();
+                }
+            }
+            KeyCode::Char('d') if alt => {
+                if !self.delete_selection() {
+                    self.delete_word_forward();
+                }
+            }
 
             // Printable insertion (ignore other control combos so they fall
             // through to the caller as commands).
@@ -514,6 +651,7 @@ impl Composer {
         area: Rect,
         text_style: Style,
         prompt_style: Style,
+        selection_style: Style,
     ) -> Position {
         if area.width == 0 || area.height == 0 {
             return Position::new(area.x, area.y);
@@ -539,13 +677,24 @@ impl Composer {
                 }
                 x += 1;
             }
-            for grapheme in self.text[vr.start..vr.end].graphemes(true) {
+            let selection = self.selection_range();
+            for (offset, grapheme) in self.text[vr.start..vr.end].grapheme_indices(true) {
+                let start = vr.start + offset;
+                let end = start + grapheme.len();
                 let w = UnicodeWidthStr::width(grapheme) as u16;
                 if x + w > area.right() {
                     break;
                 }
+                let style = if selection
+                    .as_ref()
+                    .is_some_and(|range| range.start < end && start < range.end)
+                {
+                    selection_style
+                } else {
+                    text_style
+                };
                 if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_symbol(grapheme).set_style(text_style);
+                    cell.set_symbol(grapheme).set_style(style);
                 }
                 x += w.max(1);
             }

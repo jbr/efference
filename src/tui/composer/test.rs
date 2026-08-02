@@ -13,6 +13,9 @@ fn alt_backspace() -> KeyEvent {
 fn alt(c: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT)
 }
+fn shift(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::SHIFT)
+}
 
 #[test]
 fn unicode_width_handles_representative_graphemes() {
@@ -24,6 +27,56 @@ fn unicode_width_handles_representative_graphemes() {
         assert_eq!(text.graphemes(true).collect::<Vec<_>>(), vec![text]);
         assert_eq!(text.width(), expected_width, "{text:?}");
     }
+}
+
+#[test]
+fn shift_motion_selects_graphemes_and_unmodified_motion_collapses() {
+    let mut c = Composer::new();
+    c.set_text("e\u{301}🏳️‍🌈x");
+
+    c.handle_key(shift(KeyCode::Left));
+    c.handle_key(shift(KeyCode::Left));
+    assert_eq!(c.selection_range(), Some(3..c.text.len()));
+
+    c.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+    assert_eq!(c.cursor, 3);
+    assert_eq!(c.selection_range(), None);
+
+    c.handle_key(shift(KeyCode::Right));
+    c.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+    assert_eq!(c.cursor, 17);
+    assert_eq!(c.selection_range(), None);
+}
+
+#[test]
+fn selected_text_is_replaced_or_deleted_before_ordinary_edits() {
+    let mut c = Composer::new();
+    c.set_text("abc\ndef");
+    c.handle_key(ctrl('h'));
+    c.handle_key(key('X'));
+    assert_eq!(c.text(), "X");
+    assert_eq!(c.selection_range(), None);
+
+    c.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+    c.handle_key(shift(KeyCode::Right));
+    c.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+    assert_eq!(c.text(), "");
+
+    c.set_text("one two");
+    c.handle_key(shift(KeyCode::Left));
+    c.handle_key(shift(KeyCode::Left));
+    c.handle_key(ctrl('w'));
+    assert_eq!(c.text(), "one t");
+}
+
+#[test]
+fn ctrl_x_h_selects_the_whole_buffer() {
+    let mut c = Composer::new();
+    c.set_text("a🏳️‍🌈\nb");
+    c.handle_key(ctrl('h'));
+    assert_eq!(c.selection_range(), Some(0..c.text.len()));
+    c.handle_key(key('x'));
+    assert_eq!(c.text(), "x");
 }
 
 #[test]

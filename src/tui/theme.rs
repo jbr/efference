@@ -36,6 +36,8 @@ pub(super) struct InteractiveTheme {
 
     /// Document background style
     pub document_bg_style: Style,
+    /// Selected composer text.
+    pub composer_selection_style: Style,
 
     /// Code block border style
     pub code_block_border_style: Style,
@@ -129,6 +131,9 @@ impl InteractiveTheme {
             document_bg_style: Style::default()
                 .bg(to_ratatui(default_bg))
                 .fg(to_ratatui(default_fg)),
+            composer_selection_style: Style::default()
+                .bg(to_ratatui(accent_fg))
+                .fg(to_ratatui(default_bg)),
 
             code_block_border_style: Style::default().fg(to_ratatui(code_block_border)),
 
