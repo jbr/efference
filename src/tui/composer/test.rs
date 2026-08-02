@@ -97,6 +97,39 @@ fn screenplay_mouse_drag_and_shift_click_select_composer_text() {
 }
 
 #[test]
+fn routed_clipboard_bindings_use_in_process_fallback() {
+    use crate::tui::harness::Screenplay;
+
+    let mut play = Screenplay::new(24, 7);
+    play.disable_system_clipboard()
+        .type_str("hello")
+        .composer_event(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::CONTROL))
+        .composer_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::ALT));
+    assert_eq!(play.state.clipboard.fallback(), Some("hello"));
+    assert_eq!(play.state.composer.text(), "hello");
+
+    play.route_key(KeyCode::Char('x'), KeyModifiers::SUPER);
+    assert_eq!(play.state.composer.text(), "");
+    play.route_key(KeyCode::Char('v'), KeyModifiers::SUPER);
+    assert_eq!(play.state.composer.text(), "hello");
+
+    play.composer_event(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::CONTROL))
+        .route_key(KeyCode::Char('w'), KeyModifiers::CONTROL);
+    assert_eq!(play.state.composer.text(), "");
+}
+
+#[test]
+fn ctrl_w_without_selection_still_deletes_a_word() {
+    use crate::tui::harness::Screenplay;
+
+    let mut play = Screenplay::new(24, 7);
+    play.disable_system_clipboard()
+        .type_str("foo bar")
+        .route_key(KeyCode::Char('w'), KeyModifiers::CONTROL);
+    assert_eq!(play.state.composer.text(), "foo ");
+}
+
+#[test]
 fn ctrl_x_h_selects_the_whole_buffer() {
     let mut c = Composer::new();
     c.set_text("a🏳️‍🌈\nb");

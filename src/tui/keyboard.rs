@@ -11,6 +11,34 @@ use crate::tui::composer::ComposerAction;
 use crate::tui::render_context::RenderContext;
 
 impl<'a> InteractiveState<'a> {
+    pub(super) fn handle_composer_key(&mut self, key: KeyEvent) -> ComposerAction {
+        let super_key = key.modifiers.contains(KeyModifiers::SUPER);
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+        let char_with = |ch| matches!(key.code, KeyCode::Char(actual) if actual == ch);
+        if char_with('w') && alt && !super_key {
+            self.copy_selection();
+            ComposerAction::Consumed
+        } else if char_with('w') && ctrl {
+            self.cut_selection_or_delete_word(key);
+            ComposerAction::Consumed
+        } else if char_with('y') && ctrl && !alt {
+            self.paste_clipboard();
+            ComposerAction::Consumed
+        } else if char_with('c') && super_key && !alt {
+            self.copy_selection();
+            ComposerAction::Consumed
+        } else if char_with('x') && super_key && !alt {
+            self.cut_selection_or_delete_word(key);
+            ComposerAction::Consumed
+        } else if char_with('v') && super_key && !alt {
+            self.paste_clipboard();
+            ComposerAction::Consumed
+        } else {
+            self.composer.handle_key(key)
+        }
+    }
+
     pub(crate) fn handle_key_event(
         &mut self,
         key: KeyEvent,
@@ -26,7 +54,10 @@ impl<'a> InteractiveState<'a> {
         }
 
         // Ctrl+C quits from anywhere.
-        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        if key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::SUPER)
+        {
             return true;
         }
 
@@ -117,7 +148,7 @@ impl<'a> InteractiveState<'a> {
                 self.submit_composer(text);
                 return false;
             }
-            match self.composer.handle_key(key) {
+            match self.handle_composer_key(key) {
                 ComposerAction::Submit(text) => self.submit_composer(text),
                 ComposerAction::Consumed => {}
                 // The `↑`-spill at the 0,0 detent lands on the control strip —

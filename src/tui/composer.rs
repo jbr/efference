@@ -158,6 +158,29 @@ impl Composer {
         (anchor != self.cursor).then(|| anchor.min(self.cursor)..anchor.max(self.cursor))
     }
 
+    /// The selected plain text, if the anchor and cursor enclose a range.
+    pub(super) fn selected_text(&self) -> Option<String> {
+        self.selection_range()
+            .map(|range| self.text[range].to_string())
+    }
+
+    /// Delete the selected text, returning it for a TUI-owned clipboard action.
+    pub(super) fn cut_selection(&mut self) -> Option<String> {
+        let range = self.selection_range()?;
+        let text = self.text[range.clone()].to_string();
+        self.replace_range(range.clone(), "");
+        self.cursor = range.start;
+        self.clear_selection();
+        self.goal_col = self.cursor_col();
+        Some(text)
+    }
+
+    /// Insert externally supplied plain text, replacing a selection when present.
+    pub(super) fn paste_text(&mut self, text: &str) {
+        self.insert_text(text);
+        self.goal_col = self.cursor_col();
+    }
+
     /// Position the cursor at a byte offset already known to be a grapheme
     /// boundary. A mouse press either clears or starts a selection; a drag keeps
     /// the press position as its anchor.

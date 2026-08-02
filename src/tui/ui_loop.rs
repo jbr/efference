@@ -54,6 +54,7 @@ pub(super) fn ui_loop(
             stdout(),
             LeaveAlternateScreen,
             DisableMouseCapture,
+            PopKeyboardEnhancementFlags,
             crossterm::cursor::Show
         );
         default_hook(info);
@@ -61,7 +62,15 @@ pub(super) fn ui_loop(
 
     enable_raw_mode()?;
     let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    // DISAMBIGUATE_ESCAPE_CODES lets kitty-protocol terminals report SUPER and
+    // other unambiguous modifiers. Terminals that do not implement it continue
+    // emitting their ordinary key events.
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
@@ -198,7 +207,8 @@ pub(super) fn ui_loop(
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        PopKeyboardEnhancementFlags
     )?;
     terminal.show_cursor()?;
     result

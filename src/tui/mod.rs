@@ -19,6 +19,7 @@
 #![allow(dead_code)]
 
 pub(crate) mod block_menu;
+pub(crate) mod clipboard;
 pub(crate) mod color_scheme;
 pub(crate) mod composer;
 pub(crate) mod control_strip;
@@ -228,7 +229,10 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use crossbeam_channel::{Receiver, Sender, select};
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };

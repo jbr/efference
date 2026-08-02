@@ -74,6 +74,7 @@ impl<'a> InteractiveState<'a> {
             viewing: None,
             highlight_memo: Default::default(),
             composer: Composer::new(),
+            clipboard: TextClipboard::new(),
             composing: true,
             strip_focus: None,
             staging: None,
@@ -217,6 +218,58 @@ impl<'a> InteractiveState<'a> {
     pub(in crate::tui) fn set_debug_message(&mut self, message: impl Into<Cow<'static, str>>) {
         if !self.loading.pending_request {
             self.ui.debug_message = message.into();
+        }
+    }
+
+    /// Copy the current selection into the TUI clipboard.
+    pub(in crate::tui) fn copy_selection(&mut self) {
+        let Some(text) = self.composer.selected_text() else {
+            self.set_debug_message("nothing selected");
+            return;
+        };
+        let system_written = self.clipboard.copy(text).is_ok();
+        self.set_debug_message(if system_written {
+            "copied"
+        } else {
+            "copied (system clipboard unavailable)"
+        });
+    }
+
+    /// Cut the current selection when present; otherwise retain C-w's word-delete
+    /// behavior in the composer.
+    pub(in crate::tui) fn cut_selection_or_delete_word(&mut self, key: crossterm::event::KeyEvent) {
+        let Some(text) = self.composer.cut_selection() else {
+            let _ = self.composer.handle_key(key);
+            return;
+        };
+        let system_written = self.clipboard.copy(text).is_ok();
+        self.set_debug_message(if system_written {
+            "cut"
+        } else {
+            "cut (system clipboard unavailable)"
+        });
+    }
+
+    /// Paste UTF-8 text from the system clipboard, falling back only when system
+    /// access fails. Arboard does not distinguish empty from non-text content, so
+    /// `ContentNotAvailable` is reported without using stale fallback text.
+    pub(in crate::tui) fn paste_clipboard(&mut self) {
+        match self.clipboard.paste() {
+            crate::tui::clipboard::Paste::Text(text) => {
+                self.composer.paste_text(&text);
+                self.set_debug_message("pasted");
+            }
+            crate::tui::clipboard::Paste::Unavailable => {
+                if let Some(text) = self.clipboard.fallback().map(str::to_owned) {
+                    self.composer.paste_text(&text);
+                    self.set_debug_message("pasted (in-process clipboard)");
+                } else {
+                    self.set_debug_message("clipboard unavailable");
+                }
+            }
+            crate::tui::clipboard::Paste::NoText => {
+                self.set_debug_message("clipboard has no text");
+            }
         }
     }
 

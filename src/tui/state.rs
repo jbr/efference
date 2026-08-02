@@ -16,6 +16,7 @@ use super::theme::InteractiveTheme;
 use super::utils::{find_node_at_path_mut, supports_cursor_shape};
 use crate::frontend::{Approval, Interrupt};
 use crate::log::{LogEntry, Payload};
+use crate::tui::clipboard::TextClipboard;
 use crate::tui::composer::Composer;
 use crate::tui::document::{Document, DocumentNode, NodePath, TuiAction};
 use crate::tui::projection::{self, LiveTail, Phase};
@@ -376,6 +377,9 @@ pub(super) struct InteractiveState<'a> {
 
     /// The input composer (M2). The swappable input interface (docs/tui.md).
     pub composer: Composer,
+    /// System plain-text clipboard plus an in-process fallback. Kept outside the
+    /// composer so editor state stays deterministic.
+    pub clipboard: TextClipboard,
     /// Focus model: true = composing (keys go to the composer), false = command
     /// mode (M1's single-key transcript commands). Esc toggles; a printable key in
     /// command mode returns to composing. Starts focused.

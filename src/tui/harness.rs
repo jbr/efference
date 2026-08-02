@@ -129,6 +129,13 @@ impl Screenplay<'_> {
         self
     }
 
+    /// Replace the system clipboard with a test-only unavailable adapter, so
+    /// routed copy/cut/paste scenarios cannot touch the host clipboard.
+    pub(crate) fn disable_system_clipboard(&mut self) -> &mut Self {
+        self.state.clipboard = super::clipboard::TextClipboard::unavailable();
+        self
+    }
+
     /// Route a key through the *full* [`InteractiveState::handle_key_event`] — mode
     /// routing, the composer `↑`-spill, Esc-home, unit navigation — exactly as the
     /// `ui_loop` drives it, against an off-screen `TestBackend` terminal. Use this
@@ -139,6 +146,21 @@ impl Screenplay<'_> {
         self
     }
 
+    /// Route a fully specified crossterm key event. Test key construction differs
+    /// from terminals that carry a `KeyEventKind`, so clipboard scenarios use this
+    /// to exercise the same modifier path without host input.
+    pub(crate) fn route_event(&mut self, event: KeyEvent) -> &mut Self {
+        let _ = self.route_key_event_inner(event);
+        self
+    }
+
+    /// Feed one full key event through the composer-focused dispatch without the
+    /// global TUI bindings, for cases where terminal modifier encoding matters.
+    pub(crate) fn composer_event(&mut self, event: KeyEvent) -> &mut Self {
+        self.state.handle_composer_key(event);
+        self
+    }
+
     /// Like [`route_key`](Self::route_key) but returns `handle_key_event`'s quit
     /// signal — for asserting a key exits (e.g. C-d on an empty composer).
     pub(crate) fn key_quits(&mut self, code: KeyCode, mods: KeyModifiers) -> bool {
@@ -146,6 +168,10 @@ impl Screenplay<'_> {
     }
 
     fn route_key_inner(&mut self, code: KeyCode, mods: KeyModifiers) -> bool {
+        self.route_key_event_inner(KeyEvent::new(code, mods))
+    }
+
+    fn route_key_event_inner(&mut self, event: KeyEvent) -> bool {
         // `handle_key_event` needs `Backend + Write` (the mouse/theme `execute!`s);
         // `TestBackend` isn't `Write`, so back it with a `CrosstermBackend` over a
         // `Vec<u8>` sink. A *fixed* viewport avoids querying a real tty at
@@ -163,8 +189,7 @@ impl Screenplay<'_> {
             },
         )
         .unwrap();
-        self.state
-            .handle_key_event(KeyEvent::new(code, mods), &mut term)
+        self.state.handle_key_event(event, &mut term)
     }
 
     /// Feed a [`TuiEvent`] through the real handler — committed entries, streaming
