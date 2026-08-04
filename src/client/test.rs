@@ -47,7 +47,7 @@ fn stub_router() -> Router {
         })
         .get("/state", |conn: Conn| async move {
             conn.with_status(200)
-                .with_body(r#"{"last_seq":3,"pending_approval":null}"#)
+                .with_body(r#"{"last_seq":3,"gate":null}"#)
         })
         .get("/log", |conn: Conn| async move {
             // Echo the querystring so the test can assert `since` made the trip.

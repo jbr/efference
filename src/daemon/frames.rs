@@ -92,6 +92,24 @@ pub(crate) enum Topic {
 }
 
 impl Topic {
+    /// Every topic, in `GET /state` key order. The one enumeration: the composite
+    /// snapshot is built by folding this, and the level-triggered emitter diffs by
+    /// walking it, so a topic added here reaches both surfaces or neither — which is
+    /// what keeps `GET /state` equal to the fold of every state frame
+    /// (docs/control-api.md).
+    pub(crate) const ALL: [Topic; 10] = [
+        Self::Gate,
+        Self::Processes,
+        Self::Usage,
+        Self::Role,
+        Self::Proposals,
+        Self::Notifications,
+        Self::Pace,
+        Self::ReviewLevel,
+        Self::Running,
+        Self::UpstreamFailure,
+    ];
+
     /// The wire name, for `?include=state:<topic>` parsing and the SSE `event:` field.
     pub(crate) fn as_str(self) -> &'static str {
         match self {

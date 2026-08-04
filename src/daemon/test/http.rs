@@ -30,7 +30,11 @@ async fn review_level_over_the_socket() {
     );
     let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
     assert_eq!(state["review_level"], "human_only");
-    assert_eq!(state["autonomous"], false, "human_only is not autonomous");
+    // `autonomous` used to be mirrored here as a derived bool. It is gone: it was
+    // exactly `review_level == "autonomous"`, so no client lost anything it cannot
+    // compute, and a state topic must be one value rather than a value plus a
+    // restatement of part of it (docs/control-api.md).
+    assert!(state.get("autonomous").is_none(), "not restated as a bool");
 
     // An unknown level is rejected and does not move the dial.
     assert!(client.review_level("wat").await.is_err(), "unknown → error");

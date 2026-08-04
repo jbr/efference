@@ -224,24 +224,26 @@ fn state_reports_effective_role_contents() {
     );
 }
 
-/// Autonomous mode defaults off and `/state` reports it both ways — the orchestrator-above
-/// reads this to know whether a subordinate runs unsupervised (the autonomous flip).
+/// Autonomous mode defaults off, and `set_autonomous` moves the *dial* — the
+/// orchestrator-above reads `review_level` to know whether a subordinate runs unsupervised.
+/// `/state` no longer restates it as a separate `autonomous` bool: a state topic carries one
+/// value, not a value plus a partial mirror of it (docs/control-api.md).
 #[test]
 fn state_reports_autonomous_mode() {
     let (shared, _rx) = Shared::new(Log::in_memory());
     assert!(!shared.autonomous());
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
-    assert_eq!(v["autonomous"], false);
+    assert_eq!(v["review_level"], "spotter_human");
 
     shared.set_autonomous(true);
     assert!(shared.autonomous());
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
-    assert_eq!(v["autonomous"], true);
+    assert_eq!(v["review_level"], "autonomous");
+    assert!(v.get("autonomous").is_none(), "not restated as a bool");
 }
 
-/// The review-level dial (docs/permissions.md) is runtime-settable and
-/// reported on `/state`: default `spotter_human`, and `autonomous` is a *derived* mirror of the
-/// dial (true iff the level is `Autonomous`) — so the two stay consistent.
+/// The review-level dial (docs/permissions.md) is runtime-settable and reported on `/state` as
+/// the single representation of who reviews a gated call: default `spotter_human`.
 #[test]
 fn state_reports_the_review_level_dial() {
     use crate::policy::ReviewLevel;
@@ -251,20 +253,17 @@ fn state_reports_the_review_level_dial() {
     assert_eq!(shared.review_level(), ReviewLevel::SpotterHuman);
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["review_level"], "spotter_human");
-    assert_eq!(v["autonomous"], false);
 
     // HumanOnly: reported, and still not autonomous (a human is at the gate).
     shared.set_review_level(ReviewLevel::HumanOnly);
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["review_level"], "human_only");
-    assert_eq!(v["autonomous"], false);
 
-    // Autonomous: the derived mirror flips true.
+    // Autonomous.
     shared.set_review_level(ReviewLevel::Autonomous);
     assert!(shared.autonomous());
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["review_level"], "autonomous");
-    assert_eq!(v["autonomous"], true);
 }
 
 /// `GET /state` surfaces the live background processes (docs/supervisor.md) — the data the
@@ -364,4 +363,38 @@ fn state_reports_triage_retention() {
     assert_eq!(v["usage"]["retention"]["withheld"], 1);
     assert_eq!(v["usage"]["retention"]["kept_lines"], 140);
     assert_eq!(v["usage"]["retention"]["shown_lines"], 200);
+}
+
+/// `GET /state` is exactly `last_seq` plus one field per [`Topic`], each named by
+/// [`Topic::as_str`] — the structural half of "`GET /state` ≡ the fold of every `state`
+/// frame since connect" (docs/control-api.md).
+///
+/// The fold identity needs the two sides to agree on *names*, not just on values, so this
+/// pins the key set from both directions: no topic missing from the snapshot, and no
+/// snapshot key that is not a topic. `last_seq` is the one deliberate exception — the log's
+/// cursor rather than control state, so it is outside the fold and named here explicitly
+/// rather than tolerated by a loose assertion.
+#[test]
+fn state_is_last_seq_plus_exactly_the_topics() {
+    let (shared, _rx) = Shared::new(Log::in_memory());
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    let keys: std::collections::BTreeSet<&str> =
+        v.as_object().unwrap().keys().map(String::as_str).collect();
+
+    let mut expected: std::collections::BTreeSet<&str> =
+        Topic::ALL.iter().map(|t| t.as_str()).collect();
+    expected.insert("last_seq");
+
+    assert_eq!(keys, expected, "snapshot keys are last_seq + every topic");
+
+    // And each topic's value is reachable under its own name — i.e. `topic_json` is what
+    // the composite is built from, not a parallel implementation that happens to agree.
+    for topic in Topic::ALL {
+        assert_eq!(
+            v[topic.as_str()],
+            shared.topic_json(topic),
+            "{} matches its topic function",
+            topic.as_str()
+        );
+    }
 }

@@ -143,7 +143,7 @@ pub(crate) struct BgProc {
     pub idle_secs: u64,
 }
 
-/// A pending tool-approval gate, as surfaced by `GET /state`'s `pending_approval`.
+/// A pending tool-approval gate, as surfaced by `GET /state`'s `gate`.
 #[derive(Debug, Clone)]
 pub(crate) struct PendingGate {
     pub call_id: String,

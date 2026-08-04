@@ -197,7 +197,7 @@ pub(crate) async fn pending_call_id(
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let state: serde_json::Value = serde_json::from_str(&client.state().await?)?;
     state
-        .get("pending_approval")
+        .get("gate")
         .and_then(|p| p.get("call_id"))
         .and_then(|id| id.as_str())
         .map(str::to_string)

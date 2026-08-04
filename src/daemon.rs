@@ -554,6 +554,7 @@ pub(crate) use watch::refresh_and_emit;
 
 use approvals::Pending;
 use config_edits::{PendingProposal, session_visible_notice};
+use frames::Topic;
 pub use metrics::RequestOrigin;
 use metrics::{CostCell, Metrics};
 use notifications::Inbox;

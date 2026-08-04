@@ -26,7 +26,7 @@ fn a_tmtheme_path_is_accepted_without_membership() {
 }
 #[test]
 fn parses_a_pending_gate() {
-    let body = r#"{"last_seq":1,"pending_approval":{"call_id":"toolu_x","input":{"command":"ls"},"name":"bash"},"usage":{}}"#;
+    let body = r#"{"last_seq":1,"gate":{"call_id":"toolu_x","input":{"command":"ls"},"name":"bash"},"usage":{}}"#;
     let gate = parse_pending_gate(body).expect("a gate");
     assert_eq!(gate.call_id, "toolu_x");
     assert_eq!(gate.name, "bash");
@@ -34,8 +34,8 @@ fn parses_a_pending_gate() {
 }
 
 #[test]
-fn null_pending_approval_is_no_gate() {
-    let body = r#"{"last_seq":7,"pending_approval":null,"usage":{}}"#;
+fn null_gate_is_no_gate() {
+    let body = r#"{"last_seq":7,"gate":null,"usage":{}}"#;
     assert!(parse_pending_gate(body).is_none());
 }
 

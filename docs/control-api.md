@@ -136,16 +136,21 @@ proposal, never resolve its own.
 #### `GET /state`
 The ephemeral control snapshot. The single most-polled endpoint.
 
+Its keys are `last_seq` plus **exactly one field per state topic**, each named by the
+topic. That is structural, not incidental: the same per-topic functions build this
+snapshot and the level-triggered `state` frames, so the two cannot drift and `GET /state`
+equals the fold of every `state` frame since connect. `last_seq` is the one field that is
+not a topic — it is the log's cursor rather than control state, and sits outside the fold.
+
 ```jsonc
 {
-  "last_seq": 42,                  // u64 or null (empty log)
-  "pending_approval": {            // null when no gate is open
+  "last_seq": 42,                  // u64 or null (empty log); NOT a topic
+  "gate": {                        // null when no gate is open
     "call_id": "toolu_…",
     "name": "bash",
     "input": { … },                // the tool_use input, verbatim
     "reason": "…"                  // optional: the spotter's one-line reason
   },
-  "autonomous": false,             // no synchronous human at the gate
   "role": {                        // EFFECTIVE policy = base config + folded edits
     "source": "/path/efference.toml",   // or null for the built-in default
     "scope": "…",
@@ -154,7 +159,7 @@ The ephemeral control snapshot. The single most-polled endpoint.
     "tools": { … },
     "paths": { "<path>": { "read": true, "write": false } }
   },
-  "pending_notifications": [ { "id": 3, "source": "…", "body": "…", "slot": "…" } ],
+  "notifications": [ { "id": 3, "source": "…", "body": "…", "slot": "…" } ],
   "proposals": [ { "seq": 17, "change": { … } } ],
   "processes": [ { …BgView… } ],   // live background processes
   "usage": {

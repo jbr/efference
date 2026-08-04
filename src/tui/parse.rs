@@ -12,10 +12,10 @@ pub(super) fn parse_processes(body: &str) -> Vec<BgProc> {
         .unwrap_or_default()
 }
 
-/// Parse `GET /state`'s `pending_approval` object into a [`PendingGate`].
+/// Parse `GET /state`'s `gate` object into a [`PendingGate`].
 pub(super) fn parse_pending_gate(body: &str) -> Option<PendingGate> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    let pending = value.get("pending_approval")?;
+    let pending = value.get("gate")?;
     if pending.is_null() {
         return None;
     }

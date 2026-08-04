@@ -102,7 +102,7 @@ async fn notify_supersede_and_dismiss_over_the_socket() {
         .expect("notify 2");
 
     let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
-    let notes = state["pending_notifications"].as_array().unwrap();
+    let notes = state["notifications"].as_array().unwrap();
     assert_eq!(notes.len(), 1, "slot superseded, not appended: {notes:?}");
     assert_eq!(notes[0]["body"], "finished, 0 failures");
     assert_eq!(notes[0]["source"], "test-watch");
@@ -111,12 +111,7 @@ async fn notify_supersede_and_dismiss_over_the_socket() {
     // Dismissing the live one empties the inbox; dismissing the superseded id 404s.
     client.dismiss_notification(live_id).await.unwrap();
     let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
-    assert!(
-        state["pending_notifications"]
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
+    assert!(state["notifications"].as_array().unwrap().is_empty());
     assert!(
         client.dismiss_notification(gone).await.is_err(),
         "the superseded id is gone → 404"
