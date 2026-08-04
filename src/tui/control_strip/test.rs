@@ -150,7 +150,7 @@ fn strip_hold_reads_resume_and_survives_into_idle() {
 /// least-relevant end first and never a context verb.
 #[test]
 fn strip_cuts_from_the_right_when_narrow() {
-    let mut wide = Screenplay::new(120, 12);
+    let mut wide = Screenplay::new(140, 12);
     wide.user("go");
     wide.running_bash("toolu_b", "cargo test");
     assert!(

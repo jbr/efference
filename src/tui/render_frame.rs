@@ -14,7 +14,7 @@ const PROC_PANEL_MAX: u16 = 6;
 /// hidden (the narrow-mode drawer is a later step), and the process strip returns.
 pub(super) const SIDEBAR_MIN_TOTAL: u16 = 90;
 /// Docked sidebar column width, including its 1-col left divider (docs/tui.md).
-pub(super) const SIDEBAR_WIDTH: u16 = 30;
+pub(super) const SIDEBAR_WIDTH: u16 = 40;
 
 /// Compact seconds → `8s` / `4m12s` / `1h3m`, for the process-panel timing.
 pub(super) fn fmt_secs(secs: u64) -> String {
