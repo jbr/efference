@@ -131,16 +131,42 @@ pub(crate) struct PaceView {
 /// the speed dial, toggle the hold, or both.
 pub(crate) type PaceCmd = (Option<u64>, Option<bool>);
 
-/// One live background process, as surfaced by `GET /state`'s `processes` array
-/// (the serialized `supervisor::BgView`, docs/supervisor.md). `Serialize` too so the poller
-/// can fingerprint the list and only emit on change.
+/// One live background process as the panel holds it: the wire's structural fields
+/// merged with the tail this client accumulated itself.
+///
+/// The `processes` topic carries structure only — no tail, no last-chunk stamp — because
+/// both change per output chunk and would make a level-triggered topic re-emit at the
+/// rate of the output (docs/control-api.md). The content arrives as `bg_output` deltas
+/// instead, which this client already layered on top of the poll, so the split is one the
+/// panel was half-implementing anyway.
+///
+/// `running_secs`/`idle_secs` are **derived for display** when state changes, from the
+/// absolute stamps beside them. Derived at event time rather than at render time so
+/// rendering stays a pure function of state (the snapshot harness depends on that); the
+/// stamps are retained so a repaint ticker can recompute them without a round-trip.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BgProc {
     pub handle: String,
     pub command: String,
+    /// Absolute Unix millis, from the wire.
+    pub spawned_at: u64,
+    /// Absolute Unix millis, stamped locally on each `bg_output` delta. `None` until the
+    /// first chunk — the wire cannot supply it without re-emitting per chunk.
+    pub last_chunk_at: Option<u64>,
+    /// Accumulated locally from `bg_output` deltas; a cold-opened client starts empty
+    /// until the process tail resource exists (backlog/processes-rest-resource.md).
     pub tail: String,
     pub running_secs: u64,
     pub idle_secs: u64,
+}
+
+impl BgProc {
+    /// Recompute the display counters from the absolute stamps. Called whenever the
+    /// panel's state changes; a repaint ticker would call it on tick too.
+    pub fn refresh_elapsed(&mut self) {
+        self.running_secs = secs_since(self.spawned_at);
+        self.idle_secs = self.last_chunk_at.map(secs_since).unwrap_or(0);
+    }
 }
 
 /// A pending tool-approval gate, as surfaced by `GET /state`'s `gate`.

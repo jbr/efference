@@ -118,9 +118,23 @@ This retires the `bash(echo "")` antipattern (issuing a no-op to trip a gate jus
 to see notifications). The missing piece was a *direct projection*, not another poll
 verb.
 
-`BgView` — the snapshot struct built under the registry lock — is serializable so
-the same view serves both the in-process peek renderer and the TUI process panel
-over `GET /state`: one view, two consumers.
+**Two views of one registry.** `BgView` — built under the registry lock — is the
+*model-facing* snapshot: tail inline, times as humanized elapsed counts. A peek is
+synchronous and point-in-time, so the model has no stream to subscribe to and the tail
+must be there or it does not exist; and absolute Unix millis are unreadable in a prompt.
+
+`ProcessState` is what the control API's `processes` topic carries, and it diverges on
+both fields for the mirror-image reason ([control-api](control-api.md)). It has **no
+tail and no last-chunk stamp**: both change with every output chunk, and that topic is
+level-triggered, so carrying them would emit a whole-topic replacement per chunk — worse
+than the poll it replaces. That content rides the ephemeral `output` class as
+`bg_output` deltas, where high-rate and lossy is the contract, and a client opening cold
+seeds itself from the process tail resource rather than from the topic. Times are
+absolute so a client computes elapsed without the daemon re-emitting as the clock moves.
+
+What survives in `ProcessState` changes only on spawn, exit, or mute — which is what
+makes `?include=state:processes` viable on a battery-powered client. The two types were
+one only while a poll made the economy free.
 
 ## Triage of a live process
 

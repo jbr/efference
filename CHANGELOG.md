@@ -17,6 +17,7 @@ behind a change, see [`journal/`](journal/).
 - Transient upstream 429/5xx responses retry with a bounded backoff, and an exhausted completion now returns the session to idle instead of terminating the daemon.
 
 ### Added
+- The `processes` state topic carries structure only — handle, command, absolute spawn stamp — so it changes on spawn/exit/mute rather than on every output chunk; tails ride `bg_output` deltas.
 - `GET /state` is composed from one function per state topic and its keys are named for those topics, so the snapshot and the coming level-triggered `state` frames cannot drift.
 - The TUI composer supports grapheme-safe text selection, mouse selection, and plain-text copy, cut, and paste with a process-local clipboard fallback.
 - Provider identity is declared (`EFFERENCE_PROVIDER=anthropic|openrouter`, default `anthropic`) and the endpoint URL + auth shape derived from it; the `EFFERENCE_ENDPOINT`/`EFFERENCE_AUTH_*` knobs are retired (setting one is an error naming the replacement).

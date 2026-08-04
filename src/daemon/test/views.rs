@@ -272,8 +272,15 @@ fn state_reports_the_review_level_dial() {
 }
 
 /// `GET /state` surfaces the live background processes (docs/supervisor.md) — the data the
-/// TUI process panel polls. A running child appears with its handle/command;
-/// `bg_snapshot`/`state_json` read the registry synchronously after spawn.
+/// TUI process panel reads. A running child appears with its handle/command and an
+/// absolute spawn stamp; `process_states`/`state_json` read the registry synchronously
+/// after spawn.
+///
+/// The topic carries **structure only** (docs/control-api.md): no `tail` and no
+/// last-chunk stamp, because both change with every output chunk and would make a
+/// level-triggered topic re-emit a whole-topic replacement per chunk. That content rides
+/// `bg_output` on the ephemeral `output` class. This asserts their absence, since their
+/// return would be a silent regression to a per-chunk firehose.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn state_json_surfaces_running_processes() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
@@ -285,9 +292,15 @@ async fn state_json_surfaces_running_processes() {
     assert_eq!(procs.len(), 1);
     assert_eq!(procs[0]["handle"], "bg#1");
     assert_eq!(procs[0]["command"], "sleep 5");
+    let at = procs[0]["spawned_at"]
+        .as_u64()
+        .expect("absolute spawn stamp");
+    let now = crate::log::Timestamp::now().0;
+    assert!(at <= now && now - at < 60_000, "a plausible recent stamp");
+    assert!(procs[0]["tail"].is_null(), "no tail: it rides bg_output");
     assert!(
-        procs[0]["running_secs"].is_u64(),
-        "timing present: {procs:?}"
+        procs[0]["running_secs"].is_null() && procs[0]["idle_secs"].is_null(),
+        "no ticking counters: clients subtract from the absolute stamp"
     );
     shared.kill_all_bg();
 }

@@ -2,14 +2,41 @@
 
 use super::*;
 
-/// Parse `GET /state`'s `processes` array into the live [`BgProc`] list (docs/supervisor.md).
-/// A missing/malformed field is an empty list — the panel just hides.
+/// The `processes` topic's wire shape (`supervisor::ProcessState`): structure only.
+#[derive(serde::Deserialize)]
+struct WireProcess {
+    handle: String,
+    command: String,
+    spawned_at: u64,
+}
+
+/// Parse `GET /state`'s `processes` array into [`BgProc`]s (docs/supervisor.md). A
+/// missing/malformed field is an empty list — the panel just hides.
+///
+/// Tail and last-chunk are left empty here: the topic does not carry them, and
+/// [`State::handle_event`](crate::tui::State::handle_event) merges each handle's
+/// locally-accumulated tail back in so a topic replacement can't wipe it.
 pub(super) fn parse_processes(body: &str) -> Vec<BgProc> {
     serde_json::from_str::<serde_json::Value>(body)
         .ok()
         .and_then(|v| v.get("processes").cloned())
-        .and_then(|p| serde_json::from_value::<Vec<BgProc>>(p).ok())
+        .and_then(|p| serde_json::from_value::<Vec<WireProcess>>(p).ok())
         .unwrap_or_default()
+        .into_iter()
+        .map(|w| {
+            let mut proc = BgProc {
+                handle: w.handle,
+                command: w.command,
+                spawned_at: w.spawned_at,
+                last_chunk_at: None,
+                tail: String::new(),
+                running_secs: 0,
+                idle_secs: 0,
+            };
+            proc.refresh_elapsed();
+            proc
+        })
+        .collect()
 }
 
 /// Parse `GET /state`'s `gate` object into a [`PendingGate`].

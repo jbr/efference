@@ -93,20 +93,36 @@ impl<'a> InteractiveState<'a> {
                 self.pending_gate = gate;
                 self.mark_reproject();
             }
-            TuiEvent::Processes(processes) => {
+            TuiEvent::Processes(mut processes) => {
                 // Ephemeral chrome, not transcript content — repaint, no reproject
                 // (the running tail is never in the log, docs/supervisor.md).
+                //
+                // Carry each handle's accumulated tail across the replacement. The
+                // `processes` topic is structure only — it cannot carry the tail without
+                // re-emitting per output chunk (docs/control-api.md) — so this client is
+                // the only holder of it, and a wholesale assignment would wipe what the
+                // `bg_output` deltas built. Matched by handle; a process that has since
+                // exited simply drops out with its tail.
+                for proc in &mut processes {
+                    if let Some(prev) = self.processes.iter().find(|p| p.handle == proc.handle) {
+                        proc.tail.clone_from(&prev.tail);
+                        proc.last_chunk_at = prev.last_chunk_at;
+                        proc.refresh_elapsed();
+                    }
+                }
                 self.processes = processes;
                 self.dirty = true;
             }
             TuiEvent::BgOutput { handle, chunk } => {
-                // Smooth the panel's tail between `/state` polls (TUI-bg-2). Append to
-                // the matching row; the next poll reconciles to the authoritative
-                // snapshot. An unknown handle (process spawned since the last poll) is
-                // ignored — it appears within one poll interval. Bound the appended
-                // tail so a chatty process can't grow it without limit before the next
-                // poll trims it; only the last line is shown anyway.
+                // The panel's tail is built *here*, not received: the `processes` topic
+                // carries structure only, so these deltas are the sole source of tail
+                // content (docs/control-api.md). An unknown handle (a process the panel
+                // has not seen yet) is ignored — it appears with the next state change.
+                // Bound the accumulation so a chatty process can't grow it without
+                // limit; only the last line is shown anyway.
                 if let Some(p) = self.processes.iter_mut().find(|p| p.handle == handle) {
+                    p.last_chunk_at = Some(crate::log::Timestamp::now().0);
+                    p.refresh_elapsed();
                     p.tail.push_str(&chunk);
                     if p.tail.len() > BG_TAIL_CAP {
                         let from = p.tail.len() - BG_TAIL_CAP;

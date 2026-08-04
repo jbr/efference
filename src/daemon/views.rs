@@ -72,11 +72,12 @@ impl Shared {
         serde_json::to_value(self.pending.lock().unwrap().clone()).unwrap_or(Value::Null)
     }
 
-    /// The live background processes (docs/supervisor.md) — the same `views()` snapshot
-    /// the peek auto-shows the model, surfaced here for the human clients (the TUI
-    /// process panel, docs/tui.md). Ephemeral, like the rest of `/state`.
+    /// The live background processes (docs/supervisor.md), as structure only — no tail
+    /// and no last-chunk stamp, both of which change per output chunk and would make
+    /// this topic re-emit at the rate of the output it describes. That content rides
+    /// `bg_output` on the ephemeral `output` class instead (docs/control-api.md).
     fn processes_json(&self) -> Value {
-        serde_json::to_value(self.bg_snapshot()).unwrap_or(Value::Null)
+        serde_json::to_value(self.process_states()).unwrap_or(Value::Null)
     }
 
     /// Token/cost telemetry (docs/transport.md).

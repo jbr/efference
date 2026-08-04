@@ -14,6 +14,8 @@ fn sidebar_shows_processes_and_stats() {
     play.event(TuiEvent::Processes(vec![BgProc {
         handle: "bg#1".into(),
         command: "cargo watch -x test".into(),
+        spawned_at: 0,
+        last_chunk_at: None,
         tail: "test result: ok. 12 passed".into(),
         running_secs: 252,
         idle_secs: 8,
@@ -341,6 +343,8 @@ fn background_process_panel() {
         BgProc {
             handle: "bg#1".into(),
             command: "cargo watch -x test".into(),
+            spawned_at: 0,
+            last_chunk_at: None,
             tail: "Compiling efference\nrunning 12 tests\ntest result: ok. 12 passed".into(),
             running_secs: 252,
             idle_secs: 8,
@@ -348,6 +352,8 @@ fn background_process_panel() {
         BgProc {
             handle: "bg#2".into(),
             command: "npm run dev".into(),
+            spawned_at: 0,
+            last_chunk_at: None,
             tail: "ready - started server on 0.0.0.0:3000".into(),
             running_secs: 9,
             idle_secs: 9,

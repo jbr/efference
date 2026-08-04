@@ -161,7 +161,10 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
   },
   "notifications": [ { "id": 3, "source": "…", "body": "…", "slot": "…" } ],
   "proposals": [ { "seq": 17, "change": { … } } ],
-  "processes": [ { …BgView… } ],   // live background processes
+  "processes": [                   // live background processes: STRUCTURE ONLY
+    { "handle": "bg#1", "command": "cargo watch -x test",
+      "spawned_at": 1754300000000 }  // no tail, no last-chunk: both would re-emit per chunk
+  ],
   "usage": {
     "last": { "input_tokens": …, "output_tokens": …,
               "cache_read_input_tokens": …, "cache_creation_input_tokens": … },

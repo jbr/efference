@@ -114,6 +114,14 @@ impl Shared {
 
     /// The peek's ambient `background` section (docs/supervisor.md) — a snapshot of running,
     /// un-muted processes, taken under the lock so the loop can hand it to the fork.
+    /// The control API's `processes` topic (docs/control-api.md) — structure only, no
+    /// tail. Distinct from [`bg_snapshot`](Self::bg_snapshot), which is the model-facing
+    /// peek view; see [`ProcessState`](crate::supervisor::ProcessState) for why they
+    /// diverge.
+    pub(super) fn process_states(&self) -> Vec<crate::supervisor::ProcessState> {
+        self.supervisor.lock().unwrap().process_states()
+    }
+
     pub fn bg_snapshot(&self) -> Vec<BgView> {
         self.supervisor.lock().unwrap().views()
     }

@@ -97,6 +97,12 @@ struct BgProcess {
     dropped: usize,
     spawned_at: Instant,
     last_chunk_at: Instant,
+    /// The same event as `spawned_at`, on the wall clock. Two clocks, two jobs: the
+    /// [`Instant`] drives the elapsed figures the *model* reads (monotonic, so an NTP
+    /// step can't make a process look younger), and this absolute stamp is what the
+    /// control API's `processes` topic carries so clients compute elapsed themselves
+    /// (docs/control-api.md).
+    spawned_wall: crate::log::Timestamp,
     /// Muted (the supervisor's `dismiss` for a live process, docs/supervisor.md): kept running, exit still
     /// notifies, but the running tail stops surfacing in the peek.
     muted: bool,
@@ -106,9 +112,14 @@ struct BgProcess {
 /// A live snapshot of one running process for the peek's ambient `background`
 /// section (docs/supervisor.md). Owned (it borrows nothing of the registry) so the loop can
 /// build it under the lock and hand it to the fork distiller, which then awaits.
-/// `Serialize` so the same snapshot rides `GET /state` to the human clients (the
-/// TUI process panel, docs/tui.md) — one view, two consumers.
-#[derive(Clone, Debug, Serialize)]
+///
+/// **Model-facing, and that is why it looks like this.** A peek is synchronous and
+/// point-in-time — the model has no connection to subscribe to — so the tail must be
+/// inline or it does not exist, and the times are humanized elapsed counts because
+/// absolute Unix millis are unreadable in a prompt. The control API's view of the same
+/// processes is [`ProcessState`], which diverges on both fields for the opposite reason
+/// (docs/control-api.md). One registry, two genuinely different consumers.
+#[derive(Clone, Debug)]
 pub struct BgView {
     pub handle: String,
     pub command: String,
@@ -117,9 +128,32 @@ pub struct BgView {
     pub idle_secs: u64,
 }
 
+/// One running process as the control API's `processes` state topic carries it
+/// (docs/control-api.md).
+///
+/// **What is absent is the design.** No `tail` and no last-chunk stamp: both change with
+/// every output chunk, and a level-triggered topic that changes per chunk re-emits a
+/// whole-topic replacement per chunk — worse than the poll it replaces. That content
+/// rides the ephemeral `output` class as `bg_output` deltas instead, where high-rate and
+/// lossy is the contract; a client opening cold seeds itself from the process tail
+/// resource (backlog/processes-rest-resource.md) rather than from this topic.
+///
+/// What remains changes only when a process spawns, exits, or is muted, which is what
+/// makes `?include=state:processes` viable on a battery-powered client.
+#[derive(Clone, Debug, Serialize)]
+pub struct ProcessState {
+    pub handle: String,
+    pub command: String,
+    /// Absolute Unix millis. The client subtracts from its own clock; the daemon never
+    /// re-emits merely because time passed.
+    pub spawned_at: crate::log::Timestamp,
+}
+
 /// The ephemeral background-process registry (docs/supervisor.md). Held behind a `Mutex` in
-/// [`Shared`](crate::daemon); never logged, never projected — its `Instant`s can't
-/// reach the wire, so it's cache-safe by construction.
+/// [`Shared`](crate::daemon); never logged and never projected, which is what keeps it
+/// clear of the cache prefix. (Its stamps *do* reach the control wire — see
+/// [`ProcessState`] — which is harmless: the control API and the projection are
+/// different wires, and only the projection has to stay byte-stable.)
 #[derive(Default)]
 pub struct Supervisor {
     next: u64,
@@ -146,6 +180,7 @@ impl Supervisor {
             dropped: 0,
             spawned_at: now,
             last_chunk_at: now,
+            spawned_wall: crate::log::Timestamp::now(),
             muted: false,
             running: true,
         });
@@ -184,6 +219,22 @@ impl Supervisor {
         if let Some(p) = self.find_mut(handle) {
             p.muted = true;
         }
+    }
+
+    /// The control API's view of every *running, un-muted* process — the `processes`
+    /// state topic (docs/control-api.md). Same filter as [`views`](Self::views), so a
+    /// process leaving the list is how an exit is represented and the list cannot grow
+    /// without bound over a long session.
+    pub fn process_states(&self) -> Vec<ProcessState> {
+        self.procs
+            .iter()
+            .filter(|p| p.running && !p.muted)
+            .map(|p| ProcessState {
+                handle: p.handle.clone(),
+                command: p.command.clone(),
+                spawned_at: p.spawned_wall,
+            })
+            .collect()
     }
 
     /// The ambient auto-show: a snapshot of every *running, un-muted* process for
