@@ -533,6 +533,14 @@ const SETTLE_TIMEOUT: Duration = Duration::from_secs(300);
 mod approvals;
 mod background;
 mod config_edits;
+// The control-stream frame envelope and the typed error envelope
+// (docs/control-api.md). Defined ahead of their construction sites, like `WireState`'s
+// variants were: pinning the contract first is what keeps adding the unified endpoint
+// from also reshaping it. `dead_code` until the router and the stream emit them.
+#[allow(dead_code)]
+mod errors;
+#[allow(dead_code)]
+mod frames;
 mod http;
 mod keepalive;
 mod metrics;
