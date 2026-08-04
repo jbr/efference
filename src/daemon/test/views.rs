@@ -42,7 +42,7 @@ fn state_reports_cache_telemetry() {
     // No request yet: no `last`, no stamp.
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["usage"]["last"].is_null());
-    assert!(v["usage"]["seconds_since_last_request"].is_null());
+    assert!(v["usage"]["last_request_at"].is_null());
 
     // Cold prefix: all creation, no read.
     shared.record_request(
@@ -82,8 +82,13 @@ fn state_reports_cache_telemetry() {
     );
     assert_eq!(v["usage"]["cumulative"]["cache_read_input_tokens"], 9407);
     assert_eq!(v["usage"]["cumulative"]["output_tokens"], 22);
-    // A wall-clock stamp now exists — the eviction-prediction signal (docs/log-and-projection.md).
-    assert!(v["usage"]["seconds_since_last_request"].is_u64());
+    // An absolute wall-clock stamp now exists — the eviction-prediction signal
+    // (docs/log-and-projection.md). Absolute rather than elapsed so a level-triggered
+    // `usage` topic does not re-emit on every read (docs/control-api.md); a client
+    // subtracts from its own clock.
+    let at = v["usage"]["last_request_at"].as_u64().expect("stamped");
+    let now = crate::log::Timestamp::now().0;
+    assert!(at <= now && now - at < 60_000, "a plausible recent stamp");
 }
 
 /// `GET /state` reports context-window occupancy (docs/transport.md): null with

@@ -166,7 +166,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "last": { "input_tokens": …, "output_tokens": …,
               "cache_read_input_tokens": …, "cache_creation_input_tokens": … },
     "cumulative": { …same four fields… },
-    "seconds_since_last_request": 12,       // or null
+    "last_request_at": 1754300000000,       // absolute Unix millis, or null before the first request
     "context": {                            // null when no capabilities were fetched
       "limit": 200000,                      // the boot-fetched context window (transport.md)
       "used": 9578                          // last request's total prompt tokens; null before the first

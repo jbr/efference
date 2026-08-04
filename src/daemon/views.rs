@@ -117,7 +117,10 @@ impl Shared {
                 "cache_read_input_tokens": metrics.total_cache_read,
                 "cache_creation_input_tokens": metrics.total_cache_creation,
             },
-            "seconds_since_last_request": metrics.last_request_at.map(|t| t.elapsed().as_secs()),
+            // Absolute, not elapsed (docs/control-api.md): a ticking field would make
+            // this topic re-emit on every read under level-triggered emission. Clients
+            // subtract from their own clock.
+            "last_request_at": metrics.last_request_wall,
             "context": context,
             "cost": cost,
             // Triage retention (docs/redaction-fork.md): how much of what the gate

@@ -16,7 +16,6 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::log::{LogEntry, Payload, Seq, Timestamp, Turn};
 
@@ -62,7 +61,7 @@ impl Log {
         let entry = LogEntry {
             seq,
             turn,
-            at: now(),
+            at: Timestamp::now(),
             payload,
         };
         if let Some(sink) = &mut self.sink {
@@ -89,14 +88,6 @@ pub fn load(path: impl AsRef<Path>) -> io::Result<Vec<LogEntry>> {
         entries.push(serde_json::from_str(&line).map_err(io::Error::other)?);
     }
     Ok(entries)
-}
-
-fn now() -> Timestamp {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before Unix epoch")
-        .as_millis() as u64;
-    Timestamp(millis)
 }
 
 #[cfg(test)]

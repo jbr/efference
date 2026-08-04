@@ -341,10 +341,14 @@ structural rather than a fragile string comparison.
 ### Metrics cell
 
 `Shared` holds a transport-only metrics cell: the latest `Usage`, cumulative
-totals, and two wall-clock `Instant`s. The `Instant`s are never serialized —
-only derived elapsed seconds reach a client — so their non-determinism cannot
-escape into the projection. `GET /state` carries a `usage` block with `last`,
-`cumulative`, and `seconds_since_last_request`.
+totals, two monotonic `Instant`s, and one wall-clock stamp. Two clocks, two
+jobs: the `Instant`s drive *interval* logic (when to ping, when the keepalive cap
+is reached), where a monotonic clock is correct because an NTP step must not move
+a deadline; the wall stamp is what clients read. Neither reaches the projection.
+`GET /state` carries a `usage` block with `last`, `cumulative`, and
+`last_request_at` — an **absolute** instant rather than an elapsed count, because
+a field that ticks with the clock would make the level-triggered `usage` topic
+re-emit forever (docs/control-api.md). Clients subtract from their own clock.
 
 The fork peek's usage is folded into the metrics cell because the fork reads the
 shared canonical prefix and therefore slides the cache TTL.

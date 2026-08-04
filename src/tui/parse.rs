@@ -212,8 +212,9 @@ pub(super) fn parse_usage(body: &str) -> Option<UsageStats> {
         cache_read_input_tokens: cumulative.get("cache_read_input_tokens")?.as_u64()?,
         cache_creation_input_tokens: cumulative.get("cache_creation_input_tokens")?.as_u64()?,
         seconds_since_last_request: usage
-            .get("seconds_since_last_request")
-            .and_then(|v| v.as_u64()),
+            .get("last_request_at")
+            .and_then(|v| v.as_u64())
+            .map(super::secs_since),
         context_limit: context
             .and_then(|c| c.get("limit"))
             .and_then(|v| v.as_u64()),

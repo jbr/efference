@@ -2,15 +2,26 @@
 
 use super::*;
 
-/// Per-session cache/usage telemetry. `last_request_at` is an [`Instant`] (not
-/// serialized — we surface the derived elapsed seconds, so the non-determinism
-/// never reaches a client and there's nothing to keep byte-stable).
+/// Per-session cache/usage telemetry.
+///
+/// **Two clocks, two jobs.** The [`Instant`]s are monotonic and drive *interval* logic
+/// (when to ping, when the keepalive cap is reached) — the right clock for that, since an
+/// NTP step must not move a deadline. [`Metrics::last_request_wall`] is the wall-clock
+/// stamp clients read.
+///
+/// The wall stamp is **absolute, not elapsed**, and that is load-bearing rather than
+/// cosmetic (docs/control-api.md): a field that ticks with the clock changes on every
+/// read, so under level-triggered emission "emit when it changes" becomes "emit forever."
+/// Sending the instant and letting clients subtract keeps `usage` quiet until a request
+/// actually happens.
 #[derive(Default)]
 pub(super) struct Metrics {
     pub(super) last_usage: Option<Usage>,
     /// Stamped by **any** request — real turn, fork peek, or keepalive ping. The
-    /// cache-touch clock: drives `seconds_since_last_request` and when to ping.
+    /// cache-touch clock: decides when to ping.
     pub(super) last_request_at: Option<Instant>,
+    /// The same event as [`Metrics::last_request_at`], on the wall clock, for the wire.
+    pub(super) last_request_wall: Option<crate::log::Timestamp>,
     /// Stamped by real loop turns (incl. the fork) but **not** keepalive pings, so
     /// it measures genuine idle and a ping can't reset its own deadline. Gates the
     /// keepalive cap (docs/log-and-projection.md).
@@ -111,7 +122,7 @@ impl Shared {
     /// Record a completed request's usage: persist the origin-tagged line
     /// ([`Self::persist_usage`]), fold it into the telemetry, and stamp the wall
     /// clock. The loop calls this once per API round-trip; `GET /state` reports the
-    /// latest plus running totals and the seconds-since (the eviction-prediction
+    /// latest plus running totals and the absolute stamp (the eviction-prediction
     /// signal, docs/log-and-projection.md). Transport-only — no canonical-log append,
     /// no projection change.
     pub fn record_request(&self, origin: RequestOrigin, request: RequestUsage) {
@@ -175,6 +186,7 @@ impl Shared {
         m.total_cache_read += usage.cache_read_input_tokens;
         m.total_cache_creation += usage.cache_creation_input_tokens;
         m.last_request_at = Some(Instant::now());
+        m.last_request_wall = Some(crate::log::Timestamp::now());
         m.last_usage = Some(usage);
     }
 

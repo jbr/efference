@@ -161,6 +161,12 @@ pub(crate) struct UsageStats {
     pub output_tokens: u64,
     pub cache_read_input_tokens: u64,
     pub cache_creation_input_tokens: u64,
+    /// Seconds since the last upstream request, derived at parse time from the wire's
+    /// absolute `usage.last_request_at` (docs/control-api.md — the daemon sends the
+    /// instant, not a ticking count, so a level-triggered `usage` topic stays quiet).
+    /// Derived here rather than at render time so rendering stays a pure function of
+    /// state and the snapshot harness stays deterministic; it therefore refreshes when
+    /// state does, which the `/state` poll drives today.
     pub seconds_since_last_request: Option<u64>,
     /// The model's context-window limit, from `usage.context.limit` — the
     /// boot-fetched capability (docs/transport.md). `None` when the daemon
@@ -273,3 +279,12 @@ use bridge::bridge;
 use parse::*;
 use run::DEFAULT_THEME;
 use ui_loop::{Senders, ui_loop};
+
+/// Seconds elapsed since an absolute Unix-millis stamp, per the local clock. The
+/// client-side half of "send absolute instants, let clients compute elapsed"
+/// (docs/control-api.md). Saturating: a stamp in the future (clock skew between a
+/// remote daemon and this client) reads as 0 rather than wrapping.
+pub(crate) fn secs_since(at_ms: u64) -> u64 {
+    let now = crate::log::Timestamp::now().0;
+    now.saturating_sub(at_ms) / 1000
+}

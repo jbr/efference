@@ -22,6 +22,25 @@ pub type Turn = u32;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Timestamp(pub u64);
 
+impl Timestamp {
+    /// The wall clock, now. The single place a wall-clock reading enters the process, so
+    /// the non-determinism has one door rather than several.
+    ///
+    /// Safe for anything that is never projected — log metadata, and the absolute
+    /// instants control-API state representations carry so clients can compute elapsed
+    /// without the daemon re-emitting a ticking field (docs/control-api.md). It must not
+    /// reach the wire projection, where any per-process variation breaks the cache prefix
+    /// (docs/log-and-projection.md).
+    pub fn now() -> Self {
+        Self(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock before Unix epoch")
+                .as_millis() as u64,
+        )
+    }
+}
+
 /// An Anthropic tool-use id (`toolu_…`) and its matching `tool_result` id.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CallId(pub String);
