@@ -150,6 +150,15 @@ pub struct Shared {
     /// loop's `complete` sink and the bash tool) publish via [`Shared::publish_delta`];
     /// each `GET /stream` connection subscribes. Lossy by design — see [`StreamDelta`].
     stream_tx: broadcast::Sender<StreamDelta>,
+    /// Pinged when a state topic may have moved (docs/control-api.md). One notify for all
+    /// ten topics, not one each: the reader recomputes everything and diffs, so a missed
+    /// ping is repaired by the next one from any source rather than leaving a topic stale
+    /// forever. See `topics.rs`.
+    state_changed: Notify,
+    /// Fan-out for level-triggered state updates — the whole-topic replacements that a
+    /// `GET /events` connection turns into `state` frames. Fed by the one diffing task,
+    /// so N clients cost one recomputation (`topics.rs`).
+    state_tx: broadcast::Sender<StateUpdate>,
     /// Cache/usage telemetry — the most recent request's `usage` and a wall-clock
     /// stamp, surfaced by `GET /state` so clients can see cache hit/miss and
     /// predict TTL eviction (docs/log-and-projection.md). Transport-only: never touches the log.
@@ -304,6 +313,11 @@ impl Shared {
         // the durable record, so a dropped delta is only a momentary gap in the
         // live view.
         let (stream_tx, _) = broadcast::channel(1024);
+        // State updates are whole-topic replacements, so a lagging connection loses
+        // nothing it cannot recover: the newest value for each topic is the only one that
+        // matters, and a `Lagged` is resolved by re-reading the topics rather than by
+        // replay. Sized well above the topic count so that is rare rather than routine.
+        let (state_tx, _) = broadcast::channel(256);
         // Fold any grants already in the log (a resumed session) into the initial effective
         // role; from here it's maintained incrementally on append. Computed before `log` is
         // moved into the struct.
@@ -342,6 +356,8 @@ impl Shared {
             settle_changed: Notify::new(),
             notified: Notify::new(),
             stream_tx,
+            state_changed: Notify::new(),
+            state_tx,
             metrics: Mutex::new(Metrics::default()),
             usage_log: Mutex::new(None),
             upstream_failure,
@@ -550,6 +566,7 @@ mod metrics;
 mod notifications;
 mod pace;
 mod sse;
+mod topics;
 mod views;
 mod watch;
 
@@ -563,6 +580,7 @@ pub use metrics::RequestOrigin;
 use metrics::{CostCell, Metrics};
 use notifications::Inbox;
 use pace::Pace;
+use topics::{StateUpdate, watch_topics};
 
 use http::{LogSelect, router};
 use keepalive::keepalive_loop;

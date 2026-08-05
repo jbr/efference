@@ -68,6 +68,11 @@ pub async fn serve<D: Distiller, S: Spotter>(
         .spawn(router());
     eprintln!("control socket: {}", socket.display());
 
+    // The one state-topic differ (docs/control-api.md): recomputes the topics on any
+    // change signal and publishes the ones that moved, so N connected clients cost one
+    // recomputation instead of N polls.
+    tokio::spawn(watch_topics(Arc::clone(&shared)));
+
     // The cache keepalive runs alongside the loop (docs/log-and-projection.md) — a transport-side
     // timer that never touches the log, so it composes with the loop without
     // sharing anything but the read-only client and the telemetry clocks.

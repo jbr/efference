@@ -66,7 +66,7 @@ pub(crate) enum Class {
 /// A `state` frame carries the topic's **entire** value, never a patch: replacement is
 /// idempotent and order-insensitive, which is what makes `GET /state` equal to the fold
 /// of every state frame since connect.
-#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Topic {
     /// The pending approval gate, or `null` when none is open.

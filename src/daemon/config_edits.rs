@@ -161,6 +161,7 @@ impl Shared {
     /// boot via [`set_autonomous`](Self::set_autonomous).
     pub fn set_review_level(&self, level: crate::policy::ReviewLevel) {
         self.review_level.store(level.as_u8(), Ordering::Relaxed);
+        self.touch_state();
     }
 
     /// Whether no synchronous human sits at the gate — derived from the review level

@@ -57,6 +57,7 @@ impl Shared {
         drop(inbox);
         // Wake an idle agent for a standalone triage (docs/inbox.md — wake-on-notification).
         self.notified.notify_waiters();
+        self.touch_state();
         id
     }
 
@@ -84,10 +85,16 @@ impl Shared {
     /// Dismiss a pending notification out-of-band (docs/inbox.md — `POST
     /// /notifications/:id/dismiss`). `false` → no pending notification with that id.
     pub(super) fn dismiss_notification(&self, id: u64) -> bool {
-        let mut inbox = self.inbox.lock().unwrap();
-        let before = inbox.pending.len();
-        inbox.pending.retain(|n| n.id != id);
-        inbox.pending.len() != before
+        let removed = {
+            let mut inbox = self.inbox.lock().unwrap();
+            let before = inbox.pending.len();
+            inbox.pending.retain(|n| n.id != id);
+            inbox.pending.len() != before
+        };
+        if removed {
+            self.touch_state();
+        }
+        removed
     }
 
     /// The current pending inbox, in arrival order — surfaced by `GET /state`.

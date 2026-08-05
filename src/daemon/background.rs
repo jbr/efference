@@ -32,6 +32,7 @@ pub(crate) async fn drain_background(
     .await;
     let status = child.wait().await.ok();
     let summary = shared.supervisor.lock().unwrap().finish(&handle, status);
+    shared.touch_state();
     if let Some((source, body)) = summary {
         shared.notify(source, body, Some(handle), None);
     }
@@ -61,6 +62,7 @@ impl Shared {
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
         let handle = self.supervisor.lock().unwrap().register(command, pgid);
+        self.touch_state();
         tokio::spawn(drain_background(
             Arc::clone(self),
             handle.clone(),
@@ -87,6 +89,7 @@ impl Shared {
         } = detached;
         let pgid = child.id();
         let handle = self.supervisor.lock().unwrap().adopt(command, pgid, &seed);
+        self.touch_state();
         tokio::spawn(drain_background(
             Arc::clone(self),
             handle.clone(),
@@ -136,6 +139,7 @@ impl Shared {
     /// running and still notifies on exit).
     pub fn mute_bg(&self, handle: &str) {
         self.supervisor.lock().unwrap().mute(handle);
+        self.touch_state();
     }
 
     /// The directed `list_processes` view (docs/supervisor.md).

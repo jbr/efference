@@ -66,6 +66,7 @@ impl Shared {
         if wake {
             self.pace_interrupt.notify_waiters();
         }
+        self.touch_state();
         result
     }
 
