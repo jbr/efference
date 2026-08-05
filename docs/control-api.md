@@ -66,7 +66,7 @@ decoupled from inference.
 - `202 {"status":"accepted"}` — enqueued; watch `/events` (or `/state`) for the result.
 - `?wait` — hold the connection until the daemon **settles** (the turn reaches a
   gate or completes), then return the `/state` snapshot (`200`) instead of `202`.
-- `400 {"error":"bad /turn body: …"}`
+- `400 bad_request` — unparseable body
 
 #### `POST /approvals/:call_id`
 Resolve a pending approval gate, addressed by the tool call's `tool_use` id
@@ -82,8 +82,9 @@ Resolve a pending approval gate, addressed by the tool call's `tool_use` id
     the new policy. A failed write fails the grant.
 - `200 {"status":"resolved"}`
 - `?wait` — hold until the turn's *next* gate or completion, then return `/state`.
-- `404 {"error":"no pending approval with that id"}`
-- `400` — bad body, unknown decision, or `config_edit` without a `change`.
+- `404 not_found` — no pending approval with that id
+- `400 bad_request` — bad body, or `config_edit` without a `change`
+- `400 invalid_decision` — a decision verb this daemon doesn't implement
 
 #### `POST /interrupt`
 Fire the interrupt notifier (the SIGINT equivalent; kills a running tool's
@@ -103,7 +104,7 @@ foreground bash starts). Interim verb-route; the RESTful form is
 - Body (optional): `{ "note"?: "<string>" }` — delivered to the model as a user
   message immediately after the handoff result. Blank/absent → silent handoff.
 - `202 {"status":"detach requested"}`
-- `400 {"error":"bad /background body: …"}`
+- `400 bad_request` — unparseable body
 
 #### `POST /notify`
 Enqueue an ambient notification into the inbox.
@@ -113,12 +114,12 @@ Enqueue an ambient notification into the inbox.
     pending one (archive-and-replace).
   - `replaces` — supersede a specific pending notification by its queue-local id.
 - `202 {"id": <u64>}` — the new notification's **queue-local** id.
-- `400 {"error":"bad /notify body: …"}`
+- `400 bad_request` — unparseable body
 
 #### `POST /notifications/:id/dismiss`
 Remove a pending notification (by its queue-local id) before it reaches a gate.
 
-- `200 {"status":"dismissed"}` · `404` (no such pending id) · `400` (id not an integer)
+- `200 {"status":"dismissed"}` · `404 not_found` (no such pending id) · `400 bad_request` (id not an integer)
 
 #### `POST /proposals/:seq`
 Commit or cancel a pending config-edit proposal, addressed by the `seq` of its
@@ -129,7 +130,8 @@ proposal, never resolve its own.
   - `commit` folds the proposed change into the effective config (and notifies
     the session for `scope`/`paths` changes); `cancel` is audit-only.
 - `200 {"status":"committed"}` / `{"status":"cancelled"}`
-- `404` (no pending proposal with that `seq`) · `400` (bad body / bad decision) · `500` (append failed)
+- `404 not_found` (no pending proposal with that `seq`) · `400 bad_request` (bad body) ·
+  `400 invalid_decision` (neither commit nor cancel) · `500 internal` (append failed)
 
 ### Reads (polled)
 
@@ -255,6 +257,30 @@ publishes nothing at all — indistinguishable from a hung harness.
 
 ## Error model
 
-Non-2xx responses carry an ad-hoc `{"error":"<human string>"}` body. There is no
-machine-readable error code, no problem-details envelope, and no content
-negotiation. The CLI surfaces the status + body verbatim.
+Every non-2xx response carries one shape:
+
+```jsonc
+{
+  "code": "bad_request",              // machine-readable; branch on this
+  "message": "bad /turn body: …",     // human half; free to change
+  "detail": { … }                     // optional: corrective state, omitted when there is none
+}
+```
+
+`code` is a closed set, and each code has one canonical status, so two routes
+returning the same code cannot disagree about the status:
+
+| code | status | when |
+|---|---|---|
+| `bad_request` | 400 | malformed body, unparseable path parameter, out-of-range value |
+| `invalid_decision` | 400 | a well-formed decision verb the daemon doesn't implement — the client is version-skewed, not buggy |
+| `not_found` | 404 | no such notification id, proposal `seq`, or pending approval |
+| `internal` | 500 | a log append or config write failed; absent shared state |
+
+Two further codes are defined and not yet returned: `gate_moved` (409) arrives
+with `PUT /approvals/:call_id`, where `call_id` becomes a stated precondition and
+`detail` carries the current pending gate; `cursor_out_of_range` (400) belongs to
+the unified stream. A code earns its place when a client would *act* differently
+on it, not when the prose differs.
+
+The CLI surfaces the status + body verbatim.

@@ -24,8 +24,17 @@ async fn review_level_over_the_router() {
     // restatement of part of it (docs/control-api.md).
     assert!(state.get("autonomous").is_none(), "not restated as a bool");
 
-    // An unknown level is rejected and does not move the dial.
-    assert!(client.review_level("wat").await.is_err(), "unknown → error");
+    // An unknown level is rejected in the typed envelope (docs/control-api.md) and does
+    // not move the dial. Asserted through a route rather than on `ErrorBody` directly:
+    // what a client depends on is that the *router* answers in one shape, which a test of
+    // the type alone would keep passing through a handler that hand-rolled a body.
+    let err = client
+        .review_level("wat")
+        .await
+        .expect_err("unknown → error")
+        .to_string();
+    assert!(err.contains(r#""code":"bad_request""#), "typed code: {err}");
+    assert!(err.contains(r#""message":"#), "human half: {err}");
     let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
     assert_eq!(state["review_level"], "human_only", "unchanged after a 400");
 

@@ -533,12 +533,15 @@ const SETTLE_TIMEOUT: Duration = Duration::from_secs(300);
 mod approvals;
 mod background;
 mod config_edits;
-// The control-stream frame envelope and the typed error envelope
-// (docs/control-api.md). Defined ahead of their construction sites, like `WireState`'s
-// variants were: pinning the contract first is what keeps adding the unified endpoint
-// from also reshaping it. `dead_code` until the router and the stream emit them.
+// The typed error envelope (docs/control-api.md) — every non-2xx body the router
+// answers with. `GateMoved` and `CursorOutOfRange` are still unconstructed: they belong
+// to the resource-renamed gate and the unified stream respectively.
 #[allow(dead_code)]
 mod errors;
+// The control-stream frame envelope (docs/control-api.md), defined ahead of its
+// construction sites, like `WireState`'s variants were: pinning the contract first is
+// what keeps adding the unified endpoint from also reshaping it. `dead_code` until the
+// stream emits frames.
 #[allow(dead_code)]
 mod frames;
 mod http;
@@ -554,6 +557,7 @@ pub(crate) use watch::refresh_and_emit;
 
 use approvals::Pending;
 use config_edits::{PendingProposal, session_visible_notice};
+use errors::{ErrorCode, fail};
 use frames::Topic;
 pub use metrics::RequestOrigin;
 use metrics::{CostCell, Metrics};

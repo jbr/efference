@@ -69,12 +69,16 @@ pub(crate) struct NotifyBody {
     pub(crate) replaces: Option<u64>,
 }
 
-pub(crate) const MISSING_STATE: &str = r#"{"error":"missing shared state"}"#;
-
 /// Pull the shared daemon state out of a conn's server-global TypeSet, or short
 /// out with a 500 if it's somehow absent (a wiring bug, never seen at runtime).
 pub(crate) fn shared_of(conn: &Conn) -> Option<Arc<Shared>> {
     conn.shared_state::<Arc<Shared>>().map(Arc::clone)
+}
+
+/// The answer when the server-global state is absent — the one condition every route
+/// shares, and the reason it has a helper rather than a body constant.
+fn missing_state(conn: Conn) -> Conn {
+    fail(conn, ErrorCode::Internal, "missing shared state")
 }
 
 /// The HTTP surface — a `trillium-router` over the verb set (docs/control-channel.md). Each
@@ -87,7 +91,7 @@ pub(crate) fn router() -> Router {
         // future /events) for the response; submission is decoupled from inference.
         .post("/turn", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             let wait = wants_wait(conn.querystring());
             let body = conn.request_body_string().await.unwrap_or_default();
@@ -103,15 +107,13 @@ pub(crate) fn router() -> Router {
                         conn.with_status(202).with_body(r#"{"status":"accepted"}"#)
                     }
                 }
-                Err(e) => conn
-                    .with_status(400)
-                    .with_body(format!(r#"{{"error":"bad /turn body: {e}"}}"#)),
+                Err(e) => fail(conn, ErrorCode::BadRequest, format!("bad /turn body: {e}")),
             }
         })
         // Resolve a pending approval gate by its tool_use id.
         .post("/approvals/:call_id", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             let id = CallId(conn.param("call_id").unwrap_or_default().to_string());
             let wait = wants_wait(conn.querystring());
@@ -119,9 +121,11 @@ pub(crate) fn router() -> Router {
             let decision = match serde_json::from_str::<DecisionBody>(&body) {
                 Ok(d) => d,
                 Err(e) => {
-                    return conn
-                        .with_status(400)
-                        .with_body(format!(r#"{{"error":"bad decision body: {e}"}}"#));
+                    return fail(
+                        conn,
+                        ErrorCode::BadRequest,
+                        format!("bad decision body: {e}"),
+                    );
                 }
             };
             let approval = match decision.decision.as_str() {
@@ -134,15 +138,22 @@ pub(crate) fn router() -> Router {
                         note: decision.note.unwrap_or_default(),
                     },
                     None => {
-                        return conn
-                            .with_status(400)
-                            .with_body(r#"{"error":"config_edit decision requires a change"}"#);
+                        return fail(
+                            conn,
+                            ErrorCode::BadRequest,
+                            "config_edit decision requires a change",
+                        );
                     }
                 },
+                // Well-formed JSON naming a decision this daemon doesn't implement: the
+                // client is version-skewed rather than buggy, which is the distinction
+                // `InvalidDecision` exists to carry (errors.rs).
                 other => {
-                    return conn
-                        .with_status(400)
-                        .with_body(format!(r#"{{"error":"unknown decision: {other}"}}"#));
+                    return fail(
+                        conn,
+                        ErrorCode::InvalidDecision,
+                        format!("unknown decision: {other}"),
+                    );
                 }
             };
             if shared.resolve_approval(&id, approval) {
@@ -154,13 +165,21 @@ pub(crate) fn router() -> Router {
                     conn.with_status(200).with_body(r#"{"status":"resolved"}"#)
                 }
             } else {
-                conn.with_status(404)
-                    .with_body(r#"{"error":"no pending approval with that id"}"#)
+                // Still a 404. `ErrorCode::GateMoved` (409, carrying the current gate as
+                // corrective detail) lands with `PUT /approvals/:call_id`, where the id
+                // becomes a stated precondition rather than an incidental lookup — moving
+                // the status ahead of that would change client behaviour without giving
+                // clients the detail that makes the new status actionable.
+                fail(
+                    conn,
+                    ErrorCode::NotFound,
+                    "no pending approval with that id",
+                )
             }
         })
         .post("/interrupt", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             shared.interrupt();
             conn.with_status(200)
@@ -175,7 +194,7 @@ pub(crate) fn router() -> Router {
         // backlog/processes-rest-resource.md.)
         .post("/background", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             let body = conn.request_body_string().await.unwrap_or_default();
             let note = if body.trim().is_empty() {
@@ -184,9 +203,11 @@ pub(crate) fn router() -> Router {
                 match serde_json::from_str::<BackgroundBody>(&body) {
                     Ok(b) => b.note,
                     Err(e) => {
-                        return conn
-                            .with_status(400)
-                            .with_body(format!(r#"{{"error":"bad /background body: {e}"}}"#));
+                        return fail(
+                            conn,
+                            ErrorCode::BadRequest,
+                            format!("bad /background body: {e}"),
+                        );
                     }
                 }
             };
@@ -199,7 +220,7 @@ pub(crate) fn router() -> Router {
         // Returns the resulting pace so the client reflects it without a follow-up `/state`.
         .post("/pace", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             let body = conn.request_body_string().await.unwrap_or_default();
             match serde_json::from_str::<PaceBody>(&body) {
@@ -212,16 +233,14 @@ pub(crate) fn router() -> Router {
                         held
                     ))
                 }
-                Err(e) => conn
-                    .with_status(400)
-                    .with_body(format!(r#"{{"error":"bad /pace body: {e}"}}"#)),
+                Err(e) => fail(conn, ErrorCode::BadRequest, format!("bad /pace body: {e}")),
             }
         })
         // Set the review-level dial (docs/permissions.md): who reviews a
         // gated call. Runtime-mutable, reported on `GET /state`. Returns the resulting level.
         .post("/review-level", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             let body = conn.request_body_string().await.unwrap_or_default();
             match serde_json::from_str::<ReviewLevelBody>(&body) {
@@ -231,20 +250,27 @@ pub(crate) fn router() -> Router {
                         conn.with_status(200)
                             .with_body(format!(r#"{{"review_level":"{}"}}"#, level.as_str()))
                     }
-                    None => conn.with_status(400).with_body(
-                        r#"{"error":"level must be autonomous | spotter_human | human_only"}"#,
+                    // An out-of-range value on a well-formed body — `BadRequest` rather
+                    // than `InvalidDecision`, which is reserved for a *decision* verb the
+                    // daemon doesn't implement (errors.rs).
+                    None => fail(
+                        conn,
+                        ErrorCode::BadRequest,
+                        "level must be autonomous | spotter_human | human_only",
                     ),
                 },
-                Err(e) => conn
-                    .with_status(400)
-                    .with_body(format!(r#"{{"error":"bad /review-level body: {e}"}}"#)),
+                Err(e) => fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    format!("bad /review-level body: {e}"),
+                ),
             }
         })
         // Enqueue an ambient notification into the inbox (docs/inbox.md). 202 — it waits
         // for the next triage gate (Slice C); a client watches /state for the inbox.
         .post("/notify", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             let body = conn.request_body_string().await.unwrap_or_default();
             match serde_json::from_str::<NotifyBody>(&body) {
@@ -252,26 +278,32 @@ pub(crate) fn router() -> Router {
                     let id = shared.notify(n.source, n.body, n.slot, n.replaces);
                     conn.with_status(202).with_body(format!(r#"{{"id":{id}}}"#))
                 }
-                Err(e) => conn
-                    .with_status(400)
-                    .with_body(format!(r#"{{"error":"bad /notify body: {e}"}}"#)),
+                Err(e) => fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    format!("bad /notify body: {e}"),
+                ),
             }
         })
         // Dismiss a pending notification out-of-band by its queue-local id (docs/inbox.md).
         .post("/notifications/:id/dismiss", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             match conn.param("id").and_then(|s| s.parse::<u64>().ok()) {
                 Some(id) if shared.dismiss_notification(id) => {
                     conn.with_status(200).with_body(r#"{"status":"dismissed"}"#)
                 }
-                Some(_) => conn
-                    .with_status(404)
-                    .with_body(r#"{"error":"no pending notification with that id"}"#),
-                None => conn
-                    .with_status(400)
-                    .with_body(r#"{"error":"notification id must be an integer"}"#),
+                Some(_) => fail(
+                    conn,
+                    ErrorCode::NotFound,
+                    "no pending notification with that id",
+                ),
+                None => fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    "notification id must be an integer",
+                ),
             }
         })
         // List async config-edit proposals awaiting an orchestrator decision
@@ -279,7 +311,7 @@ pub(crate) fn router() -> Router {
         // dedicated GET lets a client poll just this without the rest of the snapshot.
         .get("/proposals", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             let body =
                 serde_json::to_string(&shared.pending_proposals()).unwrap_or_else(|_| "[]".into());
@@ -292,29 +324,35 @@ pub(crate) fn router() -> Router {
         // legislates here — the session can only *file* a proposal, never resolve its own.
         .post("/proposals/:seq", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             let Some(seq) = conn.param("seq").and_then(|s| s.parse::<u64>().ok()) else {
-                return conn
-                    .with_status(400)
-                    .with_body(r#"{"error":"proposal seq must be an integer"}"#);
+                return fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    "proposal seq must be an integer",
+                );
             };
             let raw = conn.request_body_string().await.unwrap_or_default();
             let decision = match serde_json::from_str::<ProposalDecisionBody>(&raw) {
                 Ok(d) => d,
                 Err(e) => {
-                    return conn
-                        .with_status(400)
-                        .with_body(format!(r#"{{"error":"bad /proposals body: {e}"}}"#));
+                    return fail(
+                        conn,
+                        ErrorCode::BadRequest,
+                        format!("bad /proposals body: {e}"),
+                    );
                 }
             };
             let commit = match decision.decision.as_str() {
                 "commit" => true,
                 "cancel" => false,
                 other => {
-                    return conn.with_status(400).with_body(format!(
-                        r#"{{"error":"decision must be \"commit\" or \"cancel\", got {other:?}"}}"#
-                    ));
+                    return fail(
+                        conn,
+                        ErrorCode::InvalidDecision,
+                        format!("decision must be \"commit\" or \"cancel\", got {other:?}"),
+                    );
                 }
             };
             match shared.resolve_proposal_decision(seq, commit, decision.note.unwrap_or_default()) {
@@ -323,17 +361,17 @@ pub(crate) fn router() -> Router {
                 } else {
                     r#"{"status":"cancelled"}"#
                 }),
-                Ok(false) => conn
-                    .with_status(404)
-                    .with_body(r#"{"error":"no pending proposal with that seq"}"#),
-                Err(e) => conn
-                    .with_status(500)
-                    .with_body(format!(r#"{{"error":"append failed: {e}"}}"#)),
+                Ok(false) => fail(
+                    conn,
+                    ErrorCode::NotFound,
+                    "no pending proposal with that seq",
+                ),
+                Err(e) => fail(conn, ErrorCode::Internal, format!("append failed: {e}")),
             }
         })
         .get("/state", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             conn.with_status(200).with_body(shared.state_json())
         })
@@ -343,13 +381,13 @@ pub(crate) fn router() -> Router {
         // loop (docs/permissions.md). Returns immediately if already settled.
         .get("/settle", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             settle_and_state(&shared, conn).await
         })
         .get("/log", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             let since = parse_since(conn.querystring());
             conn.with_status(200).with_body(shared.log_json(since))
@@ -361,7 +399,7 @@ pub(crate) fn router() -> Router {
         // cursor the SSE crate's bare framing leaves to us.
         .get("/events", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             let since = parse_since(conn.querystring()).unwrap_or(0);
             conn.with_sse_stream(tail_events(shared, since))
@@ -373,7 +411,7 @@ pub(crate) fn router() -> Router {
         // simply starts from the next delta.
         .get("/stream", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
-                return conn.with_status(500).with_body(MISSING_STATE);
+                return missing_state(conn);
             };
             conn.with_sse_stream(stream_deltas(shared))
         })
