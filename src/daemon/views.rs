@@ -208,12 +208,69 @@ impl Shared {
         })
     }
 
-    pub(super) fn log_json(&self, since: Option<u64>) -> String {
+    /// The selected window of the log, as a JSON array (docs/control-api.md).
+    pub(super) fn log_json(&self, select: &LogSelect) -> String {
         let log = self.log.lock().unwrap();
-        let entries: Vec<&LogEntry> = match since {
-            Some(s) => log.entries().iter().filter(|e| e.seq >= s).collect(),
-            None => log.entries().iter().collect(),
-        };
-        serde_json::to_string(&entries).unwrap_or_else(|_| "[]".into())
+        serde_json::to_string(window(log.entries(), select)).unwrap_or_else(|_| "[]".into())
+    }
+
+    /// One entry by `seq`, or `None` if the log has no such position.
+    ///
+    /// The general form of reference resolution: every reference a windowed client can
+    /// hold is ultimately to an entry or to something inside one. Immutably cacheable —
+    /// see [`Self::tool_call_json`].
+    pub(super) fn entry_json(&self, seq: u64) -> Option<String> {
+        let log = self.log.lock().unwrap();
+        let entry = log.entries().iter().find(|e| e.seq == seq)?;
+        serde_json::to_string(entry).ok()
+    }
+
+    /// One tool call by its `call_id`, with the `seq` of the entry carrying it.
+    ///
+    /// A call is not its own log entry — it is embedded in an `Assistant` payload — so it
+    /// needs its own address, and `call_id` is the one already in the log, in
+    /// `tool_output` frames, and in the hand of any client holding an orphaned
+    /// `tool_result`. `seq` rides along because a client that resolved a call this way
+    /// usually wants the entry it came from next, and it costs nothing to say now.
+    ///
+    /// Both this and [`Self::entry_json`] are immutably cacheable: a `LogEntry` is
+    /// written once and never mutated — redaction chooses `wire` at append time from the
+    /// verdict rather than flipping it afterward (docs/log-and-projection.md) — so a
+    /// returning client never refetches what it has seen.
+    pub(super) fn tool_call_json(&self, call_id: &str) -> Option<String> {
+        let log = self.log.lock().unwrap();
+        let (seq, call) = log.entries().iter().find_map(|entry| {
+            let Payload::Assistant { calls, .. } = &entry.payload else {
+                return None;
+            };
+            let call = calls.iter().find(|c| c.id.0 == call_id)?;
+            Some((entry.seq, call))
+        })?;
+        serde_json::to_string(&serde_json::json!({ "seq": seq, "call": call })).ok()
+    }
+}
+
+/// The entries a [`LogSelect`] names, as a sub-slice of the log.
+///
+/// A slice, never a copy: `since`/`before` are positions in a `seq`-ordered log, so both
+/// bounds are binary searches, and `tail` is the last N of what they left. The log is
+/// dense today (`seq` == index) but this does not assume it.
+fn window<'a>(entries: &'a [LogEntry], select: &LogSelect) -> &'a [LogEntry] {
+    let start = match select.since {
+        Some(since) => entries.partition_point(|e| e.seq < since),
+        None => 0,
+    };
+    let end = match select.before {
+        Some(before) => entries.partition_point(|e| e.seq < before),
+        None => entries.len(),
+    };
+    // `before <= since` names an empty range rather than an error: it is what a client
+    // paging backward past the start of the log naturally sends on its last page.
+    let selected = &entries[start..end.max(start)];
+    match select.tail {
+        // Exactly N — or the whole range when it holds fewer, which is the same answer a
+        // client gets at the start of a short session.
+        Some(n) => &selected[selected.len().saturating_sub(n as usize)..],
+        None => selected,
     }
 }

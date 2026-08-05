@@ -81,6 +81,16 @@ fn missing_state(conn: Conn) -> Conn {
     fail(conn, ErrorCode::Internal, "missing shared state")
 }
 
+/// Mark a response as never changing. Valid only for reads of a single log entry or the
+/// call inside one: a `LogEntry` is written once and never mutated — redaction chooses
+/// `wire` at append time from the verdict rather than flipping it afterward
+/// (docs/log-and-projection.md) — so a client that has seen one need never refetch it.
+/// Not valid for `GET /log`, whose window's *contents* are immutable but whose answer to
+/// any given query grows with the session.
+fn immutable(conn: Conn) -> Conn {
+    conn.with_response_header("cache-control", "public, max-age=31536000, immutable")
+}
+
 /// The HTTP surface — a `trillium-router` over the verb set (docs/control-channel.md). Each
 /// handler reads `Shared` from the server-global state; JSON in, JSON out. The
 /// router gives method-aware dispatch (and a clean `:call_id` capture) in place
@@ -385,12 +395,45 @@ pub(crate) fn router() -> Router {
             };
             settle_and_state(&shared, conn).await
         })
+        // The durable history as a JSON array. Unbounded by default; `?since=<seq>`
+        // resumes forward, `?tail=N` opens cold at the tail, `?before=<seq>&tail=N` pages
+        // one window backward (docs/control-api.md). A window may be cut anywhere —
+        // references that dangle across the cut resolve through the two routes below.
         .get("/log", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
-            let since = parse_since(conn.querystring());
-            conn.with_status(200).with_body(shared.log_json(since))
+            match LogSelect::parse(conn.querystring()) {
+                Ok(select) => conn.with_status(200).with_body(shared.log_json(&select)),
+                Err(message) => fail(conn, ErrorCode::BadRequest, message),
+            }
+        })
+        // One entry by `seq` — the general form of reference resolution for a client
+        // reading a window rather than the whole log (docs/control-api.md).
+        .get("/log/:seq", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return missing_state(conn);
+            };
+            let Some(seq) = conn.param("seq").and_then(|s| s.parse::<u64>().ok()) else {
+                return fail(conn, ErrorCode::BadRequest, "log seq must be an integer");
+            };
+            match shared.entry_json(seq) {
+                Some(body) => immutable(conn).with_status(200).with_body(body),
+                None => fail(conn, ErrorCode::NotFound, "no log entry with that seq"),
+            }
+        })
+        // One tool call by the `call_id` the log, the gate, and `tool_output` frames all
+        // already carry. A call is embedded in an `Assistant` entry rather than being one,
+        // which is why it needs an address of its own (docs/control-api.md).
+        .get("/tool_calls/:call_id", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return missing_state(conn);
+            };
+            let call_id = conn.param("call_id").unwrap_or_default().to_string();
+            match shared.tool_call_json(&call_id) {
+                Some(body) => immutable(conn).with_status(200).with_body(body),
+                None => fail(conn, ErrorCode::NotFound, "no tool call with that id"),
+            }
         })
         // Live tail of the append-only log (docs/README.md — the log *is* the event
         // store). `?since=<seq>` replays from there then follows; default 0 streams
@@ -417,7 +460,66 @@ pub(crate) fn router() -> Router {
         })
 }
 
-/// Pull `since=<n>` out of a raw query string (`GET /log?since=12`).
+/// Which window of the log a `GET /log` read wants (docs/control-api.md).
+///
+/// `since`/`before` bound the range; `tail` takes the last N *of that range*. Splitting
+/// position from count is why `?tail=N` is its own parameter rather than a negative
+/// `since`: a position and a count are different kinds, and a parser cannot tell a
+/// deliberate `since=-300` from a client's off-by-one `-1`.
+///
+/// Three reads follow from the three fields: `?since=S` resumes forward, `?tail=N` opens
+/// cold at the tail, and `?before=X&tail=N` is one page backward — the escape hatch for a
+/// client scrolling past the window it opened with.
+#[derive(Default, PartialEq, Eq, Debug)]
+pub(crate) struct LogSelect {
+    /// Inclusive lower bound: entries with `seq >= since`.
+    pub(crate) since: Option<u64>,
+    /// Exclusive upper bound: entries with `seq < before`.
+    pub(crate) before: Option<u64>,
+    /// Keep only the last `tail` entries of the bounded range. Exactly N, cut anywhere:
+    /// a cut can orphan a reference (a `tool_result` whose call sits in the entry before
+    /// the cut), and those resolve by fetching `/log/:seq` or `/tool_calls/:call_id`
+    /// rather than by widening the window.
+    pub(crate) tail: Option<u64>,
+}
+
+impl LogSelect {
+    /// Parse the `GET /log` query, or say what was wrong with it.
+    ///
+    /// `since` and `tail` together are an **error**, not a resolved precedence: one asks
+    /// to resume from a position and the other to open at the end, so a request carrying
+    /// both has no single reading, and picking one silently would answer a question the
+    /// client didn't ask.
+    pub(crate) fn parse(query: &str) -> Result<Self, String> {
+        let select = Self {
+            since: parse_u64_param(query, "since")?,
+            before: parse_u64_param(query, "before")?,
+            tail: parse_u64_param(query, "tail")?,
+        };
+        if select.since.is_some() && select.tail.is_some() {
+            return Err("since and tail are mutually exclusive".into());
+        }
+        Ok(select)
+    }
+}
+
+/// One `name=<u64>` query parameter, absent (`Ok(None)`) or malformed (`Err`).
+///
+/// Unlike [`parse_since`], a value that doesn't parse is rejected rather than ignored: on
+/// a windowed read, a dropped bound silently returns the *whole log*, which is the
+/// failure the window exists to prevent.
+fn parse_u64_param(query: &str, name: &str) -> Result<Option<u64>, String> {
+    query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix(name)?.strip_prefix('='))
+        .map(|v| {
+            v.parse()
+                .map_err(|_| format!("{name} must be a non-negative integer, got {v:?}"))
+        })
+        .transpose()
+}
+
+/// Pull `since=<n>` out of a raw query string (`GET /events?since=12`).
 pub(crate) fn parse_since(query: &str) -> Option<u64> {
     query
         .split('&')

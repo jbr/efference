@@ -42,7 +42,10 @@ store**, a connecting client reconciles in three steps:
 
 1. `GET /state` — fetch ephemeral control state (last `seq`, any pending gate,
    live processes, usage, effective policy). None of this is in the log.
-2. `GET /log?since=<seq>` — replay durable history from a cursor.
+2. `GET /log?since=<seq>` — replay durable history from a cursor. A client
+   opening **cold** reads `?tail=<n>` instead: it renders immediately rather
+   than after the whole session, and anything the window cut off is fetchable by
+   address.
 3. `GET /events?since=<last_seq + 1>` — attach to the live durable tail; each
    event carries `id: <seq>`, so dedupe/resume by `seq`.
 
@@ -192,9 +195,64 @@ snapshot. Returns immediately if already settled. Capped server-side at **300 s*
 push-shaped alternative to busy-polling `/state`, and the same predicate backs
 the `?wait` flags on `/turn` and `/approvals`.
 
-#### `GET /log?since=<seq>`
-JSON array of `LogEntry` from `seq` onward (the whole log if `since` omitted).
-The catch-up read.
+#### `GET /log`
+JSON array of `LogEntry`. The catch-up read. Unbounded by default — the whole
+session — with three bounded forms:
+
+| query | window |
+|---|---|
+| `?since=<seq>` | everything from `seq` onward (inclusive). The forward resume |
+| `?tail=<n>` | the last `n` entries. How a client opens **cold** without replaying the session |
+| `?before=<seq>&tail=<n>` | the `n` entries ending just before `seq`. One page backward |
+
+`since`/`before` are positions; `tail` is a count. That separation is why the
+tail read is its own parameter rather than a negative `since`: a parser cannot
+tell a deliberate `since=-300` from a client's off-by-one `-1`.
+
+- **`since` and `tail` together are a `400 bad_request`** — one asks to resume
+  from a position, the other to open at the end, so the request has no single
+  reading and the daemon does not pick one for you.
+- A malformed bound (`?tail=abc`) is likewise a `400`, not ignored: dropping it
+  would silently answer with the whole log.
+- `?tail=<n>` means **exactly** `n`, **cut anywhere** — no boundary-snapping and
+  no keyframes. The whole range when it holds fewer than `n`.
+- `?before=<seq>` at or below the start of the log is an **empty array**, not an
+  error: it is what a client paging backward naturally sends on its last page.
+
+A window may be cut anywhere because references that dangle across the cut are
+**fetched, not co-delivered** — that is what the next two routes are for. A
+`tool_result` whose `ToolCall` sits in the entry before the cut, a
+`MarkKind::Boundary` naming a span that precedes it, a `Triage` pinning an
+`Ambient` from far back: all resolve by address.
+
+#### `GET /log/:seq`
+One `LogEntry`, or `404 not_found` past the head of the log. The general form of
+reference resolution: every reference is ultimately to an entry or to something
+inside one.
+
+**`Cache-Control: immutable`.** A `LogEntry` is written once and never mutated —
+redaction chooses `wire` at append time from the verdict rather than flipping it
+afterward — so a returning client never refetches an entry it has seen. This is
+a property a log-*window* read cannot offer, and it is the larger reason these
+routes exist; reference resolution is the smaller one.
+
+#### `GET /tool_calls/:call_id`
+The tool call with that id, and the `seq` of the entry carrying it:
+
+```jsonc
+{ "seq": 41, "call": { "id": "toolu_…", "name": "bash", "input": { … } } }
+```
+
+A call is **not** its own log entry — it is embedded in an `Assistant` payload —
+so it needs its own address, and `call_id` is the one already in the log, in
+`tool_output` frames, in `/state`'s `gate`, and in the hand of any client holding
+an orphaned `tool_result`. `404 not_found` if no entry carries it. Immutably
+cacheable, for the same reason as `/log/:seq`.
+
+The scale of the orphan problem is small by construction:
+`disable_parallel_tool_use` means one call per turn
+([transport.md](transport.md)), so a call sits at seq N and its result at N+1,
+and a cut orphans **at most one result, at the boundary itself**.
 
 #### `GET /proposals`
 JSON array of pending proposals — the same array `/state` carries, for a client

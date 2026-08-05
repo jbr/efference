@@ -17,6 +17,9 @@ behind a change, see [`journal/`](journal/).
 - Transient upstream 429/5xx responses retry with a bounded backoff, and an exhausted completion now returns the session to idle instead of terminating the daemon.
 
 ### Added
+- `GET /log` takes bounded windows — `?tail=N` (exactly N, cut anywhere) to open cold at the tail, `?before=<seq>&tail=N` to page backward; `since` with `tail` is a `400`.
+- `GET /log/:seq` and `GET /tool_calls/:call_id` resolve references that dangle outside a window, both `Cache-Control: immutable`.
+- Every non-2xx response carries a typed envelope (`{code, message, detail?}`), with one canonical status per code.
 - The `processes` state topic carries structure only — handle, command, absolute spawn stamp — so it changes on spawn/exit/mute rather than on every output chunk; tails ride `bg_output` deltas.
 - `GET /state` is composed from one function per state topic and its keys are named for those topics, so the snapshot and the coming level-triggered `state` frames cannot drift.
 - The TUI composer supports grapheme-safe text selection, mouse selection, and plain-text copy, cut, and paste with a process-local clipboard fallback.

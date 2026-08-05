@@ -564,7 +564,7 @@ use metrics::{CostCell, Metrics};
 use notifications::Inbox;
 use pace::Pace;
 
-use http::router;
+use http::{LogSelect, router};
 use keepalive::keepalive_loop;
 use sse::{stream_deltas, tail_events};
 use watch::config_watch_loop;

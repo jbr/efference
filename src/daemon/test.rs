@@ -4,6 +4,7 @@ use crate::client::Client as ControlClient;
 use crate::log::ContentBlock;
 use futures_lite::StreamExt;
 use std::time::Duration;
+use trillium_testing::TestServer;
 
 fn user(text: &str) -> Payload {
     Payload::User(vec![ContentBlock::Text(text.into())])
@@ -88,6 +89,22 @@ async fn test_client(shared: &Arc<Shared>) -> ControlClient {
     )
 }
 
+/// The real [`router`] as a [`TestServer`], for reads whose *response* is under test —
+/// status, headers, JSON body — rather than the client's rendering of it.
+/// [`test_client`] is the one to use for streams; this one reads bodies eagerly, so it
+/// would never return on `/events`.
+async fn test_server(shared: &Arc<Shared>) -> TestServer<impl trillium::Handler> {
+    let shared = Arc::clone(shared);
+    TestServer::new((
+        trillium::Init::new(move |info: trillium::Info| {
+            let shared = Arc::clone(&shared);
+            async move { info.with_shared_state(shared) }
+        }),
+        router(),
+    ))
+    .await
+}
+
 /// (id, event_type, data) of the next SSE event, with a timeout so a hung tail
 /// fails loudly instead of blocking the suite.
 async fn next_event(
@@ -109,6 +126,7 @@ mod approvals;
 mod background;
 mod config_edits;
 mod http;
+mod log_reads;
 mod metrics;
 mod notifications;
 mod pace;
