@@ -55,6 +55,39 @@ fn proposed_edit(change: crate::log::ConfigChange) -> Payload {
     })
 }
 
+/// A [`ControlClient`] speaking to the real [`router`] over an in-memory transport.
+///
+/// `trillium_testing::connector` builds a client-side connector from a handler, so the
+/// full request/response cycle runs — routing, extractors, SSE bodies — with no socket
+/// bound. That matters beyond tidiness: a bound path is a shared name (two tests using
+/// one collide, a panicking test leaks it) and Darwin caps a socket path at `SUN_LEN`
+/// (104 bytes), which the harness's long per-session `$TMPDIR` exceeds.
+///
+/// The shared state the handlers read via `conn.shared_state::<Arc<Shared>>()` is
+/// server-global, so it arrives through [`Init`] rather than the `with_shared_state` a
+/// real bind uses (`daemon/serve.rs`) — and `trillium_testing::init` is what *runs* that
+/// init and hands back the resulting context. The bare `trillium_testing::connector`
+/// skips startup, so a handler's init never fires and every route answers
+/// `500 missing shared state`.
+///
+/// Streaming routes are why this returns a [`ControlClient`] rather than a
+/// `TestServer`: that type reads the response body eagerly, which never returns on
+/// `/events` or `/stream`.
+async fn test_client(shared: &Arc<Shared>) -> ControlClient {
+    let shared = Arc::clone(shared);
+    let mut handler = (
+        trillium::Init::new(move |info: trillium::Info| {
+            let shared = Arc::clone(&shared);
+            async move { info.with_shared_state(shared) }
+        }),
+        router(),
+    );
+    let context = trillium_testing::init(&mut handler).await;
+    ControlClient::with_connector(
+        trillium_testing::ServerConnector::new(handler).with_context(context),
+    )
+}
+
 /// (id, event_type, data) of the next SSE event, with a timeout so a hung tail
 /// fails loudly instead of blocking the suite.
 async fn next_event(

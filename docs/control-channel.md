@@ -63,6 +63,8 @@ The daemon binds with trillium's `bind_uds(path)`. Each session lives in its own
 
 The cross-host TCP+TLS case (see [transport](transport.md)) is the same code path: `bind_tcp` or `bind_env` instead of `bind_uds`, a configuration switch rather than a new abstraction.
 
+The client side has the matching seam: `Client::new(socket)` is `Client::with_connector(UnixClientConfig::new(socket))`, and every verb below the constructor is transport-agnostic. `trillium_client::Client` type-erases its connector, so this costs no type parameter. Two consumers: a non-UDS binding differs from the UDS one only in which connector it hands over, and the daemon's own tests drive the real router over `trillium_testing`'s in-memory transport — no socket bound, so no fixed path to collide on and no exposure to Darwin's 104-byte `SUN_LEN` limit. The one wrinkle worth knowing: shared state reaches handlers through the server-global TypeSet, which a bind populates with `with_shared_state` and a test populates with an `Init` handler run by `trillium_testing::init` — the bare `connector()` never runs startup, so without that every route answers `500 missing shared state`.
+
 ## The Frontend trait
 
 The agent loop and the log know only the `Frontend` trait. Swapping the underlying line-editor or replacing the spartan attach client with a full TUI touches only this boundary, never the log or projection.

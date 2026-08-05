@@ -88,6 +88,12 @@ notify-debouncer-full = "0.7"
 # readable without running anything. `cargo insta review` / `accept` to update.
 insta = "1.48.0"
 
+# Drive the control router over an in-memory virtual transport: `connector()` builds
+# a client-side Connector from a handler, which `Client::with_connector` accepts. No
+# socket is bound, so the daemon tests neither collide on a fixed path nor hit
+# Darwin's 104-byte `SUN_LEN` limit on the harness's long per-session $TMPDIR.
+trillium-testing = "0.10.0"
+
 [build-dependencies]
 # The theme set is baked at build time from assets/themes/*/*.tmTheme into OUT_DIR
 # (see build.rs, vendored from ferritin). The .tmTheme files come from the git

@@ -15,7 +15,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
-use trillium_client::Client as HttpClient;
+use trillium_client::{Client as HttpClient, Connector};
 use trillium_tokio::UnixClientConfig;
 
 use crate::frontend::Approval;
@@ -32,10 +32,24 @@ impl Client {
     /// Bind a client to the daemon's Unix socket. Dialing happens per request via
     /// the [`UnixClientConfig`] connector; nothing connects until a verb is called.
     pub fn new(socket: impl Into<PathBuf>) -> Self {
-        // The connector targets a fixed path, so the URL host is irrelevant — but a
-        // base is still needed to form request URLs. `localhost` is a placeholder
-        // that only supplies the `Host` header (UnixClientConfig docs).
-        let http = HttpClient::new(UnixClientConfig::new(socket)).with_base("http://localhost/");
+        Self::with_connector(UnixClientConfig::new(socket))
+    }
+
+    /// Bind a client to an arbitrary [`Connector`] rather than to a socket path.
+    ///
+    /// Every verb below is transport-agnostic — the connector decides what "dial" means
+    /// — so this is the seam a test uses to drive the control router over
+    /// `trillium_testing::connector(handler)`'s in-memory transport. [`HttpClient`]
+    /// type-erases its connector, so this adds no type parameter to [`Client`] or to
+    /// anything holding one.
+    ///
+    /// The same seam is what a non-UDS binding (TCP + TLS, docs/control-api.md) would
+    /// use: the API surface is identical across bindings, and only the connector differs.
+    pub fn with_connector(connector: impl Connector) -> Self {
+        // The connector targets a fixed endpoint, so the URL host is irrelevant — but a
+        // base is still needed to form request URLs. `localhost` is a placeholder that
+        // only supplies the `Host` header (UnixClientConfig docs).
+        let http = HttpClient::new(connector).with_base("http://localhost/");
         Self { http }
     }
 

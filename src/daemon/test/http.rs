@@ -6,24 +6,12 @@ use super::*;
 /// a valid level is set and echoed on `/state`; an unknown level is rejected (400) and the dial
 /// is left untouched.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn review_level_over_the_socket() {
-    // Darwin limits Unix-socket pathnames to `SUN_LEN` (104 bytes). The harness
-    // supplies a deliberately long per-session `$TMPDIR`, so bind under `/tmp`.
-    let dir = std::path::Path::new("/tmp");
-    let log_path = dir.join("eff-review-level.jsonl");
-    let socket = dir.join("eff-review-level.sock");
+async fn review_level_over_the_router() {
+    let log_path = std::env::temp_dir().join("eff-review-level.jsonl");
     let _ = std::fs::remove_file(&log_path);
-    let _ = std::fs::remove_file(&socket);
 
     let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
-    trillium_tokio::config()
-        .with_shared_state(Arc::clone(&shared))
-        .listeners()
-        .bind_uds(&socket)
-        .expect("bind uds")
-        .spawn(router());
-
-    let client = ControlClient::new(&socket);
+    let client = test_client(&shared).await;
     assert_eq!(
         client.review_level("human_only").await.unwrap(),
         "human_only"
@@ -41,7 +29,6 @@ async fn review_level_over_the_socket() {
     let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
     assert_eq!(state["review_level"], "human_only", "unchanged after a 400");
 
-    let _ = std::fs::remove_file(&socket);
     let _ = std::fs::remove_file(&log_path);
 }
 

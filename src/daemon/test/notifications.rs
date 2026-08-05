@@ -75,22 +75,12 @@ async fn inbox_wake_fires_on_pending_not_on_drained() {
 /// `POST /notify`, slot supersession, `GET /state` exposure, and
 /// `POST /notifications/:id/dismiss` over the real router + control client.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn notify_supersede_and_dismiss_over_the_socket() {
-    let dir = std::env::temp_dir();
-    let log_path = dir.join("efference-notify-test.jsonl");
-    let socket = dir.join("efference-notify-test.sock");
+async fn notify_supersede_and_dismiss_over_the_router() {
+    let log_path = std::env::temp_dir().join("efference-notify-test.jsonl");
     let _ = std::fs::remove_file(&log_path);
-    let _ = std::fs::remove_file(&socket);
 
     let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
-    trillium_tokio::config()
-        .with_shared_state(Arc::clone(&shared))
-        .listeners()
-        .bind_uds(&socket)
-        .expect("bind uds")
-        .spawn(router());
-
-    let client = ControlClient::new(&socket);
+    let client = test_client(&shared).await;
     let gone = client
         .notify("test-watch", "running 5min", Some("bash#7"), None)
         .await
@@ -117,6 +107,5 @@ async fn notify_supersede_and_dismiss_over_the_socket() {
         "the superseded id is gone → 404"
     );
 
-    let _ = std::fs::remove_file(&socket);
     let _ = std::fs::remove_file(&log_path);
 }

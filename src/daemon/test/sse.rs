@@ -12,25 +12,15 @@ use super::*;
 /// daemon runs on the multi-thread runtime).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn events_replays_then_tails_live() {
-    let dir = std::env::temp_dir();
-    let log_path = dir.join("efference-sse-test.jsonl");
-    let socket = dir.join("efference-sse-test.sock");
+    let log_path = std::env::temp_dir().join("efference-sse-test.jsonl");
     let _ = std::fs::remove_file(&log_path);
-    let _ = std::fs::remove_file(&socket);
 
     let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
     // Two entries present before any client connects (the replay set).
     shared.append(1, user("first")).unwrap();
     shared.append(2, user("second")).unwrap();
 
-    trillium_tokio::config()
-        .with_shared_state(Arc::clone(&shared))
-        .listeners()
-        .bind_uds(&socket)
-        .expect("bind uds")
-        .spawn(router());
-
-    let client = ControlClient::new(&socket);
+    let client = test_client(&shared).await;
     let mut events = client.events(Some(0)).await.expect("open events");
 
     // Replay: the two pre-existing entries, in order, id == seq, typed `user`.
@@ -48,7 +38,6 @@ async fn events_replays_then_tails_live() {
     assert_eq!(id.as_deref(), Some("2"));
     assert!(data.contains("third"));
 
-    let _ = std::fs::remove_file(&socket);
     let _ = std::fs::remove_file(&log_path);
 }
 
@@ -60,21 +49,11 @@ async fn events_replays_then_tails_live() {
 /// a publish after `stream()` resolves can't race ahead of the subscription.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn stream_carries_ephemeral_deltas() {
-    let dir = std::env::temp_dir();
-    let log_path = dir.join("efference-stream-test.jsonl");
-    let socket = dir.join("efference-stream-test.sock");
+    let log_path = std::env::temp_dir().join("efference-stream-test.jsonl");
     let _ = std::fs::remove_file(&log_path);
-    let _ = std::fs::remove_file(&socket);
 
     let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
-    trillium_tokio::config()
-        .with_shared_state(Arc::clone(&shared))
-        .listeners()
-        .bind_uds(&socket)
-        .expect("bind uds")
-        .spawn(router());
-
-    let client = ControlClient::new(&socket);
+    let client = test_client(&shared).await;
     let mut stream = client.stream().await.expect("open stream");
 
     // Published only after the subscription exists (the handler subscribed
@@ -112,6 +91,5 @@ async fn stream_carries_ephemeral_deltas() {
     assert_eq!(v["handle"], "bg#1");
     assert_eq!(v["chunk"], "tick 3\n");
 
-    let _ = std::fs::remove_file(&socket);
     let _ = std::fs::remove_file(&log_path);
 }
