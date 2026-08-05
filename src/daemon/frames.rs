@@ -110,6 +110,13 @@ impl Topic {
         Self::UpstreamFailure,
     ];
 
+    /// The topic named by a `?include=state:<topic>` token, or `None` if there is no such
+    /// topic. The inverse of [`Topic::as_str`], and the reason that method exists: the
+    /// grammar is parsed against the same names the frames carry.
+    pub(crate) fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|t| t.as_str() == name)
+    }
+
     /// The wire name, for `?include=state:<topic>` parsing and the SSE `event:` field.
     pub(crate) fn as_str(self) -> &'static str {
         match self {
@@ -214,6 +221,21 @@ impl Frame {
             kind: topic.as_str(),
             seq: None,
             data: raw(data),
+            render: None,
+        }
+    }
+
+    /// A state frame whose value is **already serialized** — the form the emitter uses,
+    /// since the one differ serializes each topic once and every connection sends those
+    /// same bytes. Re-parsing to a [`Value`] and back would sort the keys, which is the
+    /// hazard [`raw`] exists to avoid.
+    pub(crate) fn state_raw(topic: Topic, json: &str) -> Self {
+        Self {
+            class: Class::State,
+            kind: topic.as_str(),
+            seq: None,
+            data: RawValue::from_string(json.to_string())
+                .unwrap_or_else(|_| RawValue::from_string("null".into()).expect("valid")),
             render: None,
         }
     }

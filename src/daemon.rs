@@ -566,6 +566,7 @@ mod metrics;
 mod notifications;
 mod pace;
 mod sse;
+mod stream;
 mod topics;
 mod views;
 mod watch;
@@ -575,16 +576,17 @@ pub(crate) use watch::refresh_and_emit;
 use approvals::Pending;
 use config_edits::{PendingProposal, session_visible_notice};
 use errors::{ErrorCode, fail};
-use frames::Topic;
+use frames::{Frame, Topic};
 pub use metrics::RequestOrigin;
 use metrics::{CostCell, Metrics};
 use notifications::Inbox;
 use pace::Pace;
+use stream::{Include, control_stream};
 use topics::{StateUpdate, watch_topics};
 
 use http::{LogSelect, router};
 use keepalive::keepalive_loop;
-use sse::{stream_deltas, tail_events};
+use sse::stream_deltas;
 use watch::config_watch_loop;
 
 #[cfg(test)]

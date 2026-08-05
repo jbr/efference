@@ -1,83 +1,9 @@
-//! Server-Sent Events plumbing for `/events` and `/stream` (docs/control-channel.md).
+//! Server-Sent Events plumbing for `/stream` (docs/control-channel.md).
+//!
+//! `/events` is served by `stream.rs` instead: its frames span three durability classes
+//! and must be ordered against each other, which a log-only tail cannot express.
 
 use super::*;
-
-/// One log entry as a Server-Sent Event. We implement [`Eventable`] ourselves
-/// rather than use `trillium_sse::Event` because that struct exposes no `id`
-/// setter, and `id: <seq>` is the whole point — it's the resume cursor.
-pub(crate) struct LogEvent {
-    /// The entry's `seq`, stringified so `id()` can hand back a `&str`.
-    id: String,
-    /// The payload kind → the SSE `event:` field (`user` / `assistant` /
-    /// `tool_result`), so clients can switch without parsing the body first.
-    kind: &'static str,
-    /// The full serialized [`LogEntry`] — the same JSON `GET /log` returns, so the
-    /// tail and the catch-up read are byte-identical per entry.
-    data: String,
-}
-
-impl Eventable for LogEvent {
-    fn data(&self) -> &str {
-        &self.data
-    }
-    fn event_type(&self) -> Option<&str> {
-        Some(self.kind)
-    }
-    fn id(&self) -> Option<&str> {
-        Some(&self.id)
-    }
-}
-
-pub(crate) fn log_event(entry: &LogEntry) -> LogEvent {
-    let kind = match &entry.payload {
-        Payload::User(_) => "user",
-        Payload::Assistant { .. } => "assistant",
-        Payload::ToolResult { .. } => "tool_result",
-        Payload::Mark(_) => "mark",
-        Payload::Triage(_) => "triage",
-        Payload::Ambient(_) => "ambient",
-        Payload::Spot(_) => "spot",
-        Payload::ConfigEdit(_) => "config_edit",
-        Payload::Preamble { .. } => "preamble",
-    };
-    LogEvent {
-        id: entry.seq.to_string(),
-        kind,
-        data: serde_json::to_string(entry).unwrap_or_default(),
-    }
-}
-
-/// A per-connection stream that emits every log entry from `since` onward and
-/// then follows new appends live (docs/control-channel.md). This is the fanout
-/// `trillium-sse` deliberately doesn't provide — and tailing the durable log
-/// (rather than a broadcast channel) means a slow client never drops events: the
-/// log *is* the buffer, and each connection reads at its own pace.
-///
-/// Boxed because `with_sse_stream` demands `Unpin + Send + Sync`: the raw
-/// `unfold` over an async block is `!Unpin`, and `futures-lite`'s `.boxed()` adds
-/// only `+ Send`, so we box to the `+ Send + Sync` trait object by hand.
-pub(crate) fn tail_events(
-    shared: Arc<Shared>,
-    since: u64,
-) -> Pin<Box<dyn Stream<Item = LogEvent> + Send + Sync + 'static>> {
-    Box::pin(futures_lite::stream::unfold(
-        (shared, since),
-        |(shared, next)| async move {
-            loop {
-                // Arm the wait BEFORE reading the log. tokio guarantees a
-                // `notify_waiters()` reaches any `Notified` created before the
-                // call, so an append landing between our read and our await can't
-                // be lost (no `enable()` needed for the `notify_waiters` path).
-                let waiter = Arc::clone(&shared);
-                let appended = waiter.appended.notified();
-                if let Some(entry) = shared.entry_at(next) {
-                    return Some((log_event(&entry), (shared, next + 1)));
-                }
-                appended.await;
-            }
-        },
-    ))
-}
 
 /// One ephemeral [`StreamDelta`] as an SSE event. **No `id`** — deltas are
 /// pre-commit and carry no `seq`; that absence is the whole reason they ride a

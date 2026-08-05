@@ -7,6 +7,10 @@ use super::*;
 /// up and is awaiting, which is the lost-wakeup path the tail is built to
 /// survive (the `Notified` is armed before the catch-up read).
 ///
+/// End-to-end over the real router, so it also pins that the frame envelope survives the
+/// HTTP hop: `data` is a frame whose `data` is the entry (`stream.rs` covers the envelope
+/// itself). `?include=log` keeps this about the durable class.
+///
 /// Multi-thread flavor: an SSE body streams server-write ↔ client-read
 /// concurrently, which a single-threaded test runtime can deadlock (the real
 /// daemon runs on the multi-thread runtime).
@@ -21,13 +25,18 @@ async fn events_replays_then_tails_live() {
     shared.append(2, user("second")).unwrap();
 
     let client = test_client(&shared).await;
-    let mut events = client.events(Some(0)).await.expect("open events");
+    let mut events = client
+        .events(Some(0), Some("log"))
+        .await
+        .expect("open events");
 
     // Replay: the two pre-existing entries, in order, id == seq, typed `user`.
     let (id, kind, data) = next_event(&mut events).await;
     assert_eq!(id.as_deref(), Some("0"));
     assert_eq!(kind.as_deref(), Some("user"));
-    assert!(data.contains("first"));
+    let frame: Value = serde_json::from_str(&data).unwrap();
+    assert_eq!(frame["class"], "log");
+    assert!(frame["data"].to_string().contains("first"));
     let (id, _, data) = next_event(&mut events).await;
     assert_eq!(id.as_deref(), Some("1"));
     assert!(data.contains("second"));

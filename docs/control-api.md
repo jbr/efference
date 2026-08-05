@@ -37,23 +37,24 @@ the two SSE streams (`text/event-stream`).
 
 ## Connection lifecycle (how a client catches up and stays live)
 
-Because SSE has no built-in replay but the **append-only log is itself the event
-store**, a connecting client reconciles in three steps:
+Two requests, one of them long-lived:
 
-1. `GET /state` — fetch ephemeral control state (last `seq`, any pending gate,
-   live processes, usage, effective policy). None of this is in the log.
-2. `GET /log?since=<seq>` — replay durable history from a cursor. A client
-   opening **cold** reads `?tail=<n>` instead: it renders immediately rather
-   than after the whole session, and anything the window cut off is fetchable by
-   address.
-3. `GET /events?since=<last_seq + 1>` — attach to the live durable tail; each
-   event carries `id: <seq>`, so dedupe/resume by `seq`.
+1. `GET /log?tail=<n>` — a bounded window of durable history, so the client
+   renders immediately rather than after replaying the session. Anything the
+   window cut off is fetchable by address (`/log/:seq`, `/tool_calls/:call_id`).
+2. `GET /events?since=<last_seq + 1>` — the control stream. Every subscribed
+   state topic arrives on connect, then everything that changes: log entries,
+   pre-commit output, and whole-topic state replacements, in one order.
 
-Optionally also `GET /stream` for live pre-commit output (lossy, no replay).
+Reconnect is the same two steps with a fresh cursor; `?since` is the only
+handshake. There is nothing a client must poll — the stream's `state` class
+carries the gate, processes, usage, and effective policy that used to require
+it.
 
-Ephemeral control state that has **no event** (the approval gate, process list,
-usage, effective policy, pending proposals) is discovered only by **polling
-`/state`**. The reference TUI polls it every **400 ms**.
+> **`GET /state` is still served**, and is still what the reference TUI polls
+> every 400 ms — that client hasn't migrated yet. It remains useful as a
+> one-shot read (a script, a health check) even after it does. What has changed
+> is that polling is no longer the *only* way to learn these things.
 
 ---
 
@@ -260,19 +261,79 @@ that wants to poll only this.
 
 ### Reads (streamed, SSE)
 
-#### `GET /events?since=<seq>`
-Durable SSE tail of the log. Replays from `since` then follows live (whole
-session if omitted). Per event:
+#### `GET /events?include=<spec>&since=<seq>`
+The control stream: **one** connection carrying everything that changes, as a
+discriminated envelope so a client writes one frame parser rather than one per
+stream.
 
-- `event:` — the payload kind: `user` · `assistant` · `tool_result` · `mark` ·
-  `triage` · `ambient` · `spot` · `config_edit`
-- `id:` — the entry `seq` (the resume cursor: reconnect with `since = last_id + 1`)
-- `data:` — the full serialized `LogEntry` (byte-identical to a `/log` element)
+```jsonc
+{ "class": "log",    "kind": "tool_result", "seq": 43, "data": { /* LogEntry */ } }
+{ "class": "output", "kind": "tool_output",            "data": { "call_id": "…", "chunk": "…" } }
+{ "class": "state",  "kind": "gate",                   "data": null }   // null = topic cleared
+```
 
-Slow-consumer safe: each connection tails the durable log at its own pace, so no
-event is ever dropped.
+The three classes are **durability classes**, not topics — durability is the axis
+a client branches on when deciding whether a gap is recoverable:
+
+| class | durability | resume |
+|---|---|---|
+| `log` | durable, monotonic `seq` | replay by `?since`; never dropped |
+| `output` | ephemeral, lossy | none — live tail |
+| `state` | level-triggered | snapshot on subscribe, then whole-topic replacements |
+
+SSE fields: `event:` is the frame's `kind`, and `id:` is the `seq` — **on `log`
+frames only**, so `EventSource`'s Last-Event-ID resume tracks the durable subset
+and is never corrupted by an ephemeral frame. Reconnect with
+`?since=<last_id + 1>`: the log replays exactly, state re-snapshots, output
+resumes live with an accepted gap.
+
+**`?include=`** takes comma-separated tokens, each either a bare class (`log`,
+`output`, `state` — meaning all of it) or `class:topic` (`state:gate`). Omitted
+means everything. A watch app subscribes `?include=state:gate,state:usage` and
+gets neither the token firehose nor the whole effective config.
+
+- **An unknown token is a `400 bad_request`, never ignored.** Silently dropping
+  `state:gaet` would yield a stream that never delivers a gate — indistinguishable
+  from a daemon that never gated. The cost is that an old daemon rejects a newer
+  client, which is the right direction: the client learns.
+
+**`state` is level-triggered, and a frame is a whole-topic replacement — never a
+patch.** Every subscribed topic is sent on connect, then a topic's entire value is
+re-sent when it changes (`null` = cleared). Replacement is idempotent and
+order-insensitive, which is what makes this identity hold:
+
+> **`GET /state` ≡ the fold of every `state` frame since connect** (minus
+> `last_seq`, which is the log's cursor rather than control state).
+
+Both sides are built from the same per-topic functions, so they cannot drift.
+That identity is what lets a client delete its `/state` poll rather than merely
+supplement it.
+
+**Ordering — the guarantee three connections cannot offer.** Frames arrive in one
+total order per connection, and a `state` frame follows every `log` frame it
+reflects. So a client never sees the gate before the `spot` entry whose text the
+gate quotes, and never sees `running: false` before the entries that finished the
+turn — that second one answers "is it done?" wrong, in the direction a human acts
+on. Mechanically: each state value is stamped with the log position it reflects,
+and is held until the connection has delivered through it. A client subscribed to
+`state` without `log` is not gated, having no log frames to be coherent with.
+
+**Drain order is part of the contract, not an implementation detail.** One socket
+means the ephemeral class *could* stall the durable one, which separate sockets
+could not. So: `log` frames go unconditionally, `state` once its watermark is
+passed, `output` only when nothing durable is pending, from a drop-oldest ring.
+That policy is what makes the durability table above true over one connection.
+
+A client opening **cold** should read `GET /log?tail=N` and then connect with
+`?since=<last_seq + 1>`, rather than `?since=0`. Both are correct; the second
+replays the whole session, and its state waits behind that replay.
 
 #### `GET /stream`
+The `output` class on its own socket. **Superseded by `?include=output` on
+`/events`** and retained only until the built-in clients stop using it; a new
+client should not open it, since a delta taken here has no defined order against
+the log frames on the other connection.
+
 Lossy SSE stream of **ephemeral pre-commit** output. **No `id`** and no replay —
 a late subscriber starts from the next delta; a lagging one drops the oldest. The
 committed entry on `/events` is the authoritative copy.

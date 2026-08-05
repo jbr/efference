@@ -5,7 +5,10 @@ use super::*;
 /// Decode the daemon's two SSE streams into [`TuiEvent`]s. Mirrors the decode in
 /// `main.rs`'s `render_streams`, but emits typed events instead of printing.
 pub(super) async fn bridge(client: Client, tx: Sender<TuiEvent>) -> Result<()> {
-    let mut events = client.events(Some(0)).await?;
+    // `?include=log`: the durable class only, which is what this bridge has always
+    // consumed. State frames — and with them the deletion of the `/state` poll — are a
+    // separate step (docs/control-api.md).
+    let mut events = client.events(Some(0), Some("log")).await?;
     let mut deltas = client.stream().await?;
     let mut deltas_done = false;
 
@@ -13,8 +16,10 @@ pub(super) async fn bridge(client: Client, tx: Sender<TuiEvent>) -> Result<()> {
         tokio::select! {
             event = events.next() => match event {
                 Some(Ok(event)) => {
-                    if event.event_type() != Some("keepalive")
-                        && let Ok(entry) = serde_json::from_str::<LogEntry>(event.data())
+                    // The entry sits under the frame envelope's `data` (docs/control-api.md);
+                    // an unparseable or non-`log` frame is skipped rather than fatal, so a
+                    // daemon that grows a class this client doesn't know stays usable.
+                    if let Some(entry) = log_entry_of(&event)
                         && tx.send(TuiEvent::Entry(entry)).is_err()
                     {
                         break; // UI thread gone.
@@ -38,6 +43,15 @@ pub(super) async fn bridge(client: Client, tx: Sender<TuiEvent>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The [`LogEntry`] carried by a `log`-class frame, or `None` for any other frame.
+pub(super) fn log_entry_of(event: &trillium_client::sse::Event) -> Option<LogEntry> {
+    let frame: serde_json::Value = serde_json::from_str(event.data()).ok()?;
+    if frame["class"] != "log" {
+        return None;
+    }
+    serde_json::from_value(frame["data"].clone()).ok()
 }
 
 /// Decode one ephemeral delta event, sending the matching [`TuiEvent`].

@@ -444,8 +444,12 @@ pub(crate) fn router() -> Router {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
+            let include = match Include::parse(parse_param(conn.querystring(), "include")) {
+                Ok(include) => include,
+                Err(message) => return fail(conn, ErrorCode::BadRequest, message),
+            };
             let since = parse_since(conn.querystring()).unwrap_or(0);
-            conn.with_sse_stream(tail_events(shared, since))
+            conn.with_sse_stream(control_stream(shared, include, since))
         })
         // Live tail of *ephemeral* output deltas (docs/README.md): assistant prose and
         // tool output as they're produced, before the turn commits. No `since`
@@ -517,6 +521,13 @@ fn parse_u64_param(query: &str, name: &str) -> Result<Option<u64>, String> {
                 .map_err(|_| format!("{name} must be a non-negative integer, got {v:?}"))
         })
         .transpose()
+}
+
+/// One `name=<value>` query parameter as a raw string slice, or `None` if absent.
+pub(crate) fn parse_param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
+    query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix(name)?.strip_prefix('='))
 }
 
 /// Pull `since=<n>` out of a raw query string (`GET /events?since=12`).

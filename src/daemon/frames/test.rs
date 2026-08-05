@@ -168,17 +168,3 @@ fn topic_wire_names_are_pinned() {
         ]
     );
 }
-
-/// The `kind` of a log frame must keep matching what `GET /events` already emits as its
-/// SSE `event:` field, or the unified stream silently renames every event a client
-/// switches on.
-#[test]
-fn log_kinds_match_the_served_event_names() {
-    let entry = one_entry(user("hello"));
-    assert_eq!(payload_kind(&entry.payload), "user");
-    assert_eq!(
-        Frame::log(&entry).kind,
-        super::super::sse::log_event(&entry).event_type().unwrap(),
-        "the frame's kind and the current SSE event name are one vocabulary"
-    );
-}

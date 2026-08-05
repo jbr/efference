@@ -75,7 +75,9 @@ pub(crate) struct RenderState {
 /// the entry), so the live fragments print first and the committed entry simply
 /// finalizes — without the duplicated block the two-task version produced.
 pub(crate) async fn render_streams(client: ControlClient) -> CliResult {
-    let mut events = client.events(Some(0)).await?;
+    // `?include=log`: the durable class only — this renderer takes its ephemeral half
+    // from `/stream` (docs/control-api.md).
+    let mut events = client.events(Some(0), Some("log")).await?;
     let mut deltas = client.stream().await?;
     let mut state = RenderState::default();
     let mut deltas_done = false;
@@ -139,10 +141,13 @@ pub(crate) fn print_flush(s: &str) {
 /// finalizes without re-printing its prose (the dedup the merged renderer exists
 /// for).
 pub(crate) fn render_event(kind: Option<&str>, data: &str, state: &mut RenderState) {
-    let Ok(entry) = serde_json::from_str::<serde_json::Value>(data) else {
+    // `data` is the frame envelope; the entry is under its `data` key
+    // (docs/control-api.md).
+    let Ok(frame) = serde_json::from_str::<serde_json::Value>(data) else {
         println!("· {data}");
         return;
     };
+    let entry = &frame["data"];
     let seq = entry["seq"].as_u64().unwrap_or(0);
     let payload = &entry["payload"];
     match kind {

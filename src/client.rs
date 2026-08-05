@@ -230,14 +230,26 @@ impl Client {
         self.get(&path).await
     }
 
-    /// Open the live event stream (`GET /events?since=<seq>`): a tail of the
-    /// append-only log (docs/README.md). `since` replays from that `seq` then follows;
-    /// `None` streams the whole session then live. Each event's `id` is the entry
-    /// `seq`, so a reconnect resumes with `since = last_id + 1`.
-    pub async fn events(&self, since: Option<u64>) -> Result<trillium_client::sse::EventStream> {
-        let path = match since {
-            Some(s) => format!("/events?since={s}"),
-            None => "/events".to_string(),
+    /// Open the unified control stream (`GET /events`, docs/control-api.md). Every event's
+    /// `data` is a frame envelope discriminated by `class`; only `log` frames carry an
+    /// `id`, so a reconnect resumes with `since = last_id + 1`.
+    ///
+    /// `since` replays the durable class from that `seq` then follows; `None` streams the
+    /// whole session then live. `include` names the classes and topics wanted (`"log"`,
+    /// `"log,output"`, `"state:gate"`); `None` subscribes to everything.
+    pub async fn events(
+        &self,
+        since: Option<u64>,
+        include: Option<&str>,
+    ) -> Result<trillium_client::sse::EventStream> {
+        let query: Vec<String> = since
+            .map(|s| format!("since={s}"))
+            .into_iter()
+            .chain(include.map(|i| format!("include={i}")))
+            .collect();
+        let path = match query.is_empty() {
+            true => "/events".to_string(),
+            false => format!("/events?{}", query.join("&")),
         };
         self.http
             .get(path.as_str())
