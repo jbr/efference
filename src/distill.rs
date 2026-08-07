@@ -68,7 +68,7 @@ const PEEK_ATTEMPTS: usize = 3;
 
 /// A live-process triage disposition (docs/supervisor.md) — distinct from the seq-keyed
 /// notification [`Disposition`] because a running process is addressed by its live
-/// `bg#<n>` handle, not a frozen arrival seq, and its "dismiss" is **mute** (stop
+/// `p#<n>` handle, not a frozen arrival seq, and its "dismiss" is **mute** (stop
 /// surfacing the tail; the process keeps running), not clear.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BgVerdict {
@@ -121,7 +121,7 @@ pub struct GateOutcome {
     /// filtered to notifications actually shown. Empty when nothing was pinned or
     /// dismissed (everything left for the next gate).
     pub inbox: Vec<(Seq, Disposition)>,
-    /// Live-process dispositions this peek chose, by `bg#<n>` handle (docs/supervisor.md) —
+    /// Live-process dispositions this peek chose, by `p#<n>` handle (docs/supervisor.md) —
     /// filtered to processes actually shown. The loop materializes a `Pin` into a
     /// snapshot `Ambient` and applies a `Mute` to the supervisor.
     pub background: Vec<(String, BgVerdict)>,

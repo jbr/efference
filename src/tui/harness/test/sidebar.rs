@@ -12,7 +12,7 @@ fn sidebar_shows_processes_and_stats() {
     play.user("Watch the build.");
     play.assistant("Started it — I'll keep working.", vec![]);
     play.event(TuiEvent::Processes(vec![BgProc {
-        handle: "bg#1".into(),
+        id: 1,
         command: "cargo watch -x test".into(),
         spawned_at: 0,
         last_chunk_at: None,
@@ -343,7 +343,7 @@ fn background_process_panel() {
     play.assistant("Started it — I'll keep working.", vec![]);
     play.event(TuiEvent::Processes(vec![
         BgProc {
-            handle: "bg#1".into(),
+            id: 1,
             command: "cargo watch -x test".into(),
             spawned_at: 0,
             last_chunk_at: None,
@@ -352,7 +352,7 @@ fn background_process_panel() {
             idle_secs: 8,
         },
         BgProc {
-            handle: "bg#2".into(),
+            id: 2,
             command: "npm run dev".into(),
             spawned_at: 0,
             last_chunk_at: None,

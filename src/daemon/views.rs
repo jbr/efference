@@ -46,6 +46,18 @@ impl Shared {
         Value::Object(out).to_string()
     }
 
+    /// The loop resource (`GET /loop`, docs/control-channel.md): the operator dials
+    /// and the read-only `running` flag, each field the same value — and the same
+    /// name — as its state topic, so the resource and the topics cannot drift.
+    pub(super) fn loop_json(&self) -> String {
+        serde_json::json!({
+            "pace": self.topic_json(Topic::Pace),
+            "review_level": self.topic_json(Topic::ReviewLevel),
+            "running": self.topic_json(Topic::Running),
+        })
+        .to_string()
+    }
+
     /// The highest committed `seq`, or `null` on an empty log.
     fn last_seq_json(&self) -> Value {
         match self.last_committed_seq() {
@@ -75,7 +87,7 @@ impl Shared {
     /// The live background processes (docs/supervisor.md), as structure only — no tail
     /// and no last-chunk stamp, both of which change per output chunk and would make
     /// this topic re-emit at the rate of the output it describes. That content rides
-    /// `bg_output` on the ephemeral `output` class instead (docs/control-api.md).
+    /// `process_output` on the ephemeral `output` class instead (docs/control-api.md).
     fn processes_json(&self) -> Value {
         serde_json::to_value(self.process_states()).unwrap_or(Value::Null)
     }
@@ -135,7 +147,7 @@ impl Shared {
 
     /// Async config edits awaiting an orchestrator decision (the prefix-promotion
     /// proposal, the session's config-write) — read by the client's policy surface
-    /// alongside the gate; resolved over `POST /proposals/:seq`.
+    /// alongside the gate; resolved over `PATCH /proposals/:seq`.
     fn proposals_json(&self) -> Value {
         serde_json::to_value(self.pending_proposals()).unwrap_or(Value::Null)
     }

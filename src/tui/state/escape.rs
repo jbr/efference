@@ -9,7 +9,7 @@ impl<'a> InteractiveState<'a> {
     ///
     /// 1. **not at rest in the composer** (an overlay is open, or focus is in the transcript) →
     ///    return to the composer.
-    /// 2. **at the composer, held** → interrupt the in-flight tool (`POST /interrupt`).
+    /// 2. **at the composer, held** → interrupt the in-flight tool (`POST /loop/interrupt`).
     /// 3. **at the composer, not held, loop active** → pause/hold.
     /// 4. **at the composer, not held, nothing happening** → swallow (Esc has nothing to do).
     ///
@@ -87,7 +87,7 @@ impl<'a> InteractiveState<'a> {
         self.dirty = true;
     }
 
-    /// The interrupt step of graduated Esc (docs/tui.md): fire `POST /interrupt`, which stops the
+    /// The interrupt step of graduated Esc (docs/tui.md): fire `POST /loop/interrupt`, which stops the
     /// loop at the next juncture and withholds the in-flight call's output from the model
     /// (docs/control-channel.md) — plus, on a foreground bash, kills the running process group.
     /// Reaches the one point pace can't (mid-tool). The hint names whichever promise applies, and
@@ -107,7 +107,7 @@ impl<'a> InteractiveState<'a> {
 
     /// The foreground→background handoff key (docs/supervisor.md): ask the daemon
     /// to detach the in-flight tool into the background supervisor — keep it
-    /// running as a `bg#<n>` process instead of killing it or waiting it out.
+    /// running as a `p#<n>` process instead of killing it or waiting it out.
     /// Fire-and-forget like the interrupt: the daemon no-ops if nothing is
     /// mid-tool. A message typed right after rides the seam-drain, so it reaches
     /// the model alongside the handoff — no separate note-capture flow.

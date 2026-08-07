@@ -13,18 +13,18 @@ There is no structure beyond that — the body is prose the model reads directly
 
 ## Ingestion — out of band
 
-`POST /notify { source, body, slot?, replaces? }` enqueues the notification into an
+`POST /notifications { source, body, slot?, replaces? }` enqueues the notification into an
 **ephemeral** inbox queue held in `Shared` (the daemon's shared control state). Nothing
 is written to the log at arrival; the notification exists only in memory. This is the
 same pattern as pending-approval state (see `control-channel.md`): in-flight inbox state
 is control state until the log needs it.
 
-This verb is also the inter-agent channel. One agent `POST /notify`s another agent's
+This verb is also the inter-agent channel. One agent `POST /notifications`s another agent's
 control socket; the receiving agent sees the notification at its next triage gate exactly
 as it would any other ambient event.
 
 `GET /state` surfaces the pending (not-yet-shown) inbox alongside other control state.
-`POST /notifications/:id/dismiss` clears a pending notification out-of-band, before it
+`DELETE /notifications/:id` clears a pending notification out-of-band, before it
 is ever shown — it is archived in the ephemeral queue and never reaches the log.
 
 ## Event-sourced, logged at first-show

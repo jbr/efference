@@ -196,7 +196,7 @@ async fn a_submit_interrupts_a_finite_paced_sleep() {
         .expect("seam task joined");
 }
 
-/// `POST /interrupt` **latches** (docs/control-channel.md). The `Notify` half wakes only a
+/// `POST /loop/interrupt` **latches** (docs/control-channel.md). The `Notify` half wakes only a
 /// currently-registered waiter and stores no permit, so during any tool that doesn't await the
 /// abort future — every non-bash backend — the wakeup lands nowhere. The flag is what the loop
 /// reads at its junctures instead, and it is a one-shot: consumed exactly once, so a single

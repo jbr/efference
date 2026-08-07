@@ -83,16 +83,19 @@ fn log_select_parses_positions_and_counts() {
 async fn tail_returns_exactly_n_from_the_end() {
     let app = test_server(&log_of(5)).await;
 
-    assert_eq!(seqs(app.get("/log?tail=2").await.body()), vec![3, 4]);
+    assert_eq!(seqs(app.get("/v1/log?tail=2").await.body()), vec![3, 4]);
     // Fewer entries than asked for is the whole log, not an error — the same answer a
     // client gets early in a short session.
     assert_eq!(
-        seqs(app.get("/log?tail=99").await.body()),
+        seqs(app.get("/v1/log?tail=99").await.body()),
         vec![0, 1, 2, 3, 4]
     );
-    assert_eq!(seqs(app.get("/log?tail=0").await.body()), Vec::<u64>::new());
+    assert_eq!(
+        seqs(app.get("/v1/log?tail=0").await.body()),
+        Vec::<u64>::new()
+    );
     // No bound at all is still the whole log: the default is unchanged.
-    assert_eq!(seqs(app.get("/log").await.body()), vec![0, 1, 2, 3, 4]);
+    assert_eq!(seqs(app.get("/v1/log").await.body()), vec![0, 1, 2, 3, 4]);
 }
 
 /// `?before=<seq>&tail=N` is one page backward — the escape hatch for a client scrolling
@@ -103,21 +106,24 @@ async fn before_and_tail_page_backward() {
     let app = test_server(&log_of(10)).await;
 
     assert_eq!(
-        seqs(app.get("/log?before=5&tail=3").await.body()),
+        seqs(app.get("/v1/log?before=5&tail=3").await.body()),
         vec![2, 3, 4]
     );
     // The page before that one, addressed by the first seq the client holds.
     assert_eq!(
-        seqs(app.get("/log?before=2&tail=3").await.body()),
+        seqs(app.get("/v1/log?before=2&tail=3").await.body()),
         vec![0, 1]
     );
     assert_eq!(
-        seqs(app.get("/log?before=0&tail=3").await.body()),
+        seqs(app.get("/v1/log?before=0&tail=3").await.body()),
         Vec::<u64>::new()
     );
     // `before` alone is everything up to it; `since` alone still resumes forward.
-    assert_eq!(seqs(app.get("/log?before=3").await.body()), vec![0, 1, 2]);
-    assert_eq!(seqs(app.get("/log?since=8").await.body()), vec![8, 9]);
+    assert_eq!(
+        seqs(app.get("/v1/log?before=3").await.body()),
+        vec![0, 1, 2]
+    );
+    assert_eq!(seqs(app.get("/v1/log?since=8").await.body()), vec![8, 9]);
 }
 
 /// A query with no single reading is a typed 400 rather than a silently-picked winner.
@@ -125,7 +131,7 @@ async fn before_and_tail_page_backward() {
 async fn contradictory_bounds_are_a_typed_error() {
     let app = test_server(&log_of(3)).await;
 
-    let conn = app.get("/log?since=1&tail=1").await;
+    let conn = app.get("/v1/log?since=1&tail=1").await;
     conn.assert_status(400);
     conn.assert_json_body_with(|body: &Value| {
         assert_eq!(body["code"], "bad_request");
@@ -145,7 +151,7 @@ async fn contradictory_bounds_are_a_typed_error() {
 async fn one_entry_by_seq_is_immutably_cacheable() {
     let app = test_server(&log_of(3)).await;
 
-    let conn = app.get("/log/1").await;
+    let conn = app.get("/v1/log/1").await;
     conn.assert_ok();
     conn.assert_header_with("cache-control", |value| {
         let value = format!("{value:?}");
@@ -157,7 +163,7 @@ async fn one_entry_by_seq_is_immutably_cacheable() {
     });
 
     // Past the head of the log is a 404, distinct from a window that happens to be empty.
-    let conn = app.get("/log/99").await;
+    let conn = app.get("/v1/log/99").await;
     conn.assert_status(404);
     conn.assert_json_body_with(|body: &Value| assert_eq!(body["code"], "not_found"));
 }
@@ -175,7 +181,7 @@ async fn a_tool_call_resolves_by_its_call_id() {
         .unwrap();
     let app = test_server(&shared).await;
 
-    let conn = app.get("/tool_calls/toolu_9").await;
+    let conn = app.get("/v1/tool_calls/toolu_9").await;
     conn.assert_ok();
     conn.assert_header_with("cache-control", |value| {
         assert!(format!("{value:?}").contains("immutable"));
@@ -189,7 +195,7 @@ async fn a_tool_call_resolves_by_its_call_id() {
         assert_eq!(body["call"]["input"]["command"], "cargo test");
     });
 
-    let conn = app.get("/tool_calls/toolu_absent").await;
+    let conn = app.get("/v1/tool_calls/toolu_absent").await;
     conn.assert_status(404);
     conn.assert_json_body_with(|body: &Value| assert_eq!(body["code"], "not_found"));
 }

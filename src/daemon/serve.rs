@@ -4,7 +4,7 @@
 use super::*;
 
 /// Run the daemon: bind the control socket, spawn the HTTP server, and drive the
-/// agent loop with a [`RemoteFrontend`]. The loop blocks until a `POST /turn`
+/// agent loop with a [`RemoteFrontend`]. The loop blocks until a `POST /turns`
 /// arrives, so an idle daemon simply waits — retiring argv-seeding and the
 /// "backgrounded run can't get its opening prompt" problem (docs/README.md).
 pub async fn serve<D: Distiller, S: Spotter>(

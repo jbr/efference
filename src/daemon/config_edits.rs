@@ -63,7 +63,7 @@ impl Shared {
     }
 
     /// Resolve a pending proposal by `seq` — the orchestrator-above's commit/cancel decision over
-    /// `POST /proposals/:seq` (docs/permissions.md). **Commit** appends a
+    /// `PATCH /proposals/:seq` (docs/permissions.md). **Commit** appends a
     /// `Committed` [`ConfigEdit`] carrying the proposal's `change`, which `append`'s fold applies to
     /// the effective config (and notifies the session for `scope`/`paths`); **cancel** appends a
     /// `Cancelled` entry (audit-only). Both reference the proposal by `seq`, so the fold drops it
@@ -150,14 +150,14 @@ impl Shared {
     }
 
     /// The current **review level** (docs/permissions.md) — who reviews a
-    /// gated call. Runtime-mutable (the `POST /review-level` verb); read by the loop's cascade and
+    /// gated call. Runtime-mutable (the `PATCH /loop {review_level}` verb); read by the loop's cascade and
     /// reported on `GET /state`. Relaxed ordering: a lone dial with no happens-before tie to other
     /// state, read on the loop thread and written by a handler thread.
     pub fn review_level(&self) -> crate::policy::ReviewLevel {
         crate::policy::ReviewLevel::from_u8(self.review_level.load(Ordering::Relaxed))
     }
 
-    /// Set the review level — the runtime `POST /review-level` verb, or `serve --autonomous` at
+    /// Set the review level — the runtime `PATCH /loop {review_level}` verb, or `serve --autonomous` at
     /// boot via [`set_autonomous`](Self::set_autonomous).
     pub fn set_review_level(&self, level: crate::policy::ReviewLevel) {
         self.review_level.store(level.as_u8(), Ordering::Relaxed);

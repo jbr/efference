@@ -110,7 +110,7 @@ impl ReviewLevel {
         }
     }
 
-    /// The wire / CLI token (snake_case), for `GET /state`, `POST /review-level`, and `efference
+    /// The wire / CLI token (snake_case), for `GET /state`, `PATCH /loop {review_level}`, and `efference
     /// review-level`.
     pub fn as_str(self) -> &'static str {
         match self {

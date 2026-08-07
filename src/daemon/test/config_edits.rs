@@ -265,7 +265,7 @@ fn cancelling_a_proposal_drains_the_queue_without_applying() {
     );
 }
 
-/// The client-facing resolution path (`POST /proposals/:seq` → `resolve_proposal_decision`):
+/// The client-facing resolution path (`PATCH /proposals/:seq` → `resolve_proposal_decision`):
 /// commit folds the change and drains the queue; cancel drains without applying; an unknown
 /// `seq` resolves nothing.
 #[test]

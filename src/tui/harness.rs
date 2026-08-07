@@ -199,7 +199,7 @@ impl Screenplay<'_> {
         self
     }
 
-    /// Whether the hard rung of graduated Esc fired a `POST /interrupt` since the last check
+    /// Whether the hard rung of graduated Esc fired a `POST /loop/interrupt` since the last check
     /// (docs/tui.md) — drains the interrupt channel the UI would have
     /// sent on.
     pub(crate) fn took_interrupt(&mut self) -> bool {
@@ -209,7 +209,7 @@ impl Screenplay<'_> {
         )
     }
 
-    /// Whether the background-handoff key fired a `POST /background` since the last
+    /// Whether the background-handoff key fired a `PATCH /processes/:id {background: true}` since the last
     /// check (docs/supervisor.md) — the detach intent on the same channel.
     pub(crate) fn took_background(&mut self) -> bool {
         matches!(
@@ -219,20 +219,20 @@ impl Screenplay<'_> {
     }
 
     /// The user turn a submit sent since the last check, if any — drains the channel
-    /// the UI would `POST /turn` over. `None` means nothing was sent.
+    /// the UI would `POST /turns` over. `None` means nothing was sent.
     pub(crate) fn took_turn(&mut self) -> Option<String> {
         self.submit_rx.try_recv().ok()
     }
 
     /// The approval decision a gate action sent since the last check (`call_id`,
     /// decision), if any — drains the channel the UI would have resolved
-    /// `POST /approvals/:call_id` over.
+    /// `PUT /approvals/:call_id` over.
     pub(crate) fn took_approval(&mut self) -> Option<(String, Approval)> {
         self.approve_rx.try_recv().ok()
     }
 
     /// The pace command (`speed_ms`, `held`) pushed since the last check, if any —
-    /// drains the channel the UI would `POST /pace` over. `None` means nothing was
+    /// drains the channel the UI would `PATCH /loop {pace}` over. `None` means nothing was
     /// sent (e.g. a widget preview or revert, which never touch the daemon).
     pub(crate) fn took_pace(&mut self) -> Option<super::PaceCmd> {
         self.pace_rx.try_recv().ok()

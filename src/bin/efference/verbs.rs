@@ -238,10 +238,15 @@ pub(crate) async fn interrupt(socket: PathBuf) -> CliResult {
 }
 
 pub(crate) async fn background(socket: PathBuf, note: Option<String>) -> CliResult {
-    ControlClient::new(socket)
+    match ControlClient::new(socket)
         .background(note.as_deref())
-        .await?;
-    println!("detach requested (lands only if a foreground tool is running)");
+        .await?
+    {
+        Some(id) => {
+            println!("requested backgrounding p#{id} (lands only while it is still running)")
+        }
+        None => println!("no foreground tool running; nothing to background"),
+    }
     Ok(())
 }
 

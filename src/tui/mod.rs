@@ -81,16 +81,17 @@ pub(crate) enum TuiEvent {
     ToolCallInput { fragment: String },
     /// A fragment of a running tool's output (`tool_output`).
     ToolOutput { call_id: String, chunk: String },
-    /// A fragment of a running background process's output (`bg_output`, TUI-bg-2).
+    /// A fragment of a running background process's output (`process_output`).
     /// Folded into the matching process panel row's tail — the sole source of tail
     /// content, since the `processes` topic carries structure only; demuxed by
-    /// `handle` exactly as [`ToolOutput`](TuiEvent::ToolOutput) is by `call_id`.
-    BgOutput { handle: String, chunk: String },
+    /// `id` exactly as [`ToolOutput`](TuiEvent::ToolOutput) is by `call_id`.
+    ProcessOutput { id: u64, chunk: String },
     /// The pending tool-approval gate changed (the `gate` topic).
     Gate(Option<PendingGate>),
     /// The live background processes changed (the `processes` topic,
     /// docs/supervisor.md — the running tail is ephemeral, never logged, so it has no
-    /// `log` entry; [`BgOutput`](TuiEvent::BgOutput) deltas layer the content on top).
+    /// `log` entry; [`ProcessOutput`](TuiEvent::ProcessOutput) deltas layer the content
+    /// on top).
     Processes(Vec<BgProc>),
     /// The usage statistics changed (the `usage` topic). Reflects cumulative token
     /// counts and cache telemetry.
@@ -134,8 +135,8 @@ pub(crate) type PaceCmd = (Option<u64>, Option<bool>);
 ///
 /// The `processes` topic carries structure only — no tail, no last-chunk stamp — because
 /// both change per output chunk and would make a level-triggered topic re-emit at the
-/// rate of the output (docs/control-api.md). The content arrives as `bg_output` deltas
-/// instead, layered on top by `handle_event`.
+/// rate of the output (docs/control-api.md). The content arrives as `process_output`
+/// deltas instead, layered on top by `handle_event`.
 ///
 /// `running_secs`/`idle_secs` are **derived for display** when state changes, from the
 /// absolute stamps beside them. Derived at event time rather than at render time so
@@ -144,15 +145,16 @@ pub(crate) type PaceCmd = (Option<u64>, Option<bool>);
 /// (`refresh_clocks`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BgProc {
-    pub handle: String,
+    /// The spawn-minted process id (bare on the wire; rendered `p#<n>` for display).
+    pub id: u64,
     pub command: String,
     /// Absolute Unix millis, from the wire.
     pub spawned_at: u64,
-    /// Absolute Unix millis, stamped locally on each `bg_output` delta. `None` until the
-    /// first chunk — the wire cannot supply it without re-emitting per chunk.
+    /// Absolute Unix millis, stamped locally on each `process_output` delta. `None` until
+    /// the first chunk — the wire cannot supply it without re-emitting per chunk.
     pub last_chunk_at: Option<u64>,
-    /// Accumulated locally from `bg_output` deltas; a cold-opened client starts empty
-    /// until the process tail resource exists (backlog/processes-rest-resource.md).
+    /// Accumulated locally from `process_output` deltas, seeded on first sight from
+    /// `GET /processes/:id/output` (the bridge's cold-open fetch, docs/control-api.md).
     pub tail: String,
     pub running_secs: u64,
     pub idle_secs: u64,
@@ -164,6 +166,12 @@ impl BgProc {
     pub fn refresh_elapsed(&mut self) {
         self.running_secs = secs_since(self.spawned_at);
         self.idle_secs = self.last_chunk_at.map(secs_since).unwrap_or(0);
+    }
+
+    /// The prose form of the id (`p#3`) — what the panel shows, matching the
+    /// vocabulary the model and the transcript use.
+    pub fn handle(&self) -> String {
+        crate::supervisor::handle(self.id)
     }
 }
 

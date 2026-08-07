@@ -15,7 +15,7 @@ pub(super) struct Inbox {
 /// once enqueued — supersession archives-and-replaces rather than editing (docs/log-and-projection.md).
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct PendingNotification {
-    /// Queue-local id; the handle `POST /notifications/:id/dismiss` addresses.
+    /// Queue-local id; the handle `DELETE /notifications/:id` addresses.
     pub(super) id: u64,
     pub(super) source: String,
     pub(super) body: String,
@@ -24,7 +24,7 @@ pub(super) struct PendingNotification {
 }
 
 impl Shared {
-    /// Enqueue an ambient notification (docs/inbox.md — `POST /notify`). If it names a
+    /// Enqueue an ambient notification (docs/inbox.md — `POST /notifications`). If it names a
     /// `slot` (or an explicit `replaces` id) matching a pending entry, that entry is
     /// **superseded**: archived-and-replaced, never edited (records are immutable,
     /// docs/log-and-projection.md). A superseded-while-pending entry is simply dropped — it never reached a
@@ -82,8 +82,8 @@ impl Shared {
         }
     }
 
-    /// Dismiss a pending notification out-of-band (docs/inbox.md — `POST
-    /// /notifications/:id/dismiss`). `false` → no pending notification with that id.
+    /// Dismiss a pending notification out-of-band (docs/inbox.md —
+    /// `DELETE /notifications/:id`). `false` → no pending notification with that id.
     pub(super) fn dismiss_notification(&self, id: u64) -> bool {
         let removed = {
             let mut inbox = self.inbox.lock().unwrap();

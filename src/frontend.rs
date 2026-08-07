@@ -25,10 +25,10 @@ use crate::log::{ConfigChange, ToolCall};
 /// what happens to the child.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Interrupt {
-    /// Kill the process group now (`POST /interrupt`, the Ctrl-C guardrail).
+    /// Kill the process group now (`POST /loop/interrupt`, the Ctrl-C guardrail).
     Kill,
     /// Keep the child running but stop blocking on it: hand it to the background
-    /// supervisor as a `bg#<n>` process (`POST /background`, the
+    /// supervisor as a `p#<n>` process (`PATCH /processes/:id {background: true}`, the
     /// foreground→background handoff, docs/supervisor.md).
     Detach,
 }

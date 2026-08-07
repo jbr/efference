@@ -89,7 +89,7 @@ fn strip_offers_background_only_for_foreground_bash_but_always_an_interrupt() {
     );
 }
 
-/// The non-bash `interrupt` fires the same `POST /interrupt` the bash `kill`
+/// The non-bash `interrupt` fires the same `POST /loop/interrupt` the bash `kill`
 /// does — one endpoint, two labels for the two promises it keeps. Before the
 /// latch this item would have been a button that did nothing: nothing awaits
 /// the abort future during an MCP call, so the notify had nowhere to land.

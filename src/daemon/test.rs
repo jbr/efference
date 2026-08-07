@@ -131,4 +131,5 @@ mod log_reads;
 mod metrics;
 mod notifications;
 mod pace;
+mod processes;
 mod views;

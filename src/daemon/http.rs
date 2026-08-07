@@ -7,19 +7,27 @@ pub(crate) struct TurnBody {
     pub(crate) text: String,
 }
 
-/// Body of `POST /background` (docs/supervisor.md): the optional operator note a
-/// foreground→background handoff delivers as the next user message.
+/// Body of `PATCH /processes/:id` (docs/supervisor.md, docs/control-api.md): the
+/// settable properties of a process resource. `background: true` on the foreground
+/// entry is the foreground→background handoff; `note` is the operator note the
+/// handoff delivers as the next user message — a turn-injection concern riding
+/// beside the property change, never a process attribute.
 #[derive(Deserialize)]
-pub(crate) struct BackgroundBody {
+pub(crate) struct ProcessPatchBody {
+    #[serde(default)]
+    pub(crate) background: Option<bool>,
+    #[serde(default)]
+    pub(crate) muted: Option<bool>,
     #[serde(default)]
     pub(crate) note: Option<String>,
 }
 
-/// Body of `POST /proposals/:seq`: the orchestrator's commit/cancel decision on a pending
-/// proposal, with an optional rationale note (docs/permissions.md).
+/// Body of `PATCH /proposals/:seq`: the orchestrator moves a pending proposal to its
+/// terminal state (`committed` | `cancelled`), with an optional rationale note
+/// (docs/permissions.md).
 #[derive(Deserialize)]
-pub(crate) struct ProposalDecisionBody {
-    pub(crate) decision: String,
+pub(crate) struct ProposalPatchBody {
+    pub(crate) state: String,
     #[serde(default)]
     pub(crate) note: Option<String>,
 }
@@ -39,22 +47,26 @@ pub(crate) struct DecisionBody {
     pub(crate) note: Option<String>,
 }
 
-/// Body of `POST /pace` (docs/control-channel.md): an operator pace change. Both
-/// fields optional so a client can set the speed dial, toggle the hold, or both in one call —
-/// `{"speed_ms":10000}` slows, `{"held":true}` pauses, `{"held":false}` resumes.
+/// Body of `PATCH /loop` (docs/control-channel.md): the operator dials, each
+/// optional so one call can move either or both. `pace` is itself partial —
+/// `{"pace":{"speed_ms":10000}}` slows, `{"pace":{"held":true}}` pauses,
+/// `{"pace":{"held":false}}` resumes; `review_level` is one of `autonomous` /
+/// `spotter_human` / `human_only` (docs/permissions.md).
+#[derive(Deserialize)]
+pub(crate) struct LoopPatchBody {
+    #[serde(default)]
+    pub(crate) pace: Option<PaceBody>,
+    #[serde(default)]
+    pub(crate) review_level: Option<String>,
+}
+
+/// The `pace` half of [`LoopPatchBody`].
 #[derive(Deserialize)]
 pub(crate) struct PaceBody {
     #[serde(default)]
     pub(crate) speed_ms: Option<u64>,
     #[serde(default)]
     pub(crate) held: Option<bool>,
-}
-
-/// Body of `POST /review-level` (docs/permissions.md): the operator sets the
-/// review-level dial to one of `autonomous` / `spotter_human` / `human_only`.
-#[derive(Deserialize)]
-pub(crate) struct ReviewLevelBody {
-    pub(crate) level: String,
 }
 
 #[derive(Deserialize)]
@@ -112,9 +124,9 @@ const EVENTS_HEARTBEAT: Duration = Duration::from_secs(15);
 /// stream stay audibly alive.
 pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
     Router::new()
-        // Enqueue a user turn (also seeds turn 1). 202 — watch /log (and the
-        // future /events) for the response; submission is decoupled from inference.
-        .post("/turn", |mut conn: Conn| async move {
+        // Enqueue a user turn (also seeds turn 1). 202 — watch the stream for the
+        // response; submission is decoupled from inference.
+        .post("/v1/turns", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
@@ -132,11 +144,13 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                         conn.with_status(202).with_body(r#"{"status":"accepted"}"#)
                     }
                 }
-                Err(e) => fail(conn, ErrorCode::BadRequest, format!("bad /turn body: {e}")),
+                Err(e) => fail(conn, ErrorCode::BadRequest, format!("bad /turns body: {e}")),
             }
         })
-        // Resolve a pending approval gate by its tool_use id.
-        .post("/approvals/:call_id", |mut conn: Conn| async move {
+        // Resolve the pending approval gate, addressed by the call awaiting it. A
+        // `PUT` with the id as a real precondition: the decision applies only to
+        // the gate the client is looking at.
+        .put("/v1/approvals/:call_id", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
@@ -190,19 +204,25 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                     conn.with_status(200).with_body(r#"{"status":"resolved"}"#)
                 }
             } else {
-                // Still a 404. `ErrorCode::GateMoved` (409, carrying the current gate as
-                // corrective detail) lands with `PUT /approvals/:call_id`, where the id
-                // becomes a stated precondition rather than an incidental lookup — moving
-                // the status ahead of that would change client behaviour without giving
-                // clients the detail that makes the new status actionable.
-                fail(
+                // The precondition failed: that id is not the pending gate — already
+                // resolved, or the loop moved on. 409 with the *current* gate as
+                // corrective detail (`null` = none pending), so a client re-renders
+                // without a second round-trip. This closes the "approved a gate that
+                // already moved on" race the old ambiguous 404 left open.
+                respond(
                     conn,
-                    ErrorCode::NotFound,
-                    "no pending approval with that id",
+                    ErrorBody::new(
+                        ErrorCode::GateMoved,
+                        "that call is not the pending approval gate",
+                    )
+                    .with_detail(shared.topic_json(Topic::Gate)),
                 )
             }
         })
-        .post("/interrupt", |conn: Conn| async move {
+        // Signal the running tool (docs/control-channel.md). A verb-route on the
+        // loop resource because it *is* a verb — it signals, it doesn't delete
+        // state.
+        .post("/v1/loop/interrupt", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
@@ -210,90 +230,188 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             conn.with_status(200)
                 .with_body(r#"{"status":"interrupted"}"#)
         })
-        // Detach the running foreground tool into the background supervisor
-        // (docs/supervisor.md, the foreground→background handoff) instead of
-        // killing it. Optional body `{"note": "…"}` — delivered as the next user
-        // message alongside the handoff. 202: the request only lands if a
-        // foreground tool is actually mid-run; otherwise it is a no-op.
-        // (Interim verb-route; the RESTful form is
-        // backlog/processes-rest-resource.md.)
-        .post("/background", |mut conn: Conn| async move {
+        // The turn engine's operator dials as one resource (docs/control-channel.md):
+        // `pace`, `review_level`, and the read-only `running` — named exactly as their
+        // state topics, since they are that resource's fields.
+        .get("/v1/loop", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return missing_state(conn);
+            };
+            conn.with_status(200).with_body(shared.loop_json())
+        })
+        // Move the dials — either or both in one call, which the two verb-routes
+        // this replaces could not do. Validated whole before anything is applied,
+        // so a request that is part-bad moves nothing.
+        .patch("/v1/loop", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
             let body = conn.request_body_string().await.unwrap_or_default();
-            let note = if body.trim().is_empty() {
-                None
-            } else {
-                match serde_json::from_str::<BackgroundBody>(&body) {
-                    Ok(b) => b.note,
-                    Err(e) => {
+            let patch = match serde_json::from_str::<LoopPatchBody>(&body) {
+                Ok(p) => p,
+                Err(e) => {
+                    return fail(conn, ErrorCode::BadRequest, format!("bad /loop body: {e}"));
+                }
+            };
+            let level = match patch.review_level.as_deref() {
+                Some(level) => match crate::policy::ReviewLevel::parse(level) {
+                    Some(level) => Some(level),
+                    // An out-of-range value on a well-formed body — `BadRequest`
+                    // rather than `InvalidDecision`, which is reserved for a
+                    // *decision* verb the daemon doesn't implement (errors.rs).
+                    None => {
                         return fail(
                             conn,
                             ErrorCode::BadRequest,
-                            format!("bad /background body: {e}"),
+                            "review_level must be autonomous | spotter_human | human_only",
                         );
                     }
-                }
+                },
+                None => None,
             };
-            shared.request_detach(note);
-            conn.with_status(202)
-                .with_body(r#"{"status":"detach requested"}"#)
+            if let Some(pace) = patch.pace {
+                shared.set_pace(pace.speed_ms.map(Duration::from_millis), pace.held);
+            }
+            if let Some(level) = level {
+                shared.set_review_level(level);
+            }
+            conn.with_status(200).with_body(shared.loop_json())
         })
-        // Set the operator's pace dial / hold overlay (docs/control-channel.md).
-        // Operator-view only — never a log entry, so it can't perturb the wire or the cache.
-        // Returns the resulting pace so the client reflects it without a follow-up `/state`.
-        .post("/pace", |mut conn: Conn| async move {
+        // The process resource (docs/supervisor.md, docs/control-api.md): every
+        // running tool-spawned process — foreground and background share the one
+        // namespace, `:id` is the bare spawn-minted ordinal. The listing is the
+        // same representation the `processes` state topic carries.
+        .get("/v1/processes", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
-            let body = conn.request_body_string().await.unwrap_or_default();
-            match serde_json::from_str::<PaceBody>(&body) {
-                Ok(p) => {
-                    let (speed, held) =
-                        shared.set_pace(p.speed_ms.map(Duration::from_millis), p.held);
-                    conn.with_status(200).with_body(format!(
-                        r#"{{"speed_ms":{},"held":{}}}"#,
-                        speed.as_millis() as u64,
-                        held
-                    ))
-                }
-                Err(e) => fail(conn, ErrorCode::BadRequest, format!("bad /pace body: {e}")),
+            let body =
+                serde_json::to_string(&shared.process_states()).unwrap_or_else(|_| "[]".into());
+            conn.with_status(200).with_body(body)
+        })
+        // One running process's representation.
+        .get("/v1/processes/:id", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return missing_state(conn);
+            };
+            let Some(id) = conn.param("id").and_then(|s| s.parse::<u64>().ok()) else {
+                return fail(conn, ErrorCode::BadRequest, "process id must be an integer");
+            };
+            match shared
+                .running_process(id)
+                .map(|p| serde_json::to_string(&p))
+            {
+                Some(Ok(body)) => conn.with_status(200).with_body(body),
+                _ => fail(conn, ErrorCode::NotFound, "no running process with that id"),
             }
         })
-        // Set the review-level dial (docs/permissions.md): who reviews a
-        // gated call. Runtime-mutable, reported on `GET /state`. Returns the resulting level.
-        .post("/review-level", |mut conn: Conn| async move {
+        // A cursor read of one process's retained output. `?since=<cursor>` resumes
+        // after a previous read; with no cursor it returns everything retained — the
+        // seed a cold-opened client renders before its first `process_output` delta
+        // (docs/control-api.md). Works on exited processes too: the capture outlives
+        // the exit, unlike the listing entry.
+        .get("/v1/processes/:id/output", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
+            let Some(id) = conn.param("id").and_then(|s| s.parse::<u64>().ok()) else {
+                return fail(conn, ErrorCode::BadRequest, "process id must be an integer");
+            };
+            let since = match parse_u64_param(conn.querystring(), "since") {
+                Ok(since) => since,
+                Err(message) => return fail(conn, ErrorCode::BadRequest, message),
+            };
+            match shared.process_output_read(id, since) {
+                Some(read) => {
+                    let body = serde_json::json!({
+                        "id": id,
+                        "output": read.content,
+                        "cursor": read.cursor,
+                        "lost": read.lost,
+                        "running": read.running,
+                    });
+                    conn.with_status(200).with_body(body.to_string())
+                }
+                None => fail(conn, ErrorCode::NotFound, "no process with that id"),
+            }
+        })
+        // Set a process's properties. `{"muted": …}` applies synchronously (the
+        // supervisor's dismiss-a-live-process, and its inverse). `{"background":
+        // true}` on the foreground entry is the foreground→background handoff
+        // (docs/supervisor.md): answered 202, because the flip lands only when the
+        // detach wake reaches the running tool's race — on a process that is
+        // already background it is an idempotent no-op. An optional `note` rides
+        // the handoff as the next user message. `background: false` has no
+        // transition to name.
+        .patch("/v1/processes/:id", |mut conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return missing_state(conn);
+            };
+            let Some(id) = conn.param("id").and_then(|s| s.parse::<u64>().ok()) else {
+                return fail(conn, ErrorCode::BadRequest, "process id must be an integer");
+            };
             let body = conn.request_body_string().await.unwrap_or_default();
-            match serde_json::from_str::<ReviewLevelBody>(&body) {
-                Ok(b) => match crate::policy::ReviewLevel::parse(&b.level) {
-                    Some(level) => {
-                        shared.set_review_level(level);
-                        conn.with_status(200)
-                            .with_body(format!(r#"{{"review_level":"{}"}}"#, level.as_str()))
-                    }
-                    // An out-of-range value on a well-formed body — `BadRequest` rather
-                    // than `InvalidDecision`, which is reserved for a *decision* verb the
-                    // daemon doesn't implement (errors.rs).
-                    None => fail(
+            let patch = match serde_json::from_str::<ProcessPatchBody>(&body) {
+                Ok(p) => p,
+                Err(e) => {
+                    return fail(
                         conn,
                         ErrorCode::BadRequest,
-                        "level must be autonomous | spotter_human | human_only",
-                    ),
-                },
-                Err(e) => fail(
+                        format!("bad /processes body: {e}"),
+                    );
+                }
+            };
+            if patch.background == Some(false) {
+                return fail(
                     conn,
                     ErrorCode::BadRequest,
-                    format!("bad /review-level body: {e}"),
-                ),
+                    "a background process cannot be foregrounded",
+                );
+            }
+            if patch.note.is_some() && patch.background != Some(true) {
+                return fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    "note accompanies a background:true handoff",
+                );
+            }
+            let Some(current) = shared.running_process(id) else {
+                return fail(conn, ErrorCode::NotFound, "no running process with that id");
+            };
+            if let Some(muted) = patch.muted {
+                shared.set_process_muted(id, muted);
+            }
+            // Only a foreground entry has anywhere to move; the id addressing what
+            // to detach is what the blind verb-route this replaced couldn't say.
+            let detach = patch.background == Some(true) && !current.background;
+            if detach {
+                shared.request_detach(patch.note);
+            }
+            let representation = shared
+                .running_process(id)
+                .and_then(|p| serde_json::to_string(&p).ok())
+                .unwrap_or_else(|| "null".into());
+            conn.with_status(if detach { 202 } else { 200 })
+                .with_body(representation)
+        })
+        // Kill a running process: `killpg` its group; the drain task then sees EOF
+        // and fires the exit notification (docs/supervisor.md).
+        .delete("/v1/processes/:id", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return missing_state(conn);
+            };
+            let Some(id) = conn.param("id").and_then(|s| s.parse::<u64>().ok()) else {
+                return fail(conn, ErrorCode::BadRequest, "process id must be an integer");
+            };
+            if shared.kill_process(id) {
+                conn.with_status(200).with_body(r#"{"status":"killed"}"#)
+            } else {
+                fail(conn, ErrorCode::NotFound, "no running process with that id")
             }
         })
         // Enqueue an ambient notification into the inbox (docs/inbox.md). 202 — it waits
-        // for the next triage gate (Slice C); a client watches /state for the inbox.
-        .post("/notify", |mut conn: Conn| async move {
+        // for the next triage gate; a client watches the `notifications` topic.
+        .post("/v1/notifications", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
@@ -306,12 +424,12 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 Err(e) => fail(
                     conn,
                     ErrorCode::BadRequest,
-                    format!("bad /notify body: {e}"),
+                    format!("bad /notifications body: {e}"),
                 ),
             }
         })
         // Dismiss a pending notification out-of-band by its queue-local id (docs/inbox.md).
-        .post("/notifications/:id/dismiss", |conn: Conn| async move {
+        .delete("/v1/notifications/:id", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
@@ -334,7 +452,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
         // List async config-edit proposals awaiting an orchestrator decision
         // (docs/permissions.md). The same array `/state` carries; a
         // dedicated GET lets a client poll just this without the rest of the snapshot.
-        .get("/proposals", |conn: Conn| async move {
+        .get("/v1/proposals", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
@@ -342,12 +460,13 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 serde_json::to_string(&shared.pending_proposals()).unwrap_or_else(|_| "[]".into());
             conn.with_status(200).with_body(body)
         })
-        // Commit or cancel a proposal by its `seq` (the `Proposed` entry's id). Body:
-        // `{"decision":"commit"|"cancel","note":"…"}`. Commit folds the proposed change into
-        // the effective config (and notifies the session for scope/paths); cancel is
-        // audit-only. Either way the proposal leaves the pending queue. The orchestrator-above
-        // legislates here — the session can only *file* a proposal, never resolve its own.
-        .post("/proposals/:seq", |mut conn: Conn| async move {
+        // Move a proposal to its terminal state by its `seq` (the `Proposed` entry's
+        // id). Body: `{"state":"committed"|"cancelled","note":"…"}`. Committing folds
+        // the proposed change into the effective config (and notifies the session for
+        // scope/paths); cancelling is audit-only. Either way the proposal leaves the
+        // pending queue. The orchestrator-above legislates here — the session can only
+        // *file* a proposal, never resolve its own.
+        .patch("/v1/proposals/:seq", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
@@ -359,7 +478,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 );
             };
             let raw = conn.request_body_string().await.unwrap_or_default();
-            let decision = match serde_json::from_str::<ProposalDecisionBody>(&raw) {
+            let decision = match serde_json::from_str::<ProposalPatchBody>(&raw) {
                 Ok(d) => d,
                 Err(e) => {
                     return fail(
@@ -369,22 +488,22 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                     );
                 }
             };
-            let commit = match decision.decision.as_str() {
-                "commit" => true,
-                "cancel" => false,
+            let commit = match decision.state.as_str() {
+                "committed" => true,
+                "cancelled" => false,
                 other => {
                     return fail(
                         conn,
                         ErrorCode::InvalidDecision,
-                        format!("decision must be \"commit\" or \"cancel\", got {other:?}"),
+                        format!("state must be \"committed\" or \"cancelled\", got {other:?}"),
                     );
                 }
             };
             match shared.resolve_proposal_decision(seq, commit, decision.note.unwrap_or_default()) {
                 Ok(true) => conn.with_status(200).with_body(if commit {
-                    r#"{"status":"committed"}"#
+                    r#"{"state":"committed"}"#
                 } else {
-                    r#"{"status":"cancelled"}"#
+                    r#"{"state":"cancelled"}"#
                 }),
                 Ok(false) => fail(
                     conn,
@@ -394,27 +513,38 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 Err(e) => fail(conn, ErrorCode::Internal, format!("append failed: {e}")),
             }
         })
-        .get("/state", |conn: Conn| async move {
+        // The composite current representation — every state topic under its own
+        // name (docs/control-api.md). `?wait=settled` blocks until the daemon
+        // reaches a decision point — a gate is pending, or the loop is idle — then
+        // answers with the same snapshot: the wait-without-acting read that
+        // replaces polling in a wall-clock loop (docs/permissions.md). Returns at
+        // once if already settled.
+        .get("/v1/state", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
-            conn.with_status(200).with_body(shared.state_json())
-        })
-        // Long-poll: block until the daemon reaches a decision point (a gate is pending, or the
-        // loop is idle), then return the `/state` snapshot. Lets a client drive the daemon
-        // synchronously — "act, read state, act" — instead of polling `/state` in a wall-clock
-        // loop (docs/permissions.md). Returns immediately if already settled.
-        .get("/settle", |conn: Conn| async move {
-            let Some(shared) = shared_of(&conn) else {
-                return missing_state(conn);
-            };
-            settle_and_state(&shared, conn).await
+            match parse_param(conn.querystring(), "wait") {
+                Some("settled") => settle_and_state(&shared, conn).await,
+                // An unknown predicate is an error, not an immediate answer: a
+                // client that asked to wait must not be told "now" is what it
+                // waited for.
+                Some(other) => {
+                    let message = format!("unknown wait predicate {other:?}; try wait=settled");
+                    fail(conn, ErrorCode::BadRequest, message)
+                }
+                None if conn.querystring().split('&').any(|kv| kv == "wait") => fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    "wait needs a predicate: wait=settled",
+                ),
+                None => conn.with_status(200).with_body(shared.state_json()),
+            }
         })
         // The durable history as a JSON array. Unbounded by default; `?since=<seq>`
         // resumes forward, `?tail=N` opens cold at the tail, `?before=<seq>&tail=N` pages
         // one window backward (docs/control-api.md). A window may be cut anywhere —
         // references that dangle across the cut resolve through the two routes below.
-        .get("/log", |conn: Conn| async move {
+        .get("/v1/log", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
@@ -425,7 +555,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
         })
         // One entry by `seq` — the general form of reference resolution for a client
         // reading a window rather than the whole log (docs/control-api.md).
-        .get("/log/:seq", |conn: Conn| async move {
+        .get("/v1/log/:seq", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
@@ -440,7 +570,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
         // One tool call by the `call_id` the log, the gate, and `tool_output` frames all
         // already carry. A call is embedded in an `Assistant` entry rather than being one,
         // which is why it needs an address of its own (docs/control-api.md).
-        .get("/tool_calls/:call_id", |conn: Conn| async move {
+        .get("/v1/tool_calls/:call_id", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
@@ -456,7 +586,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
         // reconnecting client resumes with `?since=<last_seq + 1>` — the explicit
         // cursor the SSE crate's bare framing leaves to us.
         .get(
-            "/events",
+            "/v1/events",
             (
                 // The route is a tuple because the `Sse` handler cannot answer with the
                 // typed envelope: its `connect` must return a stream, so rejection
@@ -587,7 +717,7 @@ pub(crate) fn parse_since(query: &str) -> Option<u64> {
 }
 
 /// Whether a request asked to block until settled (`?wait`, `?wait=1`, `?wait=true`) — the
-/// long-poll opt-in on `/turn` and `/approvals` (docs/permissions.md).
+/// long-poll opt-in on the write routes (`/turns`, `/approvals`) (docs/permissions.md).
 pub(crate) fn wants_wait(query: &str) -> bool {
     query
         .split('&')
@@ -595,9 +725,9 @@ pub(crate) fn wants_wait(query: &str) -> bool {
 }
 
 /// Block until the daemon settles (capped by [`SETTLE_TIMEOUT`]), then answer with the `/state`
-/// snapshot — the shared tail of `GET /settle` and the `?wait` paths. The body is exactly `/state`'s,
-/// so a settled response is just a fresh state read; the client inspects `gate` to tell a
-/// gate from idle.
+/// snapshot — the shared tail of `GET /state?wait=settled` and the write routes' `?wait`. The
+/// body is exactly `/state`'s, so a settled response is just a fresh state read; the client
+/// inspects `gate` to tell a gate from idle.
 pub(crate) async fn settle_and_state(shared: &Arc<Shared>, conn: Conn) -> Conn {
     let _ = tokio::time::timeout(SETTLE_TIMEOUT, shared.await_settled()).await;
     conn.with_status(200).with_body(shared.state_json())

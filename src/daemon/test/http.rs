@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// `POST /review-level` over the real router + control client (docs/permissions.md):
+/// `PATCH /loop {review_level}` over the real router + control client (docs/permissions.md):
 /// a valid level is set and echoed on `/state`; an unknown level is rejected (400) and the dial
 /// is left untouched.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -57,4 +57,108 @@ fn config_edit_decision_body_decodes() {
             command: "cargo nextest".into()
         })
     );
+}
+
+/// `PUT /approvals/:call_id` treats the id as a precondition (docs/control-api.md):
+/// addressing anything but the pending gate is 409 `gate_moved`, whose `detail`
+/// carries the *current* gate (`null` = none) so a client re-renders without a
+/// second round-trip. The old ambiguous 404 is gone.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn put_approvals_enforces_the_gate_precondition() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let app = test_server(&shared).await;
+
+    // No gate at all: the precondition fails, and the detail says "none pending".
+    let conn = app
+        .put("/v1/approvals/toolu_x")
+        .with_body(r#"{"decision":"approve"}"#)
+        .await;
+    conn.assert_status(409);
+    let v: Value = serde_json::from_str(conn.body()).unwrap();
+    assert_eq!(v["code"], "gate_moved");
+    assert!(v["detail"].is_null(), "no gate pending: {v}");
+
+    // A gate for toolu_x: addressing a different id is the moved-gate race, and the
+    // body hands back the gate that *is* pending.
+    let _rx = shared.register_pending(&bash_call("cargo test"));
+    let conn = app
+        .put("/v1/approvals/toolu_stale")
+        .with_body(r#"{"decision":"approve"}"#)
+        .await;
+    conn.assert_status(409);
+    let v: Value = serde_json::from_str(conn.body()).unwrap();
+    assert_eq!(
+        v["detail"]["call_id"], "toolu_x",
+        "the current gate rides as corrective detail: {v}"
+    );
+
+    // The precondition holds: the decision applies.
+    let conn = app
+        .put("/v1/approvals/toolu_x")
+        .with_body(r#"{"decision":"approve"}"#)
+        .await;
+    conn.assert_status(200);
+}
+
+/// `GET`/`PATCH /loop` (docs/control-channel.md): one resource for the operator
+/// dials, one call can move both — which the two verb-routes it replaced could not —
+/// and a part-bad request moves nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn loop_resource_moves_both_dials_in_one_call() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let app = test_server(&shared).await;
+
+    let read: Value = serde_json::from_str(app.get("/v1/loop").await.body()).unwrap();
+    assert!(read["pace"]["speed_ms"].is_u64());
+    assert_eq!(read["running"], false);
+
+    let conn = app
+        .patch("/v1/loop")
+        .with_body(r#"{"pace":{"speed_ms":5000,"held":true},"review_level":"human_only"}"#)
+        .await;
+    conn.assert_status(200);
+    let v: Value = serde_json::from_str(conn.body()).unwrap();
+    assert_eq!(v["pace"]["speed_ms"], 5000);
+    assert_eq!(v["pace"]["held"], true);
+    assert_eq!(v["review_level"], "human_only");
+
+    // Validated whole before anything is applied: a bad review_level rejects the
+    // pace change riding beside it.
+    app.patch("/v1/loop")
+        .with_body(r#"{"pace":{"speed_ms":1},"review_level":"wat"}"#)
+        .await
+        .assert_status(400);
+    let read: Value = serde_json::from_str(app.get("/v1/loop").await.body()).unwrap();
+    assert_eq!(read["pace"]["speed_ms"], 5000, "nothing moved on a 400");
+
+    // The resource's fields are its state topics, byte for byte.
+    let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(state["pace"], read["pace"]);
+    assert_eq!(state["review_level"], read["review_level"]);
+    assert_eq!(state["running"], read["running"]);
+}
+
+/// `GET /state?wait=settled` blocks until a decision point — an idle daemon is
+/// already settled, so it answers at once with the snapshot — and the `wait`
+/// grammar rejects a missing or unknown predicate with a 400, never silently
+/// answering "now": a client that asked to wait must not be told the present is
+/// what it waited for. (The predicate's lifecycle itself is pinned in `pace.rs`
+/// at the `Shared` level.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn state_wait_takes_a_predicate() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let app = test_server(&shared).await;
+
+    let conn = app.get("/v1/state?wait=settled").await;
+    conn.assert_status(200);
+    let v: Value = serde_json::from_str(conn.body()).unwrap();
+    assert!(
+        v.get("gate").is_some(),
+        "the settled answer is a /state snapshot"
+    );
+
+    app.get("/v1/state?wait=now").await.assert_status(400);
+    app.get("/v1/state?wait").await.assert_status(400);
+    // And an un-waited read still answers immediately.
+    app.get("/v1/state").await.assert_status(200);
 }

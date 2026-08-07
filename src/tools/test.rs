@@ -33,6 +33,7 @@ async fn routes_a_bash_call_to_the_bash_backend() {
             &call(bash::NAME, json!({"command": "echo routed"})),
             pending(),
             |_| {},
+            |_| {},
         )
         .await,
     );
@@ -49,8 +50,13 @@ async fn unknown_tool_is_an_error_result_not_a_panic() {
     let box_ = Toolbox::bash_only();
     // An already-resolved abort proves the unknown path never touches it.
     let result = done(
-        box_.run(&call("nope", json!({})), ready(Interrupt::Kill), |_| {})
-            .await,
+        box_.run(
+            &call("nope", json!({})),
+            ready(Interrupt::Kill),
+            |_| {},
+            |_| {},
+        )
+        .await,
     );
     assert!(result.is_error);
     assert!(

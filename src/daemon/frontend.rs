@@ -16,7 +16,7 @@ impl Frontend for RemoteFrontend {
     async fn read_user_turn(&mut self) -> Option<String> {
         // Mark the loop parked so `/settle` reports idle while we wait (and wake any waiter).
         self.shared.parking();
-        // Blocks until a `POST /turn` arrives. `None` (all senders dropped) only
+        // Blocks until a `POST /turns` arrives. `None` (all senders dropped) only
         // happens once the daemon is tearing down, which ends the loop cleanly.
         let turn = self.turns.recv().await;
         if turn.is_some() {
@@ -51,8 +51,8 @@ impl Frontend for RemoteFrontend {
     }
 
     async fn interrupted(&mut self) -> Interrupt {
-        // Race the two operator intents over the running tool: `POST /interrupt`
-        // kills, `POST /background` detaches into the supervisor (docs/supervisor.md).
+        // Race the two operator intents over the running tool: `POST /loop/interrupt`
+        // kills, `PATCH /processes/:id {background: true}` detaches into the supervisor (docs/supervisor.md).
         tokio::select! {
             _ = self.shared.interrupt.notified() => Interrupt::Kill,
             _ = self.shared.detach.notified() => Interrupt::Detach,

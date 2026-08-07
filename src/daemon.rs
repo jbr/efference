@@ -80,12 +80,12 @@ pub enum StreamDelta {
     ToolCallInput { fragment: String },
     /// A chunk of a running tool's combined output, tagged by its `tool_use` id.
     ToolOutput { call_id: String, chunk: String },
-    /// A chunk of a running background process's output, tagged by its `bg#<n>`
-    /// handle (docs/supervisor.md, TUI-bg-2). Demuxed by handle exactly like
-    /// [`ToolOutput`](Self::ToolOutput) is by `call_id` — it smooths the live process
-    /// panel's tail between the ~400ms `/state` polls. The poll snapshot stays the
-    /// authoritative tail; these just fill the gaps.
-    BgOutput { handle: String, chunk: String },
+    /// A chunk of a running background process's output, tagged by the process's
+    /// spawn-minted id (docs/supervisor.md; rendered `p#<n>` in prose, bare here —
+    /// docs/supervisor.md). Demuxed by id exactly like
+    /// [`ToolOutput`](Self::ToolOutput) is by `call_id`. Lossy: a cold-opened client
+    /// seeds its tail from the process resource and layers these on top.
+    ProcessOutput { id: u64, chunk: String },
 }
 
 /// Daemon state shared between the loop task and the HTTP handlers. Held as
@@ -105,21 +105,21 @@ pub struct Shared {
     /// The single pending approval, surfaced by `GET /state` (the loop is
     /// sequential — one gate at a time, docs/README.md).
     pending: Mutex<Option<Pending>>,
-    /// Fired by `POST /interrupt`; the future `interrupted()` races a running tool.
+    /// Fired by `POST /loop/interrupt`; the future `interrupted()` races a running tool.
     interrupt: Notify,
-    /// The **latched** half of `POST /interrupt` (docs/control-channel.md). `Notify::notify_waiters`
+    /// The **latched** half of `POST /loop/interrupt` (docs/control-channel.md). `Notify::notify_waiters`
     /// wakes only a *currently registered* waiter and stores no permit, so during a call no backend
     /// awaits the abort future — every non-bash tool (`src/tools.rs`) — the wakeup has nowhere to
     /// land and is dropped. This flag is what survives it: the loop reads it at the junctures
     /// either side of a call and stops there, so the interrupt lands on tools it cannot suspend.
     /// Latching also closes the window between a bash spawn and the abort future's first poll.
     interrupt_latch: AtomicBool,
-    /// Fired by `POST /background` — the detach half of the interrupt intent
+    /// Fired by `PATCH /processes/:id {background: true}` — the detach half of the interrupt intent
     /// (docs/supervisor.md, the foreground→background handoff). Like `interrupt`,
     /// `notify_waiters` reaches only a *currently-awaited* race, so a detach
     /// request with no foreground tool running is lost harmlessly.
     detach: Notify,
-    /// The operator note optionally attached to a `POST /background`
+    /// The operator note optionally attached to a `PATCH /processes/:id {background: true}`
     /// (docs/supervisor.md): stashed by the handler, consumed by the loop only
     /// when a detach actually lands, and cleared when a fresh foreground bash
     /// starts so a request that never found a running tool can't mislabel a
@@ -132,7 +132,7 @@ pub struct Shared {
     /// ([`Shared::is_settled`], docs/permissions.md). The loop owns it:
     /// set true when it dequeues a turn, false when it parks.
     running: AtomicBool,
-    /// Turns submitted (`POST /turn`) but not yet dequeued by the loop — the submit→dequeue
+    /// Turns submitted (`POST /turns`) but not yet dequeued by the loop — the submit→dequeue
     /// handoff counter that closes the cross-task race in [`Shared::is_settled`] (a turn exists
     /// even in the instant before the loop marks itself `running`).
     queued: AtomicUsize,
@@ -241,7 +241,7 @@ pub struct Shared {
     /// the wire — like `effective`, behind a lock because the loop mutates it mid-session.
     probes: Mutex<crate::policy::ProbeLedger>,
     /// The operator's **review level** (docs/permissions.md), stored as an
-    /// `AtomicU8` ordinal so it is lock-free and **runtime-mutable** (the `POST /review-level` verb,
+    /// `AtomicU8` ordinal so it is lock-free and **runtime-mutable** (the `PATCH /loop {review_level}` verb,
     /// not just a boot flag). The loop's cascade reads it ([`Shared::review_level`]) to decide who
     /// reviews a gated call: `Autonomous` redirects the model instead of blocking on an absent
     /// human; `SpotterHuman` runs the spotter then the human gate; `HumanOnly` skips the spotter
@@ -326,6 +326,18 @@ impl Shared {
         // Fold the probe ledger from a resumed log (no-op for a fresh one), then maintain it
         // incrementally as the loop assesses moves (docs/permissions.md).
         let probes = crate::policy::probe_ledger(log.entries());
+        // Seed the process-id mint past every `p#<n>` a resumed log mentions, so a restarted
+        // daemon never re-mints an ordinal the durable record already refers to
+        // (docs/supervisor.md). Scanned over the serialized entry because
+        // handles land in prose (tool results, notification sources), not in a typed field.
+        let minted = log
+            .entries()
+            .iter()
+            .map(|e| {
+                serde_json::to_string(e).map_or(0, |s| crate::supervisor::max_handle_mention(&s))
+            })
+            .max()
+            .unwrap_or(0);
         // Open the file the role resolved from, if any. Boot has already loaded and validated it,
         // so this parses; a failure here is reported and leaves the session file-less (edits stay
         // in the log fold) rather than aborting a session over a race with an external writer.
@@ -368,7 +380,7 @@ impl Shared {
             inbox: Mutex::new(Inbox::default()),
 
             proposals: Mutex::new(Vec::new()),
-            supervisor: Mutex::new(Supervisor::new()),
+            supervisor: Mutex::new(Supervisor::with_minted(minted)),
             role,
             effective: Mutex::new(effective),
             config_file: Mutex::new(config_file),
@@ -575,7 +587,7 @@ pub(crate) use watch::refresh_and_emit;
 
 use approvals::Pending;
 use config_edits::{PendingProposal, session_visible_notice};
-use errors::{ErrorCode, fail};
+use errors::{ErrorBody, ErrorCode, fail, respond};
 use frames::{Frame, Topic};
 pub use metrics::RequestOrigin;
 use metrics::{CostCell, Metrics};

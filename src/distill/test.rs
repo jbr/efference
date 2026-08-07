@@ -114,7 +114,7 @@ fn parse_dispositions_reads_triage_inbox_and_background() {
         TRIAGE,
         json!({
             "inbox": { "pin": [5], "dismiss": [6] },
-            "background": { "pin": ["bg#1"], "mute": ["bg#2"] }
+            "background": { "pin": ["p#1"], "mute": ["p#2"] }
         }),
     );
     let (ibx, bg) = parse_dispositions(&c, TRIAGE).expect("a triage call parses");
@@ -122,8 +122,8 @@ fn parse_dispositions_reads_triage_inbox_and_background() {
     assert_eq!(
         bg,
         vec![
-            ("bg#1".to_string(), BgVerdict::Pin),
-            ("bg#2".to_string(), BgVerdict::Mute)
+            ("p#1".to_string(), BgVerdict::Pin),
+            ("p#2".to_string(), BgVerdict::Mute)
         ]
     );
     // A call by a different name yields nothing.

@@ -85,8 +85,8 @@ fn every_output_delta_maps_to_a_kind_and_no_cursor() {
             call_id: "c".into(),
             chunk: "o".into(),
         },
-        StreamDelta::BgOutput {
-            handle: "bg#1".into(),
+        StreamDelta::ProcessOutput {
+            id: 1,
             chunk: "o".into(),
         },
     ];
@@ -107,7 +107,7 @@ fn every_output_delta_maps_to_a_kind_and_no_cursor() {
             "tool_call_start",
             "tool_call_input",
             "tool_output",
-            "bg_output",
+            "process_output",
         ]
     );
 }

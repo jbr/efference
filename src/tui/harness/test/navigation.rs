@@ -322,7 +322,7 @@ fn graduated_esc_is_state_driven_return_pause_interrupt() {
 
 /// The foreground→background handoff, now the strip's `background` item and its
 /// scoped mnemonic (docs/tui.md, docs/supervisor.md): `b` fires the detach
-/// (`POST /background`) exactly where the item is shown, and matches nothing
+/// (`PATCH /processes/:id {background: true}`) exactly where the item is shown, and matches nothing
 /// anywhere else. The handoff only exists for a foreground `bash` child, so the
 /// item's presence — and therefore the mnemonic's — tracks the in-flight tool,
 /// not merely "something is running."

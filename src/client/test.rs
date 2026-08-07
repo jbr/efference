@@ -21,13 +21,13 @@ fn rec_of(conn: &Conn) -> Recorder {
 
 fn stub_router() -> Router {
     Router::new()
-        .post("/turn", |mut conn: Conn| async move {
+        .post("/v1/turns", |mut conn: Conn| async move {
             let rec = rec_of(&conn);
             let body = conn.request_body_string().await.unwrap_or_default();
             rec.turns.lock().unwrap().push(body);
             conn.with_status(202).with_body(r#"{"status":"accepted"}"#)
         })
-        .post("/approvals/:call_id", |mut conn: Conn| async move {
+        .put("/v1/approvals/:call_id", |mut conn: Conn| async move {
             let rec = rec_of(&conn);
             let id = conn.param("call_id").unwrap_or_default().to_string();
             // Stand in for "no such gate" so the client's non-2xx path is tested.
@@ -40,16 +40,16 @@ fn stub_router() -> Router {
             rec.approvals.lock().unwrap().push((id, body));
             conn.with_status(200).with_body(r#"{"status":"resolved"}"#)
         })
-        .post("/interrupt", |conn: Conn| async move {
+        .post("/v1/loop/interrupt", |conn: Conn| async move {
             *rec_of(&conn).interrupts.lock().unwrap() += 1;
             conn.with_status(200)
                 .with_body(r#"{"status":"interrupted"}"#)
         })
-        .get("/state", |conn: Conn| async move {
+        .get("/v1/state", |conn: Conn| async move {
             conn.with_status(200)
                 .with_body(r#"{"last_seq":3,"gate":null}"#)
         })
-        .get("/log", |conn: Conn| async move {
+        .get("/v1/log", |conn: Conn| async move {
             // Echo the querystring so the test can assert `since` made the trip.
             let q = conn.querystring().to_string();
             conn.with_status(200).with_body(format!(r#"{{"q":"{q}"}}"#))

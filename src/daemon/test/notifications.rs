@@ -72,8 +72,8 @@ async fn inbox_wake_fires_on_pending_not_on_drained() {
         .expect("woke on a freshly-arrived notification");
 }
 
-/// `POST /notify`, slot supersession, `GET /state` exposure, and
-/// `POST /notifications/:id/dismiss` over the real router + control client.
+/// `POST /notifications`, slot supersession, `GET /state` exposure, and
+/// `DELETE /notifications/:id` over the real router + control client.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn notify_supersede_and_dismiss_over_the_router() {
     let log_path = std::env::temp_dir().join("efference-notify-test.jsonl");

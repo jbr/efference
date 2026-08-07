@@ -25,8 +25,16 @@ behind a change, see [`journal/`](journal/).
 - `GET /log` takes bounded windows — `?tail=N` (exactly N, cut anywhere) to open cold at the tail, `?before=<seq>&tail=N` to page backward; `since` with `tail` is a `400`.
 - `GET /log/:seq` and `GET /tool_calls/:call_id` resolve references that dangle outside a window, both `Cache-Control: immutable`.
 - Every non-2xx response carries a typed envelope (`{code, message, detail?}`), with one canonical status per code.
-- The `processes` state topic carries structure only — handle, command, absolute spawn stamp — so it changes on spawn/exit/mute rather than on every output chunk; tails ride `bg_output` deltas.
-- `GET /state` is composed from one function per state topic and its keys are named for those topics, so the snapshot and the coming level-triggered `state` frames cannot drift.
+- The `processes` state topic carries structure only — id, command, pid, absolute spawn stamp, background/muted flags — so it changes on spawn/exit/mute/handoff rather than on every output chunk; tails ride `process_output` deltas.
+- Processes are identified by a spawn-minted ordinal that survives property changes — rendered `p#<n>` in prose, bare in machine-facing fields (replacing `bg#<n>`) — with the OS pid carried as an attribute and the mint counter seeded past a resumed log's mentions.
+- Every route is served under a `/v1` prefix.
+- Processes are a REST resource: `GET /processes` (+ `/:id`, `/:id/output?since=` cursor reads), `PATCH /processes/:id` (`muted`, and `background: true` as the foreground→background handoff with an optional note — replacing `POST /background`), `DELETE /processes/:id` (kill).
+- The foreground bash command is registered in the process namespace at spawn — listed with `background: false`, its output readable at `/processes/:id/output` mid-run — so the handoff is a property flip that keeps the id and the capture.
+- The write routes are resources: `POST /turns`, `POST /notifications` + `DELETE /notifications/:id`, `PATCH /proposals/:seq {state}`, and `GET`/`PATCH /loop` absorbing the pace and review-level verbs (one call can move both dials), with `POST /loop/interrupt` the loop's one remaining verb.
+- `PUT /approvals/:call_id` treats the id as a precondition: addressing a gate that moved is `409 gate_moved` with the current gate in `detail`, replacing the ambiguous 404.
+- `GET /state?wait=settled` absorbs `GET /settle`; a `wait` without a known predicate is a `400`.
+- The TUI seeds each process tail from `GET /processes/:id/output` on first sight, so a cold-opened panel shows output that predates its connection.
+- `GET /state` is composed from one function per state topic and its keys are named for those topics, so the snapshot and the level-triggered `state` frames cannot drift.
 - The TUI composer supports grapheme-safe text selection, mouse selection, and plain-text copy, cut, and paste with a process-local clipboard fallback.
 - Provider identity is declared (`EFFERENCE_PROVIDER=anthropic|openrouter`, default `anthropic`) and the endpoint URL + auth shape derived from it; the `EFFERENCE_ENDPOINT`/`EFFERENCE_AUTH_*` knobs are retired (setting one is an error naming the replacement).
 - `serve` fetches the model's capabilities (context window, max output tokens) from the provider's metadata endpoint at boot; a failed lookup aborts startup.

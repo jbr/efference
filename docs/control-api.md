@@ -6,9 +6,13 @@
 > `Frontend` boundary, see [control-channel.md](control-channel.md); for the
 > streaming/transport internals see [transport.md](transport.md).
 >
-> **Status:** unversioned and unstable. There is no `/vN` prefix and no
-> compatibility promise yet. This documents what the daemon serves *today* so we
-> can critique and harden it before more clients commit to it.
+> **Status:** versioned, still pre-stability. Every route is served under the
+> **`/v1`** prefix (`POST /v1/turns`); the paths in this document omit it. No
+> compatibility promise yet — this documents what the daemon serves *today* so
+> we can critique and harden it before more clients commit to it. A client
+> should treat its control endpoint as an opaque base URL it joins paths onto:
+> session identity may later arrive as connection/header context or an additive
+> path prefix in front of these routes, never as a rename of them.
 
 ## Transport & addressing
 
@@ -62,7 +66,7 @@ it.
 
 ### Writes
 
-#### `POST /turn`
+#### `POST /turns`
 Enqueue a user turn. Also seeds turn 1 on an idle daemon. Submission is
 decoupled from inference.
 
@@ -72,9 +76,10 @@ decoupled from inference.
   gate or completes), then return the `/state` snapshot (`200`) instead of `202`.
 - `400 bad_request` — unparseable body
 
-#### `POST /approvals/:call_id`
-Resolve a pending approval gate, addressed by the tool call's `tool_use` id
-(`call_id`).
+#### `PUT /approvals/:call_id`
+Resolve the pending approval gate, addressed by the tool call's `tool_use` id
+(`call_id`). The id is a **precondition**, not a lookup: the decision applies
+only if that call is still the pending gate.
 
 - Body: `{ "decision": "approve" | "abort" | "redirect" | "config_edit", … }`
   - `approve` — run the call.
@@ -86,31 +91,35 @@ Resolve a pending approval gate, addressed by the tool call's `tool_use` id
     the new policy. A failed write fails the grant.
 - `200 {"status":"resolved"}`
 - `?wait` — hold until the turn's *next* gate or completion, then return `/state`.
-- `404 not_found` — no pending approval with that id
+- `409 gate_moved` — that id is not the pending gate (already resolved, or the
+  loop moved on). `detail` carries the **current** gate (`null` = none pending),
+  so the client re-renders without a second round-trip. This closes the
+  "approved a gate that already moved on" race.
 - `400 bad_request` — bad body, or `config_edit` without a `change`
 - `400 invalid_decision` — a decision verb this daemon doesn't implement
 
-#### `POST /interrupt`
-Fire the interrupt notifier (the SIGINT equivalent; kills a running tool's
-process group). No body.
+#### `GET /loop` · `PATCH /loop`
+The turn engine's operator dials as one resource. Its fields are named for —
+and are byte-identical to — their state topics: `pace` (`{speed_ms, held}`),
+`review_level`, and the read-only `running`.
+
+- `GET` → `200 { "pace": { "speed_ms": 15000, "held": false }, "review_level": "spotter_human", "running": true }`
+- `PATCH` body: `{ "pace"?: { "speed_ms"?: <u64>, "held"?: <bool> }, "review_level"?: "<level>" }` —
+  each field optional, so one call can move either dial or both (the two
+  verb-routes this replaced could not). Validated whole before anything is
+  applied: a part-bad request moves nothing.
+- `PATCH` → `200` with the full resource representation.
+- `400 bad_request` — bad body, or a `review_level` outside
+  `autonomous | spotter_human | human_only`.
+
+#### `POST /loop/interrupt`
+Signal the running tool (the SIGINT equivalent; kills its process group). A
+verb-route on the loop resource because it *is* a verb — it signals, it doesn't
+delete state. No body.
 
 - `200 {"status":"interrupted"}`
 
-#### `POST /background`
-Detach the running foreground tool into the background supervisor — the
-foreground→background handoff ([supervisor.md](supervisor.md)). The command
-keeps running as a `bg#<n>` process; the model's `tool_use` is paired with a
-non-error handoff result. A no-op when nothing is mid-tool (the wake reaches
-only a currently-running tool's race; a stale note is dropped when the next
-foreground bash starts). Interim verb-route; the RESTful form is
-`backlog/processes-rest-resource.md`.
-
-- Body (optional): `{ "note"?: "<string>" }` — delivered to the model as a user
-  message immediately after the handoff result. Blank/absent → silent handoff.
-- `202 {"status":"detach requested"}`
-- `400 bad_request` — unparseable body
-
-#### `POST /notify`
+#### `POST /notifications`
 Enqueue an ambient notification into the inbox.
 
 - Body: `{ "source": "<string>", "body": "<string>", "slot"?: "<string>", "replaces"?: <u64> }`
@@ -120,22 +129,86 @@ Enqueue an ambient notification into the inbox.
 - `202 {"id": <u64>}` — the new notification's **queue-local** id.
 - `400 bad_request` — unparseable body
 
-#### `POST /notifications/:id/dismiss`
+#### `DELETE /notifications/:id`
 Remove a pending notification (by its queue-local id) before it reaches a gate.
 
 - `200 {"status":"dismissed"}` · `404 not_found` (no such pending id) · `400 bad_request` (id not an integer)
 
-#### `POST /proposals/:seq`
-Commit or cancel a pending config-edit proposal, addressed by the `seq` of its
-`Proposed` log entry. The orchestrator-above decides; a session can only *file* a
-proposal, never resolve its own.
+#### `PATCH /proposals/:seq`
+Move a pending config-edit proposal to its terminal state, addressed by the
+`seq` of its `Proposed` log entry. The orchestrator-above decides; a session can
+only *file* a proposal, never resolve its own.
 
-- Body: `{ "decision": "commit" | "cancel", "note"?: "<string>" }`
-  - `commit` folds the proposed change into the effective config (and notifies
-    the session for `scope`/`paths` changes); `cancel` is audit-only.
-- `200 {"status":"committed"}` / `{"status":"cancelled"}`
+- Body: `{ "state": "committed" | "cancelled", "note"?: "<string>" }`
+  - `committed` folds the proposed change into the effective config (and
+    notifies the session for `scope`/`paths` changes); `cancelled` is audit-only.
+- `200 {"state":"committed"}` / `{"state":"cancelled"}`
 - `404 not_found` (no pending proposal with that `seq`) · `400 bad_request` (bad body) ·
-  `400 invalid_decision` (neither commit nor cancel) · `500 internal` (append failed)
+  `400 invalid_decision` (a `state` that is neither) · `500 internal` (append failed)
+
+### The processes resource
+
+Every running tool-spawned process — **foreground and background share one
+namespace** ([supervisor.md](supervisor.md)): the foreground bash command is
+registered and listed from the moment it spawns, and backgrounding is a
+*property change* on it, not the appearance of a new resource. `:id` is the
+bare spawn-minted ordinal (`GET /processes/3/output`); the `p#<n>` rendering is
+prose-only and never appears in a path (`#` is the URL fragment delimiter — an
+unencoded one silently truncates the request).
+
+#### `GET /processes`
+The running processes, as a JSON array of the same representation the
+`processes` state topic carries — flagged, not filtered:
+
+```jsonc
+[ { "id": 1,                     // spawn-minted ordinal; rendered "p#1" in prose
+    "command": "cargo watch -x test",
+    "pid": 4242,                 // OS pid — an attribute for direct interaction, never the identifier
+    "spawned_at": 1754300000000, // absolute Unix millis; clients compute elapsed
+    "background": true,          // false = the loop's in-flight foreground tool
+    "muted": false } ]           // dismissed-from-view; still running, still notifies on exit
+```
+
+#### `GET /processes/:id`
+One running process's representation, or `404 not_found` (exited processes
+leave the listing; their retained output stays readable below).
+
+#### `GET /processes/:id/output`
+A cursor read of the process's retained output. With no cursor it returns
+everything retained — **the seed a cold-opened client renders before its first
+`process_output` delta** (the `output` class is lossy with no replay, so
+without this read a client connecting mid-run shows an empty tail until the
+next chunk). Works on exited processes: the capture outlives the exit.
+
+- `?since=<cursor>` — resume after a previous read.
+- `200 { "id": 3, "output": "…", "cursor": 5324, "lost": 0, "running": true }` —
+  `cursor` is the value to pass next time; `lost` counts bytes between the
+  caller's cursor and the earliest retained byte (dropped at the bounded cap —
+  reported, never silently skipped).
+- `404 not_found` — no process with that id was ever registered this session.
+
+#### `PATCH /processes/:id`
+Set a process's properties.
+
+- Body: `{ "background"?: <bool>, "muted"?: <bool>, "note"?: "<string>" }`
+- `{"muted": true}` / `{"muted": false}` — dismiss the running tail from view /
+  undo that; applies synchronously, `200` with the representation.
+- `{"background": true}` on the **foreground** entry is the
+  foreground→background handoff ([supervisor.md](supervisor.md)): `202` with
+  the representation, because the flip lands only when the detach wake reaches
+  the running tool's race. On an already-background process it is an idempotent
+  `200` no-op. An optional `note` rides the handoff and is delivered to the
+  model as a user message right after the handoff result — a turn-injection
+  concern beside the property change, not a process attribute.
+- `400 bad_request` — `background: false` (no transition to name), or a `note`
+  without `background: true`.
+- `404 not_found` — no running process with that id.
+
+#### `DELETE /processes/:id`
+Kill a running process (SIGKILL to its whole process group). The drain task
+then sees EOF and fires the exit notification like any other exit.
+
+- `200 {"status":"killed"}` · `404 not_found` (no running process with that id)
 
 ### Reads (one-shot)
 
@@ -143,6 +216,15 @@ proposal, never resolve its own.
 The ephemeral control snapshot: the composite "current representation" the
 stream pushes per-topic replacements of. A one-shot read for scripts and
 bootstraps; a client holding the stream needs never request it.
+
+**`?wait=settled`** turns the read into a long-poll: block until the daemon
+reaches a **decision point** (a gate is pending, or the loop is idle with
+nothing queued), then return the snapshot. Returns immediately if already
+settled; capped server-side at **300 s** (on timeout it returns current state
+and the client re-polls). The same predicate backs the `?wait` flags on
+`/turns` and `/approvals`. A `wait` with a missing or unknown predicate is a
+`400`, never answered immediately — a client that asked to wait must not be
+told the present is what it waited for.
 
 Its keys are `last_seq` plus **exactly one field per state topic**, each named by the
 topic. That is structural, not incidental: the same per-topic functions build this
@@ -169,9 +251,13 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
   },
   "notifications": [ { "id": 3, "source": "…", "body": "…", "slot": "…" } ],
   "proposals": [ { "seq": 17, "change": { … } } ],
-  "processes": [                   // live background processes: STRUCTURE ONLY
-    { "handle": "bg#1", "command": "cargo watch -x test",
-      "spawned_at": 1754300000000 }  // no tail, no last-chunk: both would re-emit per chunk
+  "processes": [                   // every running tool-spawned process: STRUCTURE ONLY
+    { "id": 1,                     // spawn-minted ordinal; rendered "p#1" in prose
+      "command": "cargo watch -x test",
+      "pid": 4242,                 // OS pid — an attribute for direct interaction, never the identifier
+      "spawned_at": 1754300000000, // no tail, no last-chunk: both would re-emit per chunk
+      "background": true,          // false = the in-flight foreground tool (flagged, not filtered)
+      "muted": false }
   ],
   "usage": {
     "last": { "input_tokens": …, "output_tokens": …,
@@ -189,14 +275,6 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
   }
 }
 ```
-
-#### `GET /settle`
-Long-poll: block until the daemon reaches a **decision point** (a gate is
-pending, or the loop is idle with nothing queued), then return the `/state`
-snapshot. Returns immediately if already settled. Capped server-side at **300 s**
-(on timeout it returns current state; the client re-polls). This is the
-push-shaped alternative to busy-polling `/state`, and the same predicate backs
-the `?wait` flags on `/turn` and `/approvals`.
 
 #### `GET /log`
 JSON array of `LogEntry`. The catch-up read. Unbounded by default — the whole
@@ -357,7 +435,9 @@ the oldest. The committed entry on the `log` class is the authoritative copy.
   A client may display these but must not **parse** them as a complete document: mid-stream they
   are a partial slice.
 - `tool_output` — `{ "call_id": "…", "chunk": "…" }`
-- `bg_output` — `{ "handle": "bg#<n>", "chunk": "…" }`
+- `process_output` — `{ "id": <n>, "chunk": "…" }` — a background process's output,
+  keyed by the bare process id (rendered `p#<n>` in prose, never in machine-facing
+  fields).
 
 The three middle kinds exist so a client can show *which phase* a turn is in. Without them
 only prose reaches the stream, and a turn spent thinking or emitting a large tool input
@@ -385,8 +465,8 @@ publishes nothing at all — indistinguishable from a hung harness.
 |---|---|---|---|
 | `seq` | durable, monotonic per session | the log | `/events` `id`, `/log?since`, proposal addressing |
 | `call_id` | a tool call (the `tool_use` id) | the model | `/approvals/:call_id`, `tool_output` deltas |
-| notification id | **queue-local**, not durable | the inbox | `/notify` response, `/notifications/:id/dismiss` |
-| `bg#<n>` handle | a background process | the supervisor | `bg_output` deltas, process views |
+| notification id | **queue-local**, not durable | the inbox | `/notifications` response, `DELETE /notifications/:id` |
+| process id | a tool-spawned process; survives property changes | the supervisor, minted at spawn | the `/processes/:id` routes, `process_output` deltas, the `processes` topic; rendered `p#<n>` in prose |
 
 ## Error model
 
@@ -395,7 +475,7 @@ Every non-2xx response carries one shape:
 ```jsonc
 {
   "code": "bad_request",              // machine-readable; branch on this
-  "message": "bad /turn body: …",     // human half; free to change
+  "message": "bad /turns body: …",    // human half; free to change
   "detail": { … }                     // optional: corrective state, omitted when there is none
 }
 ```
@@ -407,14 +487,13 @@ returning the same code cannot disagree about the status:
 |---|---|---|
 | `bad_request` | 400 | malformed body, unparseable path parameter, out-of-range value |
 | `invalid_decision` | 400 | a well-formed decision verb the daemon doesn't implement — the client is version-skewed, not buggy |
-| `not_found` | 404 | no such notification id, proposal `seq`, or pending approval |
+| `not_found` | 404 | no such notification id, proposal `seq`, or process id |
+| `gate_moved` | 409 | `PUT /approvals/:call_id` whose id is not the pending gate; `detail` carries the current gate |
 | `internal` | 500 | a log append or config write failed; absent shared state |
 
-One further code is defined and not yet returned: `gate_moved` (409) arrives
-with `PUT /approvals/:call_id`, where `call_id` becomes a stated precondition and
-`detail` carries the current pending gate. A code earns its place when a client
-would *act* differently on it, not when the prose differs. (A
-`cursor_out_of_range` code was once reserved for `?since` beyond the head; it
-left when that case was settled as a wait rather than an error.)
+A code earns its place when a client would *act* differently on it, not when
+the prose differs. (A `cursor_out_of_range` code was once reserved for `?since`
+beyond the head; it left when that case was settled as a wait rather than an
+error.)
 
 The CLI surfaces the status + body verbatim.

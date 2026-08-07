@@ -42,7 +42,7 @@ impl Shared {
         (p.speed, p.held)
     }
 
-    /// Apply an operator pace change (docs/control-channel.md — the `POST /pace` verb):
+    /// Apply an operator pace change (docs/control-channel.md — the `PATCH /loop {pace}` verb):
     /// set the `speed` dial and/or the `held` overlay, each optional. **Releasing** a hold (`held`
     /// true → false) wakes an in-flight juncture sleep so resume is immediate; a pure speed change or a
     /// *hold* does not wake it — those take effect at the next juncture, per the design (a hold lands at
@@ -167,7 +167,7 @@ impl Shared {
         self.interrupt.notify_waiters();
     }
 
-    /// Consume the latched interrupt — `true` exactly once per `POST /interrupt`
+    /// Consume the latched interrupt — `true` exactly once per `POST /loop/interrupt`
     /// (docs/control-channel.md). The loop calls this at both junctures around a
     /// call: before one runs (it doesn't) and where its result lands (the result
     /// is withheld from the wire). Also cleared when a fresh user turn starts, so

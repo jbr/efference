@@ -123,7 +123,7 @@ impl Bash {
                     },
                     "background": {
                         "type": "boolean",
-                        "description": "Run asynchronously: return immediately with a bg#n handle, surface the process's recent output in your inbox at each step, and notify you when it exits. Use for long-running or watch processes (servers, `cargo watch`, test runners) so you can keep working. Omit or false to run to completion and get the output now."
+                        "description": "Run asynchronously: return immediately with a p#n handle, surface the process's recent output in your inbox at each step, and notify you when it exits. Use for long-running or watch processes (servers, `cargo watch`, test runners) so you can keep working. Omit or false to run to completion and get the output now."
                     }
                 },
                 "required": ["command"]
@@ -139,18 +139,23 @@ impl Bash {
     /// which surrenders the live child as [`Outcome::Detached`]; the loop owns
     /// the pairing there too (the handoff result, docs/supervisor.md).
     ///
+    /// `on_spawn` fires once with the child's pid the moment the spawn succeeds —
+    /// the hook the daemon uses to register the foreground process in the
+    /// supervisor's namespace so it is addressable from spawn (docs/supervisor.md).
+    ///
     /// Streams as it runs: instead of buffering with `wait_with_output`, both pipes
-    /// are drained incrementally and each chunk is forwarded to `on_output` (the
-    /// transport-only live sink — the daemon publishes it as `output` frames) while
-    /// the canonical bytes accumulate. Stdout and stderr land in **arrival order**
-    /// (a single interleaved buffer), so progress output written to stderr — cargo,
-    /// say — streams too; this is also more terminal-faithful than the old
-    /// stdout-block-then-stderr-block rendering.
+    /// are drained incrementally and each raw chunk is forwarded to `on_output` (the
+    /// transport-only live sink — the daemon publishes it as `output` frames and
+    /// feeds the supervisor's capture) while the canonical bytes accumulate. Stdout
+    /// and stderr land in **arrival order** (a single interleaved buffer), so
+    /// progress output written to stderr — cargo, say — streams too; this is also
+    /// more terminal-faithful than the old stdout-block-then-stderr-block rendering.
     pub async fn run(
         &self,
         input: &Value,
         abort: impl Future<Output = Interrupt>,
-        mut on_output: impl FnMut(&str),
+        on_spawn: impl FnOnce(Option<u32>),
+        mut on_output: impl FnMut(&[u8]),
     ) -> Outcome {
         let command = match Input::deserialize(input) {
             Ok(input) => input.command,
@@ -177,18 +182,18 @@ impl Bash {
 
         // Grab the pgid before anything consumes the handle; `killpg` needs only it.
         let pgid = child.id();
+        on_spawn(pgid);
         // Take the pipes so we can read them incrementally; both are piped above.
         let mut stdout = child.stdout.take().expect("stdout is piped");
         let mut stderr = child.stderr.take().expect("stderr is piped");
 
-        // Drain both pipes in arrival order — forwarding each chunk live and
+        // Drain both pipes in arrival order — forwarding each raw chunk live and
         // accumulating the canonical bytes — until both close or the user
-        // interrupts. The live view is per-chunk `from_utf8_lossy` (a multi-byte
-        // char split at a read boundary shows a transient replacement char —
-        // cosmetic); the canonical bytes are decoded once, whole, in [`render`].
+        // interrupts. The canonical bytes are decoded once, whole, in [`render`];
+        // per-chunk decoding is the sink's concern.
         let mut combined: Vec<u8> = Vec::new();
         let interrupted = drain_pipes(&mut stdout, &mut stderr, abort, |chunk| {
-            on_output(&String::from_utf8_lossy(chunk));
+            on_output(chunk);
             combined.extend_from_slice(chunk);
         })
         .await;

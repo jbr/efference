@@ -198,9 +198,9 @@ impl Frame {
                 "tool_output",
                 serde_json::json!({ "call_id": call_id, "chunk": chunk }),
             ),
-            StreamDelta::BgOutput { handle, chunk } => (
-                "bg_output",
-                serde_json::json!({ "handle": handle, "chunk": chunk }),
+            StreamDelta::ProcessOutput { id, chunk } => (
+                "process_output",
+                serde_json::json!({ "id": id, "chunk": chunk }),
             ),
         };
         Self {

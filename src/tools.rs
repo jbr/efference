@@ -63,19 +63,24 @@ impl Provider {
 
     /// Run a call this backend handles. `abort` is the loop's interrupt future,
     /// resolving with the operator's intent (kill or detach); backends that
-    /// can't be interrupted ignore it. `on_output` is the live-stream sink
-    /// (docs/README.md) — only the long-running, interruptible bash tool streams;
-    /// the MCP tools are synchronous and resolve whole as [`Outcome::Done`].
+    /// can't be interrupted ignore it. `on_spawn` fires with the child's pid when
+    /// the backend spawns an OS process (only bash does — the daemon registers it
+    /// in the supervisor's process namespace, docs/supervisor.md). `on_output` is
+    /// the live-stream sink (docs/README.md) — only the long-running, interruptible
+    /// bash tool streams; the MCP tools are synchronous and resolve whole as
+    /// [`Outcome::Done`].
     async fn run(
         &self,
         call: &ToolCall,
         abort: impl Future<Output = Interrupt>,
-        on_output: impl FnMut(&str),
+        on_spawn: impl FnOnce(Option<u32>),
+        on_output: impl FnMut(&[u8]),
     ) -> Outcome {
         match self {
-            Provider::Bash(b) => b.run(&call.input, abort, on_output).await,
-            // Synchronous and fast — no await, so these ignore `abort` and stream
-            // nothing; their result lands whole as one committed entry.
+            Provider::Bash(b) => b.run(&call.input, abort, on_spawn, on_output).await,
+            // Synchronous and fast — no await, so these ignore `abort`, spawn no
+            // process, and stream nothing; their result lands whole as one
+            // committed entry.
             Provider::Fs(s) => s.run_call(&call.name, &call.input).into(),
             Provider::SemanticEdit(s) => s.run_call(&call.name, &call.input).into(),
         }
@@ -246,10 +251,11 @@ impl Toolbox {
         &self,
         call: &ToolCall,
         abort: impl Future<Output = Interrupt>,
-        on_output: impl FnMut(&str),
+        on_spawn: impl FnOnce(Option<u32>),
+        on_output: impl FnMut(&[u8]),
     ) -> Outcome {
         match self.providers.iter().find(|p| p.handles(&call.name)) {
-            Some(provider) => provider.run(call, abort, on_output).await,
+            Some(provider) => provider.run(call, abort, on_spawn, on_output).await,
             None => RawResult {
                 content: format!("unknown tool: {}", call.name),
                 is_error: true,

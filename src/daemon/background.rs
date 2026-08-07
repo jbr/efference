@@ -10,7 +10,7 @@ use super::*;
 /// across an await.
 pub(crate) async fn drain_background(
     shared: Arc<Shared>,
-    handle: String,
+    id: u64,
     mut child: tokio::process::Child,
     mut stdout: tokio::process::ChildStdout,
     mut stderr: tokio::process::ChildStderr,
@@ -20,27 +20,29 @@ pub(crate) async fn drain_background(
         &mut stderr,
         std::future::pending::<()>(),
         |chunk| {
-            shared.supervisor.lock().unwrap().push_chunk(&handle, chunk);
-            // Smooth the live process panel between `/state` polls (TUI-bg-2). Lossy
-            // and best-effort — the poll snapshot remains the authoritative tail.
-            shared.publish_delta(StreamDelta::BgOutput {
-                handle: handle.clone(),
+            shared.supervisor.lock().unwrap().push_chunk(id, chunk);
+            // The live process tail on the stream's ephemeral `output` class — lossy
+            // and best-effort; a client seeds itself from the process resource and
+            // layers these on top (docs/control-api.md).
+            shared.publish_delta(StreamDelta::ProcessOutput {
+                id,
                 chunk: String::from_utf8_lossy(chunk).into_owned(),
             });
         },
     )
     .await;
     let status = child.wait().await.ok();
-    let summary = shared.supervisor.lock().unwrap().finish(&handle, status);
+    let summary = shared.supervisor.lock().unwrap().finish(id, status);
     shared.touch_state();
     if let Some((source, body)) = summary {
-        shared.notify(source, body, Some(handle), None);
+        let slot = crate::supervisor::handle(id);
+        shared.notify(source, body, Some(slot), None);
     }
 }
 
 impl Shared {
     /// Spawn a backgrounded bash command into the supervisor (docs/supervisor.md). Returns
-    /// its `bg#<n>` handle immediately; a detached task drains the child's output
+    /// its `p#<n>` handle immediately; a detached task drains the child's output
     /// into the registry (re-surfaced live at each triage gate) and fires an exit
     /// notification when it ends. The child leads a fresh process group, so one
     /// `killpg` reaps it and any grandchildren on teardown.
@@ -61,46 +63,81 @@ impl Shared {
         let pgid = child.id();
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
-        let handle = self.supervisor.lock().unwrap().register(command, pgid);
+        let id = self
+            .supervisor
+            .lock()
+            .unwrap()
+            .register_background(command, pgid);
         self.touch_state();
         tokio::spawn(drain_background(
             Arc::clone(self),
-            handle.clone(),
+            id,
             child,
             stdout,
             stderr,
         ));
-        Ok(handle)
+        Ok(crate::supervisor::handle(id))
     }
 
-    /// Adopt a *detached foreground* command into the supervisor (the
-    /// foreground→background handoff, docs/supervisor.md). Mirrors
-    /// [`spawn_background`](Self::spawn_background) from the registration on —
-    /// same drain task, same exit notification — but the child is already
-    /// running: the capture is seeded with everything the foreground path
-    /// drained before the detach, and the drain resumes from that byte boundary.
-    pub fn adopt_background(self: &Arc<Self>, detached: crate::bash::DetachedBash) -> String {
+    /// Register the loop's freshly-spawned *foreground* command in the process
+    /// namespace (docs/supervisor.md): addressable — and listed on the `processes`
+    /// topic — from spawn, so the handoff is a property change on a resource that
+    /// already exists. Returns the spawn-minted id.
+    pub fn register_foreground(&self, command: String, pgid: Option<u32>) -> u64 {
+        let id = self
+            .supervisor
+            .lock()
+            .unwrap()
+            .register_foreground(command, pgid);
+        self.touch_state();
+        id
+    }
+
+    /// Feed one raw foreground output chunk into the process's capture, so
+    /// `GET /processes/:id/output` can seed a cold-opened client mid-run
+    /// (docs/control-api.md). No state touch: buffer content is not topic state.
+    pub fn push_process_chunk(&self, id: u64, chunk: &[u8]) {
+        self.supervisor.lock().unwrap().push_chunk(id, chunk);
+    }
+
+    /// Drop a completed foreground command from the registry: its canonical output
+    /// is the paired `tool_result` (docs/supervisor.md).
+    pub fn conclude_foreground(&self, id: u64) {
+        self.supervisor.lock().unwrap().remove(id);
+        self.touch_state();
+    }
+
+    /// Adopt a *detached foreground* command into the background (the
+    /// foreground→background handoff, docs/supervisor.md). `id` is the entry the
+    /// loop registered at spawn: the flip keeps the id and the capture — every
+    /// pre-detach byte was already fed live by the foreground chunk sink, so the
+    /// surrendered `seed` is deliberately not re-pushed — and from here the same
+    /// drain task and exit notification as a spawned background process take over,
+    /// resuming from exactly the byte boundary the foreground drain stopped at.
+    pub fn adopt_background(
+        self: &Arc<Self>,
+        detached: crate::bash::DetachedBash,
+        id: u64,
+    ) -> String {
         let crate::bash::DetachedBash {
-            command,
             child,
             stdout,
             stderr,
-            seed,
+            ..
         } = detached;
-        let pgid = child.id();
-        let handle = self.supervisor.lock().unwrap().adopt(command, pgid, &seed);
+        self.supervisor.lock().unwrap().make_background(id);
         self.touch_state();
         tokio::spawn(drain_background(
             Arc::clone(self),
-            handle.clone(),
+            id,
             child,
             stdout,
             stderr,
         ));
-        handle
+        crate::supervisor::handle(id)
     }
 
-    /// `POST /background` (docs/supervisor.md): ask the loop to detach the
+    /// `PATCH /processes/:id {background: true}` (docs/supervisor.md): ask the loop to detach the
     /// running foreground tool into the supervisor, optionally attaching an
     /// operator note the handoff delivers as the next user message. A no-op if
     /// nothing is mid-tool (no waiter → the wake is lost; the note is cleared
@@ -130,16 +167,21 @@ impl Shared {
     }
 
     /// Snapshot a process's current tail for a pin — `(source, body)` ready to wrap
-    /// in a [`Notification`](crate::log::Notification) (docs/supervisor.md).
+    /// in a [`Notification`](crate::log::Notification) (docs/supervisor.md). The
+    /// handle string is the model's vocabulary; an unparseable one answers like an
+    /// unknown process.
     pub fn bg_pin_snapshot(&self, handle: &str) -> Option<(String, String)> {
-        self.supervisor.lock().unwrap().pin_snapshot(handle)
+        let id = crate::supervisor::parse_handle(handle)?;
+        self.supervisor.lock().unwrap().pin_snapshot(id)
     }
 
     /// Mute a process's running tail (`dismiss` for a live process, docs/supervisor.md — it keeps
     /// running and still notifies on exit).
     pub fn mute_bg(&self, handle: &str) {
-        self.supervisor.lock().unwrap().mute(handle);
-        self.touch_state();
+        if let Some(id) = crate::supervisor::parse_handle(handle) {
+            self.supervisor.lock().unwrap().set_muted(id, true);
+            self.touch_state();
+        }
     }
 
     /// The directed `list_processes` view (docs/supervisor.md).
@@ -150,15 +192,44 @@ impl Shared {
     /// Cursor-based read of one process's output (`read_since`, docs/supervisor.md). `None` if the
     /// handle is unknown.
     pub fn bg_read_since(&self, handle: &str, cursor: Option<u64>) -> Option<String> {
-        self.supervisor.lock().unwrap().read_since(handle, cursor)
+        let id = crate::supervisor::parse_handle(handle)?;
+        self.supervisor.lock().unwrap().read_since(id, cursor)
     }
 
-    /// Kill a running background process by handle (docs/supervisor.md — `kill_process`):
-    /// `killpg` its group; the drain task then sees EOF and fires the exit
-    /// notification. `false` if no such running process. The lock is dropped before
-    /// the FFI kill (never held across it).
-    pub fn kill_bg(&self, handle: &str) -> bool {
-        let pgid = self.supervisor.lock().unwrap().pgid_of(handle);
+    /// One *running* process's representation — the `/processes/:id` target check
+    /// (docs/control-api.md).
+    pub fn running_process(&self, id: u64) -> Option<crate::supervisor::ProcessState> {
+        self.supervisor.lock().unwrap().running_state(id)
+    }
+
+    /// One cursor read of a process's retained output, structured — the body of
+    /// `GET /processes/:id/output` (docs/control-api.md). With no cursor it returns
+    /// everything retained: the seed a cold-opened client renders before its first
+    /// `process_output` delta.
+    pub fn process_output_read(
+        &self,
+        id: u64,
+        cursor: Option<u64>,
+    ) -> Option<crate::supervisor::OutputRead> {
+        self.supervisor.lock().unwrap().read_output(id, cursor)
+    }
+
+    /// Set a running process's muted flag (`PATCH /processes/:id {muted}`,
+    /// docs/control-api.md). `false` if no such running process.
+    pub fn set_process_muted(&self, id: u64, muted: bool) -> bool {
+        let set = self.supervisor.lock().unwrap().set_muted(id, muted);
+        if set {
+            self.touch_state();
+        }
+        set
+    }
+
+    /// Kill a running process by id (`DELETE /processes/:id`, and the model's
+    /// `kill_process`): `killpg` its group; the drain task then sees EOF and fires
+    /// the exit notification. `false` if no such running process. The lock is
+    /// dropped before the FFI kill (never held across it).
+    pub fn kill_process(&self, id: u64) -> bool {
+        let pgid = self.supervisor.lock().unwrap().pgid_of(id);
         match pgid {
             Some(pgid) => {
                 crate::bash::kill_group(pgid);
@@ -166,6 +237,12 @@ impl Shared {
             }
             None => false,
         }
+    }
+
+    /// [`kill_process`](Self::kill_process) addressed by the model's `p#<n>`
+    /// vocabulary; an unparseable handle answers like an unknown process.
+    pub fn kill_bg(&self, handle: &str) -> bool {
+        crate::supervisor::parse_handle(handle).is_some_and(|id| self.kill_process(id))
     }
 
     /// `killpg` every still-running background child — daemon teardown (docs/supervisor.md

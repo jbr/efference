@@ -297,9 +297,9 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// Render the live background-process panel (docs/supervisor.md): one row per running
-    /// process — `▶ bg#3  cargo watch · 4m12s · idle 8s │ <last output line>` — the
+    /// process — `▶ p#3  cargo watch · 4m12s · idle 8s │ <last output line>` — the
     /// handle/header in the accent style, the last tail line muted. Fed by the
-    /// `/state` poll; capped at [`PROC_PANEL_MAX`] rows (the rest are still in the
+    /// `processes` topic; capped at [`PROC_PANEL_MAX`] rows (the rest are still in the
     /// list, just not shown — the directed `list()` read of Slice 2 will surface all).
     fn render_processes_panel(&self, buf: &mut ratatui::buffer::Buffer, area: Rect) {
         for (row, p) in (0..area.height).zip(&self.processes) {
@@ -312,7 +312,7 @@ impl<'a> InteractiveState<'a> {
             }
             let header = format!(
                 "▶ {}  {} · {} · idle {} │ ",
-                p.handle,
+                p.handle(),
                 p.command,
                 fmt_secs(p.running_secs),
                 fmt_secs(p.idle_secs)

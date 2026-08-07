@@ -209,7 +209,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             // Acquire the result. A backgrounded bash spawn returns immediately — the child
             // runs on under the supervisor and its output surfaces at later gates
             // (docs/supervisor.md); everything else runs to completion through the toolbox.
-            // `interrupted()` resolves on a `POST /interrupt` — the tool's kill trigger
+            // `interrupted()` resolves on a `POST /loop/interrupt` — the tool's kill trigger
             // (kills the process group). Tool output streams to the control stream's `output` class
             // chunk-by-chunk as it runs (bash; the MCP tools resolve whole), tagged by call id.
             let mut handoff = None;
@@ -244,23 +244,60 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                     // fresh command's (potential) handoff — drop any stale note first.
                     shared.take_detach_note();
                 }
+                // A foreground bash command joins the process namespace the moment it
+                // spawns (docs/supervisor.md): the spawn hook mints its id, and the
+                // chunk sink feeds the supervisor's capture alongside the live stream —
+                // which is what lets `GET /processes/:id/output` seed a cold-opened
+                // client mid-run, and what makes the handoff below a property flip
+                // rather than a re-registration. A `Mutex` (not a `Cell`) so the loop
+                // future stays `Send`.
+                let fg_id = std::sync::Mutex::new(None::<u64>);
+                let command = call
+                    .input
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
                 let outcome = toolbox
-                    .run(call, frontend.interrupted(), |chunk| {
-                        shared.publish_delta(StreamDelta::ToolOutput {
-                            call_id: call.id.0.clone(),
-                            chunk: chunk.to_string(),
-                        });
-                    })
+                    .run(
+                        call,
+                        frontend.interrupted(),
+                        |pgid| {
+                            *fg_id.lock().unwrap() =
+                                Some(shared.register_foreground(command, pgid));
+                        },
+                        |chunk| {
+                            if let Some(id) = *fg_id.lock().unwrap() {
+                                shared.push_process_chunk(id, chunk);
+                            }
+                            shared.publish_delta(StreamDelta::ToolOutput {
+                                call_id: call.id.0.clone(),
+                                chunk: String::from_utf8_lossy(chunk).into_owned(),
+                            });
+                        },
+                    )
                     .await;
                 match outcome {
-                    bash::Outcome::Done(result) => result,
+                    bash::Outcome::Done(result) => {
+                        // The paired `tool_result` is the canonical output now; the
+                        // registry entry has done its job.
+                        if let Some(id) = fg_id.lock().unwrap().take() {
+                            shared.conclude_foreground(id);
+                        }
+                        result
+                    }
                     // The foreground→background handoff (docs/supervisor.md): the operator
-                    // detached the running command, so adopt the live child into the
-                    // supervisor — seeded with everything already streamed — and pair the
+                    // detached the running command, so flip its registry entry to
+                    // background — the capture already spans the whole run — and pair the
                     // `tool_use` with a handoff result (`is_error: false`; unlike Ctrl-C, the
                     // command wasn't lost, it moved).
                     bash::Outcome::Detached(detached) => {
-                        let handle = shared.adopt_background(*detached);
+                        let id = fg_id
+                            .lock()
+                            .unwrap()
+                            .take()
+                            .expect("a detach only reaches a spawned (registered) command");
+                        let handle = shared.adopt_background(*detached, id);
                         handoff = shared.take_detach_note();
                         RawResult {
                             content: format!(

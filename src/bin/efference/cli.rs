@@ -186,7 +186,7 @@ pub(crate) fn session_listing() -> String {
 #[derive(Subcommand)]
 pub(crate) enum Command {
     /// Run the daemon: bind the control socket and drive the agent loop. Waits for
-    /// the first user turn over the socket (`POST /turn`).
+    /// the first user turn over the socket (`POST /turns`).
     Serve {
         /// Model to use for the agent. Defaults to claude-haiku-4-5.
         #[arg(long, default_value = "claude-haiku-4-5")]
@@ -214,7 +214,7 @@ pub(crate) enum Command {
         #[arg(long)]
         keep_scratch: bool,
     },
-    /// Send a user turn to a running daemon (`POST /turn`). Seeds turn 1 on an
+    /// Send a user turn to a running daemon (`POST /turns`). Seeds turn 1 on an
     /// idle daemon. Returns immediately — watch `state`/`log` for the response,
     /// or pass `--wait` to block until the turn reaches a gate or completes.
     Turn {
@@ -244,19 +244,19 @@ pub(crate) enum Command {
         wait: bool,
     },
     /// Block until the daemon reaches a decision point — a gate is pending, or the loop is
-    /// idle — then print its `/state` (`GET /settle`). The wait-without-acting verb.
+    /// idle — then print its `/state` (`GET /state?wait=settled`). The wait-without-acting verb.
     Settle,
-    /// Interrupt a running tool (`POST /interrupt`) — kills its process group.
+    /// Interrupt a running tool (`POST /loop/interrupt`) — kills its process group.
     Interrupt,
     /// Detach the running foreground tool into the background supervisor
-    /// (`POST /background`, docs/supervisor.md) — it keeps running as a `bg#<n>`
+    /// (`PATCH /processes/:id {background: true}`, docs/supervisor.md) — it keeps running as a `p#<n>`
     /// process instead of blocking the turn. No-op if nothing is mid-tool.
     Background {
         /// A note delivered to the model as the next user message alongside the handoff.
         #[arg(long)]
         note: Option<String>,
     },
-    /// Set the operator's pace dial / hold overlay (`POST /pace`,
+    /// Set the operator's pace dial / hold overlay (`PATCH /loop {pace}`,
     /// docs/control-channel.md). Between-turns wall-clock pacing, transparent to the
     /// agent (never logged or sent to the model). Combine `--speed-ms` with `--hold`/`--resume`.
     Pace {
@@ -270,14 +270,14 @@ pub(crate) enum Command {
         #[arg(long)]
         resume: bool,
     },
-    /// Set the review-level dial (`POST /review-level`, docs/permissions.md):
+    /// Set the review-level dial (`PATCH /loop {review_level}`, docs/permissions.md):
     /// who reviews a call the fast-path didn't clear.
     ReviewLevel {
         /// `autonomous` (spotter redirects the model), `spotter_human` (spotter → human gate), or
         /// `human_only` (skip the spotter; every gated call goes straight to the human).
         level: String,
     },
-    /// Post an ambient notification into the daemon's inbox (`POST /notify`, docs/inbox.md).
+    /// Post an ambient notification into the daemon's inbox (`POST /notifications`, docs/inbox.md).
     /// It waits for the next triage gate; watch `state` for the pending inbox.
     Notify {
         /// Where it came from (e.g. "test-watch", "operator", "agent:reviewer").

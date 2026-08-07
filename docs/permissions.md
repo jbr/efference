@@ -384,7 +384,7 @@ invariant can't reach — the file is invalid *and* the restore failed — is re
 ## The review-level dial (`src/agent.rs`, `src/daemon/config_edits.rs`)
 
 **Who reviews a call the fast-path didn't clear** is a runtime dial — a [`ReviewLevel`] ordinal on
-`Shared` (`policy.rs`), set over the control channel (`POST /review-level`, `efference review-level`)
+`Shared` (`policy.rs`), set over the control channel (`PATCH /loop {review_level}`, `efference review-level`)
 and reported on `GET /state`, orthogonal to pace ([operator participation](control-channel.md#operator-participation--the-intervention-points)). Three
 positions of increasing human involvement:
 

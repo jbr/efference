@@ -79,7 +79,7 @@ async fn an_idle_stream_heartbeats_with_comments() {
     .with_base("http://localhost/");
 
     let mut conn = raw
-        .get("/events?include=state:gate")
+        .get("/v1/events?include=state:gate")
         .await
         .expect("open events");
     let mut body = Vec::new();
@@ -108,7 +108,7 @@ async fn an_idle_stream_heartbeats_with_comments() {
 
 /// `?include=output` carries ephemeral deltas published after a client subscribes:
 /// assistant prose (`assistant_delta`), tool output (`tool_output`), and process
-/// output (`bg_output`), each typed by the frame's `kind`, payloaded under the
+/// output (`process_output`), each typed by the frame's `kind`, payloaded under the
 /// envelope's `data`, and crucially **id-less** — they're pre-commit and have no
 /// `seq`, which is the contract that keeps them off the durable resume cursor. The
 /// handler subscribes synchronously while building the response, so a publish after
@@ -132,8 +132,8 @@ async fn the_output_class_carries_ephemeral_deltas() {
         call_id: "toolu_5".into(),
         chunk: "line of output\n".into(),
     });
-    shared.publish_delta(StreamDelta::BgOutput {
-        handle: "bg#1".into(),
+    shared.publish_delta(StreamDelta::ProcessOutput {
+        id: 1,
         chunk: "tick 3\n".into(),
     });
 
@@ -153,12 +153,12 @@ async fn the_output_class_carries_ephemeral_deltas() {
     assert_eq!(v["data"]["call_id"], "toolu_5");
     assert_eq!(v["data"]["chunk"], "line of output\n");
 
-    // Background-process delta: tagged by handle (TUI-bg-2), demuxed like a tool.
+    // Background-process delta: tagged by the bare process id, demuxed like a tool.
     let (id, kind, data) = next_event(&mut stream).await;
     assert_eq!(id, None);
-    assert_eq!(kind.as_deref(), Some("bg_output"));
+    assert_eq!(kind.as_deref(), Some("process_output"));
     let v: Value = serde_json::from_str(&data).unwrap();
-    assert_eq!(v["data"]["handle"], "bg#1");
+    assert_eq!(v["data"]["id"], 1);
     assert_eq!(v["data"]["chunk"], "tick 3\n");
 
     let _ = std::fs::remove_file(&log_path);

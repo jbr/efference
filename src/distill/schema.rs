@@ -41,12 +41,12 @@ pub(super) fn inbox_schema_field() -> Value {
 pub(super) fn background_schema_field() -> Value {
     json!({
         "type": "object",
-        "description": "If a section named \"background\" appears above, triage those live background processes by [bg#n] handle. Unlisted handles keep streaming their tail at the next decision point. Omit when no background section is shown.",
+        "description": "If a section named \"background\" appears above, triage those live background processes by [p#n] handle. Unlisted handles keep streaming their tail at the next decision point. Omit when no background section is shown.",
         "properties": {
             "pin": {
                 "type": "array",
                 "items": { "type": "string" },
-                "description": "Handles whose current tail to capture onto the record now (e.g. \"bg#3\")."
+                "description": "Handles whose current tail to capture onto the record now (e.g. \"p#3\")."
             },
             "mute": {
                 "type": "array",

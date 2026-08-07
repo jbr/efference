@@ -86,10 +86,10 @@ fn bare_allow_grants_the_bash_program() {
 }
 
 #[test]
-fn bg_output_smooths_the_matching_process_tail() {
+fn process_output_smooths_the_matching_process_tail() {
     let (mut s, _arx) = state_with_gate();
     s.processes = vec![BgProc {
-        handle: "bg#1".into(),
+        id: 1,
         command: "cargo watch".into(),
         spawned_at: 0,
         last_chunk_at: None,
@@ -97,26 +97,26 @@ fn bg_output_smooths_the_matching_process_tail() {
         running_secs: 3,
         idle_secs: 0,
     }];
-    // A delta for the live process appends to its tail (between polls).
-    s.handle_event(TuiEvent::BgOutput {
-        handle: "bg#1".into(),
+    // A delta for the live process appends to its tail.
+    s.handle_event(TuiEvent::ProcessOutput {
+        id: 1,
         chunk: "tick 2\n".into(),
     });
     assert_eq!(s.processes[0].tail, "tick 1\ntick 2\n");
     assert!(s.dirty, "panel repaints");
-    // A delta for an unknown handle is ignored (it appears within one poll).
-    s.handle_event(TuiEvent::BgOutput {
-        handle: "bg#9".into(),
+    // A delta for an unknown id is ignored (it appears with the next state change).
+    s.handle_event(TuiEvent::ProcessOutput {
+        id: 9,
         chunk: "nope".into(),
     });
     assert_eq!(s.processes[0].tail, "tick 1\ntick 2\n");
 }
 
 #[test]
-fn bg_output_bounds_the_tail_on_a_char_boundary() {
+fn process_output_bounds_the_tail_on_a_char_boundary() {
     let (mut s, _arx) = state_with_gate();
     s.processes = vec![BgProc {
-        handle: "bg#1".into(),
+        id: 1,
         command: "chatty".into(),
         spawned_at: 0,
         last_chunk_at: None,
@@ -126,10 +126,7 @@ fn bg_output_bounds_the_tail_on_a_char_boundary() {
     }];
     // A multibyte burst past the cap must not panic and must stay valid UTF-8.
     let chunk = "é".repeat(BG_TAIL_CAP); // 2 bytes each → 2× the cap
-    s.handle_event(TuiEvent::BgOutput {
-        handle: "bg#1".into(),
-        chunk,
-    });
+    s.handle_event(TuiEvent::ProcessOutput { id: 1, chunk });
     assert!(s.processes[0].tail.len() <= BG_TAIL_CAP);
     assert!(
         s.processes[0].tail.chars().all(|c| c == 'é'),

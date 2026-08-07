@@ -64,7 +64,7 @@ impl<'a> InteractiveState<'a> {
     /// Handle a composer submission. When a gate is pending, the text resolves it
     /// with the same three-valued semantics as the `attach` REPL — empty approves,
     /// `.abort` aborts, anything else redirects the model. Otherwise it's a normal
-    /// user turn (`POST /turn`).
+    /// user turn (`POST /turns`).
     /// The `ConfigChange` a `.allow` at the gate proposes (docs/permissions.md). An
     /// explicit `spec` is taken as a bash command-prefix to allow; bare `.allow`
     /// derives it from the gated call — the program for a `bash` call, else the tool's

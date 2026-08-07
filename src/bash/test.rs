@@ -14,7 +14,12 @@ fn now() -> Ready<Interrupt> {
 
 /// A sink that discards streamed chunks — the unit tests assert the canonical
 /// result; the live-streaming path is exercised separately.
-fn sink() -> impl FnMut(&str) {
+fn sink() -> impl FnMut(&[u8]) {
+    |_| {}
+}
+
+/// A spawn hook that ignores the pid — the registration path is the daemon's.
+fn no_spawn() -> impl FnOnce(Option<u32>) {
     |_| {}
 }
 
@@ -30,7 +35,12 @@ fn done(outcome: Outcome) -> RawResult {
 async fn runs_command_and_captures_stdout() {
     let result = done(
         Bash::default()
-            .run(&json!({ "command": "echo hello" }), never(), sink())
+            .run(
+                &json!({ "command": "echo hello" }),
+                never(),
+                no_spawn(),
+                sink(),
+            )
             .await,
     );
     assert!(!result.is_error);
@@ -41,7 +51,12 @@ async fn runs_command_and_captures_stdout() {
 async fn captures_stderr_without_marking_error() {
     let result = done(
         Bash::default()
-            .run(&json!({ "command": "echo oops 1>&2" }), never(), sink())
+            .run(
+                &json!({ "command": "echo oops 1>&2" }),
+                never(),
+                no_spawn(),
+                sink(),
+            )
             .await,
     );
     assert!(!result.is_error, "exit 0 even though it wrote to stderr");
@@ -52,7 +67,7 @@ async fn captures_stderr_without_marking_error() {
 async fn nonzero_exit_is_error_and_surfaces_status() {
     let result = done(
         Bash::default()
-            .run(&json!({ "command": "exit 7" }), never(), sink())
+            .run(&json!({ "command": "exit 7" }), never(), no_spawn(), sink())
             .await,
     );
     assert!(result.is_error);
@@ -67,7 +82,7 @@ async fn nonzero_exit_is_error_and_surfaces_status() {
 async fn malformed_input_is_an_error_result_not_a_panic() {
     let result = done(
         Bash::default()
-            .run(&json!({ "not_command": true }), never(), sink())
+            .run(&json!({ "not_command": true }), never(), no_spawn(), sink())
             .await,
     );
     assert!(result.is_error);
@@ -81,7 +96,7 @@ async fn abort_kills_a_running_command_promptly() {
     let start = Instant::now();
     let result = done(
         Bash::default()
-            .run(&json!({ "command": "sleep 30" }), now(), sink())
+            .run(&json!({ "command": "sleep 30" }), now(), no_spawn(), sink())
             .await,
     );
     assert!(result.is_error);
@@ -99,7 +114,8 @@ async fn streams_chunks_to_the_sink() {
         .run(
             &json!({ "command": "echo one; echo two 1>&2; echo three" }),
             never(),
-            |chunk: &str| streamed.push_str(chunk),
+            no_spawn(),
+            |chunk: &[u8]| streamed.push_str(&String::from_utf8_lossy(chunk)),
         )
         .await;
     let result = done(outcome);
@@ -129,8 +145,13 @@ async fn tmpdir_is_overridden_when_set() {
         tmpdir: Some(std::path::PathBuf::from("/scratch/efference-test")),
     };
     let result = done(
-        bash.run(&json!({ "command": "echo $TMPDIR" }), never(), sink())
-            .await,
+        bash.run(
+            &json!({ "command": "echo $TMPDIR" }),
+            never(),
+            no_spawn(),
+            sink(),
+        )
+        .await,
     );
     assert_eq!(result.content.trim(), "/scratch/efference-test");
 }
@@ -150,6 +171,7 @@ async fn detach_surrenders_a_live_child_with_its_output_so_far() {
         .run(
             &json!({ "command": "echo early; sleep 0.6; echo late" }),
             detach,
+            no_spawn(),
             sink(),
         )
         .await;

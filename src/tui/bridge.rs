@@ -15,12 +15,35 @@ pub(super) async fn bridge(client: Client, tx: Sender<TuiEvent>) -> Result<()> {
     // convenience (docs/permissions.md), so the bridge holds the latest value of each
     // and re-merges when any of them moves.
     let mut policy = PolicyTopics::default();
+    // Panel rows whose retained output has been seeded. The `output` class is lossy
+    // with no replay, so a process already running at connect has no deltas to build
+    // a tail from — `GET /processes/:id/output` is the seed (docs/control-api.md).
+    // A row is seeded when it first becomes panel-visible, which also covers a
+    // foreground command flipping to background mid-run.
+    let mut seeded: std::collections::HashSet<u64> = std::collections::HashSet::new();
 
     loop {
         match events.next().await {
             Some(Ok(event)) => {
+                let fresh = unseeded_panel_rows(&event, &mut seeded);
                 if decode_frame(&event, &mut policy, &tx).is_break() {
                     break; // UI thread gone.
+                }
+                // After the topic frame (so the row exists to append onto), fetch each
+                // fresh row's retained output and deliver it as an ordinary tail delta.
+                for id in fresh {
+                    let Ok(body) = client.process_output(id, None).await else {
+                        continue;
+                    };
+                    let chunk = serde_json::from_str::<serde_json::Value>(&body)
+                        .ok()
+                        .and_then(|v| v["output"].as_str().map(str::to_string))
+                        .filter(|chunk| !chunk.is_empty());
+                    if let Some(chunk) = chunk
+                        && tx.send(TuiEvent::ProcessOutput { id, chunk }).is_err()
+                    {
+                        return Ok(()); // UI thread gone.
+                    }
                 }
             }
             // Stream error or end: the durable tail is authoritative, so its
@@ -32,6 +55,32 @@ pub(super) async fn bridge(client: Client, tx: Sender<TuiEvent>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The ids a `processes` topic frame makes newly panel-visible (background,
+/// un-muted) that have not been seeded yet — marking them seeded as it collects.
+/// Any other frame yields nothing.
+fn unseeded_panel_rows(
+    event: &trillium_client::sse::Event,
+    seeded: &mut std::collections::HashSet<u64>,
+) -> Vec<u64> {
+    let Ok(frame) = serde_json::from_str::<serde_json::Value>(event.data()) else {
+        return Vec::new();
+    };
+    if frame["class"] != "state" || frame["kind"] != "processes" {
+        return Vec::new();
+    }
+    frame["data"]
+        .as_array()
+        .map(|procs| {
+            procs
+                .iter()
+                .filter(|p| p["background"] == true && p["muted"] == false)
+                .filter_map(|p| p["id"].as_u64())
+                .filter(|id| seeded.insert(*id))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The latest value of each topic that feeds [`PolicyView`]. `role` starts absent —
@@ -155,10 +204,10 @@ fn decode_delta(
             ),
             _ => None,
         },
-        "bg_output" => match (value["handle"].as_str(), value["chunk"].as_str()) {
-            (Some(handle), Some(chunk)) => Some(
-                tx.send(TuiEvent::BgOutput {
-                    handle: handle.to_string(),
+        "process_output" => match (value["id"].as_u64(), value["chunk"].as_str()) {
+            (Some(id), Some(chunk)) => Some(
+                tx.send(TuiEvent::ProcessOutput {
+                    id,
                     chunk: chunk.to_string(),
                 })
                 .map_err(Box::new),

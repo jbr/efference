@@ -63,7 +63,7 @@ into your working context going forward and `dismiss` the noise; any id you don'
 is left in the inbox and shown again at the next decision point.";
 
 pub(super) const BACKGROUND_INSTRUCTION: &str = " Background processes are listed under \
-\"background\" above, each with a [bg#n] handle and its recent output. In the \
+\"background\" above, each with a [p#n] handle and its recent output. In the \
 `background` field, `pin` the handles whose current output you want captured onto the \
 record now, and `mute` the ones whose tail you no longer need to see (they keep \
 running and still notify you when they exit). Anything you don't list keeps streaming \
@@ -76,7 +76,7 @@ surfaced as a reminder to read it before you rely on memory. Name nothing if non
 
 /// Render the inbox + background sections of a peek view (docs/inbox.md, docs/supervisor.md) — shared by the
 /// tool-result-riding gate and the standalone idle triage. Each item by its `[seq]` /
-/// `[bg#n]` handle, with running-process tails indented.
+/// `[p#n]` handle, with running-process tails indented.
 pub(super) fn append_inbox_and_background(
     view: &mut String,
     inbox: &[ShownNotification],

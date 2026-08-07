@@ -37,10 +37,10 @@ pub(super) enum StripVerb {
     PauseToggle,
     /// Enter the inline pace stepper (the widget class, docs/tui.md).
     PaceWidget,
-    /// Interrupt the loop (`POST /interrupt`) — shown as `kill` where it also
+    /// Interrupt the loop (`POST /loop/interrupt`) — shown as `kill` where it also
     /// kills a process group, `interrupt` everywhere else (docs/tui.md).
     Interrupt,
-    /// Foreground→background handoff (`POST /background`).
+    /// Foreground→background handoff (`PATCH /processes/:id {background: true}`).
     Background,
     /// Approve the pending gate.
     ApproveGate,
@@ -139,7 +139,7 @@ impl InteractiveState<'_> {
             ];
         }
         if self.is_loop_active() {
-            // One verb, two labels. `POST /interrupt` stops the loop at the next
+            // One verb, two labels. `POST /loop/interrupt` stops the loop at the next
             // juncture and withholds the in-flight call's output from the model
             // (docs/control-channel.md) — true in every active state, so the item
             // is always shown. On a foreground bash it *additionally* kills the

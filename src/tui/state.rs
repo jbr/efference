@@ -420,14 +420,14 @@ pub(super) struct InteractiveState<'a> {
     /// The pending tool-approval gate, if any (polled from `GET /state`, M3).
     pub pending_gate: Option<PendingGate>,
     /// Sends an approval decision (`call_id`, decision) to the tokio side, which
-    /// resolves it via `POST /approvals/:call_id`.
+    /// resolves it via `PUT /approvals/:call_id`.
     pub approve_tx: UnboundedSender<(String, Approval)>,
     /// Sends a pace command (`speed_ms`, `held`) to the tokio side, which `POST`s it to
     /// `/pace` (docs/tui.md).
     pub pace_tx: UnboundedSender<PaceCmd>,
     /// Fires the operator's interrupt intent at the in-flight tool: `Kill` →
-    /// `POST /interrupt` (the hard rung of graduated Esc, docs/tui.md), `Detach` →
-    /// `POST /background` (the foreground→background handoff, docs/supervisor.md).
+    /// `POST /loop/interrupt` (the hard rung of graduated Esc, docs/tui.md), `Detach` →
+    /// `PATCH /processes/:id {background: true}` (the foreground→background handoff, docs/supervisor.md).
     /// A no-op if nothing is running.
     pub interrupt_tx: UnboundedSender<Interrupt>,
     /// Whether the loop is executing a turn, polled from `GET /state`'s `running` (docs/tui.md).

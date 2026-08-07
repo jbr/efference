@@ -13,14 +13,14 @@ async fn background_process_drains_and_notifies_on_exit() {
     let handle = shared
         .spawn_background("echo hello; echo world 1>&2".into())
         .expect("spawn");
-    assert_eq!(handle, "bg#1");
+    assert_eq!(handle, "p#1");
 
     // The detached drain task runs on the runtime; poll until the exit
     // notification lands (the command exits near-immediately).
     let mut tries = 0;
     loop {
         let pending = shared.pending_notifications();
-        if let Some(n) = pending.iter().find(|n| n.source == "bg#1") {
+        if let Some(n) = pending.iter().find(|n| n.source == "p#1") {
             assert!(
                 n.body.contains("exited 0"),
                 "exit status in body: {}",
@@ -31,7 +31,7 @@ async fn background_process_drains_and_notifies_on_exit() {
                 "final tail carried: {}",
                 n.body
             );
-            assert_eq!(n.slot.as_deref(), Some("bg#1"), "exit rides the bg slot");
+            assert_eq!(n.slot.as_deref(), Some("p#1"), "exit rides the bg slot");
             break;
         }
         tries += 1;
@@ -47,10 +47,11 @@ async fn background_process_drains_and_notifies_on_exit() {
 }
 
 /// The foreground→background handoff end to end (docs/supervisor.md): a foreground
-/// bash command is detached mid-run, adopted into the supervisor with its
-/// already-streamed bytes as the seed, the continuing drain lands the
-/// post-detach output in the same capture, and the exit notifies on the
-/// `bg#` slot like any spawned background process.
+/// bash command is registered at spawn and its chunks fed to the capture (the loop's
+/// wiring, mirrored here), it is detached mid-run and flipped to background under
+/// the same id, the continuing drain lands the post-detach output in the same
+/// capture, and the exit notifies on the `p#` slot like any spawned background
+/// process.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn adopt_background_continues_the_drain_and_notifies_on_exit() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
@@ -58,30 +59,44 @@ async fn adopt_background_continues_the_drain_and_notifies_on_exit() {
         tokio::time::sleep(Duration::from_millis(300)).await;
         Interrupt::Detach
     };
+    let fg_id = std::sync::Mutex::new(None::<u64>);
     let outcome = crate::bash::Bash::default()
         .run(
             &serde_json::json!({ "command": "echo early; sleep 0.6; echo late" }),
             detach,
-            |_| {},
+            |pgid| {
+                *fg_id.lock().unwrap() = Some(
+                    shared.register_foreground("echo early; sleep 0.6; echo late".into(), pgid),
+                );
+            },
+            |chunk| {
+                if let Some(id) = *fg_id.lock().unwrap() {
+                    shared.push_process_chunk(id, chunk);
+                }
+            },
         )
         .await;
     let detached = match outcome {
         crate::bash::Outcome::Detached(d) => d,
         crate::bash::Outcome::Done(r) => panic!("expected a detach, got {:?}", r.content),
     };
-    let handle = shared.adopt_background(*detached);
-    assert_eq!(handle, "bg#1");
+    let id = fg_id.lock().unwrap().take().expect("registered at spawn");
+    let handle = shared.adopt_background(*detached, id);
+    assert_eq!(handle, "p#1");
 
-    // The seeded capture is readable immediately, before any new output.
+    // The live-fed capture is readable immediately, before any new output.
     let read = shared.bg_read_since(&handle, None).expect("known handle");
-    assert!(read.contains("early"), "seed in the capture: {read}");
+    assert!(
+        read.contains("early"),
+        "pre-detach bytes in the capture: {read}"
+    );
 
     // The continuing drain appends the post-detach output to the same
     // capture, and the exit notifies — one uninterrupted stream.
     let mut tries = 0;
     loop {
         let pending = shared.pending_notifications();
-        if let Some(n) = pending.iter().find(|n| n.source == "bg#1") {
+        if let Some(n) = pending.iter().find(|n| n.source == "p#1") {
             assert!(n.body.contains("exited 0"), "clean exit: {}", n.body);
             assert!(
                 n.body.contains("early") && n.body.contains("late"),
@@ -120,7 +135,7 @@ async fn background_spawn_exports_the_scratch_tmpdir() {
     }
 }
 
-/// The detach note (docs/supervisor.md): stashed by `POST /background`,
+/// The detach note (docs/supervisor.md): stashed by `PATCH /processes/:id {background: true}`,
 /// consumed exactly once by the loop when a handoff lands; a blank note is
 /// dropped at the door.
 #[test]
@@ -138,7 +153,7 @@ fn detach_note_is_stashed_and_consumed_once() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn kill_bg_and_inbox_summary() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
-    assert!(!shared.kill_bg("bg#1"), "unknown handle → false");
+    assert!(!shared.kill_bg("p#1"), "unknown handle → false");
 
     let h = shared.spawn_background("sleep 30".into()).expect("spawn");
     assert!(shared.kill_bg(&h), "kills a running process");

@@ -9,26 +9,36 @@
 use super::*;
 
 /// The `processes` topic's wire shape (`supervisor::ProcessState`): structure only.
+/// `pid` is on the wire too — an attribute for direct OS interaction — but the panel
+/// has no use for it yet, and serde ignores what isn't named.
 #[derive(serde::Deserialize)]
 struct WireProcess {
-    handle: String,
+    id: u64,
     command: String,
     spawned_at: u64,
+    background: bool,
+    muted: bool,
 }
 
 /// Parse the `processes` topic's array into [`BgProc`]s (docs/supervisor.md). A
 /// missing/malformed field is an empty list — the panel just hides.
 ///
+/// The topic carries every running process, flagged rather than filtered
+/// (docs/control-api.md); the panel's choices are made here — muted rows are
+/// dismissed-from-view, and the foreground entry already renders live in the
+/// transcript's in-flight block, so both are dropped.
+///
 /// Tail and last-chunk are left empty here: the topic does not carry them, and
-/// [`State::handle_event`](crate::tui::State::handle_event) merges each handle's
+/// [`State::handle_event`](crate::tui::State::handle_event) merges each process's
 /// locally-accumulated tail back in so a topic replacement can't wipe it.
 pub(super) fn parse_processes(value: &serde_json::Value) -> Vec<BgProc> {
     serde_json::from_value::<Vec<WireProcess>>(value.clone())
         .unwrap_or_default()
         .into_iter()
+        .filter(|w| w.background && !w.muted)
         .map(|w| {
             let mut proc = BgProc {
-                handle: w.handle,
+                id: w.id,
                 command: w.command,
                 spawned_at: w.spawned_at,
                 last_chunk_at: None,

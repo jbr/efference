@@ -32,7 +32,7 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
         }
     });
 
-    // Approval sender: resolve a gate via `POST /approvals/:call_id` (M3).
+    // Approval sender: resolve a gate via `PUT /approvals/:call_id` (M3).
     let approve_client = client.clone();
     let approver = tokio::spawn(async move {
         while let Some((call_id, decision)) = approve_rx.recv().await {
@@ -40,7 +40,7 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
         }
     });
 
-    // Pace sender: each pace key issues a `POST /pace` (docs/tui.md).
+    // Pace sender: each pace key issues a `PATCH /loop {pace}` (docs/tui.md).
     let pace_client = client.clone();
     let pacer = tokio::spawn(async move {
         while let Some((speed_ms, held)) = pace_rx.recv().await {
@@ -49,16 +49,21 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
     });
 
     // Interrupt sender: the operator's intent over the in-flight tool. `Kill`
-    // (the hard rung of graduated Esc, docs/tui.md) fires `POST /interrupt`;
-    // `Detach` (the foreground→background handoff, docs/supervisor.md) fires
-    // `POST /background`.
+    // (the hard rung of graduated Esc, docs/tui.md) fires the loop interrupt;
+    // `Detach` (the foreground→background handoff, docs/supervisor.md) resolves
+    // the foreground process and patches it background — the client verb owns
+    // that resolution.
     let interrupt_client = client.clone();
     let interrupter = tokio::spawn(async move {
         while let Some(intent) = interrupt_rx.recv().await {
-            let _ = match intent {
-                crate::frontend::Interrupt::Kill => interrupt_client.interrupt().await,
-                crate::frontend::Interrupt::Detach => interrupt_client.background(None).await,
-            };
+            match intent {
+                crate::frontend::Interrupt::Kill => {
+                    let _ = interrupt_client.interrupt().await;
+                }
+                crate::frontend::Interrupt::Detach => {
+                    let _ = interrupt_client.background(None).await;
+                }
+            }
         }
     });
 

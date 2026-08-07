@@ -68,7 +68,7 @@ impl<'a> InteractiveState<'a> {
                     x0 + 1,
                     y,
                     max_w.saturating_sub(1),
-                    &format!("{}  {}", p.handle, p.command),
+                    &format!("{}  {}", p.handle(), p.command),
                     text,
                 );
                 y += 1;
