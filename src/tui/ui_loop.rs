@@ -99,6 +99,11 @@ pub(super) fn ui_loop(
     });
 
     let timer_tick = crossbeam_channel::tick(Duration::from_millis(30));
+    // Elapsed-time displays (process running/idle seconds, seconds since the last
+    // request) derive from absolute stamps and only change once a second — the wire
+    // deliberately carries no ticking values (docs/control-api.md), so this tick is
+    // what advances them.
+    let clock_tick = crossbeam_channel::tick(Duration::from_secs(1));
 
     terminal.draw(|frame| state.render_frame(frame))?;
     state.update_cursor(&mut terminal);
@@ -129,6 +134,10 @@ pub(super) fn ui_loop(
             recv(timer_tick) -> _ => {
                 // Paint coalesced daemon changes and advance the streaming spinner.
                 redraw = state.dirty || state.loading.pending_request;
+            }
+            recv(clock_tick) -> _ => {
+                // Advance the elapsed-time displays; repaint only if one moved.
+                redraw = state.refresh_clocks();
             }
             recv(event_rx) -> event => match event {
                 // Apply the whole arriving burst, then paint once — the same fold

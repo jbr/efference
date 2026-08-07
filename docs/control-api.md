@@ -51,10 +51,10 @@ handshake. There is nothing a client must poll — the stream's `state` class
 carries the gate, processes, usage, and effective policy that used to require
 it.
 
-> **`GET /state` is still served**, and is still what the reference TUI polls
-> every 400 ms — that client hasn't migrated yet. It remains useful as a
-> one-shot read (a script, a health check) even after it does. What has changed
-> is that polling is no longer the *only* way to learn these things.
+> **`GET /state` is still served** as a one-shot read (a script, a health
+> check, the `efference state` verb). No shipped client polls it: the
+> reference TUI holds one stream connection and derives everything from its
+> frames.
 
 ---
 
@@ -137,10 +137,12 @@ proposal, never resolve its own.
 - `404 not_found` (no pending proposal with that `seq`) · `400 bad_request` (bad body) ·
   `400 invalid_decision` (neither commit nor cancel) · `500 internal` (append failed)
 
-### Reads (polled)
+### Reads (one-shot)
 
 #### `GET /state`
-The ephemeral control snapshot. The single most-polled endpoint.
+The ephemeral control snapshot: the composite "current representation" the
+stream pushes per-topic replacements of. A one-shot read for scripts and
+bootstraps; a client holding the stream needs never request it.
 
 Its keys are `last_seq` plus **exactly one field per state topic**, each named by the
 topic. That is structural, not incidental: the same per-topic functions build this

@@ -13,7 +13,7 @@
 
 - **No composer.** It reserves no rows (`render_frame`), so the transcript takes them. An input that cannot send is not chrome worth drawing.
 - **No loop verbs on the [control strip](#the-control-strip).** The whole strip is the client-only tail — `theme t · help ? · close q`, with `detach` reading `close` because there is no daemon left running behind it. Pace goes with the rest: it is a control over a loop, and there isn't one.
-- **No sidebar.** Every section of it (processes, stats, policy) is fed by the `/state` poll, which has nothing to poll.
+- **No sidebar.** Every section of it (processes, stats, policy) is fed by the `state` frames of a live control stream, and there is no daemon to serve one.
 - **The strip is the resting focus,** in place of the composer: focus starts there, `Esc` returns there, and `↓` off its bottom stops rather than falling into a composer that isn't rendered.
 
 The log is read once at open, so a session that is still running shows as of the moment it was opened — a snapshot, not a tail. Reading a live session's log is allowed for that reason rather than refused; nothing in the view can write to it.
@@ -139,9 +139,9 @@ A submitted turn is not lost while a trajectory runs. `submit_composer` pushes t
 
 ## The pace indicator
 
-The operator's pace ([operator participation](control-channel.md#operator-participation--the-intervention-points)) is polled from `GET /state`'s `pace` into a `PaceView` and surfaced **loud** in the status bar: a `⏸ HELD` / `⏱ 10s` indicator ahead of the status text whenever the pace is non-default (the default fast-and-unheld state adds no chrome). It is status-bar chrome, never transcript content — pacing never reaches the log or the wire. The transcript keys `+`/`-` step the speed dial along a coarse ladder and `p` toggles the hold, each optimistically updating the local `PaceView` on the keypress (the poll reconciles) and issuing `POST /pace` over a dedicated pace channel. Because a slow pace *is* the window during which the operator has room to read and type, pacing and the mid-trajectory injection compose: the sleep is exactly when a message can be interjected.
+The operator's pace ([operator participation](control-channel.md#operator-participation--the-intervention-points)) arrives on the `pace` state topic, decoded into a `PaceView` and surfaced **loud** in the status bar: a `⏸ HELD` / `⏱ 10s` indicator ahead of the status text whenever the pace is non-default (the default fast-and-unheld state adds no chrome). It is status-bar chrome, never transcript content — pacing never reaches the log or the wire. The transcript keys `+`/`-` step the speed dial along a coarse ladder and `p` toggles the hold, each optimistically updating the local `PaceView` on the keypress (the topic's next frame reconciles) and issuing `POST /pace` over a dedicated pace channel. Because a slow pace *is* the window during which the operator has room to read and type, pacing and the mid-trajectory injection compose: the sleep is exactly when a message can be interjected.
 
-The same poll carries an optional upstream-failure diagnostic. A non-2xx response renders as `upstream 429 ×2` ahead of the status text; the count covers consecutive matching statuses. It remains after a success as the last observed transport failure, and is never transcript content.
+The `upstream_failure` topic carries an optional upstream-failure diagnostic. A non-2xx response renders as `upstream 429 ×2` ahead of the status text; the count covers consecutive matching statuses. It remains after a success as the last observed transport failure, and is never transcript content.
 
 ## Graduated Esc
 
@@ -163,7 +163,7 @@ Alongside kill, transcript-navigation `b` fires the **foreground→background ha
 
 ## Wiring: two threads, one crossbeam channel
 
-crossterm's event read blocks, so the UI runs on a dedicated OS thread (`tui::ui_loop`). A tokio task (`tui::bridge`) subscribes to `/events` (durable `LogEntry` entries) and `/stream` (ephemeral `assistant_delta` / `tool_output` deltas) over the [transport](transport.md), decodes them into `TuiEvent`s, and forwards them over a crossbeam channel into the UI thread.
+crossterm's event read blocks, so the UI runs on a dedicated OS thread (`tui::ui_loop`). A tokio task (`tui::bridge`) holds one connection to the unified control stream (`GET /events?include=log,output,state`, [control-api](control-api.md)) over the [transport](transport.md), decodes its frames — durable `LogEntry` entries, ephemeral `assistant_delta` / `tool_output` deltas, and whole-topic `state` replacements — into `TuiEvent`s, and forwards them over a crossbeam channel into the UI thread. There is no poll: the connect snapshot seeds every topic, and the daemon pushes a replacement when one changes. A 1 Hz clock tick in the UI loop advances the elapsed-time displays (process running/idle seconds, seconds since the last request), which derive from absolute stamps because the wire deliberately carries no ticking values.
 
 The UI loop drains arriving events through `InteractiveState::handle_event` and sets a `reproject_pending` flag rather than re-projecting per event. Before each paint it calls `flush_reproject`, which brings the transcript up to date once and clears the flag. A reattach replay that delivers N entries therefore costs O(N) event folds and O(1) projections, not O(N²).
 
@@ -229,7 +229,7 @@ Only verbs that apply in the state are shown: the strip flashing between states 
 
 Two transient sub-states own the row outright and carry no tail: staging (no items at all — the row is the staging note) and the active pace stepper (only the loud `▴ pace <v> ▾` and its note). Both are described under item classes below.
 
-Because the item list is a pure function of polled state plus the committed log, re-ranking happens only at state transitions — never while the strip sits stable.
+Because the item list is a pure function of the state topics plus the committed log, re-ranking happens only at state transitions — never while the strip sits stable.
 
 **Which tool is running** comes from the log the TUI already holds, with no daemon round-trip: the loop appends the assistant entry *before* running its call and the `tool_result` after (`src/agent.rs`), so the last call with no paired result is what is executing now (`in_flight_call` in `tui/state.rs`). `disable_parallel_tool_use` means at most one call per turn, so that tail is the whole answer.
 
@@ -255,7 +255,7 @@ The verbs a unit carries are a pure function of the entry (`block_menu::menu_ite
 
 ## Inline approval gates
 
-The approval gate is ephemeral control state: the daemon gates *after* appending the `tool_use` to the log and *before* running the tool, but there is no SSE event for this transition. A poll task watches `GET /state`'s `gate` field and emits a `TuiEvent::Gate` when it appears or resolves.
+The approval gate is ephemeral control state: the daemon gates *after* appending the `tool_use` to the log and *before* running the tool. The transition arrives as a `gate` state frame — the topic's whole value when a gate registers, `null` when it resolves — decoded into a `TuiEvent::Gate`. Delivery is coherent with the log ([control-api](control-api.md)): the frame never precedes the entries it reflects, so the gate renders against a transcript that already shows its call.
 
 The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail call with no result. `project` receives `pending_call` + `pending_reason` and emits the gate beside that call, where the result will land — the spotter's reason (when it gated via the spotter — read from the `Spot` audit entry, see [permissions](permissions.md)), then the affordance carrying the `⏸`:
 
@@ -267,7 +267,7 @@ spotter gated · deletes outside the git tree — not reversible
 
 Reading order is call → what the spotter made of it → what to do, so the affordance lands adjacent to the strip carrying the verbs.
 
-**Every judged call carries its verdict, not only a held one.** The `Spot` entries are indexed by `call_id` alongside the results and emitted with the call they judge, so a *cleared* call shows its reason too — which is most of them, since clearing is the common verdict and nothing ever interrupts for one. The stance leads the line (`spotter cleared · …`, `watching`, `gated`) because it is the scannable part; without it every verdict looks alike. The whole line sits in the dim register: before the decision it is why the call is held, and after it is a gloss on what the call was taken to be, so it never competes with the call or its result for attention. A resolved gate keeps its verdict, which is the only surviving record when a human approves something the spotter wanted to stop. `Origin` is not drawn — a fail-closed verdict's own reason reads "spotter unavailable", so a glyph would only repeat the line. The committed entry is the source; `pending_reason` from `/state` covers only the window where a gate has registered but its log entry hasn't reached the client, so the two never both render (that path has no stance, and reads `spotter · …`).
+**Every judged call carries its verdict, not only a held one.** The `Spot` entries are indexed by `call_id` alongside the results and emitted with the call they judge, so a *cleared* call shows its reason too — which is most of them, since clearing is the common verdict and nothing ever interrupts for one. The stance leads the line (`spotter cleared · …`, `watching`, `gated`) because it is the scannable part; without it every verdict looks alike. The whole line sits in the dim register: before the decision it is why the call is held, and after it is a gloss on what the call was taken to be, so it never competes with the call or its result for attention. A resolved gate keeps its verdict, which is the only surviving record when a human approves something the spotter wanted to stop. `Origin` is not drawn — a fail-closed verdict's own reason reads "spotter unavailable", so a glyph would only repeat the line. The committed entry is the source; `pending_reason` from the gate covers only a client holding the gate without the `Spot` entry behind it — a window the stream's coherence rule closes (a `gate` frame never precedes the entry it quotes, [control-api](control-api.md)), so the fallback survives as robustness rather than as a path that renders (it has no stance, and reads `spotter · …`).
 
 Whether this much per-call annotation earns its space is an open question the dogfooding loop is meant to answer; a suppression setting is the obvious lever if it turns out to be noise.
 
@@ -290,7 +290,7 @@ Resolving replaces the inline affordance with the real result entry (or, on redi
 
 ## The sidebar
 
-When the terminal is wide enough (≥ a threshold), a **right-docked sidebar** carries the glanceable, self-contained widgets that don't belong in the transcript: `PROCESSES` (the live background processes, off the old bottom strip), `STATS` (context-window occupancy — the `ctx 7% · 14k/200k` line, from `/state`'s `usage.context` — billed session cost where the provider accounts per request — `cost $0.0421`, from `usage.cost`, see [transport](transport.md) — triage retention — `kept 55% · 13k/24k lines`, from `usage.retention`, see [redaction-fork](redaction-fork.md) — plus token/cache telemetry, off the status bar), and `POLICY`. It is chrome, fed by the `/state` poll (`tui/render_sidebar.rs`), with a `│` dividing it from the transcript; the composer spans the transcript column only, and below the dock threshold the sidebar is hidden (a narrow-mode drawer is future work). Its `Rect` is remembered so `Alt-S` can screenshot just those columns.
+When the terminal is wide enough (≥ a threshold), a **right-docked sidebar** carries the glanceable, self-contained widgets that don't belong in the transcript: `PROCESSES` (the live background processes, off the old bottom strip), `STATS` (context-window occupancy — the `ctx 7% · 14k/200k` line, from `/state`'s `usage.context` — billed session cost where the provider accounts per request — `cost $0.0421`, from `usage.cost`, see [transport](transport.md) — triage retention — `kept 55% · 13k/24k lines`, from `usage.retention`, see [redaction-fork](redaction-fork.md) — plus token/cache telemetry, off the status bar), and `POLICY`. It is chrome, fed by the `usage`/`processes`/`role` state topics (`tui/render_sidebar.rs`), with a `│` dividing it from the transcript; the composer spans the transcript column only, and below the dock threshold the sidebar is hidden (a narrow-mode drawer is future work). Its `Rect` is remembered so `Alt-S` can screenshot just those columns.
 
 `POLICY` renders the **review level** (`/state`'s `review_level` — who reviews a gated call, read-only here; set it with `efference review-level`, the interactive gear selector deferred to the ergonomics pass) followed by the effective perimeter — scope, commands, paths, tools — read from `/state`'s `role`. Pending **proposals** (from `/state`'s `proposals`: prefix-promotion, a session's config-write) render *in the same section, in their committed sort position*, flagged with a trailing `⊕` in a muted style — a proposal is a projection of its committed self, so committing it (over `POST /proposals/:seq`) drops the `⊕` in place without reflow. This is the human/orchestrator surface for the config-edit loop (see [permissions](permissions.md)).
 
@@ -311,4 +311,4 @@ The IR keeps ferritin's `Cow<'a>` borrowing, used as `Document<'static>` over ow
 
 ## Backlog
 
-Remaining polish — the box→`│` connector refinement for result bodies, focus *into* the sidebar (x/y/z navigation, committing a proposal in place), the narrow-mode scrimmed drawer, the at-rest unit boundary, refreshing the help-screen keymap text, and gates-as-synthetic-`/events` to drop the poll task — is tracked in the backlog.
+Remaining polish — the box→`│` connector refinement for result bodies, focus *into* the sidebar (x/y/z navigation, committing a proposal in place), the narrow-mode scrimmed drawer, the at-rest unit boundary, and refreshing the help-screen keymap text — is tracked in the backlog.

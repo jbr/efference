@@ -172,6 +172,35 @@ impl<'a> InteractiveState<'a> {
         false
     }
 
+    /// Recompute every clock-derived display value from the absolute stamps it was
+    /// derived from: each process row's running/idle seconds and the status bar's
+    /// seconds-since-last-request. Returns whether anything moved.
+    ///
+    /// Called once a second by the UI loop's clock tick. The wire stopped carrying
+    /// ticking values so the level-triggered `state` topics could stay quiet
+    /// (docs/control-api.md); the elapsed *display* still has to advance, and this is
+    /// where it does — keeping rendering itself a pure function of state, which the
+    /// snapshot harness depends on.
+    pub(in crate::tui) fn refresh_clocks(&mut self) -> bool {
+        let mut changed = false;
+        for p in &mut self.processes {
+            let before = (p.running_secs, p.idle_secs);
+            p.refresh_elapsed();
+            changed |= (p.running_secs, p.idle_secs) != before;
+        }
+        if let Some(usage) = &mut self.usage {
+            let secs = usage.last_request_at.map(crate::tui::secs_since);
+            if usage.seconds_since_last_request != secs {
+                usage.seconds_since_last_request = secs;
+                changed = true;
+            }
+        }
+        if changed {
+            self.dirty = true;
+        }
+        changed
+    }
+
     /// Flag that the transcript must be re-projected before the next paint.
     pub(super) fn mark_reproject(&mut self) {
         self.reproject_pending = true;

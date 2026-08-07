@@ -25,6 +25,7 @@ fn sidebar_shows_processes_and_stats() {
         output_tokens: 3100,
         cache_read_input_tokens: 8900,
         cache_creation_input_tokens: 5200,
+        last_request_at: None,
         seconds_since_last_request: Some(8),
         // The boot-fetched window and the last request's occupancy
         // (docs/transport.md): 14.1k of 200k → the `ctx 7% · 14k/200k` line.
@@ -53,6 +54,7 @@ fn sidebar_retention_before_any_triage_and_after_a_failed_gate() {
         output_tokens: 50,
         cache_read_input_tokens: 0,
         cache_creation_input_tokens: 0,
+        last_request_at: None,
         seconds_since_last_request: None,
         context_limit: None,
         context_used: None,

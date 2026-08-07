@@ -16,101 +16,13 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
     let (interrupt_tx, mut interrupt_rx) =
         tokio::sync::mpsc::unbounded_channel::<crate::frontend::Interrupt>();
 
-    // The bridge feeds the UI thread; it ends when the streams close or the UI
-    // thread drops the receiver.
+    // The bridge feeds the UI thread everything — log entries, live deltas, and the
+    // state topics (gate/processes/usage/policy/pace/running) as level-triggered
+    // frames on the same connection (docs/control-api.md). It ends when the stream
+    // closes or the UI thread drops the receiver. No poll: the daemon pushes a
+    // whole-topic replacement when a topic changes, and the connect snapshot seeds
+    // every topic up front.
     let bridge = tokio::spawn(bridge(client.clone(), tx.clone()));
-
-    // Gate poller: the approval gate is ephemeral control state (`GET /state`) with
-    // no SSE event, so poll it and emit a `Gate` only when it changes (M3).
-    let poll_client = client.clone();
-    let gate_tx = tx.clone();
-    let poller = tokio::spawn(async move {
-        let mut last: Option<String> = None;
-        let mut last_procs = String::new();
-        let mut last_usage = String::new();
-        let mut last_upstream_failure: Option<UpstreamFailureView> = None;
-        let mut last_policy = String::new();
-
-        let mut last_pace: Option<PaceView> = None;
-        let mut last_running: Option<bool> = None;
-        loop {
-            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-            let Ok(body) = poll_client.state().await else {
-                continue;
-            };
-            let gate = parse_pending_gate(&body);
-            let cur = gate.as_ref().map(|g| g.call_id.clone());
-            if cur != last {
-                last = cur;
-                if gate_tx.send(TuiEvent::Gate(gate)).is_err() {
-                    break;
-                }
-            }
-            // The live process list rides the same poll (docs/supervisor.md). Emit only when it
-            // changes — but `running`/`idle` secs tick, so a running process refreshes
-            // ~1Hz, which is exactly the live-ish cadence the panel wants.
-            let procs = parse_processes(&body);
-            let fp = serde_json::to_string(&procs).unwrap_or_default();
-            if fp != last_procs {
-                last_procs = fp;
-                if gate_tx.send(TuiEvent::Processes(procs)).is_err() {
-                    break;
-                }
-            }
-            // Usage statistics from the same poll. Emit only when they change.
-            if let Some(usage) = parse_usage(&body) {
-                let ufp = serde_json::to_string(&usage).unwrap_or_default();
-                if ufp != last_usage {
-                    last_usage = ufp;
-                    if gate_tx.send(TuiEvent::Usage(usage)).is_err() {
-                        break;
-                    }
-                }
-            }
-            // The last upstream failure is a transport diagnostic, not transcript content.
-            // Emit both its first appearance and changes; it remains visible after recovery.
-            let upstream_failure = parse_upstream_failure(&body);
-            if upstream_failure != last_upstream_failure {
-                last_upstream_failure = upstream_failure;
-                if gate_tx
-                    .send(TuiEvent::UpstreamFailure(upstream_failure))
-                    .is_err()
-                {
-                    break;
-                }
-            }
-            // The effective policy + proposals from the same poll. Emit on change
-            // (fingerprinted via Debug — PolicyView isn't Serialize).
-            if let Some(policy) = parse_policy(&body) {
-                let pfp = format!("{policy:?}");
-                if pfp != last_policy {
-                    last_policy = pfp;
-                    if gate_tx.send(TuiEvent::Policy(policy)).is_err() {
-                        break;
-                    }
-                }
-            }
-            // The operator's pace from the same poll (docs/tui.md).
-            // Emit on change so a CLI `efference pace` (or another client) is reflected too.
-            if let Some(pace) = parse_pace(&body)
-                && last_pace != Some(pace)
-            {
-                last_pace = Some(pace);
-                if gate_tx.send(TuiEvent::Pace(pace)).is_err() {
-                    break;
-                }
-            }
-            // Whether the loop is running (docs/tui.md) — graduated Esc reads it.
-            if let Some(running) = parse_running(&body)
-                && last_running != Some(running)
-            {
-                last_running = Some(running);
-                if gate_tx.send(TuiEvent::Running(running)).is_err() {
-                    break;
-                }
-            }
-        }
-    });
 
     // Turn sender: each composer submission is POSTed as a user turn (M2 write path).
     let turn_client = client.clone();
@@ -163,7 +75,6 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
 
     let result = ui.await.context("the TUI thread panicked")?;
     bridge.abort();
-    poller.abort();
     sender.abort();
     approver.abort();
     pacer.abort();
@@ -234,11 +145,12 @@ async fn run_offline(
 
 /// Run the interactive TUI against a daemon control socket.
 ///
-/// Subscribes to the daemon's `/events` (durable log) and `/stream` (ephemeral
-/// deltas) over the [`Client`], bridges them into the UI thread, and renders the
-/// transcript until the user quits or the daemon goes away. The crossterm event
-/// loop blocks, so the UI runs on a dedicated blocking thread while the SSE
-/// bridge runs as a tokio task (docs/README.md — the TUI is one client of the socket).
+/// Subscribes to the daemon's unified `/events` stream (`?include=log,output,state`,
+/// docs/control-api.md) over the [`Client`], bridges its frames into the UI thread,
+/// and renders the transcript until the user quits or the daemon goes away. The
+/// crossterm event loop blocks, so the UI runs on a dedicated blocking thread while
+/// the SSE bridge runs as a tokio task (docs/README.md — the TUI is one client of the
+/// socket).
 /// The default theme — nicer than `THEME_NAMES[0]` ("1337", which only wins by
 /// sort order). Overridable with `--theme` / `EFFERENCE_THEME`.
 pub(super) const DEFAULT_THEME: &str = "Catppuccin Frappe";

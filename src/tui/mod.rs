@@ -58,58 +58,56 @@ pub(crate) mod write_text;
 // Private re-export: visible to the `tui` submodules, not the wider crate.
 use state::{InteractiveState, UiMode};
 
-/// One inbound message to the UI thread, bridged from the daemon's SSE streams
-/// by the tokio side (see `main.rs`). Durable [`Entry`](TuiEvent::Entry) values
-/// come from `/events` (a serialized [`LogEntry`](crate::log::LogEntry)); the
-/// ephemeral deltas come from `/stream` and are folded into the live tail until
-/// their committed entry lands.
+/// One inbound message to the UI thread, decoded by the bridge from the unified
+/// control stream's frames (docs/control-api.md): durable [`Entry`](TuiEvent::Entry)
+/// values from `log` frames, the ephemeral deltas from `output` frames (folded into
+/// the live tail until their committed entry lands), and the chrome below from
+/// `state` frames — each a whole-topic replacement.
 #[derive(Debug)]
 pub(crate) enum TuiEvent {
-    /// A committed log entry (from the durable `/events` tail).
+    /// A committed log entry (a `log` frame — the durable class).
     Entry(crate::log::LogEntry),
-    /// A fragment of in-progress assistant prose (`/stream` `assistant_delta`).
+    /// A fragment of in-progress assistant prose (`assistant_delta`).
     AssistantDelta(String),
-    /// A fragment of in-progress extended thinking (`/stream` `thinking_delta`). Kept distinct
+    /// A fragment of in-progress extended thinking (`thinking_delta`). Kept distinct
     /// from [`AssistantDelta`](Self::AssistantDelta) so it can never be rendered as the
     /// assistant's answer.
     ThinkingDelta(String),
-    /// The model began emitting a tool call (`/stream` `tool_call_start`), named before its
+    /// The model began emitting a tool call (`tool_call_start`), named before its
     /// arguments arrive.
     ToolCallStart { name: String },
-    /// A fragment of a tool call's input arriving (`/stream` `tool_call_input`), verbatim. Shown
+    /// A fragment of a tool call's input arriving (`tool_call_input`), verbatim. Shown
     /// as text, never parsed — it is a partial slice of a JSON document.
     ToolCallInput { fragment: String },
-    /// A fragment of a running tool's output (`/stream` `tool_output`).
+    /// A fragment of a running tool's output (`tool_output`).
     ToolOutput { call_id: String, chunk: String },
-    /// A fragment of a running background process's output (`/stream` `bg_output`,
-    /// TUI-bg-2). Folded into the matching process panel row's tail to smooth it
-    /// between the ~400ms [`Processes`](TuiEvent::Processes) polls; demuxed by
+    /// A fragment of a running background process's output (`bg_output`, TUI-bg-2).
+    /// Folded into the matching process panel row's tail — the sole source of tail
+    /// content, since the `processes` topic carries structure only; demuxed by
     /// `handle` exactly as [`ToolOutput`](TuiEvent::ToolOutput) is by `call_id`.
     BgOutput { handle: String, chunk: String },
-    /// The pending tool-approval gate changed (polled from `GET /state`, since the
-    /// gate is ephemeral control state with no SSE event — docs/README.md parks
-    /// "pending-approval as synthetic `/events`" for later).
+    /// The pending tool-approval gate changed (the `gate` topic).
     Gate(Option<PendingGate>),
-    /// The live background processes changed (polled from `GET /state` alongside the
-    /// gate, docs/supervisor.md — the running tail is ephemeral, never logged, so it has no
-    /// `/events` entry; the process panel is fed by the poll). Smooth `/stream`
-    /// `bg_output` deltas layer on top between polls (TUI-bg-2, [`BgOutput`](TuiEvent::BgOutput)).
+    /// The live background processes changed (the `processes` topic,
+    /// docs/supervisor.md — the running tail is ephemeral, never logged, so it has no
+    /// `log` entry; [`BgOutput`](TuiEvent::BgOutput) deltas layer the content on top).
     Processes(Vec<BgProc>),
-    /// The usage statistics changed (polled from `GET /state` alongside the gate
-    /// and processes). Reflects cumulative token counts and cache telemetry.
+    /// The usage statistics changed (the `usage` topic). Reflects cumulative token
+    /// counts and cache telemetry.
     Usage(UsageStats),
-    /// The last non-success upstream response changed (polled from `GET /state`).
+    /// The last non-success upstream response changed (the `upstream_failure` topic).
     /// Ephemeral transport diagnostic, rendered in the status bar.
     UpstreamFailure(Option<UpstreamFailureView>),
 
-    /// The effective policy + its pending proposals changed (polled from `GET /state`'s
-    /// `role` + `proposals`). Drives the sidebar's POLICY section (docs/permissions.md).
+    /// The effective policy + its pending proposals changed (the `role`, `proposals`,
+    /// and `review_level` topics, merged by the bridge). Drives the sidebar's POLICY
+    /// section (docs/permissions.md).
     Policy(PolicyView),
-    /// The operator's pace dial / hold overlay changed (polled from `GET /state`'s `pace`,
+    /// The operator's pace dial / hold overlay changed (the `pace` topic,
     /// docs/tui.md). Loud to the operator (surfaced in the status bar),
     /// silent to the agent — it is never logged or projected.
     Pace(PaceView),
-    /// Whether the loop is executing a turn (polled from `GET /state`'s `running`). The
+    /// Whether the loop is executing a turn (the `running` topic). The
     /// "is something happening" signal graduated Esc reads to choose pause-vs-swallow
     /// (docs/tui.md) — reliable through a silent tool, unlike streaming deltas.
     Running(bool),
@@ -137,13 +135,13 @@ pub(crate) type PaceCmd = (Option<u64>, Option<bool>);
 /// The `processes` topic carries structure only — no tail, no last-chunk stamp — because
 /// both change per output chunk and would make a level-triggered topic re-emit at the
 /// rate of the output (docs/control-api.md). The content arrives as `bg_output` deltas
-/// instead, which this client already layered on top of the poll, so the split is one the
-/// panel was half-implementing anyway.
+/// instead, layered on top by `handle_event`.
 ///
 /// `running_secs`/`idle_secs` are **derived for display** when state changes, from the
 /// absolute stamps beside them. Derived at event time rather than at render time so
 /// rendering stays a pure function of state (the snapshot harness depends on that); the
-/// stamps are retained so a repaint ticker can recompute them without a round-trip.
+/// stamps are retained so the clock tick can recompute them without a round-trip
+/// (`refresh_clocks`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BgProc {
     pub handle: String,
@@ -162,7 +160,7 @@ pub(crate) struct BgProc {
 
 impl BgProc {
     /// Recompute the display counters from the absolute stamps. Called whenever the
-    /// panel's state changes; a repaint ticker would call it on tick too.
+    /// panel's state changes, and once a second by the clock tick (`refresh_clocks`).
     pub fn refresh_elapsed(&mut self) {
         self.running_secs = secs_since(self.spawned_at);
         self.idle_secs = self.last_chunk_at.map(secs_since).unwrap_or(0);
@@ -179,20 +177,23 @@ pub(crate) struct PendingGate {
     /// (docs/permissions.md) — surfaced inline at the gate so the human sees *why*.
     pub reason: Option<String>,
 }
-/// Usage statistics from the daemon, as surfaced by `GET /state`'s `usage` field.
-/// Polled alongside the gate and processes.
+/// Usage statistics from the daemon — the `usage` state topic (also `GET /state`'s
+/// `usage` key).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct UsageStats {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_read_input_tokens: u64,
     pub cache_creation_input_tokens: u64,
-    /// Seconds since the last upstream request, derived at parse time from the wire's
-    /// absolute `usage.last_request_at` (docs/control-api.md — the daemon sends the
-    /// instant, not a ticking count, so a level-triggered `usage` topic stays quiet).
-    /// Derived here rather than at render time so rendering stays a pure function of
-    /// state and the snapshot harness stays deterministic; it therefore refreshes when
-    /// state does, which the `/state` poll drives today.
+    /// The wire's absolute `usage.last_request_at` (Unix millis), retained so the
+    /// clock tick can recompute the elapsed display without a round-trip
+    /// (docs/control-api.md — the daemon sends the instant, not a ticking count, so a
+    /// level-triggered `usage` topic stays quiet).
+    pub last_request_at: Option<u64>,
+    /// Seconds since the last upstream request, derived from `last_request_at` at
+    /// parse time and again on each clock tick. Derived rather than computed at render
+    /// time so rendering stays a pure function of state and the snapshot harness stays
+    /// deterministic.
     pub seconds_since_last_request: Option<u64>,
     /// The model's context-window limit, from `usage.context.limit` — the
     /// boot-fetched capability (docs/transport.md). `None` when the daemon
@@ -302,7 +303,6 @@ mod ui_loop;
 pub use run::{run, run_gallery, run_view};
 
 use bridge::bridge;
-use parse::*;
 use run::DEFAULT_THEME;
 use ui_loop::{Senders, ui_loop};
 

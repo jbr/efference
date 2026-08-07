@@ -1,4 +1,10 @@
-//! Decoding `GET /state` into the typed views the sidebar and status bar render.
+//! Decoding `state`-frame topic values into the typed views the sidebar and status bar
+//! render (docs/control-api.md).
+//!
+//! Each function takes one topic's **whole value** — the `data` of a `state` frame,
+//! identical to the same-named key of `GET /state` — never the composite blob. The
+//! bridge feeds them from frames; anything reading `GET /state` directly indexes the
+//! topic key first.
 
 use super::*;
 
@@ -10,17 +16,14 @@ struct WireProcess {
     spawned_at: u64,
 }
 
-/// Parse `GET /state`'s `processes` array into [`BgProc`]s (docs/supervisor.md). A
+/// Parse the `processes` topic's array into [`BgProc`]s (docs/supervisor.md). A
 /// missing/malformed field is an empty list — the panel just hides.
 ///
 /// Tail and last-chunk are left empty here: the topic does not carry them, and
 /// [`State::handle_event`](crate::tui::State::handle_event) merges each handle's
 /// locally-accumulated tail back in so a topic replacement can't wipe it.
-pub(super) fn parse_processes(body: &str) -> Vec<BgProc> {
-    serde_json::from_str::<serde_json::Value>(body)
-        .ok()
-        .and_then(|v| v.get("processes").cloned())
-        .and_then(|p| serde_json::from_value::<Vec<WireProcess>>(p).ok())
+pub(super) fn parse_processes(value: &serde_json::Value) -> Vec<BgProc> {
+    serde_json::from_value::<Vec<WireProcess>>(value.clone())
         .unwrap_or_default()
         .into_iter()
         .map(|w| {
@@ -39,10 +42,9 @@ pub(super) fn parse_processes(body: &str) -> Vec<BgProc> {
         .collect()
 }
 
-/// Parse `GET /state`'s `gate` object into a [`PendingGate`].
-pub(super) fn parse_pending_gate(body: &str) -> Option<PendingGate> {
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    let pending = value.get("gate")?;
+/// Parse the `gate` topic's object into a [`PendingGate`]. `null` — the topic's
+/// cleared value — is no gate.
+pub(super) fn parse_pending_gate(pending: &serde_json::Value) -> Option<PendingGate> {
     if pending.is_null() {
         return None;
     }
@@ -60,7 +62,6 @@ pub(super) fn parse_pending_gate(body: &str) -> Option<PendingGate> {
     })
 }
 
-/// Parse `GET /state`'s `usage` object into a [`UsageStats`].
 /// Filesystem perms → a compact tag for the POLICY readout.
 pub(super) fn perm_str(read: bool, write: bool) -> &'static str {
     match (read, write) {
@@ -70,14 +71,22 @@ pub(super) fn perm_str(read: bool, write: bool) -> &'static str {
     }
 }
 
-/// Decode `GET /state`'s `role` (the effective policy) + `proposals` into a [`PolicyView`]
-/// for the sidebar (docs/permissions.md). Proposals are merged into their section and
-/// sorted alongside the committed grants, flagged `proposed`, so a commit drops the flag
-/// in place without reflow. `ConfigChange` is externally tagged
+/// Merge the `role`, `proposals`, and `review_level` topics into a [`PolicyView`] for
+/// the sidebar (docs/permissions.md). Three topics, one view: the daemon serves them
+/// separately (docs/control-api.md), and this client merges them only for its own
+/// rendering convenience, so the bridge holds the latest value of each and re-merges
+/// when any of them moves. Proposals are merged into their section and sorted alongside
+/// the committed grants, flagged `proposed`, so a commit drops the flag in place
+/// without reflow. `ConfigChange` is externally tagged
 /// (`{"Command":{"command":…}}`, `{"Path":{…}}`, `{"Tool":{"name":…}}`, `{"Scope":{"text":…}}`).
-pub(super) fn parse_policy(body: &str) -> Option<PolicyView> {
-    let v: serde_json::Value = serde_json::from_str(body).ok()?;
-    let role = v.get("role")?;
+pub(super) fn parse_policy(
+    role: &serde_json::Value,
+    proposals: &serde_json::Value,
+    review_level: &serde_json::Value,
+) -> Option<PolicyView> {
+    if role.is_null() {
+        return None;
+    }
 
     let str_entries = |key: &str| -> Vec<PolicyEntry> {
         role.get(key)
@@ -118,7 +127,7 @@ pub(super) fn parse_policy(body: &str) -> Option<PolicyView> {
         .unwrap_or_default();
 
     let mut scope_proposal = None;
-    if let Some(arr) = v.get("proposals").and_then(|p| p.as_array()) {
+    if let Some(arr) = proposals.as_array() {
         for prop in arr {
             let (Some(seq), Some(change)) =
                 (prop.get("seq").and_then(|s| s.as_u64()), prop.get("change"))
@@ -175,34 +184,20 @@ pub(super) fn parse_policy(body: &str) -> Option<PolicyView> {
         commands,
         paths,
         tools,
-        // `review_level` sits at the top level of `/state`, not under `role`.
-        review_level: v
-            .get("review_level")
-            .and_then(|l| l.as_str())
-            .map(String::from),
+        review_level: review_level.as_str().map(String::from),
     })
 }
 
-/// Parse `GET /state`'s `running` bool (docs/tui.md) — is the loop executing a turn.
-pub(super) fn parse_running(body: &str) -> Option<bool> {
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    value.get("running")?.as_bool()
-}
-
-/// Parse `GET /state`'s `pace` object into a [`PaceView`] (docs/tui.md).
-pub(super) fn parse_pace(body: &str) -> Option<PaceView> {
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    let pace = value.get("pace")?;
+/// Parse the `pace` topic's object into a [`PaceView`] (docs/tui.md).
+pub(super) fn parse_pace(pace: &serde_json::Value) -> Option<PaceView> {
     Some(PaceView {
         speed_ms: pace.get("speed_ms")?.as_u64()?,
         held: pace.get("held")?.as_bool()?,
     })
 }
 
-/// Parse the optional last non-success upstream response from `GET /state`.
-pub(super) fn parse_upstream_failure(body: &str) -> Option<UpstreamFailureView> {
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    let failure = value.get("upstream_failure")?;
+/// Parse the `upstream_failure` topic — the optional last non-success upstream response.
+pub(super) fn parse_upstream_failure(failure: &serde_json::Value) -> Option<UpstreamFailureView> {
     if failure.is_null() {
         return None;
     }
@@ -212,9 +207,9 @@ pub(super) fn parse_upstream_failure(body: &str) -> Option<UpstreamFailureView> 
     })
 }
 
-pub(super) fn parse_usage(body: &str) -> Option<UsageStats> {
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    let usage = value.get("usage")?;
+/// Parse the `usage` topic's object into a [`UsageStats`]. `null` — no requests yet —
+/// is no stats.
+pub(super) fn parse_usage(usage: &serde_json::Value) -> Option<UsageStats> {
     if usage.is_null() {
         return None;
     }
@@ -233,15 +228,14 @@ pub(super) fn parse_usage(body: &str) -> Option<UsageStats> {
             .and_then(|v| v.as_u64())
             .unwrap_or(0)
     };
+    let last_request_at = usage.get("last_request_at").and_then(|v| v.as_u64());
     Some(UsageStats {
         input_tokens: cumulative.get("input_tokens")?.as_u64()?,
         output_tokens: cumulative.get("output_tokens")?.as_u64()?,
         cache_read_input_tokens: cumulative.get("cache_read_input_tokens")?.as_u64()?,
         cache_creation_input_tokens: cumulative.get("cache_creation_input_tokens")?.as_u64()?,
-        seconds_since_last_request: usage
-            .get("last_request_at")
-            .and_then(|v| v.as_u64())
-            .map(super::secs_since),
+        last_request_at,
+        seconds_since_last_request: last_request_at.map(super::secs_since),
         context_limit: context
             .and_then(|c| c.get("limit"))
             .and_then(|v| v.as_u64()),

@@ -19,6 +19,7 @@ behind a change, see [`journal/`](journal/).
 ### Added
 - `GET /events` is one control stream carrying three durability classes (`log`/`output`/`state`) under a discriminated frame envelope, selectable with `?include=log,output,state:gate`; an unknown token is a `400`.
 - Level-triggered `state` frames deliver whole-topic replacements, ordered so that no state frame precedes a log frame it reflects, and folding them equals `GET /state`.
+- The TUI runs on one control connection (`?include=log,output,state`): the 400 ms `GET /state` poll and its second `/stream` socket are gone, with gate/processes/usage/policy/pace/running driven from `state` frames and elapsed-time displays advanced by a client-side 1 Hz tick.
 - `GET /log` takes bounded windows — `?tail=N` (exactly N, cut anywhere) to open cold at the tail, `?before=<seq>&tail=N` to page backward; `since` with `tail` is a `400`.
 - `GET /log/:seq` and `GET /tool_calls/:call_id` resolve references that dangle outside a window, both `Cache-Control: immutable`.
 - Every non-2xx response carries a typed envelope (`{code, message, detail?}`), with one canonical status per code.
