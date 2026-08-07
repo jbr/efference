@@ -69,6 +69,7 @@ const KEEP_FIELDS: &str =
 /// `riders` are the field rows for whatever else this gate carries (inbox, background,
 /// surfacing roster), placed inside the block rather than appended after it.
 pub(super) fn retain_instruction(offered: &[String], riders: &[&str]) -> String {
+    let v = AskVariant::from_env();
     let scope = "Nothing earlier in this conversation is being triaged — those results are \
 already decided, and their [n] tags are not call ids.";
     let shape = match offered {
@@ -86,19 +87,136 @@ entries, one per call id listed here and no others: [{ids}]. Copy each `call_id`
             ids = many.join("], ["),
         ),
     };
-    let fields = std::iter::once(KEEP_FIELDS)
+    let fields: Vec<&str> = std::iter::once(KEEP_FIELDS)
         .chain(riders.iter().copied())
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!(
-        "{ASK_BANNER}\n\n\
-Call `retain` now. This is a triage turn, not a work turn: the task continues on your NEXT \
-turn, from whatever you keep here. No other tool will run until you have called `retain` — a \
-call to anything else is rejected and this ask comes back.\n\n\
-{shape}\n\n\
-{fields}\n\n\
-Call `retain`."
-    )
+        .collect();
+    v.assemble(&shape, &fields)
+}
+
+/// Which features of the ask are on — the ablation axis the `peek` rig varies
+/// (docs/redaction-fork.md, backlog/ask-ablations.md).
+///
+/// **Temporary experiment scaffolding**, and its own backlog unit to delete. It lives here
+/// rather than in the dev tool because the shape (single vs multi result) and the rider
+/// rows must stay exactly what production sends — a variant assembled anywhere else would
+/// drift from `retain_instruction`, which is the one divergence the replay rig exists to
+/// rule out. A full-text override was the other candidate and can't work: a fifth of the
+/// gates in a real session carry several results and need their ids interpolated.
+struct AskVariant {
+    banner: bool,
+    /// The imperative leading the ask and repeated at its end.
+    lede: bool,
+    /// "This is a triage turn, not a work turn" plus the closed-toolbox fact.
+    stance: bool,
+    /// Per-field asks as a scannable block; off means appended prose, as before.
+    block: bool,
+    /// Additive candidate: prose is not read, only the call's arguments are.
+    verdict_channel: bool,
+    /// Additive candidate: the output above is complete, nothing further is coming.
+    output_final: bool,
+}
+
+impl Default for AskVariant {
+    /// What ships. Ablations turn features **off** from here, so the default path is the
+    /// one under test in production and an unset env var changes nothing.
+    fn default() -> Self {
+        Self {
+            banner: true,
+            lede: true,
+            stance: true,
+            block: true,
+            verdict_channel: false,
+            output_final: false,
+        }
+    }
+}
+
+impl AskVariant {
+    /// Read `EFFERENCE_PEEK_ASK`: a comma-separated list of `no-<feature>` ablations and
+    /// `+<feature>` additions, or `legacy` for every ablation at once. Unset — the whole
+    /// production path — yields [`Self::default`]. An unrecognized token is a hard panic
+    /// rather than a silent no-op: a typo'd ablation that quietly measured the shipped ask
+    /// would read as "this feature does nothing".
+    fn from_env() -> Self {
+        let Ok(spec) = std::env::var("EFFERENCE_PEEK_ASK") else {
+            return Self::default();
+        };
+        let mut v = Self::default();
+        for token in spec.split(',').map(str::trim).filter(|t| !t.is_empty()) {
+            match token {
+                "shipped" => {}
+                "legacy" => {
+                    v.banner = false;
+                    v.lede = false;
+                    v.stance = false;
+                    v.block = false;
+                }
+                "no-banner" => v.banner = false,
+                "no-lede" => v.lede = false,
+                "no-stance" => v.stance = false,
+                "no-block" => v.block = false,
+                "+verdict-channel" => v.verdict_channel = true,
+                "+output-final" => v.output_final = true,
+                other => panic!("EFFERENCE_PEEK_ASK: unknown variant {other:?}"),
+            }
+        }
+        v
+    }
+
+    /// Assemble the ask from the gate's `shape` sentence and its `fields` rows.
+    ///
+    /// `no-block` collapses the same rows into one paragraph rather than restoring the
+    /// pre-reshape wording, so the ablation isolates *formatting* and holds content fixed;
+    /// swapping the old sentences back would confound the two.
+    fn assemble(&self, shape: &str, fields: &[&str]) -> String {
+        let mut stance = String::new();
+        if self.stance {
+            stance.push_str(
+                " This is a triage turn, not a work turn: the task continues on your NEXT turn, \
+from whatever you keep here. No other tool will run until you have called `retain` — a call to \
+anything else is rejected and this ask comes back.",
+            );
+        }
+        if self.verdict_channel {
+            stance.push_str(
+                " The verdict is the `retain` call's arguments and nothing else — prose is not \
+read. Describing what to keep instead of calling `retain` leaves the result untriaged.",
+            );
+        }
+        let shape = match self.output_final {
+            true => format!(
+                "{shape} That call has finished and the output above is complete — nothing \
+further is coming, so decide on what is there."
+            ),
+            false => shape.to_string(),
+        };
+
+        let fields = match self.block {
+            true => fields.join("\n"),
+            false => fields
+                .iter()
+                .map(|f| f.split_whitespace().collect::<Vec<_>>().join(" "))
+                .collect::<Vec<_>>()
+                .join(" "),
+        };
+
+        let mut out = String::new();
+        if self.banner {
+            out.push_str(ASK_BANNER);
+            out.push_str("\n\n");
+        }
+        if self.lede {
+            out.push_str(&format!(
+                "Call `retain` now.{stance}\n\n{shape}\n\n{fields}"
+            ));
+            out.push_str("\n\nCall `retain`.");
+        } else {
+            // The pre-reshape placement: the imperative sits mid-paragraph, after the
+            // description, and the ask closes on whatever rider came last.
+            out.push_str(&format!("{shape} Call `retain` now.{stance}\n\n{fields}"));
+        }
+        out
+    }
 }
 
 /// The gate-scoped riders, as field rows for [`retain_instruction`]'s block. Each is added
