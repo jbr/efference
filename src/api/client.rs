@@ -108,6 +108,21 @@ impl Client {
         &self.endpoint
     }
 
+    /// Carry this session's sticky-routing key, when there is one *and* the provider
+    /// reads one (docs/transport.md). Both halves are conditional: offline verbs have
+    /// no conversation to pin, and Anthropic has no sticky-routing concept at all —
+    /// gating on the provider rather than sending the header everywhere keeps the
+    /// design off the assumption that an unrecognized header is ignored.
+    fn with_session_id(&self, conn: trillium_client::Conn) -> trillium_client::Conn {
+        match (
+            self.endpoint.provider.session_header(),
+            &self.endpoint.session_id,
+        ) {
+            (Some(header), Some(id)) => conn.with_request_header(header, id.clone()),
+            _ => conn,
+        }
+    }
+
     /// One streaming round-trip: serialize `messages`, POST with `stream: true`,
     /// and fold the SSE event stream back into a [`Completion`]. Each live signal — prose,
     /// thinking, a tool call opening, its arguments arriving — is handed to `on_delta` as a
@@ -146,7 +161,7 @@ impl Client {
             body.len()
         );
 
-        let mut events = match self
+        let conn = self
             .http
             .post(self.endpoint.url.as_str())
             .with_request_header(
@@ -154,11 +169,9 @@ impl Client {
                 self.endpoint.auth_value.clone(),
             )
             .with_request_header("anthropic-version", ANTHROPIC_VERSION)
-            .with_request_header("content-type", "application/json")
-            .with_body(body)
-            .into_sse()
-            .await
-        {
+            .with_request_header("content-type", "application/json");
+        let conn = self.with_session_id(conn);
+        let mut events = match conn.with_body(body).into_sse().await {
             Ok(events) => events,
             Err(e) => return Err(Self::sse_open_error(e).await),
         };
@@ -229,7 +242,7 @@ impl Client {
             stream: false,
         };
         let body = serde_json::to_string(&request)?;
-        let mut conn = self
+        let conn = self
             .http
             .post(self.endpoint.url.as_str())
             .with_request_header(
@@ -237,9 +250,9 @@ impl Client {
                 self.endpoint.auth_value.clone(),
             )
             .with_request_header("anthropic-version", ANTHROPIC_VERSION)
-            .with_request_header("content-type", "application/json")
-            .with_body(body)
-            .await?;
+            .with_request_header("content-type", "application/json");
+        let conn = self.with_session_id(conn);
+        let mut conn = conn.with_body(body).await?;
         let ok = conn.status().is_some_and(|s| s.is_success());
         let text = conn.response_body().read_string().await?;
         if !ok {

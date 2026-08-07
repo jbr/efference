@@ -243,7 +243,7 @@ mod render;
 mod thinking;
 
 pub use client::Client;
-pub use endpoint::Endpoint;
+pub use endpoint::{Endpoint, sticky_session_id};
 pub use provider::{ModelCapabilities, Provider};
 pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,

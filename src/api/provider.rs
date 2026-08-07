@@ -67,6 +67,20 @@ impl Provider {
         }
     }
 
+    /// The header this provider reads a sticky-routing session key from, or
+    /// `None` where the concept doesn't exist (docs/transport.md). Anthropic has
+    /// no equivalent: nothing in Messages selects an upstream, because there is
+    /// only one — `metadata.user_id` is an abuse-detection identifier, not a
+    /// routing key, and is not a substitute. Gating here rather than sending the
+    /// header everywhere means the design never rests on an unrecognized header
+    /// being ignored rather than rejected.
+    pub(super) fn session_header(&self) -> Option<&'static str> {
+        match self {
+            Self::Anthropic => None,
+            Self::OpenRouter => Some("x-session-id"),
+        }
+    }
+
     /// The literal prepended to the secret to form the auth header value.
     /// Split off the secret so the secret stays a *whole* value (an `op://…`
     /// reference `op run` can substitute — docs/transport.md).

@@ -601,3 +601,89 @@ fn render_messages_yaml_is_just_the_array() {
     assert!(!rendered.contains("system:"));
     assert!(!rendered.contains("tools:"));
 }
+
+// ---- the sticky-routing session key (docs/transport.md) ----
+
+/// The key is derived from the session dir, which is fixed for the session's life,
+/// so re-deriving it yields the same bytes — the property the whole mechanism rests
+/// on. A key that moved with the projection would re-route exactly when consolidation
+/// rewrites the opening messages, which is the failure it exists to prevent.
+#[test]
+fn session_key_is_stable_across_derivations() {
+    let dir = std::path::Path::new(".efference/work");
+    assert_eq!(sticky_session_id(dir), sticky_session_id(dir));
+}
+
+/// Session ids are unique per `.efference/` dir, not per account: two repos both
+/// served `--name work` must not pin each other's routing. The name stays readable
+/// in front (the Sessions view is the other thing the key buys) and the path hash
+/// separates them.
+#[test]
+fn session_key_separates_same_name_in_different_dirs() {
+    let a = sticky_session_id(std::path::Path::new("alpha/.efference/work"));
+    let b = sticky_session_id(std::path::Path::new("beta/.efference/work"));
+    assert!(a.starts_with("work-"), "{a}");
+    assert!(b.starts_with("work-"), "{b}");
+    assert_ne!(a, b);
+}
+
+/// `--name` is arbitrary user input, so the 256-char cap has to hold without
+/// panicking and without eating the hash. Truncating the tail would drop the
+/// disambiguating half — the one thing the cap must not do.
+#[test]
+fn session_key_caps_by_truncating_the_name_not_the_hash() {
+    let long = "x".repeat(400);
+    let dir = std::path::PathBuf::from(".efference").join(&long);
+    let key = sticky_session_id(&dir);
+    assert!(key.len() <= 256, "{}", key.len());
+    // the hash survives: the same dir under a shorter name shares no suffix by
+    // accident, and this key still ends in one full hash's worth of hex
+    let (name, hash) = key.rsplit_once('-').unwrap();
+    assert_eq!(hash.len(), 16, "{key}");
+    assert!(hash.chars().all(|c| c.is_ascii_hexdigit()), "{key}");
+    assert!(name.chars().all(|c| c == 'x'), "{key}");
+}
+
+/// A multibyte `--name` truncates on a character boundary. A plain byte slice here
+/// panics at boot, which is a crash on the operator's first non-ASCII session name.
+#[test]
+fn session_key_truncates_a_multibyte_name_without_panicking() {
+    let long = "é".repeat(400);
+    let key = sticky_session_id(&std::path::PathBuf::from(".efference").join(&long));
+    assert!(key.len() <= 256, "{}", key.len());
+    assert!(key.contains('é'));
+}
+
+/// The spotter's key is distinct from the agent's. Its prefix shares nothing with the
+/// agent turn, and an explicit key overrides the message hashing that used to separate
+/// them for free — so pointing both clients at one model would otherwise pin two
+/// unrelated prefixes to one route.
+#[test]
+fn spotter_endpoint_takes_a_distinct_key_that_still_fits_the_cap() {
+    let mut e = Endpoint::resolve(None, None, Some("sk-ant-xyz".into())).unwrap();
+    let long = "x".repeat(400);
+    e.session_id = Some(sticky_session_id(
+        &std::path::PathBuf::from(".efference").join(&long),
+    ));
+    let spot = e.for_spotter();
+    assert_ne!(spot.session_id, e.session_id);
+    assert!(spot.session_id.unwrap().len() <= 256);
+}
+
+/// An endpoint with no key derived — every offline verb — yields no spotter key
+/// either, rather than a bare suffix.
+#[test]
+fn spotter_endpoint_without_a_key_stays_keyless() {
+    let e = Endpoint::resolve(None, None, Some("sk-ant-xyz".into())).unwrap();
+    assert_eq!(e.session_id, None);
+    assert_eq!(e.for_spotter().session_id, None);
+}
+
+/// Only providers that read a sticky key get the header. Anthropic has no
+/// sticky-routing concept, so gating here is what keeps the design off the
+/// assumption that an unrecognized header is ignored rather than rejected.
+#[test]
+fn only_openrouter_declares_a_session_header() {
+    assert_eq!(Provider::Anthropic.session_header(), None);
+    assert_eq!(Provider::OpenRouter.session_header(), Some("x-session-id"));
+}

@@ -11,6 +11,12 @@ use super::*;
 /// switching providers is one word plus the matching key. Resolved once from
 /// the environment at boot and shared by the agent [`Client`] and the fork's
 /// spotter client, so both hit the same endpoint over the same cached prefix.
+///
+/// The `session_id` field is attached after resolution by the daemon's `serve`
+/// (docs/transport.md). Absent in offline verbs (spotter probes, wire view)
+/// that have no conversation to pin. Whether it actually rides a request is the
+/// *provider's* call ([`Provider::session_header`]) — the field carries this
+/// session's key regardless, so the derivation stays in one place.
 #[derive(Clone, Debug)]
 pub struct Endpoint {
     /// The declared API family — also the source of the model-metadata query
@@ -29,6 +35,99 @@ pub struct Endpoint {
     /// `op run` substitutes — it only resolves a reference that is the entire
     /// value, never one embedded mid-string).
     pub auth_value: String,
+    /// This session's sticky-routing key (docs/transport.md), or `None` where
+    /// there is no conversation to pin. Set by the daemon's `serve` from
+    /// [`sticky_session_id`]; carried on every request the provider declares a
+    /// [`session_header`] for. Derived once at boot from the session dir, which
+    /// is fixed for the session's life — it must not move when the projection
+    /// does, since a key that tracked the projection would re-route exactly when
+    /// consolidation rewrites the opening messages.
+    ///
+    /// [`session_header`]: Provider::session_header
+    pub session_id: Option<String>,
+}
+
+/// The cap OpenRouter puts on a session key. `--name` is arbitrary user input,
+/// so the derivation below has to fit inside it rather than assume it does.
+const SESSION_ID_MAX: usize = 256;
+
+/// What distinguishes the spotter's key from the agent's ([`Endpoint::for_spotter`]).
+const SPOTTER_SUFFIX: &str = "-spot";
+
+/// This session's sticky-routing key: `<session id>-<hash of the session dir's
+/// absolute path>` (docs/transport.md).
+///
+/// Both halves earn their place. Session ids are unique per `.efference/` dir, not
+/// per account, so two repos both served `--name work` would otherwise produce the
+/// same key and pin each other's routing; the hash separates them. Hashing alone
+/// would do that and make the value unreadable in OpenRouter's Sessions view, which
+/// is the other thing the key buys, so the human-chosen name stays in front.
+///
+/// The path is canonicalized through the *parent*, not the dir itself: on the first
+/// turn the session dir does not exist yet, and taking the same branch either way is
+/// what keeps a fresh session and a resumed one on one key. `cwd.join(dir)` is not
+/// enough — it is absolute but not canonical, so the same session reached through a
+/// symlinked path (`/tmp` vs `/private/tmp` on macOS) would hash differently.
+pub fn sticky_session_id(session_dir: &std::path::Path) -> String {
+    let name = session_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unnamed");
+    let hash = fnv1a_hex(&canonical_display(session_dir));
+    // Truncate the *name*, never the tail: the hash is the disambiguating half, so a
+    // cap that dropped it would defeat the thing the key exists for. The spotter's
+    // suffix is reserved here so its derived key fits the same cap.
+    let budget = SESSION_ID_MAX - SPOTTER_SUFFIX.len() - hash.len() - 1;
+    format!("{}-{hash}", truncate_on_char_boundary(name, budget))
+}
+
+/// The session dir as an absolute, symlink-resolved string — see
+/// [`sticky_session_id`] for why the parent is what gets canonicalized. Falls back
+/// through `cwd`-joining and then the path as given; the key only has to be stable
+/// within one session, so a fallback that stays constant is enough.
+fn canonical_display(session_dir: &std::path::Path) -> String {
+    let parent = match session_dir.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => std::path::PathBuf::from("."),
+    };
+    let resolved = match (std::fs::canonicalize(&parent), session_dir.file_name()) {
+        (Ok(parent), Some(name)) => Some(parent.join(name)),
+        _ => std::env::current_dir()
+            .ok()
+            .map(|cwd| cwd.join(session_dir)),
+    };
+    resolved
+        .unwrap_or_else(|| session_dir.to_path_buf())
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// FNV-1a over `s`, hex. Spelled out rather than reached for from `std`:
+/// `DefaultHasher`'s output is explicitly not stable across Rust releases, so a
+/// rebuild mid-session would move the key — the one property this whole mechanism
+/// is for. Not a cryptographic hash and doesn't need to be; it disambiguates two
+/// paths, and nothing downstream trusts it.
+fn fnv1a_hex(s: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in s.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x1000_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// The longest prefix of `s` that fits in `max` **bytes** and ends on a character
+/// boundary. `--name` is arbitrary user input, so a plain `&s[..max]` is a panic
+/// waiting for the first multibyte name.
+fn truncate_on_char_boundary(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let mut end = max;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }
 
 /// The env knobs the provider enum replaced. Set ones are a hard error naming
@@ -98,6 +197,26 @@ impl Endpoint {
             url: provider.messages_url().to_string(),
             auth_header: provider.auth_header().to_string(),
             auth_value: format!("{}{}", provider.auth_prefix(), key),
+            session_id: None,
         })
+    }
+
+    /// The same endpoint under a **distinct** sticky key, for the spotter's client
+    /// (docs/permissions.md, docs/transport.md).
+    ///
+    /// The spotter has its own system prompt and shares no prefix with the agent
+    /// turn, so the two are separate conversations that happen to run over one
+    /// endpoint. Nothing stops an operator pointing both at the same model, and a
+    /// shared key would then pin two unrelated prefixes to one sticky route and
+    /// trade cache hits on both. An explicit key overrides message-hash derivation,
+    /// so the separation the derived key gave for free has to be re-stated here.
+    pub fn for_spotter(&self) -> Self {
+        Self {
+            session_id: self
+                .session_id
+                .as_ref()
+                .map(|id| format!("{id}{SPOTTER_SUFFIX}")),
+            ..self.clone()
+        }
     }
 }

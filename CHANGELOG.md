@@ -17,6 +17,7 @@ behind a change, see [`journal/`](journal/).
 - Transient upstream 429/5xx responses retry with a bounded backoff, and an exhausted completion now returns the session to idle instead of terminating the daemon.
 
 ### Added
+- Sessions send OpenRouter a per-session `x-session-id`, pinning sticky routing to one upstream so a consolidation — which rewrites the opening messages OpenRouter would otherwise hash — can't re-route mid-session; the spotter takes a distinct key, and providers without sticky routing are sent nothing.
 - `GET /events` is one control stream carrying three durability classes (`log`/`output`/`state`) under a discriminated frame envelope, selectable with `?include=log,output,state:gate`; an unknown token is a `400`.
 - Level-triggered `state` frames deliver whole-topic replacements, ordered so that no state frame precedes a log frame it reflects, and folding them equals `GET /state`.
 - The TUI runs on one control connection (`?include=log,output,state`): the 400 ms `GET /state` poll and its second `/stream` socket are gone, with gate/processes/usage/policy/pace/running driven from `state` frames and elapsed-time displays advanced by a client-side 1 Hz tick.

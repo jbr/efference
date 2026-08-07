@@ -23,7 +23,15 @@ pub(crate) async fn serve(
     // (default anthropic) implies the messages URL and auth shape; the secret arrives
     // alone via EFFERENCE_API_KEY (or the ANTHROPIC_API_KEY fallback) so it can be a
     // whole-value `op://…` reference under `op run`.
-    let endpoint = efference::api::Endpoint::from_env()?;
+    let mut endpoint = efference::api::Endpoint::from_env()?;
+
+    // The sticky-routing key (docs/transport.md): derived once here, from the session
+    // dir, which is fixed for the session's life. It pins the session to one upstream
+    // so consolidation — which rewrites the opening messages, and with them the key
+    // OpenRouter would otherwise derive by hashing them — can't re-route mid-session.
+    // Whether it rides a request is the provider's call; a session that never talks to
+    // a provider with sticky routing simply derives a key nothing reads.
+    endpoint.session_id = Some(efference::api::sticky_session_id(&session_dir));
 
     // The required model-metadata lookup (docs/transport.md): capability conditionals
     // (the context ceiling now; more as they land) must not run on guesses, so a failed
@@ -178,8 +186,11 @@ pub(crate) async fn serve(
     // The independent permission rung (docs/permissions.md): a fresh-context spotter
     // on its own Haiku-band client, built from the same endpoint. It re-decides the calls
     // the deterministic fast-path can't clear, before the human gate. It learns the
-    // scratch dir so its scope block can alias `$TMPDIR` to the granted path.
-    let spotter = ForkSpot::new(endpoint, spotter_model).with_scratch(Some(scratch.clone()));
+    // scratch dir so its scope block can alias `$TMPDIR` to the granted path. Its own
+    // sticky key (`for_spotter`): same endpoint, but a prefix the agent lineage never
+    // shares, so pointing both at one model doesn't pin them to one route.
+    let spotter =
+        ForkSpot::new(endpoint.for_spotter(), spotter_model).with_scratch(Some(scratch.clone()));
 
     // The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
     // canonical wire keeps only what the model retains. `Toolbox` is the docs/tools.md tool

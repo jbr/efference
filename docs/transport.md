@@ -172,6 +172,49 @@ Env knobs:
   `EFFERENCE_API_KEY`: an Anthropic key is the wrong credential there, and the
   early error beats a confusing 401.
 
+**Sticky routing (`x-session-id`).** OpenRouter routes a model slug to *some*
+upstream provider and keeps a conversation on one of them so the prompt cache
+stays warm. Absent an explicit key it derives one by hashing the first system
+message and the first non-system message — which `consolidate` moves: it elides
+every entry up to `upto`, including the original first user message, and projects
+a summary in its place ([consolidate.md](consolidate.md)). The first non-system
+message is therefore different on the next turn, the derived key changes, and
+OpenRouter is free to route elsewhere — reading a cache write back against an
+upstream that never saw it. Sending the key explicitly is what pins it.
+
+The value is `<session id>-<hash of the session dir's canonical path>`, derived
+once at boot by `sticky_session_id` in `src/api/endpoint.rs`. Session ids are
+unique per `.efference/` dir, not per account, so two repos both served
+`--name work` would otherwise collide; the hash separates them while the
+human-chosen name stays readable in OpenRouter's Sessions view, the other thing
+the key buys. The path is canonicalized through the parent, since the session dir
+does not exist yet on the first turn and a fresh session must key the same as a
+resumed one. Capped at 256 characters (OpenRouter's limit) by truncating the
+*name* — `--name` is arbitrary user input, and a cap that ate the hash instead
+would defeat the disambiguation.
+
+Which requests carry it is the **provider's** call: `Provider::session_header`
+returns the header name, or `None` where the concept doesn't exist. Anthropic
+returns `None` — nothing in Messages selects an upstream, because there is only
+one, and `metadata.user_id` is an abuse-detection identifier rather than a
+routing key. An earlier draft sent the header unconditionally on the grounds that
+an unrecognized header is free; gating on the declared provider means that
+assumption never has to hold. Offline verbs (the `spotter` probe, `wire`) derive
+no key at all — a one-shot probe has no conversation to pin.
+
+The spotter takes a **distinct** key (`Endpoint::for_spotter`, a `-spot` suffix).
+It has its own system prompt and shares no prefix with the agent turn, so the two
+are separate conversations over one endpoint; message-hash derivation separated
+them for free, and an explicit key overrides that, so the separation has to be
+re-stated. Nothing stops an operator pointing both clients at the same model, and
+a shared key would then pin two unrelated prefixes to one route.
+
+Byte-stability is the point: the key is derived from the session dir, which is
+fixed for the session's life, and must not move when the projection does. The
+hash is a spelled-out FNV-1a rather than `DefaultHasher`, whose output is
+explicitly not stable across Rust releases — a rebuild mid-session would
+otherwise move the key.
+
 An earlier design assembled the endpoint from data instead — URL, header name,
 and prefix each their own env knob, with no provider identity in the code. It
 was replaced because the provider knowledge didn't disappear, it moved into the

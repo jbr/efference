@@ -145,6 +145,7 @@ fn state_reports_session_cost_only_when_armed() {
         url: "https://openrouter.ai/api/v1/messages".into(),
         auth_header: "authorization".into(),
         auth_value: "Bearer sk-or-test".into(),
+        session_id: None,
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(
