@@ -400,7 +400,16 @@ fn roster_lists_stub_items_and_excludes_inlined_and_exec() {
         },
         listed("jsonl-prose"),
     ])];
-    assert_eq!(surfaceable_roster(&prefix), vec!["ferritin", "jsonl-prose"]);
+    assert_eq!(
+        names(&surfaceable_roster(&prefix)),
+        ["ferritin", "jsonl-prose"]
+    );
+}
+
+/// The roster carries whole items now (so it can re-render them as the preamble did);
+/// most assertions here are still about *which* items, by name.
+fn names(roster: &[Item]) -> Vec<&str> {
+    roster.iter().map(roster_name).collect()
 }
 
 #[test]
@@ -422,8 +431,8 @@ fn roster_excludes_already_surfaced_names() {
         ),
     ];
     assert_eq!(
-        surfaceable_roster(&prefix),
-        vec!["jsonl-prose"],
+        names(&surfaceable_roster(&prefix)),
+        ["jsonl-prose"],
         "ferritin was surfaced already; only jsonl-prose remains offerable"
     );
 }
@@ -582,7 +591,7 @@ fn flat_keep_is_adopted_only_for_a_single_result_gate() {
 /// it is the token most likely to come back wrong (docs/redaction-fork.md).
 #[test]
 fn a_single_result_gate_asks_for_the_flat_form_and_no_call_id() {
-    let instruction = retain_instruction(&["call_abc123".to_string()]);
+    let instruction = retain_instruction(&["call_abc123".to_string()], &[]);
     assert!(
         !instruction.contains("call_abc123"),
         "nothing to copy: {instruction}"
@@ -599,7 +608,7 @@ fn a_single_result_gate_asks_for_the_flat_form_and_no_call_id() {
 #[test]
 fn a_multi_result_gate_lists_every_offered_id_and_the_count() {
     let offered = ["call_a".to_string(), "call_b".to_string()];
-    let instruction = retain_instruction(&offered);
+    let instruction = retain_instruction(&offered, &[]);
     assert!(instruction.contains("[call_a], [call_b]"), "{instruction}");
     assert!(
         instruction.contains("exactly 2 `results` entries"),
@@ -619,7 +628,7 @@ fn every_retain_ask_excludes_the_transcript_behind_it() {
         vec!["only".to_string()],
         vec!["a".to_string(), "b".to_string()],
     ] {
-        let instruction = retain_instruction(&offered);
+        let instruction = retain_instruction(&offered, &[]);
         assert!(
             instruction.contains("Nothing earlier in this conversation is being triaged"),
             "the ask must say what is out of scope: {instruction}"
@@ -721,4 +730,76 @@ fn a_coverage_rejection_reports_what_was_answered() {
         why.contains("[6], [multi_tool_use.parallel], [8]"),
         "the wrong ids are the diagnosis: {why}"
     );
+}
+
+/// The ask opens on a banner and the imperative, and closes on the imperative. Every other
+/// section of a peek view carries a banner; the ask carrying none left the only
+/// *instruction* in the view reading as a trailing note. A session answered 29% of its
+/// gates with a work tool instead of a verdict (journal/2026-08-07-session-key-review.md).
+#[test]
+fn the_ask_is_bannered_and_opens_and_closes_on_the_imperative() {
+    let instruction = retain_instruction(&["call_x".to_string()], &[]);
+    let mut lines = instruction.lines();
+    assert_eq!(lines.next(), Some(ASK_BANNER), "{instruction}");
+    assert!(
+        instruction
+            .lines()
+            .nth(2)
+            .is_some_and(|l| l.starts_with("Call `retain` now.")),
+        "the imperative leads, not a description: {instruction}"
+    );
+    assert!(instruction.ends_with("Call `retain`."), "{instruction}");
+}
+
+/// The turn is stated to be a triage turn, and the closed toolbox is stated as fact — a
+/// non-`retain` call really is answered with an error and the ask really does come back
+/// (`extend_with_retry`), so the sentence is true as written rather than a discouragement.
+#[test]
+fn the_ask_says_this_turn_is_not_the_task() {
+    let instruction = retain_instruction(&["call_x".to_string()], &[]);
+    assert!(
+        instruction.contains("not a work turn"),
+        "the ask must disown the task: {instruction}"
+    );
+    assert!(
+        instruction.contains("No other tool will run until you have called `retain`"),
+        "and state the closed toolbox non-optionally: {instruction}"
+    );
+}
+
+/// A rider's field row rides inside the block, and only when its section is above. An
+/// absent rider must leave no trace — an unconditional mention would ask about a section
+/// the model can't see.
+#[test]
+fn rider_fields_appear_only_when_their_section_does() {
+    let offered = ["call_x".to_string()];
+    let bare = retain_instruction(&offered, &[]);
+    assert!(bare.contains("  keep "), "keep always rides: {bare}");
+    for absent in ["surfaced", "inbox", "background"] {
+        assert!(
+            !bare.contains(absent),
+            "{absent} named with no section: {bare}"
+        );
+    }
+    let with_roster = retain_instruction(&offered, &[SURFACE_FIELD]);
+    assert!(with_roster.contains("  surfaced "), "{with_roster}");
+    assert!(!with_roster.contains("  inbox "), "{with_roster}");
+}
+
+/// The roster renders each item exactly as the boot preamble spelled it, through the
+/// preamble's own renderer — summary and path included. A bare `[name]` under-describes
+/// what the item is: a session met a listed skill that way and built a tool call out of
+/// the name rather than reading the file (journal/2026-08-07-session-key-review.md).
+#[test]
+fn the_roster_renders_items_as_the_preamble_spelled_them() {
+    let roster = vec![listed("ferritin")];
+    let mut view = String::new();
+    append_roster(&mut view, &roster);
+    assert!(
+        view.contains(&crate::context::render_item(&roster[0])),
+        "one renderer, so the two can't drift: {view}"
+    );
+    assert!(view.contains("path=\"skills/ferritin.md\""), "{view}");
+    assert!(view.contains("what ferritin does"), "{view}");
+    assert!(!view.contains("[ferritin]"), "not the bare name: {view}");
 }

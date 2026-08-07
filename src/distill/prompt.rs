@@ -9,12 +9,27 @@ context and be acted on now, `dismiss` the noise, and leave anything you're defe
 unlisted. If you pin nothing you simply go back to idle and nothing changes — so pin only \
 what truly warrants picking the work back up.";
 
-/// The shared tail of the `retain` ask — what `keep` means and how to choose it. The
-/// shape-specific opening is prepended by [`retain_instruction`].
-const RETAIN_TAIL: &str = " `keep` is \"all\", \"none\", or comma-separated 1-based inclusive \
-line ranges like \"40-52,310-318\". Whatever you drop is gone from the working context — so keep \
-anything that might matter for the rest of the task, while staying as lean as you can. Always \
-add a one-line `note` summarizing what that output showed.";
+/// The ask's banner. Every other section of a peek view carries one (`═══ result ═══`,
+/// `═══ context ═══`, `═══ inbox ═══`); the ask carrying none left the only *instruction*
+/// in the view formatted as a trailing note about the sections above it.
+pub(super) const ASK_BANNER: &str = "═══ triage · answer, don't act ═══";
+
+/// The `keep`/`note` rows of the field block. `note` says *only what it showed* because a
+/// peek once turned a raw `unknown tool: ferritin` into "ferritin is not available as a CLI
+/// tool in this environment" — false, and the raw is discarded, so the invented claim was
+/// the only thing that survived onto the canonical wire
+/// (journal/2026-08-07-session-key-review.md). Dropping the wrong lines is the failure this
+/// gate is designed against; asserting past the output is worse, because nothing
+/// downstream can detect it.
+// NB: each row's first line sits on the opening-quote line. A `"\` continuation would eat
+// the newline *and* the leading indent behind it, silently de-indenting the first row only.
+const KEEP_FIELDS: &str =
+    "  keep        \"all\", \"none\", or comma-separated 1-based inclusive line ranges like
+              \"40-52,310-318\". Whatever you drop is gone from the working context, so keep
+              anything that might matter for the rest of the task, while staying as lean
+              as you can.
+  note        One line, saying what this output showed — only what it showed. Do not
+              generalize past it or explain what it means for the task.";
 
 /// The `retain` ask, scoped to the results **this gate** is deciding
 /// (docs/redaction-fork.md).
@@ -36,43 +51,76 @@ add a one-line `note` summarizing what that output showed.";
 ///   carry several. The ids are interpolated in that case — the peek's tail is thrown
 ///   away, so nothing here is cache-keyed (docs/log-and-projection.md), unlike the
 ///   static schema it drives.
-pub(super) fn retain_instruction(offered: &[String]) -> String {
+///
+/// A third thing, from a session that answered 29% of its gates with a work tool instead
+/// of a verdict — usually the tool it went on to call on the next canonical turn, at a rate
+/// that climbed with session depth (journal/2026-08-07-session-key-review.md). The ask had
+/// no structural weight against that: one unbroken paragraph, assembled from four
+/// separately-authored fragments, opening on a description and closing on a tangent about
+/// `surfaced`, while every other section of the view carried a banner and `tools[]` carried
+/// the whole world toolset under `tool_choice: auto`. So the ask now leads with the
+/// imperative, states plainly that this turn is not the task, carries the per-field asks as
+/// a scannable block instead of appended prose, and repeats the imperative last.
+///
+/// The "no other tool will run" sentence is a **fact**, not a discouragement: a
+/// non-`retain` call is answered with an error `tool_result` and the ask is renewed
+/// (`extend_with_retry`). Saying so non-optionally beats hinting, and stays true.
+///
+/// `riders` are the field rows for whatever else this gate carries (inbox, background,
+/// surfacing roster), placed inside the block rather than appended after it.
+pub(super) fn retain_instruction(offered: &[String], riders: &[&str]) -> String {
     let scope = "Nothing earlier in this conversation is being triaged — those results are \
 already decided, and their [n] tags are not call ids.";
-    match offered {
+    let shape = match offered {
         [_one] => format!(
-            "This message carries the FULL, line-numbered output of the one tool call you just \
-made. {scope} Call `retain` now with a top-level `keep` and `note` for that output — no \
-`results` array and no call id: there is only one result in question.{RETAIN_TAIL}"
+            "The block above is the FULL, line-numbered output of the one call you just made. \
+{scope} Answer with a top-level `keep` and `note`: no `results` array and no call id, since \
+there is only one result in question."
         ),
         many => format!(
-            "This message carries the FULL, line-numbered output of the {n} tool calls you just \
-made, each under a header naming its [call id]. Line numbers restart at 1 within each result, so \
-ranges are always relative to the result you are deciding. {scope} Call `retain` now with exactly \
-{n} `results` entries, one per call id listed here and no others: [{ids}]. Copy each `call_id` \
-exactly.{RETAIN_TAIL}",
+            "The blocks above are the FULL, line-numbered output of the {n} calls you just made, \
+each under a header naming its [call id]. Line numbers restart at 1 within each result, so ranges \
+are always relative to the result you are deciding. {scope} Answer with exactly {n} `results` \
+entries, one per call id listed here and no others: [{ids}]. Copy each `call_id` exactly.",
             n = many.len(),
             ids = many.join("], ["),
         ),
-    }
+    };
+    let fields = std::iter::once(KEEP_FIELDS)
+        .chain(riders.iter().copied())
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "{ASK_BANNER}\n\n\
+Call `retain` now. This is a triage turn, not a work turn: the task continues on your NEXT \
+turn, from whatever you keep here. No other tool will run until you have called `retain` — a \
+call to anything else is rejected and this ask comes back.\n\n\
+{shape}\n\n\
+{fields}\n\n\
+Call `retain`."
+    )
 }
 
-pub(super) const INBOX_INSTRUCTION: &str = " You also have pending notifications, listed under \
-\"inbox\" above with an [id] each. In the `inbox` field, `pin` the ids worth carrying \
-into your working context going forward and `dismiss` the noise; any id you don't list \
-is left in the inbox and shown again at the next decision point.";
+/// The gate-scoped riders, as field rows for [`retain_instruction`]'s block. Each is added
+/// only when its section is actually present in the view above.
+pub(super) const INBOX_FIELD: &str =
+    "  inbox       The pending notifications under \"inbox\" above, an [id] each. `pin` the ids
+              worth carrying into your working context going forward and `dismiss` the
+              noise; any id you don't list stays in the inbox and is shown again at the
+              next decision point.";
 
-pub(super) const BACKGROUND_INSTRUCTION: &str = " Background processes are listed under \
-\"background\" above, each with a [p#n] handle and its recent output. In the \
-`background` field, `pin` the handles whose current output you want captured onto the \
-record now, and `mute` the ones whose tail you no longer need to see (they keep \
-running and still notify you when they exit). Anything you don't list keeps streaming \
-its latest tail to you at the next decision point.";
+pub(super) const BACKGROUND_FIELD: &str =
+    "  background  The processes under \"background\" above, a [p#n] handle each. `pin` the
+              handles whose current output you want captured onto the record now, and
+              `mute` the ones whose tail you no longer need (they keep running, and still
+              notify you when they exit). Anything you don't list keeps streaming its
+              latest tail to you at the next decision point.";
 
-pub(super) const SURFACE_INSTRUCTION: &str = " Under \"context\" above are one-line-summarized \
-files available to you but not yet loaded, each with a [name]. In the `surfaced` field, \
-name any that genuinely bear on what you're doing right now — each you name will be \
-surfaced as a reminder to read it before you rely on memory. Name nothing if none apply.";
+pub(super) const SURFACE_FIELD: &str =
+    "  surfaced    The files under \"context\" above — available to you, not yet loaded, each
+              shown with its summary and the path to read. Name any that genuinely bear on
+              what you're doing right now and it will be surfaced as a reminder to read it
+              before you rely on memory. Name nothing if none apply.";
 
 /// Render the inbox + background sections of a peek view (docs/inbox.md, docs/supervisor.md) — shared by the
 /// tool-result-riding gate and the standalone idle triage. Each item by its `[seq]` /
@@ -106,14 +154,17 @@ pub(super) fn append_inbox_and_background(
     }
 }
 
-/// The fork's surfacing roster (docs/redaction-fork.md): the names of **listed**
-/// `[context]` items — stub files carrying a `path`, read on demand — that no prior gate
-/// has surfaced yet. A pure fold over the prefix: the boot `Preamble`'s structured listing
-/// (last one wins on a multi-boot log) minus every name any prior `Triage.surfaced` already
-/// carried (the surfaced-once dedup, `Triage`-only — no path-load tracking). Inlined and
-/// exec items are excluded: their whole body is already on the wire, so there is nothing to
-/// read on demand. Names double as the constrained output vocabulary.
-pub(super) fn surfaceable_roster(prefix: &[LogEntry]) -> Vec<String> {
+/// The fork's surfacing roster (docs/redaction-fork.md): the **listed** `[context]` items
+/// — stub files carrying a `path`, read on demand — that no prior gate has surfaced yet.
+/// A pure fold over the prefix: the boot `Preamble`'s structured listing (last one wins on
+/// a multi-boot log) minus every name any prior `Triage.surfaced` already carried (the
+/// surfaced-once dedup, `Triage`-only — no path-load tracking). Inlined and exec items are
+/// excluded: their whole body is already on the wire, so there is nothing to read on
+/// demand. Names double as the constrained output vocabulary.
+///
+/// The whole item is carried, not just the name, so [`append_roster`] can re-render it as
+/// the preamble spelled it — summary and path included.
+pub(super) fn surfaceable_roster(prefix: &[LogEntry]) -> Vec<Item> {
     let mut sections: &[crate::context::Section] = &[];
     let mut surfaced: HashSet<&str> = HashSet::new();
     for entry in prefix {
@@ -127,25 +178,40 @@ pub(super) fn surfaceable_roster(prefix: &[LogEntry]) -> Vec<String> {
     sections
         .iter()
         .flat_map(|s| &s.items)
-        .filter_map(|item| match item {
-            Item::Listed { name, .. } => Some(name),
-            Item::Inline { .. } | Item::Exec { .. } => None,
+        .filter(|item| match item {
+            Item::Listed { name, .. } => {
+                !surfaced.contains(name.as_str()) && seen.insert(name.as_str())
+            }
+            Item::Inline { .. } | Item::Exec { .. } => false,
         })
-        .filter(|name| !surfaced.contains(name.as_str()) && seen.insert(name.as_str()))
         .cloned()
         .collect()
 }
 
+/// The name a roster [`Item`] is addressed by — the `retain.surfaced` vocabulary.
+pub(super) fn roster_name(item: &Item) -> &str {
+    match item {
+        Item::Listed { name, .. } | Item::Inline { name, .. } | Item::Exec { name, .. } => name,
+    }
+}
+
 /// Render the surfacing roster section of a peek view (docs/redaction-fork.md): the
-/// available-but-unloaded context items by `[name]`, the coordinates the `retain.surfaced`
-/// field addresses. Only in the tool-result gate — the idle triage rides no work in flight.
-pub(super) fn append_roster(view: &mut String, roster: &[String]) {
+/// available-but-unloaded context items, each spelled exactly as the boot preamble spelled
+/// it — `<name path="…">summary</name>`, through the preamble's own renderer so the two
+/// can't drift. Only in the tool-result gate — the idle triage rides no work in flight.
+///
+/// The name alone was what shipped first, and it under-describes what the item *is*: a
+/// session met a listed skill as a bare `[ferritin]` and built a tool call out of the name
+/// rather than reading the file (journal/2026-08-07-session-key-review.md). Repeating the
+/// summary and the path costs a line each and answers the question the name provokes.
+pub(super) fn append_roster(view: &mut String, roster: &[Item]) {
     if roster.is_empty() {
         return;
     }
     view.push_str(&format!("\n\n═══ context · {} available ═══", roster.len()));
-    for name in roster {
-        view.push_str(&format!("\n[{name}]"));
+    for item in roster {
+        view.push('\n');
+        view.push_str(&crate::context::render_item(item));
     }
 }
 

@@ -435,7 +435,7 @@ fn peek_messages(
     pending: &[Pending<'_>],
     inbox: &[ShownNotification],
     background: &[BgView],
-    roster: &[String],
+    roster: &[Item],
 ) -> Vec<ApiMessage> {
     let mut sections = String::new();
     append_inbox_and_background(&mut sections, inbox, background);
@@ -443,17 +443,19 @@ fn peek_messages(
 
     // Scoped to exactly this gate's ids, and shape-selected on its size — the tail is
     // discarded with the fork, so nothing here is cache-keyed (docs/redaction-fork.md).
+    // A rider's field row is offered only when its section is actually above.
     let offered: Vec<String> = pending.iter().map(|p| p.call.id.0.clone()).collect();
-    let mut instruction = retain_instruction(&offered);
+    let mut riders: Vec<&str> = Vec::new();
     if !inbox.is_empty() {
-        instruction.push_str(INBOX_INSTRUCTION);
+        riders.push(INBOX_FIELD);
     }
     if !background.is_empty() {
-        instruction.push_str(BACKGROUND_INSTRUCTION);
+        riders.push(BACKGROUND_FIELD);
     }
     if !roster.is_empty() {
-        instruction.push_str(SURFACE_INSTRUCTION);
+        riders.push(SURFACE_FIELD);
     }
+    let instruction = retain_instruction(&offered, &riders);
 
     // The prefix hits cache; only the raws and the instruction are fresh, and they are
     // discarded — the canonical lineage never sees raw (docs/redaction-fork.md).
@@ -468,8 +470,14 @@ fn peek_messages(
             cache_control: None,
         })
         .collect();
+    // `sections` already opens with its own blank line when non-empty, and is empty
+    // outright on a gate carrying no riders — so trim rather than always joining with a
+    // gap, which left the block opening on stray whitespace.
     content.push(ApiBlock::Text {
-        text: format!("{sections}\n\n{instruction}"),
+        text: match sections.trim() {
+            "" => instruction,
+            sections => format!("{sections}\n\n{instruction}"),
+        },
         cache_control: None,
     });
     messages.push(ApiMessage {
@@ -582,7 +590,7 @@ impl Distiller for ForkPeek {
             .filter(|(h, _)| shown_bg.contains(h.as_str()))
             .collect();
         // Keep only names actually on the roster (drop any the model invented), deduped.
-        let offered_names: HashSet<&str> = roster.iter().map(String::as_str).collect();
+        let offered_names: HashSet<&str> = roster.iter().map(roster_name).collect();
         let mut kept = HashSet::new();
         let surfaced = verdict
             .surfaced

@@ -105,6 +105,28 @@ The schema is static while gate size is not, so `retain` carries both shapes and
 tail instruction (`retain_instruction` in `src/distill/prompt.rs`) names which one this
 gate wants.
 
+**The ask is shaped against the pull of the turn it interrupts.** It carries its own
+`═══` banner, like every other section of the view; it opens on the imperative and
+repeats it last; it states that this is a triage turn and not a work turn; and the
+per-field asks (`keep`, `note`, and whichever of `inbox`/`background`/`surfaced` this
+gate carries) are a scannable block rather than prose appended after the fact. What
+shipped first was one unbroken paragraph assembled from four separately-authored
+fragments, opening on a description and closing on a tangent — the only *instruction* in
+the view formatted as a trailing note about the sections above it. A session answered 29%
+of its gates with a work tool instead of a verdict, usually the tool it went on to call
+on the next canonical turn, at a rate that climbed with session depth; every structural
+signal in the request said "ordinary tool result", including `tools[]` carrying the whole
+world toolset under `tool_choice: auto`.
+
+The closed-toolbox sentence — "no other tool will run until you have called `retain`" —
+is a statement of fact, not a discouragement: a non-`retain` call is answered with an
+error `tool_result` and the ask is renewed (below). `note` asks for what the output
+showed *and only that*, because a peek once turned a raw `unknown tool: ferritin` into
+"ferritin is not available as a CLI tool in this environment" — false, and since the raw
+is discarded, the invented claim was the only thing that reached the canonical wire.
+Dropping the wrong lines is the failure this gate is built against; asserting past the
+output is worse, because nothing downstream can detect it.
+
 - **One result** — top-level `keep`/`note`, **no call id**. Naming the one call whose
   output is right there is transcription with no decision in it, and it is the single
   most failure-prone token in the response.
@@ -278,10 +300,16 @@ need. Implemented in `src/distill.rs` (the roster + verdict) and `src/project.rs
 (the render).
 
 - **Roster.** The peek view lists the surfaceable items — every `Item::Listed`
-  (those with a `path`) in the boot listing that no prior gate has surfaced — by
-  `[name]`, and `retain` gains an optional `surfaced` field over those names. The
-  roster is a pure fold over the prefix; names double as the constrained output
-  vocabulary, validated against the roster (invented names dropped).
+  (those with a `path`) in the boot listing that no prior gate has surfaced — and
+  `retain` gains an optional `surfaced` field over those names. The roster is a pure
+  fold over the prefix; names double as the constrained output vocabulary, validated
+  against the roster (invented names dropped). Each item renders through
+  `context::render_item`, the **same** renderer the boot preamble uses, so an item met
+  mid-session is spelled `<name path="…">summary</name>` exactly as it was spelled at
+  boot. A bare `[name]` shipped first and under-described what an item *is*: a session
+  met a listed skill that way and built a tool call out of the name rather than opening
+  the file, then wrote the resulting `unknown tool` error into canonical context as a
+  false claim about the tool's availability.
 - **Surfaced-once dedup.** The fold excludes any name already in a prior
   `Triage.surfaced`, so an item is offered at most once per session — the same
   shape as the inbox's `active_shown`, `Triage`-only, no path-load tracking. It

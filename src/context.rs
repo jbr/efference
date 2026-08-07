@@ -105,7 +105,13 @@ impl Resolved {
 
 /// Render one item as its `<name>…</name>` tag: an inlined file holds its verbatim body (trimmed of
 /// surrounding blank space); a listed file holds its summary and a read pointer.
-fn render_item(item: &Item) -> String {
+///
+/// The fork peek's surfacing roster (docs/redaction-fork.md) renders through here too, so
+/// an item the model meets mid-session is spelled exactly as it was in the boot preamble.
+/// A roster that showed the bare name instead invited reading it as a *capability* rather
+/// than a file to open — a session did precisely that, building a tool call out of a
+/// listed skill's name (journal/2026-08-07-session-key-review.md).
+pub(crate) fn render_item(item: &Item) -> String {
     match item {
         Item::Inline { name, body, .. } | Item::Exec { name, body, .. } => {
             format!("<{name}>\n{}\n</{name}>", body.trim())
