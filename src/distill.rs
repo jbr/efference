@@ -487,6 +487,95 @@ fn peek_messages(
     messages
 }
 
+/// What one un-retried fork peek came back with — the `peek` dev tool's measurement
+/// primitive (docs/redaction-fork.md).
+///
+/// The gate's own machinery retries, so a session's `Triage.retries` records *that* a
+/// first attempt failed but never lets you compare two asks: a change that halves
+/// first-attempt non-compliance and one that changes nothing both end in a usable
+/// verdict. This runs exactly one round trip and reports the first attempt's verdict,
+/// which is the number an instruction change actually moves.
+pub struct PeekAttempt {
+    /// The tools the peek called, in order — empty for a prose-only answer.
+    pub called: Vec<String>,
+    /// Why the verdict was unusable, in the same phrasing `Triage.retries` records.
+    /// `None` means a usable, covering verdict on the first attempt.
+    pub why: Option<String>,
+    /// The model's exact `keep` string when it did answer, for eyeballing quality
+    /// separately from compliance.
+    pub raw_keep: Option<String>,
+    /// The one-line `note`, which is where an invented claim would show up.
+    pub note: Option<String>,
+    pub usage: RequestUsage,
+}
+
+impl PeekAttempt {
+    /// A usable, covering verdict on the first try — the thing being measured.
+    pub fn compliant(&self) -> bool {
+        self.why.is_none()
+    }
+}
+
+/// Rebuild the exact request a recorded gate's peek sent — the same `peek_messages` the
+/// live gate calls, so a replay can't drift from production (backlog/peek-dev-tools.md).
+/// Split out for the `peek` dev tool's dry run, which reviews an ask without spending a
+/// request on it.
+pub fn peek_request(
+    prefix: &[LogEntry],
+    pending: &[Pending<'_>],
+    inbox: &[ShownNotification],
+    background: &[BgView],
+) -> Vec<ApiMessage> {
+    let roster = surfaceable_roster(prefix);
+    peek_messages(prefix, pending, inbox, background, &roster)
+}
+
+/// One fork-peek round trip against a recorded gate, with **no retries**
+/// (backlog/peek-dev-tools.md). Same request, same validity rule (`parse_retain` plus
+/// [`require_coverage`]) as the live gate — only the retry loop is absent, because the
+/// first attempt is the measurement.
+pub async fn peek_attempt(
+    client: &Client,
+    tools: &[Value],
+    prefix: &[LogEntry],
+    pending: &[Pending<'_>],
+    inbox: &[ShownNotification],
+    background: &[BgView],
+) -> Result<PeekAttempt, String> {
+    let offered: Vec<String> = pending.iter().map(|p| p.call.id.0.clone()).collect();
+    let messages = peek_request(prefix, pending, inbox, background);
+    let completion = client
+        .complete(&messages, tools, ToolChoice::auto(), |_| {})
+        .await
+        .map_err(|e| format!("peek request failed: {e}"))?;
+
+    let called = match &completion.assistant {
+        Payload::Assistant { calls, .. } => calls.iter().map(|c| c.name.clone()).collect(),
+        _ => Vec::new(),
+    };
+    let verdict = parse_retain(&completion, &offered)
+        .ok_or_else(|| unusable(&completion, RETAIN))
+        .and_then(|v| require_coverage(v, &offered));
+    let (why, raw_keep, note) = match verdict {
+        Ok(v) => {
+            let first = v.results.first();
+            (
+                None,
+                first.map(|r| r.raw_keep.clone()),
+                first.and_then(|r| r.note.clone()),
+            )
+        }
+        Err(why) => (Some(why), None, None),
+    };
+    Ok(PeekAttempt {
+        called,
+        why,
+        raw_keep,
+        note,
+        usage: completion.request_usage(),
+    })
+}
+
 impl Distiller for ForkPeek {
     async fn distill(
         &self,

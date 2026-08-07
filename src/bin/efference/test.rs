@@ -233,3 +233,132 @@ fn paint_is_plain_when_not_a_tty() {
     assert_eq!(paint("x", RED, false), "x");
     assert_eq!(paint("x", RED, true), "\x1b[31mx\x1b[0m");
 }
+
+// ---- `peek` gate reconstruction (docs/redaction-fork.md) ----
+
+use crate::peek_replay::gates;
+use efference::log::{CallId, LogEntry, Origin, Payload, RawResult, ToolCall, Triage, WireState};
+
+fn call(id: &str) -> ToolCall {
+    ToolCall {
+        id: CallId(id.into()),
+        name: "bash".into(),
+        input: serde_json::json!({"command": "ls"}),
+    }
+}
+
+fn result(seq: u64, id: &str) -> LogEntry {
+    entry(
+        seq,
+        Payload::ToolResult {
+            call_id: CallId(id.into()),
+            raw: RawResult {
+                content: "out".into(),
+                is_error: false,
+            },
+            wire: WireState::Raw,
+        },
+    )
+}
+
+fn triage(seq: u64, for_result: u64, retries: Vec<String>) -> LogEntry {
+    entry(
+        seq,
+        Payload::Triage(Triage {
+            for_result: Some(for_result),
+            origin: Origin::Model,
+            raw_keep: "all".into(),
+            inbox: Vec::new(),
+            surfaced: Vec::new(),
+            retries,
+        }),
+    )
+}
+
+/// A gate is a completion's calls **plus their results**, and its prefix ends *before* the
+/// first of those results: the live loop snapshots the log at the assistant turn, and
+/// `peek_messages` appends the results itself as fresh `tool_result` blocks. A prefix that
+/// already carried them would double every result in the replayed request.
+#[test]
+fn a_gate_carries_a_completions_results_and_a_prefix_that_stops_short_of_them() {
+    let log = vec![
+        entry(
+            1,
+            Payload::Assistant {
+                thinking: vec![],
+                text: vec![],
+                calls: vec![call("a"), call("b")],
+            },
+        ),
+        result(2, "a"),
+        result(3, "b"),
+        triage(4, 2, vec![]),
+    ];
+    let gates = gates(&log);
+    assert_eq!(gates.len(), 1);
+    assert_eq!(gates[0].seq, 2, "addressed by its first result's seq");
+    assert_eq!(gates[0].calls.len(), 2, "the whole completion's batch");
+    assert_eq!(
+        gates[0].prefix_end, 1,
+        "the prefix is the assistant turn alone — the results are appended by the peek"
+    );
+}
+
+/// The recorded first attempt is the baseline each replay is scored against, so it has to
+/// come off the gate's own `Triage` rather than the session's aggregate.
+#[test]
+fn a_gate_carries_its_recorded_first_attempt() {
+    let log = vec![
+        entry(
+            1,
+            Payload::Assistant {
+                thinking: vec![],
+                text: vec![],
+                calls: vec![call("a")],
+            },
+        ),
+        result(2, "a"),
+        triage(
+            3,
+            2,
+            vec!["attempt 1 of 3: peek called edit instead of retain".into()],
+        ),
+        entry(
+            4,
+            Payload::Assistant {
+                thinking: vec![],
+                text: vec![],
+                calls: vec![call("b")],
+            },
+        ),
+        result(5, "b"),
+        triage(6, 5, vec![]),
+    ];
+    let gates = gates(&log);
+    assert_eq!(gates.len(), 2, "one gate per completion");
+    assert!(
+        gates[0]
+            .recorded_first_failure
+            .as_deref()
+            .is_some_and(|w| w.contains("edit"))
+    );
+    assert_eq!(
+        gates[1].recorded_first_failure, None,
+        "this one complied first try"
+    );
+}
+
+/// A completion whose calls never ran — aborted, interrupted, withheld — opens no gate,
+/// so it must not appear as one with an empty result set.
+#[test]
+fn a_completion_with_no_results_opens_no_gate() {
+    let log = vec![entry(
+        1,
+        Payload::Assistant {
+            thinking: vec![],
+            text: vec![],
+            calls: vec![call("a")],
+        },
+    )];
+    assert!(gates(&log).is_empty());
+}

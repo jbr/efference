@@ -106,6 +106,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             model,
             config,
         } => wire(path, messages, format, &model, config).await,
+        Command::Peek {
+            path,
+            seq,
+            repeat,
+            dry_run,
+            model,
+        } => peek(path, seq, repeat, dry_run, &model).await,
     }
 }
 
@@ -113,12 +120,14 @@ type CliResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
 use attach::attach;
 use cli::*;
+use peek_replay::peek;
 use serve::{serve, spotter_check};
 use spot_report::*;
 use verbs::*;
 
 mod attach;
 mod cli;
+mod peek_replay;
 mod serve;
 mod spot_report;
 mod verbs;

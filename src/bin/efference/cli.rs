@@ -344,6 +344,34 @@ pub(crate) enum Command {
     /// block and `tools[]` aren't stored in the log, so they're rebuilt from the
     /// current code and cwd — flagged on stderr, since the recorded session may
     /// have run elsewhere.
+    /// Dev tool (like `wire`/`spotter`): replay a recorded session's fork-gate peeks
+    /// (docs/redaction-fork.md) and report **first-attempt** compliance — did the peek
+    /// answer with a verdict, or reach for a work tool? The live gate retries, so a
+    /// session's own record shows that a first attempt failed but can't score one ask
+    /// against another. Each gate carries its own prefix at its own session depth, and
+    /// replaying one is a single warm prefix read, so a whole session is an eval set.
+    /// Sends real requests unless `--dry-run`.
+    Peek {
+        /// Path to a session dir or a `log.jsonl` whose gates to replay.
+        path: PathBuf,
+        /// Replay only the gate triaging this result `seq` (as `Triage.for_result`
+        /// names it, and as the listing prints it). Omit to sweep every gate.
+        #[arg(long)]
+        seq: Option<u64>,
+        /// Draws per gate. A peek is sampled, not deterministic, so one draw per gate
+        /// resolves only large differences; repeats buy a per-gate rate instead of a
+        /// coin flip.
+        #[arg(long, default_value = "3")]
+        repeat: usize,
+        /// Print the peek's trailing message instead of sending it — what makes an
+        /// instruction change reviewable without spending a request.
+        #[arg(long)]
+        dry_run: bool,
+        /// Model to replay against. Match the session's own model or the numbers
+        /// aren't comparable to its record.
+        #[arg(long, default_value = "claude-haiku-4-5")]
+        model: String,
+    },
     Wire {
         /// Path to a session JSONL log (e.g. `.efference/session-<millis>.jsonl`).
         path: PathBuf,
