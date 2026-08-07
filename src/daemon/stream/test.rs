@@ -259,6 +259,63 @@ async fn state_only_subscribers_are_not_gated_on_the_log() {
     );
 }
 
+/// An update arriving while the connection is **parked in its wait** is delivered, not
+/// consumed and dropped.
+///
+/// The wait's channel arms complete by receiving — cancel-safety covers only the losing
+/// branches — so a discarded completion value is a real message gone. For state that
+/// failure is a topic stuck stale until its next unrelated change: a gate appearing
+/// while an idle client is parked would simply never render. The park matters: polling
+/// to quiescence first is what routes the update through the wait rather than through
+/// `absorb_state`'s `try_recv`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_update_arriving_while_parked_is_not_dropped() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    tokio::spawn(watch_topics(Arc::clone(&shared)));
+    let mut stream = control_stream(
+        Arc::clone(&shared),
+        Include::parse(Some("state:review_level")).unwrap(),
+        0,
+    );
+
+    // Drain the connect snapshot until quiet, leaving the stream parked in its wait.
+    collect(&mut stream).await;
+
+    shared.set_review_level(crate::policy::ReviewLevel::Autonomous);
+
+    let seen = collect(&mut stream).await;
+    assert_eq!(
+        seen.last().map(|f| f.data.clone()),
+        Some(Value::from("autonomous")),
+        "the update that arrived while parked was delivered: {seen:?}"
+    );
+}
+
+/// The same property for the ephemeral class: a delta arriving while parked is sent, not
+/// silently dropped. `output` is lossy under backpressure (the ring drops oldest), but an
+/// idle connection has no backpressure — losing one delta per park would be corruption in
+/// the live tail, not load-shedding.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_delta_arriving_while_parked_is_not_dropped() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let mut stream = control_stream(
+        Arc::clone(&shared),
+        Include::parse(Some("output")).unwrap(),
+        0,
+    );
+
+    collect(&mut stream).await;
+
+    shared.publish_delta(StreamDelta::AssistantText("while parked".into()));
+
+    let seen = collect(&mut stream).await;
+    assert_eq!(
+        seen.first().map(|f| f.data["text"].clone()),
+        Some(Value::from("while parked")),
+        "the delta that arrived while parked was delivered: {seen:?}"
+    );
+}
+
 /// Log frames are never delayed behind the ephemeral class — the hazard one socket
 /// introduces that three did not, and the reason the drain order is part of the contract.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

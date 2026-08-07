@@ -121,6 +121,12 @@ struct Tail {
     /// backlogged connection growing without limit. Keyed by position in [`Topic::ALL`]
     /// so emission order is canonical rather than arrival-dependent.
     pending: BTreeMap<usize, StateUpdate>,
+    /// A delta the wait in [`next_frame`](Tail::next_frame) received while parked. A
+    /// completed `recv` has already consumed the message, so it must be held here and
+    /// drained through the normal priority order — discarding it would drop one delta
+    /// every time the connection goes idle, not only under backpressure. Always `None`
+    /// when the wait is reached, because the output drain step empties it first.
+    received_output: Option<StreamDelta>,
 }
 
 impl Tail {
@@ -216,6 +222,9 @@ impl Tail {
             }
 
             if self.include.output {
+                if let Some(delta) = self.received_output.take() {
+                    return Some(Frame::output(&delta));
+                }
                 match self.output_rx.try_recv() {
                     Ok(delta) => return Some(Frame::output(&delta)),
                     // Drop-oldest: the ring already discarded them, and the committed
@@ -226,11 +235,27 @@ impl Tail {
                 }
             }
 
-            // Nothing ready: wait for whichever source moves first.
+            // Nothing ready: wait for whichever source moves first. A completed `recv`
+            // has **consumed** its message (cancel-safety covers only the losing
+            // branches), so both channel arms must capture what they received — an `_ =`
+            // here would silently drop whatever arrives while the connection is parked,
+            // which for state means a topic stuck stale until its next unrelated change.
             tokio::select! {
                 _ = appended => {}
-                _ = self.state_rx.recv(), if self.include.wants_state() => {}
-                _ = self.output_rx.recv(), if self.include.output => {}
+                update = self.state_rx.recv(), if self.include.wants_state() => {
+                    match update {
+                        Ok(update) => self.queue(update),
+                        // Same repair as `absorb_state`: level-triggered state recovers
+                        // from a lag by re-reading, never by replay.
+                        Err(broadcast::error::RecvError::Lagged(_)) => self.snapshot(),
+                        Err(broadcast::error::RecvError::Closed) => {}
+                    }
+                }
+                delta = self.output_rx.recv(), if self.include.output => {
+                    if let Ok(delta) = delta {
+                        self.received_output = Some(delta);
+                    }
+                }
             }
         }
     }
@@ -285,6 +310,7 @@ pub(crate) fn control_stream(
         include,
         next_log: since,
         pending: BTreeMap::new(),
+        received_output: None,
     };
     // Subscribe *then* snapshot: an update landing in between is absorbed as a duplicate
     // replacement, which is harmless. Snapshotting first and subscribing after would drop
