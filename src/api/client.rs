@@ -111,8 +111,7 @@ impl Client {
     /// One streaming round-trip: serialize `messages`, POST with `stream: true`,
     /// and fold the SSE event stream back into a [`Completion`]. Each live signal — prose,
     /// thinking, a tool call opening, its arguments arriving — is handed to `on_delta` as a
-    /// [`Streamed`] the moment it arrives: the transport-only live sink (the daemon publishes it to
-    /// `GET /stream`). Pass a no-op `|_| {}` when nothing is listening (e.g. the fork peek, whose
+    /// [`Streamed`] the moment it arrives: the transport-only live sink (the daemon publishes it to    /// the control stream's `output` class). Pass a no-op `|_| {}` when nothing is listening (e.g. the fork peek, whose
     /// triage tokens must never surface).
     ///
     /// `into_sse` *is* the execution — the conn must not be awaited first (that

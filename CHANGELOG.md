@@ -20,6 +20,7 @@ behind a change, see [`journal/`](journal/).
 - `GET /events` is one control stream carrying three durability classes (`log`/`output`/`state`) under a discriminated frame envelope, selectable with `?include=log,output,state:gate`; an unknown token is a `400`.
 - Level-triggered `state` frames deliver whole-topic replacements, ordered so that no state frame precedes a log frame it reflects, and folding them equals `GET /state`.
 - The TUI runs on one control connection (`?include=log,output,state`): the 400 ms `GET /state` poll and its second `/stream` socket are gone, with gate/processes/usage/policy/pace/running driven from `state` frames and elapsed-time displays advanced by a client-side 1 Hz tick.
+- `efference attach` renders from one control connection (`?include=log,output`).
 - `GET /log` takes bounded windows — `?tail=N` (exactly N, cut anywhere) to open cold at the tail, `?before=<seq>&tail=N` to page backward; `since` with `tail` is a `400`.
 - `GET /log/:seq` and `GET /tool_calls/:call_id` resolve references that dangle outside a window, both `Cache-Control: immutable`.
 - Every non-2xx response carries a typed envelope (`{code, message, detail?}`), with one canonical status per code.
@@ -36,6 +37,7 @@ behind a change, see [`journal/`](journal/).
 - Cumulative triage retention on `/state` (`usage.retention`, derived from the log) and as a `kept 55% · 13k/24k lines` line in the sidebar; results a failed gate withheld are counted apart from the ratio.
 
 ### Removed
+- `GET /stream`: the `output` class rides the unified `/events` stream, where its deltas have a defined order against the log frames; the standalone socket had none.
 - The unused `HeadTail` stub distiller (no call sites, including in tests); `ForkPeek` is the only distiller.
 - The TUI status bar shows the last non-2xx upstream response and consecutive-attempt count while retries are in flight.
 

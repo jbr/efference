@@ -269,7 +269,7 @@ async fn peek_with_retries<T>(
 ) -> Result<T, String> {
     for attempt in 1..=PEEK_ATTEMPTS {
         // No-op sink: the fork peek's triage tokens are internal and must never surface
-        // on `GET /stream` — only the main thread's prose streams.
+        // on the control stream — only the main thread's prose streams.
         let completion = match client
             .complete(&messages, tools, ToolChoice::auto(), |_| {})
             .await

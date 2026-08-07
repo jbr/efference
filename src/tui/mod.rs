@@ -7,7 +7,7 @@
 //!
 //! - The rustdoc shell (Navigator/Request/Commands and the two-thread request
 //!   architecture) is gone; the efference daemon *is* the request side. The TUI
-//!   subscribes to the daemon's `/events` + `/stream` SSE and projects the log
+//!   subscribes to the daemon's `/events` control stream and projects the log
 //!   into a [`document::Document`] via [`projection`], re-projected as events land.
 //! - The IR's navigation appendage (rustdoc `Navigate` actions, `Metadata` item
 //!   blocks tied to `DocRef`) is stripped; what remains is markdown + code +

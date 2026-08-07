@@ -210,7 +210,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             // runs on under the supervisor and its output surfaces at later gates
             // (docs/supervisor.md); everything else runs to completion through the toolbox.
             // `interrupted()` resolves on a `POST /interrupt` — the tool's kill trigger
-            // (kills the process group). Tool output streams to `GET /stream`
+            // (kills the process group). Tool output streams to the control stream's `output` class
             // chunk-by-chunk as it runs (bash; the MCP tools resolve whole), tagged by call id.
             let mut handoff = None;
             let result = if bash::is_background_call(call) {

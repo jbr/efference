@@ -1,22 +1,21 @@
-//! `efference attach` — decode the daemon's two SSE streams to the terminal (docs/control-channel.md).
+//! `efference attach` — decode the daemon's control stream to the terminal (docs/control-channel.md).
 
 use super::*;
 
 /// The `attach` REPL — a spartan interactive client (docs/README.md: authoritative-
 /// but-spartan, the full TUI is a later client). A background task renders the
-/// live event tail; the foreground reads stdin and, per line, either resolves the
-/// pending approval gate or sends a new turn. Both halves are just clients of the
-/// socket — no privileged path (docs/control-channel.md).
+/// live control stream; the foreground reads stdin and, per line, either resolves
+/// the pending approval gate or sends a new turn. Both halves are just clients of
+/// the socket — no privileged path (docs/control-channel.md).
 pub(crate) async fn attach(socket: PathBuf) -> CliResult {
     let client = ControlClient::new(socket);
 
-    // Background: tail `/events` from the start of the session and render each
-    // entry as it lands. Dropped when `attach` returns (process exit).
-    // Background: render the durable event tail and the ephemeral delta stream in
-    // ONE task. Merging them (rather than two racing tasks) lets the live-streamed
-    // prose suppress its own committed echo: when a turn streamed text, the
-    // committed entry's text blocks are omitted — only its tool-call/approval lines,
-    // which are never streamed, still render. See `render_streams`.
+    // Background: render the control stream from the start of the session until
+    // `attach` returns (process exit). One connection carries both the committed
+    // entries and the live fragments, which is what lets the streamed prose
+    // suppress its own committed echo: when a turn streamed text, the committed
+    // entry's text blocks are omitted — only its tool-call/approval lines, which
+    // are never streamed, still render. See `render_streams`.
     let tail = client.clone();
     let handle = tokio::spawn(async move {
         if let Err(e) = render_streams(tail).await {
@@ -69,45 +68,29 @@ pub(crate) struct RenderState {
     pub(crate) streamed_tool: bool,
 }
 
-/// Render the durable event tail (`GET /events`) and the ephemeral delta stream
-/// (`GET /stream`) from a single task (docs/README.md). Deltas physically precede the
-/// commit they belong to (the daemon publishes them during inference, then appends
-/// the entry), so the live fragments print first and the committed entry simply
-/// finalizes — without the duplicated block the two-task version produced.
+/// Render the unified control stream (`GET /events?include=log,output`,
+/// docs/control-api.md) from a single task. The daemon delivers each connection's
+/// frames in one total order, with a delta preceding the entry that commits it (the
+/// loop publishes fragments during inference, then appends), so the live fragments
+/// print first and the committed entry simply finalizes — the dedup the
+/// [`RenderState`] flags exist for.
 pub(crate) async fn render_streams(client: ControlClient) -> CliResult {
-    // `?include=log`: the durable class only — this renderer takes its ephemeral half
-    // from `/stream` (docs/control-api.md).
-    let mut events = client.events(Some(0), Some("log")).await?;
-    let mut deltas = client.stream().await?;
+    let mut events = client.events(Some(0), Some("log,output")).await?;
     let mut state = RenderState::default();
-    let mut deltas_done = false;
-    loop {
-        tokio::select! {
-            event = events.next() => match event {
-                Some(event) => {
-                    let event = event?;
-                    render_event(event.event_type(), event.data(), &mut state);
-                }
-                None => break, // the durable tail ended (daemon down) → stop.
-            },
-            // Guarded so a finished delta stream (None forever) can't busy-loop the
-            // select; the durable tail keeps rendering on its own after.
-            delta = deltas.next(), if !deltas_done => match delta {
-                Some(delta) => render_delta(delta?, &mut state),
-                None => deltas_done = true,
-            },
-        }
+    // The stream ending (daemon down) ends the render loop.
+    while let Some(event) = events.next().await {
+        let event = event?;
+        render_event(event.event_type(), event.data(), &mut state);
     }
     Ok(())
 }
 
-/// Render one ephemeral delta: append its fragment to the current line and flush
-/// (no newline, so prose / output accrete as they stream). The first fragment of a
-/// region prints a label and trips the matching [`RenderState`] flag so the
-/// committed entry knows to omit its echo.
-pub(crate) fn render_delta(event: trillium_client::sse::Event, state: &mut RenderState) {
-    let value: serde_json::Value = serde_json::from_str(event.data()).unwrap_or_default();
-    match event.event_type() {
+/// Render one ephemeral `output` frame's payload: append its fragment to the
+/// current line and flush (no newline, so prose / output accrete as they stream).
+/// The first fragment of a region prints a label and trips the matching
+/// [`RenderState`] flag so the committed entry knows to omit its echo.
+pub(crate) fn render_delta(kind: Option<&str>, value: &serde_json::Value, state: &mut RenderState) {
+    match kind {
         Some("assistant_delta") => {
             if let Some(text) = value["text"].as_str() {
                 if !state.streamed_assistant {
@@ -135,18 +118,25 @@ pub(crate) fn print_flush(s: &str) {
     let _ = std::io::Write::flush(&mut std::io::stdout());
 }
 
-/// Render one SSE event (a serialized [`LogEntry`]) as a concise line. Navigates
+/// Render one frame of the control stream as a concise line: an `output` frame's
+/// fragment via [`render_delta`], a `log` frame's committed entry below. Navigates
 /// the JSON loosely (via `Value`) so the CLI stays decoupled from the log's
 /// internal shape. `state` carries what was already shown live, so a streamed turn
 /// finalizes without re-printing its prose (the dedup the merged renderer exists
 /// for).
 pub(crate) fn render_event(kind: Option<&str>, data: &str, state: &mut RenderState) {
-    // `data` is the frame envelope; the entry is under its `data` key
+    // `data` is the frame envelope; the payload is under its `data` key
     // (docs/control-api.md).
     let Ok(frame) = serde_json::from_str::<serde_json::Value>(data) else {
         println!("· {data}");
         return;
     };
+    if frame["class"] == "output" {
+        return render_delta(kind, &frame["data"], state);
+    }
+    if frame["class"] != "log" {
+        return; // an unknown class from a newer daemon — skip, don't die.
+    }
     let entry = &frame["data"];
     let seq = entry["seq"].as_u64().unwrap_or(0);
     let payload = &entry["payload"];

@@ -330,30 +330,28 @@ A client opening **cold** should read `GET /log?tail=N` and then connect with
 `?since=<last_seq + 1>`, rather than `?since=0`. Both are correct; the second
 replays the whole session, and its state waits behind that replay.
 
-#### `GET /stream`
-The `output` class on its own socket. **Superseded by `?include=output` on
-`/events`** and retained only until the built-in clients stop using it; a new
-client should not open it, since a delta taken here has no defined order against
-the log frames on the other connection.
+**The `output` class's kinds** — ephemeral pre-commit output, each frame's payload
+under `data`. A late subscriber starts from the next delta; a lagging one drops
+the oldest. The committed entry on the `log` class is the authoritative copy.
 
-Lossy SSE stream of **ephemeral pre-commit** output. **No `id`** and no replay —
-a late subscriber starts from the next delta; a lagging one drops the oldest. The
-committed entry on `/events` is the authoritative copy.
-
-- `event: assistant_delta` — `{ "text": "<fragment>" }`
-- `event: thinking_delta` — `{ "text": "<fragment>" }` — extended thinking, never the
+- `assistant_delta` — `{ "text": "<fragment>" }`
+- `thinking_delta` — `{ "text": "<fragment>" }` — extended thinking, never the
   assistant's answer; a client must render it as thinking or not at all.
-- `event: tool_call_start` — `{ "name": "<tool>" }` — the model began emitting a tool call,
+- `tool_call_start` — `{ "name": "<tool>" }` — the model began emitting a tool call,
   named *before* its arguments stream (a large input takes seconds to arrive).
-- `event: tool_call_input` — `{ "fragment": "<partial json>" }` — arguments arriving, verbatim.
+- `tool_call_input` — `{ "fragment": "<partial json>" }` — arguments arriving, verbatim.
   A client may display these but must not **parse** them as a complete document: mid-stream they
   are a partial slice.
-- `event: tool_output` — `{ "call_id": "…", "chunk": "…" }`
-- `event: bg_output` — `{ "handle": "bg#<n>", "chunk": "…" }`
+- `tool_output` — `{ "call_id": "…", "chunk": "…" }`
+- `bg_output` — `{ "handle": "bg#<n>", "chunk": "…" }`
 
-The three middle events exist so a client can show *which phase* a turn is in. Without them
+The three middle kinds exist so a client can show *which phase* a turn is in. Without them
 only prose reaches the stream, and a turn spent thinking or emitting a large tool input
 publishes nothing at all — indistinguishable from a hung harness.
+
+> `GET /stream`, which carried this class on its own socket, is retired: a delta
+> taken there had no defined order against the log frames on the other
+> connection — the exact hazard the unified stream removed.
 
 ---
 

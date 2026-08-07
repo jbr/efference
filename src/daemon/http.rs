@@ -451,17 +451,6 @@ pub(crate) fn router() -> Router {
             let since = parse_since(conn.querystring()).unwrap_or(0);
             conn.with_sse_stream(control_stream(shared, include, since))
         })
-        // Live tail of *ephemeral* output deltas (docs/README.md): assistant prose and
-        // tool output as they're produced, before the turn commits. No `since`
-        // cursor and no replay — these carry no `seq` and aren't durable; a client
-        // that wants the authoritative record tails `/events`. A late subscriber
-        // simply starts from the next delta.
-        .get("/stream", |conn: Conn| async move {
-            let Some(shared) = shared_of(&conn) else {
-                return missing_state(conn);
-            };
-            conn.with_sse_stream(stream_deltas(shared))
-        })
 }
 
 /// Which window of the log a `GET /log` read wants (docs/control-api.md).

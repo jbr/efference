@@ -269,28 +269,29 @@ backlog.
 
 ---
 
-## Token-level deltas — `GET /stream`
+## Token-level deltas — the `output` class
 
 Assistant prose and tool stdout are the same thing: ephemeral, pre-commit
 output that the committed log entry supersedes once the turn closes. One
 mechanism carries both.
 
-`Shared` holds a **lossy** `broadcast::Sender<StreamDelta>`. `StreamDelta` has
-two variants:
+`Shared` holds a **lossy** `broadcast::Sender<StreamDelta>`. `StreamDelta`'s
+variants: `AssistantText` and `ThinkingText` (fragments from `text_delta` /
+`thinking_delta` events), `ToolCallStart` and `ToolCallInput` (a tool call
+opening, then its arguments arriving), `ToolOutput { call_id, chunk }` (a chunk
+from a running tool's stdout or stderr), and `BgOutput { handle, chunk }` (the
+same for a background process).
 
-- `AssistantText(String)` — a prose fragment from a `text_delta` event
-- `ToolOutput { call_id, chunk }` — a chunk from a running tool's stdout or
-  stderr
-
-`GET /stream` subscribes per connection and receives deltas as they arrive.
+Each control-stream connection with `?include=output` subscribes and receives
+deltas as `output` frames as they arrive ([control-api](control-api.md)).
 
 **Deliberately lossy.** A lagging consumer drops deltas rather than stalling
 the producing loop. The log is the authoritative backstop; ephemeral deltas are
-only a live view. Where `/events` is durable (with resume cursors), `/stream`
-is best-effort.
+only a live view. Where the `log` class is durable (with resume cursors),
+`output` is best-effort.
 
-**ID-less by design.** Delta events carry no SSE `id:` field. That absence is
-the contract that keeps them off the `/events` resume cursor. `StreamDelta` is
+**ID-less by design.** Output frames carry no SSE `id:` field. That absence is
+the contract that keeps them off the durable resume cursor. `StreamDelta` is
 never appended to the log, never projected, and carries no sequence number —
 it is transport-only.
 
@@ -307,7 +308,7 @@ enforcement.
 `tokio::select` reads of stdout and stderr, which is terminal-faithful (cargo
 build progress, test output, etc.) and preserves the process-group abort path.
 
-**`attach` merges `/events` + `/stream` in one render task.** Live fragments
+**`attach` renders both classes from one connection.** Live fragments
 print first; the committed entry finalizes the line when the turn closes. Tool
 output is intentionally not deduped against the committed `tool_result`: the
 stream shows raw live output, the result shows the fork's distillate (see

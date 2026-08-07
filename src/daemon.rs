@@ -51,8 +51,8 @@ use crate::spotter::Spotter;
 use crate::supervisor::{BgView, Supervisor};
 use crate::tools::Toolbox;
 
-/// A live, pre-commit output fragment streamed to clients over `GET /stream`
-/// (docs/README.md — the deferred token-level deltas). **Ephemeral and transport-only**:
+/// A live, pre-commit output fragment streamed to clients as the control stream's
+/// `output` class (docs/control-api.md). **Ephemeral and transport-only**:
 /// never appended to the log, never projected, and droppable for a slow consumer.
 /// The authoritative text always lands as a committed [`LogEntry`] on `/events`, so
 /// the stream is a live convenience with the durable log as its backstop — which is
@@ -148,7 +148,8 @@ pub struct Shared {
     notified: Notify,
     /// Fan-out for ephemeral pre-commit output deltas (docs/README.md). Producers (the
     /// loop's `complete` sink and the bash tool) publish via [`Shared::publish_delta`];
-    /// each `GET /stream` connection subscribes. Lossy by design — see [`StreamDelta`].
+    /// each control-stream connection wanting `output` frames subscribes. Lossy by
+    /// design — see [`StreamDelta`].
     stream_tx: broadcast::Sender<StreamDelta>,
     /// Pinged when a state topic may have moved (docs/control-api.md). One notify for all
     /// ten topics, not one each: the reader recomputes everything and diffs, so a missed
@@ -489,15 +490,15 @@ impl Shared {
         Ok(seq)
     }
 
-    /// Publish an ephemeral pre-commit output delta to `GET /stream` subscribers
-    /// (docs/README.md). Intentionally lossy: a send with no subscribers — or to a
-    /// lagging one — is dropped, because the committed entry on `/events` is the
-    /// authoritative copy. Never touches the log.
+    /// Publish an ephemeral pre-commit output delta to the control stream's `output`
+    /// subscribers (docs/control-api.md). Intentionally lossy: a send with no
+    /// subscribers — or to a lagging one — is dropped, because the committed entry on
+    /// the `log` class is the authoritative copy. Never touches the log.
     pub fn publish_delta(&self, delta: StreamDelta) {
         let _ = self.stream_tx.send(delta);
     }
 
-    /// A fresh subscription to the delta fan-out for one `GET /stream` connection.
+    /// A fresh subscription to the delta fan-out for one control-stream connection.
     fn subscribe_stream(&self) -> broadcast::Receiver<StreamDelta> {
         self.stream_tx.subscribe()
     }
@@ -565,7 +566,6 @@ mod keepalive;
 mod metrics;
 mod notifications;
 mod pace;
-mod sse;
 mod stream;
 mod topics;
 mod views;
@@ -586,7 +586,6 @@ use topics::{StateUpdate, watch_topics};
 
 use http::{LogSelect, router};
 use keepalive::keepalive_loop;
-use sse::stream_deltas;
 use watch::config_watch_loop;
 
 #[cfg(test)]

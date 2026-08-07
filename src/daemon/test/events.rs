@@ -1,4 +1,5 @@
-//! Tests for `sse.rs`.
+//! End-to-end tests of `GET /events` over the real router — the SSE hop that
+//! `stream.rs`'s in-process tests do not cross.
 
 use super::*;
 
@@ -50,23 +51,27 @@ async fn events_replays_then_tails_live() {
     let _ = std::fs::remove_file(&log_path);
 }
 
-/// `GET /stream` carries ephemeral deltas published after a client subscribes:
-/// assistant prose (`assistant_delta`) and tool output (`tool_output`), each
-/// typed, JSON-bodied, and crucially **id-less** — they're pre-commit and have
-/// no `seq`, which is the contract that keeps them off the durable `/events`
-/// cursor. The handler subscribes synchronously while building the response, so
-/// a publish after `stream()` resolves can't race ahead of the subscription.
+/// `?include=output` carries ephemeral deltas published after a client subscribes:
+/// assistant prose (`assistant_delta`), tool output (`tool_output`), and process
+/// output (`bg_output`), each typed by the frame's `kind`, payloaded under the
+/// envelope's `data`, and crucially **id-less** — they're pre-commit and have no
+/// `seq`, which is the contract that keeps them off the durable resume cursor. The
+/// handler subscribes synchronously while building the response, so a publish after
+/// `events()` resolves can't race ahead of the subscription.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn stream_carries_ephemeral_deltas() {
+async fn the_output_class_carries_ephemeral_deltas() {
     let log_path = std::env::temp_dir().join("efference-stream-test.jsonl");
     let _ = std::fs::remove_file(&log_path);
 
     let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
     let client = test_client(&shared).await;
-    let mut stream = client.stream().await.expect("open stream");
+    let mut stream = client
+        .events(None, Some("output"))
+        .await
+        .expect("open events");
 
     // Published only after the subscription exists (the handler subscribed
-    // before returning the response headers `stream()` just awaited).
+    // before returning the response headers `events()` just awaited).
     shared.publish_delta(StreamDelta::AssistantText("hello ".into()));
     shared.publish_delta(StreamDelta::ToolOutput {
         call_id: "toolu_5".into(),
@@ -77,28 +82,29 @@ async fn stream_carries_ephemeral_deltas() {
         chunk: "tick 3\n".into(),
     });
 
-    // Prose delta: typed, id-less, text in a JSON body.
+    // Prose delta: typed, id-less, text under the envelope's `data`.
     let (id, kind, data) = next_event(&mut stream).await;
     assert_eq!(id, None, "deltas carry no seq");
     assert_eq!(kind.as_deref(), Some("assistant_delta"));
     let v: Value = serde_json::from_str(&data).unwrap();
-    assert_eq!(v["text"], "hello ");
+    assert_eq!(v["class"], "output");
+    assert_eq!(v["data"]["text"], "hello ");
 
     // Tool-output delta: tagged by the call id so a client can attribute it.
     let (id, kind, data) = next_event(&mut stream).await;
     assert_eq!(id, None);
     assert_eq!(kind.as_deref(), Some("tool_output"));
     let v: Value = serde_json::from_str(&data).unwrap();
-    assert_eq!(v["call_id"], "toolu_5");
-    assert_eq!(v["chunk"], "line of output\n");
+    assert_eq!(v["data"]["call_id"], "toolu_5");
+    assert_eq!(v["data"]["chunk"], "line of output\n");
 
     // Background-process delta: tagged by handle (TUI-bg-2), demuxed like a tool.
     let (id, kind, data) = next_event(&mut stream).await;
     assert_eq!(id, None);
     assert_eq!(kind.as_deref(), Some("bg_output"));
     let v: Value = serde_json::from_str(&data).unwrap();
-    assert_eq!(v["handle"], "bg#1");
-    assert_eq!(v["chunk"], "tick 3\n");
+    assert_eq!(v["data"]["handle"], "bg#1");
+    assert_eq!(v["data"]["chunk"], "tick 3\n");
 
     let _ = std::fs::remove_file(&log_path);
 }

@@ -73,7 +73,7 @@ fn proposed_edit(change: crate::log::ConfigChange) -> Payload {
 ///
 /// Streaming routes are why this returns a [`ControlClient`] rather than a
 /// `TestServer`: that type reads the response body eagerly, which never returns on
-/// `/events` or `/stream`.
+/// `/events`.
 async fn test_client(shared: &Arc<Shared>) -> ControlClient {
     let shared = Arc::clone(shared);
     let mut handler = (
@@ -125,10 +125,10 @@ async fn next_event(
 mod approvals;
 mod background;
 mod config_edits;
+mod events;
 mod http;
 mod log_reads;
 mod metrics;
 mod notifications;
 mod pace;
-mod sse;
 mod views;

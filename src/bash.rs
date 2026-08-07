@@ -141,7 +141,7 @@ impl Bash {
     ///
     /// Streams as it runs: instead of buffering with `wait_with_output`, both pipes
     /// are drained incrementally and each chunk is forwarded to `on_output` (the
-    /// transport-only live sink — the daemon publishes it to `GET /stream`) while
+    /// transport-only live sink — the daemon publishes it as `output` frames) while
     /// the canonical bytes accumulate. Stdout and stderr land in **arrival order**
     /// (a single interleaved buffer), so progress output written to stderr — cargo,
     /// say — streams too; this is also more terminal-faithful than the old

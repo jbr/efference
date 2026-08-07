@@ -155,8 +155,7 @@ impl Spotter for ForkSpot {
             ],
         }];
 
-        // No-op sink: the spotter's tokens are internal and must never surface on
-        // `GET /stream` (mirrors the fork peek).
+        // No-op sink: the spotter's tokens are internal and must never surface on        // the control stream (mirrors the fork peek).
         match self
             .client
             .complete(

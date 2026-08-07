@@ -258,18 +258,6 @@ impl Client {
             .map_err(|e| anyhow!("opening the event stream at {path}: {e}"))
     }
 
-    /// Open the live ephemeral delta stream (`GET /stream`, docs/README.md): assistant
-    /// prose and tool output as they're produced, before the turn commits. No
-    /// cursor and no replay — it's a lossy live view; tail `/events` for the
-    /// durable, authoritative record.
-    pub async fn stream(&self) -> Result<trillium_client::sse::EventStream> {
-        self.http
-            .get("/stream")
-            .into_sse()
-            .await
-            .map_err(|e| anyhow!("opening the delta stream: {e}"))
-    }
-
     /// POST a JSON body to `path`, returning the response body on a 2xx and an
     /// error carrying the status + body otherwise.
     async fn post(&self, path: &str, body: String) -> Result<String> {

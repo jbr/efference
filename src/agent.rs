@@ -148,7 +148,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             place_trailing_cache_breakpoint(&mut messages);
             // One tool call per turn (docs/README.md) — the agent picks its next single
             // action; the fork's `retain` is the only forced call. Every live signal is
-            // published to `GET /stream` as it arrives — prose, thinking, and the opening
+            // published to the control stream's `output` class as it arrives — prose, thinking, and the opening
             // and arrival of a tool call's input — so a client can show *which phase* the
             // turn is in rather than only its prose (docs/transport.md). The
             // committed assistant entry on `/events` remains canonical; this is the live view.
