@@ -498,6 +498,15 @@ fn peek_messages(
 pub struct PeekAttempt {
     /// The tools the peek called, in order — empty for a prose-only answer.
     pub called: Vec<String>,
+    /// Each call's arguments, alongside `called`. A tool name says the peek reached for
+    /// the wrong thing; the arguments say *what it was reaching for* — whether it was
+    /// continuing the task, re-reading what it had just been shown, or something else
+    /// entirely. That distinction is the whole diagnosis and the name alone erases it.
+    pub inputs: Vec<Value>,
+    /// The prose and thinking the peek emitted, joined. A non-compliant attempt that
+    /// reasoned about triage first is a different failure from one that never registered
+    /// the ask, and only the text separates them.
+    pub said: String,
     /// Why the verdict was unusable, in the same phrasing `Triage.retries` records.
     /// `None` means a usable, covering verdict on the first attempt.
     pub why: Option<String>,
@@ -549,9 +558,28 @@ pub async fn peek_attempt(
         .await
         .map_err(|e| format!("peek request failed: {e}"))?;
 
-    let called = match &completion.assistant {
-        Payload::Assistant { calls, .. } => calls.iter().map(|c| c.name.clone()).collect(),
-        _ => Vec::new(),
+    let (called, inputs, said) = match &completion.assistant {
+        Payload::Assistant {
+            calls,
+            text,
+            thinking,
+        } => (
+            calls.iter().map(|c| c.name.clone()).collect(),
+            calls.iter().map(|c| c.input.clone()).collect(),
+            thinking
+                .iter()
+                .chain(text)
+                .map(|b| match b {
+                    crate::log::ContentBlock::Text(t) => t.as_str(),
+                    crate::log::ContentBlock::Thinking { text, .. } => text.as_str(),
+                    _ => "",
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim()
+                .to_string(),
+        ),
+        _ => (Vec::new(), Vec::new(), String::new()),
     };
     let verdict = parse_retain(&completion, &offered)
         .ok_or_else(|| unusable(&completion, RETAIN))
@@ -569,6 +597,8 @@ pub async fn peek_attempt(
     };
     Ok(PeekAttempt {
         called,
+        inputs,
+        said,
         why,
         raw_keep,
         note,

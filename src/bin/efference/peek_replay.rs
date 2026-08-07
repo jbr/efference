@@ -95,6 +95,16 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
     gates
 }
 
+/// Collapse `s` onto one line and cap it at `max` characters — a failing draw's arguments
+/// and prose are for scanning a sweep, not for reading in full.
+fn one_line(s: &str, max: usize) -> String {
+    let flat = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    match flat.char_indices().nth(max) {
+        Some((cut, _)) => format!("{}…", &flat[..cut]),
+        None => flat,
+    }
+}
+
 /// The one-line description of what a replayed attempt did.
 fn outcome(attempt: &efference::distill::PeekAttempt) -> String {
     match &attempt.why {
@@ -206,6 +216,18 @@ pub(crate) async fn peek(
                 called,
                 outcome(&attempt)
             );
+            // A failing draw prints what it reached for and what it said. The tool name
+            // alone says the peek answered with the wrong thing; the arguments and the
+            // prose say whether it was continuing the task, re-reading what it had just
+            // been shown, or never registered the ask at all — which is the diagnosis.
+            if !attempt.compliant() {
+                for (name, input) in attempt.called.iter().zip(&attempt.inputs) {
+                    println!("           ↳ {name}({})", one_line(&input.to_string(), 160));
+                }
+                if !attempt.said.is_empty() {
+                    println!("           ↳ said: {}", one_line(&attempt.said, 300));
+                }
+            }
         }
         match (&g.recorded_first_failure, passes == repeat, passes == 0) {
             (Some(_), true, _) => fixed += 1,
