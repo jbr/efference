@@ -5,7 +5,6 @@ use super::*;
 fn codes_map_to_canonical_statuses() {
     assert_eq!(ErrorCode::BadRequest.status(), 400);
     assert_eq!(ErrorCode::InvalidDecision.status(), 400);
-    assert_eq!(ErrorCode::CursorOutOfRange.status(), 400);
     assert_eq!(ErrorCode::NotFound.status(), 404);
     assert_eq!(ErrorCode::GateMoved.status(), 409);
     assert_eq!(ErrorCode::Internal.status(), 500);
@@ -41,6 +40,6 @@ fn gate_moved_carries_corrective_detail() {
 /// Codes serialize as snake_case, which is what a client matches on.
 #[test]
 fn codes_serialize_as_snake_case() {
-    let json = serde_json::to_string(&ErrorCode::CursorOutOfRange).unwrap();
-    assert_eq!(json, r#""cursor_out_of_range""#);
+    let json = serde_json::to_string(&ErrorCode::InvalidDecision).unwrap();
+    assert_eq!(json, r#""invalid_decision""#);
 }

@@ -39,7 +39,7 @@ trillium-tokio = "0.6.4"
 # StreamExt for consuming the SSE EventStream; already in-tree via trillium.
 futures-lite = "2.6.1"
 trillium-router = "0.5.2"
-trillium-sse = "0.2.1"
+trillium-sse = "0.3.0"
 
 # TUI (DESIGN §10 — the interactive client). Vendored-and-adapted from ferritin's
 # interactive renderer into src/tui/: a ratatui document renderer with syntect

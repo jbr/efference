@@ -51,6 +51,61 @@ async fn events_replays_then_tails_live() {
     let _ = std::fs::remove_file(&log_path);
 }
 
+/// An idle `/events` stream is never entirely silent: whenever the heartbeat interval
+/// passes without a frame, the daemon sends an SSE **comment** (a `:` line) — the one
+/// keepalive shape a client's event parser discards entirely, which is why this test
+/// must read raw body bytes rather than decoded events (the invisibility is the point).
+/// The heartbeat is what makes a `?since` past the head — served as a wait, not an
+/// error — distinguishable from a dead connection.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_idle_stream_heartbeats_with_comments() {
+    use futures_lite::AsyncReadExt;
+
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let shared_for_init = Arc::clone(&shared);
+    let mut handler = (
+        trillium::Init::new(move |info: trillium::Info| {
+            let shared = Arc::clone(&shared_for_init);
+            async move { info.with_shared_state(shared) }
+        }),
+        // The interval parameter exists for this test: short enough to observe, long
+        // enough that the snapshot frame reliably precedes the first heartbeat.
+        super::super::http::router_with_heartbeat(Duration::from_millis(50)),
+    );
+    let context = trillium_testing::init(&mut handler).await;
+    let raw = trillium_client::Client::new(
+        trillium_testing::ServerConnector::new(handler).with_context(context),
+    )
+    .with_base("http://localhost/");
+
+    let mut conn = raw
+        .get("/events?include=state:gate")
+        .await
+        .expect("open events");
+    let mut body = Vec::new();
+    let mut buf = [0u8; 1024];
+    tokio::time::timeout(Duration::from_secs(5), async {
+        // A comment line starts with `:`; field lines start with `event`/`data`/`id`,
+        // and data is single-line JSON, so `\n:` can only be a comment.
+        while !body.windows(2).any(|w| w == b"\n:") {
+            let n = conn
+                .response_body()
+                .read(&mut buf)
+                .await
+                .expect("read body");
+            assert_ne!(n, 0, "the stream ended before a heartbeat");
+            body.extend_from_slice(&buf[..n]);
+        }
+    })
+    .await
+    .expect("a heartbeat comment within the timeout");
+
+    // The stream is still a working event stream around the comment: the connect
+    // snapshot's gate frame arrived as a normal event.
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("event: gate"), "{text}");
+}
+
 /// `?include=output` carries ephemeral deltas published after a client subscribes:
 /// assistant prose (`assistant_delta`), tool output (`tool_output`), and process
 /// output (`bg_output`), each typed by the frame's `kind`, payloaded under the

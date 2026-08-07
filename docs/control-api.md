@@ -330,6 +330,20 @@ A client opening **cold** should read `GET /log?tail=N` and then connect with
 `?since=<last_seq + 1>`, rather than `?since=0`. Both are correct; the second
 replays the whole session, and its state waits behind that replay.
 
+**A `?since` past the head waits; it does not error.** That is the natural
+reading of a cursor on an append-only log: the entries simply haven't been
+written yet. A client wanting the log's actual position reads `last_seq` from
+`GET /state`.
+
+**Heartbeat.** Whenever 15 seconds pass without a frame, the stream sends an SSE
+comment (a `:` line) — the one keepalive an `EventSource` consumer discards
+without dispatching anything, and the one that stays outside the frame envelope
+(a heartbeat *frame* would need a fourth `class` naming no durability). It keeps
+an idle stream from being reaped by a TLS intermediary, and it is what makes the
+wait above distinguishable from a dead connection. The handler also negotiates
+`Accept`: a request whose `Accept` header excludes `text/event-stream` passes
+through rather than receiving a stream.
+
 **The `output` class's kinds** — ephemeral pre-commit output, each frame's payload
 under `data`. A late subscriber starts from the next delta; a lagging one drops
 the oldest. The committed entry on the `log` class is the authoritative copy.
@@ -396,10 +410,11 @@ returning the same code cannot disagree about the status:
 | `not_found` | 404 | no such notification id, proposal `seq`, or pending approval |
 | `internal` | 500 | a log append or config write failed; absent shared state |
 
-Two further codes are defined and not yet returned: `gate_moved` (409) arrives
+One further code is defined and not yet returned: `gate_moved` (409) arrives
 with `PUT /approvals/:call_id`, where `call_id` becomes a stated precondition and
-`detail` carries the current pending gate; `cursor_out_of_range` (400) belongs to
-the unified stream. A code earns its place when a client would *act* differently
-on it, not when the prose differs.
+`detail` carries the current pending gate. A code earns its place when a client
+would *act* differently on it, not when the prose differs. (A
+`cursor_out_of_range` code was once reserved for `?since` beyond the head; it
+left when that case was settled as a wait rather than an error.)
 
 The CLI surfaces the status + body verbatim.

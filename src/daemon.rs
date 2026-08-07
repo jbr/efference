@@ -34,7 +34,7 @@ use tokio::process::Command;
 use tokio::sync::{Notify, broadcast, mpsc, oneshot};
 use trillium::Conn;
 use trillium_router::{Router, RouterConnExt};
-use trillium_sse::{Eventable, SseConnExt};
+use trillium_sse::{Eventable, sse};
 
 use crate::agent;
 use crate::api::{
@@ -551,8 +551,8 @@ mod approvals;
 mod background;
 mod config_edits;
 // The typed error envelope (docs/control-api.md) — every non-2xx body the router
-// answers with. `GateMoved` and `CursorOutOfRange` are still unconstructed: they belong
-// to the resource-renamed gate and the unified stream respectively.
+// answers with. `GateMoved` is still unconstructed: it belongs to the
+// resource-renamed gate.
 #[allow(dead_code)]
 mod errors;
 // The control-stream frame envelope (docs/control-api.md), defined ahead of its

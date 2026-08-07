@@ -21,6 +21,7 @@ behind a change, see [`journal/`](journal/).
 - Level-triggered `state` frames deliver whole-topic replacements, ordered so that no state frame precedes a log frame it reflects, and folding them equals `GET /state`.
 - The TUI runs on one control connection (`?include=log,output,state`): the 400 ms `GET /state` poll and its second `/stream` socket are gone, with gate/processes/usage/policy/pace/running driven from `state` frames and elapsed-time displays advanced by a client-side 1 Hz tick.
 - `efference attach` renders from one control connection (`?include=log,output`).
+- `/events` sends an SSE comment whenever 15 s pass without a frame, negotiates `Accept`, and serves `?since` past the head as a wait rather than an error.
 - `GET /log` takes bounded windows — `?tail=N` (exactly N, cut anywhere) to open cold at the tail, `?before=<seq>&tail=N` to page backward; `since` with `tail` is a `400`.
 - `GET /log/:seq` and `GET /tool_calls/:call_id` resolve references that dangle outside a window, both `Cache-Control: immutable`.
 - Every non-2xx response carries a typed envelope (`{code, message, detail?}`), with one canonical status per code.

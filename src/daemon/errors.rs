@@ -7,9 +7,11 @@
 //! half and is free to change without breaking a client.
 //!
 //! The code set is deliberately small and derived from the errors the router already
-//! returns, plus the two the unified stream needs ([`ErrorCode::GateMoved`],
-//! [`ErrorCode::CursorOutOfRange`]). Resist growing it per-route: a code earns its place
-//! when a client would *act* differently on it, not when the prose differs.
+//! returns, plus the one the gate's precondition needs ([`ErrorCode::GateMoved`]).
+//! Resist growing it per-route: a code earns its place when a client would *act*
+//! differently on it, not when the prose differs. (A `cursor_out_of_range` code was
+//! reserved here once; it left when `?since` past the head was settled as a wait, not
+//! an error — under wait-semantics no client acts on it, because it is not one.)
 
 use super::*;
 
@@ -33,10 +35,6 @@ pub(crate) enum ErrorCode {
     /// closes the "approved a gate that already moved on" race, which today is an
     /// ambiguous 404.
     GateMoved,
-    /// A stream cursor the log cannot satisfy (`?since` beyond `last_seq + 1` — a
-    /// replaced log file, or a cursor from another session). Today this blocks
-    /// silently, which is indistinguishable from an idle daemon. 400.
-    CursorOutOfRange,
     /// The daemon failed at something it was supposed to be able to do (a log append,
     /// a config write, absent shared state). 500.
     Internal,
@@ -47,7 +45,7 @@ impl ErrorCode {
     /// the same code can't disagree about the status.
     pub(crate) fn status(self) -> u16 {
         match self {
-            Self::BadRequest | Self::InvalidDecision | Self::CursorOutOfRange => 400,
+            Self::BadRequest | Self::InvalidDecision => 400,
             Self::NotFound => 404,
             Self::GateMoved => 409,
             Self::Internal => 500,
@@ -63,8 +61,7 @@ pub(crate) struct ErrorBody {
     /// `code`.
     pub(crate) message: String,
     /// Machine-readable context for codes that carry corrective state — the current
-    /// pending gate on a [`ErrorCode::GateMoved`], the log's `last_seq` on a
-    /// [`ErrorCode::CursorOutOfRange`]. Omitted entirely when there is none.
+    /// pending gate on a [`ErrorCode::GateMoved`]. Omitted entirely when there is none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) detail: Option<Value>,
 }

@@ -91,11 +91,26 @@ fn immutable(conn: Conn) -> Conn {
     conn.with_response_header("cache-control", "public, max-age=31536000, immutable")
 }
 
+/// How long `/events` may sit silent before it sends an SSE comment (docs/control-api.md).
+///
+/// An idle stream through a TLS intermediary gets reaped, and a client cannot otherwise
+/// distinguish idle from dead; a comment (`: `) is the one keepalive an `EventSource`
+/// consumer ignores — every shape `Eventable` can encode fires `onmessage` — and the one
+/// that stays out of the frame envelope, since a heartbeat *frame* would need a fourth
+/// `class` naming no durability. It is also what makes `?since` past the head safe to
+/// serve as a wait rather than an error. (`daemon/keepalive.rs` is the *upstream* cache
+/// ping; unrelated.)
+const EVENTS_HEARTBEAT: Duration = Duration::from_secs(15);
+
 /// The HTTP surface — a `trillium-router` over the verb set (docs/control-channel.md). Each
 /// handler reads `Shared` from the server-global state; JSON in, JSON out. The
 /// router gives method-aware dispatch (and a clean `:call_id` capture) in place
 /// of the earlier hand-rolled `(method, path)` match.
-pub(crate) fn router() -> Router {
+///
+/// `heartbeat` is the `/events` idle-comment interval — [`EVENTS_HEARTBEAT`] via
+/// [`router`] everywhere real; a parameter so a test can shrink it and watch a quiet
+/// stream stay audibly alive.
+pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
     Router::new()
         // Enqueue a user turn (also seeds turn 1). 202 — watch /log (and the
         // future /events) for the response; submission is decoupled from inference.
@@ -440,17 +455,61 @@ pub(crate) fn router() -> Router {
         // the whole session and then live. Each event carries `id: <seq>`, so a
         // reconnecting client resumes with `?since=<last_seq + 1>` — the explicit
         // cursor the SSE crate's bare framing leaves to us.
-        .get("/events", |conn: Conn| async move {
-            let Some(shared) = shared_of(&conn) else {
-                return missing_state(conn);
-            };
-            let include = match Include::parse(parse_param(conn.querystring(), "include")) {
-                Ok(include) => include,
-                Err(message) => return fail(conn, ErrorCode::BadRequest, message),
-            };
-            let since = parse_since(conn.querystring()).unwrap_or(0);
-            conn.with_sse_stream(control_stream(shared, include, since))
-        })
+        .get(
+            "/events",
+            (
+                // The route is a tuple because the `Sse` handler cannot answer with the
+                // typed envelope: its `connect` must return a stream, so rejection
+                // happens *before* it, and a failure halts so the SSE half never runs.
+                // The `Sse` handler brings what the plain `with_sse_stream` conn method
+                // cannot: `Accept` negotiation (a request excluding `text/event-stream`
+                // passes through untouched) and the heartbeat, which needs the runtime
+                // the handler obtains at server init.
+                |conn: Conn| async move {
+                    let Some(shared) = shared_of(&conn) else {
+                        return missing_state(conn).halt();
+                    };
+                    match Include::parse(parse_param(conn.querystring(), "include")) {
+                        Ok(include) => {
+                            // `?since` past the head is a *wait*, not an error — the
+                            // natural reading of a cursor on an append-only log, and
+                            // the heartbeat is what keeps that wait distinguishable
+                            // from a dead connection.
+                            let since = parse_since(conn.querystring()).unwrap_or(0);
+                            conn.with_state(EventsRequest {
+                                shared,
+                                include,
+                                since,
+                            })
+                        }
+                        Err(message) => fail(conn, ErrorCode::BadRequest, message).halt(),
+                    }
+                },
+                sse(|conn: &mut Conn| match conn.take_state::<EventsRequest>() {
+                    Some(EventsRequest {
+                        shared,
+                        include,
+                        since,
+                    }) => control_stream(shared, include, since),
+                    // Unreachable: the validating half halts before this runs.
+                    None => Box::pin(futures_lite::stream::empty()),
+                })
+                .with_heartbeat(heartbeat),
+            ),
+        )
+}
+
+/// The validated inputs of one `/events` request, handed from the route's validating
+/// half to its `Sse` half through conn state.
+struct EventsRequest {
+    shared: Arc<Shared>,
+    include: Include,
+    since: u64,
+}
+
+/// [`router_with_heartbeat`] at the real [`EVENTS_HEARTBEAT`] interval.
+pub(crate) fn router() -> Router {
+    router_with_heartbeat(EVENTS_HEARTBEAT)
 }
 
 /// Which window of the log a `GET /log` read wants (docs/control-api.md).

@@ -25,7 +25,8 @@ async fn collect(
     while let Ok(Some(event)) =
         tokio::time::timeout(Duration::from_millis(200), stream.next()).await
     {
-        let frame: Value = serde_json::from_str(event.data()).expect("a frame envelope");
+        let frame: Value = serde_json::from_str(event.data().expect("frames carry data"))
+            .expect("a frame envelope");
         seen.push(Seen {
             class: frame["class"].as_str().unwrap_or_default().to_string(),
             kind: frame["kind"].as_str().unwrap_or_default().to_string(),
@@ -92,7 +93,7 @@ async fn sse_fields_carry_the_kind_and_the_cursor() {
     while let Ok(Some(event)) =
         tokio::time::timeout(Duration::from_millis(200), stream.next()).await
     {
-        let frame: Value = serde_json::from_str(event.data()).unwrap();
+        let frame: Value = serde_json::from_str(event.data().expect("frames carry data")).unwrap();
         kinds.push((
             frame["class"].as_str().unwrap_or_default().to_string(),
             event.event_type().map(str::to_string),

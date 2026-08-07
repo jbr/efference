@@ -273,8 +273,10 @@ pub(crate) struct FrameEvent {
 }
 
 impl Eventable for FrameEvent {
-    fn data(&self) -> &str {
-        &self.data
+    // Always `Some`: every frame carries its envelope. Comment-only messages — the
+    // heartbeat — come from the `Sse` handler's own interleaving, never from here.
+    fn data(&self) -> Option<&str> {
+        Some(&self.data)
     }
     fn event_type(&self) -> Option<&str> {
         Some(self.kind)
@@ -296,8 +298,8 @@ impl From<Frame> for FrameEvent {
 
 /// The per-connection frame stream (docs/control-api.md).
 ///
-/// Boxed because `with_sse_stream` demands `Unpin + Send + Sync`: the raw `unfold` over an
-/// async block is `!Unpin`, and `futures-lite`'s `.boxed()` adds only `+ Send`.
+/// Boxed because the `Sse` handler's `EventStream` demands `Unpin`: the raw `unfold`
+/// over an async block is not.
 pub(crate) fn control_stream(
     shared: Arc<Shared>,
     include: Include,

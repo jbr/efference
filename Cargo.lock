@@ -846,7 +846,7 @@ dependencies = [
  "crossbeam-channel",
  "crossterm",
  "env_logger",
- "fieldwork 0.5.2",
+ "fieldwork 0.5.3",
  "fs-mcp",
  "futures-lite",
  "indexmap",
@@ -1063,11 +1063,11 @@ dependencies = [
 
 [[package]]
 name = "fieldwork"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16b5ff57d22899405076c15dd38c2735eb8ff261a37fd0d1b0e841f3fd298433"
+checksum = "2dd017babc84497a6270475d80d5fb285cab36f6719daca3b130446ca34372da"
 dependencies = [
- "fieldwork-derive 0.5.2",
+ "fieldwork-derive 0.5.3",
 ]
 
 [[package]]
@@ -1083,13 +1083,13 @@ dependencies = [
 
 [[package]]
 name = "fieldwork-derive"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9aca8417ff665ef605a5d6f8f7670df33f74f3226003a1021582940878730b3"
+checksum = "c2d2cd106c285788bb67746bfdcfe0c7d08fc58ae7c7c3914b8da9bd3a61c958"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -2651,9 +2651,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.106"
+version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
+checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
 ]
@@ -2720,9 +2720,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.46"
+version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfbc457d0c7a0759a614551b11a6409e5951f6c7537be1f1b7682b9ae9230368"
+checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
 ]
@@ -3655,6 +3655,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "syn"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53e9bae58849f64dfa4f5d5ae372c8341f7305f82a3868709269343628b659a3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
 name = "sync_wrapper"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4208,7 +4219,7 @@ dependencies = [
  "crossbeam-queue",
  "dashmap",
  "encoding_rs",
- "fieldwork 0.5.2",
+ "fieldwork 0.5.3",
  "futures-lite",
  "log",
  "memchr",
@@ -4240,7 +4251,7 @@ dependencies = [
  "encoding_rs",
  "event-listener",
  "fastrand",
- "fieldwork 0.5.2",
+ "fieldwork 0.5.3",
  "futures-lite",
  "hashbrown 0.17.1",
  "httpdate",
@@ -4304,7 +4315,7 @@ dependencies = [
  "async_cell",
  "atomic-waker",
  "cfg_aliases",
- "fieldwork 0.5.2",
+ "fieldwork 0.5.3",
  "futures-lite",
  "listenfd",
  "log",
@@ -4319,12 +4330,15 @@ dependencies = [
 
 [[package]]
 name = "trillium-sse"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c513be834bf36768e73ec65e539582933ca2dff1a9fc12780071547bb55c395"
+checksum = "384c6e7b46e1d3317d24c47b3665fb4b653943df2dc140ba744edbe610086322"
 dependencies = [
+ "fieldwork 0.5.3",
  "futures-lite",
+ "log",
  "trillium",
+ "trillium-server-common",
 ]
 
 [[package]]
@@ -4339,7 +4353,7 @@ dependencies = [
  "dashmap",
  "env_logger",
  "fastrand",
- "fieldwork 0.5.2",
+ "fieldwork 0.5.3",
  "futures-lite",
  "log",
  "once_cell",
