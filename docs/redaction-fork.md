@@ -118,6 +118,21 @@ on the next canonical turn, at a rate that climbed with session depth; every str
 signal in the request said "ordinary tool result", including `tools[]` carrying the whole
 world toolset under `tool_choice: auto`.
 
+Measured by replaying a recorded session's gates one feature at a time
+(`efference peek`), **no single one of those is necessary** — ablating any one of the
+banner, the leading/closing imperative, the triage-turn stance, or the field block leaves
+the failure rate where it is, while ablating all four costs about twelve points. The
+shaping is redundant rather than resting on a particular sentence, which is the useful
+thing to know before editing it.
+
+The ask also states that **the verdict is the `retain` call's arguments and prose is not
+read**. That one is separately attributed: measured against the all-features-off variant,
+where there was headroom to see it, it moved the failure rate from 14% to 5%. Its target
+is a specific failure — a peek writing a correct verdict as prose *and* calling a work
+tool for the next step. An instruction to "respond with a tool call" would not have
+touched that, since a call was already being made; what was missing was that the prose
+channel isn't read.
+
 The closed-toolbox sentence — "no other tool will run until you have called `retain`" —
 is a statement of fact, not a discouragement: a non-`retain` call is answered with an
 error `tool_result` and the ask is renewed (below). `note` asks for what the output

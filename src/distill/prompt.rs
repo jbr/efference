@@ -110,7 +110,9 @@ struct AskVariant {
     stance: bool,
     /// Per-field asks as a scannable block; off means appended prose, as before.
     block: bool,
-    /// Additive candidate: prose is not read, only the call's arguments are.
+    /// The verdict is the call's arguments; prose is not read. Ships on — measured
+    /// against the all-features-off base, where there was headroom to see it: 14% → 5%,
+    /// 15 gates improved to 4 regressed (p ≈ 0.02).
     verdict_channel: bool,
     /// Additive candidate: the output above is complete, nothing further is coming.
     output_final: bool,
@@ -125,7 +127,7 @@ impl Default for AskVariant {
             lede: true,
             stance: true,
             block: true,
-            verdict_channel: false,
+            verdict_channel: true,
             output_final: false,
         }
     }
@@ -150,11 +152,13 @@ impl AskVariant {
                     v.lede = false;
                     v.stance = false;
                     v.block = false;
+                    v.verdict_channel = false;
                 }
                 "no-banner" => v.banner = false,
                 "no-lede" => v.lede = false,
                 "no-stance" => v.stance = false,
                 "no-block" => v.block = false,
+                "no-verdict-channel" => v.verdict_channel = false,
                 "+verdict-channel" => v.verdict_channel = true,
                 "+output-final" => v.output_final = true,
                 other => panic!("EFFERENCE_PEEK_ASK: unknown variant {other:?}"),
