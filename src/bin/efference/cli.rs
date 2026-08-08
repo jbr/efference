@@ -363,6 +363,13 @@ pub(crate) enum Command {
         /// coin flip.
         #[arg(long, default_value = "3")]
         repeat: usize,
+        /// Sample this many gates instead of sweeping all of them — for pricing a new
+        /// model before committing to a full run. Sampled **evenly across the session**,
+        /// never the first N: first-attempt failures climb with session depth, so a
+        /// prefix of the gates measures the easy end and reads as a better rate than the
+        /// model earns.
+        #[arg(long)]
+        limit: Option<usize>,
         /// Print the peek's trailing message instead of sending it — what makes an
         /// instruction change reviewable without spending a request.
         #[arg(long)]

@@ -110,9 +110,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             path,
             seq,
             repeat,
+            limit,
             dry_run,
             model,
-        } => peek(path, seq, repeat, dry_run, &model).await,
+        } => peek(path, seq, repeat, limit, dry_run, &model).await,
     }
 }
 

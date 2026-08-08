@@ -137,6 +137,7 @@ pub(crate) async fn peek(
     path: PathBuf,
     seq: Option<u64>,
     repeat: usize,
+    limit: Option<usize>,
     dry_run: bool,
     model: &str,
 ) -> CliResult {
@@ -145,10 +146,18 @@ pub(crate) async fn peek(
     let (path, label) = resolve_session_log(&path.to_string_lossy())?;
     let entries = efference::persist::load(&path)?;
     let all = gates(&entries);
-    let selected: Vec<&Gate> = match seq {
+    let mut selected: Vec<&Gate> = match seq {
         Some(s) => all.iter().filter(|g| g.seq == s).collect(),
         None => all.iter().collect(),
     };
+    // Evenly spaced, not the first N. Failure rate climbs with session depth, so a prefix
+    // of the gates samples the easy end and flatters the model.
+    if let Some(limit) = limit.filter(|n| *n < selected.len() && *n > 0) {
+        let step = selected.len() as f64 / limit as f64;
+        selected = (0..limit)
+            .map(|i| selected[(i as f64 * step) as usize])
+            .collect();
+    }
     if selected.is_empty() {
         return Err(match seq {
             Some(s) => format!("no gate triaging result seq {s} in {}", path.display()).into(),
@@ -220,6 +229,9 @@ pub(crate) async fn peek(
         selected.len()
     );
     let (mut draws, mut compliant, mut cache_read, mut uncached) = (0usize, 0usize, 0u64, 0u64);
+    // Output includes reasoning tokens, which bill as output and vary enormously by model
+    // — the term most likely to make a cost estimate wrong.
+    let (mut out_tokens, mut prompt_tokens) = (0u64, 0u64);
     // Gates whose recorded first attempt failed, and whose replays now all pass (and the
     // reverse) — the discordant pairs, which are what a paired comparison actually rests on.
     let (mut fixed, mut broke) = (0usize, 0usize);
@@ -246,6 +258,10 @@ pub(crate) async fn peek(
             .await?;
             draws += 1;
             cache_read += attempt.usage.usage.cache_read_input_tokens;
+            out_tokens += attempt.usage.usage.output_tokens;
+            prompt_tokens += attempt.usage.usage.input_tokens
+                + attempt.usage.usage.cache_read_input_tokens
+                + attempt.usage.usage.cache_creation_input_tokens;
             // NB: not `usage.input_tokens`. That counts everything neither read from nor
             // written to cache, so a prefix segment that missed cache lands in it too —
             // it moved the wrong way between two runs whose tails differed by 1 KB. Tail
