@@ -93,6 +93,62 @@ entries, one per call id listed here and no others: [{ids}]. Copy each `call_id`
     v.assemble(&shape, &fields)
 }
 
+/// How much of a roster item the peek view spells out — the cost axis
+/// (backlog/ask-ablations.md). The roster is re-sent on **every** gate and lives in the
+/// fork's uncached tail, so its size is paid per tool result for the whole session; in the
+/// session these were measured against it was 28 items on all 55 gates and `Triage.surfaced`
+/// came back empty every time.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RosterStyle {
+    /// `<name path="…">summary</name>` — what the boot preamble spells in full.
+    Full,
+    /// The same tag with the summary cut to its first sentence.
+    FirstSentence,
+    /// `<name path="…"/>` — the coordinates with no summary. **What ships.** The summary
+    /// costs a quarter of the session's uncached tail and buys no measurable compliance;
+    /// the `path=` attribute is the part that says "a file to open" rather than "a thing
+    /// you can call", which is what a bare name was misread as.
+    NamePath,
+    /// `[name]` alone, as the roster shipped before.
+    Name,
+    /// No roster section at all, and so no `surfaced` decision this gate.
+    Off,
+}
+
+impl RosterStyle {
+    fn render(self, item: &Item) -> String {
+        let Item::Listed {
+            name,
+            description,
+            path,
+        } = item
+        else {
+            return crate::context::render_item(item);
+        };
+        match self {
+            Self::Full | Self::Off => crate::context::render_item(item),
+            Self::FirstSentence => {
+                format!(
+                    "<{name} path=\"{path}\">{}</{name}>",
+                    first_sentence(description)
+                )
+            }
+            Self::NamePath => format!("<{name} path=\"{path}\"/>"),
+            Self::Name => format!("[{name}]"),
+        }
+    }
+}
+
+/// The first sentence of `s` — up to the first `. ` that isn't inside an obvious
+/// abbreviation-free position, else the whole string. Deliberately crude: this trims a
+/// roster summary for a cost experiment, and over-keeping is harmless.
+fn first_sentence(s: &str) -> &str {
+    match s.find(". ") {
+        Some(i) => &s[..=i],
+        None => s,
+    }
+}
+
 /// Which features of the ask are on — the ablation axis the `peek` rig varies
 /// (docs/redaction-fork.md, backlog/ask-ablations.md).
 ///
@@ -103,6 +159,7 @@ entries, one per call id listed here and no others: [{ids}]. Copy each `call_id`
 /// rule out. A full-text override was the other candidate and can't work: a fifth of the
 /// gates in a real session carry several results and need their ids interpolated.
 struct AskVariant {
+    roster: RosterStyle,
     banner: bool,
     /// The imperative leading the ask and repeated at its end.
     lede: bool,
@@ -123,6 +180,7 @@ impl Default for AskVariant {
     /// one under test in production and an unset env var changes nothing.
     fn default() -> Self {
         Self {
+            roster: RosterStyle::NamePath,
             banner: true,
             lede: true,
             stance: true,
@@ -158,6 +216,11 @@ impl AskVariant {
                 "no-lede" => v.lede = false,
                 "no-stance" => v.stance = false,
                 "no-block" => v.block = false,
+                "roster-full" => v.roster = RosterStyle::Full,
+                "roster-sentence" => v.roster = RosterStyle::FirstSentence,
+                "roster-path" => v.roster = RosterStyle::NamePath,
+                "roster-name" => v.roster = RosterStyle::Name,
+                "roster-off" => v.roster = RosterStyle::Off,
                 "no-verdict-channel" => v.verdict_channel = false,
                 "+verdict-channel" => v.verdict_channel = true,
                 "+output-final" => v.output_final = true,
@@ -326,14 +389,22 @@ pub(super) fn roster_name(item: &Item) -> &str {
 /// session met a listed skill as a bare `[ferritin]` and built a tool call out of the name
 /// rather than reading the file (journal/2026-08-07-session-key-review.md). Repeating the
 /// summary and the path costs a line each and answers the question the name provokes.
+/// Whether this gate actually shows a roster section — and so whether the ask should offer
+/// a `surfaced` field at all. Not the same as "the roster is non-empty": a style that
+/// renders nothing must also drop the field, or the ask names a section that isn't there.
+pub(super) fn roster_shown(roster: &[Item]) -> bool {
+    !roster.is_empty() && AskVariant::from_env().roster != RosterStyle::Off
+}
+
 pub(super) fn append_roster(view: &mut String, roster: &[Item]) {
-    if roster.is_empty() {
+    if !roster_shown(roster) {
         return;
     }
+    let style = AskVariant::from_env().roster;
     view.push_str(&format!("\n\n═══ context · {} available ═══", roster.len()));
     for item in roster {
         view.push('\n');
-        view.push_str(&crate::context::render_item(item));
+        view.push_str(&style.render(item));
     }
 }
 

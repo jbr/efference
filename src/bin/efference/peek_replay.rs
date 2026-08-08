@@ -105,6 +105,22 @@ fn one_line(s: &str, max: usize) -> String {
     }
 }
 
+/// The size of the peek's trailing user message — the part of the request that is fresh
+/// on every gate, as against the prefix it re-reads warm.
+fn tail_chars(messages: &[efference::project::ApiMessage]) -> usize {
+    let Some(last) = messages.last() else {
+        return 0;
+    };
+    last.content
+        .iter()
+        .map(|b| match b {
+            efference::project::ApiBlock::Text { text, .. } => text.len(),
+            efference::project::ApiBlock::ToolResult { content, .. } => content.len(),
+            _ => 0,
+        })
+        .sum()
+}
+
 /// The one-line description of what a replayed attempt did.
 fn outcome(attempt: &efference::distill::PeekAttempt) -> String {
     match &attempt.why {
@@ -154,6 +170,31 @@ pub(crate) async fn peek(
     let toolbox = Toolbox::bash_and_mcps(std::env::current_dir()?, None)?;
     let tools = efference::agent::tool_definitions(&toolbox);
 
+    // A dry run over the whole session costs nothing and answers the other half of the
+    // question a variant raises: what it costs. The tail is the fresh part of every gate's
+    // request, so its mean size is what a cheaper roster is trying to move — and reading
+    // it here rather than off `usage` keeps it free of cache jitter.
+    if dry_run && seq.is_none() {
+        let total: usize = selected
+            .iter()
+            .map(|g| {
+                let pending: Vec<Pending<'_>> = g
+                    .calls
+                    .iter()
+                    .zip(&g.raws)
+                    .map(|(call, raw)| Pending { call, raw })
+                    .collect();
+                tail_chars(&peek_request(&entries[..g.prefix_end], &pending, &[], &[]))
+            })
+            .sum();
+        println!(
+            "{} gates · mean tail {} chars · {} chars per session",
+            selected.len(),
+            total / selected.len(),
+            total
+        );
+        return Ok(());
+    }
     if dry_run {
         let g = selected[0];
         let pending: Vec<Pending<'_>> = g
@@ -178,7 +219,7 @@ pub(crate) async fn peek(
         "replaying {} gate(s) from {label} × {repeat} on {model} — first attempt only, no retries",
         selected.len()
     );
-    let (mut draws, mut compliant, mut cache_read) = (0usize, 0usize, 0u64);
+    let (mut draws, mut compliant, mut cache_read, mut uncached) = (0usize, 0usize, 0u64, 0u64);
     // Gates whose recorded first attempt failed, and whose replays now all pass (and the
     // reverse) — the discordant pairs, which are what a paired comparison actually rests on.
     let (mut fixed, mut broke) = (0usize, 0usize);
@@ -189,6 +230,9 @@ pub(crate) async fn peek(
             .zip(&g.raws)
             .map(|(call, raw)| Pending { call, raw })
             .collect();
+        // The fork tail — result blocks, roster, ask — is uncached by construction, so
+        // its size is what a gate costs beyond re-reading the prefix, on every tool result.
+        uncached += tail_chars(&peek_request(&entries[..g.prefix_end], &pending, &[], &[])) as u64;
         let mut passes = 0usize;
         for draw in 1..=repeat {
             let attempt = peek_attempt(
@@ -202,6 +246,11 @@ pub(crate) async fn peek(
             .await?;
             draws += 1;
             cache_read += attempt.usage.usage.cache_read_input_tokens;
+            // NB: not `usage.input_tokens`. That counts everything neither read from nor
+            // written to cache, so a prefix segment that missed cache lands in it too —
+            // it moved the wrong way between two runs whose tails differed by 1 KB. Tail
+            // size is measured off the request we build instead: deterministic, free, and
+            // exactly the thing a cheaper roster is supposed to move.
             if attempt.compliant() {
                 compliant += 1;
                 passes += 1;
@@ -241,6 +290,14 @@ pub(crate) async fn peek(
         .filter(|g| g.recorded_first_failure.is_some())
         .count();
     println!("\nPEEK REPLAY · {model}");
+    // The fork tail is uncached by construction, so this is what a gate costs beyond
+    // re-reading the prefix — paid on every tool result, for the whole session. It is the
+    // number a cheaper roster has to move, and it belongs next to the failure rate because
+    // the two are the trade.
+    println!(
+        "  tail      {} chars per gate, uncached (result + roster + ask)",
+        uncached / selected.len().max(1) as u64
+    );
     println!(
         "  recorded  {recorded_failures}/{} gates failed their first attempt  ({:.0}%)",
         selected.len(),

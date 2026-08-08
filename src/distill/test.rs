@@ -786,20 +786,26 @@ fn rider_fields_appear_only_when_their_section_does() {
     assert!(!with_roster.contains("  inbox "), "{with_roster}");
 }
 
-/// The roster renders each item exactly as the boot preamble spelled it, through the
-/// preamble's own renderer — summary and path included. A bare `[name]` under-describes
-/// what the item is: a session met a listed skill that way and built a tool call out of
-/// the name rather than reading the file (journal/2026-08-07-session-key-review.md).
+/// The roster names each item **and its path**, so it reads as a file to open rather than
+/// a capability to call — a session met a listed skill as a bare `[ferritin]` and built a
+/// tool call out of the name (journal/2026-08-07-session-key-review.md).
+///
+/// It does *not* carry the summary. That is a measured call, not an aesthetic one: the
+/// summaries are a quarter of a session's uncached fork tail and moved the first-attempt
+/// failure rate not at all (journal/2026-08-07-triage-ask-measured.md).
 #[test]
-fn the_roster_renders_items_as_the_preamble_spelled_them() {
+fn the_roster_gives_each_item_a_path_but_not_its_summary() {
     let roster = vec![listed("ferritin")];
     let mut view = String::new();
     append_roster(&mut view, &roster);
+    assert!(view.contains("<ferritin"), "named: {view}");
     assert!(
-        view.contains(&crate::context::render_item(&roster[0])),
-        "one renderer, so the two can't drift: {view}"
+        view.contains("path=\"skills/ferritin.md\""),
+        "and located: {view}"
     );
-    assert!(view.contains("path=\"skills/ferritin.md\""), "{view}");
-    assert!(view.contains("what ferritin does"), "{view}");
+    assert!(
+        !view.contains("what ferritin does"),
+        "the summary is the part that costs and doesn't pay: {view}"
+    );
     assert!(!view.contains("[ferritin]"), "not the bare name: {view}");
 }

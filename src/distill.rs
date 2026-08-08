@@ -452,7 +452,7 @@ fn peek_messages(
     if !background.is_empty() {
         riders.push(BACKGROUND_FIELD);
     }
-    if !roster.is_empty() {
+    if roster_shown(roster) {
         riders.push(SURFACE_FIELD);
     }
     let instruction = retain_instruction(&offered, &riders);
