@@ -329,6 +329,14 @@ pub(crate) async fn peek(
     println!(
         "  flipped   {fixed} recorded-failure gates now pass every draw · {broke} recorded-pass gates now fail every draw"
     );
+    // Output carries reasoning tokens, which differ by an order of magnitude between
+    // models and are the term that makes a borrowed cost estimate wrong. A short
+    // `--limit` probe reports this on the model itself.
+    println!(
+        "  tokens    {}k prompt · {} output per draw (output includes reasoning)",
+        prompt_tokens / draws.max(1) as u64 / 1000,
+        out_tokens / draws.max(1) as u64
+    );
     println!(
         "  cache     {cache_read} tokens read (a cold total means the replay isn't reading the session's prefix)"
     );
