@@ -232,6 +232,10 @@ pub(crate) async fn peek(
     // Output includes reasoning tokens, which bill as output and vary enormously by model
     // — the term most likely to make a cost estimate wrong.
     let (mut out_tokens, mut prompt_tokens) = (0u64, 0u64);
+    // Draws that never produced a parseable response at all — counted as failures, and
+    // reported separately because "the model refused the ask" and "the response didn't
+    // decode" are different defects.
+    let mut transport_errors = 0usize;
     // Gates whose recorded first attempt failed, and whose replays now all pass (and the
     // reverse) — the discordant pairs, which are what a paired comparison actually rests on.
     let (mut fixed, mut broke) = (0usize, 0usize);
@@ -247,7 +251,12 @@ pub(crate) async fn peek(
         uncached += tail_chars(&peek_request(&entries[..g.prefix_end], &pending, &[], &[])) as u64;
         let mut passes = 0usize;
         for draw in 1..=repeat {
-            let attempt = peek_attempt(
+            // A transport error is this draw's problem, not the sweep's. Propagating it
+            // threw away 160-odd completed draws when one response came back with
+            // malformed JSON — and a model that sometimes fails to produce a parseable
+            // response *is* part of what a cross-model comparison is measuring, so it is
+            // recorded as a failed draw rather than hidden by aborting.
+            let attempt = match peek_attempt(
                 &client,
                 &tools,
                 &entries[..g.prefix_end],
@@ -255,7 +264,19 @@ pub(crate) async fn peek(
                 &[],
                 &[],
             )
-            .await?;
+            .await
+            {
+                Ok(attempt) => attempt,
+                Err(e) => {
+                    draws += 1;
+                    transport_errors += 1;
+                    println!(
+                        "seq {:>4} · draw {draw}/{repeat} · {:<24} {e}",
+                        g.seq, "(error)"
+                    );
+                    continue;
+                }
+            };
             draws += 1;
             cache_read += attempt.usage.usage.cache_read_input_tokens;
             out_tokens += attempt.usage.usage.output_tokens;
@@ -332,6 +353,11 @@ pub(crate) async fn peek(
     // Output carries reasoning tokens, which differ by an order of magnitude between
     // models and are the term that makes a borrowed cost estimate wrong. A short
     // `--limit` probe reports this on the model itself.
+    if transport_errors > 0 {
+        println!(
+            "  errors    {transport_errors} draw(s) returned nothing parseable (counted as failures)"
+        );
+    }
     println!(
         "  tokens    {}k prompt · {} output per draw (output includes reasoning)",
         prompt_tokens / draws.max(1) as u64 / 1000,
