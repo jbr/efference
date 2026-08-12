@@ -1,12 +1,18 @@
 # Tools
 
-## Design boundary: in-process over MCP subprocesses
+## Design boundary: in-process for the built-ins
 
-Tools run in-process behind a `Provider` enum aggregated by a `Toolbox`, not
-as MCP subprocesses. The reason is iteration velocity: an in-process call pays
-neither JSON-RPC round-trip overhead nor process lifecycle management. A new
-backend is a single enum variant; dispatch stays static with no `async-trait`
-boxing.
+efference's own primitives run in-process behind a `Provider` enum aggregated
+by a `Toolbox`, not as MCP subprocesses. The reason is iteration velocity: an
+in-process call pays neither JSON-RPC round-trip overhead nor process
+lifecycle management. A new backend is a single enum variant; dispatch stays
+static with no `async-trait` boxing.
+
+The boundary is *additive*, not exclusive: third-party servers mount as
+**connected providers** (a `Provider` variant speaking the MCP wire — see
+below) without dissolving the typed in-process hook the built-ins earn —
+gating, staleness checks, and line-numbered fork rendering all want direct
+access to the result structs.
 
 ## The `Tool` trait and progressive reveal
 
@@ -88,6 +94,57 @@ in memory (`SessionStore::new(None)` — no disk, no file-watcher) and seeds the
 working directory, so embedding touches no shared state and makes end-to-end
 tests hermetic.
 
+## Connected providers: user-declared MCP servers
+
+Besides the embedded crates, efference mounts servers it did *not* compile in —
+an arbitrary set the user declares in the config (`[mcp.servers.<name>]`,
+`src/config.rs`), spawned over stdio or reached over streamable HTTP. The
+implementation is `src/mcp.rs` (+ `src/mcp/stdio.rs`, `src/mcp/http.rs`);
+`Provider::Connected` is the toolbox variant. The MCP `client`/`server` role
+names describe wire direction only and stay inside that module; efference's
+vocabulary is *host mounts provider*.
+
+The stanza's shape picks the transport — `command`/`args`/`env` spawns a stdio
+subprocess (own process group, killed on drop, stderr drained to the daemon
+log), `url` connects over streamable HTTP (`trillium-client`; the server may
+answer a POST as JSON or as a per-request SSE stream, and `Mcp-Session-Id` /
+`MCP-Protocol-Version` ride as headers once learned). Declaring a server is the
+human's authority via the reviewed config file; an agent write to that table is
+gated like any other config edit, and *calling* a connected tool rides the same
+spotter/gate cascade as every tool. A connected server's results are untrusted
+content — same trust class as attachments; human-in-the-loop is the mitigation.
+
+Wire protocol: the serialization types live in `mcplease` (`types.rs`, modeled
+on the MCP `2026-07-28` schema revision with the stateful `initialize`
+handshake retained from `2025-11-25` — the newest revision removed the
+handshake in favor of stateless per-request `_meta`, but deployed servers
+speak the handshake). Mounting runs `initialize` (accepting any supported
+revision the server negotiates down to), `notifications/initialized`, then a
+paginated `tools/list`. Requests are strictly serialized — the loop issues one
+tool call at a time — so there is no demux task: a request reads until its
+response id arrives, answering `ping` and stepping over notifications and
+stale responses inline.
+
+Unlike the embedded path, the tool table is **discovered at runtime**, which
+creates a cache hazard the embedded path never had (the server can change its
+list between — or during — sessions). The discipline: the table is a
+**snapshot at mount**, sorted by tool name (a server may reorder), folded
+through the same `anthropic_def` normalization, and frozen for the session; a
+mid-session `tools/list_changed` does not reach the wire. Every failure — a
+server that won't start is skipped with a warning at boot; a call that fails,
+times out, or hits a dead server — lands as an `is_error` result, so a
+`tool_use` is never orphaned.
+
+Tool names reach the wire namespaced `<server>__<tool>`. Two underscores are
+legal in the API's tool-name alphabet, absent from every embedded tool name,
+and the config validates server names against the same alphabet — so
+collisions across N user-provided servers are structurally impossible rather
+than guarded case-by-case.
+
+One known gap: the offline `wire` dev view does not mount connected providers
+(mounting spawns processes), so a session with `[mcp.servers.*]` sends more
+`tools[]` than that view shows.
+
 ### Duplicate tool name rejection: filter and guard
 
 Both servers expose `set_working_directory`. Advertising it would put a
@@ -135,10 +192,11 @@ end; `serve --keep-scratch` retains it as a post-mortem artifact.
 
 ## Open items
 
-**cargo-mcp** is not yet integrated — there is a `mcplease` version skew
-between cargo-mcp and the other crates, and it shells out to real `cargo` /
-`rustup`, which adds complexity. It remains off the critical path per the
-taxonomy above.
+**cargo-mcp** is not embedded, and no longer needs to be: as a stdio binary it
+is one `[mcp.servers.cargo]` stanza away (the connected path negotiates down
+to its protocol revision; no `mcplease` version alignment required). It
+remains off the critical path per the taxonomy above — mount it when driving
+cargo through bash shows real friction.
 
 **Forwarding, renaming, and subsetting MCP tools** (the progressive-reveal
 dimension of which of a server's tools reach the wire) is unsettled. Tools are

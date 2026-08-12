@@ -125,6 +125,29 @@ pub struct Config {
     /// (a dynamic `exec` section can sit between static files). The harness bakes in nothing about
     /// what any entry "is" — see [`ContextEntry`].
     pub context: Vec<ContextEntry>,
+
+    /// User-declared MCP servers to mount as connected providers (docs/tools.md).
+    /// A `BTreeMap` so mount order — and therefore the wire `tools[]` order — is
+    /// deterministic (docs/log-and-projection.md). Declaring a server here is the
+    /// human's authority; an agent edit to this table is gated like any other
+    /// config edit. TOML `[mcp.servers.<name>]` tables.
+    pub mcp_servers: BTreeMap<String, McpTransport>,
+}
+
+/// How to reach one declared MCP server ([`Config::mcp_servers`]). The shape of
+/// the stanza picks the transport: `command` (+ optional `args`/`env`) spawns a
+/// stdio subprocess; `url` connects over streamable HTTP. Exactly one of the two
+/// is required — [`validate`] rejects a stanza with both or neither.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpTransport {
+    Stdio {
+        command: String,
+        args: Vec<String>,
+        env: BTreeMap<String, String>,
+    },
+    Http {
+        url: String,
+    },
 }
 
 /// One `[context]` entry — a source of preamble bytes with an optional heading, write grants, and a

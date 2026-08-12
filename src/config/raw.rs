@@ -29,6 +29,34 @@ pub(super) struct RawConfig {
     /// [`ContextEntry`].
     #[serde(default)]
     context: IndexMap<String, RawContextValue>,
+    /// `[mcp]` table — connected-provider declarations ([`Config::mcp_servers`]).
+    #[serde(default)]
+    mcp: RawMcp,
+}
+
+/// The `[mcp]` table. Only `servers` today; a table (rather than hoisting
+/// `servers` to the top level) so future mcp-wide knobs have a home.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawMcp {
+    #[serde(default)]
+    servers: BTreeMap<String, RawMcpServer>,
+}
+
+/// One `[mcp.servers.<name>]` stanza. Which keys are present picks the
+/// transport — see [`McpTransport`]; [`validate_mcp_server`] rejects ambiguous
+/// or empty shapes.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawMcpServer {
+    #[serde(default)]
+    command: Option<String>,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+    #[serde(default)]
+    url: Option<String>,
 }
 
 /// A `[context]` value: the `true`/`false` sugar (a bare read-only path) or an inline table
@@ -114,6 +142,16 @@ pub enum ValidationError {
     /// entry whose key *is* the path, with no `path`/`paths`). Both are about a *location of many
     /// files*; a single file has nowhere to create into and nothing to sort.
     ContextBarePathGrant(String, &'static str),
+    /// An `[mcp.servers.<name>]` stanza with both `command` and `url`, or neither — the transport
+    /// is picked by which one is present, so the shape must commit to exactly one.
+    McpServerTransport(String),
+    /// `args`/`env` on a `url` server — those keys parameterize a spawned subprocess, and an HTTP
+    /// server is not spawned.
+    McpServerHttpExtras(String),
+    /// A server name that cannot prefix a wire tool name. Connected tools reach the wire as
+    /// `<server>__<tool>`, and the API constrains tool names to `[a-zA-Z0-9_-]`, so the server
+    /// name must fit the same alphabet (and stay short enough to leave room for the tool).
+    McpServerName(String),
 }
 
 impl std::fmt::Display for ValidationError {
@@ -145,6 +183,22 @@ impl std::fmt::Display for ValidationError {
                 "context entry `{key}` uses `{which}` on a bare path — `{which}` needs a labeled \
                  group with `path`/`paths` (a single file has nowhere to create into / nothing to \
                  sort)"
+            ),
+            ValidationError::McpServerTransport(name) => write!(
+                f,
+                "mcp server `{name}` must set exactly one of `command` (a stdio subprocess) or \
+                 `url` (a streamable-HTTP endpoint)"
+            ),
+            ValidationError::McpServerHttpExtras(name) => write!(
+                f,
+                "mcp server `{name}` sets `url` together with `args`/`env` — those keys \
+                 parameterize a spawned `command`, and an HTTP server is not spawned"
+            ),
+            ValidationError::McpServerName(name) => write!(
+                f,
+                "mcp server name `{name}` must be 1-32 characters of [a-zA-Z0-9_-] (it prefixes \
+                 every tool the server advertises, as `{name}__<tool>`, and the API constrains \
+                 tool names to that alphabet)"
             ),
         }
     }
@@ -181,6 +235,11 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
     for (key, value) in raw.context {
         context.push(validate_context_entry(key, value)?);
     }
+    let mut mcp_servers = BTreeMap::new();
+    for (name, server) in raw.mcp.servers {
+        let transport = validate_mcp_server(&name, server)?;
+        mcp_servers.insert(name, transport);
+    }
     Ok(Config {
         scope: raw.scope,
         watch_for: raw.watch_for,
@@ -190,7 +249,39 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
         paths,
         extends: raw.extends,
         context,
+        mcp_servers,
     })
+}
+
+/// Interpret one `[mcp.servers.<name>]` stanza into an [`McpTransport`], failing closed on an
+/// ambiguous shape. The name is validated here too, because it prefixes every advertised tool
+/// name on the wire (`<server>__<tool>`) and must fit the API's tool-name alphabet.
+pub(super) fn validate_mcp_server(
+    name: &str,
+    server: RawMcpServer,
+) -> Result<McpTransport, ValidationError> {
+    let name_ok = !name.is_empty()
+        && name.len() <= 32
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if !name_ok {
+        return Err(ValidationError::McpServerName(name.to_string()));
+    }
+    match (server.command, server.url) {
+        (Some(command), None) => Ok(McpTransport::Stdio {
+            command,
+            args: server.args,
+            env: server.env,
+        }),
+        (None, Some(url)) => {
+            if !server.args.is_empty() || !server.env.is_empty() {
+                return Err(ValidationError::McpServerHttpExtras(name.to_string()));
+            }
+            Ok(McpTransport::Http { url })
+        }
+        _ => Err(ValidationError::McpServerTransport(name.to_string())),
+    }
 }
 
 /// Interpret one `[context]` `(key, value)` into a [`ContextEntry`], failing closed on an illegal

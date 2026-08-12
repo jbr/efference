@@ -17,6 +17,7 @@ behind a change, see [`journal/`](journal/).
 - Transient upstream 429/5xx responses retry with a bounded backoff, and an exhausted completion now returns the session to idle instead of terminating the daemon.
 
 ### Added
+- `[mcp.servers.<name>]` in the config mounts user-declared MCP servers as connected providers — spawned over stdio or reached over streamable HTTP — with tool names namespaced `<server>__<tool>`, the tool table snapshot at mount, and every failure paired as an `is_error` result.
 - `efference peek` replays a recorded session's fork gates through the live request builder and scores first-attempt compliance, with `--repeat` draws per gate and a `--dry-run` that prints the ask without spending a request.
 - Sessions send OpenRouter a per-session `x-session-id`, pinning sticky routing to one upstream so a consolidation — which rewrites the opening messages OpenRouter would otherwise hash — can't re-route mid-session; the spotter takes a distinct key, and providers without sticky routing are sent nothing.
 - `GET /events` is one control stream carrying three durability classes (`log`/`output`/`state`) under a discriminated frame envelope, selectable with `?include=log,output,state:gate`; an unknown token is a `400`.

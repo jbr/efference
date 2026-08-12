@@ -86,7 +86,10 @@ pub(crate) async fn wire(
     };
     // The full tools[] a real turn sends — world tools + the harness tools
     // (`consolidate`, the docs/supervisor.md and docs/inbox.md tools) — so the dev view matches.
-    // (No scratch dir: the wire view renders, it never executes.)
+    // (No scratch dir: the wire view renders, it never executes.) One known gap:
+    // config-declared connected providers (docs/tools.md) are not mounted here —
+    // mounting spawns processes / opens connections, which an offline view must
+    // not — so a session with `[mcp.servers.*]` has more tools[] than this shows.
     let toolbox = Toolbox::bash_and_mcps(cwd, None)?;
     let tools = efference::agent::tool_definitions(&toolbox);
 

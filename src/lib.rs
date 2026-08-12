@@ -12,6 +12,7 @@ pub mod expand;
 pub mod frontend;
 pub mod inbox;
 pub mod log;
+pub mod mcp;
 pub mod persist;
 pub mod policy;
 pub mod pretty;

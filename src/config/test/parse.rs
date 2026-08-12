@@ -296,3 +296,75 @@ fn command_deny_is_rejected() {
         LoadError::Validate(_, ValidationError::CommandDeny(_))
     ));
 }
+
+#[test]
+fn mcp_servers_parse_into_transports() {
+    let config = parse_str(
+        r#"
+[mcp.servers.github]
+command = "gh-mcp-server"
+args = ["--stdio"]
+env = { GITHUB_TOKEN = "t" }
+
+[mcp.servers.sentry]
+url = "https://mcp.example.com/mcp"
+"#,
+    );
+    assert_eq!(config.mcp_servers.len(), 2);
+    // BTreeMap: mount order is name order, deterministic.
+    let names: Vec<&str> = config.mcp_servers.keys().map(String::as_str).collect();
+    assert_eq!(names, ["github", "sentry"]);
+    assert!(matches!(
+        &config.mcp_servers["github"],
+        McpTransport::Stdio { command, args, env }
+            if command == "gh-mcp-server" && args == &["--stdio"] && env["GITHUB_TOKEN"] == "t"
+    ));
+    assert!(matches!(
+        &config.mcp_servers["sentry"],
+        McpTransport::Http { url } if url == "https://mcp.example.com/mcp"
+    ));
+}
+
+/// The stanza's shape picks the transport, so it must commit to exactly one.
+#[test]
+fn mcp_server_with_both_or_neither_transport_fails_the_file() {
+    for text in [
+        "[mcp.servers.x]\ncommand = \"a\"\nurl = \"https://b\"\n",
+        "[mcp.servers.x]\nargs = [\"--stdio\"]\n",
+    ] {
+        let err = super::parse(Path::new("bad.toml"), text).unwrap_err();
+        assert!(matches!(
+            err,
+            LoadError::Validate(_, ValidationError::McpServerTransport(_))
+        ));
+    }
+}
+
+/// `args`/`env` parameterize a spawned subprocess; an HTTP server is not spawned.
+#[test]
+fn mcp_http_server_with_spawn_keys_fails_the_file() {
+    let err = super::parse(
+        Path::new("bad.toml"),
+        "[mcp.servers.x]\nurl = \"https://b\"\nenv = { A = \"1\" }\n",
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        LoadError::Validate(_, ValidationError::McpServerHttpExtras(_))
+    ));
+}
+
+/// The server name prefixes every advertised tool on the wire (`<server>__<tool>`),
+/// so it must fit the API's tool-name alphabet.
+#[test]
+fn mcp_server_name_outside_the_tool_alphabet_fails_the_file() {
+    let err = super::parse(
+        Path::new("bad.toml"),
+        "[mcp.servers.\"my server!\"]\ncommand = \"a\"\n",
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        LoadError::Validate(_, ValidationError::McpServerName(_))
+    ));
+}

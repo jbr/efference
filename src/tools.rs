@@ -22,7 +22,7 @@ use std::path::PathBuf;
 
 use fs_mcp::FsTools;
 use mcplease::traits::{AsToolsList, Tool as McpTool};
-use mcplease::types::ToolSchema;
+use mcplease::types::Tool as ToolDefinition;
 use semantic_edit_mcp::SemanticEditTools;
 use serde_json::{Value, json};
 
@@ -40,6 +40,9 @@ pub enum Provider {
     // variant (clippy::large_enum_variant). Method calls auto-deref through the box.
     Fs(Box<McpServer<FsTools, fs_mcp::Tools>>),
     SemanticEdit(Box<McpServer<SemanticEditTools, semantic_edit_mcp::Tools>>),
+    /// A connected provider (docs/tools.md): a user-declared server reached
+    /// over stdio or HTTP, its tool table discovered at mount.
+    Connected(Box<crate::mcp::ConnectedProvider>),
 }
 
 impl Provider {
@@ -49,6 +52,7 @@ impl Provider {
             Provider::Bash(_) => vec![Bash::definition()],
             Provider::Fs(s) => s.definitions.clone(),
             Provider::SemanticEdit(s) => s.definitions.clone(),
+            Provider::Connected(c) => c.definitions(),
         }
     }
 
@@ -58,6 +62,7 @@ impl Provider {
             Provider::Bash(_) => name == bash::NAME,
             Provider::Fs(s) => s.handles(name),
             Provider::SemanticEdit(s) => s.handles(name),
+            Provider::Connected(c) => c.handles(name),
         }
     }
 
@@ -83,6 +88,10 @@ impl Provider {
             // committed entry.
             Provider::Fs(s) => s.run_call(&call.name, &call.input).into(),
             Provider::SemanticEdit(s) => s.run_call(&call.name, &call.input).into(),
+            // Async over a wire, but no OS process of the *call's* own and no
+            // live stream: the result lands whole. Races `abort` internally
+            // (Kill abandons the call; Detach is bash-only and keeps waiting).
+            Provider::Connected(c) => c.run(call, abort).await,
         }
     }
 }
@@ -112,7 +121,7 @@ where
     /// keys, so the defs are byte-stable for the session — docs/log-and-projection.md) and reused as the
     /// wire `tools[]`.
     fn from_state(state: State, hidden: &[&str]) -> Self {
-        let schemas: Vec<ToolSchema> = <ToolEnum as AsToolsList>::tools_list()
+        let schemas: Vec<ToolDefinition> = <ToolEnum as AsToolsList>::tools_list()
             .into_iter()
             .filter(|s| !hidden.contains(&s.name.as_str()))
             .collect();
@@ -158,11 +167,13 @@ where
     }
 }
 
-/// Translate an mcplease [`ToolSchema`] (MCP `inputSchema`, camelCase) into the
-/// Anthropic `tools[]` shape (`input_schema`, snake_case). `serde_json::to_value`
-/// normalizes object keys to sorted order, so the result is byte-deterministic —
-/// safe for the tools cache tier (docs/log-and-projection.md).
-fn anthropic_def(schema: &ToolSchema) -> Value {
+/// Translate an MCP tool definition (`inputSchema`, camelCase) into the
+/// Anthropic `tools[]` shape (`input_schema`, snake_case). The schema is
+/// carried as a raw `serde_json::Value`, whose object maps keep keys in
+/// sorted order, so re-serializing an identical definition is
+/// byte-deterministic — safe for the tools cache tier
+/// (docs/log-and-projection.md).
+pub(crate) fn anthropic_def(schema: &ToolDefinition) -> Value {
     let mut def = serde_json::Map::new();
     def.insert("name".to_string(), Value::String(schema.name.clone()));
     if let Some(description) = &schema.description {
@@ -171,10 +182,7 @@ fn anthropic_def(schema: &ToolSchema) -> Value {
             Value::String(description.clone()),
         );
     }
-    def.insert(
-        "input_schema".to_string(),
-        serde_json::to_value(&schema.input_schema).unwrap_or(Value::Null),
-    );
+    def.insert("input_schema".to_string(), schema.input_schema.clone());
     Value::Object(def)
 }
 
@@ -223,6 +231,23 @@ impl Toolbox {
                 &["set_working_directory"],
             ))),
         ]))
+    }
+
+    /// Mount one user-declared connected provider (docs/tools.md): connect,
+    /// handshake, snapshot its tool table, and add it to the mounted set.
+    /// Namespacing (`<server>__<tool>`) keeps its names disjoint from every
+    /// other provider's, so the unique-names invariant holds by construction.
+    /// Call before the first projection — the mounted set must be fixed for
+    /// the session (docs/log-and-projection.md).
+    pub async fn mount_connected(
+        &mut self,
+        name: &str,
+        config: &crate::config::McpTransport,
+        cwd: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        let provider = crate::mcp::ConnectedProvider::mount(name, config, cwd).await?;
+        self.providers.push(Provider::Connected(Box::new(provider)));
+        Ok(())
     }
 
     /// The session scratch dir the bash provider exports as `$TMPDIR`, if any.

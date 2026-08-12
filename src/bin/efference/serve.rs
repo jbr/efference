@@ -198,7 +198,17 @@ pub(crate) async fn serve(
     // their session cwd seeded to where we're running (resolved once above for [context]).
     // The scratch dir rides in as bash's `$TMPDIR`; the daemon reads it back off the
     // toolbox for the expander and background spawns (one source of truth).
-    let toolbox = Toolbox::bash_and_mcps(cwd, Some(scratch.clone()))?;
+    let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))?;
+    // Mount the config-declared connected providers (docs/tools.md) before the
+    // first projection, so the session's tools[] is fixed from turn one. A
+    // server that won't come up is skipped with a warning rather than failing
+    // the boot — the declared set is the operator's intent, not a hard
+    // dependency.
+    for (name, server) in &loaded.role.mcp_servers {
+        if let Err(e) = toolbox.mount_connected(name, server, &cwd).await {
+            eprintln!("[mcp: could not mount `{name}`: {e}]");
+        }
+    }
     if autonomous {
         eprintln!(
             "autonomous: no synchronous gate — spotter Watch/Gate redirects the model to its \
