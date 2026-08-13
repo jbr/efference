@@ -123,7 +123,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
  "x11rb",
 ]
 
@@ -949,7 +949,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2954,7 +2954,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3020,7 +3020,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3629,10 +3629,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4084,6 +4084,8 @@ dependencies = [
 [[package]]
 name = "trillium"
 version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "616f6b4783efa17cd96b35ce691de520aefe69c2ef0af3f422e92eb25dc39392"
 dependencies = [
  "futures-lite",
  "log",
@@ -4093,7 +4095,9 @@ dependencies = [
 
 [[package]]
 name = "trillium-client"
-version = "0.9.13"
+version = "0.9.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "353d5e679f18666c9e83a3e2bfe62f5add6ce57d921a79e1c554ae6947973107"
 dependencies = [
  "async-lock",
  "crossbeam-queue",
@@ -4124,6 +4128,8 @@ dependencies = [
 [[package]]
 name = "trillium-http"
 version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e192b2bf293b95da8659f069f8a927fc9ba805b47fce0d17904f476548b0fe70"
 dependencies = [
  "atomic-waker",
  "encoding_rs",
@@ -4150,15 +4156,19 @@ dependencies = [
 [[package]]
 name = "trillium-macros"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3caa8c474e8cfacd96ca0692f57f932891543db2147beca4758a075a7d26a0b2"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 2.0.119",
 ]
 
 [[package]]
 name = "trillium-router"
 version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bff65060c613764e5fef61e4d13a4a8aa37cd364a0fb6ed59c1804ec7185fbe3"
 dependencies = [
  "log",
  "routefinder",
@@ -4168,6 +4178,8 @@ dependencies = [
 [[package]]
 name = "trillium-rustls"
 version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8c7da9a57686f04771d29d25d3b2c11d5180063d3fb12fb2cf89d1e8516c81f"
 dependencies = [
  "futures-rustls",
  "log",
@@ -4180,6 +4192,8 @@ dependencies = [
 [[package]]
 name = "trillium-server-common"
 version = "0.7.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f36a02f792b5015cd357aac5299d5eeb154ecf149b8f5f52341e5691d1301154"
 dependencies = [
  "async-channel",
  "async_cell",
@@ -4201,6 +4215,8 @@ dependencies = [
 [[package]]
 name = "trillium-sse"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "384c6e7b46e1d3317d24c47b3665fb4b653943df2dc140ba744edbe610086322"
 dependencies = [
  "fieldwork 0.5.3",
  "futures-lite",
@@ -4212,6 +4228,8 @@ dependencies = [
 [[package]]
 name = "trillium-testing"
 version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50a2fbe24a29098c729ed1422038089a157f19598532ade563f829773d5b1a4c"
 dependencies = [
  "async-channel",
  "async-dup",
@@ -4238,6 +4256,8 @@ dependencies = [
 [[package]]
 name = "trillium-tokio"
 version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25e3b81554f70e425cc23030c8cd5c851a213d883cb30ebbf81eb2e9b24be1ad"
 dependencies = [
  "async-compat",
  "log",
@@ -4549,7 +4569,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

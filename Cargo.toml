@@ -113,19 +113,3 @@ syntect = { version = "5.3", default-features = false, features = [
   "regex-onig",
 ] }
 
-# trillium-client 0.9.13 + the `EventStream::conn()` accessor (needed by src/mcp/http.rs
-# to read `Mcp-Session-Id` off an SSE response); drop this patch block at the next
-# trillium-client release that includes it. The rest of the constellation rides along
-# because the patched client path-depends on its siblings — patching only some of them
-# splits the graph into path and registry instances of the same crates and trait bounds
-# stop lining up. Every local version matches the registry version efference pins.
-[patch.crates-io]
-trillium = { path = "../trillium/trillium" }
-trillium-client = { path = "../trillium/client" }
-trillium-http = { path = "../trillium/http" }
-trillium-router = { path = "../trillium/router" }
-trillium-rustls = { path = "../trillium/rustls" }
-trillium-server-common = { path = "../trillium/server-common" }
-trillium-sse = { path = "../trillium/sse" }
-trillium-testing = { path = "../trillium/testing" }
-trillium-tokio = { path = "../trillium/tokio" }
