@@ -24,26 +24,29 @@
 //! Tool names are namespaced `<server>__<tool>` on the wire, which makes
 //! collisions across servers structurally impossible (embedded tool names
 //! contain no `__`, and the config validates server names against the API's
-//! tool-name alphabet).
+//! tool-name alphabet). That alphabet (`[a-zA-Z0-9_-]`) has no separator that
+//! reads as one — the MCP spec permits `.`, the provider does not — so
+//! [`display_name`] renders the boundary as a dot for the TUI.
 //!
-//! Protocol interop: requests open with the stateful `initialize` handshake
-//! (revisions through `2025-11-25` — what deployed servers speak). The
-//! `2026-07-28` revision replaces the handshake with stateless per-request
-//! `_meta` and `server/discover`; the mcplease types model both, and the
-//! handshake here accepts any supported revision the server negotiates down
-//! to. A stateless-only server is not yet reachable — that flow lands when a
-//! real one exists to test against.
+//! Protocol interop is `mcplease::client`'s (docs/tools.md "the client
+//! protocol"): `ClientProtocol` builds each request and classifies each
+//! arriving message, and `Negotiation` runs the `server/discover` probe that
+//! `2026-07-28` introduced, falling back to the stateful `initialize`
+//! handshake that deployed servers still speak. Neither does any I/O, so what
+//! is left here is one loop — send a request, read frames until its response
+//! arrives — and the two transports are pure framing beneath it.
 
 use std::future::Future;
 use std::path::Path;
 use std::time::Duration;
 
+use mcplease::client::{ClientProtocol, Negotiation, Reaction, Step};
 use mcplease::types::{
-    CallToolResult, ClientCapabilities, ContentBlock, Implementation, InitializeRequestParams,
-    InitializeResult, ListToolsResult, ResourceContents, SUPPORTED_PROTOCOL_VERSIONS,
-    Tool as ToolDefinition,
+    CallToolResult, ContentBlock, Implementation, InputRequiredResult, JsonRpcError,
+    JsonRpcMessage, JsonRpcRequest, ListToolsResult, ResourceContents, Tool as ToolDefinition,
+    ToolCallOutcome,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 use tokio::sync::Mutex;
 
 use crate::bash::Outcome;
@@ -64,12 +67,22 @@ mod test;
 /// can never collide with an embedded one.
 pub const NAMESPACE_SEPARATOR: &str = "__";
 
-/// The protocol revision requested in the `initialize` handshake. The newest
-/// handshake revision — a server on an older revision answers with its own,
-/// and any supported answer is accepted.
-const REQUESTED_PROTOCOL_VERSION: &str = mcplease::types::LATEST_HANDSHAKE_PROTOCOL_VERSION;
+/// A namespaced wire name rendered for a human: `ferritin__get` → `ferritin.get`.
+///
+/// The wire alphabet (`[a-zA-Z0-9_-]`) has no separator that reads as one, so
+/// `__` is what the name must *be*; a dot is what it wants to look like. Only
+/// the first occurrence is replaced — the server name is validated against that
+/// same alphabet and embedded tool names contain no `__`, so the first `__` is
+/// always the namespace boundary and any later one belongs to the server's own
+/// tool name.
+///
+/// Display only. Nothing that reaches the wire, the log, or a lookup may go
+/// through here — the dotted form is not a name anything can be found by.
+pub fn display_name(wire_name: &str) -> String {
+    wire_name.replacen(NAMESPACE_SEPARATOR, ".", 1)
+}
 
-/// How long a server gets to complete handshake + discovery before the mount
+/// How long a server gets to complete negotiation + discovery before the mount
 /// fails. Individual tool calls are not timed out — the operator's interrupt
 /// covers a hung call.
 const MOUNT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -85,12 +98,12 @@ pub struct ConnectedProvider {
     /// The live connection. An async-aware mutex (not `RefCell`) because a
     /// `tools/call` holds it across awaits; the loop is single-threaded, so
     /// there is no contention to speak of.
-    transport: Mutex<Transport>,
+    session: Mutex<Session>,
 }
 
 impl ConnectedProvider {
-    /// Connect to a declared server, run the handshake, and snapshot its tool
-    /// table. `cwd` is the working directory a stdio server is spawned in.
+    /// Connect to a declared server, negotiate, and snapshot its tool table.
+    /// `cwd` is the working directory a stdio server is spawned in.
     pub async fn mount(name: &str, config: &McpTransport, cwd: &Path) -> anyhow::Result<Self> {
         let transport = match config {
             McpTransport::Stdio { command, args, env } => {
@@ -101,16 +114,19 @@ impl ConnectedProvider {
         Self::mount_transport(name, transport).await
     }
 
-    /// Handshake + discovery over an already-open transport (the seam the
+    /// Negotiation + discovery over an already-open transport (the seam the
     /// loopback tests use).
-    async fn mount_transport(name: &str, mut transport: Transport) -> anyhow::Result<Self> {
+    async fn mount_transport(name: &str, transport: Transport) -> anyhow::Result<Self> {
+        let mut session = Session::new(transport);
         let tools = tokio::time::timeout(MOUNT_TIMEOUT, async {
-            handshake(&mut transport).await?;
-            list_tools(&mut transport).await
+            session.negotiate().await?;
+            session.list_tools().await
         })
         .await
         .map_err(|_| {
-            anyhow::anyhow!("server did not finish handshake + discovery within {MOUNT_TIMEOUT:?}")
+            anyhow::anyhow!(
+                "server did not finish negotiation + discovery within {MOUNT_TIMEOUT:?}"
+            )
         })??;
 
         // Sort by tool name: the snapshot must yield byte-identical
@@ -136,7 +152,7 @@ impl ConnectedProvider {
             name: name.to_string(),
             names,
             definitions,
-            transport: Mutex::new(transport),
+            session: Mutex::new(session),
         })
     }
 
@@ -180,11 +196,34 @@ impl ConnectedProvider {
     async fn call(&self, wire_name: &str, input: &Value) -> RawResult {
         let prefix = format!("{}{NAMESPACE_SEPARATOR}", self.name);
         let tool = wire_name.strip_prefix(&prefix).unwrap_or(wire_name);
-        let params = json!({ "name": tool, "arguments": input });
-        let mut transport = self.transport.lock().await;
-        match transport.request("tools/call", Some(params)).await {
-            Ok(result) => match serde_json::from_value::<CallToolResult>(result) {
-                Ok(result) => render_result(result),
+        let mut session = self.session.lock().await;
+        let request = session.protocol.tools_call(tool, input);
+        // Two failure layers flatten to one: the connection or framing giving
+        // out, and the server answering with a protocol error. Both are the
+        // call failing, and both must land as a paired result.
+        let result = match session.round_trip(request).await {
+            Ok(Ok(result)) => Ok(result),
+            Ok(Err(protocol)) => Err(anyhow::Error::new(protocol)),
+            Err(transport) => Err(transport),
+        };
+        match result {
+            Ok(result) => match serde_json::from_value::<ToolCallOutcome>(result) {
+                Ok(ToolCallOutcome::Complete(result)) => render_result(result),
+                // An interim result: the server wants more input (elicitation,
+                // sampling) or is shedding load, and expects the client to
+                // supply it and re-issue. efference declares no client
+                // capabilities and does not retry, so this lands as an error
+                // naming what the server asked for — better than the empty
+                // `content` a `CallToolResult` parse would have produced.
+                Ok(ToolCallOutcome::InputRequired(interim)) => RawResult {
+                    content: format!(
+                        "`{}` returned an interim result asking for more input ({}), which \
+                         efference does not supply",
+                        self.name,
+                        describe_input_required(&interim),
+                    ),
+                    is_error: true,
+                },
                 Err(e) => RawResult {
                     content: format!("`{}` returned an unparseable tool result: {e}", self.name),
                     is_error: true,
@@ -194,6 +233,112 @@ impl ConnectedProvider {
                 content: format!("`{}` call failed: {e}", self.name),
                 is_error: true,
             },
+        }
+    }
+}
+
+/// A connection and the protocol state riding on it.
+///
+/// [`ClientProtocol`] decides *what* to send and what each arriving message
+/// means; [`Transport`] moves bytes. [`round_trip`](Session::round_trip) is
+/// the only place the two meet, and it is the same loop for every transport —
+/// which is what keeps stdio and HTTP from each growing their own copy of the
+/// protocol's rules.
+struct Session {
+    protocol: ClientProtocol,
+    transport: Transport,
+}
+
+impl Session {
+    fn new(transport: Transport) -> Self {
+        Self {
+            // No optional capabilities: efference answers no server-initiated
+            // elicitation or sampling, and says so on every request rather
+            // than letting a server infer it.
+            protocol: ClientProtocol::new(Implementation::new(
+                "efference",
+                env!("CARGO_PKG_VERSION"),
+            )),
+            transport,
+        }
+    }
+
+    /// Send one request and read frames until its response arrives. `Ok(Err)`
+    /// is the server answering with a protocol error; `Err` is the connection
+    /// or the framing failing.
+    async fn round_trip(
+        &mut self,
+        request: JsonRpcRequest,
+    ) -> anyhow::Result<Result<Value, JsonRpcError>> {
+        let id = request.id.clone();
+        let mut exchange = self
+            .transport
+            .open(&JsonRpcMessage::Request(request))
+            .await?;
+        loop {
+            let frame = exchange.next_frame().await?;
+            match self.protocol.on_message(frame) {
+                Reaction::Result { id: got, result } if got == id => return Ok(result),
+                // A response to a call the operator abandoned. Its `tool_use`
+                // was already paired with the cancellation.
+                Reaction::Result { id, .. } => {
+                    log::debug!("skipping response to abandoned request {id:?}");
+                }
+                Reaction::Reply(response) => {
+                    exchange.reply(&JsonRpcMessage::Response(response)).await?;
+                }
+                Reaction::Ignore => {}
+            }
+        }
+    }
+
+    /// Settle the protocol revision: the `server/discover` probe, falling back
+    /// to the `initialize` handshake when the server does not have it, and
+    /// confirming a handshake with `notifications/initialized`.
+    async fn negotiate(&mut self) -> anyhow::Result<()> {
+        let (mut negotiation, mut request) = Negotiation::start(&mut self.protocol);
+        let negotiated = loop {
+            let result = self.round_trip(request).await?;
+            match negotiation.on_result(&mut self.protocol, result)? {
+                Step::Send(next) => request = next,
+                Step::Done(negotiated) => break *negotiated,
+            }
+        };
+        // The HTTP transport carries the revision as a header on every later
+        // request; stdio needs nothing.
+        self.transport
+            .set_protocol_version(&negotiated.protocol_version);
+        if let Some(confirm) = negotiated.initialized_notification() {
+            self.transport
+                .notify(&JsonRpcMessage::Notification(confirm))
+                .await?;
+        }
+        log::debug!(
+            "negotiated {} ({})",
+            negotiated.protocol_version,
+            if negotiated.stateful {
+                "handshake"
+            } else {
+                "stateless"
+            }
+        );
+        Ok(())
+    }
+
+    /// Drain the server's full `tools/list`, following pagination cursors.
+    async fn list_tools(&mut self) -> anyhow::Result<Vec<ToolDefinition>> {
+        let mut tools = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let request = self.protocol.tools_list(cursor.as_deref());
+            let result = self.round_trip(request).await??;
+            let page: ListToolsResult = serde_json::from_value(result)
+                .map_err(|e| anyhow::anyhow!("unparseable tools/list result: {e}"))?;
+            tools.extend(page.tools);
+            match page.next_cursor {
+                Some(next) => cursor = Some(next),
+                None => return Ok(tools),
+            }
         }
     }
 }
@@ -209,24 +354,31 @@ enum Transport {
 }
 
 impl Transport {
-    /// One request-response round trip. `Ok` is the JSON-RPC `result`;
-    /// protocol errors come back as `Err`.
-    async fn request(&mut self, method: &str, params: Option<Value>) -> anyhow::Result<Value> {
+    /// Send a message that expects an answer, and hand back the frames the
+    /// server sends in response.
+    async fn open(&mut self, message: &JsonRpcMessage) -> anyhow::Result<Exchange<'_>> {
         match self {
-            Transport::Stdio(t) => t.request(method, params).await,
-            Transport::Http(t) => t.request(method, params).await,
+            Transport::Stdio(t) => {
+                let pipe = t.pipe();
+                pipe.send(message).await?;
+                Ok(Exchange::Pipe(pipe))
+            }
+            Transport::Http(t) => Ok(Exchange::Http(t.open(message).await?)),
             #[cfg(test)]
-            Transport::Loopback(t) => t.request(method, params).await,
+            Transport::Loopback(t) => {
+                t.send(message).await?;
+                Ok(Exchange::Loopback(t))
+            }
         }
     }
 
-    /// Send a one-way notification.
-    async fn notify(&mut self, method: &str, params: Option<Value>) -> anyhow::Result<()> {
+    /// Send a one-way message.
+    async fn notify(&mut self, message: &JsonRpcMessage) -> anyhow::Result<()> {
         match self {
-            Transport::Stdio(t) => t.notify(method, params).await,
-            Transport::Http(t) => t.notify(method, params).await,
+            Transport::Stdio(t) => t.pipe().send(message).await,
+            Transport::Http(t) => t.notify(message).await,
             #[cfg(test)]
-            Transport::Loopback(t) => t.notify(method, params).await,
+            Transport::Loopback(t) => t.send(message).await,
         }
     }
 
@@ -242,44 +394,39 @@ impl Transport {
     }
 }
 
-/// The stateful `initialize` handshake: send our identity and requested
-/// revision, accept whichever supported revision the server negotiates, and
-/// confirm with `notifications/initialized`.
-async fn handshake(transport: &mut Transport) -> anyhow::Result<InitializeResult> {
-    let params = InitializeRequestParams {
-        protocol_version: REQUESTED_PROTOCOL_VERSION.into(),
-        capabilities: ClientCapabilities::default(),
-        client_info: Implementation::new("efference", env!("CARGO_PKG_VERSION")),
-    };
-    let result = transport
-        .request("initialize", Some(serde_json::to_value(&params)?))
-        .await?;
-    let init: InitializeResult = serde_json::from_value(result)
-        .map_err(|e| anyhow::anyhow!("unparseable initialize result: {e}"))?;
-    if !SUPPORTED_PROTOCOL_VERSIONS.contains(&init.protocol_version.as_str()) {
-        anyhow::bail!(
-            "server negotiated protocol version `{}`, which efference does not speak",
-            init.protocol_version
-        );
-    }
-    transport.set_protocol_version(&init.protocol_version);
-    transport.notify("notifications/initialized", None).await?;
-    Ok(init)
+/// The frames one request produced. A pipe carries every exchange, so its
+/// frames come off the shared connection; an HTTP exchange owns the response
+/// to its own POST.
+enum Exchange<'a> {
+    Pipe(&'a mut stdio::ChildPipe),
+    Http(http::HttpExchange),
+    #[cfg(test)]
+    Loopback(&'a mut test::LoopbackPipe),
 }
 
-/// Drain the server's full `tools/list`, following pagination cursors.
-async fn list_tools(transport: &mut Transport) -> anyhow::Result<Vec<ToolDefinition>> {
-    let mut tools = Vec::new();
-    let mut cursor: Option<String> = None;
-    loop {
-        let params = cursor.take().map(|cursor| json!({ "cursor": cursor }));
-        let result = transport.request("tools/list", params).await?;
-        let page: ListToolsResult = serde_json::from_value(result)
-            .map_err(|e| anyhow::anyhow!("unparseable tools/list result: {e}"))?;
-        tools.extend(page.tools);
-        match page.next_cursor {
-            Some(next) => cursor = Some(next),
-            None => return Ok(tools),
+impl Exchange<'_> {
+    async fn next_frame(&mut self) -> anyhow::Result<JsonRpcMessage> {
+        match self {
+            Exchange::Pipe(pipe) => pipe.next_frame().await,
+            Exchange::Http(exchange) => exchange.next_frame().await,
+            #[cfg(test)]
+            Exchange::Loopback(pipe) => pipe.next_frame().await,
+        }
+    }
+
+    /// Answer a server-initiated request. A per-request SSE stream is not a
+    /// channel we can write to, so an HTTP exchange drops the answer — the
+    /// server learns nothing, which is the same as the honest refusal it
+    /// would have received.
+    async fn reply(&mut self, message: &JsonRpcMessage) -> anyhow::Result<()> {
+        match self {
+            Exchange::Pipe(pipe) => pipe.send(message).await,
+            Exchange::Http(_) => {
+                log::debug!("dropping a reply: an HTTP exchange has no channel back");
+                Ok(())
+            }
+            #[cfg(test)]
+            Exchange::Loopback(pipe) => pipe.send(message).await,
         }
     }
 }
@@ -288,7 +435,7 @@ async fn list_tools(transport: &mut Transport) -> anyhow::Result<Vec<ToolDefinit
 /// verbatim; non-text blocks land as placeholders naming what was withheld
 /// (the log stays a faithful record that *something* was there); a
 /// structured-only result lands as pretty JSON.
-fn render_result(result: CallToolResult) -> RawResult {
+pub(crate) fn render_result(result: CallToolResult) -> RawResult {
     let is_error = result.is_error.unwrap_or(false);
     let mut parts: Vec<String> = result.content.iter().map(render_block).collect();
     if parts.is_empty()
@@ -302,6 +449,27 @@ fn render_result(result: CallToolResult) -> RawResult {
     RawResult {
         content: parts.join("\n\n"),
         is_error,
+    }
+}
+
+/// Name what an interim result is waiting on, for the error text the model
+/// reads. The request kinds are the keys' values (`elicitation/create`,
+/// `sampling/createMessage`, `roots/list`); a result with only
+/// `request_state` is the spec's load-shedding case — the server is asking to
+/// be retried, not asking a question.
+fn describe_input_required(interim: &InputRequiredResult) -> String {
+    let mut methods: Vec<&str> = interim
+        .input_requests
+        .iter()
+        .flat_map(|requests| requests.values())
+        .filter_map(|request| request.get("method").and_then(Value::as_str))
+        .collect();
+    methods.sort_unstable();
+    methods.dedup();
+    if methods.is_empty() {
+        "the server asked to be retried".to_string()
+    } else {
+        methods.join(", ")
     }
 }
 

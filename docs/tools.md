@@ -68,13 +68,17 @@ fully reversible) that exposes its modules, `Tools` enum, state struct, and an
 
 `McpServer<State, ToolEnum>` in `src/tools.rs` is generic over the two
 instantiations (fs-mcp and semantic-edit-mcp). It holds state in a `RefCell`
-— the agent loop is single-threaded and `mcplease`'s `execute` is synchronous,
-so the borrow never spans an `.await`. Dispatching a call wraps the name and
-arguments as `{"name", "arguments"}`, deserializes to the typed `ToolEnum` via
-`serde_json::from_value`, and calls `Tool::execute` against the shared state.
-Any failure (bad input or tool error) becomes an `is_error` result so the
-`tool_use` always gets exactly one paired `tool_result` — the API rejects
-orphans.
+— the agent loop is single-threaded and `mcplease`'s `Dispatch::call` is
+synchronous, so the borrow never spans an `.await`. Dispatching a call wraps
+the name and arguments as `{"name", "arguments"}`, deserializes to the typed
+`ToolEnum` via `serde_json::from_value`, and calls `Dispatch::call` against the
+shared state with a `RequestContext` naming efference and declaring no client
+capabilities (no wire, so the context that would ride in a request's `_meta` is
+handed over directly). The resulting `CallToolResult` is folded to text by the
+same renderer the connected providers use, so an embedded tool that grows a
+structured or multimodal result reads the same way as a remote one. Any failure
+(bad input or tool error) becomes an `is_error` result so the `tool_use` always
+gets exactly one paired `tool_result` — the API rejects orphans.
 
 ### Schema translation
 
@@ -114,16 +118,28 @@ gated like any other config edit, and *calling* a connected tool rides the same
 spotter/gate cascade as every tool. A connected server's results are untrusted
 content — same trust class as attachments; human-in-the-loop is the mitigation.
 
-Wire protocol: the serialization types live in `mcplease` (`types.rs`, modeled
-on the MCP `2026-07-28` schema revision with the stateful `initialize`
-handshake retained from `2025-11-25` — the newest revision removed the
-handshake in favor of stateless per-request `_meta`, but deployed servers
-speak the handshake). Mounting runs `initialize` (accepting any supported
-revision the server negotiates down to), `notifications/initialized`, then a
-paginated `tools/list`. Requests are strictly serialized — the loop issues one
-tool call at a time — so there is no demux task: a request reads until its
-response id arrives, answering `ping` and stepping over notifications and
-stale responses inline.
+### The client protocol, and what a transport is left holding
+
+Wire protocol and serialization types both live in `mcplease`, taken with the
+`client` feature. `mcplease::client::ClientProtocol` builds each request —
+including the per-request `_meta` (protocol version, client identity,
+capabilities) that revision `2026-07-28` requires, and that a server on any
+revision reconstructs as its `RequestContext` — and classifies each arriving
+message as a `Reaction`: a result to correlate by id, a reply to send (`ping`
+answered, everything else refused as method-not-found, since efference declares
+no client capabilities), or nothing. `mcplease::client::Negotiation` runs the
+`server/discover` probe `2026-07-28` introduced and falls back to the stateful
+`initialize` handshake when a server answers that it has no such method —
+which is what deployed servers do today. Neither type performs I/O.
+
+That leaves `src/mcp.rs` one loop — `Session::round_trip`: send a request, read
+frames until the response with a matching id arrives — shared by both
+transports, and leaves the transports themselves as framing alone
+(`src/mcp/stdio.rs` reads and writes lines; `src/mcp/http.rs` POSTs and exposes
+whatever the server answered with, one JSON body or a stream of SSE events, as
+a source of frames). Requests are strictly serialized — the loop issues one
+tool call at a time — so there is no demux task. Mounting is negotiation, then
+a paginated `tools/list`.
 
 Unlike the embedded path, the tool table is **discovered at runtime**, which
 creates a cache hazard the embedded path never had (the server can change its
@@ -133,13 +149,48 @@ through the same `anthropic_def` normalization, and frozen for the session; a
 mid-session `tools/list_changed` does not reach the wire. Every failure — a
 server that won't start is skipped with a warning at boot; a call that fails,
 times out, or hits a dead server — lands as an `is_error` result, so a
-`tool_use` is never orphaned.
+`tool_use` is never orphaned. A `tools/call` result is decoded as
+`ToolCallOutcome`, which discriminates on `resultType`: an *interim* result
+(the server asking for elicitation or sampling, or shedding load and asking to
+be retried) would otherwise deserialize as a complete result with empty
+content. efference declares no client capabilities and does not re-issue, so an
+interim result lands as an `is_error` result naming what the server asked for.
+
+Both revisions are reachable: a server that answers `server/discover` is
+mounted statelessly (no handshake, no `notifications/initialized`), and one
+that does not gets the handshake. Loopback tests in `src/mcp/test.rs` cover
+each path.
 
 Tool names reach the wire namespaced `<server>__<tool>`. Two underscores are
 legal in the API's tool-name alphabet, absent from every embedded tool name,
 and the config validates server names against the same alphabet — so
 collisions across N user-provided servers are structurally impossible rather
 than guarded case-by-case.
+
+Because `__` is what resolves the boundary in every direction, a server name may
+not itself contain one — `_` is legal, `my__server` is rejected at validate.
+
+The alphabet has no separator that reads as one to a human, so the TUI renders
+the boundary as a dot — `ferritin__get` displays as `ferritin.get`
+(`mcp::display_name`, applied at the two transcript sites that print a tool
+name). The dotted form never reaches the wire or the log. It *is* accepted as a
+config **input alias**, since an operator types what the TUI shows them:
+`config::raw::wire_tool_name` resolves a dotted `tools` entry to the wire name at
+validate, so a grant is still stored and matched as exactly one name. Only the
+first dot is the boundary — a server's own tool name may contain dots (the MCP
+spec permits them), so `ferritin.admin.tools.list` resolves to
+`ferritin__admin.tools.list`.
+
+Every human-facing surface uses the dotted form: the transcript, the sidebar's
+policy labels (including pending proposals, so a proposal reads and sorts as the
+grant it becomes), and the config file the auto-persist write-back produces.
+The wire and the log keep the underscores — the dot is applied at each display
+boundary and undone on the way back in, so exactly one name is ever stored or
+matched.
+
+Server-wide clearance (`tools = ["ferritin"]` clearing every tool that server
+advertises) is not built:
+[`backlog/permissions/tool-grant-granularity.md`](../backlog/permissions/tool-grant-granularity.md).
 
 One known gap: the offline `wire` dev view does not mount connected providers
 (mounting spawns processes), so a session with `[mcp.servers.*]` sends more

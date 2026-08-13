@@ -9,7 +9,9 @@ serde_json = { version = "1.0.151", features = ["raw_value"] }
 # In-process MCP tool servers consumed as lib crates (DESIGN §5), not subprocesses.
 fs-mcp = { path = "../fs-mcp" }
 semantic-edit-mcp = { path = "../semantic-edit-mcp" }
-mcplease = { version = "0.3.0", path = "../mcplease" }
+# `client` is the transport-agnostic client protocol (docs/tools.md); the
+# in-process servers above bring the `server` half through their own dependency.
+mcplease = { version = "0.4", features = ["client"], default-features = false }
 anyhow = "1"
 # Lightweight logging facade + env-driven backend. The daemon emits request sizes,
 # fork-peek fallbacks, capped tool results, and full API error bodies; control verbosity

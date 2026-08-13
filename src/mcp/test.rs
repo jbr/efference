@@ -51,6 +51,16 @@ fn loopback(mut script: Box<Script>) -> (Transport, Arc<Mutex<Vec<JsonRpcMessage
     (Transport::Loopback(pipe), inbox)
 }
 
+/// How a server on any revision before `2026-07-28` answers the
+/// `server/discover` probe — which is exactly how the client learns to fall
+/// back to the handshake. Every script below opens with it.
+fn declines_discovery(request: &JsonRpcRequest) -> Vec<JsonRpcMessage> {
+    vec![JsonRpcMessage::Response(JsonRpcResponse::error(
+        request.id.clone(),
+        JsonRpcError::method_not_found("server/discover"),
+    ))]
+}
+
 fn initialize_result(version: &str) -> Value {
     json!({
         "protocolVersion": version,
@@ -212,6 +222,7 @@ async fn a_protocol_error_becomes_an_error_result_not_a_panic() {
 #[tokio::test]
 async fn interleaved_notifications_requests_and_stale_responses_are_stepped_over() {
     let script: Box<Script> = Box::new(|request: &JsonRpcRequest| match request.method.as_str() {
+        "server/discover" => declines_discovery(request),
         "initialize" => vec![
             // A notification the client should skip…
             JsonRpcMessage::Notification(mcplease::types::JsonRpcNotification::new(
@@ -260,6 +271,9 @@ async fn interleaved_notifications_requests_and_stale_responses_are_stepped_over
 #[tokio::test]
 async fn an_unsupported_negotiated_version_fails_the_mount() {
     let script: Box<Script> = Box::new(|request: &JsonRpcRequest| {
+        if request.method == "server/discover" {
+            return declines_discovery(request);
+        }
         vec![JsonRpcMessage::Response(JsonRpcResponse::success(
             request.id.clone(),
             initialize_result("1999-12-31"),
@@ -278,6 +292,7 @@ async fn a_dead_server_fails_the_call_as_an_error_result() {
     // task, dropping its end of the pipe — the client sees EOF mid-wait and
     // must land it as a paired error result, never a hang or a panic.
     let script: Box<Script> = Box::new(|request: &JsonRpcRequest| match request.method.as_str() {
+        "server/discover" => declines_discovery(request),
         "initialize" => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
             request.id.clone(),
             initialize_result("2025-06-18"),
@@ -295,6 +310,93 @@ async fn a_dead_server_fails_the_call_as_an_error_result() {
     let result = run(&provider, &call("fake__zeta", json!({ "x": "hi" }))).await;
     assert!(result.is_error);
     assert!(result.content.contains("closed"), "{}", result.content);
+}
+
+#[tokio::test]
+async fn a_stateless_server_is_mounted_without_a_handshake() {
+    // A `2026-07-28` server: it answers `server/discover` and has no
+    // `initialize` at all, so the mount must settle on the probe alone and
+    // send no `notifications/initialized`.
+    let script: Box<Script> = Box::new(|request: &JsonRpcRequest| match request.method.as_str() {
+        "server/discover" => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+            request.id.clone(),
+            json!({
+                "supportedVersions": ["2026-07-28"],
+                "capabilities": { "tools": {} },
+                "resultType": "complete",
+            }),
+        ))],
+        "tools/list" => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+            request.id.clone(),
+            json!({ "tools": [tool("zeta")] }),
+        ))],
+        "tools/call" => {
+            // The stateless revision carries the client's identity in every
+            // request's `_meta` instead of a handshake; a server on it is
+            // entitled to read one.
+            let context = mcplease::types::RequestContext::from_params(request.params.as_ref());
+            let caller = context.client_info.expect("clientInfo in _meta");
+            vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+                request.id.clone(),
+                serde_json::to_value(CallToolResult::text(format!("called by {}", caller.name)))
+                    .unwrap(),
+            ))]
+        }
+        other => panic!("a stateless server has no {other}"),
+    });
+    let (transport, inbox) = loopback(script);
+    let provider = ConnectedProvider::mount_transport("fake", transport)
+        .await
+        .unwrap();
+
+    let result = run(&provider, &call("fake__zeta", json!({ "x": "hi" }))).await;
+    assert_eq!(result.content, "called by efference");
+    assert!(!result.is_error);
+
+    // Nothing to confirm: there is no session.
+    let confirmed = inbox.lock().unwrap().iter().any(|message| {
+        matches!(message, JsonRpcMessage::Notification(n) if n.method == "notifications/initialized")
+    });
+    assert!(!confirmed);
+}
+
+#[tokio::test]
+async fn an_interim_result_lands_as_an_error_naming_what_was_asked_for() {
+    // A 2026-07-28 server answering `tools/call` with `resultType:
+    // "input_required"`. Parsed as a `CallToolResult` this would look like a
+    // successful call with empty content; it must instead pair the `tool_use`
+    // with an error the model can act on.
+    let script: Box<Script> = Box::new(|request: &JsonRpcRequest| match request.method.as_str() {
+        "server/discover" => declines_discovery(request),
+        "initialize" => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+            request.id.clone(),
+            initialize_result("2025-06-18"),
+        ))],
+        "tools/list" => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+            request.id.clone(),
+            json!({ "tools": [tool("zeta")] }),
+        ))],
+        _ => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+            request.id.clone(),
+            json!({
+                "resultType": "input_required",
+                "inputRequests": {
+                    "ask-1": { "method": "elicitation/create", "params": {} }
+                }
+            }),
+        ))],
+    });
+    let (transport, _) = loopback(script);
+    let provider = ConnectedProvider::mount_transport("fake", transport)
+        .await
+        .unwrap();
+    let result = run(&provider, &call("fake__zeta", json!({ "x": "hi" }))).await;
+    assert!(result.is_error);
+    assert!(
+        result.content.contains("elicitation/create"),
+        "{}",
+        result.content
+    );
 }
 
 /// Live end-to-end over streamable HTTP against a real, unauthenticated
@@ -412,4 +514,18 @@ fn multimodal_blocks_render_as_placeholders_and_structured_content_as_json() {
     };
     let rendered = render_result(structured_only);
     assert!(rendered.content.contains("\"answer\": 42"));
+}
+
+#[test]
+fn display_name_dots_the_namespace_boundary_only() {
+    // The common case: what the operator reads instead of `ferritin__get`.
+    assert_eq!(display_name("ferritin__get"), "ferritin.get");
+    // An embedded tool name has no boundary to find, so it passes through
+    // unchanged — the same invariant that makes namespacing collision-free.
+    assert_eq!(display_name("edit"), "edit");
+    assert_eq!(display_name("undo_edit"), "undo_edit");
+    // Only the *first* `__` is the boundary. A server whose own tool name
+    // contains `__` keeps it: `get__raw` is that server's name for the tool,
+    // not a second namespace.
+    assert_eq!(display_name("ferritin__get__raw"), "ferritin.get__raw");
 }

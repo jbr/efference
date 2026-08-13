@@ -1,13 +1,18 @@
 //! The streamable-HTTP transport (docs/tools.md "connected providers"):
 //! JSON-RPC POSTed to a single endpoint over `trillium-client`.
 //!
-//! Each request is one POST. The server answers either `application/json`
-//! (one JSON-RPC response) or `text/event-stream` (a per-request SSE stream
-//! that may interleave notifications before the response arrives; the
-//! response ends our interest in the stream). The branch is driven through
-//! `into_sse`: the Ok arm is the event stream (response headers reachable via
-//! `EventStream::conn()`), and an `UnexpectedContentType` error *is* the JSON
-//! arm — the `SseError` hands the executed conn back.
+//! Framing only, like the stdio transport — the protocol decisions live in
+//! `mcplease::client`. What is genuinely this transport's own is the shape of
+//! an exchange: each request is one POST, and the server answers either
+//! `application/json` (one JSON-RPC response) or `text/event-stream` (a
+//! per-request SSE stream that may interleave notifications before the
+//! response arrives). Both are modeled as [`HttpExchange`], a source of frames
+//! that runs dry when the server is done talking.
+//!
+//! The branch is driven through `into_sse`: the Ok arm is the event stream
+//! (response headers reachable via `EventStream::conn()`), and an
+//! `UnexpectedContentType` error *is* the JSON arm — the `SseError` hands the
+//! executed conn back.
 //!
 //! Session and version state ride as headers once learned: `Mcp-Session-Id`
 //! (issued by the server, echoed on every later request) and
@@ -17,11 +22,8 @@
 
 use anyhow::Context;
 use futures_lite::StreamExt;
-use mcplease::types::{
-    JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, RequestId,
-};
-use serde_json::Value;
-use trillium_client::sse::SseErrorKind;
+use mcplease::types::JsonRpcMessage;
+use trillium_client::sse::{EventStream, SseErrorKind};
 use trillium_client::{Client as HttpClient, Conn};
 use trillium_rustls::RustlsConfig;
 use trillium_tokio::ClientConfig;
@@ -32,10 +34,9 @@ pub struct HttpTransport {
     /// Issued by the server (initialize response header) and echoed back on
     /// every subsequent request until the session ends.
     session_id: Option<String>,
-    /// The negotiated protocol revision, carried as a header after the
-    /// handshake settles it.
+    /// The negotiated protocol revision, carried as a header after
+    /// negotiation settles it.
     protocol_version: Option<String>,
-    next_id: i64,
 }
 
 impl HttpTransport {
@@ -45,7 +46,6 @@ impl HttpTransport {
             url: url.to_string(),
             session_id: None,
             protocol_version: None,
-            next_id: 0,
         })
     }
 
@@ -76,19 +76,12 @@ impl HttpTransport {
         }
     }
 
-    pub async fn request(&mut self, method: &str, params: Option<Value>) -> anyhow::Result<Value> {
-        self.next_id += 1;
-        let id = RequestId::Integer(self.next_id);
-        let request = JsonRpcRequest::new(id.clone(), method, params);
-        let body = serde_json::to_string(&JsonRpcMessage::Request(request))?;
-
+    /// POST a message that expects an answer, and hand back the frames the
+    /// server sends in response to it.
+    pub async fn open(&mut self, message: &JsonRpcMessage) -> anyhow::Result<HttpExchange> {
+        let body = serde_json::to_string(message)?;
         match self.base_conn().with_body(body).into_sse().await {
-            // The SSE arm: read events until our response id shows up.
-            // Interleaved notifications and server-initiated requests are
-            // logged and skipped (unanswered — efference advertised no client
-            // capabilities); a stream that ends without the response is an
-            // error, and the caller must re-issue rather than resume.
-            Ok(mut events) => {
+            Ok(events) => {
                 let session_id = events
                     .conn()
                     .response_headers()
@@ -97,32 +90,7 @@ impl HttpTransport {
                 if let Some(session_id) = session_id {
                     self.session_id = Some(session_id);
                 }
-                while let Some(event) = events.next().await {
-                    let event = event.with_context(|| format!("reading {method} events"))?;
-                    match serde_json::from_str::<JsonRpcMessage>(event.data()) {
-                        Ok(JsonRpcMessage::Response(response))
-                            if response.id.as_ref() == Some(&id) =>
-                        {
-                            return response
-                                .into_result()
-                                .map_err(|e| anyhow::anyhow!("{method}: {e}"));
-                        }
-                        Ok(JsonRpcMessage::Response(stale)) => {
-                            log::debug!("skipping response to abandoned request {:?}", stale.id);
-                        }
-                        Ok(JsonRpcMessage::Notification(notification)) => {
-                            log::debug!("ignoring server notification {}", notification.method);
-                        }
-                        Ok(JsonRpcMessage::Request(request)) => {
-                            log::debug!(
-                                "ignoring server-initiated request {} (no client capabilities)",
-                                request.method
-                            );
-                        }
-                        Err(e) => log::debug!("ignoring unparseable SSE data: {e}"),
-                    }
-                }
-                anyhow::bail!("event stream ended before the {method} response arrived")
+                Ok(HttpExchange::Events(Box::new(events)))
             }
             Err(e) => match &e.kind {
                 // The JSON arm: a non-event-stream 2xx is the response itself.
@@ -130,11 +98,9 @@ impl HttpTransport {
                     let mut conn: Conn = e.into();
                     self.learn_session(&conn);
                     let body = conn.response_body().read_string().await?;
-                    let response: JsonRpcResponse = serde_json::from_str(&body)
-                        .with_context(|| format!("unparseable {method} response"))?;
-                    response
-                        .into_result()
-                        .map_err(|e| anyhow::anyhow!("{method}: {e}"))
+                    let message = serde_json::from_str(&body)
+                        .with_context(|| format!("unparseable response body: {body}"))?;
+                    Ok(HttpExchange::Once(Some(message)))
                 }
                 SseErrorKind::Status(status) => {
                     let status = *status;
@@ -153,20 +119,50 @@ impl HttpTransport {
         }
     }
 
-    pub async fn notify(&mut self, method: &str, params: Option<Value>) -> anyhow::Result<()> {
-        let notification = JsonRpcNotification::new(method, params);
-        let body = serde_json::to_string(&JsonRpcMessage::Notification(notification))?;
+    /// POST a one-way message. Expected `202 Accepted`; any 2xx is taken as
+    /// delivered.
+    pub async fn notify(&mut self, message: &JsonRpcMessage) -> anyhow::Result<()> {
+        let body = serde_json::to_string(message)?;
         let conn = self
             .base_conn()
             .with_body(body)
             .await
             .with_context(|| format!("POST {}", self.url))?;
         self.learn_session(&conn);
-        // Expected 202 Accepted; any 2xx is taken as delivered.
         let status = conn.status().map_or(0, u16::from);
         if !(200..300).contains(&status) {
             anyhow::bail!("server returned {status} to a notification");
         }
         Ok(())
+    }
+}
+
+/// The frames one POST produced: a single JSON response, or an event stream
+/// that may carry several messages before the one being waited on.
+pub enum HttpExchange {
+    Once(Option<JsonRpcMessage>),
+    // Boxed: an `EventStream` is far larger than the `Once` arm.
+    Events(Box<EventStream>),
+}
+
+impl HttpExchange {
+    /// The next frame, or an error once the exchange has run dry — a POST
+    /// whose answer never arrived cannot be resumed, only re-issued.
+    pub async fn next_frame(&mut self) -> anyhow::Result<JsonRpcMessage> {
+        match self {
+            Self::Once(message) => message
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("the response body held only one message")),
+            Self::Events(events) => loop {
+                let Some(event) = events.next().await else {
+                    anyhow::bail!("the event stream ended before the response arrived");
+                };
+                let event = event.context("reading events")?;
+                match serde_json::from_str(event.data()) {
+                    Ok(message) => return Ok(message),
+                    Err(e) => log::debug!("ignoring unparseable SSE data: {e}"),
+                }
+            },
+        }
     }
 }
