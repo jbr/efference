@@ -86,8 +86,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             paths,
             model,
             probe,
+            tool,
+            input,
+            config,
+            show_move,
+            no_brief,
             command,
-        } => spotter_check(scope, watch_for, paths, &model, probe, command.join(" ")).await,
+        } => {
+            spotter_check(
+                scope,
+                watch_for,
+                paths,
+                &model,
+                probe,
+                tool,
+                input,
+                config,
+                show_move,
+                no_brief,
+                command.join(" "),
+            )
+            .await
+        }
         Command::SpotterLog {
             path,
             stances,

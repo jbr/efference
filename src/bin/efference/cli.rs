@@ -415,10 +415,12 @@ pub(crate) enum Command {
         since: Option<u64>,
     },
     /// Dev tool (like `wire`/`gallery`): run the spotter permission rung
-    /// (docs/permissions.md) on a single (scope, watch-for, command) and print its
-    /// verdict — no daemon, no session. A live API call to the spotter model, for
-    /// iterating on the persona and config against real cases. Requires
-    /// ANTHROPIC_API_KEY.
+    /// (docs/permissions.md) on a single move — a bash command, or a structured tool
+    /// call with `--tool` — and print its verdict; no daemon, no session. A live API
+    /// call to the spotter model, for iterating on the persona and config against real
+    /// cases. With `--config`, the declared MCP servers are mounted first, so a
+    /// `--tool` move is judged against the server's real tool definition (the same
+    /// brief a session's spotter would see). Requires ANTHROPIC_API_KEY.
     Spotter {
         /// The scope (perimeter prose) to judge against. Omit to test the no-scope frame.
         #[arg(long)]
@@ -438,8 +440,33 @@ pub(crate) enum Command {
         /// the safe-vote; the tester reports whether it would queue a promotion.
         #[arg(long)]
         probe: Option<String>,
+        /// Judge a structured tool call instead of a bash command. Takes the tool name
+        /// in either spelling (`ferritin.get` or `ferritin__get`); its input comes from
+        /// `--input`. The tool must be one the toolbox mounts — a built-in, or a tool
+        /// from a server declared in `--config` — because the point is to judge it
+        /// against its *real* definition (docs/permissions.md).
+        #[arg(long, conflicts_with = "command")]
+        tool: Option<String>,
+        /// The `--tool` call's input, as JSON. Defaults to no arguments.
+        #[arg(long, default_value = "{}")]
+        input: String,
+        /// A config file to take the mission from, and — the reason this exists — to
+        /// mount the `[mcp.servers.<name>]` declarations from, so `--tool` can name a
+        /// real connected tool. `--scope`/`--watch-for`/`--path` override what it
+        /// supplies. Omit to judge against the flags alone (no servers mounted).
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Print the exact move block sent to the spotter before the verdict. Implied by
+        /// `--tool`, where seeing the rendered brief is usually the point.
+        #[arg(long = "show-move")]
+        show_move: bool,
+        /// Withhold the tool's brief, judging a `--tool` move on its name and input alone
+        /// — what the spotter saw before briefs existed. The A/B: run the same call with
+        /// and without, and the stance difference is the brief's effect.
+        #[arg(long = "no-brief")]
+        no_brief: bool,
         /// The bash command to judge. Multiple words are joined with spaces.
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required_unless_present = "tool", num_args = 1..)]
         command: Vec<String>,
     },
     /// Dev tool (like `wire`/`spotter`): survey the recorded spotter verdicts

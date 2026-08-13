@@ -239,34 +239,138 @@ pub(crate) async fn serve(
     result
 }
 
-/// Dev tool: run the spotter on one `(scope, watch-for, paths, command)` and print
-/// the verdict (docs/permissions.md). No daemon — it builds a throwaway config and a
-/// bash [`ToolCall`] and calls the exact `assess` path a real gate would, so what it
-/// prints is what the loop would see. For iterating on the persona and config.
+/// Every mounted tool name, dotted — what the tester prints when `--tool` names
+/// something no provider owns.
+fn available_tools(toolbox: &Toolbox) -> Vec<String> {
+    toolbox
+        .definitions()
+        .iter()
+        .filter_map(|d| d.get("name").and_then(|n| n.as_str()))
+        .map(efference::mcp::display_name)
+        .collect()
+}
+
+/// Dev tool: run the spotter on one move and print the verdict
+/// (docs/permissions.md). No daemon — it builds a config and a [`ToolCall`] and calls
+/// the exact `assess` path a real gate would, so what it prints is what the loop would
+/// see. For iterating on the persona and config.
+///
+/// Two modes. A **bash** move needs nothing but the flags. A **`--tool`** move is
+/// judged against a real tool definition, so it first builds the toolbox and mounts the
+/// servers `--config` declares — the brief the spotter reads is then the same one a
+/// session's gate would render, annotations and all, rather than a hand-written stand-in
+/// that could drift from what the server actually advertises.
 ///
 /// [`ToolCall`]: efference::log::ToolCall
+#[allow(clippy::too_many_arguments)] // a dev tester: every knob is one flag
 pub(crate) async fn spotter_check(
     scope: Option<String>,
     watch_for: Vec<String>,
     paths: Vec<String>,
     model: &str,
     probe: Option<String>,
+    tool: Option<String>,
+    input: String,
+    config: Option<PathBuf>,
+    show_move: bool,
+    no_brief: bool,
     command: String,
 ) -> CliResult {
-    let endpoint = efference::api::Endpoint::from_env()?;
+    // `--config` supplies the mission and the server declarations; the individual flags
+    // override it, so a config can be borrowed for its servers while the perimeter under
+    // test is varied from the command line.
+    let base = match config.as_deref() {
+        Some(path) => match efference::config::load(Some(path)) {
+            Ok(loaded) => loaded.role,
+            Err(e) => {
+                e.eprint();
+                return Err("could not load config".into());
+            }
+        },
+        None => efference::config::Config::default(),
+    };
     let role = efference::config::Config {
-        scope,
-        watch_for,
-        paths: paths.iter().map(|s| parse_path_grant(s)).collect(),
+        scope: scope.or(base.scope),
+        watch_for: if watch_for.is_empty() {
+            base.watch_for
+        } else {
+            watch_for
+        },
+        paths: if paths.is_empty() {
+            base.paths
+        } else {
+            paths.iter().map(|s| parse_path_grant(s)).collect()
+        },
+        mcp_servers: base.mcp_servers,
         ..Default::default()
     };
-    let call = efference::log::ToolCall {
-        id: efference::log::CallId("toolu_spotter_check".into()),
-        name: efference::bash::NAME.into(),
-        input: serde_json::json!({ "command": command }),
+
+    // A structured move needs the mounted table to have a brief at all, so the toolbox is
+    // built only in that mode — a bash check keeps costing nothing and spawning nothing.
+    let toolbox = match &tool {
+        Some(_) => {
+            let cwd = std::env::current_dir()?;
+            let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), None)?;
+            // Unlike `serve`, a mount failure is fatal here: the whole point is judging
+            // against that server's real definition, and a skipped mount would silently
+            // downgrade the check to a name with no brief.
+            for (name, server) in &role.mcp_servers {
+                toolbox
+                    .mount_connected(name, server, &cwd)
+                    .await
+                    .map_err(|e| format!("could not mount `{name}`: {e}"))?;
+            }
+            Some(toolbox)
+        }
+        None => None,
     };
+
+    let call = match &tool {
+        // Either spelling is accepted, resolved by the same rule the config uses, so the
+        // tester and a `tools` grant agree on what a dotted name means.
+        Some(name) => efference::log::ToolCall {
+            id: efference::log::CallId("toolu_spotter_check".into()),
+            name: efference::config::wire_tool_name(name.clone()),
+            input: serde_json::from_str(&input)
+                .map_err(|e| format!("--input is not valid JSON: {e}"))?,
+        },
+        None => efference::log::ToolCall {
+            id: efference::log::CallId("toolu_spotter_check".into()),
+            name: efference::bash::NAME.into(),
+            input: serde_json::json!({ "command": command }),
+        },
+    };
+
+    let brief = toolbox.as_ref().and_then(|t| t.brief(&call.name));
+    // The lookup runs either way, so `--no-brief` still catches a name nothing mounts —
+    // the A/B compares two verdicts on the same real tool, not one on a fictional one.
+    let sent = if no_brief { None } else { brief.as_ref() };
+    if tool.is_some() && brief.is_none() {
+        // Naming a tool nothing mounts is the likely mistake (a typo, or a server the
+        // config doesn't declare), and it would otherwise pass silently as a briefless
+        // call — the exact thing this mode exists to avoid.
+        return Err(format!(
+            "no mounted tool named `{}`. Mounted: {}",
+            efference::mcp::display_name(&call.name),
+            match toolbox.as_ref().map(available_tools) {
+                Some(names) if !names.is_empty() => names.join(", "),
+                _ => "(none)".into(),
+            }
+        )
+        .into());
+    }
+    if show_move || tool.is_some() {
+        println!(
+            "{}\n",
+            efference::spotter::preview_move(&call, sent, probe.as_deref())
+        );
+    }
+    // Credentials are resolved last, after the config, the mount, and the brief: a typo'd
+    // tool name or an unreachable server should fail on its own terms, and the move
+    // preview is useful with no key at all.
+    let endpoint = efference::api::Endpoint::from_env()?;
     let spotting = ForkSpot::new(endpoint, model)
-        .assess(&role, &call, probe.as_deref())
+        .assess(&role, &call, sent, probe.as_deref())
         .await;
     println!("stance: {:?}", spotting.read.stance);
     println!("reason: {}", spotting.read.reason);

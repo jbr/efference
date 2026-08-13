@@ -229,7 +229,7 @@ mod raw;
 pub use edit::diff_changes;
 pub use file::{ConfigFile, Refreshed};
 pub use load::{ConfigSource, LoadError, LoadedConfig, load};
-pub use raw::ValidationError;
+pub use raw::{ValidationError, wire_tool_name};
 
 use edit::apply_to_document;
 use raw::parse;

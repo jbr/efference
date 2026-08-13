@@ -331,7 +331,13 @@ projects to nothing — audit-only, never on the canonical wire. This is the *fi
 decision that earns a log line: fast-path clears stay deliberately unlogged. `efference
 spotter --scope … --watch-for … --path … "<cmd>"` runs the exact `assess` path on one move,
 for iterating on the persona and config against real cases (`--watch-for` repeats; `--path`
-takes `<path>:rw` / `<path>:r`). Its read-side companion, `efference spotter-log`, surveys
+takes `<path>:rw` / `<path>:r`). `--tool <name> --input <json>` judges a **structured** move
+instead: with `--config`, the declared servers are mounted first, so the brief is built from
+the definition the server actually advertises rather than a hand-written stand-in that could
+drift from it. `--show-move` prints the exact block sent (implied by `--tool`), and
+`--no-brief` withholds it — the A/B that measures what the brief changes. Config, mount, and
+brief all resolve before credentials do, so a typo'd tool name or an unreachable server fails
+on its own terms and the move preview works with no key at all. Its read-side companion, `efference spotter-log`, surveys
 these `Spot` entries back out of the session logs — a stance-distribution summary (with the
 fail-closed rate) plus each verdict correlated to the call it judged and its one-line reason,
 across every `.efference/*/log.jsonl` or one session; `--stance`/`--no-fallback` filter, and

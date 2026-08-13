@@ -264,7 +264,7 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
 /// The dotted form is an **input alias only** — it is resolved here and never stored, so
 /// the config, the log, and the fast-path all still key on one name. An entry with no `.`
 /// (every embedded tool name) passes through untouched.
-pub(super) fn wire_tool_name(entry: String) -> String {
+pub fn wire_tool_name(entry: String) -> String {
     match entry.split_once('.') {
         Some((server, tool)) if !server.is_empty() && !tool.is_empty() => {
             format!("{server}{}{tool}", crate::mcp::NAMESPACE_SEPARATOR)
