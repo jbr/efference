@@ -282,3 +282,69 @@ fn persist_scope_replaces_in_place_then_inserts_when_absent() {
 
     std::fs::remove_file(&path).unwrap();
 }
+
+/// A connected tool's grant is written in the dotted form the operator reads everywhere
+/// else, and the file round-trips back to the wire name the fast-path matches. That
+/// round-trip is what keeps the auto-persist echo idempotent: the reloaded file normalizes
+/// to the same wire name, so the next diff finds nothing new.
+#[test]
+fn persist_tool_writes_the_dotted_form_and_round_trips_to_the_wire_name() {
+    let path = std::env::temp_dir().join(format!("efference-dotted-{}.toml", std::process::id()));
+    std::fs::write(&path, "tools = [\"read\"]\n").unwrap();
+
+    let change = ConfigChange::Tool {
+        name: "ferritin__get".into(),
+    };
+    persist_config_change(&path, &change).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("ferritin.get"), "dotted in the file: {text}");
+    assert!(
+        !text.contains("ferritin__get"),
+        "wire form stays off the page: {text}"
+    );
+
+    // The loader resolves it back, so the fast-path still matches one name.
+    let role = parse(&path, &text).unwrap();
+    assert!(role.tools.contains("ferritin__get"));
+    assert!(role.tools.contains("read"));
+
+    // Re-persisting is a no-op: membership is compared normalized, so the entry already
+    // present in dotted form is recognized as the same grant.
+    persist_config_change(&path, &change).unwrap();
+    let after = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        after.matches("ferritin.get").count(),
+        1,
+        "idempotent: {after}"
+    );
+
+    std::fs::remove_file(&path).unwrap();
+}
+
+/// The other spelling of the same grant: a hand-written wire-form entry must not gain a
+/// second, dotted entry when the harness persists the same grant.
+#[test]
+fn persist_tool_does_not_duplicate_a_hand_written_wire_form_entry() {
+    let path = std::env::temp_dir().join(format!("efference-dotted2-{}.toml", std::process::id()));
+    std::fs::write(&path, "tools = [\"ferritin__get\"]\n").unwrap();
+
+    persist_config_change(
+        &path,
+        &ConfigChange::Tool {
+            name: "ferritin__get".into(),
+        },
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        !text.contains("ferritin.get"),
+        "no second spelling appended: {text}"
+    );
+    assert_eq!(
+        text.matches("ferritin__get").count(),
+        1,
+        "unchanged: {text}"
+    );
+
+    std::fs::remove_file(&path).unwrap();
+}

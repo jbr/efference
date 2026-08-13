@@ -283,7 +283,7 @@ pub(crate) fn tail_nodes(live: &LiveTail, pending_turns: &[String]) -> Vec<Docum
 /// to the gate affordance — both are entries of their own (docs/tui.md).
 fn call_entry(call: &ToolCall) -> DocumentNode<'static> {
     let mut header = vec![inline_code_styled(
-        call.name.clone(),
+        crate::mcp::display_name(&call.name),
         SpanStyle::FunctionName,
     )];
     let (inline, overflow) = call_args(call);

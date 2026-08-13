@@ -368,3 +368,46 @@ fn mcp_server_name_outside_the_tool_alphabet_fails_the_file() {
         LoadError::Validate(_, ValidationError::McpServerName(_))
     ));
 }
+
+/// `__` is the namespace separator itself. A server name containing one would move the
+/// boundary every direction of the mapping resolves as the *first* `__`, so it is
+/// rejected even though `_` is otherwise a legal character.
+#[test]
+fn mcp_server_name_containing_the_separator_fails_the_file() {
+    let err = super::parse(
+        Path::new("bad.toml"),
+        "[mcp.servers.my__server]\ncommand = \"a\"\n",
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        LoadError::Validate(_, ValidationError::McpServerName(_))
+    ));
+    // A single underscore is still fine — only the doubled form is the separator.
+    let ok = super::parse(
+        Path::new("ok.toml"),
+        "[mcp.servers.my_server]\ncommand = \"a\"\n",
+    )
+    .unwrap();
+    assert!(ok.mcp_servers.contains_key("my_server"));
+}
+
+/// The TUI shows `ferritin.get`, so that is what an operator types — but the grant is
+/// matched against the wire name. The dotted form is resolved at validate and never
+/// stored, so the fast-path still sees exactly one name.
+#[test]
+fn a_dotted_tool_grant_normalizes_to_the_wire_name() {
+    let config = super::parse(
+        Path::new("ok.toml"),
+        "tools = [\"ferritin.get\", \"read\", \"ferritin.admin.tools.list\"]\n",
+    )
+    .unwrap();
+    assert!(config.tools.contains("ferritin__get"));
+    // Only the first dot is the boundary: a server's own tool name may contain dots
+    // (the MCP spec permits them), and those stay put.
+    assert!(config.tools.contains("ferritin__admin.tools.list"));
+    // An undotted entry — every embedded tool name — passes through untouched.
+    assert!(config.tools.contains("read"));
+    // The dotted form is an alias, not a second key.
+    assert!(!config.tools.contains("ferritin.get"));
+}

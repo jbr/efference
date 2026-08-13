@@ -64,15 +64,28 @@ pub(super) fn apply_to_document(doc: &mut DocumentMut, change: &ConfigChange) {
         }
         // A tool-name grant: append to the `tools` array if absent (the array is set-shaped, so
         // dedup is membership, not last-write-wins).
+        //
+        // Written in the **dotted** form the operator reads everywhere else — the file is a
+        // surface a human reviews, so it shows `ferritin.get`, not `ferritin__get`. The change
+        // itself carries the wire name (the log is a machine record); the dot is applied here,
+        // at the document boundary, and undone by `wire_tool_name` on the next load. That
+        // round-trip is what keeps the write-back's idempotent echo idempotent — the reloaded
+        // file normalizes back to the same wire name, so the diff finds nothing new.
+        //
+        // Membership is therefore compared *normalized*, not literally: a file that already
+        // spells the grant either way must not gain a second entry in the other spelling.
         ConfigChange::Tool { name } => {
             let entry = doc
                 .as_table_mut()
                 .entry("tools")
                 .or_insert(Item::Value(Value::Array(Array::new())));
             if let Some(arr) = entry.as_array_mut()
-                && !arr.iter().any(|v| v.as_str() == Some(name.as_str()))
+                && !arr.iter().any(|v| {
+                    v.as_str()
+                        .is_some_and(|s| raw::wire_tool_name(s.to_string()) == *name)
+                })
             {
-                arr.push(name.as_str());
+                arr.push(crate::mcp::display_name(name).as_str());
             }
         }
         // A scope replace: set the `scope` scalar in place. When it already exists, carry its

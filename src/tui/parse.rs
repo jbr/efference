@@ -98,14 +98,17 @@ pub(super) fn parse_policy(
         return None;
     }
 
-    let str_entries = |key: &str| -> Vec<PolicyEntry> {
+    // `label` renders the stored key for a human. Commands are already what the operator
+    // typed; a tool name arrives in its wire form and is shown dotted, the same as in the
+    // transcript and in the config file the sidebar mirrors (docs/tools.md).
+    let str_entries = |key: &str, label: fn(&str) -> String| -> Vec<PolicyEntry> {
         role.get(key)
             .and_then(|a| a.as_array())
             .map(|a| {
                 a.iter()
                     .filter_map(|x| x.as_str())
                     .map(|s| PolicyEntry {
-                        label: s.to_string(),
+                        label: label(s),
                         proposed: false,
                         seq: None,
                     })
@@ -113,8 +116,8 @@ pub(super) fn parse_policy(
             })
             .unwrap_or_default()
     };
-    let mut commands = str_entries("commands");
-    let mut tools = str_entries("tools");
+    let mut commands = str_entries("commands", |s| s.to_string());
+    let mut tools = str_entries("tools", crate::mcp::display_name);
     let mut paths: Vec<PolicyEntry> = role
         .get("paths")
         .and_then(|p| p.as_object())
@@ -169,7 +172,10 @@ pub(super) fn parse_policy(
                 .and_then(|s| s.as_str())
             {
                 tools.push(PolicyEntry {
-                    label: n.to_string(),
+                    // A proposal is shown in its committed section, in sorted position — so it
+                    // must be labelled the same way a committed grant is, or it would sort and
+                    // read as a different entry than the one it becomes.
+                    label: crate::mcp::display_name(n),
                     proposed: true,
                     seq: Some(seq),
                 });

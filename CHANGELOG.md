@@ -8,9 +8,11 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- A namespaced tool name reads dotted on every human-facing surface — transcript, sidebar policy labels, and the config file the write-back produces (`ferritin.get` for the wire's `ferritin__get`); `tools` grants accept either spelling and resolve to the wire name at validate.
 - Connected providers speak the stateless `2026-07-28` revision: mounting probes `server/discover` and falls back to the `initialize` handshake, and every request carries the client `_meta` that revision requires.
 
 ### Fixed
+- An MCP server name may no longer contain `__`; the separator inside a name would move the namespace boundary that the wire→display and dotted-config→wire mappings both resolve as the first occurrence.
 - Tracks the published mcplease 0.3 API (`Dispatch::call` with a `RequestContext`); embedded tool results now fold through the same `CallToolResult` renderer as connected ones, and an interim (`input_required`) result from a connected server lands as a named error instead of an empty success.
 - Composer movement, deletion, visual-row wrapping, and caret measurement use extended grapheme clusters, so combining characters and emoji sequences are not split by editing or layout.
 - Token usage merges `message_start` and `message_delta` per field, so OpenRouter turns report real input and cache read/write counts instead of the all-zero `message_start` placeholder.

@@ -60,7 +60,10 @@ pub(in crate::tui) fn phase_blocks(phase: &Phase) -> Vec<DocumentNode<'static>> 
             blocks
         }
         Phase::CallingTool { name, input } if input.is_empty() => {
-            vec![dim_line(&format!("❯ calling {name}…"))]
+            vec![dim_line(&format!(
+                "❯ calling {}…",
+                crate::mcp::display_name(name)
+            ))]
         }
         Phase::CallingTool { name, input } => {
             // Dimmed lines, not a `code_block`: the live tail's register is dim
@@ -68,7 +71,10 @@ pub(in crate::tui) fn phase_blocks(phase: &Phase) -> Vec<DocumentNode<'static>> 
             // rather than bytes still arriving. (It was originally forced — the boxed
             // render clipped long content at its border — but that is fixed, so this
             // now rests on the register alone.)
-            let mut blocks = vec![dim_line(&format!("❯ calling {name}…"))];
+            let mut blocks = vec![dim_line(&format!(
+                "❯ calling {}…",
+                crate::mcp::display_name(name)
+            ))];
             blocks.extend(input.lines().map(|line| dim_line(&format!("  {line}"))));
             blocks
         }

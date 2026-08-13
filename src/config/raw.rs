@@ -196,9 +196,10 @@ impl std::fmt::Display for ValidationError {
             ),
             ValidationError::McpServerName(name) => write!(
                 f,
-                "mcp server name `{name}` must be 1-32 characters of [a-zA-Z0-9_-] (it prefixes \
-                 every tool the server advertises, as `{name}__<tool>`, and the API constrains \
-                 tool names to that alphabet)"
+                "mcp server name `{name}` must be 1-32 characters of [a-zA-Z0-9_-] and must not \
+                 contain `__` (it prefixes every tool the server advertises, as `{name}__<tool>`: \
+                 the API constrains tool names to that alphabet, and `__` is the separator itself \
+                 — a name containing one would move the namespace boundary)"
             ),
         }
     }
@@ -245,12 +246,31 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
         watch_for: raw.watch_for,
         trust_threshold: raw.trust_threshold,
         commands,
-        tools: raw.tools.into_iter().collect(),
+        tools: raw.tools.into_iter().map(wire_tool_name).collect(),
         paths,
         extends: raw.extends,
         context,
         mcp_servers,
     })
+}
+
+/// Normalize a `tools` entry to the name the wire actually carries: the TUI shows a
+/// connected tool as `ferritin.get`, so that is what an operator types, but the grant is
+/// matched against `ferritin__get`. Only the **first** `.` is the namespace boundary —
+/// server names cannot contain one (validated above) while a server's own tool name may
+/// (the MCP spec permits `.` and offers `admin.tools.list` as an example), so
+/// `ferritin.admin.tools.list` resolves to `ferritin__admin.tools.list`.
+///
+/// The dotted form is an **input alias only** — it is resolved here and never stored, so
+/// the config, the log, and the fast-path all still key on one name. An entry with no `.`
+/// (every embedded tool name) passes through untouched.
+pub(super) fn wire_tool_name(entry: String) -> String {
+    match entry.split_once('.') {
+        Some((server, tool)) if !server.is_empty() && !tool.is_empty() => {
+            format!("{server}{}{tool}", crate::mcp::NAMESPACE_SEPARATOR)
+        }
+        _ => entry,
+    }
 }
 
 /// Interpret one `[mcp.servers.<name>]` stanza into an [`McpTransport`], failing closed on an
@@ -260,8 +280,13 @@ pub(super) fn validate_mcp_server(
     name: &str,
     server: RawMcpServer,
 ) -> Result<McpTransport, ValidationError> {
+    // `__` is excluded, not just absent-by-convention: it is the namespace separator, and
+    // every direction of the mapping (wire → display, dotted config → wire) resolves the
+    // boundary as the *first* `__`. A server named `my__server` would make that first
+    // occurrence land inside the server name, so the name must not contain one.
     let name_ok = !name.is_empty()
         && name.len() <= 32
+        && !name.contains(crate::mcp::NAMESPACE_SEPARATOR)
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');

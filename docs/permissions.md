@@ -184,6 +184,17 @@ needed permission — reads (`read`/`list`/`search`/`find_anchor`) need `read`, 
 (`write`/`edit`) need `write` (`write` implies `read`). Nothing clears in code; an
 empty config gates every tool, exactly as before.
 
+The name match is **exact**, unlike `[commands]`'s token-prefix match. A connected
+provider's tools reach the wire namespaced (`<server>__<tool>`, docs/tools.md), so
+clearing a whole server means listing each of its tools; `tools = ["ferritin"]` clears
+nothing. A server-wide grant is planned as an explicit glob (`"ferritin.*"`), which is why
+`tools` keeps exact-match semantics in the meantime —
+[`backlog/permissions/tool-grant-granularity.md`](../backlog/permissions/tool-grant-granularity.md).
+An entry is written and displayed in the dotted form (`"ferritin.get"`) — the file the
+write-back produces, the sidebar's labels, and the transcript all agree — and is resolved
+to the wire name at validate, so the set the fast-path reads holds one name per grant
+however the operator spelled it.
+
 **Multi-path clearance is per-path, unioned across sources.** A tool naming several paths
 (`read`'s `paths` array) clears only when *every* path is granted — but each path may be
 granted by a *different* source: a `[paths]` grant (which requires the name grant) **or** a
