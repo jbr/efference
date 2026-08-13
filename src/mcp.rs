@@ -91,8 +91,13 @@ const MOUNT_TIMEOUT: Duration = Duration::from_secs(30);
 /// snapshot taken at mount.
 pub struct ConnectedProvider {
     name: String,
-    /// Namespaced wire names, aligned with `definitions`.
-    names: Vec<String>,
+    /// The server's tool table as discovered, with each `name` rewritten to its
+    /// namespaced form — aligned with `definitions`. Held whole rather than as a
+    /// name list because `anthropic_def` keeps only what the Anthropic tool shape
+    /// has a slot for; the server's own `annotations` and `title` are dropped
+    /// there and read here instead (`crate::tools::ToolBrief`,
+    /// docs/permissions.md).
+    tools: Vec<ToolDefinition>,
     /// Anthropic `tools[]` entries — namespaced, normalized, frozen at mount.
     definitions: Vec<Value>,
     /// The live connection. An async-aware mutex (not `RefCell`) because a
@@ -134,23 +139,21 @@ impl ConnectedProvider {
         let mut tools = tools;
         tools.sort_by(|a, b| a.name.cmp(&b.name));
 
-        let names: Vec<String> = tools
-            .iter()
-            .map(|tool| format!("{name}{NAMESPACE_SEPARATOR}{}", tool.name))
-            .collect();
-        let definitions = tools
-            .iter()
-            .zip(&names)
-            .map(|(tool, wire_name)| {
-                let mut namespaced = tool.clone();
-                namespaced.name = wire_name.clone();
-                anthropic_def(&namespaced)
+        // Namespace in place, once: the snapshot and the wire definitions are then
+        // two views of the same entries, and `handles` / `brief` / `tools[]` can
+        // never disagree about a name.
+        let tools: Vec<ToolDefinition> = tools
+            .into_iter()
+            .map(|mut tool| {
+                tool.name = format!("{name}{NAMESPACE_SEPARATOR}{}", tool.name);
+                tool
             })
             .collect();
+        let definitions = tools.iter().map(anthropic_def).collect();
 
         Ok(Self {
             name: name.to_string(),
-            names,
+            tools,
             definitions,
             session: Mutex::new(session),
         })
@@ -167,7 +170,20 @@ impl ConnectedProvider {
 
     /// Whether this provider owns the (namespaced) tool name.
     pub fn handles(&self, name: &str) -> bool {
-        self.names.iter().any(|n| n == name)
+        self.tools.iter().any(|t| t.name == name)
+    }
+
+    /// The spotter's brief for one of this server's tools
+    /// (docs/permissions.md) — the snapshotted entry, tagged with the server it
+    /// came from.
+    pub fn brief(&self, name: &str) -> Option<crate::tools::ToolBrief<'_>> {
+        self.tools
+            .iter()
+            .find(|t| t.name == name)
+            .map(|definition| crate::tools::ToolBrief {
+                server: Some(&self.name),
+                definition,
+            })
     }
 
     /// Run one call. Races the operator's interrupt: `Kill` abandons the call

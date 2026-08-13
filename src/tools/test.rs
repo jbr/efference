@@ -141,7 +141,7 @@ fn semantic_edit_server_advertises_its_edit_tools() {
         assert!(
             server.handles(expected),
             "missing {expected} in {:?}",
-            server.names
+            server.schemas.iter().map(|s| &s.name).collect::<Vec<_>>()
         );
     }
     let bad = server.run_call("edit", &json!({ "nonsense": true }));

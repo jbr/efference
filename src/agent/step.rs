@@ -109,7 +109,12 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 } else {
                     None
                 };
-                let spotting = spotter.assess(&role, call, probe.as_deref()).await;
+                // What the mounted table knows about this tool (docs/permissions.md).
+                // `None` for bash, whose command text is its own description.
+                let brief = toolbox.brief(&call.name);
+                let spotting = spotter
+                    .assess(&role, call, brief.as_ref(), probe.as_deref())
+                    .await;
                 if let Some(u) = spotting.usage {
                     shared.record_request(RequestOrigin::Spot, u);
                 }

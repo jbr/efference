@@ -43,6 +43,8 @@ use crate::bash;
 use crate::config::Config;
 use crate::log::{Origin, Stance, ToolCall};
 use crate::project::{ApiBlock, ApiMessage, CacheControl, Role as ApiRole};
+use crate::tools::ToolBrief;
+use mcplease::types::Tool as ToolDefinition;
 
 /// The forced tool name.
 const SPOT: &str = "spot";
@@ -97,11 +99,22 @@ pub trait Spotter {
     /// Assess one gated tool call against the config. The config supplies the mission
     /// (scope), the boundaries (path grants + cwd), and the spotter-only watch-for list.
     ///
+    /// `brief` is what the mounted tool table knows about a structured call's tool
+    /// — its description, its input schema, and the server's own behavior hints
+    /// (docs/permissions.md). `None` for bash (judged as command text) and when no
+    /// toolbox is at hand (the `efference spotter` dev command).
+    ///
     /// `probe` is an optional command prefix the prefix-promotion descent
     /// (docs/permissions.md) wants judged *for promotion* alongside this move:
     /// when `Some`, the move prompt asks whether that prefix is safe for **every** argument, and a
     /// [`Stance::ClearAlways`] is the safe-vote. `None` on most calls (no probe rides along).
-    async fn assess(&self, role: &Config, call: &ToolCall, probe: Option<&str>) -> Spotting;
+    async fn assess(
+        &self,
+        role: &Config,
+        call: &ToolCall,
+        brief: Option<&ToolBrief<'_>>,
+        probe: Option<&str>,
+    ) -> Spotting;
 }
 
 /// The model spotter — the independent rung realized. Owns a dedicated [`Client`]
@@ -136,7 +149,13 @@ impl ForkSpot {
 }
 
 impl Spotter for ForkSpot {
-    async fn assess(&self, role: &Config, call: &ToolCall, probe: Option<&str>) -> Spotting {
+    async fn assess(
+        &self,
+        role: &Config,
+        call: &ToolCall,
+        brief: Option<&ToolBrief<'_>>,
+        probe: Option<&str>,
+    ) -> Spotting {
         // Cached block: the per-session-stable scope + watch-for. Fresh
         // block: the move (plus the optional promotion probe — it rides the fresh tail, so it never
         // perturbs the cached prefix, docs/log-and-projection.md). The persona (system) + the cached block are
@@ -149,7 +168,7 @@ impl Spotter for ForkSpot {
                     cache_control: Some(CacheControl::Ephemeral),
                 },
                 ApiBlock::Text {
-                    text: render_move(call, probe),
+                    text: render_move(call, brief, probe),
                     cache_control: None,
                 },
             ],
@@ -190,7 +209,13 @@ pub struct StaticSpotter {
 }
 
 impl Spotter for StaticSpotter {
-    async fn assess(&self, _role: &Config, _call: &ToolCall, _probe: Option<&str>) -> Spotting {
+    async fn assess(
+        &self,
+        _role: &Config,
+        _call: &ToolCall,
+        _brief: Option<&ToolBrief<'_>>,
+        _probe: Option<&str>,
+    ) -> Spotting {
         Spotting {
             read: Read {
                 stance: self.stance,
@@ -271,11 +296,17 @@ fn render_context(role: &Config, scratch: Option<&std::path::Path>) -> String {
 }
 
 /// Render the move the session is about to make. Bash shows its command verbatim; a
-/// structured tool shows its name and input. The instruction to call `spot` rides
-/// here (the fresh tail), not in the cached context. When `probe` is `Some`, a
-/// promotion question for that prefix rides along too (docs/permissions.md) —
-/// the harness names the prefix; the model answers it via the `clear_always` stance.
-fn render_move(call: &ToolCall, probe: Option<&str>) -> String {
+/// structured tool shows what the tool *is* — its brief — and then the call. The
+/// instruction to call `spot` rides here (the fresh tail), not in the cached context.
+/// When `probe` is `Some`, a promotion question for that prefix rides along too
+/// (docs/permissions.md) — the harness names the prefix; the model answers it via
+/// the `clear_always` stance.
+///
+/// The brief goes **before** the input for the same reason a reader wants it there:
+/// `{"path": "x"}` is uninterpretable until you know what the tool does with a path.
+/// Bash needs no equivalent — its command text is self-describing, which is exactly
+/// what a bare structured call is not.
+fn render_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>, probe: Option<&str>) -> String {
     let body = if call.name == bash::NAME {
         match call.input.get("command").and_then(Value::as_str) {
             Some(cmd) => format!("A shell command:\n\n    {cmd}"),
@@ -287,7 +318,14 @@ fn render_move(call: &ToolCall, probe: Option<&str>) -> String {
     } else {
         let input =
             serde_json::to_string_pretty(&call.input).unwrap_or_else(|_| call.input.to_string());
-        format!("A `{}` tool call with input:\n\n{input}", call.name)
+        let display = crate::mcp::display_name(&call.name);
+        match brief {
+            Some(brief) => format!(
+                "{}\nThe call being proposed, with input:\n\n{input}",
+                render_brief(&display, brief)
+            ),
+            None => format!("A `{display}` tool call with input:\n\n{input}"),
+        }
     };
     let promotion = match probe {
         Some(prefix) => format!(
@@ -303,6 +341,126 @@ fn render_move(call: &ToolCall, probe: Option<&str>) -> String {
         "---\n\nThe session is about to make this move:\n\n{body}{promotion}\n\n\
          Call `spot` with your stance and a one-line reason."
     )
+}
+
+/// The exact move block [`Spotter::assess`] would send for this call — what the
+/// spotter model reads, byte for byte. The `efference spotter` tester prints it, so
+/// iterating on a tool's brief doesn't mean guessing at what the model saw.
+pub fn preview_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>, probe: Option<&str>) -> String {
+    render_move(call, brief, probe)
+}
+
+/// How much of a description and of an input schema ride into the move block. A
+/// verbose server (or a schema with a large enum) would otherwise push the fresh
+/// tail past the useful signal and pay for it on every gated call. Clipped at a
+/// char boundary, with the clip marked so a truncated schema is never mistaken for
+/// the whole one.
+const DESCRIPTION_BUDGET: usize = 1200;
+const SCHEMA_BUDGET: usize = 2000;
+
+/// Clip to `max` bytes at a char boundary, marking the clip.
+fn clip(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_string();
+    }
+    let mut end = max;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}\n… (truncated)", &text[..end])
+}
+
+/// Describe the tool a structured move would call: where it came from, what it says
+/// it does, what it declares about its own behavior, and what it accepts.
+///
+/// **On the declarations.** `readOnlyHint` / `destructiveHint` / `idempotentHint` /
+/// `openWorldHint` are the server's claims about its own tool — the MCP spec warns
+/// clients not to make trust decisions on them for untrusted servers. They are
+/// rendered anyway, labelled as self-reported, because this harness's threat model
+/// is **error, not deception** (docs/permissions.md): a well-meaning server's hints
+/// are true, and a lying one is already out of scope. The asymmetry that survives
+/// either way is stated to the spotter: a hint is grounds to *gate*, never
+/// sufficient on its own to *clear*.
+fn render_brief(display: &str, brief: &ToolBrief<'_>) -> String {
+    let definition = brief.definition;
+    let mut s = match brief.server {
+        Some(server) => format!(
+            "The tool `{display}`, from the connected MCP server `{server}` — a server this \
+             operator declared, whose tools this harness does not implement or vet.\n"
+        ),
+        None => format!("The tool `{display}`, built into this harness.\n"),
+    };
+    if let Some(title) = definition.title.as_deref().filter(|t| !t.trim().is_empty()) {
+        s.push_str(&format!("Titled: {title}\n"));
+    }
+
+    match definition
+        .description
+        .as_deref()
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+    {
+        Some(description) => s.push_str(&format!(
+            "\nWhat it says it does:\n{}\n",
+            clip(description, DESCRIPTION_BUDGET)
+        )),
+        None => s.push_str("\nIt carries no description.\n"),
+    }
+
+    let declarations = declarations(definition);
+    if !declarations.is_empty() {
+        s.push_str(
+            "\nWhat the server declares about it (self-reported, not verified here — enough to \
+             raise a concern, never enough on its own to settle one):\n",
+        );
+        for line in declarations {
+            s.push_str(&format!("- {line}\n"));
+        }
+    }
+
+    let schema = serde_json::to_string_pretty(&definition.input_schema)
+        .unwrap_or_else(|_| definition.input_schema.to_string());
+    s.push_str(&format!(
+        "\nWhat it accepts:\n{}\n",
+        clip(&schema, SCHEMA_BUDGET)
+    ));
+    s
+}
+
+/// The server's behavior hints, rendered one per declared field. Absent fields are
+/// omitted rather than defaulted: "the server said nothing" and "the server said
+/// no" are different evidence, and only the first is true of a server that never
+/// filled the annotations in.
+fn declarations(definition: &ToolDefinition) -> Vec<&'static str> {
+    let Some(hints) = definition.annotations.as_ref() else {
+        return Vec::new();
+    };
+    let mut lines = Vec::new();
+    if let Some(read_only) = hints.read_only_hint {
+        lines.push(match read_only {
+            true => "read-only: it does not modify its environment",
+            false => "not read-only: it modifies its environment",
+        });
+    }
+    if let Some(destructive) = hints.destructive_hint {
+        lines.push(match destructive {
+            true => "destructive: its modifications may be irreversible",
+            false => "additive: it does not remove or overwrite what is already there",
+        });
+    }
+    if let Some(idempotent) = hints.idempotent_hint {
+        lines.push(match idempotent {
+            true => "idempotent: repeating it with the same arguments changes nothing further",
+            false => "not idempotent: repeating it compounds its effect",
+        });
+    }
+    if let Some(open_world) = hints.open_world_hint {
+        lines.push(match open_world {
+            true => "open-world: it reaches entities outside this machine (e.g. the network)",
+            false => "closed-world: its effects stay inside a closed domain",
+        });
+    }
+    lines
 }
 
 /// The forced `spot` tool: a required `stance` enum + one-line `reason`. The stance is 4-valued —

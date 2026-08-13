@@ -21,8 +21,8 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 
 use fs_mcp::FsTools;
-use mcplease::traits::{AsToolsList, Tool as McpTool};
-use mcplease::types::Tool as ToolDefinition;
+use mcplease::traits::{AsToolsList, Dispatch};
+use mcplease::types::{RequestContext, Tool as ToolDefinition};
 use semantic_edit_mcp::SemanticEditTools;
 use serde_json::{Value, json};
 
@@ -66,6 +66,24 @@ impl Provider {
         }
     }
 
+    /// The spotter's brief for a tool this backend owns. `Bash` has none: a bash
+    /// move is judged as its command text, not as a tool schema
+    /// (`spotter::render_move`).
+    fn brief(&self, name: &str) -> Option<ToolBrief<'_>> {
+        match self {
+            Provider::Bash(_) => None,
+            Provider::Fs(s) => s.schema(name).map(|definition| ToolBrief {
+                server: None,
+                definition,
+            }),
+            Provider::SemanticEdit(s) => s.schema(name).map(|definition| ToolBrief {
+                server: None,
+                definition,
+            }),
+            Provider::Connected(c) => c.brief(name),
+        }
+    }
+
     /// Run a call this backend handles. `abort` is the loop's interrupt future,
     /// resolving with the operator's intent (kill or detach); backends that
     /// can't be interrupted ignore it. `on_spawn` fires with the child's pid when
@@ -99,20 +117,24 @@ impl Provider {
 /// An in-process MCP server (docs/tools.md) adapted to the toolbox, generic over the
 /// server's session `State` and its generated `mcplease` `ToolEnum` dispatcher.
 /// Holds the state behind a `RefCell` — the loop is single-threaded and
-/// `mcplease`'s `execute` is synchronous (`&mut state`), so the borrow never spans
+/// `mcplease`'s `Dispatch::call` is synchronous (`&mut state`), so the borrow never spans
 /// an `.await` — plus the precomputed Anthropic tool definitions and the names it
 /// answers for. fs-mcp and semantic-edit-mcp are two instantiations.
 pub struct McpServer<State, ToolEnum> {
     state: RefCell<State>,
     definitions: Vec<Value>,
-    names: Vec<String>,
+    /// The mounted tool table, aligned with `definitions`. Kept whole (not just
+    /// the names) because `anthropic_def` drops what the wire has no slot for —
+    /// the annotations and the title — and the spotter reads those
+    /// ([`ToolBrief`], docs/permissions.md).
+    schemas: Vec<ToolDefinition>,
     _tools: PhantomData<fn() -> ToolEnum>,
 }
 
 impl<State, ToolEnum> McpServer<State, ToolEnum>
 where
-    // `Tool<State>`'s supertrait gives `DeserializeOwned`, so `from_value` works.
-    ToolEnum: AsToolsList + McpTool<State>,
+    // `Dispatch<State>`'s supertrait gives `DeserializeOwned`, so `from_value` works.
+    ToolEnum: AsToolsList + Dispatch<State>,
 {
     /// Adapt an already-constructed server state, advertising every tool the
     /// generated enum exposes **except** those named in `hidden` — the curation
@@ -125,23 +147,30 @@ where
             .into_iter()
             .filter(|s| !hidden.contains(&s.name.as_str()))
             .collect();
-        let names = schemas.iter().map(|s| s.name.clone()).collect();
         let definitions = schemas.iter().map(anthropic_def).collect();
         Self {
             state: RefCell::new(state),
             definitions,
-            names,
+            schemas,
             _tools: PhantomData,
         }
     }
 
     fn handles(&self, name: &str) -> bool {
-        self.names.iter().any(|n| n == name)
+        self.schemas.iter().any(|s| s.name == name)
+    }
+
+    /// This server's entry for `name`, for the spotter's brief.
+    fn schema(&self, name: &str) -> Option<&ToolDefinition> {
+        self.schemas.iter().find(|s| s.name == name)
     }
 
     /// Dispatch one call through the generated `ToolEnum`: wrap as
-    /// `{name, arguments}`, deserialize to the typed tool, and `execute` it
-    /// against the shared state. Any failure (bad input, tool error) becomes an
+    /// `{name, arguments}`, deserialize to the typed tool, and `call` it
+    /// against the shared state. The `CallToolResult` is folded to text by the
+    /// same renderer the connected providers use (docs/tools.md), so an
+    /// embedded tool that grows a structured or multimodal result reads the
+    /// same way as a remote one. Any failure (bad input, tool error) becomes an
     /// `is_error` result so the `tool_use` still gets its pair.
     fn run_call(&self, name: &str, input: &Value) -> RawResult {
         let envelope = json!({ "name": name, "arguments": input });
@@ -154,17 +183,49 @@ where
                 };
             }
         };
-        match McpTool::execute(tool, &mut self.state.borrow_mut()) {
-            Ok(content) => RawResult {
-                content,
-                is_error: false,
-            },
+        match tool.call(&mut self.state.borrow_mut(), &request_context()) {
+            Ok(result) => crate::mcp::render_result(result),
             Err(e) => RawResult {
                 content: e.to_string(),
                 is_error: true,
             },
         }
     }
+}
+
+/// What an embedded server learns about its caller. Over a wire this rides in
+/// each request's `_meta` (protocol revision 2026-07-28); in-process there is
+/// no wire, so the same context is handed to `call` directly. efference
+/// declares no optional client capabilities — notably not elicitation, so a
+/// tool must not ask for more input mid-call.
+fn request_context() -> RequestContext {
+    RequestContext {
+        protocol_version: Some(mcplease::types::LATEST_PROTOCOL_VERSION.to_string()),
+        client_info: Some(mcplease::types::Implementation::new(
+            "efference",
+            env!("CARGO_PKG_VERSION"),
+        )),
+        client_capabilities: Default::default(),
+    }
+}
+
+/// What the spotter is handed about a structured tool before it judges a call
+/// (docs/permissions.md). Borrowed out of the mounted tool table, which is fixed
+/// for the session.
+///
+/// The wire `tools[]` entry is not enough on its own: [`anthropic_def`] keeps
+/// only `name` / `description` / `input_schema`, because those are the only
+/// fields the Anthropic tool shape has. A server's own behavior hints
+/// (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) and its
+/// `title` are dropped there, and they are exactly what a permission rung wants —
+/// so the brief reads the `ToolDefinition` the mount snapshotted instead.
+pub struct ToolBrief<'a> {
+    /// The connected server that advertised this tool; `None` for an embedded
+    /// one. The spotter is told which, because "a tool this harness ships" and
+    /// "a tool a declared remote server offers" carry different priors.
+    pub server: Option<&'a str>,
+    /// The mounted entry, namespaced — `name` is the wire name.
+    pub definition: &'a ToolDefinition,
 }
 
 /// Translate an MCP tool definition (`inputSchema`, camelCase) into the
@@ -267,6 +328,14 @@ impl Toolbox {
             .iter()
             .flat_map(Provider::definitions)
             .collect()
+    }
+
+    /// The spotter's brief for a structured tool (docs/permissions.md): what the
+    /// mount snapshotted about it, so the rung that judges an unfamiliar tool sees
+    /// more than a name and a JSON blob. `None` for bash and for a name no backend
+    /// owns.
+    pub fn brief(&self, name: &str) -> Option<ToolBrief<'_>> {
+        self.providers.iter().find_map(|p| p.brief(name))
     }
 
     /// Route a call to the backend that handles its name. An unknown name comes

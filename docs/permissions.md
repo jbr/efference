@@ -286,6 +286,28 @@ the mission?* The scope is the authority — including over how much permanence 
 (a teardown scope clears `terraform destroy`). Reversibility/containment is only the default
 heuristic *when the scope is silent*.
 
+**A structured move carries a brief.** A bash command describes itself; `{"path": "x"}`
+does not, so a call to a connected server's tool used to reach the spotter as a name and a
+JSON blob. The move block now leads with what the mounted table knows about that tool —
+which server advertised it, its description, its input schema, and the server's own
+behavior hints — and only then shows the arguments (`tools::ToolBrief`,
+`spotter::render_brief`). The brief is read from the `ToolDefinition` the mount
+snapshotted, not from the wire `tools[]` entry, because `anthropic_def` keeps only the
+three fields the Anthropic tool shape has: `annotations` and `title` are dropped there.
+Description and schema are clipped to a fixed budget, so a verbose server can't crowd the
+tail on every gated call. It rides the **fresh** block, so nothing about the cached prefix
+moves.
+
+The hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are the
+judged party's claims about itself, and the MCP spec warns clients not to make trust
+decisions on them for untrusted servers. They are rendered anyway, labelled as
+self-reported, because the threat model here is **error, not deception**: a well-meaning
+server's hints are true, and a lying one is already out of scope (virtualization's tail).
+The asymmetry that holds under either model is stated in the prompt — a hint is grounds to
+*gate*, never sufficient on its own to *clear*. An absent hint renders as nothing rather
+than as its negation: "the server said no" and "the server filled nothing in" are
+different evidence.
+
 **The request layout** is `[persona (system) | scope + watch-for (cached) | the move
 (fresh)]`. The scope block is the config's scope prose plus the `[paths]` grants + cwd, so the
 spotter judges "outside scope" against a fixed, external authority — never the session's own

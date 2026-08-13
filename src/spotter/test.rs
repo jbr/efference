@@ -69,11 +69,11 @@ fn render_move_asks_the_promotion_question_only_when_a_prefix_is_probed() {
         input: json!({ "command": "git log --oneline" }),
     };
     // No probe → no promotion question.
-    let plain = render_move(&call, None);
+    let plain = render_move(&call, None, None);
     assert!(!plain.contains("clear_always"), "{plain}");
     assert!(!plain.contains("promotion"), "{plain}");
     // Probe → the named prefix and the clear_always instruction ride the move.
-    let probed = render_move(&call, Some("git log"));
+    let probed = render_move(&call, None, Some("git log"));
     assert!(probed.contains("git log"), "{probed}");
     assert!(probed.contains("clear_always"), "{probed}");
 }
@@ -93,7 +93,7 @@ fn render_move_shows_bash_command_and_structured_input() {
         name: bash::NAME.into(),
         input: json!({ "command": "git push" }),
     };
-    let rendered = render_move(&bash_call, None);
+    let rendered = render_move(&bash_call, None, None);
     assert!(rendered.contains("git push"), "{rendered}");
     assert!(rendered.contains("spot"), "instruction present: {rendered}");
 
@@ -102,9 +102,115 @@ fn render_move_shows_bash_command_and_structured_input() {
         name: "write".into(),
         input: json!({ "path": "/etc/hosts" }),
     };
-    let rendered = render_move(&write_call, None);
+    let rendered = render_move(&write_call, None, None);
     assert!(rendered.contains("write"), "{rendered}");
     assert!(rendered.contains("/etc/hosts"), "{rendered}");
+}
+
+/// A connected server's entry: namespaced name, description, schema, and the
+/// self-reported hints the wire definition has no slot for.
+fn briefed_tool(annotations: Option<mcplease::types::ToolAnnotations>) -> ToolDefinition {
+    ToolDefinition {
+        name: "ferritin__get".into(),
+        title: None,
+        description: Some("Show a Rust item by path.".into()),
+        input_schema: json!({
+            "type": "object",
+            "properties": { "path": { "type": "string" } },
+        }),
+        output_schema: None,
+        annotations,
+        icons: None,
+        meta: None,
+    }
+}
+
+#[test]
+fn a_brief_puts_the_tool_before_its_input() {
+    let call = ToolCall {
+        id: CallId("x".into()),
+        name: "ferritin__get".into(),
+        input: json!({ "path": "serde::Deserialize" }),
+    };
+    let definition = briefed_tool(None);
+    let brief = ToolBrief {
+        server: Some("ferritin"),
+        definition: &definition,
+    };
+    let rendered = render_move(&call, Some(&brief), None);
+
+    // The tool reads dotted here as everywhere user-facing, and is attributed to the
+    // server that advertised it.
+    assert!(rendered.contains("`ferritin.get`"), "{rendered}");
+    assert!(!rendered.contains("ferritin__get"), "{rendered}");
+    assert!(
+        rendered.contains("connected MCP server `ferritin`"),
+        "{rendered}"
+    );
+    // Description and schema both ride along.
+    assert!(rendered.contains("Show a Rust item by path."), "{rendered}");
+    assert!(rendered.contains("\"path\""), "{rendered}");
+    // Order is the point: what the tool *is* precedes the arguments, which are
+    // uninterpretable without it.
+    let described = rendered
+        .find("Show a Rust item")
+        .expect("description present");
+    let input = rendered
+        .find("serde::Deserialize")
+        .expect("the call's input present");
+    assert!(
+        described < input,
+        "brief must precede the input: {rendered}"
+    );
+}
+
+#[test]
+fn declared_hints_are_rendered_as_the_servers_claims_not_as_findings() {
+    let definition = briefed_tool(Some(mcplease::types::ToolAnnotations {
+        title: None,
+        read_only_hint: Some(true),
+        destructive_hint: None,
+        idempotent_hint: None,
+        open_world_hint: Some(true),
+    }));
+    let brief = ToolBrief {
+        server: Some("ferritin"),
+        definition: &definition,
+    };
+    let rendered = render_brief("ferritin.get", &brief);
+
+    assert!(rendered.contains("read-only"), "{rendered}");
+    assert!(rendered.contains("open-world"), "{rendered}");
+    // The hedge is load-bearing: these are the judged party's own claims, so they may
+    // raise a concern but must never settle one (docs/permissions.md).
+    assert!(rendered.contains("self-reported"), "{rendered}");
+    assert!(rendered.contains("never enough on its own"), "{rendered}");
+    // An absent hint says nothing — it must not render as a denial.
+    assert!(!rendered.contains("destructive"), "{rendered}");
+    assert!(!rendered.contains("idempotent"), "{rendered}");
+}
+
+#[test]
+fn a_tool_with_no_annotations_renders_no_declarations_section() {
+    let definition = briefed_tool(None);
+    let brief = ToolBrief {
+        server: None,
+        definition: &definition,
+    };
+    let rendered = render_brief("read", &brief);
+    assert!(rendered.contains("built into this harness"), "{rendered}");
+    assert!(!rendered.contains("self-reported"), "{rendered}");
+}
+
+#[test]
+fn an_oversized_description_and_schema_are_clipped_at_a_char_boundary() {
+    // Multi-byte chars straddling the budget must not panic or split a char.
+    let long = "é".repeat(DESCRIPTION_BUDGET);
+    let clipped = clip(&long, DESCRIPTION_BUDGET);
+    assert!(clipped.ends_with("… (truncated)"), "{clipped}");
+    assert!(clipped.len() <= DESCRIPTION_BUDGET + "\n… (truncated)".len());
+    // Under budget passes through untouched.
+    assert_eq!(clip("short", DESCRIPTION_BUDGET), "short");
 }
 
 #[test]

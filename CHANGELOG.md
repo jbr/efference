@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The spotter judging a structured call is shown a brief for its tool first — the server that advertised it, its description, its input schema, and the server's self-reported behavior hints (`readOnlyHint` and friends, labelled as claims) — instead of a bare name and a JSON blob.
 - A namespaced tool name reads dotted on every human-facing surface — transcript, sidebar policy labels, and the config file the write-back produces (`ferritin.get` for the wire's `ferritin__get`); `tools` grants accept either spelling and resolve to the wire name at validate.
 - Connected providers speak the stateless `2026-07-28` revision: mounting probes `server/discover` and falls back to the `initialize` handshake, and every request carries the client `_meta` that revision requires.
 
