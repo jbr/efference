@@ -286,7 +286,21 @@ fn call_entry(call: &ToolCall) -> DocumentNode<'static> {
         crate::mcp::display_name(&call.name),
         SpanStyle::FunctionName,
     )];
-    let (inline, overflow) = call_args(call);
+    let (inline, mut overflow) = call_args(call);
+    // The call's `intent` (docs/tools.md) leads the body: the operator reads why
+    // before what, and it is the one part of a structured call that isn't inferable
+    // from the arguments. Absent on calls from before the field, and on any the model
+    // omitted, so it is additive rather than a row that is usually empty.
+    if let Some(intent) = call.intent() {
+        overflow.insert(
+            0,
+            DocumentNode::paragraph(vec![Span {
+                text: intent.to_string().into(),
+                style: SpanStyle::Comment,
+                action: None,
+            }]),
+        );
+    }
     if let Some(arg_spans) = inline {
         header.push(Span {
             text: " · ".into(),

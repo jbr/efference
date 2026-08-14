@@ -316,8 +316,27 @@ fn render_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>, probe: Option<&st
             ),
         }
     } else {
-        let input =
-            serde_json::to_string_pretty(&call.input).unwrap_or_else(|_| call.input.to_string());
+        // The harness-injected `intent` (docs/tools.md) is withheld from the spotter,
+        // for now, and the reason is not that it would be useless — it is context for
+        // an underdetermined call, which is exactly what a bare structured call lacks.
+        //
+        // It is withheld because the agent authoring it is the party being judged, and
+        // it knows the criteria. Any weight the spotter puts on it is a channel for
+        // talking past the gate on assertion alone ("this path is scratch" is not
+        // evidence that it is). And a gate that reads the field changes the field:
+        // once the session learns the spotter sees it, `intent` stops being a cheap
+        // honest note about why and becomes partly a plea, which spends the honesty
+        // the condensed-transcript use depends on.
+        //
+        // Both effects are measurable and neither is measured yet
+        // (docs/permissions.md); the red team — commands the spotter blocks, intents
+        // written to get them through, the flip rate — comes before turning this on.
+        // Withheld is the reversible default.
+        let mut shown = call.input.clone();
+        if let Some(object) = shown.as_object_mut() {
+            object.remove(crate::tools::INTENT);
+        }
+        let input = serde_json::to_string_pretty(&shown).unwrap_or_else(|_| shown.to_string());
         let display = crate::mcp::display_name(&call.name);
         match brief {
             Some(brief) => format!(

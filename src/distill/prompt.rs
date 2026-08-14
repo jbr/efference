@@ -29,7 +29,9 @@ const KEEP_FIELDS: &str =
               anything that might matter for the rest of the task, while staying as lean
               as you can.
   note        One line, saying what this output showed — only what it showed. Do not
-              generalize past it or explain what it means for the task.";
+              generalize past it or explain what it means for the task. Where the
+              result header carries an `intent`, answer it from what is shown; \"it
+              didn't\" is an answer, and often the one worth keeping.";
 
 /// The `retain` ask, scoped to the results **this gate** is deciding
 /// (docs/redaction-fork.md).
@@ -423,6 +425,17 @@ pub(super) fn result_view(call: &ToolCall, raw: &RawResult) -> String {
     let lines = &all[..all.len().min(PEEK_LINE_CAP)];
     let dropped = all.len() - lines.len();
     let mut view = format!("═══ result · [{}] {} ═══\n", call.id.0, call.name);
+    // The call's `intent` (docs/tools.md), so the verdict's `note` answers the
+    // question the call was asking rather than restating what the tool did. The two
+    // are written at different times by different requests, which is what lets them
+    // disagree — a `note` that does not answer its `intent` is the signal that the
+    // call went sideways, and it is unavailable from either half alone.
+    //
+    // Showing it here creates no incentive to write intents for this reader: triage
+    // runs after the call, so nothing the intent says can change whether it ran.
+    if let Some(intent) = call.intent() {
+        view.push_str(&format!("intent: {intent}\n"));
+    }
     view.push_str(&number_lines(lines));
     if dropped > 0 {
         view.push_str(&format!("\n       … [{dropped} more lines truncated] …"));

@@ -286,6 +286,33 @@ the mission?* The scope is the authority — including over how much permanence 
 (a teardown scope clears `terraform destroy`). Reversibility/containment is only the default
 heuristic *when the scope is silent*.
 
+**The move block withholds the call's `intent`.** Every tool call carries a one-line
+`intent` saying why it is being made ([tools.md](tools.md)); `render_move` removes it
+before rendering, and a test pins the removal. Not because it would be useless — it is
+exactly the context an underdetermined structured call lacks — but because its author
+is the party being judged, and it knows the criteria. Two effects, both real, neither
+measured:
+
+- *Accuracy.* `rm -rf ./tmp/build` reads differently depending on what the session
+  believed `./tmp` was, and the spotter has no other way to learn that.
+- *Persuasion.* Intent is evidence about the session's **belief**, not a claim about
+  the world: "this directory is scratch" is not evidence that it is. Any weight put on
+  an unverifiable assertion is a channel for talking past the gate.
+
+If it is turned on, the influence should be asymmetric — intent may freely *raise*
+suspicion (a command that does not match its stated intent is a strong block signal,
+and one available no other way), and may *lower* it only through a claim the spotter
+can check (`is this path under $TMPDIR` is checkable; "this is safe" is not). It
+augments the command; it never replaces it, which is the substitution the human
+approval surface exists to prevent.
+
+The cost even where it works: once the session learns the spotter reads the field, the
+field changes. It stops being a cheap honest note about *why* and becomes partly a plea
+to a gate that can punish it now — an immediate gradient, unlike "a human may read this
+later" — which spends the honesty the condensed-transcript use depends on. So the order
+is red team first: take commands the spotter blocks, have a model write intents designed
+to get them through, read the flip rate. Withheld is the reversible default until then.
+
 **A structured move carries a brief.** A bash command describes itself; `{"path": "x"}`
 does not, so a call to a connected server's tool used to reach the spotter as a name and a
 JSON blob. The move block now leads with what the mounted table knows about that tool —

@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Every tool call carries a required `intent` — one line on why the call is being made, injected into every mounted tool's schema and stripped before dispatch. It leads the call entry in the TUI and heads the result block the fork peek triages, so the verdict's `note` answers it. The spotter does not see it.
 - Connected HTTP providers authorize over the MCP OAuth flow: a `401` at boot runs discovery (RFC 9728 protected-resource and RFC 8414/OIDC authorization-server metadata, both probe ladders), obtains a `client_id` by Client ID Metadata Document or dynamic registration, and completes an authorization-code + PKCE dance through a fixed-port loopback redirect, with `iss`/`state` validation and RFC 8707 resource binding. Tokens persist between runs; `--reauth <server>` re-runs it.
 - A declared MCP server that does not mount now fails `efference serve` instead of being skipped with a warning; `optional = true` on the stanza opts out, and an optional server that fails is reported both to the operator at every launch and to the model as a preamble section naming it and the reason.
 - `efference spotter --tool <name> --input <json>` judges a structured move, mounting the servers `--config` declares so the verdict is made against the real tool definition; `--show-move` prints the exact block sent and `--no-brief` withholds the brief for an A/B.

@@ -31,6 +31,53 @@ The redaction policy — deterministic rule vs. fork vs. eventual small
 distiller — is kept pluggable behind a trait. It is the most-iterated
 knob; see `redaction-fork.md`.
 
+## The `intent` property
+
+Every tool the toolbox advertises carries one property the tool did not declare:
+`intent`, a required string holding one line on why the call is being made. It is
+injected once in `Toolbox::definitions` over the flattened set, so a built-in tool
+and a connected server's tool get the same field on the same terms; the guidance for
+writing it is in the session preamble (`assets/prompts/session.md`), and the schema
+`description` is a pointer to that guidance.
+
+The split is deliberate. The **declaration** has to be in each schema: a property the
+schema does not declare may not be emittable at all under constrained decoding, and a
+preamble-only instruction is a soft constraint that decays across a long mechanical
+run — the regime where the field is most wanted. The **guidance** is prose stated
+once, because repeating a paragraph across every mounted tool costs prefix tokens per
+tool for no added signal.
+
+`Toolbox::run` removes `intent` from `input` before dispatch (`Provider::without_intent`),
+so no tool receives it. The logged `ToolCall` keeps it, which is what puts it on the
+wire and in reach of `ToolCall::intent`. It stays inside `input` rather than becoming a
+field of its own: the wire already carries it as part of the `tool_use` block, so
+lifting it out would move the pinned projection bytes for no gain
+([log-and-projection.md](log-and-projection.md)).
+
+**Collision.** A tool whose own schema already declares `intent` is skipped — not
+injected, and not stripped, since the field is the tool's own. The check reads the
+mounted table, which is fixed for the session, so a name answers the same way at
+definition time and at dispatch time; injection and strip cannot disagree. The
+preamble says this happens, so a session meeting such a tool reads its description
+rather than assuming the harness meaning.
+
+**Determinism.** `serde_json::Map` is a `BTreeMap`, so the injected property lands in
+sorted key position and `required` is appended to — an identical mounted set yields
+byte-identical definitions, which the `tools[]` array sitting in the cached prefix
+requires. A consequence: the schema cannot put `intent` first, because key order is
+not the schema's to choose. Whether the model *emits* it before the other arguments —
+which is the difference between a reasoning slot and a post-hoc label — is therefore
+steered only by the preamble instruction, and is a thing to read off real calls.
+
+**Readers.** The TUI leads a call entry's body with it. The fork peek's `result_view`
+puts it in the result header so the triage `note` answers it rather than restating
+what the tool did ([redaction-fork.md](redaction-fork.md)); the two halves are written
+at different times by different requests, so they can disagree, and a `note` that does
+not answer its `intent` is the signal that the call went sideways. Showing it to
+triage creates no incentive to write intents for that reader, because triage runs
+after the call and cannot change whether it ran. The spotter is the case where that
+does not hold, and it does not see the field — [permissions.md](permissions.md).
+
 ## Tool taxonomy
 
 Not everything belongs behind the in-process trait.

@@ -107,6 +107,27 @@ fn render_move_shows_bash_command_and_structured_input() {
     assert!(rendered.contains("/etc/hosts"), "{rendered}");
 }
 
+/// The move block withholds the call's `intent` (docs/tools.md, docs/permissions.md).
+/// Pinned because the default is a decision, not an accident: the field's author is
+/// the party being judged, so a spotter that reads it is a channel for arguing past
+/// the gate — and a field the gate reads stops being written honestly. Flipping this
+/// is the experiment; it should have to break a test.
+#[test]
+fn render_move_withholds_the_calls_intent() {
+    let call = ToolCall {
+        id: CallId("z".into()),
+        name: "write".into(),
+        input: json!({ "path": "/etc/hosts", "intent": "this host file is disposable" }),
+    };
+    let rendered = render_move(&call, None, None);
+    assert!(rendered.contains("/etc/hosts"), "{rendered}");
+    assert!(
+        !rendered.contains("disposable"),
+        "intent must not reach the spotter: {rendered}"
+    );
+    assert!(!rendered.contains("intent"), "{rendered}");
+}
+
 /// A connected server's entry: namespaced name, description, schema, and the
 /// self-reported hints the wire definition has no slot for.
 fn briefed_tool(annotations: Option<mcplease::types::ToolAnnotations>) -> ToolDefinition {

@@ -15,6 +15,7 @@
 //! request's `tools[]` is byte-stable and never perturbs the tools cache tier
 //! (docs/log-and-projection.md).
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -29,6 +30,73 @@ use serde_json::{Value, json};
 use crate::bash::{self, Bash, Outcome};
 use crate::frontend::Interrupt;
 use crate::log::{RawResult, ToolCall};
+
+/// The property the harness adds to every mounted tool's input schema
+/// (docs/tools.md "The `intent` property"): one line of prose saying why the call
+/// is being made, generated before the call runs. Stripped from `input` before
+/// dispatch, so no tool ever receives it; kept on the logged [`ToolCall`], so it
+/// projects to the wire and is available to the harness's own readers.
+pub const INTENT: &str = "intent";
+
+/// The `intent` property's schema `description`. Deliberately a pointer, not the
+/// guidance: the guidance is stated once in the session preamble
+/// (`assets/prompts/session.md`), because repeating a paragraph across every
+/// mounted tool costs prefix tokens per tool for no added signal. What must live
+/// here is the *declaration* — a property the schema does not declare may not be
+/// emittable at all under constrained decoding, and a preamble-only instruction is
+/// a soft constraint that decays over a long run.
+const INTENT_DESCRIPTION: &str =
+    "Why this call, now — one line. See the guidance on `intent` in your instructions.";
+
+/// Whether an `input_schema` already declares an `intent` property of its own.
+///
+/// A tool that does keeps its own field: the harness must not inject a second
+/// meaning onto the same key, nor strip a value the tool is expecting. The check is
+/// against the mounted table, which is fixed for the session, so a given name
+/// answers the same way at definition time and at dispatch time — the injection and
+/// the strip cannot disagree.
+fn declares_own_intent(input_schema: &Value) -> bool {
+    input_schema
+        .get("properties")
+        .and_then(|properties| properties.get(INTENT))
+        .is_some()
+}
+
+/// Add [`INTENT`] to one wire tool definition, unless the tool declares its own.
+///
+/// Key order stays sorted (`serde_json::Map` is a `BTreeMap` — no `preserve_order`)
+/// and `required` is appended to, so an identical mounted set yields byte-identical
+/// definitions. The `tools[]` array sits in the cached prefix, so this must hold or
+/// every request re-uploads the whole conversation (docs/log-and-projection.md).
+fn with_intent(mut definition: Value) -> Value {
+    let Some(schema) = definition.get_mut("input_schema") else {
+        return definition;
+    };
+    if declares_own_intent(schema) {
+        return definition;
+    }
+    let Some(schema) = schema.as_object_mut() else {
+        return definition;
+    };
+    schema
+        .entry("properties")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .map(|properties| {
+            properties.insert(
+                INTENT.to_string(),
+                json!({ "type": "string", "description": INTENT_DESCRIPTION }),
+            )
+        });
+    if let Some(required) = schema
+        .entry("required")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+    {
+        required.push(Value::String(INTENT.to_string()));
+    }
+    definition
+}
 
 /// A tool backend. Each variant owns whatever state its tools need; `Bash` is
 /// stateless, an MCP server holds its session state (added as its own variant
@@ -82,6 +150,36 @@ impl Provider {
             }),
             Provider::Connected(c) => c.brief(name),
         }
+    }
+
+    /// The call as the *tool* should see it: [`INTENT`] removed, since the harness
+    /// put it there and the tool's schema never asked for it (docs/tools.md).
+    /// Borrows unless there is something to remove — the common shape is one clone
+    /// of a small `Value` per call.
+    ///
+    /// A tool that declares its own `intent` keeps the field: it is the tool's, and
+    /// [`with_intent`] left that schema alone, so nothing was injected to remove.
+    fn without_intent<'a>(&self, call: &'a ToolCall) -> Cow<'a, ToolCall> {
+        let declares_own = match self {
+            Provider::Bash(_) => declares_own_intent(&Bash::definition()["input_schema"]),
+            Provider::Fs(s) => s
+                .schema(&call.name)
+                .is_some_and(|d| declares_own_intent(&d.input_schema)),
+            Provider::SemanticEdit(s) => s
+                .schema(&call.name)
+                .is_some_and(|d| declares_own_intent(&d.input_schema)),
+            Provider::Connected(c) => c
+                .brief(&call.name)
+                .is_some_and(|b| declares_own_intent(&b.definition.input_schema)),
+        };
+        if declares_own || call.input.get(INTENT).is_none() {
+            return Cow::Borrowed(call);
+        }
+        let mut stripped = call.clone();
+        if let Some(object) = stripped.input.as_object_mut() {
+            object.remove(INTENT);
+        }
+        Cow::Owned(stripped)
     }
 
     /// Run a call this backend handles. `abort` is the loop's interrupt future,
@@ -324,11 +422,15 @@ impl Toolbox {
         })
     }
 
-    /// All tool definitions, in mount order — the request's `tools[]`.
+    /// All tool definitions, in mount order — the request's `tools[]`, each carrying
+    /// the injected [`INTENT`] property (docs/tools.md). One injection site for every
+    /// backend: a tool the harness mounts and a tool a connected server advertises
+    /// get the same field on the same terms.
     pub fn definitions(&self) -> Vec<Value> {
         self.providers
             .iter()
             .flat_map(Provider::definitions)
+            .map(with_intent)
             .collect()
     }
 
@@ -351,7 +453,10 @@ impl Toolbox {
         on_output: impl FnMut(&[u8]),
     ) -> Outcome {
         match self.providers.iter().find(|p| p.handles(&call.name)) {
-            Some(provider) => provider.run(call, abort, on_spawn, on_output).await,
+            Some(provider) => {
+                let call = provider.without_intent(call);
+                provider.run(&call, abort, on_spawn, on_output).await
+            }
             None => RawResult {
                 content: format!("unknown tool: {}", call.name),
                 is_error: true,

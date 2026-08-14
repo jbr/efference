@@ -66,6 +66,128 @@ async fn unknown_tool_is_an_error_result_not_a_panic() {
     );
 }
 
+/// Every mounted tool advertises `intent`, and advertises it as required — bash and
+/// both in-process MCP servers alike, since injection happens once over the whole
+/// mounted set rather than per backend (docs/tools.md).
+#[test]
+fn every_mounted_tool_advertises_a_required_intent() {
+    let dir = std::env::temp_dir().join(format!("eff-intent-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let defs = Toolbox::bash_and_mcps(dir.clone(), None)
+        .unwrap()
+        .definitions();
+    assert!(defs.len() > 1, "expected a populated toolbox");
+    for def in &defs {
+        let schema = &def["input_schema"];
+        assert_eq!(
+            schema["properties"][INTENT]["type"],
+            json!("string"),
+            "{} is missing the intent property",
+            def["name"]
+        );
+        let required = schema["required"].as_array().expect("required array");
+        assert!(
+            required.contains(&json!(INTENT)),
+            "{} does not require intent: {required:?}",
+            def["name"]
+        );
+    }
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The `tools[]` array lives in the cached prefix, so injection must be a pure
+/// function of the mounted set: same toolbox, byte-identical definitions. A
+/// non-deterministic key order here would silently cold-start the cache on every
+/// request (docs/log-and-projection.md).
+#[test]
+fn intent_injection_is_byte_stable() {
+    let dir = std::env::temp_dir().join(format!("eff-intent-stable-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let toolbox = Toolbox::bash_and_mcps(dir.clone(), None).unwrap();
+    let once = serde_json::to_string(&toolbox.definitions()).unwrap();
+    let twice = serde_json::to_string(&toolbox.definitions()).unwrap();
+    assert_eq!(once, twice);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A schema that has no `properties` or `required` of its own still gets a
+/// well-formed injection — the keys are created rather than assumed.
+#[test]
+fn intent_injects_into_a_bare_object_schema() {
+    let injected = with_intent(json!({
+        "name": "bare",
+        "input_schema": { "type": "object" }
+    }));
+    assert_eq!(
+        injected["input_schema"]["properties"][INTENT]["type"],
+        "string"
+    );
+    assert_eq!(injected["input_schema"]["required"], json!([INTENT]));
+}
+
+/// A tool that declares its own `intent` is left alone: the harness must not
+/// overwrite the tool's description of its own field with the harness's.
+#[test]
+fn a_tool_declaring_its_own_intent_is_not_injected() {
+    let own = json!({
+        "name": "declares",
+        "input_schema": {
+            "type": "object",
+            "properties": { INTENT: { "type": "number", "description": "the tool's own" } },
+            "required": []
+        }
+    });
+    let injected = with_intent(own.clone());
+    assert_eq!(injected, own, "an existing intent must survive untouched");
+}
+
+/// The injected `intent` never reaches the tool. Proven through the dispatch path
+/// rather than by inspecting `without_intent`: bash echoes its own environment, so a
+/// tool that received an unexpected argument would surface as a real error result.
+#[tokio::test]
+async fn intent_is_stripped_before_the_tool_runs() {
+    let box_ = Toolbox::bash_only();
+    let result = done(
+        box_.run(
+            &call(
+                bash::NAME,
+                json!({"command": "echo ran", INTENT: "prove the strip"}),
+            ),
+            pending(),
+            |_| {},
+            |_| {},
+        )
+        .await,
+    );
+    assert!(!result.is_error, "got {:?}", result.content);
+    assert!(result.content.contains("ran"), "got {:?}", result.content);
+}
+
+/// The strip is dispatch-only: the logged call keeps its `intent`, which is what
+/// puts it on the wire and in reach of the harness's readers.
+#[test]
+fn the_logged_call_keeps_its_intent() {
+    let with = call(bash::NAME, json!({"command": "true", INTENT: "  why  "}));
+    assert_eq!(with.intent(), Some("why"), "trimmed, and still on the call");
+    assert_eq!(call(bash::NAME, json!({"command": "true"})).intent(), None);
+    // An empty or whitespace-only intent reads as absent rather than as a blank row.
+    assert_eq!(
+        call(bash::NAME, json!({"command": "true", INTENT: "   "})).intent(),
+        None
+    );
+    // A non-string intent (a model emitting the wrong type) is absent, not a panic.
+    assert_eq!(
+        call(bash::NAME, json!({"command": "true", INTENT: 7})).intent(),
+        None
+    );
+}
+
 fn fs_server(cwd: PathBuf) -> McpServer<FsTools, fs_mcp::Tools> {
     McpServer::from_state(FsTools::embedded(cwd).unwrap(), &["set_working_directory"])
 }

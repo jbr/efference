@@ -170,6 +170,25 @@ pub struct ToolCall {
     pub input: Value,
 }
 
+impl ToolCall {
+    /// The harness-injected `intent` (docs/tools.md): why this call was made, in the
+    /// model's words, written before it ran. `None` for a call from before the field
+    /// existed, one the model omitted, or a tool that declares its own `intent` — no
+    /// reader may assume it is present.
+    ///
+    /// It stays in `input` rather than becoming a field of its own: the wire carries
+    /// it as part of the `tool_use` block, so it is already in the projection and in
+    /// every recorded log, and lifting it out would move the pinned wire bytes
+    /// (docs/log-and-projection.md). Only the dispatch path removes it.
+    pub fn intent(&self) -> Option<&str> {
+        self.input
+            .get(crate::tools::INTENT)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|intent| !intent.is_empty())
+    }
+}
+
 /// The full, immutable result of a tool run. Survives in the log forever; never
 /// overwritten by redaction — that is what makes every redaction reversible.
 #[derive(Clone, Debug, Serialize, Deserialize)]
