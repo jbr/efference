@@ -9,6 +9,8 @@
 //! against it with no daemon behind it. The snapshot harness (`harness.rs`) covers
 //! the same shapes headlessly; this is for seeing them live, in color, scrollable.
 
+pub mod stream;
+
 use crate::log::{
     CallId, ContentBlock, Keep, LogEntry, Mark, MarkKind, Payload, RawResult, Timestamp, ToolCall,
     WireState,

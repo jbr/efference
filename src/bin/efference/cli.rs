@@ -341,6 +341,19 @@ pub(crate) enum Command {
         /// "Catppuccin Frappe".
         #[arg(long, env = "EFFERENCE_THEME")]
         theme: Option<String>,
+        /// Also play a scripted live stream into the gallery on a timer: a long
+        /// file write whose JSON input arrives fragment by fragment, then a command
+        /// whose output streams. Drives the render behaviours that only exist at
+        /// animation rate.
+        #[arg(long)]
+        stream: bool,
+        /// Bytes per streamed tool-input fragment (with `--stream`).
+        #[arg(long, default_value_t = 24, requires = "stream")]
+        chunk: usize,
+        /// Milliseconds between streamed fragments (with `--stream`). Below the
+        /// 30 ms paint tick, fragments fold into one frame.
+        #[arg(long, default_value_t = 16, requires = "stream")]
+        interval: u64,
     },
     /// Dev tool (not part of the shippable product, like `gallery`): point it at a
     /// session JSONL log and print the wire request — the deterministic projection

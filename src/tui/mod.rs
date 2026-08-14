@@ -308,6 +308,7 @@ mod parse;
 mod run;
 mod ui_loop;
 
+pub use gallery::stream::Script as StreamScript;
 pub use run::{run, run_gallery, run_view};
 
 use bridge::bridge;

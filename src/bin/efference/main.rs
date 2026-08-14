@@ -120,7 +120,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::Attach => attach(client_socket()?).await,
         Command::Tui { theme } => tui(client_socket()?, theme).await,
         Command::View { session, theme } => view(session, name.clone(), theme).await,
-        Command::Gallery { theme } => gallery(theme).await,
+        Command::Gallery {
+            theme,
+            stream,
+            chunk,
+            interval,
+        } => gallery(theme, stream, chunk, interval).await,
         Command::Wire {
             path,
             messages,

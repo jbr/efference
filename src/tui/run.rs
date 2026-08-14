@@ -88,9 +88,14 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
 }
 
 /// Launch the TUI on the fixed [`gallery`] transcript — every element type, no
-/// daemon.
-pub async fn run_gallery(theme: Option<String>) -> Result<()> {
-    run_offline(gallery::log(), None, theme).await
+/// daemon. With `stream`, a scripted emitter also plays live tool-call events into
+/// the session on a timer (`gallery/stream.rs`), which is how the animation-rate
+/// render behaviours get driven without an upstream.
+pub async fn run_gallery(
+    theme: Option<String>,
+    stream: Option<gallery::stream::Script>,
+) -> Result<()> {
+    run_offline(gallery::log(), None, theme, stream).await
 }
 
 /// Launch the TUI **read-only** on a recorded session's log (`efference view`,
@@ -99,7 +104,7 @@ pub async fn run_gallery(theme: Option<String>) -> Result<()> {
 /// session in the status bar. Nothing here can write — the log is read once, and
 /// the read-only state renders no composer and carries no loop verbs.
 pub async fn run_view(entries: Vec<LogEntry>, label: String, theme: Option<String>) -> Result<()> {
-    run_offline(entries, Some(label), theme).await
+    run_offline(entries, Some(label), theme, None).await
 }
 
 /// The shared offline runner behind [`run_gallery`] and [`run_view`]: seed the
@@ -112,6 +117,7 @@ async fn run_offline(
     entries: Vec<LogEntry>,
     viewing: Option<String>,
     theme: Option<String>,
+    stream: Option<gallery::stream::Script>,
 ) -> Result<()> {
     let theme = resolve_theme(theme)?;
 
@@ -127,6 +133,14 @@ async fn run_offline(
         let _ = tx.send(TuiEvent::Entry(entry));
     }
 
+    // The emitter shares the events channel with the seeded log, so live fragments
+    // land in the same UI as committed entries — the point being to watch the
+    // handoff between them.
+    let emitter = stream.map(|script| {
+        let tx = tx.clone();
+        tokio::spawn(script.play(tx))
+    });
+
     let ui = tokio::task::spawn_blocking(move || {
         let senders = Senders {
             submit: submit_tx,
@@ -137,6 +151,10 @@ async fn run_offline(
         ui_loop(rx, senders, theme, viewing)
     });
     let result = ui.await.context("the TUI thread panicked")?;
+
+    if let Some(emitter) = emitter {
+        emitter.abort();
+    }
 
     // Hold the far-ends until the UI exits, so the channels stay open for its life.
     drop(tx);

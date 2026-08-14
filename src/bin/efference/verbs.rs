@@ -135,9 +135,19 @@ pub(crate) async fn view(
     Ok(())
 }
 
-/// Launch the TUI on the fixed element gallery — no daemon, no socket.
-pub(crate) async fn gallery(theme: Option<String>) -> CliResult {
-    efference::tui::run_gallery(theme).await?;
+/// Launch the TUI on the fixed element gallery — no daemon, no socket. With
+/// `stream`, a scripted emitter plays live tool-call events over it on a timer.
+pub(crate) async fn gallery(
+    theme: Option<String>,
+    stream: bool,
+    chunk: usize,
+    interval: u64,
+) -> CliResult {
+    let script = stream.then(|| efference::tui::StreamScript {
+        chunk,
+        interval: std::time::Duration::from_millis(interval),
+    });
+    efference::tui::run_gallery(theme, script).await?;
     Ok(())
 }
 
