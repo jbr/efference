@@ -142,20 +142,21 @@ pub(crate) async fn gallery(
     stream: bool,
     chunk: usize,
     interval: u64,
+    frame_cost: bool,
 ) -> CliResult {
     let script = stream.then(|| efference::tui::StreamScript {
         chunk,
         interval: std::time::Duration::from_millis(interval),
     });
-    efference::tui::run_gallery(theme, script).await?;
+    efference::tui::run_gallery(theme, script, frame_cost).await?;
     Ok(())
 }
 
 /// Launch the interactive TUI against the daemon control socket. All rendering
 /// lives in `efference::tui`; here we just hand it a control client and the
 /// optional theme override.
-pub(crate) async fn tui(socket: PathBuf, theme: Option<String>) -> CliResult {
-    efference::tui::run(ControlClient::new(socket), theme).await?;
+pub(crate) async fn tui(socket: PathBuf, theme: Option<String>, frame_cost: bool) -> CliResult {
+    efference::tui::run(ControlClient::new(socket), theme, frame_cost).await?;
     Ok(())
 }
 

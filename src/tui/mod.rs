@@ -25,6 +25,7 @@ pub(crate) mod composer;
 pub(crate) mod control_strip;
 pub(crate) mod document;
 pub(crate) mod events;
+pub(crate) mod frame_cost;
 pub(crate) mod gallery;
 pub(crate) mod grid;
 #[cfg(test)]

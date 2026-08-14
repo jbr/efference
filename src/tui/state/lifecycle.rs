@@ -73,6 +73,7 @@ impl<'a> InteractiveState<'a> {
             events,
             viewing: None,
             highlight_memo: Default::default(),
+            frame_cost: None,
             composer: Composer::new(),
             clipboard: TextClipboard::new(),
             composing: true,

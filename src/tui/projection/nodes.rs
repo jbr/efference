@@ -9,29 +9,20 @@ use super::*;
 /// rendering the instant the matching `User` entry arrives via `/events`. Rendered as plain
 /// dimmed lines (not markdown) so the in-flight echo doesn't reflow as it commits.
 pub(in crate::tui) fn pending_turn(text: &str) -> DocumentNode<'static> {
-    let mut blocks: Vec<DocumentNode<'static>> = text
+    let mut lines: Vec<Span<'static>> = text
         .lines()
         .enumerate()
-        .map(|(i, line)| DocumentNode::Paragraph {
-            spans: vec![Span {
-                // The marker leads the first line; continuation lines indent to align.
-                text: format!("{}{line}", if i == 0 { "⋯ " } else { "  " }).into(),
-                style: SpanStyle::Comment,
-                action: None,
-            }],
-        })
+        // The marker leads the first line; continuation lines indent to align.
+        .map(|(i, line)| dim_span(&format!("{}{line}", if i == 0 { "⋯ " } else { "  " })))
         .collect();
     // A blank submit can't reach here, but always emit a turn rather than an empty one.
-    if blocks.is_empty() {
-        blocks.push(DocumentNode::Paragraph {
-            spans: vec![Span {
-                text: "⋯ ".into(),
-                style: SpanStyle::Comment,
-                action: None,
-            }],
-        });
+    if lines.is_empty() {
+        lines.push(dim_span("⋯ "));
     }
-    DocumentNode::entry(EntryKind::UserMessage, blocks)
+    DocumentNode::entry(
+        EntryKind::UserMessage,
+        vec![DocumentNode::styled_lines(lines)],
+    )
 }
 
 /// The live phase, rendered **in full** — the point is to watch the work happen, so nothing here
@@ -45,50 +36,54 @@ pub(in crate::tui) fn pending_turn(text: &str) -> DocumentNode<'static> {
 ///
 /// [`backlog/tui-streaming-lifecycle.md`]: ../../backlog/tui-streaming-lifecycle.md
 pub(in crate::tui) fn phase_blocks(phase: &Phase) -> Vec<DocumentNode<'static>> {
-    match phase {
-        Phase::Thinking { text } if text.trim().is_empty() => vec![dim_line("✻ thinking…")],
-        Phase::Thinking { text } => {
+    let lines: Vec<Span<'static>> = match phase {
+        Phase::Thinking { text } if text.trim().is_empty() => vec![dim_span("✻ thinking…")],
+        Phase::Thinking { text } => text
+            .lines()
+            .enumerate()
             // The marker leads the first line; continuation lines indent to align under it, the
             // same shape a pending user turn uses.
-            let mut blocks = Vec::new();
-            for (i, line) in text.lines().enumerate() {
-                blocks.push(dim_line(&format!(
+            .map(|(i, line)| {
+                dim_span(&format!(
                     "{}{line}",
                     if i == 0 { "✻ thinking… " } else { "  " }
-                )));
-            }
-            blocks
-        }
-        Phase::CallingTool { name, input } if input.is_empty() => {
-            vec![dim_line(&format!(
-                "❯ calling {}…",
-                crate::mcp::display_name(name)
-            ))]
-        }
+                ))
+            })
+            .collect(),
         Phase::CallingTool { name, input } => {
             // Dimmed lines, not a `code_block`: the live tail's register is dim
             // throughout, and a box would claim this is a finished thing to read
             // rather than bytes still arriving. (It was originally forced — the boxed
             // render clipped long content at its border — but that is fixed, so this
             // now rests on the register alone.)
-            let mut blocks = vec![dim_line(&format!(
+            let mut lines = vec![dim_span(&format!(
                 "❯ calling {}…",
                 crate::mcp::display_name(name)
             ))];
-            blocks.extend(input.lines().map(|line| dim_line(&format!("  {line}"))));
-            blocks
+            lines.extend(input.lines().map(|line| dim_span(&format!("  {line}"))));
+            lines
         }
+    };
+    vec![DocumentNode::styled_lines(lines)]
+}
+
+/// One dimmed span — the live tail's register throughout: present but visibly not
+/// committed. A *span*, not a node, because the live tail's text is line-structured
+/// rather than block-structured; see [`DocumentNode::Lines`].
+pub(in crate::tui) fn dim_span(text: &str) -> Span<'static> {
+    Span {
+        text: text.to_string().into(),
+        style: SpanStyle::Comment,
+        action: None,
     }
 }
 
-/// One dimmed line — the live tail's register throughout: present but visibly not committed.
+/// One dimmed line as a *block* — separated from its siblings by a blank row. For
+/// text that really is paragraph-structured; line-structured text wants
+/// [`DocumentNode::Lines`] instead.
 pub(in crate::tui) fn dim_line(text: &str) -> DocumentNode<'static> {
     DocumentNode::Paragraph {
-        spans: vec![Span {
-            text: text.to_string().into(),
-            style: SpanStyle::Comment,
-            action: None,
-        }],
+        spans: vec![dim_span(text)],
     }
 }
 
@@ -290,10 +285,11 @@ pub(in crate::tui) fn running_tool_peek(output: &str) -> DocumentNode<'static> {
         style: SpanStyle::Comment,
         action: None,
     }];
-    let body = lines[lines.len() - shown..]
-        .iter()
-        .map(|line| dim_line(&format!("  {line}")))
-        .collect();
+    let body = vec![DocumentNode::styled_lines(
+        lines[lines.len() - shown..]
+            .iter()
+            .map(|line| dim_span(&format!("  {line}"))),
+    )];
     DocumentNode::headed_entry(
         EntryKind::ToolResult,
         Some(Span {

@@ -423,6 +423,14 @@ fn collect_text(nodes: &[DocumentNode<'_>]) -> String {
                 }
                 out.push('\n');
             }
+            DocumentNode::Lines { lines } => {
+                for spans in lines {
+                    for span in spans {
+                        out.push_str(&span.text);
+                    }
+                    out.push('\n');
+                }
+            }
             DocumentNode::Entry { header, blocks, .. } => {
                 for span in header.iter().flatten() {
                     out.push_str(&span.text);

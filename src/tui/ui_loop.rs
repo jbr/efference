@@ -2,6 +2,10 @@
 
 use super::*;
 
+use crate::tui::frame_cost::FrameCost;
+use ratatui::prelude::Backend;
+use std::io::Write;
+
 /// The four channels the UI sends the operator's intent over, carried together
 /// because every entry point builds all four at once and hands them straight to the
 /// state. The tokio side turns each into its control-channel `POST`; an offline run
@@ -24,6 +28,10 @@ pub(super) fn ui_loop(
     // `Some(label)` runs the loop as a read-only view of a recorded log
     // (docs/tui.md): no composer, no loop verbs, nothing that can send.
     viewing: Option<String>,
+    // Time each paint and print the distribution on exit (`frame_cost.rs`). Off in
+    // every normal run; the readout is not reproducible, so nothing that snapshots
+    // can turn it on.
+    frame_cost: bool,
 ) -> io::Result<()> {
     // Build the render context: interactive TTY, sized to the terminal.
     let width = crossterm::terminal::size()
@@ -87,6 +95,9 @@ pub(super) fn ui_loop(
     if let Some(label) = viewing {
         state.set_viewing(label);
     }
+    if frame_cost {
+        state.frame_cost = Some(Default::default());
+    }
 
     // Event reader thread: blocks on crossterm reads, forwards to a channel.
     let (event_tx, event_rx) = crossbeam_channel::unbounded();
@@ -105,7 +116,7 @@ pub(super) fn ui_loop(
     // what advances them.
     let clock_tick = crossbeam_channel::tick(Duration::from_secs(1));
 
-    terminal.draw(|frame| state.render_frame(frame))?;
+    draw_measured(&mut terminal, &mut state)?;
     state.update_cursor(&mut terminal);
 
     let result = loop {
@@ -203,7 +214,7 @@ pub(super) fn ui_loop(
         // One draw per frame: `render_frame` measures the document and re-pins a
         // stream-following viewport to the bottom before it paints (docs/tui.md),
         // so there is no stale-offset paint to correct afterwards.
-        terminal.draw(|frame| state.render_frame(frame))?;
+        draw_measured(&mut terminal, &mut state)?;
 
         state.update_cursor(&mut terminal);
     };
@@ -220,5 +231,32 @@ pub(super) fn ui_loop(
         PopKeyboardEnhancementFlags
     )?;
     terminal.show_cursor()?;
+
+    // After the alt-screen is gone, so the distribution lands on the real terminal
+    // rather than being wiped with the scrollback (`frame_cost.rs`).
+    if let Some(summary) = state.frame_cost.as_ref().and_then(FrameCost::summary) {
+        eprintln!("{summary}");
+    }
     result
+}
+
+/// One paint, timed when `--frame-cost` asked for it. The measurement wraps the
+/// whole `draw` — the document measure pass and the paint are one unit of work, and
+/// splitting them would attribute layout cost to whichever half ran second.
+fn draw_measured(
+    terminal: &mut Terminal<impl Backend<Error = io::Error> + Write>,
+    state: &mut InteractiveState<'_>,
+) -> io::Result<()> {
+    if state.frame_cost.is_none() {
+        terminal.draw(|frame| state.render_frame(frame))?;
+        return Ok(());
+    }
+    let started = std::time::Instant::now();
+    terminal.draw(|frame| state.render_frame(frame))?;
+    let micros = started.elapsed().as_micros().min(u32::MAX as u128) as u32;
+    let (laid_out, highlighted) = (state.document.laid_out, state.document.highlighted);
+    if let Some(cost) = state.frame_cost.as_mut() {
+        cost.record(micros, laid_out, highlighted);
+    }
+    Ok(())
 }

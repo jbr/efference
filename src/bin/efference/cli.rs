@@ -316,6 +316,11 @@ pub(crate) enum Command {
         /// lists the available ones. Defaults to "Catppuccin Frappe".
         #[arg(long, env = "EFFERENCE_THEME")]
         theme: Option<String>,
+        /// Time each paint and print the distribution (p50/p90/p99/max, and how
+        /// many frames ran over the 30ms tick) on exit. Development
+        /// instrumentation for the streaming render.
+        #[arg(long)]
+        frame_cost: bool,
     },
     /// Read a recorded session in the TUI, inert: the same transcript rendering as
     /// `tui`, over a session's `log.jsonl` instead of a live daemon. Nothing can be
@@ -354,6 +359,11 @@ pub(crate) enum Command {
         /// 30 ms paint tick, fragments fold into one frame.
         #[arg(long, default_value_t = 16, requires = "stream")]
         interval: u64,
+        /// Time each paint and print the distribution (p50/p90/p99/max, and how
+        /// many frames ran over the 30ms tick) on exit. Development
+        /// instrumentation for the streaming render.
+        #[arg(long)]
+        frame_cost: bool,
     },
     /// Dev tool (not part of the shippable product, like `gallery`): point it at a
     /// session JSONL log and print the wire request — the deterministic projection

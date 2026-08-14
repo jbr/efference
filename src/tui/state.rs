@@ -375,6 +375,10 @@ pub(super) struct InteractiveState<'a> {
     /// code block is parsed once rather than on every paint (docs/tui.md).
     pub highlight_memo: super::render_code_block::HighlightMemo,
 
+    /// Paint durations, when `--frame-cost` asked for them (`frame_cost.rs`).
+    /// `None` is the normal case and costs nothing.
+    pub frame_cost: Option<super::frame_cost::FrameCost>,
+
     /// The input composer (M2). The swappable input interface (docs/tui.md).
     pub composer: Composer,
     /// System plain-text clipboard plus an in-process fallback. Kept outside the

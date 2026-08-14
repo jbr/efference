@@ -114,3 +114,20 @@ fn a_committed_turn_clears_the_live_phase() {
     );
     assert!(play.find("Twelve.").is_some());
 }
+
+/// The live tail's line spacing. Every live renderer — a running tool's output
+/// peek, a thinking phase, an arriving tool input — models one source line as one
+/// `Paragraph` child of its entry, and an entry separates its children by a blank
+/// row (markdown block spacing). So a multi-line live block renders double-spaced,
+/// which reads as the stream having inserted newlines it did not send.
+#[test]
+fn the_live_tail_is_not_double_spaced() {
+    let mut play = Screenplay::new(80, 24);
+    play.user("Run the tests.");
+    play.event(TuiEvent::ToolOutput {
+        call_id: "call-live".into(),
+        chunk: "one\ntwo\nthree\n".into(),
+    });
+    play.pin_to_bottom();
+    play.snapshot("live_tool_output_spacing");
+}

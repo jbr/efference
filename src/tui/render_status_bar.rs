@@ -29,7 +29,11 @@ impl<'a> InteractiveState<'a> {
         } else {
             self.ui.debug_message.to_string()
         };
+        // The frame-cost readout leads, when `--frame-cost` asked for it: it is being
+        // read *while* something streams, so it must not be the thing that gets
+        // truncated when the status message is long.
         let indicators = [
+            self.frame_cost.as_ref().and_then(|c| c.readout()),
             super::state::pace_indicator(self.pace),
             super::state::upstream_failure_indicator(self.upstream_failure),
         ]

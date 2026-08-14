@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
+pub async fn run(client: Client, theme: Option<String>, frame_cost: bool) -> Result<()> {
     use crate::frontend::Approval;
 
     // Validate the theme up front, before the alt-screen takes over, so a bad
@@ -75,7 +75,7 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
             pace: pace_tx,
             interrupt: interrupt_tx,
         };
-        ui_loop(rx, senders, theme, None)
+        ui_loop(rx, senders, theme, None, frame_cost)
     });
 
     let result = ui.await.context("the TUI thread panicked")?;
@@ -94,8 +94,9 @@ pub async fn run(client: Client, theme: Option<String>) -> Result<()> {
 pub async fn run_gallery(
     theme: Option<String>,
     stream: Option<gallery::stream::Script>,
+    frame_cost: bool,
 ) -> Result<()> {
-    run_offline(gallery::log(), None, theme, stream).await
+    run_offline(gallery::log(), None, theme, stream, frame_cost).await
 }
 
 /// Launch the TUI **read-only** on a recorded session's log (`efference view`,
@@ -104,7 +105,7 @@ pub async fn run_gallery(
 /// session in the status bar. Nothing here can write — the log is read once, and
 /// the read-only state renders no composer and carries no loop verbs.
 pub async fn run_view(entries: Vec<LogEntry>, label: String, theme: Option<String>) -> Result<()> {
-    run_offline(entries, Some(label), theme, None).await
+    run_offline(entries, Some(label), theme, None, false).await
 }
 
 /// The shared offline runner behind [`run_gallery`] and [`run_view`]: seed the
@@ -118,6 +119,7 @@ async fn run_offline(
     viewing: Option<String>,
     theme: Option<String>,
     stream: Option<gallery::stream::Script>,
+    frame_cost: bool,
 ) -> Result<()> {
     let theme = resolve_theme(theme)?;
 
@@ -148,7 +150,7 @@ async fn run_offline(
             pace: pace_tx,
             interrupt: interrupt_tx,
         };
-        ui_loop(rx, senders, theme, viewing)
+        ui_loop(rx, senders, theme, viewing, frame_cost)
     });
     let result = ui.await.context("the TUI thread panicked")?;
 

@@ -38,6 +38,19 @@ impl<'a> InteractiveState<'a> {
                 self.layout.pos.y += 1;
             }
 
+            // Each line renders exactly as a `Paragraph` would; what differs is that
+            // nothing separates them, because they were never separate blocks.
+            DocumentNode::Lines { lines } => {
+                for spans in lines {
+                    self.layout.pos.x = self.layout.indent;
+                    self.draw_blockquote_markers(buf);
+                    for span in spans {
+                        self.render_span(span, buf);
+                    }
+                    self.layout.pos.y += 1;
+                }
+            }
+
             DocumentNode::Metadata { fields } => {
                 // Render each field on its own line: bold label + styled value.
                 for field in fields {

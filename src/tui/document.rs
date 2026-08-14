@@ -99,6 +99,17 @@ pub enum DocumentNode<'a> {
     /// Block-level paragraph
     Paragraph { spans: Vec<Span<'a>> },
 
+    /// A run of consecutive lines with **no blank row between them** — one row per
+    /// line, each wrapping like a paragraph.
+    ///
+    /// The distinction from a sequence of [`Paragraph`](Self::Paragraph)s is the
+    /// spacing: an [`Entry`](Self::Entry) separates its children by a blank row,
+    /// which is markdown block spacing and is right for prose. Text that is already
+    /// line-structured — a running tool's output, a thinking phase, an arriving tool
+    /// input, a multi-line user turn — is not a sequence of blocks, and rendering it
+    /// as one doubles every newline the source actually had.
+    Lines { lines: Vec<Vec<Span<'a>>> },
+
     /// Structured key-value metadata block (item kind, visibility, path,
     /// crate, etc). Renderers choose layout: verbose labeled lines for
     /// human-facing modes, compact single-line summary for the AI mode.
@@ -319,6 +330,19 @@ impl<'a> DocumentNode<'a> {
     /// Convenience constructor for a paragraph
     pub fn paragraph(spans: Vec<Span<'a>>) -> Self {
         DocumentNode::Paragraph { spans }
+    }
+
+    /// Convenience constructor for a run of unspaced lines. `lines` is one span
+    /// list per row.
+    pub fn lines(lines: Vec<Vec<Span<'a>>>) -> Self {
+        DocumentNode::Lines { lines }
+    }
+
+    /// A run of unspaced lines each carrying one span — the live tail's shape.
+    pub fn styled_lines(lines: impl IntoIterator<Item = Span<'a>>) -> Self {
+        DocumentNode::Lines {
+            lines: lines.into_iter().map(|span| vec![span]).collect(),
+        }
     }
 
     /// Convenience constructor for a metadata block
