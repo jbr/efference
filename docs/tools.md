@@ -62,12 +62,20 @@ preamble says this happens, so a session meeting such a tool reads its descripti
 rather than assuming the harness meaning.
 
 **Determinism.** `serde_json::Map` is a `BTreeMap`, so the injected property lands in
-sorted key position and `required` is appended to — an identical mounted set yields
-byte-identical definitions, which the `tools[]` array sitting in the cached prefix
-requires. A consequence: the schema cannot put `intent` first, because key order is
-not the schema's to choose. Whether the model *emits* it before the other arguments —
-which is the difference between a reasoning slot and a post-hoc label — is therefore
-steered only by the preamble instruction, and is a thing to read off real calls.
+sorted key position — an identical mounted set yields byte-identical definitions, which
+the `tools[]` array sitting in the cached prefix requires. That sorted order is a
+serde_json *cargo feature* (`preserve_order` swaps in an `IndexMap`), unified across the
+whole runtime graph, so it is pinned by a test in `src/project.rs` rather than assumed;
+see [log-and-projection.md](log-and-projection.md).
+
+A consequence: the schema cannot put `intent` first, because key order is not the
+schema's to choose (it falls after `command` for bash, before `paths` for `read`).
+Whether the model *emits* it before the other arguments is the difference between a
+reasoning slot and a label on a call already decided, and the levers for that are the
+preamble instruction — the one being relied on — and prepending `intent` to `required`,
+which is free but not a known mechanism, since `required` is semantically a set. Which
+of these does anything is a reading to take off real calls, and the split sort position
+across tools is a natural A/B.
 
 **Readers.** The TUI leads a call entry's body with it. The fork peek's `result_view`
 puts it in the result header so the triage `note` answers it rather than restating

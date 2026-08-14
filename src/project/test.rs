@@ -54,6 +54,30 @@ fn sample_log() -> Vec<LogEntry> {
     ]
 }
 
+/// `serde_json::Map` must be a `BTreeMap` — the sorted key order every other
+/// determinism guarantee here is built on (docs/log-and-projection.md). Tool-call
+/// `input` is a `Value` *for* this: a map that preserved insertion order would take
+/// its order from whatever built it, and anything built from a `HashMap` would
+/// randomize per process and silently move the cached prefix.
+///
+/// This is a property of a **cargo feature**, not of this crate: serde_json's
+/// `preserve_order` swaps in an `IndexMap`, and cargo unifies features across the
+/// whole runtime graph, so any dependency turning it on flips the behavior here with
+/// no compile error. A copy of serde_json with `indexmap` is already in this build's
+/// *build-dependency* graph (resolved separately, so it does not reach the binary) —
+/// the flip is one normal dependency away. Nothing else would catch it: both
+/// projection pins would keep passing, because a single process is self-consistent.
+#[test]
+fn json_object_keys_serialize_in_sorted_order() {
+    let out_of_order = serde_json::json!({ "zeta": 1, "alpha": 2, "mu": 3 });
+    assert_eq!(
+        serde_json::to_string(&out_of_order).unwrap(),
+        r#"{"alpha":2,"mu":3,"zeta":1}"#,
+        "serde_json is preserving insertion order — a dependency has enabled the \
+         `preserve_order` feature, and the cache-prefix invariant no longer holds"
+    );
+}
+
 #[test]
 fn projection_is_byte_stable() {
     let log = sample_log();

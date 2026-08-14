@@ -88,12 +88,19 @@ fn with_intent(mut definition: Value) -> Value {
                 json!({ "type": "string", "description": INTENT_DESCRIPTION }),
             )
         });
+    // Prepended, not appended. `required` is semantically a set — order means nothing
+    // to the schema — so this is a free coin-flip rather than a known mechanism: it is
+    // the only structural place left to say "this one first". `properties` cannot say
+    // it, because sorted key order is not ours to choose (see the doc comment above),
+    // and whether the model emits `intent` before the other arguments is the
+    // difference between a reasoning slot and a label on a decided call
+    // (docs/tools.md). The preamble instruction is the lever we are actually relying on.
     if let Some(required) = schema
         .entry("required")
         .or_insert_with(|| json!([]))
         .as_array_mut()
     {
-        required.push(Value::String(INTENT.to_string()));
+        required.insert(0, Value::String(INTENT.to_string()));
     }
     definition
 }
