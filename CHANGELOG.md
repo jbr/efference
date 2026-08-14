@@ -16,7 +16,11 @@ behind a change, see [`journal/`](journal/).
 - A namespaced tool name reads dotted on every human-facing surface — transcript, sidebar policy labels, and the config file the write-back produces (`ferritin.get` for the wire's `ferritin__get`); `tools` grants accept either spelling and resolve to the wire name at validate.
 - Connected providers speak the stateless `2026-07-28` revision: mounting probes `server/discover` and falls back to the `initialize` handshake, and every request carries the client `_meta` that revision requires.
 
+- `--frame-cost` (on `tui` and `gallery`) times each paint: p50/p95/max over a rolling window plus the last walk's laid-out and highlighted node counts in the status bar, and the session's distribution — including how many frames ran over the 30ms tick — on exit.
+- `efference gallery --stream` plays a scripted live tool call over the offline gallery (`--chunk`/`--interval` set the pace), so the render behaviours that only exist at animation rate can be driven without a daemon.
+
 ### Fixed
+- The live tail no longer renders a blank row between every line: an entry separates its child *blocks* by a blank row, and streaming tool output, thinking, an arriving tool input, and a pending user turn each modelled one source line as one block.
 - Streamable-HTTP requests carry the `Mcp-Method` and `Mcp-Name` headers `2026-07-28` requires, with the spec's base64 sentinel encoding for values that cannot ride raw. Their absence was invisible against mcplease-backed servers, which do not validate them, and rejected by Sentry with `HeaderMismatch`.
 - An MCP server name may no longer contain `__`; the separator inside a name would move the namespace boundary that the wire→display and dotted-config→wire mappings both resolve as the first occurrence.
 - Tracks the published mcplease 0.3 API (`Dispatch::call` with a `RequestContext`); embedded tool results now fold through the same `CallToolResult` renderer as connected ones, and an interim (`input_required`) result from a connected server lands as a named error instead of an empty success.

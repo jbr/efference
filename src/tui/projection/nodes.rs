@@ -30,11 +30,8 @@ pub(in crate::tui) fn pending_turn(text: &str) -> DocumentNode<'static> {
 /// accumulating in a code block.
 ///
 /// The input is shown, never *parsed*: mid-stream it is a partial slice of a JSON document, so the
-/// display must not assert structure the arrived bytes don't support. Rendering it structurally is
-/// its own design question ([`backlog/tui-streaming-lifecycle.md`]) — the raw characters claim
-/// nothing, which is what makes showing them safe.
-///
-/// [`backlog/tui-streaming-lifecycle.md`]: ../../backlog/tui-streaming-lifecycle.md
+/// display must not assert structure the arrived bytes don't support (docs/tui.md). The raw
+/// characters claim nothing, which is what makes showing them safe.
 pub(in crate::tui) fn phase_blocks(phase: &Phase) -> Vec<DocumentNode<'static>> {
     let lines: Vec<Span<'static>> = match phase {
         Phase::Thinking { text } if text.trim().is_empty() => vec![dim_span("✻ thinking…")],
