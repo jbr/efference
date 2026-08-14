@@ -57,6 +57,10 @@ pub(super) struct RawMcpServer {
     env: BTreeMap<String, String>,
     #[serde(default)]
     url: Option<String>,
+    /// Start the session even if this server does not mount. Defaults to
+    /// `false` — see [`McpServerEntry::optional`].
+    #[serde(default)]
+    optional: bool,
 }
 
 /// A `[context]` value: the `true`/`false` sugar (a bare read-only path) or an inline table
@@ -238,8 +242,8 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
     }
     let mut mcp_servers = BTreeMap::new();
     for (name, server) in raw.mcp.servers {
-        let transport = validate_mcp_server(&name, server)?;
-        mcp_servers.insert(name, transport);
+        let entry = validate_mcp_server(&name, server)?;
+        mcp_servers.insert(name, entry);
     }
     Ok(Config {
         scope: raw.scope,
@@ -273,13 +277,13 @@ pub fn wire_tool_name(entry: String) -> String {
     }
 }
 
-/// Interpret one `[mcp.servers.<name>]` stanza into an [`McpTransport`], failing closed on an
+/// Interpret one `[mcp.servers.<name>]` stanza into an [`McpServerEntry`], failing closed on an
 /// ambiguous shape. The name is validated here too, because it prefixes every advertised tool
 /// name on the wire (`<server>__<tool>`) and must fit the API's tool-name alphabet.
 pub(super) fn validate_mcp_server(
     name: &str,
     server: RawMcpServer,
-) -> Result<McpTransport, ValidationError> {
+) -> Result<McpServerEntry, ValidationError> {
     // `__` is excluded, not just absent-by-convention: it is the namespace separator, and
     // every direction of the mapping (wire → display, dotted config → wire) resolves the
     // boundary as the *first* `__`. A server named `my__server` would make that first
@@ -293,20 +297,25 @@ pub(super) fn validate_mcp_server(
     if !name_ok {
         return Err(ValidationError::McpServerName(name.to_string()));
     }
-    match (server.command, server.url) {
-        (Some(command), None) => Ok(McpTransport::Stdio {
+    let optional = server.optional;
+    let transport = match (server.command, server.url) {
+        (Some(command), None) => McpTransport::Stdio {
             command,
             args: server.args,
             env: server.env,
-        }),
+        },
         (None, Some(url)) => {
             if !server.args.is_empty() || !server.env.is_empty() {
                 return Err(ValidationError::McpServerHttpExtras(name.to_string()));
             }
-            Ok(McpTransport::Http { url })
+            McpTransport::Http { url }
         }
-        _ => Err(ValidationError::McpServerTransport(name.to_string())),
-    }
+        _ => return Err(ValidationError::McpServerTransport(name.to_string())),
+    };
+    Ok(McpServerEntry {
+        transport,
+        optional,
+    })
 }
 
 /// Interpret one `[context]` `(key, value)` into a [`ContextEntry`], failing closed on an illegal

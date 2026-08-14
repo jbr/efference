@@ -8,6 +8,7 @@ pub(crate) async fn serve(
     spotter_model: &str,
     config: Option<PathBuf>,
     autonomous: bool,
+    reauth: Vec<String>,
     keep_scratch: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Daemon logging: RUST_LOG controls verbosity (default: efference at info, deps
@@ -156,6 +157,27 @@ pub(crate) async fn serve(
     // docs/context.md; orientation rides here as a config exec entry), the role's
     // brief, and the config note.
     let cwd = std::env::current_dir()?;
+
+    // Mount the config-declared connected providers (docs/tools.md) before the
+    // first projection, so the session's tools[] is fixed from turn one — and
+    // before the system prompt is built, because what did *not* mount is part
+    // of what the session must know. A server that answers `401` is authorized
+    // here, which is the one point in the boot that waits for a human
+    // (docs/mcp-auth.md).
+    let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))?;
+    // Credentials live in the base dir, not the session dir: an authorization
+    // belongs to the operator and the server, not to one session.
+    let store = efference::mcp::auth::store::FileStore::new(Path::new(BASE_DIR));
+    let unmounted = mcp_mount::mount_all(
+        &mut toolbox,
+        &loaded.role.mcp_servers,
+        &cwd,
+        &store,
+        &reauth,
+    )
+    .await?;
+    let unmounted_section = efference::mcp::unmounted_section(&unmounted);
+
     let role_section = loaded.role.preamble_section();
     // The [context] preamble builder (docs/context.md): resolve the operator's listed
     // files from cwd and fold the rendered block into the frozen prefix. Fail closed — configured
@@ -168,7 +190,11 @@ pub(crate) async fn serve(
         }
     };
     let context_block = resolved.render();
-    let system = efference::env::system_prompt(context_block.as_deref(), role_section.as_deref());
+    let system = efference::env::system_prompt(
+        context_block.as_deref(),
+        role_section.as_deref(),
+        unmounted_section.as_deref(),
+    );
     // Snapshot the rendered boot preamble into the log (docs/context.md): the
     // [context] block folds in file contents that drift on disk, so the preamble is no longer
     // reconstructable from config + current files — this one entry keeps the log the complete
@@ -198,17 +224,6 @@ pub(crate) async fn serve(
     // their session cwd seeded to where we're running (resolved once above for [context]).
     // The scratch dir rides in as bash's `$TMPDIR`; the daemon reads it back off the
     // toolbox for the expander and background spawns (one source of truth).
-    let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))?;
-    // Mount the config-declared connected providers (docs/tools.md) before the
-    // first projection, so the session's tools[] is fixed from turn one. A
-    // server that won't come up is skipped with a warning rather than failing
-    // the boot — the declared set is the operator's intent, not a hard
-    // dependency.
-    for (name, server) in &loaded.role.mcp_servers {
-        if let Err(e) = toolbox.mount_connected(name, server, &cwd).await {
-            eprintln!("[mcp: could not mount `{name}`: {e}]");
-        }
-    }
     if autonomous {
         eprintln!(
             "autonomous: no synchronous gate — spotter Watch/Gate redirects the model to its \
@@ -316,7 +331,10 @@ pub(crate) async fn spotter_check(
             // downgrade the check to a name with no brief.
             for (name, server) in &role.mcp_servers {
                 toolbox
-                    .mount_connected(name, server, &cwd)
+                    // No stored credentials and no dance: a spotter check must
+                    // never open a browser (docs/mcp-auth.md). A server needing
+                    // authorization fails here, pointing at `efference serve`.
+                    .mount_connected(name, &server.transport, &cwd, None)
                     .await
                     .map_err(|e| format!("could not mount `{name}`: {e}"))?;
             }

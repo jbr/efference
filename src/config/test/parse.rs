@@ -315,14 +315,40 @@ url = "https://mcp.example.com/mcp"
     let names: Vec<&str> = config.mcp_servers.keys().map(String::as_str).collect();
     assert_eq!(names, ["github", "sentry"]);
     assert!(matches!(
-        &config.mcp_servers["github"],
+        &config.mcp_servers["github"].transport,
         McpTransport::Stdio { command, args, env }
             if command == "gh-mcp-server" && args == &["--stdio"] && env["GITHUB_TOKEN"] == "t"
     ));
     assert!(matches!(
-        &config.mcp_servers["sentry"],
+        &config.mcp_servers["sentry"].transport,
         McpTransport::Http { url } if url == "https://mcp.example.com/mcp"
     ));
+    // Required is the default: a declared server that will not mount stops the boot.
+    assert!(config.mcp_servers.values().all(|entry| !entry.optional));
+}
+
+/// `optional = true` is the opt-out from the fatal default. The default is the
+/// strict one deliberately: an opt-*in* to strictness is one nobody remembers to
+/// write, so the safe behavior has to be what you get for free.
+#[test]
+fn a_server_can_opt_out_of_being_required() {
+    let config = parse_str(
+        r#"
+[mcp.servers.required_by_default]
+command = "a"
+
+[mcp.servers.explicitly_optional]
+command = "b"
+optional = true
+
+[mcp.servers.explicitly_required]
+url = "https://example.com/mcp"
+optional = false
+"#,
+    );
+    assert!(!config.mcp_servers["required_by_default"].optional);
+    assert!(config.mcp_servers["explicitly_optional"].optional);
+    assert!(!config.mcp_servers["explicitly_required"].optional);
 }
 
 /// The stanza's shape picks the transport, so it must commit to exactly one.

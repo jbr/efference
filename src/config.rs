@@ -131,11 +131,33 @@ pub struct Config {
     /// deterministic (docs/log-and-projection.md). Declaring a server here is the
     /// human's authority; an agent edit to this table is gated like any other
     /// config edit. TOML `[mcp.servers.<name>]` tables.
-    pub mcp_servers: BTreeMap<String, McpTransport>,
+    pub mcp_servers: BTreeMap<String, McpServerEntry>,
 }
 
-/// How to reach one declared MCP server ([`Config::mcp_servers`]). The shape of
-/// the stanza picks the transport: `command` (+ optional `args`/`env`) spawns a
+/// One `[mcp.servers.<name>]` stanza: how to reach the server, and whether the
+/// session may start without it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpServerEntry {
+    pub transport: McpTransport,
+    /// `optional = true` — start anyway if this server does not mount.
+    ///
+    /// Defaults to `false`, so a declared server that will not come up stops
+    /// the boot. Declaring a server is the operator's statement that the
+    /// session should have it (docs/tools.md); starting without it silently
+    /// produces a session that is missing a capability nobody knows is
+    /// missing, and an agent that answers "I can't do that" to a request the
+    /// config says it can. Boot is also when a human is present to fix it.
+    ///
+    /// The flag is deliberately one boolean rather than a taxonomy of failure
+    /// kinds: an uninstalled command, an unreachable host, a TLS problem, a
+    /// server that needs authorization, and one that spews non-JSON on stdout
+    /// are all "did not mount". Which of those it was belongs in the *message*,
+    /// not in the config surface.
+    pub optional: bool,
+}
+
+/// How to reach one declared MCP server ([`McpServerEntry`]). The shape of the
+/// stanza picks the transport: `command` (+ optional `args`/`env`) spawns a
 /// stdio subprocess; `url` connects over streamable HTTP. Exactly one of the two
 /// is required — [`validate`] rejects a stanza with both or neither.
 #[derive(Debug, Clone, PartialEq, Eq)]

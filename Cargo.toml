@@ -85,6 +85,22 @@ toml_edit = { version = "0.25.13", features = ["serde"] }
 # policy tables use. Already compiled in-tree via toml_edit; this just promotes it to direct.
 indexmap = { version = "2", features = ["serde"] }
 notify-debouncer-full = "0.7"
+# OAuth for connected HTTP providers (docs/mcp-auth.md). `FollowRedirects` is a
+# client handler: OAuth discovery chases `Location` across origins, and it drops
+# `Authorization`/`Cookie` on a cross-origin hop, which is exactly the leak the
+# spec's threat model is about. trillium-client does not follow redirects itself.
+trillium-redirect = { version = "0.3.0", features = ["client"] }
+# PKCE (RFC 7636 S256): a CSPRNG verifier, its SHA-256 digest, base64url-nopad
+# for both. efference is a *public* OAuth client — a shipped binary can hold no
+# secret — so PKCE is what stands between an intercepted authorization code and
+# a token, and these three are load-bearing rather than incidental.
+base64 = "0.23.1"
+sha2 = "0.11.0"
+rand = "0.10.2"
+# Opens the operator's browser for the MCP authorization step (docs/mcp-auth.md).
+# Only reached from `efference serve` with a tty; a headless boot prints the URL
+# instead, since there is no browser to hand a redirect back to.
+webbrowser = "1.2.4"
 
 [dev-dependencies]
 # Snapshot the TUI as plain-text character grids (DESIGN: "playwright for TUIs").

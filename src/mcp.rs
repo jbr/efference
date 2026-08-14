@@ -55,6 +55,7 @@ use crate::frontend::Interrupt;
 use crate::log::{RawResult, ToolCall};
 use crate::tools::anthropic_def;
 
+pub mod auth;
 mod http;
 mod stdio;
 
@@ -80,6 +81,49 @@ pub const NAMESPACE_SEPARATOR: &str = "__";
 /// through here — the dotted form is not a name anything can be found by.
 pub fn display_name(wire_name: &str) -> String {
     wire_name.replacen(NAMESPACE_SEPARATOR, ".", 1)
+}
+
+/// A declared server that did not mount, and why (docs/tools.md).
+///
+/// Only `optional = true` servers can reach here — a required one that fails
+/// stops the boot — but the session still has to account for it, in two
+/// directions. The operator is told at every launch, because a config entry
+/// that quietly does nothing is a standing papercut. The model is told in the
+/// preamble, because otherwise it reads its tool table as the whole truth and
+/// answers "I can't do that" to a request the operator's config says it can.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unmounted {
+    pub name: String,
+    /// Why it did not mount, rendered for a reader: an uninstalled command, an
+    /// unreachable host, a TLS failure, a server awaiting authorization, a
+    /// server writing non-JSON to stdout. The config collapses all of these to
+    /// one flag; the distinction lives here, where it can be acted on.
+    pub reason: String,
+}
+
+/// The preamble section naming what the operator declared and this session does
+/// not have. `None` when everything mounted — a heading explaining that nothing
+/// is missing is noise in the cached prefix.
+///
+/// Frozen into the system prompt at boot like every other preamble section, so
+/// it stays byte-stable for the session (docs/log-and-projection.md).
+pub fn unmounted_section(unmounted: &[Unmounted]) -> Option<String> {
+    if unmounted.is_empty() {
+        return None;
+    }
+    let mut section = String::from(
+        "# Declared but unavailable\n\nThese MCP servers are declared in this session's \
+         configuration but did not connect, so their tools are absent from your tool list. \
+         If asked for something one of them provides, say that it is configured but \
+         unavailable and give the reason — do not answer as though the capability does not \
+         exist.\n",
+    );
+    for Unmounted { name, reason } in unmounted {
+        section.push_str(&format!("\n- `{name}` — {reason}"));
+    }
+    section
+        .push_str("\n\nThe operator was told the same thing at startup; fixing it is their call.");
+    Some(section)
 }
 
 /// How long a server gets to complete negotiation + discovery before the mount
@@ -109,12 +153,22 @@ pub struct ConnectedProvider {
 impl ConnectedProvider {
     /// Connect to a declared server, negotiate, and snapshot its tool table.
     /// `cwd` is the working directory a stdio server is spawned in.
-    pub async fn mount(name: &str, config: &McpTransport, cwd: &Path) -> anyhow::Result<Self> {
+    pub async fn mount(
+        name: &str,
+        config: &McpTransport,
+        cwd: &Path,
+        authorization: Option<&str>,
+    ) -> anyhow::Result<Self> {
         let transport = match config {
             McpTransport::Stdio { command, args, env } => {
+                // Stdio servers take credentials from the environment by the
+                // spec's own direction, so an `Authorization` header has no
+                // meaning here even if one was somehow stored.
                 Transport::Stdio(stdio::StdioTransport::spawn(command, args, env, cwd)?)
             }
-            McpTransport::Http { url } => Transport::Http(http::HttpTransport::new(url)?),
+            McpTransport::Http { url } => {
+                Transport::Http(http::HttpTransport::new(url)?.with_authorization(authorization))
+            }
         };
         Self::mount_transport(name, transport).await
     }

@@ -8,12 +8,15 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Connected HTTP providers authorize over the MCP OAuth flow: a `401` at boot runs discovery (RFC 9728 protected-resource and RFC 8414/OIDC authorization-server metadata, both probe ladders), obtains a `client_id` by Client ID Metadata Document or dynamic registration, and completes an authorization-code + PKCE dance through a fixed-port loopback redirect, with `iss`/`state` validation and RFC 8707 resource binding. Tokens persist between runs; `--reauth <server>` re-runs it.
+- A declared MCP server that does not mount now fails `efference serve` instead of being skipped with a warning; `optional = true` on the stanza opts out, and an optional server that fails is reported both to the operator at every launch and to the model as a preamble section naming it and the reason.
 - `efference spotter --tool <name> --input <json>` judges a structured move, mounting the servers `--config` declares so the verdict is made against the real tool definition; `--show-move` prints the exact block sent and `--no-brief` withholds the brief for an A/B.
 - The spotter judging a structured call is shown a brief for its tool first — the server that advertised it, its description, its input schema, and the server's self-reported behavior hints (`readOnlyHint` and friends, labelled as claims) — instead of a bare name and a JSON blob.
 - A namespaced tool name reads dotted on every human-facing surface — transcript, sidebar policy labels, and the config file the write-back produces (`ferritin.get` for the wire's `ferritin__get`); `tools` grants accept either spelling and resolve to the wire name at validate.
 - Connected providers speak the stateless `2026-07-28` revision: mounting probes `server/discover` and falls back to the `initialize` handshake, and every request carries the client `_meta` that revision requires.
 
 ### Fixed
+- Streamable-HTTP requests carry the `Mcp-Method` and `Mcp-Name` headers `2026-07-28` requires, with the spec's base64 sentinel encoding for values that cannot ride raw. Their absence was invisible against mcplease-backed servers, which do not validate them, and rejected by Sentry with `HeaderMismatch`.
 - An MCP server name may no longer contain `__`; the separator inside a name would move the namespace boundary that the wire→display and dotted-config→wire mappings both resolve as the first occurrence.
 - Tracks the published mcplease 0.3 API (`Dispatch::call` with a `RequestContext`); embedded tool results now fold through the same `CallToolResult` renderer as connected ones, and an interim (`input_required`) result from a connected server lands as a named error instead of an empty success.
 - Composer movement, deletion, visual-row wrapping, and caret measurement use extended grapheme clusters, so combining characters and emoji sequences are not split by editing or layout.

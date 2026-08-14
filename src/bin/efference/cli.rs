@@ -209,6 +209,12 @@ pub(crate) enum Command {
         /// (docs/permissions.md).
         #[arg(long)]
         autonomous: bool,
+        /// Re-run the MCP authorization dance for this server, discarding any stored
+        /// credentials for it first (docs/mcp-auth.md). The recovery path when a grant
+        /// has been revoked or the server has changed authorization servers — otherwise
+        /// a stored token is reused until it fails. Repeatable.
+        #[arg(long, value_name = "SERVER")]
+        reauth: Vec<String>,
         /// Keep the per-session `$TMPDIR` scratch directory on exit instead of
         /// deleting it — an artifact for post-mortem analysis (docs/tools.md).
         #[arg(long)]

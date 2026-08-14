@@ -16,21 +16,37 @@
 //!
 //! Session and version state ride as headers once learned: `Mcp-Session-Id`
 //! (issued by the server, echoed on every later request) and
-//! `MCP-Protocol-Version` (the negotiated revision, per `2025-06-18`+).
-//! A `401` is surfaced as "authorization required" — the OAuth flow is a
-//! planned unit, not yet built.
+//! `MCP-Protocol-Version` (the negotiated revision, per `2025-06-18`+). A `401`
+//! becomes `crate::mcp::auth::AuthorizationRequired`, which the boot phase acts
+//! on (docs/mcp-auth.md).
+//!
+//! `2026-07-28` adds two *required* headers derived from the body —
+//! `Mcp-Method` on every request and `Mcp-Name` on the methods that address a
+//! specific tool, prompt, or resource (SEP-2243). They are derived here, in the
+//! one place that already holds the message, because the whole point of them is
+//! that they agree with the body; a server that enforces them rejects a
+//! disagreement with `HeaderMismatch`.
 
 use anyhow::Context;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use futures_lite::StreamExt;
 use mcplease::types::JsonRpcMessage;
+use serde_json::Value;
 use trillium_client::sse::{EventStream, SseErrorKind};
-use trillium_client::{Client as HttpClient, Conn};
+use trillium_client::{Client as HttpClient, Conn, HeaderValue};
+
+use crate::www_authenticate::Challenges;
 use trillium_rustls::RustlsConfig;
 use trillium_tokio::ClientConfig;
 
 pub struct HttpTransport {
     client: HttpClient,
     url: String,
+    /// The `Authorization` header value to send on every request, once the
+    /// server has been authorized (docs/mcp-auth.md). The spec requires it on
+    /// *every* request, not just the first.
+    authorization: Option<String>,
     /// Issued by the server (initialize response header) and echoed back on
     /// every subsequent request until the session ends.
     session_id: Option<String>,
@@ -44,17 +60,34 @@ impl HttpTransport {
         Ok(Self {
             client: HttpClient::new(RustlsConfig::<ClientConfig>::default()),
             url: url.to_string(),
+            authorization: None,
             session_id: None,
             protocol_version: None,
         })
+    }
+
+    /// Send this `Authorization` header on every request.
+    pub fn with_authorization(mut self, authorization: Option<&str>) -> Self {
+        self.authorization = authorization.map(String::from);
+        self
     }
 
     pub fn set_protocol_version(&mut self, version: &str) {
         self.protocol_version = Some(version.to_string());
     }
 
-    /// An unexecuted POST carrying the transport's standing headers.
-    fn base_conn(&self) -> Conn {
+    /// An unexecuted POST carrying the transport's standing headers, plus the
+    /// per-message standard headers `2026-07-28` requires.
+    fn base_conn(&self, message: &JsonRpcMessage) -> Conn {
+        let mut conn = self.standing_conn();
+        for (name, value) in standard_headers(message) {
+            conn = conn.with_request_header(name, value);
+        }
+        conn
+    }
+
+    /// The headers that do not depend on the message being sent.
+    fn standing_conn(&self) -> Conn {
         let mut conn = self
             .client
             .post(self.url.as_str())
@@ -65,6 +98,9 @@ impl HttpTransport {
         }
         if let Some(version) = &self.protocol_version {
             conn = conn.with_request_header("mcp-protocol-version", version.clone());
+        }
+        if let Some(authorization) = &self.authorization {
+            conn = conn.with_request_header("authorization", authorization.clone());
         }
         conn
     }
@@ -80,7 +116,7 @@ impl HttpTransport {
     /// server sends in response to it.
     pub async fn open(&mut self, message: &JsonRpcMessage) -> anyhow::Result<HttpExchange> {
         let body = serde_json::to_string(message)?;
-        match self.base_conn().with_body(body).into_sse().await {
+        match self.base_conn(message).with_body(body).into_sse().await {
             Ok(events) => {
                 let session_id = events
                     .conn()
@@ -107,10 +143,7 @@ impl HttpTransport {
                     let mut conn: Conn = e.into();
                     let body = conn.response_body().read_string().await.unwrap_or_default();
                     if u16::from(status) == 401 {
-                        anyhow::bail!(
-                            "server requires authorization (401); the OAuth flow is not yet \
-                             implemented"
-                        );
+                        return Err(authorization_required(&conn).into());
                     }
                     anyhow::bail!("server returned {status}: {body}")
                 }
@@ -124,7 +157,7 @@ impl HttpTransport {
     pub async fn notify(&mut self, message: &JsonRpcMessage) -> anyhow::Result<()> {
         let body = serde_json::to_string(message)?;
         let conn = self
-            .base_conn()
+            .base_conn(message)
             .with_body(body)
             .await
             .with_context(|| format!("POST {}", self.url))?;
@@ -134,6 +167,95 @@ impl HttpTransport {
             anyhow::bail!("server returned {status} to a notification");
         }
         Ok(())
+    }
+}
+
+/// The standard request headers `2026-07-28` requires on every streamable-HTTP
+/// POST (SEP-2243). `Mcp-Method` mirrors the body's `method` on all requests;
+/// `Mcp-Name` mirrors `params.name` or `params.uri` on the three methods that
+/// address a specific thing.
+///
+/// They are **required for compliance**, and a server that enforces them
+/// rejects the request with a `HeaderMismatch` naming the disagreement rather
+/// than failing obscurely — which is how their absence was found. Servers
+/// differ on whether they enforce: ferritin does not, Sentry does.
+///
+/// Deriving them here rather than at the call sites is the point: the headers
+/// have to agree with the body, so the one place that already has the body is
+/// the only place they can be derived without drifting.
+pub(super) fn standard_headers(message: &JsonRpcMessage) -> Vec<(&'static str, String)> {
+    let (method, params) = match message {
+        JsonRpcMessage::Request(request) => (&request.method, &request.params),
+        JsonRpcMessage::Notification(notification) => (&notification.method, &notification.params),
+        // A response has no `method`; these headers describe a request.
+        JsonRpcMessage::Response(_) => return Vec::new(),
+    };
+    let mut headers = vec![("mcp-method", encode_header_value(method))];
+    if let Some(name) = mcp_name(method, params.as_ref()) {
+        headers.push(("mcp-name", encode_header_value(&name)));
+    }
+    headers
+}
+
+/// `Mcp-Name`'s source field: `params.name` for a tool or prompt, `params.uri`
+/// for a resource. No other method carries it.
+pub(super) fn mcp_name(method: &str, params: Option<&Value>) -> Option<String> {
+    let field = match method {
+        "tools/call" | "prompts/get" => "name",
+        "resources/read" => "uri",
+        _ => return None,
+    };
+    Some(params?.get(field)?.as_str()?.to_string())
+}
+
+const SENTINEL_PREFIX: &str = "=?base64?";
+const SENTINEL_SUFFIX: &str = "?=";
+
+/// A header value per the spec's Value Encoding rules: as-is when it is safe to
+/// send raw, and `=?base64?<standard base64 of the UTF-8 bytes>?=` when it is
+/// not.
+///
+/// A value that *looks* encoded but is not gets encoded too, so the server
+/// cannot mistake a literal `=?base64?…?=` for a marker — the one rule here
+/// that exists purely to remove an ambiguity rather than to carry bytes safely.
+pub(super) fn encode_header_value(value: &str) -> String {
+    if is_header_safe(value) {
+        return value.to_string();
+    }
+    format!(
+        "{SENTINEL_PREFIX}{}{SENTINEL_SUFFIX}",
+        BASE64.encode(value.as_bytes())
+    )
+}
+
+/// Whether a value can ride in a header raw: visible ASCII, space, or tab
+/// (RFC 9110), no leading or trailing whitespace to be stripped in transit, and
+/// not something a server would read as an encoding marker.
+fn is_header_safe(value: &str) -> bool {
+    let looks_encoded = value.starts_with(SENTINEL_PREFIX) && value.ends_with(SENTINEL_SUFFIX);
+    !looks_encoded
+        && value
+            .bytes()
+            .all(|b| (0x20..=0x7e).contains(&b) || b == 0x09)
+        && !value.starts_with([' ', '\t'])
+        && !value.ends_with([' ', '\t'])
+}
+
+/// Read the `WWW-Authenticate` challenge off a `401` into the typed error the
+/// boot phase acts on (docs/mcp-auth.md).
+///
+/// A header that appears more than once is one list (RFC 9110 §5.3), so every
+/// value is parsed together rather than only the first. A server that sends no
+/// challenge, or an unparseable one, still yields the error — discovery has
+/// well-known-URI fallbacks for everything the challenge would have told us.
+fn authorization_required(conn: &Conn) -> crate::mcp::auth::AuthorizationRequired {
+    let values = conn.response_headers().get_values("www-authenticate");
+    let challenges = match values {
+        Some(values) => Challenges::parse_all(values.iter().filter_map(HeaderValue::as_str)),
+        None => Challenges::default(),
+    };
+    crate::mcp::auth::AuthorizationRequired {
+        challenge: challenges.scheme("Bearer").cloned(),
     }
 }
 

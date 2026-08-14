@@ -40,6 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             spotter_model,
             config,
             autonomous,
+            reauth,
             keep_scratch,
         } => {
             // `serve` owns the session dir: `--name` or a generated timestamp id → `.efference/<id>/`,
@@ -51,6 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 &spotter_model,
                 config,
                 autonomous,
+                reauth,
                 keep_scratch,
             )
             .await
@@ -148,6 +150,7 @@ use verbs::*;
 
 mod attach;
 mod cli;
+mod mcp_mount;
 mod peek_replay;
 mod serve;
 mod spot_report;

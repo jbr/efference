@@ -118,6 +118,58 @@ gated like any other config edit, and *calling* a connected tool rides the same
 spotter/gate cascade as every tool. A connected server's results are untrusted
 content — same trust class as attachments; human-in-the-loop is the mitigation.
 
+### The `2026-07-28` standard request headers
+
+A streamable-HTTP POST carries two headers derived from its own body:
+`Mcp-Method` (the JSON-RPC `method`, on every request) and `Mcp-Name`
+(`params.name` for `tools/call`/`prompts/get`, `params.uri` for
+`resources/read`). Both are required for compliance; a value that cannot ride
+raw in a header — non-ASCII, control characters, leading or trailing
+whitespace, or one that would be mistaken for an encoding marker — is carried
+as `=?base64?<standard base64 of the UTF-8 bytes>?=`.
+
+They are derived in `src/mcp/http.rs`, at the one point that already holds the
+message, because what makes them useful is that they *agree* with the body: a
+server that enforces them answers a disagreement with a `HeaderMismatch` naming
+which field mismatched.
+
+Enforcement varies, and that asymmetry is worth knowing: ferritin accepted
+requests without them for as long as efference sent none, because ferritin is
+built on the same mcplease whose server half does not validate them. Sentry
+rejects them. A server built from the same library as the client will not catch
+this class of bug.
+
+### A declared server that does not mount stops the boot
+
+`optional = true` on a stanza opts out; the default is that a mount failure
+fails `efference serve`, naming the server and the reason. Declaring a server is
+the operator's statement that this session should have it, so starting without
+it produces a session missing a capability nobody knows is missing — and an
+agent that answers "I can't do that" to a request the config says it can.
+Boot is also the moment a human is present to fix it.
+
+The flag is one boolean rather than a taxonomy of failure kinds: an uninstalled
+command, an unreachable host, a TLS failure, a server awaiting authorization,
+and a server writing non-JSON to its stdout all collapse to "did not mount".
+Which one it was belongs in the message, not in the config surface. The default
+is the strict setting deliberately — an opt-*in* to strictness is one nobody
+remembers to write, so the safe behavior is what you get for free.
+
+An optional server that fails is reported in two directions, because both
+parties need it and neither can infer it:
+
+- **The operator**, on stderr at every launch — not only the launch where it
+  first broke. A config entry that quietly does nothing is the papercut this
+  exists to prevent.
+- **The model**, as the last section of the frozen system prompt
+  (`mcp::unmounted_section`, spliced by `env::system_prompt`). Without it the
+  model reads its tool table as the whole truth. With it, "that server is
+  configured but did not connect: `<reason>`" replaces "I can't do that".
+
+This is why mounting happens *before* the system prompt is built in
+`src/bin/efference/serve.rs`: what failed to mount is part of what the session
+must know, and the prompt is frozen once at boot (docs/log-and-projection.md).
+
 ### The client protocol, and what a transport is left holding
 
 Wire protocol and serialization types both live in `mcplease`, taken with the

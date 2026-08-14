@@ -305,8 +305,10 @@ impl Toolbox {
         name: &str,
         config: &crate::config::McpTransport,
         cwd: &std::path::Path,
+        authorization: Option<&str>,
     ) -> anyhow::Result<()> {
-        let provider = crate::mcp::ConnectedProvider::mount(name, config, cwd).await?;
+        let provider =
+            crate::mcp::ConnectedProvider::mount(name, config, cwd, authorization).await?;
         self.providers.push(Provider::Connected(Box::new(provider)));
         Ok(())
     }

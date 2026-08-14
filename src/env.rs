@@ -37,7 +37,11 @@ const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 /// designed to spare the agent. The permission perimeter stays invisible until a move actually
 /// strays, at which point the gate-rejection message names the config as the request channel
 /// ([`crate::agent`], docs/permissions.md).
-pub fn system_prompt(context_block: Option<&str>, role_section: Option<&str>) -> String {
+pub fn system_prompt(
+    context_block: Option<&str>,
+    role_section: Option<&str>,
+    unmounted: Option<&str>,
+) -> String {
     // `include_str!` keeps the file's trailing newline; trim it so the join is clean.
     let mut prompt = PREAMBLE.trim_end().to_string();
     // Knowledge (what the session knows) sits before the perimeter (what it may do)
@@ -49,6 +53,14 @@ pub fn system_prompt(context_block: Option<&str>, role_section: Option<&str>) ->
     if let Some(section) = role_section {
         prompt.push_str("\n\n");
         prompt.push_str(section);
+    }
+    // Last, next to the perimeter it qualifies: what the operator declared that
+    // this session does *not* have (docs/tools.md). Without it, the model reads
+    // its tool table as the whole truth and tells the operator a configured
+    // capability does not exist.
+    if let Some(unmounted) = unmounted {
+        prompt.push_str("\n\n");
+        prompt.push_str(unmounted);
     }
     prompt
 }
