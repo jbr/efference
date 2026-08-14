@@ -20,6 +20,7 @@ behind a change, see [`journal/`](journal/).
 - `efference gallery --stream` plays a scripted live tool call over the offline gallery (`--chunk`/`--interval` set the pace), so the render behaviours that only exist at animation rate can be driven without a daemon.
 
 ### Fixed
+- Wrapping a long line is linear in its length rather than quadratic: the wrap policy measured the whole remaining text once per row emitted, purely to test whether it fit. One 16k-column line (a tool call's JSON input mid-stream, a minified file) cost ~300ms per wrap in release, repeated every frame while it streamed.
 - The live tail no longer renders a blank row between every line: an entry separates its child *blocks* by a blank row, and streaming tool output, thinking, an arriving tool input, and a pending user turn each modelled one source line as one block.
 - Streamable-HTTP requests carry the `Mcp-Method` and `Mcp-Name` headers `2026-07-28` requires, with the spec's base64 sentinel encoding for values that cannot ride raw. Their absence was invisible against mcplease-backed servers, which do not validate them, and rejected by Sentry with `HeaderMismatch`.
 - An MCP server name may no longer contain `__`; the separator inside a name would move the namespace boundary that the wire→display and dotted-config→wire mappings both resolve as the first occurrence.

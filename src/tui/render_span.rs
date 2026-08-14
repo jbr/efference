@@ -82,7 +82,10 @@ impl<'a> InteractiveState<'a> {
                     continue;
                 }
 
-                if display_width(remaining) <= available_width as usize {
+                // Bounded (see `width_upto`): this loop runs once per row, so
+                // measuring the whole remainder each time makes drawing one long
+                // line quadratic in its length — the same defect `wrap_points` had.
+                if width_upto(remaining, available_width as usize) <= available_width as usize {
                     // Fits on current line
                     self.write_text(
                         buf,
@@ -170,8 +173,12 @@ impl<'a> InteractiveState<'a> {
                             }
                         } else {
                             // No whitespace at all in remaining text
-                            // If it fits, write it; otherwise wrap first
-                            if display_width(remaining) <= available_width as usize {
+                            // If it fits, write it; otherwise wrap first. Bounded
+                            // (see `width_upto`): this is the no-whitespace path, so
+                            // an unbroken run reaches it once per row it occupies.
+                            if width_upto(remaining, available_width as usize)
+                                <= available_width as usize
+                            {
                                 self.write_text(
                                     buf,
                                     self.layout.pos.y,
@@ -255,6 +262,34 @@ pub(super) fn display_width(text: &str) -> usize {
         .sum()
 }
 
+/// [`display_width`], measured no further than `cap` columns: the exact width when
+/// it is at most `cap`, and `cap + 1` (meaning "wider than `cap`") as soon as it is
+/// not.
+///
+/// Every use of a width in the wrap policy is a *comparison* against something no
+/// larger than the row width, so measuring past that point is work whose result is
+/// discarded. Measuring it anyway made wrapping quadratic in the length of a line:
+/// [`wrap_points`] tests the remaining text once per row it emits, so one 16k-column
+/// line — a tool call's JSON input, a minified file, a base64 blob — cost
+/// hundreds of milliseconds per frame, and the frames repeat while it streams.
+fn width_upto(text: &str, cap: usize) -> usize {
+    use unicode_segmentation::UnicodeSegmentation;
+    use unicode_width::UnicodeWidthStr;
+
+    let mut total = 0;
+    for grapheme in text.graphemes(true) {
+        total += if grapheme == "\t" {
+            4
+        } else {
+            grapheme.width()
+        };
+        if total > cap {
+            return cap + 1;
+        }
+    }
+    total
+}
+
 /// Block-wrap `text` into visual rows of at most `width` display columns,
 /// returning the **byte offset at which each visual row begins** (the first row
 /// starts at 0 implicitly, so the result holds one entry per *continuation* row;
@@ -275,7 +310,9 @@ pub(super) fn wrap_points(text: &str, width: usize) -> Vec<usize> {
     let mut base = 0;
     while base < text.len() {
         let remaining = &text[base..];
-        if display_width(remaining) <= width {
+        // Bounded: this only ever asks "does the rest fit on one row?", so it must
+        // not measure a rest that is many rows long (see `width_upto`).
+        if width_upto(remaining, width) <= width {
             break;
         }
         // Where to cut, as a byte offset within `remaining`.
@@ -374,7 +411,10 @@ pub(super) fn find_wrap_position(text: &str, max_width: usize) -> Option<usize> 
     {
         // Avoid breaking if it would leave a very short word (< 3 display cols) on next line.
         // This prevents orphans like "a" or "is" at the start of a line.
-        let remaining_width = display_width(&text[pos..]);
+        //
+        // Bounded at the row width: both tests below compare against something no
+        // larger than that, so the exact width of a long tail is never wanted.
+        let remaining_width = width_upto(&text[pos..], max_width.max(4));
         if pos > 0 && remaining_width > 3 {
             return Some(pos);
         }
