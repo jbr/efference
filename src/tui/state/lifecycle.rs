@@ -36,6 +36,7 @@ impl<'a> InteractiveState<'a> {
                 scrollbar_dragging: false,
                 keyboard_cursor: KeyboardCursor::VirtualTop,
                 stuck_to_bottom: true,
+                last_document_height: 0,
                 input_height: 1,
                 gate_height: 0,
                 sidebar_area: None,

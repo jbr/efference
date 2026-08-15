@@ -144,5 +144,8 @@ impl<'a> InteractiveState<'a> {
             render_width: self.layout.area.width,
             document_height: self.layout.pos.y,
         });
+        // Survives the cache's invalidation, so a scroll arriving between a
+        // re-projection and the next paint still has a height to reason against.
+        self.viewport.last_document_height = self.layout.pos.y;
     }
 }

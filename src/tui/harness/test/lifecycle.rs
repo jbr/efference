@@ -160,3 +160,70 @@ fn a_streaming_write_shows_the_file_it_is_writing() {
     play.pin_to_bottom();
     play.snapshot("streaming_write_call");
 }
+
+/// **Scrolling up during a stream stays where the operator put it.**
+///
+/// A re-projection drops the layout cache, and `ui_loop` re-projects before it
+/// drains an input burst — so a scroll event arriving mid-stream sees an
+/// invalidated layout. When `max_scroll` answered 0 there, `offset >= max_scroll`
+/// read as "at the bottom", which re-armed stream-following: scrolling down a notch
+/// from many screens up snapped straight to the end, losing the place being read.
+#[test]
+fn scrolling_down_mid_stream_does_not_snap_to_the_end() {
+    let mut play = Screenplay::new(80, 20);
+    play.user("write it");
+    play.event(TuiEvent::ToolCallStart {
+        name: "write".into(),
+    });
+    play.event(TuiEvent::ToolCallInput {
+        fragment: r#"{"path":"a.rs","contents":""#.into(),
+    });
+    for _ in 0..40 {
+        play.event(TuiEvent::ToolCallInput {
+            fragment: r#"    let value = compute(state);\n"#.into(),
+        });
+    }
+    play.pin_to_bottom();
+    let _ = play.draw();
+
+    // Scroll up a little: stream-following detaches and a place is being read.
+    play.state.viewport.stuck_to_bottom = false;
+    let reading_at = play.state.max_scroll() - 3;
+    play.state.set_scroll_offset(reading_at);
+    let _ = play.draw();
+
+    // Many more screens arrive. The event loop re-projects before handling input,
+    // which is what leaves the layout cache invalid at the moment a scroll lands.
+    for _ in 0..200 {
+        play.event(TuiEvent::ToolCallInput {
+            fragment: r#"    let value = compute(state);\n"#.into(),
+        });
+    }
+    play.state.flush_reproject();
+    assert!(
+        play.state.viewport.cached_layout.is_none(),
+        "the scenario requires the layout to be invalid when the scroll arrives"
+    );
+
+    // One notch down, exactly as the mouse handler does it.
+    play.state
+        .set_scroll_offset(play.state.viewport.scroll_offset.saturating_add(1));
+    play.state.viewport.stuck_to_bottom =
+        play.state.viewport.scroll_offset >= play.state.max_scroll();
+
+    assert!(
+        !play.state.viewport.stuck_to_bottom,
+        "one notch down from many screens up re-armed stream-following"
+    );
+    assert_eq!(
+        play.state.viewport.scroll_offset,
+        reading_at + 1,
+        "the viewport moved by a notch, not to the end"
+    );
+    let _ = play.draw();
+    assert_eq!(
+        play.state.viewport.scroll_offset,
+        reading_at + 1,
+        "and the next frame left it there"
+    );
+}

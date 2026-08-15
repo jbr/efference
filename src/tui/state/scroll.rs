@@ -15,16 +15,19 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// The maximum scroll offset given the cached layout (0 if unknown).
+    /// The maximum scroll offset, from the cached layout when it is valid and from
+    /// the last completed walk's height when a re-projection has dropped it
+    /// (docs/tui.md — [`last_document_height`](super::ViewportState::last_document_height)).
+    ///
+    /// Never 0-when-unknown: callers ask this to decide whether the operator is at
+    /// the bottom, and answering 0 says "yes" to every one of them.
     pub(in crate::tui) fn max_scroll(&self) -> u16 {
         self.viewport
             .cached_layout
-            .map(|cache| {
-                cache
-                    .document_height
-                    .saturating_sub(self.viewport.last_viewport_height)
+            .map_or(self.viewport.last_document_height, |cache| {
+                cache.document_height
             })
-            .unwrap_or(0)
+            .saturating_sub(self.viewport.last_viewport_height)
     }
 
     /// Pin the viewport to the bottom (used while streaming, when stuck_to_bottom).

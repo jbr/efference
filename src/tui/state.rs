@@ -224,6 +224,18 @@ pub(super) struct ViewportState {
     pub cursor_pos: Option<Position>,
     pub clicked_position: Option<Position>,
     pub cached_layout: Option<DocumentLayoutCache>,
+    /// The document height as of the last completed walk, kept **after**
+    /// [`cached_layout`](Self::cached_layout) is invalidated.
+    ///
+    /// A re-projection drops the layout cache, so between a streamed fragment and
+    /// the next paint the current height is genuinely unknown — and during a stream
+    /// that is most of the time. `max_scroll` answering "0" there made every scroll
+    /// event evaluate `offset >= max_scroll` as true, i.e. "the user is at the
+    /// bottom", which silently re-armed stream-following and snapped the viewport
+    /// down from wherever they were reading. The previous frame's height is the last
+    /// thing actually measured, and it errs the safe way: content only ever arrives
+    /// *below*, so it under-estimates the bottom rather than claiming to be at it.
+    pub last_document_height: u16,
     /// Last known viewport height for scroll clamping
     pub last_viewport_height: u16,
     /// Scrollbar hover/drag state
