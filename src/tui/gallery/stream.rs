@@ -10,7 +10,7 @@
 //! Fragment size and interval are knobs because the interesting cases sit at both
 //! ends: small fragments at the frame interval are what a real stream looks like,
 //! and large ones arriving faster than the 30 ms paint tick are what provokes the
-//! per-frame costs (backlog/tui-streaming-lifecycle.md).
+//! per-frame costs (docs/tui.md).
 
 #[cfg(test)]
 mod test;
