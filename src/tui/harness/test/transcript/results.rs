@@ -154,12 +154,11 @@ fn transcript_distilled_result() {
     play.snapshot("transcript_distilled_result");
 }
 
-/// A tool with its own representation renders the **full** output through it, even
-/// when triage kept only part — a subset of a diff's lines is a mangled diff, not a
-/// smaller one. Where the operator is therefore seeing more than the agent did,
-/// that gap is stated rather than left to be inferred (docs/tui.md).
+/// A distilled result shows the **triaged** lines, for every tool — the default
+/// view is the agent's view (docs/tui.md). Triage kept only the prose line here, so
+/// the diff section is gone and what survived renders numbered.
 #[test]
-fn a_partial_distillate_of_an_edit_still_renders_whole() {
+fn a_partial_distillate_of_an_edit_shows_the_triaged_lines() {
     let mut play = Screenplay::new(80, 24);
     play.user("Add the line.");
     play.assistant(
@@ -189,16 +188,64 @@ fn a_partial_distillate_of_an_edit_still_renders_whole() {
     let frame = play.render();
     play.snapshot("transcript_partial_distillate_of_an_edit");
     assert!(
-        frame.contains("+- `read` tool line-range support"),
-        "the diff renders whole, not clipped to the kept range:\n{frame}"
+        !frame.contains("+- `read` tool line-range support"),
+        "the dropped diff lines are not shown — the agent doesn't have them:\n{frame}"
+    );
+    assert!(
+        frame.contains("kept 1 of 7 lines"),
+        "the header says how much of the output survived:\n{frame}"
     );
     assert!(
         frame.contains("inserted the read line-range entry"),
         "the distiller's note still shows:\n{frame}"
     );
+}
+
+/// A partly-triaged edit whose *diff lines* survived keeps the colored diff: the
+/// `===DIFF===` parse runs over the whole result and the kept-line filter applies to
+/// the rows it produced, so the tool's rendering survives triage instead of falling
+/// back to plain text (docs/tui.md).
+#[test]
+fn a_partly_kept_diff_is_still_a_diff() {
+    let mut play = Screenplay::new(80, 24);
+    play.user("Add the line.");
+    play.assistant(
+        "Editing.",
+        vec![tool_call(
+            "edit",
+            "toolu_e4",
+            json!({ "file_path": "CHANGELOG.md", "operation": "insert_after" }),
+        )],
+    );
+    play.tool_result(
+        "toolu_e4",
+        "Applied insert after — the file has been updated.\n\
+         \n\
+         ===DIFF===\n\
+         @@ -12,3 +12,4 @@\n\
+         \x20- In-process MCP tools (fs-mcp, semantic-edit-mcp).\n\
+         +- `read` tool line-range support in `fs-mcp`.\n\
+         \x20- Interactive TUI (`efference tui`).",
+        false,
+        WireState::Distilled {
+            keep: Keep::Ranges(vec![(4, 6)]),
+            note: None,
+        },
+    );
+
+    let frame = play.render();
+    play.snapshot("transcript_partly_kept_diff");
     assert!(
-        frame.contains("the agent's copy kept 1 of 7 lines"),
-        "…and so does the fact that the agent saw less than this:\n{frame}"
+        frame.contains("+- `read` tool line-range support"),
+        "the kept diff lines render as diff lines:\n{frame}"
+    );
+    assert!(
+        !frame.contains("Interactive TUI"),
+        "…and the dropped one doesn't:\n{frame}"
+    );
+    assert!(
+        !frame.contains("Applied insert after"),
+        "…nor does the dropped prose above the marker:\n{frame}"
     );
 }
 
@@ -382,6 +429,53 @@ fn transcript_file_tools() {
         WireState::Raw,
     );
     play.snapshot("transcript_file_tools");
+}
+
+/// A distilled `read` keeps its per-tool rendering too — sentinel framing dropped,
+/// highlighted by extension — over just the kept lines, in a gutter numbered by the
+/// *result's* line numbers (the coordinate system the verdict was expressed in, so
+/// the operator's view and the agent's name the same lines).
+#[test]
+fn a_partly_kept_read_keeps_its_highlighting() {
+    let mut play = Screenplay::new(80, 24);
+    play.user("Open state.rs.");
+    play.assistant(
+        "Reading the file:",
+        vec![tool_call(
+            "read",
+            "toolu_r4",
+            json!({ "paths": ["src/tui/state.rs"] }),
+        )],
+    );
+    play.tool_result(
+        "toolu_r4",
+        "==MK7 BEGIN /Users/jbr/code/efference/src/tui/state.rs, LENGTH: 96 MK7==\n\
+             pub struct InteractiveState<'a> {\n\
+             \x20   pub document: DocumentState<'a>,\n\
+             \x20   pub viewport: ViewportState,\n\
+             }\n\
+             ==MK7 END /Users/jbr/code/efference/src/tui/state.rs MK7==",
+        false,
+        WireState::Distilled {
+            keep: Keep::Ranges(vec![(2, 3)]),
+            note: Some("the struct head and its first field".into()),
+        },
+    );
+
+    let frame = play.render();
+    play.snapshot("transcript_partly_kept_read");
+    assert!(
+        frame.contains("pub struct InteractiveState"),
+        "the kept lines are on screen:\n{frame}"
+    );
+    assert!(
+        !frame.contains("pub viewport"),
+        "…and the dropped ones are not:\n{frame}"
+    );
+    assert!(
+        !frame.contains("MK7"),
+        "the sentinel framing is still consumed, not printed:\n{frame}"
+    );
 }
 
 /// A failing tool call — the error result path (struck-through label, the

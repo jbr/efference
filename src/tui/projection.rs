@@ -349,20 +349,18 @@ fn result_entry(
     // because text is all it has, and a terminal has a gutter (docs/tui.md). Both
     // views resolve the verdict through `project::distillate`, so they can differ in
     // form but never in which lines they show.
-    // **A tool with its own representation renders the full output through it**, not
-    // the triaged form. A diff is only a diff whole: a subset of its lines is a
-    // mangled diff, not a smaller one, and the same goes for a `read`'s sentinel
-    // framing. Where the triage is the useful view — a long `bash` result — there is
-    // no richer form to fall back to, and the numbered gutter stays, since it is the
-    // coordinate system the verdict was expressed in.
+    //
+    // **The triaged lines are what a distilled result shows**, for every tool — the
+    // default view is the agent's view. A tool with its own representation keeps it:
+    // the tool-specific parse runs over the whole output and the kept-line filter is
+    // applied to the rows it produced (`distilled_body`), so a `read` is still
+    // highlighted and framing-stripped and an edit's diff is still colored, at
+    // whatever subset survived triage.
     //
     // The note still shows either way: it is the distiller's account of the output,
     // and it is true regardless of which form of the output is on screen.
-    let rich_form = has_rich_rendering(call.name.as_str())
-        && matches!(wire, WireState::Raw | WireState::Distilled { .. });
-
     let (body, size) = match wire {
-        WireState::Distilled { keep, .. } if !show_raw && !rich_form => {
+        WireState::Distilled { keep, .. } if !show_raw => {
             let distillate = crate::project::distillate(&raw.content, keep);
             let kept = distillate.numbered_lines();
             // Verb first, so which number is which is unambiguous — `3 of 412` alone
@@ -373,23 +371,14 @@ fn result_entry(
                 kept.len(),
                 if total == 1 { "" } else { "s" }
             );
-            let body = if kept.is_empty() {
-                Vec::new()
-            } else {
-                vec![DocumentNode::numbered_code(
-                    None::<&str>,
-                    kept.into_iter()
-                        .map(|(n, text)| (n, text.to_string().into()))
-                        .collect(),
-                )]
-            };
+            let body = distilled_body(call.name.as_str(), raw, &kept);
             (body, size)
         }
         _ => {
-            // A forced-raw view and a rich-form tool both render the full output, so
-            // both pass a synthetic `Raw` wire to get the tool-specific rendering
-            // (diff / read) a natural raw result gets.
-            let (content, effective_wire) = if show_raw || rich_form {
+            // A forced-raw view renders the full output, so it passes a synthetic
+            // `Raw` wire to get the tool-specific rendering (diff / read) a natural
+            // raw result gets.
+            let (content, effective_wire) = if show_raw {
                 (raw.content.clone(), &WireState::Raw)
             } else {
                 let content = match wire {
@@ -469,23 +458,6 @@ fn distillate_note(
         nodes.push(annotation_line("⟢ ", note));
     }
     let distillate = crate::project::distillate(&raw.content, keep);
-
-    // A tool with its own representation renders the *full* output, so where triage
-    // actually dropped lines the operator is now seeing more than the agent did.
-    // That gap is exactly the thing this surface exists to make visible
-    // (docs/positions.md), so it is stated rather than left to be inferred from a
-    // line count that no longer describes what is on screen.
-    let kept: usize = distillate.ranges.iter().map(|(s, e)| e + 1 - s).sum();
-    if has_rich_rendering(call.name.as_str()) && kept < distillate.shown.len() {
-        nodes.push(annotation_line(
-            "⟢ ",
-            &format!(
-                "shown whole; the agent's copy kept {kept} of {} lines",
-                distillate.shown.len()
-            ),
-        ));
-    }
-
     if distillate.dropped > 0 {
         nodes.push(annotation_line(
             "… ",
