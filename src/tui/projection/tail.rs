@@ -8,6 +8,14 @@ use super::*;
 /// `call_id`, kept in arrival order).
 #[derive(Debug, Default)]
 pub(crate) struct LiveTail {
+    /// Extended thinking streamed so far this turn. **Accumulated transcript
+    /// content, not a phase preview**: it stays on screen once the model moves on
+    /// to prose or a tool call, and is superseded by the committed thinking block
+    /// when the turn lands (docs/tui.md). It was a phase, and a phase is one slot —
+    /// so `tool_call_start` replaced it and the thinking vanished the instant the
+    /// model started acting, which on a turn that thinks briefly then calls a tool
+    /// is too fast to read.
+    pub thinking: String,
     pub assistant: String,
     pub(super) tools: Vec<(String, String)>,
     /// What the model is doing *right now*, when that isn't emitting prose
@@ -22,15 +30,12 @@ pub(crate) struct LiveTail {
 /// often `idle`, which reads as *finished*.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Phase {
-    /// Extended thinking, with the text so far. Shown as a live preview, not accumulated
-    /// transcript content: it is cleared when the turn commits (rendering committed thinking in
-    /// the transcript is a separate unit — docs/transport.md).
-    Thinking { text: String },
     /// A tool call is being emitted: named at `content_block_start`, then its JSON `input`
-    /// accumulating. The text is shown verbatim and never parsed — it is a partial slice of a JSON
-    /// document until the block closes. Showing it claims no structure, and `{"command":"cargo
-    /// test` says far more than a byte count; parsing a partial document *structurally* is its own
-    /// design question (backlog/tui-streaming-lifecycle.md).
+    /// accumulating. The input is parsed as a *prefix* — what may be claimed from a partly
+    /// arrived document is decided positionally (docs/tui.md).
+    ///
+    /// The only phase left. Thinking used to be one too, which is what made it
+    /// ephemeral: a phase is a single slot, so this variant replaced it.
     CallingTool { name: String, input: String },
 }
 
@@ -62,6 +67,10 @@ impl LiveTail {
         match &entry.payload {
             Payload::Assistant { .. } => {
                 self.assistant.clear();
+                // The committed entry carries the turn's thinking blocks and renders
+                // them the same way, so the live copy has been superseded rather
+                // than discarded.
+                self.thinking.clear();
                 // The committed entry *is* the record of what the turn produced, so the live
                 // phase has nothing left to report.
                 self.phase = None;

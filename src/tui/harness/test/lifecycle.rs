@@ -70,8 +70,10 @@ fn a_prose_less_generation_phase_is_visible() {
         "the pending call is named before its input streams"
     );
     assert!(
-        play.find("src directory first").is_none(),
-        "acting supersedes thinking — one phase at a time"
+        play.find("src directory first").is_some(),
+        "thinking stays in the transcript when the model moves on to acting — it was a \
+             phase, and a phase is one slot, so a tool call replaced it faster than it \
+             could be read"
     );
 
     // Before a single pair has closed there is no structure to claim, so the raw
@@ -252,4 +254,56 @@ fn committed_thinking_keeps_the_lines_the_model_emitted() {
         "…which is what reflowing to a paragraph did to it"
     );
     play.snapshot("committed_thinking");
+}
+
+/// **Streamed thinking persists, and the commit does not reshape it.**
+///
+/// It used to be a [`Phase`](crate::tui::projection::Phase) — one slot — so
+/// `tool_call_start` replaced it and a turn that thought briefly then acted showed
+/// its reasoning for a few frames and then lost it until the turn committed. It is
+/// accumulated live-tail content now, rendered by the same builder as the committed
+/// block, so the handoff is invisible (docs/tui.md).
+#[test]
+fn streamed_thinking_persists_and_does_not_reshape_on_commit() {
+    let thought = "Two options here:\n- reflow to paragraphs\n- keep the lines\n\nThe second one.";
+
+    let mut play = Screenplay::new(80, 24);
+    play.user("Which approach?");
+    for word in thought.split_inclusive(' ') {
+        play.event(TuiEvent::ThinkingDelta(word.to_string()));
+    }
+    play.pin_to_bottom();
+    let live = transcript_rows(&play.render());
+
+    // Acting no longer wipes it.
+    play.event(TuiEvent::ToolCallStart {
+        name: "write".into(),
+    });
+    assert!(
+        play.find("- keep the lines").is_some(),
+        "a tool call starting wiped the thinking that led to it"
+    );
+
+    // The committed turn carries the same thinking, and must render it the same way.
+    let mut committed = Screenplay::new(80, 24);
+    committed.user("Which approach?");
+    committed.assistant_thinking(thought, "");
+    committed.pin_to_bottom();
+    assert_eq!(
+        live,
+        transcript_rows(&committed.render()),
+        "the block changed shape when the turn committed — the transcript visibly \
+         rewrites itself at that moment even though both renders are correct"
+    );
+}
+
+/// The transcript half of a rendered frame, without the bottom chrome. The strip and
+/// status bar legitimately differ between a streaming turn and a settled one (`◍
+/// streaming…`, the interrupt verbs), which is not the transcript reshaping.
+fn transcript_rows(frame: &str) -> String {
+    frame
+        .lines()
+        .take_while(|line| !line.contains("help ?"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

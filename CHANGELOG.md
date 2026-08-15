@@ -21,6 +21,8 @@ behind a change, see [`journal/`](journal/).
 - `--frame-cost` (on `tui` and `gallery`) times each paint: p50/p95/max over a rolling window plus the last walk's laid-out and highlighted node counts in the status bar, and the session's distribution — including how many frames ran over the 30ms tick — on exit.
 - `efference gallery --stream` plays a scripted live tool call over the offline gallery (`--chunk`/`--interval` set the pace), so the render behaviours that only exist at animation rate can be driven without a daemon.
 
+- Streamed thinking persists in the transcript as a dimmed block instead of vanishing when the model starts acting. It was a generation *phase* — one slot — so `tool_call_start` replaced it, and a turn that thought briefly before calling a tool showed its reasoning for a few frames and then lost it until the turn committed. The live and committed blocks are built by the same renderer, so the handoff is invisible.
+
 ### Fixed
 - Committed thinking keeps the line structure the model emitted. It was reflowed to paragraphs — single newlines became spaces, so a list read as one run-on line — to work around an entry double-spacing one node per line. It also means the block no longer changes shape when the turn commits, since the live thinking phase already rendered line by line.
 - Scrolling up during a stream stays where it was put. A re-projection drops the layout cache, and the event loop re-projects before draining an input burst, so a scroll arriving mid-stream saw no layout — and `max_scroll` answering 0 there made every scroll read as "at the bottom", re-arming stream-following and snapping the viewport to the end from wherever was being read.

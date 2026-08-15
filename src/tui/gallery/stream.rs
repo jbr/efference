@@ -77,9 +77,11 @@ impl Script {
     ) -> Result<(), ()> {
         let (name, prose, input, output) = scene.parts();
 
-        // A thinking phase first, so the phase line's replacement by the tool call
-        // is exercised rather than assumed.
-        for word in "weighing the render path against the layout pass ".split_inclusive(' ') {
+        // Thinking first, and enough of it to watch arrive: the point of streaming it
+        // is that a turn spent thinking is legible while it happens, which a couple of
+        // words cannot demonstrate. Multi-paragraph and with a list, so the line
+        // structure the render preserves is visible too.
+        for word in scene.thinking().split_inclusive(' ') {
             self.send(tx, TuiEvent::ThinkingDelta(word.to_string()))
                 .await?;
         }
@@ -177,6 +179,39 @@ enum Scene {
 }
 
 impl Scene {
+    /// What the model thinks through before acting. Long on purpose — streaming it is
+    /// the thing being shown, and that only reveals itself over a stretch of text.
+    fn thinking(self) -> &'static str {
+        match self {
+            Scene::Write => {
+                "The renderer needs to handle a few cases here, so let me work \
+through them before touching anything.\n\n\
+The block is laid out once per frame while it is visible, and its text changes on every \
+fragment, so anything keyed on the text will miss every time. That is fine for a small \
+block and quadratic for a large one.\n\n\
+Three things have to hold:\n\
+- the identifying argument has to be readable before the contents finish arriving\n\
+- a value that is still open must never be rendered as though it had closed\n\
+- whatever is shown mid-stream has to match what lands when the call commits\n\n\
+The third is the one that is easy to get wrong. If the live block and the committed block \
+are built by different code they will drift, and the drift shows up as the transcript \
+visibly rewriting itself at the moment of commit — which reads as a bug even when both \
+renders are individually correct.\n\n\
+So: one renderer, fed the settled arguments, with the in-flight value handled separately. \
+Writing it now."
+            }
+            Scene::Bash => {
+                "Before running anything, worth being clear about what a failure \
+here would tell me.\n\n\
+The suite covers the projection and the render separately, so a failure in one does not \
+implicate the other. If the byte-stability pin fails I have moved the wire, which is a \
+different problem from a render regression and wants a different fix.\n\n\
+Running the whole thing rather than a filter, since the interesting failures are the ones \
+I am not expecting."
+            }
+        }
+    }
+
     /// `(tool name, assistant prose, JSON input, tool output)`.
     fn parts(self) -> (&'static str, &'static str, String, String) {
         match self {

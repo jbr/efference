@@ -36,36 +36,18 @@ pub(in crate::tui) fn pending_turn(text: &str) -> DocumentNode<'static> {
 /// Before any pair has arrived there is nothing to claim and the raw characters are shown, which
 /// claim nothing.
 pub(in crate::tui) fn phase_blocks(phase: &Phase) -> Vec<DocumentNode<'static>> {
-    let lines: Vec<Span<'static>> = match phase {
-        Phase::Thinking { text } if text.trim().is_empty() => vec![dim_span("✻ thinking…")],
-        Phase::Thinking { text } => text
-            .lines()
-            .enumerate()
-            // The marker leads the first line; continuation lines indent to align under it, the
-            // same shape a pending user turn uses.
-            .map(|(i, line)| {
-                dim_span(&format!(
-                    "{}{line}",
-                    if i == 0 { "✻ thinking… " } else { "  " }
-                ))
-            })
-            .collect(),
-        Phase::CallingTool { name, input } => {
-            if let Some(blocks) = calling_tool_blocks(name, input) {
-                return blocks;
-            }
-            // Nothing structural has arrived yet (`{"pa`). Dimmed lines, not a
-            // `code_block`: raw characters claim nothing, which is what makes
-            // showing them safe, and a box would claim this is a finished thing to
-            // read rather than bytes still arriving.
-            let mut lines = vec![dim_span(&format!(
-                "❯ calling {}…",
-                crate::mcp::display_name(name)
-            ))];
-            lines.extend(input.lines().map(|line| dim_span(&format!("  {line}"))));
-            lines
-        }
-    };
+    let Phase::CallingTool { name, input } = phase;
+    if let Some(blocks) = calling_tool_blocks(name, input) {
+        return blocks;
+    }
+    // Nothing structural has arrived yet (`{"pa`). Dimmed lines, not a `code_block`:
+    // raw characters claim nothing, which is what makes showing them safe, and a box
+    // would claim this is a finished thing to read rather than bytes still arriving.
+    let mut lines = vec![dim_span(&format!(
+        "❯ calling {}…",
+        crate::mcp::display_name(name)
+    ))];
+    lines.extend(input.lines().map(|line| dim_span(&format!("  {line}"))));
     vec![DocumentNode::styled_lines(lines)]
 }
 
@@ -180,18 +162,8 @@ pub(in crate::tui) fn thinking_entry(thinking: &[ContentBlock]) -> Option<Docume
     for block in thinking {
         match block {
             ContentBlock::Thinking { text, .. } => {
-                // The model's own line structure, kept. Thinking is not flowing prose —
-                // it holds lists, indentation, and snippets, and reflowing it to
-                // paragraphs turned "- a\n- b" into "- a - b". It previously had to:
-                // one node per line was one *block* per line, and the renderer
-                // separates blocks by a blank row, so the whole entry double-spaced.
-                // [`DocumentNode::Lines`] renders a run of lines without that, which
-                // also makes this agree with the live thinking phase — the same text
-                // no longer changes shape when the turn commits.
-                let lines: Vec<Span<'static>> =
-                    text.trim_matches('\n').lines().map(dim_span).collect();
-                if !lines.is_empty() {
-                    body.push(DocumentNode::styled_lines(lines));
+                if let Some(lines) = thinking_lines(text) {
+                    body.push(lines);
                 }
             }
             // Safety-encrypted thinking is opaque — say so rather than rendering nothing, so the
@@ -202,19 +174,37 @@ pub(in crate::tui) fn thinking_entry(thinking: &[ContentBlock]) -> Option<Docume
             ContentBlock::Text(_) => {}
         }
     }
-    if body.is_empty() {
-        return None;
-    }
-    Some(DocumentNode::headed_entry(
+    (!body.is_empty()).then(|| thinking_block(body))
+}
+
+/// The same entry, built from thinking **still streaming** (docs/tui.md). Identical
+/// in shape to the committed one on purpose: the live copy is superseded by the
+/// committed copy when the turn lands, and a block that changed shape at that moment
+/// would read as the transcript rewriting itself.
+pub(in crate::tui) fn live_thinking_entry(text: &str) -> Option<DocumentNode<'static>> {
+    Some(thinking_block(vec![thinking_lines(text)?]))
+}
+
+/// A thinking text as a run of dimmed rows, keeping the model's own line structure.
+/// `None` for text that is empty or only whitespace.
+fn thinking_lines(text: &str) -> Option<DocumentNode<'static>> {
+    // The model's own lines, kept. Thinking is not flowing prose — it holds lists,
+    // indentation, and snippets, and reflowing it to paragraphs turned "- a\n- b"
+    // into "- a - b". It previously had to: one node per line was one *block* per
+    // line, and the renderer separates blocks by a blank row, so the whole entry
+    // double-spaced. [`DocumentNode::Lines`] renders a run of lines without that.
+    let lines: Vec<Span<'static>> = text.trim_matches('\n').lines().map(dim_span).collect();
+    (!lines.is_empty() && !text.trim().is_empty()).then(|| DocumentNode::styled_lines(lines))
+}
+
+/// The `✻ thinking` entry both the live and committed renders produce.
+fn thinking_block(body: Vec<DocumentNode<'static>>) -> DocumentNode<'static> {
+    DocumentNode::headed_entry(
         EntryKind::Thinking,
         None,
-        vec![Span {
-            text: "✻ thinking".into(),
-            style: SpanStyle::Comment,
-            action: None,
-        }],
+        vec![dim_span("✻ thinking")],
         body,
-    ))
+    )
 }
 
 /// The affordance shown beside a pending call (docs/tui.md), where its result will

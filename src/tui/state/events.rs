@@ -44,10 +44,9 @@ impl<'a> InteractiveState<'a> {
                 self.mark_reproject();
             }
             TuiEvent::ThinkingDelta(text) => {
-                match &mut self.live.phase {
-                    Some(Phase::Thinking { text: buf }) => buf.push_str(&text),
-                    _ => self.live.phase = Some(Phase::Thinking { text }),
-                }
+                // Accumulated, not a phase: it stays in the transcript when the model
+                // moves on to acting (docs/tui.md).
+                self.live.thinking.push_str(&text);
                 self.loading.pending_request = true;
                 self.mark_reproject();
             }
