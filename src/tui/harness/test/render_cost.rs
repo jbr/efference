@@ -218,3 +218,46 @@ fn a_re_rendered_result_drops_its_cached_layout() {
         "and the next frame must show the re-rendered entry"
     );
 }
+
+/// **A streaming write colours the lines that arrived, not the lines it holds.**
+///
+/// A tool call's arriving contents render as a code block whose text changes every
+/// frame, so `memo_key` — which hashes the text — misses every frame. Without the
+/// incremental path behind that miss the block re-parses from line 1 on each one:
+/// measured at 401 lines per frame for a 400-line block, growing with the file, and
+/// worst at the end of the write where the operator is still watching.
+#[test]
+fn a_streaming_write_colours_only_the_lines_that_arrived() {
+    let mut play = Screenplay::new(120, 40);
+    play.user("write it");
+    play.event(TuiEvent::ToolCallStart {
+        name: "write".into(),
+    });
+    play.event(TuiEvent::ToolCallInput {
+        fragment: r#"{"path":"a.rs","contents":""#.into(),
+    });
+    play.pin_to_bottom();
+    let _ = play.draw();
+
+    for lines in [50, 100, 200, 400] {
+        while play.state.live.phase_input_lines() < lines {
+            play.event(TuiEvent::ToolCallInput {
+                fragment: r#"    let value = compute(state);\n"#.into(),
+            });
+        }
+        let _ = play.draw();
+        // A steady-state *streaming* frame: one more fragment, then a paint. (Two
+        // paints with no fragment between them hit the memo outright — the text did
+        // not change. What a stream does is change it every frame.)
+        play.event(TuiEvent::ToolCallInput {
+            fragment: r#"    let value = compute(state);\n"#.into(),
+        });
+        let _ = play.draw();
+        let highlighted = play.state.document.highlighted;
+        assert!(
+            highlighted <= 3,
+            "a block holding {lines} lines coloured {highlighted} of them for one \
+             arriving line — the growing-block prefix was not reused"
+        );
+    }
+}

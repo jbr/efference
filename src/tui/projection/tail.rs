@@ -35,6 +35,16 @@ pub(crate) enum Phase {
 }
 
 impl LiveTail {
+    /// How many lines the in-flight tool input currently decodes to — test support
+    /// for measuring what a growing streaming block costs.
+    #[cfg(test)]
+    pub(crate) fn phase_input_lines(&self) -> usize {
+        match &self.phase {
+            Some(Phase::CallingTool { input, .. }) => input.matches("\\n").count(),
+            _ => 0,
+        }
+    }
+
     /// Append a fragment of a running tool's output.
     pub(crate) fn push_tool_output(&mut self, call_id: &str, chunk: &str) {
         if let Some((_, buf)) = self.tools.iter_mut().find(|(id, _)| id == call_id) {

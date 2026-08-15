@@ -74,18 +74,28 @@ fn a_prose_less_generation_phase_is_visible() {
         "acting supersedes thinking — one phase at a time"
     );
 
-    // The arriving input is shown verbatim — never parsed, but not hidden either: the
-    // identifying fields come first in JSON, so the head is the informative part.
+    // Before a single pair has closed there is no structure to claim, so the raw
+    // characters are shown — they claim nothing, which is what makes them safe.
     play.event(TuiEvent::ToolCallInput {
         fragment: "{\"comm".into(),
     });
+    assert!(
+        play.find(r#"{"comm"#).is_some(),
+        "with nothing structural arrived yet, the raw bytes are shown rather than nothing"
+    );
+
+    // Once the pair closes it reads as an argument, through the same renderer a
+    // committed call uses — so the header fills in rather than changing shape.
     play.event(TuiEvent::ToolCallInput {
         fragment: "and\":\"ls src\"}".into(),
     });
     assert!(
-        play.find(r#"{"command":"ls src"}"#).is_some(),
-        "fragments accumulate into the raw input, shown in full as text — never parsed as a \
-             complete document, and never truncated"
+        play.find("ls src").is_some(),
+        "a closed argument renders as an argument"
+    );
+    assert!(
+        play.find(r#"{"command""#).is_none(),
+        "…and the JSON envelope it arrived in is no longer what the operator reads"
     );
 
     // Prose is its own evidence of progress, so it replaces the phase line.
@@ -130,4 +140,23 @@ fn the_live_tail_is_not_double_spaced() {
     });
     play.pin_to_bottom();
     play.snapshot("live_tool_output_spacing");
+}
+
+/// The streaming write: the path is a settled argument and reads as one, while the
+/// contents are still arriving and read as content (docs/tui.md).
+#[test]
+fn a_streaming_write_shows_the_file_it_is_writing() {
+    let mut play = Screenplay::new(80, 24);
+    play.user("Write the renderer.");
+    play.event(TuiEvent::ToolCallStart {
+        name: "write".into(),
+    });
+    // Emitted the way a model emits it: identifying arguments first, contents last
+    // and still open.
+    play.event(TuiEvent::ToolCallInput {
+        fragment: r#"{"intent":"write the renderer","path":"src/render.rs","contents":"fn main() {\n    let x = 1;\n"#
+            .into(),
+    });
+    play.pin_to_bottom();
+    play.snapshot("streaming_write_call");
 }

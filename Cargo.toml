@@ -101,6 +101,7 @@ rand = "0.10.2"
 # Only reached from `efference serve` with a tty; a headless boot prints the URL
 # instead, since there is no browser to hand a redirect back to.
 webbrowser = "1.2.4"
+jiter = { version = "0.16.0", default-features = false }
 
 [dev-dependencies]
 # Snapshot the TUI as plain-text character grids (DESIGN: "playwright for TUIs").

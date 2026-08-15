@@ -7,11 +7,18 @@ use super::*;
 /// `bash` command, or a JSON envelope for an unrecognized tool). Known tools get a
 /// tool-specific summary — the file tools surface their path/pattern; `bash` shows
 /// a single-line command inline, a multi-line one as a shell block.
+///
+/// Takes the name and input rather than a [`ToolCall`] so the **live** block can
+/// render through it too, from the settled half of a partly-arrived input
+/// (`projection/partial.rs`). One function for both is what keeps the streaming
+/// header from jumping when the call commits: it fills in, it doesn't change shape.
 pub(in crate::tui) fn call_args(
-    call: &ToolCall,
+    name: &str,
+    input: &serde_json::Value,
 ) -> (Option<Vec<Span<'static>>>, Vec<DocumentNode<'static>>) {
-    let input = |key| call.input.get(key).and_then(|v| v.as_str());
-    match call.name.as_str() {
+    let call_input = input;
+    let input = |key| call_input.get(key).and_then(|v| v.as_str());
+    match name {
         n if n == crate::bash::NAME => {
             if let Some(command) = input("command") {
                 return if command.contains('\n') {
@@ -22,7 +29,7 @@ pub(in crate::tui) fn call_args(
             }
         }
         "read" => {
-            if let Some(paths) = call.input.get("paths").and_then(|v| v.as_array()) {
+            if let Some(paths) = call_input.get("paths").and_then(|v| v.as_array()) {
                 let joined = paths
                     .iter()
                     .filter_map(|v| v.as_str())
@@ -57,7 +64,7 @@ pub(in crate::tui) fn call_args(
                 // `append` and `overwrite` change what the call *does* to an existing
                 // file, so they belong beside the path rather than in a dropped envelope.
                 for (key, label) in [("append", " · append"), ("overwrite", " · overwrite")] {
-                    if call.input.get(key).and_then(|v| v.as_bool()) == Some(true) {
+                    if call_input.get(key).and_then(|v| v.as_bool()) == Some(true) {
                         spans.push(Span {
                             text: label.into(),
                             style: SpanStyle::Comment,
@@ -101,7 +108,7 @@ pub(in crate::tui) fn call_args(
         _ => {}
     }
     let pretty =
-        serde_json::to_string_pretty(&call.input).unwrap_or_else(|_| call.input.to_string());
+        serde_json::to_string_pretty(call_input).unwrap_or_else(|_| call_input.to_string());
     (None, vec![code_block(Some("json"), &pretty)])
 }
 

@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod test;
+
 use std::collections::VecDeque;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -7,7 +10,6 @@ use ratatui::{
     buffer::Buffer,
     style::{Color, Style},
 };
-use syntect::easy::HighlightLines;
 use syntect::util::LinesWithEndings;
 
 use super::render_span::{display_width, wrap_points};
@@ -41,6 +43,39 @@ const MEMO_SEGMENT_CAP: usize = 200_000;
 pub(super) struct HighlightMemo {
     entries: VecDeque<(u64, Highlighting)>,
     segments: usize,
+    /// One slot, because only one block grows at a time: the live tool call's.
+    growing: Option<GrowingHighlight>,
+}
+
+/// Highlighting for a block that is still being **appended to** — a tool call's
+/// contents arriving mid-stream (docs/tui.md).
+///
+/// [`HighlightMemo`] is keyed on the block's text, so a block that grows misses it
+/// on every frame and re-parses from line 1 — the exact cost the memo exists to
+/// avoid, reached by a door it can't see. The text is append-only though, and
+/// syntect exposes its per-line state (`HighlightLines::state` /
+/// `from_state`), so the previous frame's work is reusable: only the lines that
+/// arrived since it need parsing.
+///
+/// The saved state is the state after the last **complete** line. A block's final
+/// line is usually still arriving, and highlighting it can mis-lex (an unterminated
+/// string literal colours the rest of the line as a string) — so it is recomputed
+/// each frame from the saved state and never committed to it. It corrects itself
+/// when its newline lands.
+#[derive(Debug)]
+struct GrowingHighlight {
+    /// Identity of what is being highlighted — theme and language, not text. A
+    /// theme switch or a different block resets rather than continuing.
+    ident: u64,
+    /// The prefix already highlighted: complete lines only. Held as text so the
+    /// continuation check is an exact `starts_with` rather than a hash that could
+    /// collide into showing one file's colours over another's.
+    prefix: String,
+    /// Segments for the lines in `prefix`, one entry per line.
+    lines: Vec<Vec<Segment>>,
+    /// syntect's per-line state as of the end of `prefix`.
+    parse: syntect::parsing::ParseState,
+    highlight: syntect::highlighting::HighlightState,
 }
 
 impl HighlightMemo {
@@ -64,6 +99,99 @@ impl HighlightMemo {
             }
         }
         value
+    }
+
+    /// Highlight `code`, reusing whatever of it was highlighted last frame.
+    ///
+    /// Returns the per-line segments and **how many lines were actually parsed** —
+    /// the number `document.highlighted` reports and the render-cost tests assert
+    /// on. For a block that grew by a line since the last frame that is one or two,
+    /// not the whole block.
+    ///
+    /// Falls back to parsing everything whenever `code` is not a continuation of
+    /// what was highlighted before (a different block, a theme change, an edit
+    /// rather than an append), so correctness never depends on the guess being
+    /// right.
+    fn highlight_growing(
+        &mut self,
+        syntax: &syntect::parsing::SyntaxReference,
+        theme: &syntect::highlighting::Theme,
+        syntax_set: &syntect::parsing::SyntaxSet,
+        ident: u64,
+        code: &str,
+    ) -> (Vec<Vec<Segment>>, usize) {
+        use syntect::easy::HighlightLines;
+
+        // Continue only from an exact prefix of this very text; anything else
+        // starts over.
+        let resume = self
+            .growing
+            .take()
+            .filter(|g| g.ident == ident && !g.prefix.is_empty() && code.starts_with(&g.prefix));
+
+        let (mut lines, from, mut highlighter) = match resume {
+            Some(g) => {
+                let at = g.prefix.len();
+                let h = HighlightLines::from_state(theme, g.highlight, g.parse);
+                (g.lines, at, h)
+            }
+            None => (Vec::new(), 0, HighlightLines::new(syntax, theme)),
+        };
+
+        // Complete lines extend the saved state; the trailing partial line does not.
+        let tail = &code[from..];
+        let complete_upto = tail.rfind('\n').map_or(0, |i| i + 1);
+        let mut parsed = 0;
+        for line in LinesWithEndings::from(&tail[..complete_upto]) {
+            lines.push(line_segments(&mut highlighter, line, syntax_set));
+            parsed += 1;
+        }
+
+        // Save the state *here*, before the partial line, then carry on past it.
+        let (highlight, parse) = highlighter.state();
+        self.growing = Some(GrowingHighlight {
+            ident,
+            prefix: code[..from + complete_upto].to_string(),
+            lines: lines.clone(),
+            parse: parse.clone(),
+            highlight: highlight.clone(),
+        });
+
+        let remainder = &tail[complete_upto..];
+        if !remainder.is_empty() {
+            let mut highlighter = HighlightLines::from_state(theme, highlight, parse);
+            lines.push(line_segments(&mut highlighter, remainder, syntax_set));
+            parsed += 1;
+        }
+
+        (lines, parsed)
+    }
+}
+
+/// One line's syntect ranges as [`Segment`]s: byte offsets into the line *without*
+/// its newline, so a wrapped row can clip each token to the slice it shows. syntect
+/// needs the newline to keep its state machine right, but it is never drawn.
+fn line_segments(
+    highlighter: &mut syntect::easy::HighlightLines<'_>,
+    line: &str,
+    syntax_set: &syntect::parsing::SyntaxSet,
+) -> Vec<Segment> {
+    let drawn = line.trim_end_matches('\n');
+    match highlighter.highlight_line(line, syntax_set) {
+        Ok(ranges) => {
+            let mut segments = Vec::with_capacity(ranges.len());
+            let mut at = 0;
+            for (style, text) in ranges {
+                let end = (at + text.len()).min(drawn.len());
+                if at < end {
+                    let fg = style.foreground;
+                    segments.push((at, end, Style::default().fg(Color::Rgb(fg.r, fg.g, fg.b))));
+                }
+                at += text.len();
+            }
+            segments
+        }
+        Err(_) => vec![(0, drawn.len(), Style::default())],
     }
 }
 
@@ -284,49 +412,29 @@ impl<'a> InteractiveState<'a> {
             .filter(|_| !self.layout.measuring)
             .and_then(|l| self.render_context.syntax_set().find_syntax_by_token(l));
 
-        let key = memo_key(self.current_theme_name.as_deref(), lang_display, code);
+        let theme_name = self.current_theme_name.as_deref();
+        let key = memo_key(theme_name, lang_display, code);
         let highlighting: Option<Highlighting> = match self.highlight_memo.get(key) {
             hit @ Some(_) => hit,
             None => syntax.map(|syntax| {
-                // Computed whole, in one pass, because syntect carries parse state
-                // line to line — a block can't be coloured from its middle. This is
-                // the pass the memo exists to run only once.
-                let lines: Vec<Vec<Segment>> = {
-                    let mut highlighter = HighlightLines::new(syntax, self.render_context.theme());
-                    LinesWithEndings::from(code)
-                        .map(|line| {
-                            // syntect needs the line ending to keep its state machine
-                            // right, but the newline is never drawn.
-                            let drawn = line.trim_end_matches('\n');
-                            match highlighter.highlight_line(line, self.render_context.syntax_set())
-                            {
-                                // Byte offsets into `drawn`, so a wrapped row can clip
-                                // each token to the slice of the line it shows.
-                                Ok(ranges) => {
-                                    let mut segments = Vec::with_capacity(ranges.len());
-                                    let mut at = 0;
-                                    for (style, text) in ranges {
-                                        let end = (at + text.len()).min(drawn.len());
-                                        if at < end {
-                                            let fg = style.foreground;
-                                            segments.push((
-                                                at,
-                                                end,
-                                                Style::default().fg(Color::Rgb(fg.r, fg.g, fg.b)),
-                                            ));
-                                        }
-                                        at += text.len();
-                                    }
-                                    segments
-                                }
-                                Err(_) => vec![(0, drawn.len(), Style::default())],
-                            }
-                        })
-                        .collect()
-                };
-                // What the scroll-cost test asserts on (docs/tui.md): a frame that
-                // hits the memo colours nothing at all.
-                self.document.highlighted += lines.len();
+                // A miss is either a block seen for the first time or one that grew
+                // since the last frame — a tool call's contents arriving. syntect
+                // carries parse state line to line, so a block cannot be coloured
+                // from its middle *cold*; it can be continued from a kept state,
+                // which is what makes the streaming case cost the new lines rather
+                // than all of them.
+                let ident = memo_key(theme_name, lang_display, "");
+                let (lines, parsed) = self.highlight_memo.highlight_growing(
+                    syntax,
+                    self.render_context.theme(),
+                    self.render_context.syntax_set(),
+                    ident,
+                    code,
+                );
+                // What the scroll-cost tests assert on (docs/tui.md): a frame that
+                // hits the memo colours nothing, and a frame on a growing block
+                // colours only what arrived.
+                self.document.highlighted += parsed;
                 self.highlight_memo.insert(key, lines)
             }),
         };

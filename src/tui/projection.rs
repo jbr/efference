@@ -286,7 +286,7 @@ fn call_entry(call: &ToolCall) -> DocumentNode<'static> {
         crate::mcp::display_name(&call.name),
         SpanStyle::FunctionName,
     )];
-    let (inline, mut overflow) = call_args(call);
+    let (inline, mut overflow) = call_args(&call.name, &call.input);
     // The call's `intent` (docs/tools.md) leads the body: the operator reads why
     // before what, and it is the one part of a structured call that isn't inferable
     // from the arguments. Absent on calls from before the field, and on any the model
@@ -513,6 +513,7 @@ mod test;
 
 mod incremental;
 mod nodes;
+mod partial;
 mod tail;
 mod tools;
 

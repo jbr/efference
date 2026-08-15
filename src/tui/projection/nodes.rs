@@ -1,5 +1,6 @@
 //! Small document-node and span builders shared by the projection.
 
+use super::partial::PartialInput;
 use super::*;
 
 /// A just-submitted user turn not yet echoed back as a committed `User` log entry
@@ -26,12 +27,14 @@ pub(in crate::tui) fn pending_turn(text: &str) -> DocumentNode<'static> {
 }
 
 /// The live phase, rendered **in full** — the point is to watch the work happen, so nothing here
-/// truncates. Thinking renders as dimmed prose; a tool call renders as its name plus the JSON input
-/// accumulating in a code block.
+/// truncates. Thinking renders as dimmed prose; a tool call renders as its arguments, with the one
+/// value still arriving shown as content.
 ///
-/// The input is shown, never *parsed*: mid-stream it is a partial slice of a JSON document, so the
-/// display must not assert structure the arrived bytes don't support (docs/tui.md). The raw
-/// characters claim nothing, which is what makes showing them safe.
+/// The input is a partial slice of a JSON document, so the display must not assert structure the
+/// arrived bytes don't support (docs/tui.md). It is parsed as a *prefix*, and what may be claimed
+/// from that is decided positionally — see [`calling_tool_blocks`] and `projection/partial.rs`.
+/// Before any pair has arrived there is nothing to claim and the raw characters are shown, which
+/// claim nothing.
 pub(in crate::tui) fn phase_blocks(phase: &Phase) -> Vec<DocumentNode<'static>> {
     let lines: Vec<Span<'static>> = match phase {
         Phase::Thinking { text } if text.trim().is_empty() => vec![dim_span("✻ thinking…")],
@@ -48,11 +51,13 @@ pub(in crate::tui) fn phase_blocks(phase: &Phase) -> Vec<DocumentNode<'static>> 
             })
             .collect(),
         Phase::CallingTool { name, input } => {
-            // Dimmed lines, not a `code_block`: the live tail's register is dim
-            // throughout, and a box would claim this is a finished thing to read
-            // rather than bytes still arriving. (It was originally forced — the boxed
-            // render clipped long content at its border — but that is fixed, so this
-            // now rests on the register alone.)
+            if let Some(blocks) = calling_tool_blocks(name, input) {
+                return blocks;
+            }
+            // Nothing structural has arrived yet (`{"pa`). Dimmed lines, not a
+            // `code_block`: raw characters claim nothing, which is what makes
+            // showing them safe, and a box would claim this is a finished thing to
+            // read rather than bytes still arriving.
             let mut lines = vec![dim_span(&format!(
                 "❯ calling {}…",
                 crate::mcp::display_name(name)
@@ -62,6 +67,77 @@ pub(in crate::tui) fn phase_blocks(phase: &Phase) -> Vec<DocumentNode<'static>> 
         }
     };
     vec![DocumentNode::styled_lines(lines)]
+}
+
+/// A tool call rendered from the part of its input that has arrived (docs/tui.md):
+/// the settled arguments as arguments, and the one value still in flight as
+/// content. `None` before anything structural has arrived, so the caller falls back
+/// to the raw characters.
+///
+/// The settled half goes through [`call_args`] — the same function a *committed*
+/// call renders through — so the header fills in as bytes land rather than changing
+/// shape when the call commits. The in-flight value never reaches it: what
+/// [`call_args`] produces is an identity claim (`write src/api.rs`), and only a
+/// value whose closing quote has arrived may back one
+/// (`projection/partial.rs`).
+fn calling_tool_blocks(name: &str, input: &str) -> Option<Vec<DocumentNode<'static>>> {
+    let parsed = PartialInput::parse(input)?;
+    if parsed.settled.is_empty() && parsed.arriving.is_none() {
+        return None;
+    }
+
+    let mut header = vec![
+        dim_span("❯ calling "),
+        inline_code_styled(crate::mcp::display_name(name), SpanStyle::FunctionName),
+    ];
+    let settled = parsed.settled_value();
+    let (inline, mut blocks) = call_args(name, &settled);
+    if let Some(arg_spans) = inline {
+        header.push(dim_span(" · "));
+        header.extend(arg_spans);
+    }
+    header.push(dim_span("…"));
+
+    // The call's `intent` (docs/tools.md) leads the body, as it does on a committed
+    // call: the operator reads why before what. It settles early — it is emitted
+    // first — so it is readable for the whole time the arguments are still arriving,
+    // which is exactly the window this render exists for.
+    if let Some(intent) = settled
+        .get(crate::tools::INTENT)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|intent| !intent.is_empty())
+    {
+        blocks.insert(0, DocumentNode::styled_lines([dim_span(intent)]));
+    }
+    blocks.insert(0, DocumentNode::lines(vec![header]));
+
+    // The value still arriving, as content. A string with newlines in it is the
+    // case worth rendering as a block — a file's contents, a heredoc, a message
+    // body — and it is rendered in the language of whatever settled path names it,
+    // which is why the path arriving first is what makes this worth doing.
+    if let Some((key, text)) = parsed.arriving_text() {
+        if text.contains('\n') {
+            blocks.push(code_block(streaming_lang(&parsed), text));
+        } else {
+            blocks.push(DocumentNode::styled_lines([dim_span(&format!(
+                "  {key}: {text}…"
+            ))]));
+        }
+    }
+    Some(blocks)
+}
+
+/// The language to highlight an in-flight value in: taken from whichever settled
+/// argument names a file. Only the settled ones are consulted — a path that is
+/// itself still arriving names nothing yet.
+fn streaming_lang(parsed: &PartialInput) -> Option<&'static str> {
+    parsed
+        .settled
+        .iter()
+        .find(|(key, _)| matches!(key.as_str(), "path" | "file_path"))
+        .and_then(|(_, value)| value.as_str())
+        .and_then(lang_for_path)
 }
 
 /// One dimmed span — the live tail's register throughout: present but visibly not
