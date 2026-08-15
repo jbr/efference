@@ -135,7 +135,7 @@ impl ForkSpot {
     /// [`Endpoint`], so it authenticates and routes the same way (docs/transport.md).
     pub fn new(endpoint: Endpoint, model: impl Into<String>) -> Self {
         ForkSpot {
-            client: Client::new(endpoint, model, PERSONA),
+            client: Client::new(endpoint, model, PERSONA, None),
             scratch: None,
         }
     }

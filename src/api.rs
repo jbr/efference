@@ -77,6 +77,13 @@ struct Request<'a> {
     /// docs/log-and-projection.md). (`disabled` 400s on Fable 5, which can't disable thinking — not a
     /// serve target yet.)
     thinking: Thinking,
+    /// Sampling temperature, in the provider's native float range. Omits when
+    /// `None` (the session didn't set `--temperature`), letting the API default
+    /// (1.0). When set, the value is the provider's mapped float — a per-session
+    /// constant, like `model`, so it never toggles in-flight and stays out of the
+    /// cached prefix's way.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f64>,
     messages: &'a [ApiMessage],
     /// Always `true` — we consume the response as SSE (docs/transport.md). Set once and
     /// never varied; a delivery flag, not part of the cached prefix (docs/log-and-projection.md),

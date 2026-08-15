@@ -202,6 +202,12 @@ pub(crate) enum Command {
         /// reported on `GET /state`.
         #[arg(long, short = 'c')]
         config: Option<PathBuf>,
+        /// Sampling temperature on a 0–100 scale. Integer to avoid float
+        /// serialization drift and the two-provider-scale confusion: 50 is mid-scale
+        /// and maps to each provider's default (1.0). Omitted → the field is left out
+        /// of the wire entirely, and the API uses its own default (1.0).
+        #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
+        temperature: Option<u8>,
         /// Run **autonomous** (no synchronous human at the gate): a spotter `Watch`/`Gate`
         /// becomes a redirect that hands the call back to the model, pointing it at its config
         /// file to request access, instead of blocking on an absent human. A config-file write

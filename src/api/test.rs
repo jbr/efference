@@ -687,3 +687,66 @@ fn only_openrouter_declares_a_session_header() {
     assert_eq!(Provider::Anthropic.session_header(), None);
     assert_eq!(Provider::OpenRouter.session_header(), Some("x-session-id"));
 }
+/// The session-level 0–100 integer temperature maps to the provider's
+/// native float range. 50 is mid-scale and lands at 1.0 on both providers
+/// (matching both defaults), 0 is the floor, and 100 is the ceiling.
+#[test]
+fn map_temperature_maps_the_integer_to_provider_native_range() {
+    // Anthropic: 0.0..1.0
+    let a = Provider::Anthropic;
+    assert_eq!(a.map_temperature(0), 0.0);
+    assert_eq!(a.map_temperature(50), 0.5);
+    assert_eq!(a.map_temperature(100), 1.0);
+
+    // OpenRouter: 0.0..2.0
+    let o = Provider::OpenRouter;
+    assert_eq!(o.map_temperature(0), 0.0);
+    assert_eq!(o.map_temperature(50), 1.0);
+    assert_eq!(o.map_temperature(100), 2.0);
+}
+/// When `temperature` is `None`, the serialized `Request` omits the field
+/// entirely — the JSON key is absent, not null. Omitting optional fields
+/// vs. explicitly sending defaults produces different cache keys, so this
+/// is the cache-safe path for sessions that don't set `--temperature`.
+#[test]
+fn request_omits_temperature_when_none() {
+    let request = Request {
+        model: "test",
+        max_tokens: 1024,
+        system: "",
+        tools: &[],
+        tool_choice: ToolChoice::auto(),
+        thinking: Thinking::Disabled,
+        temperature: None,
+        messages: &[],
+        stream: false,
+    };
+    let json = serde_json::to_string(&request).unwrap();
+    assert!(
+        !json.contains("temperature"),
+        "temperature field absent when None"
+    );
+}
+
+/// When `temperature` is `Some(f)`, the serialized `Request` includes the
+/// float value. This is the cache-affecting path — the value is part of the
+/// request body hash.
+#[test]
+fn request_includes_temperature_when_set() {
+    let request = Request {
+        model: "test",
+        max_tokens: 1024,
+        system: "",
+        tools: &[],
+        tool_choice: ToolChoice::auto(),
+        thinking: Thinking::Disabled,
+        temperature: Some(0.7),
+        messages: &[],
+        stream: false,
+    };
+    let json = serde_json::to_string(&request).unwrap();
+    assert!(
+        json.contains("\"temperature\":0.7"),
+        "temperature: 0.7 present"
+    );
+}

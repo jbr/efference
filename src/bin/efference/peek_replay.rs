@@ -222,7 +222,7 @@ pub(crate) async fn peek(
     }
 
     let endpoint = efference::api::Endpoint::from_env()?;
-    let client = Client::new(endpoint, model, system);
+    let client = Client::new(endpoint, model, system, None);
 
     eprintln!(
         "replaying {} gate(s) from {label} × {repeat} on {model} — first attempt only, no retries",

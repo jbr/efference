@@ -50,6 +50,20 @@ impl Provider {
             Self::OpenRouter => "openrouter",
         }
     }
+    /// Map the session's 0–100 integer temperature to this provider's native
+    /// float range. The integer avoids serialization drift and the two-scale
+    /// confusion; `None` means omit the field from the wire entirely, letting
+    /// the API use its own default (1.0 everywhere we support).
+    ///
+    /// - **Anthropic**: `t / 100.0` → 0.0..1.0
+    /// - **OpenRouter**: `(t / 100.0) * 2.0` → 0.0..2.0
+    pub fn map_temperature(&self, t: u8) -> f64 {
+        let v = (t as f64) / 100.0;
+        match self {
+            Self::Anthropic => v,
+            Self::OpenRouter => v * 2.0,
+        }
+    }
 
     /// The messages endpoint this provider serves the Anthropic wire on.
     pub(super) fn messages_url(&self) -> &'static str {

@@ -7,6 +7,7 @@ pub(crate) async fn serve(
     model: &str,
     spotter_model: &str,
     config: Option<PathBuf>,
+    temperature: Option<u8>,
     autonomous: bool,
     reauth: Vec<String>,
     keep_scratch: bool,
@@ -207,7 +208,7 @@ pub(crate) async fn serve(
         },
     )?;
 
-    let client = Client::new(endpoint.clone(), model, system);
+    let client = Client::new(endpoint.clone(), model, system, temperature);
 
     // The independent permission rung (docs/permissions.md): a fresh-context spotter
     // on its own Haiku-band client, built from the same endpoint. It re-decides the calls

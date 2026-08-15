@@ -57,11 +57,17 @@ pub struct Client {
     endpoint: Endpoint,
     model: String,
     system: String,
+    temperature: Option<u8>,
     upstream_failure: UpstreamFailureState,
 }
 
 impl Client {
-    pub fn new(endpoint: Endpoint, model: impl Into<String>, system: impl Into<String>) -> Self {
+    pub fn new(
+        endpoint: Endpoint,
+        model: impl Into<String>,
+        system: impl Into<String>,
+        temperature: Option<u8>,
+    ) -> Self {
         let upstream_failure = upstream_failure_state();
         let retry = RetryHandler::default()
             // Messages POSTs are replay-safe: an unsuccessful open produced no
@@ -93,6 +99,7 @@ impl Client {
             endpoint,
             model: model.into(),
             system: system.into(),
+            temperature,
             upstream_failure,
         }
     }
@@ -150,6 +157,9 @@ impl Client {
             tools,
             tool_choice,
             thinking: Thinking::for_request(&self.model, &tool_choice),
+            temperature: self
+                .temperature
+                .map(|t| self.endpoint.provider.map_temperature(t)),
             messages,
             stream: true,
         };
@@ -238,6 +248,9 @@ impl Client {
             tools,
             tool_choice,
             thinking: THINKING_DISABLED,
+            temperature: self
+                .temperature
+                .map(|t| self.endpoint.provider.map_temperature(t)),
             messages,
             stream: false,
         };
