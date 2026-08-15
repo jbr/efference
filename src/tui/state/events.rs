@@ -227,6 +227,10 @@ impl<'a> InteractiveState<'a> {
     /// and, through them, their cached layout — unless a call they own changed, so a
     /// streamed token costs the tail rather than the whole log.
     pub(in crate::tui) fn reproject(&mut self) {
+        // Timed only when `--frame-cost` asked for it (`frame_cost.rs`): this runs
+        // before the paint rather than inside it, so without attributing it here a
+        // frame's reported cost would omit rebuilding the nodes it then lays out.
+        let started = self.frame_cost.is_some().then(std::time::Instant::now);
         let gate = projection::Gate {
             call: self.pending_gate.as_ref().map(|g| g.call_id.as_str()),
             reason: self.pending_gate.as_ref().and_then(|g| g.reason.as_deref()),
@@ -240,5 +244,8 @@ impl<'a> InteractiveState<'a> {
             &self.pending_turns,
         );
         self.viewport.cached_layout = None;
+        if let (Some(started), Some(cost)) = (started, self.frame_cost.as_mut()) {
+            cost.note_projection(started.elapsed().as_micros().min(u32::MAX as u128) as u32);
+        }
     }
 }
