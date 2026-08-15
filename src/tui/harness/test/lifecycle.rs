@@ -227,3 +227,29 @@ fn scrolling_down_mid_stream_does_not_snap_to_the_end() {
         "and the next frame left it there"
     );
 }
+
+/// **Committed thinking keeps the model's line structure.** It is the copy a human
+/// reads afterwards, at their own pace (docs/tui.md), and it is not flowing prose:
+/// it holds lists and indentation, which reflowing to paragraphs destroys. It also
+/// has to match the live phase, which shows the same text line by line — otherwise
+/// the block visibly reshapes at the moment the turn commits.
+#[test]
+fn committed_thinking_keeps_the_lines_the_model_emitted() {
+    let mut play = Screenplay::new(80, 24);
+    play.user("Which approach?");
+    play.assistant_thinking(
+        "Two options here:\n- reflow to paragraphs\n- keep the lines\n\nThe second one.",
+        "The second one.",
+    );
+    play.pin_to_bottom();
+    assert!(
+        play.find("- reflow to paragraphs").is_some(),
+        "a list item is on its own row, not joined to its neighbour"
+    );
+    assert!(
+        play.find("- reflow to paragraphs - keep the lines")
+            .is_none(),
+        "…which is what reflowing to a paragraph did to it"
+    );
+    play.snapshot("committed_thinking");
+}

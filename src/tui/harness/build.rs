@@ -55,6 +55,18 @@ impl Screenplay<'_> {
         })
     }
 
+    /// A committed assistant turn that did extended thinking first.
+    pub(crate) fn assistant_thinking(&mut self, thinking: &str, text: &str) -> &mut Self {
+        self.commit(Payload::Assistant {
+            thinking: vec![ContentBlock::Thinking {
+                text: thinking.into(),
+                signature: String::new(),
+            }],
+            text: vec![ContentBlock::Text(text.into())],
+            calls: vec![],
+        })
+    }
+
     /// A committed tool exchange in one line: the assistant's `bash`-shaped call
     /// plus its (non-error, raw) result — the shape most transcript scenarios need
     /// a focusable unit to be.

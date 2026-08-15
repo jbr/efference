@@ -180,15 +180,19 @@ pub(in crate::tui) fn thinking_entry(thinking: &[ContentBlock]) -> Option<Docume
     for block in thinking {
         match block {
             ContentBlock::Thinking { text, .. } => {
-                // Split on blank lines, not every newline: a blank line is the model's own
-                // paragraph break, and one node per source line would double-space the whole
-                // block (the renderer separates body children by a blank row).
-                body.extend(
-                    text.split("\n\n")
-                        .map(str::trim)
-                        .filter(|para| !para.is_empty())
-                        .map(|para| dim_line(&para.replace('\n', " "))),
-                );
+                // The model's own line structure, kept. Thinking is not flowing prose —
+                // it holds lists, indentation, and snippets, and reflowing it to
+                // paragraphs turned "- a\n- b" into "- a - b". It previously had to:
+                // one node per line was one *block* per line, and the renderer
+                // separates blocks by a blank row, so the whole entry double-spaced.
+                // [`DocumentNode::Lines`] renders a run of lines without that, which
+                // also makes this agree with the live thinking phase — the same text
+                // no longer changes shape when the turn commits.
+                let lines: Vec<Span<'static>> =
+                    text.trim_matches('\n').lines().map(dim_span).collect();
+                if !lines.is_empty() {
+                    body.push(DocumentNode::styled_lines(lines));
+                }
             }
             // Safety-encrypted thinking is opaque — say so rather than rendering nothing, so the
             // record doesn't silently omit that the model thought here.
