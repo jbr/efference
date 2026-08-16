@@ -12,6 +12,10 @@ use super::*;
 use crate::auth::{self, BurnLedger, Lockout, Root};
 use std::time::SystemTime;
 use trillium::{KnownHeaderName, Method};
+use trillium_cookies::{
+    CookiesConnExt, CookiesHandler,
+    cookie::{Cookie, SameSite},
+};
 
 /// What `efference serve --bind` resolved to — built by the CLI from flags, consumed
 /// by [`arm`]. Deliberately not part of the session config: the config file is
@@ -124,9 +128,15 @@ pub(crate) fn spawn(
         // HEAD support: rewrites to GET on the way in, strips the body (keeping
         // content-length) on the way out. First, so the gate only ever sees GET.
         trillium_head::head(),
+        // Parses the request cookie jar (every field line — see `authed`) and
+        // serializes the response's. Ahead of the gate, which reads the jar.
+        CookiesHandler::new(),
         gate(Arc::clone(&auth)),
         public_router(auth),
         router(),
+        // Last: any GET neither router claimed is the web client's surface
+        // (docs/web-client.md) — an asset, or the SPA index.
+        frontend(),
     );
     let config = trillium_tokio::config()
         .with_swansong(swansong)
@@ -188,16 +198,17 @@ impl TcpAuth {
     /// Whether the conn presents a valid credential: the session cookie, or the
     /// bearer for programs (which can set headers where `EventSource` cannot).
     fn authed(&self, conn: &Conn) -> bool {
-        if let Some(cookies) = conn.request_headers().get_str(KnownHeaderName::Cookie) {
-            let presented = cookies.split(';').map(str::trim).find_map(|pair| {
-                pair.strip_prefix(auth::COOKIE_NAME)
-                    .and_then(|rest| rest.strip_prefix('='))
-            });
-            if let Some(value) = presented
-                && auth::cookie_is_valid(&self.cookie_key, value, SystemTime::now())
-            {
-                return true;
-            }
+        // Read through the jar `CookiesHandler` parsed, never `get_str` on the
+        // raw header: the cookie header arrives as several field lines when an
+        // h2/h3 client splits one line per cookie (RFC 9113 §8.2.3), and
+        // because cookies ignore ports, any other service's cookie on this
+        // host rides along and forces the split — `get_str` reads none of a
+        // multi-valued header, which presented as browsers (with company on
+        // the host) failing auth that curl (one cookie, one line) passed.
+        if let Some(value) = conn.cookies().get(auth::COOKIE_NAME).map(Cookie::value)
+            && auth::cookie_is_valid(&self.cookie_key, value, SystemTime::now())
+        {
+            return true;
         }
         if let Some(authorization) = conn
             .request_headers()
@@ -258,8 +269,8 @@ enum CodeRejection {
 /// The hardening + auth gate, run before every route on the TCP listener
 /// (docs/web-bind.md): Host allowlist (DNS rebinding), Origin + Content-Type checks on
 /// unsafe methods (CSRF — a localhost or LAN bind is not a trust boundary while a
-/// browser is present), then the credential check, with exactly two anonymous routes:
-/// the bootstrap page and the credential mint itself.
+/// browser is present), then the credential check. The anonymous surface is the web
+/// client's shell (every GET outside `/v1`) and the credential mint itself.
 fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
     move |conn: Conn| {
         let auth = Arc::clone(&auth);
@@ -321,11 +332,18 @@ fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
                 }
             }
             // `trillium_head::head()` runs ahead of the gate, so a HEAD arrives
-            // here already rewritten to GET.
-            let anonymous = matches!(
-                (method, conn.path()),
-                (Method::Get, "/") | (Method::Post, "/auth/session")
-            );
+            // here already rewritten to GET. Anonymous surface: every GET outside
+            // `/v1` — the web client's shell and hashed assets, same posture as the
+            // inline bootstrap page before it (docs/web-client.md) — plus the
+            // credential mint. `/v1` is the whole sensitive surface on this
+            // listener; a non-GET outside it fails closed here rather than 404ing.
+            let path = conn.path();
+            let v1 = path == "/v1" || path.starts_with("/v1/");
+            let anonymous = match method {
+                Method::Get => !v1,
+                Method::Post => path == "/auth/session",
+                _ => false,
+            };
             if !anonymous && !auth.authed(&conn) {
                 return fail(
                     conn,
@@ -339,21 +357,30 @@ fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
     }
 }
 
-/// The browser-facing anonymous surface, mounted only on the TCP spawn: the bootstrap
-/// page and the credential mint. Everything else on TCP is the shared `/v1` router
-/// behind the gate.
+/// The web client (docs/web-client.md): `web/` built and embedded at compile time,
+/// or — under the `dev-proxy` feature — proxied to a spawned Vite dev server with
+/// HMR. Mounted after both routers on the TCP spawn, so it answers exactly the GETs
+/// they don't claim; the gate has already let those through anonymously. The SPA
+/// index serves only at `/` — the client routes nothing else yet, and answering
+/// every unmatched path with the index would hand scanner probes a `200`.
+fn frontend() -> impl trillium::Handler {
+    trillium_frontend::frontend!("./web")
+        .with_client(trillium_client::Client::new(
+            trillium_tokio::ClientConfig::default(),
+        ))
+        .with_index_file("index.html")
+        .with_index_predicate(|conn| conn.path() == "/")
+}
+
+/// The browser-facing anonymous surface, mounted only on the TCP spawn: the
+/// credential mint. Static assets fall through to [`frontend`]; everything else on
+/// TCP is the shared `/v1` router behind the gate.
 pub(crate) fn public_router(auth: Arc<TcpAuth>) -> Router {
     Router::new()
-        // The bootstrap page (docs/web-bind.md): reads `#token=` from the fragment,
-        // POSTs it to `/auth/session`, scrubs the URL; renders the six-digit field on
-        // a bare visit. Replaced wholesale by the web client when that lands.
-        .get("/", |conn: Conn| async move {
-            conn.with_response_header(KnownHeaderName::ContentType, "text/html; charset=utf-8")
-                .with_status(200)
-                .with_body(include_str!("tcp/bootstrap.html"))
-        })
         // Trade a current TOTP code for the session cookie. The one credential mint;
-        // rate-limited, and every accepted code burns.
+        // rate-limited, and every accepted code burns. The login view that reads
+        // `#token=` from the fragment and POSTs here is the web client's
+        // (web/src/ui/Login.tsx), successor to the inline bootstrap page.
         .post("/auth/session", move |mut conn: Conn| {
             let auth = Arc::clone(&auth);
             async move {
@@ -375,12 +402,14 @@ pub(crate) fn public_router(auth: Arc<TcpAuth>) -> Router {
                 match auth.authenticate_code(code.trim()) {
                     Ok(()) => {
                         let value = auth::mint_cookie(&auth.cookie_key, SystemTime::now());
-                        let cookie = format!(
-                            "{}={value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age={}",
-                            auth::COOKIE_NAME,
-                            auth::COOKIE_TTL.as_secs()
-                        );
-                        conn.with_response_header(KnownHeaderName::SetCookie, cookie)
+                        let cookie = Cookie::build((auth::COOKIE_NAME, value))
+                            .path("/")
+                            .secure(true)
+                            .http_only(true)
+                            .same_site(SameSite::Strict)
+                            .max_age(auth::COOKIE_TTL.try_into().expect("30 days fits"))
+                            .build();
+                        conn.with_cookie(cookie)
                             .with_status(200)
                             .with_body(r#"{"status":"authed"}"#)
                     }

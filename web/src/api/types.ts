@@ -1,0 +1,224 @@
+// TypeScript mirror of the daemon's /v1 envelope (docs/control-api.md), the
+// one place wire shapes are declared client-side. Log payloads mirror the
+// serde encodings of src/log.rs: externally tagged enums, so a variant is
+// either a bare string (unit) or a single-key object. When the control API
+// moves, this file and the frame parser in stream.ts are the whole blast
+// radius; nothing in ui/ names a wire field.
+
+// ---- log entries ----
+
+export type Seq = number;
+export type CallId = string;
+
+export interface LogEntry {
+  seq: Seq;
+  turn: number;
+  at: number;
+  payload: Payload;
+}
+
+export type Payload =
+  | { User: ContentBlock[] }
+  | {
+      Assistant: {
+        thinking: ContentBlock[];
+        text: ContentBlock[];
+        calls: ToolCall[];
+      };
+    }
+  | { ToolResult: { call_id: CallId; raw: RawResult; wire: WireState } }
+  | { Mark: Mark }
+  | { Triage: Triage }
+  | { Ambient: Notification }
+  | { Spot: Spot }
+  | { ConfigEdit: ConfigEdit }
+  | { Preamble: { system: string; context: unknown } };
+
+export type ContentBlock =
+  | { Text: string }
+  | { Thinking: { text: string; signature: string } }
+  | { RedactedThinking: { data: string } };
+
+export interface ToolCall {
+  id: CallId;
+  name: string;
+  input: unknown;
+}
+
+export interface RawResult {
+  content: string;
+  is_error: boolean;
+}
+
+export type WireState =
+  | "Raw"
+  | { Distilled: { keep: Keep; note: string | null } }
+  | "Elided"
+  | { TriageFailed: { why: string } };
+
+export type Keep = "All" | "None" | { Ranges: [number, number][] };
+
+export interface Mark {
+  kind: { Boundary: { upto: Seq } };
+  note: string;
+}
+
+export type TriageOrigin = "Model" | "Fallback";
+
+export interface Triage {
+  for_result: Seq | null;
+  origin: TriageOrigin;
+  raw_keep: string;
+  inbox: [Seq, "Pin" | "Dismiss"][];
+  surfaced: string[];
+  retries: string[];
+}
+
+export interface Notification {
+  source: string;
+  body: string;
+  slot: string | null;
+}
+
+export type Stance = "clear" | "watch" | "gate" | "clear_always";
+
+export interface Spot {
+  call_id: CallId;
+  stance: Stance;
+  reason: string;
+  origin: TriageOrigin;
+  probed_prefix?: string;
+}
+
+export type ConfigChange =
+  | { command: { command: string } }
+  | { path: { path: string; read: boolean; write: boolean } }
+  | { tool: { name: string } }
+  | { scope: { text: string } };
+
+export interface ConfigEdit {
+  state: "proposed" | "committed" | "cancelled";
+  resolves: Seq | null;
+  change: ConfigChange;
+  note: string;
+}
+
+// ---- state topics (the GET /state snapshot ≡ the fold of `state` frames) ----
+
+export interface Gate {
+  call_id: CallId;
+  name: string;
+  input: unknown;
+  reason?: string;
+}
+
+export interface Role {
+  source: string | null;
+  scope: string;
+  watch_for: string[];
+  commands: string[];
+  tools: Record<string, unknown>;
+  paths: Record<string, { read: boolean; write: boolean }>;
+}
+
+export interface PendingNotification {
+  id: number;
+  source: string;
+  body: string;
+  slot: string | null;
+}
+
+export interface Proposal {
+  seq: Seq;
+  change: ConfigChange;
+}
+
+export interface Process {
+  id: number;
+  command: string;
+  pid: number;
+  spawned_at: number;
+  background: boolean;
+  muted: boolean;
+}
+
+export interface TokenCounts {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
+}
+
+export interface Usage {
+  last: TokenCounts | null;
+  cumulative: TokenCounts;
+  last_request_at: number | null;
+  context: { limit: number; used: number | null } | null;
+  cost: { usd: number; unpriced: number } | null;
+}
+
+export interface Pace {
+  speed_ms: number;
+  held: boolean;
+}
+
+export type ReviewLevel = "autonomous" | "spotter_human" | "human_only";
+
+// One optional field per state topic, each named by its topic; `null` is a
+// cleared topic, absence an unsubscribed one.
+export interface StateTopics {
+  gate?: Gate | null;
+  role?: Role | null;
+  notifications?: PendingNotification[] | null;
+  proposals?: Proposal[] | null;
+  processes?: Process[] | null;
+  usage?: Usage | null;
+  pace?: Pace | null;
+  review_level?: ReviewLevel | null;
+  running?: boolean | null;
+  upstream_failure?: unknown;
+}
+
+export interface StateSnapshot extends StateTopics {
+  last_seq: Seq | null;
+}
+
+// ---- the /events frame envelope ----
+
+export type Frame =
+  // `render` is the daemon-side human-wire render document, an annotation
+  // beside `data` (unemitted today; the field is reserved).
+  | { class: "log"; kind: string; seq: Seq; data: LogEntry; render?: unknown }
+  | { class: "output"; kind: OutputKind; data: OutputData }
+  | { class: "state"; kind: keyof StateTopics; data: unknown };
+
+export type OutputKind =
+  | "assistant_delta"
+  | "thinking_delta"
+  | "tool_call_start"
+  | "tool_call_input"
+  | "tool_output"
+  | "process_output";
+
+export type OutputData =
+  | { text: string }
+  | { name: string }
+  | { fragment: string }
+  | { call_id: CallId; chunk: string }
+  | { id: number; chunk: string };
+
+// ---- the error envelope ----
+
+export interface ErrorEnvelope {
+  code:
+    | "bad_request"
+    | "invalid_decision"
+    | "not_found"
+    | "gate_moved"
+    | "unauthorized"
+    | "forbidden"
+    | "rate_limited"
+    | "internal";
+  message: string;
+  detail?: unknown;
+}

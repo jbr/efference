@@ -43,9 +43,11 @@ async fn tcp_server(auth: &Arc<TcpAuth>) -> (TestServer<impl trillium::Handler>,
     let server = TestServer::new((
         init(shared),
         trillium_head::head(),
+        CookiesHandler::new(),
         gate(Arc::clone(auth)),
         public_router(Arc::clone(auth)),
         router(),
+        frontend(),
     ))
     .await
     .with_host("localhost");
@@ -65,19 +67,19 @@ fn current_code(auth: &TcpAuth) -> String {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_bootstrap_page_is_anonymous_and_the_api_is_not() {
+async fn the_web_client_is_anonymous_and_the_api_is_not() {
     let auth = armed("page-vs-api");
     let (server, _guard) = tcp_server(&auth).await;
 
+    // The SPA shell (docs/web-client.md): served without a credential, like the
+    // inline bootstrap page it replaced — the login view is inside the app.
     server
         .get("/")
         .await
         .assert_status(200)
         .assert_header_with(KnownHeaderName::ContentType, |ct| {
             assert!(ct.as_str().is_some_and(|ct| ct.starts_with("text/html")))
-        })
-        // The bootstrap JS is served: the page is what reads the fragment token.
-        .assert_body_contains("#token");
+        });
 
     // HEAD rides `trillium_head::head()`: 200 like the GET, with the body stripped.
     let head = server.build(Method::Head, "/").await;
@@ -89,6 +91,17 @@ async fn the_bootstrap_page_is_anonymous_and_the_api_is_not() {
         .await
         .assert_status(401)
         .assert_body_contains(r#""code":"unauthorized""#);
+
+    // The SPA index answers `/` only; an unmatched anonymous GET is a 404, not a
+    // scanner-probe `200`.
+    server.get("/nonexistent").await.assert_status(404);
+
+    // A non-GET outside `/v1` fails closed at the gate.
+    server
+        .post("/nonexistent")
+        .with_json_body(&serde_json::json!({}))
+        .await
+        .assert_status(401);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -129,6 +142,50 @@ async fn a_current_code_mints_a_cookie_and_burns() {
         .await
         .assert_status(401)
         .assert_body_contains("already used");
+}
+
+/// Browsers split the cookie header into one field line per cookie over h2/h3
+/// (RFC 9113 §8.2.3), and cookies ignore ports — so any other service's cookie
+/// on the daemon's host forces the split. The gate must find its cookie among
+/// several field lines and among several crumbs on one line; the regressed
+/// shape was a raw `get_str`, which reads none of a multi-valued header, so
+/// browsers carrying any unrelated host cookie could never authenticate.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_cookie_authenticates_among_other_cookies_and_split_field_lines() {
+    let auth = armed("cookie-field-lines");
+    let (server, _guard) = tcp_server(&auth).await;
+    let code = current_code(&auth);
+
+    let session = server
+        .post("/auth/session")
+        .with_json_body(&serde_json::json!({ "code": code }))
+        .await;
+    session.assert_status(200);
+    let set_cookie = session
+        .header(KnownHeaderName::SetCookie)
+        .expect("a session cookie was set")
+        .to_string();
+    let cookie = set_cookie.split(';').next().unwrap().to_string();
+
+    // Two field lines, ours second.
+    server
+        .get("/v1/state")
+        .with_request_header(
+            KnownHeaderName::Cookie,
+            trillium::HeaderValues::from(vec!["unrelated=1".to_string(), cookie.clone()]),
+        )
+        .await
+        .assert_status(200);
+
+    // One line, several crumbs, ours last.
+    server
+        .get("/v1/state")
+        .with_request_header(
+            KnownHeaderName::Cookie,
+            format!("unrelated=1; other=two; {cookie}"),
+        )
+        .await
+        .assert_status(200);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

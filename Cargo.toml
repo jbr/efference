@@ -55,6 +55,14 @@ trillium-quinn = "0.1.6"
 # coming out — the router itself has no HEAD story.
 trillium-head = "0.3"
 trillium-sse = "0.3.0"
+# The web client (docs/web-client.md): builds `web/` at compile time and embeds
+# the dist assets in the binary; the `dev-proxy` feature below proxies to a
+# spawned Vite dev server instead (HMR). Build mode needs pnpm on PATH.
+trillium-frontend = "0.4.2"
+# The TCP gate's cookie jar (docs/web-bind.md). Parsing must cover every cookie
+# field line — h2/h3 clients split one line per cookie — which the raw-header
+# read it replaced did not.
+trillium-cookies = "0.5.1"
 
 # TUI (DESIGN §10 — the interactive client). Vendored-and-adapted from ferritin's
 # interactive renderer into src/tui/: a ratatui document renderer with syntect
@@ -128,6 +136,11 @@ qrcode = { version = "0.14", default-features = false }
 # instead, since there is no browser to hand a redirect back to.
 webbrowser = "1.2.4"
 jiter = { version = "0.16.0", default-features = false }
+
+[features]
+# Serve the web client from a spawned Vite dev server (with HMR) instead of the
+# compile-time embed: `cargo run --features dev-proxy -- serve --bind …`.
+dev-proxy = ["trillium-frontend/dev-proxy"]
 
 [dev-dependencies]
 # Snapshot the TUI as plain-text character grids (DESIGN: "playwright for TUIs").

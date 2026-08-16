@@ -22,8 +22,9 @@ one `Arc<Shared>`:
 
 - **UDS spawn:** `(head, host_router, router())` — no gate, plus the host-only
   credential routes (below).
-- **TCP spawn:** `(head, gate, public_router, router())` — every conn passes the gate
-  first.
+- **TCP spawn:** `(head, gate, public_router, router(), frontend())` — every conn
+  passes the gate first; the trailing frontend handler serves the embedded web client
+  ([web-client.md](web-client.md)) for the GETs neither router claims.
 
 `head` is `trillium_head::head()`, mounted ahead of everything: HEAD requests are
 rewritten to GET on the way in (so the gate and routers only ever see GET) and the
@@ -83,11 +84,12 @@ The gate is the enforcement; the strip closes the accident.)
 launches the browser. `efference open` re-mints against a running daemon — the re-auth
 path when at the host, and the answer to lost scrollback. The code rides the URL
 *fragment*: it never reaches server or proxy logs, and burned codes make
-browser-history residue inert. The served page (`src/daemon/tcp/bootstrap.html`) reads
-the hash, `POST /auth/session`, gets the cookie, scrubs the URL with
-`history.replaceState`; a bare visit renders a six-digit field posting to the same
-endpoint. `efference open --qr` renders the `otpauth://` QR so a stock authenticator
-app becomes a re-auth path with no host access.
+browser-history residue inert. The web client's login view
+([web-client.md](web-client.md), `web/src/ui/Login.tsx`) reads the hash,
+`POST /auth/session`, gets the cookie, scrubs the URL with `history.replaceState`; a
+bare visit renders a six-digit field posting to the same endpoint. `efference open
+--qr` renders the `otpauth://` QR so a stock authenticator app becomes a re-auth path
+with no host access.
 
 TOTP acceptance has two hard properties:
 
@@ -119,8 +121,11 @@ Runs before every TCP route, in order:
    `Content-Type: application/json` (`400`) — forms can't spell that, which closes the
    no-preflight CSRF shapes. A localhost or LAN bind is not a trust boundary while a
    browser is present; these ship with the bind, not after it.
-3. **Credential check** — valid cookie or bearer, else `401 unauthorized`. Exactly two
-   anonymous routes: `GET /` (the bootstrap page) and `POST /auth/session` (the mint).
+3. **Credential check** — valid cookie or bearer, else `401 unauthorized`. The
+   anonymous surface is every GET outside `/v1` — the web client's shell and hashed
+   assets ([web-client.md](web-client.md)), which reveal nothing session-specific —
+   plus `POST /auth/session` (the mint). `/v1` is the whole sensitive surface on this
+   listener; a non-GET outside it fails closed rather than 404ing.
 
 The `401`/`403`/`429` codes are `ErrorCode` variants in the standard error envelope
 ([control-api.md](control-api.md)).

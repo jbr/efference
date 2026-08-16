@@ -153,6 +153,7 @@ Read top-down; open the subsystem doc you need.
 | Transport & streaming (upstream SSE, deltas, keepalive) | [transport.md](transport.md) | `src/api.rs` |
 | MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/http.rs` |
 | The TCP bind — the web client's front door (root-derived credentials, TOTP bootstrap, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/daemon/tcp.rs` |
+| The web client | [web-client.md](web-client.md) | `web/`, `src/daemon/tcp.rs` |
 | The TUI client | [tui.md](tui.md) | `src/tui/` |
 
 Where a module has grown a directory beside it (`src/api/`, `src/config/`, `src/policy/`,
