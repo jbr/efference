@@ -43,6 +43,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             autonomous,
             reauth,
             keep_scratch,
+            bind,
+            host,
+            tls_cert,
+            tls_key,
+            open,
         } => {
             // `serve` owns the session dir: `--name` or a generated timestamp id → `.efference/<id>/`,
             // with the socket/log/config colocated inside.
@@ -56,6 +61,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 autonomous,
                 reauth,
                 keep_scratch,
+                serve::BindFlags {
+                    bind,
+                    host,
+                    tls_cert,
+                    tls_key,
+                    open,
+                },
             )
             .await
         }
@@ -67,6 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             wait,
         } => approve(client_socket()?, call_id, abort, redirect, wait).await,
         Command::Settle => settle(client_socket()?).await,
+        Command::Open { print, qr, bearer } => open(client_socket()?, print, qr, bearer).await,
         Command::Interrupt => interrupt(client_socket()?).await,
         Command::Background { note } => background(client_socket()?, note).await,
         Command::Pace {

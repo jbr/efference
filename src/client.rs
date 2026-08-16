@@ -291,6 +291,39 @@ impl Client {
             .map_err(|e| anyhow!("opening the event stream at {path}: {e}"))
     }
 
+    /// A fresh bootstrap link from the daemon's TCP bind (`GET /auth/link`,
+    /// docs/web-bind.md) — current TOTP code in the fragment. The `/auth/*`
+    /// credential routes answer only over the Unix socket (host possession is the
+    /// enrollment authority) and live beside `/v1`, hence [`get_unversioned`].
+    ///
+    /// [`get_unversioned`]: Self::get_unversioned
+    pub async fn auth_link(&self) -> Result<String> {
+        json_field(&self.get_unversioned("/auth/link").await?, "url")
+    }
+
+    /// The authenticator-app enrollment URI (`GET /auth/otpauth`, docs/web-bind.md).
+    /// Carries the TOTP secret itself — the caller renders it as a QR at the host
+    /// terminal and nowhere else.
+    pub async fn auth_otpauth(&self) -> Result<String> {
+        json_field(&self.get_unversioned("/auth/otpauth").await?, "uri")
+    }
+
+    /// The program bearer for the TCP bind (`GET /auth/bearer`, docs/web-bind.md).
+    pub async fn auth_bearer(&self) -> Result<String> {
+        json_field(&self.get_unversioned("/auth/bearer").await?, "bearer")
+    }
+
+    /// GET a path that lives beside `/v1` rather than under it — the `/auth/*`
+    /// family only (docs/web-bind.md).
+    async fn get_unversioned(&self, path: &str) -> Result<String> {
+        let conn = self
+            .http
+            .get(path)
+            .await
+            .with_context(|| format!("GET {path} from the control socket"))?;
+        read_2xx(conn, "GET", path).await
+    }
+
     /// POST a JSON body to `path`, returning the response body on a 2xx and an
     /// error carrying the status + body otherwise.
     async fn post(&self, path: &str, body: String) -> Result<String> {
@@ -358,6 +391,15 @@ impl Client {
             .with_context(|| format!("GET {path} from the control socket"))?;
         read_2xx(conn, "GET", path).await
     }
+}
+
+/// Pull one string field out of a JSON body — the `/auth/*` responses are all a
+/// single-field object.
+fn json_field(body: &str, field: &str) -> Result<String> {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v.get(field).and_then(|f| f.as_str()).map(String::from))
+        .ok_or_else(|| anyhow!("no {field:?} in response: {body}"))
 }
 
 /// Join the API version onto a verb's path (docs/control-api.md): every route is

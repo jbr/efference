@@ -2,6 +2,82 @@
 
 use super::*;
 
+/// The raw `--bind` flag family, resolved by [`resolve_bind`] into the daemon's
+/// [`TcpBind`] — or rejected before anything else boots.
+///
+/// [`TcpBind`]: efference::daemon::TcpBind
+pub(crate) struct BindFlags {
+    pub(crate) bind: Option<String>,
+    pub(crate) host: Option<String>,
+    pub(crate) tls_cert: Option<PathBuf>,
+    pub(crate) tls_key: Option<PathBuf>,
+    pub(crate) open: bool,
+}
+
+/// Validate the bind flags into a [`TcpBind`] (docs/web-bind.md), enforcing the
+/// operator posture at the flag boundary: plaintext only on loopback, TLS wants an
+/// explicit public name, and a bind without the machine root is refused rather than
+/// silently unauthenticated.
+///
+/// [`TcpBind`]: efference::daemon::TcpBind
+fn resolve_bind(
+    flags: BindFlags,
+) -> Result<Option<efference::daemon::TcpBind>, Box<dyn std::error::Error + Send + Sync>> {
+    // An empty bind is the explicit "UDS-only" spelling: `--bind ""` overrides a
+    // direnv'd EFFERENCE_BIND default (e.g. for a second concurrent session).
+    let Some(addr) = flags.bind.filter(|a| !a.trim().is_empty()) else {
+        return Ok(None);
+    };
+    use std::net::ToSocketAddrs;
+    let resolved: Vec<_> = addr
+        .to_socket_addrs()
+        .map_err(|e| format!("--bind {addr:?} did not resolve: {e}"))?
+        .collect();
+    let loopback = !resolved.is_empty() && resolved.iter().all(|a| a.ip().is_loopback());
+    let tls = match (flags.tls_cert, flags.tls_key) {
+        (Some(cert), Some(key)) => Some(efference::daemon::TlsPem {
+            cert: std::fs::read(&cert)
+                .map_err(|e| format!("could not read --tls-cert {}: {e}", cert.display()))?,
+            key: std::fs::read(&key)
+                .map_err(|e| format!("could not read --tls-key {}: {e}", key.display()))?,
+        }),
+        // clap's `requires` pairing makes one-without-the-other unrepresentable.
+        _ => None,
+    };
+    if tls.is_none() && !loopback {
+        return Err(format!(
+            "--bind {addr} is not loopback: --tls-cert/--tls-key are required — \
+             never cleartext on a routable interface (docs/web-bind.md)"
+        )
+        .into());
+    }
+    let host = match (flags.host, &tls) {
+        (Some(host), _) => host,
+        (None, None) => "localhost".into(),
+        (None, Some(_)) => {
+            return Err(
+                "--bind with TLS needs --host <name> — the cert's DNS name, which browsers \
+                 must address the daemon by"
+                    .into(),
+            );
+        }
+    };
+    let root = efference::auth::Root::from_env().ok_or_else(|| {
+        format!(
+            "--bind requires {} (inject it with the op env-file pattern, like provider keys)",
+            efference::auth::ROOT_ENV
+        )
+    })?;
+    Ok(Some(efference::daemon::TcpBind {
+        addr,
+        tls,
+        host,
+        root,
+        open: flags.open,
+    }))
+}
+
+#[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
 pub(crate) async fn serve(
     session_dir: PathBuf,
     model: &str,
@@ -11,7 +87,11 @@ pub(crate) async fn serve(
     autonomous: bool,
     reauth: Vec<String>,
     keep_scratch: bool,
+    bind_flags: BindFlags,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Resolve the bind first: a bad flag combination or a missing root should fail
+    // before a session dir is minted or a provider is dialed.
+    let bind = resolve_bind(bind_flags)?;
     // Daemon logging: RUST_LOG controls verbosity (default: efference at info, deps
     // quiet). The transport (request sizes, full API error bodies), the agent loop
     // (capped tool results), and the distiller (fork-peek fallbacks) emit through `log`.
@@ -241,6 +321,7 @@ pub(crate) async fn serve(
         loaded,
         autonomous,
         capabilities,
+        bind,
     )
     .await;
     // Scratch lifecycle (docs/tools.md): cleaned on session end unless retained as

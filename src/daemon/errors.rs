@@ -38,6 +38,15 @@ pub(crate) enum ErrorCode {
     /// The daemon failed at something it was supposed to be able to do (a log append,
     /// a config write, absent shared state). 500.
     Internal,
+    /// The TCP bind's auth gate (docs/web-bind.md): no valid cookie or bearer on a
+    /// route that needs one. A client acts on this by re-authenticating. 401.
+    Unauthorized,
+    /// The TCP bind's hardening gate (docs/web-bind.md): a Host or Origin outside the
+    /// allowlist. Not a credential problem — re-authenticating won't help. 403.
+    Forbidden,
+    /// TOTP verification is locked out (docs/web-bind.md); the response carries
+    /// `Retry-After`. A client acts by waiting, not by retrying immediately. 429.
+    RateLimited,
 }
 
 impl ErrorCode {
@@ -46,8 +55,11 @@ impl ErrorCode {
     pub(crate) fn status(self) -> u16 {
         match self {
             Self::BadRequest | Self::InvalidDecision => 400,
+            Self::Unauthorized => 401,
+            Self::Forbidden => 403,
             Self::NotFound => 404,
             Self::GateMoved => 409,
+            Self::RateLimited => 429,
             Self::Internal => 500,
         }
     }

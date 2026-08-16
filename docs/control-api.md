@@ -20,6 +20,12 @@ The daemon speaks **HTTP/1.1 over a Unix domain socket**. Each session owns a
 directory `.efference/<id>/` (the id is `serve --name <id>`, or a generated
 timestamp) holding `control.sock`, `log.jsonl`, and `config.toml`.
 
+With `serve --bind`, the same routes are also served on a TCP listener behind a
+hardening + auth gate — cookie or bearer, plus `401 unauthorized` /
+`403 forbidden` / `429 rate_limited` in the standard error envelope, and the
+`/auth/*` routes beside `/v1`. That surface is [web-bind.md](web-bind.md); the
+UDS stays auth-exempt and everything below is unchanged on it.
+
 A client finds the socket by:
 
 1. `--socket <path>` — explicit override, or

@@ -225,6 +225,56 @@ pub(crate) enum Command {
         /// deleting it — an artifact for post-mortem analysis (docs/tools.md).
         #[arg(long)]
         keep_scratch: bool,
+        /// Also listen on a TCP address (docs/web-bind.md) — the web client's front
+        /// door, beside the UDS. Loopback may be plaintext; any other address
+        /// requires --tls-cert/--tls-key (never cleartext on a routable interface),
+        /// and either way EFFERENCE_ROOT_SECRET must be set (the op env-file
+        /// pattern). Deliberately a flag/env, not a config key: the session config
+        /// is model-proposable, and network exposure must not be. The env fallbacks
+        /// on this flag family are for a direnv'd default (the operator's shell),
+        /// same trust as typing them; `--bind ""` overrides such a default back to
+        /// UDS-only (a second concurrent session, or the port is busy).
+        #[arg(long, value_name = "ADDR:PORT", env = "EFFERENCE_BIND")]
+        bind: Option<String>,
+        /// The public name browsers address the bind by — the Host allowlist and the
+        /// hostname in the printed link (your ts.net name). Defaults to `localhost`
+        /// on a loopback bind; required with TLS.
+        #[arg(long, value_name = "NAME", requires = "bind", env = "EFFERENCE_HOST")]
+        host: Option<String>,
+        /// PEM certificate chain for the bind (the `tailscale cert` output).
+        #[arg(
+            long,
+            value_name = "PEM",
+            requires = "tls_key",
+            env = "EFFERENCE_TLS_CERT"
+        )]
+        tls_cert: Option<PathBuf>,
+        /// PEM private key matching --tls-cert.
+        #[arg(
+            long,
+            value_name = "PEM",
+            requires = "tls_cert",
+            env = "EFFERENCE_TLS_KEY"
+        )]
+        tls_key: Option<PathBuf>,
+        /// Open the operator's browser at the bootstrap link once bound.
+        #[arg(long, requires = "bind")]
+        open: bool,
+    },
+    /// Mint a fresh bootstrap link against a running daemon's TCP bind and open it —
+    /// the re-auth path when at the host, and the answer to lost scrollback
+    /// (docs/web-bind.md). The credential routes answer only on the Unix socket:
+    /// possession of the host machine is the enrollment authority.
+    Open {
+        /// Print the link without launching a browser.
+        #[arg(long)]
+        print: bool,
+        /// Show the authenticator-app enrollment QR (`otpauth://`) instead of a link.
+        #[arg(long, conflicts_with = "bearer")]
+        qr: bool,
+        /// Print the program bearer token instead of a link.
+        #[arg(long)]
+        bearer: bool,
     },
     /// Send a user turn to a running daemon (`POST /turns`). Seeds turn 1 on an
     /// idle daemon. Returns immediately — watch `state`/`log` for the response,

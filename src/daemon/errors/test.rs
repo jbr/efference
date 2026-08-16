@@ -5,8 +5,11 @@ use super::*;
 fn codes_map_to_canonical_statuses() {
     assert_eq!(ErrorCode::BadRequest.status(), 400);
     assert_eq!(ErrorCode::InvalidDecision.status(), 400);
+    assert_eq!(ErrorCode::Unauthorized.status(), 401);
+    assert_eq!(ErrorCode::Forbidden.status(), 403);
     assert_eq!(ErrorCode::NotFound.status(), 404);
     assert_eq!(ErrorCode::GateMoved.status(), 409);
+    assert_eq!(ErrorCode::RateLimited.status(), 429);
     assert_eq!(ErrorCode::Internal.status(), 500);
 }
 

@@ -579,6 +579,7 @@ mod metrics;
 mod notifications;
 mod pace;
 mod stream;
+mod tcp;
 mod topics;
 mod views;
 mod watch;
@@ -608,3 +609,4 @@ mod serve;
 
 pub use frontend::RemoteFrontend;
 pub use serve::serve;
+pub use tcp::{TcpBind, TlsPem};

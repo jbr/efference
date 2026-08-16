@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod api;
+pub mod auth;
 pub mod bash;
 pub mod client;
 pub mod config;

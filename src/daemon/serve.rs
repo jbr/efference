@@ -7,6 +7,7 @@ use super::*;
 /// agent loop with a [`RemoteFrontend`]. The loop blocks until a `POST /turns`
 /// arrives, so an idle daemon simply waits — retiring argv-seeding and the
 /// "backgrounded run can't get its opening prompt" problem (docs/README.md).
+#[allow(clippy::too_many_arguments)] // the daemon's full boot surface; one caller
 pub async fn serve<D: Distiller, S: Spotter>(
     client: Client,
     toolbox: Toolbox,
@@ -17,6 +18,7 @@ pub async fn serve<D: Distiller, S: Spotter>(
     role: LoadedConfig,
     autonomous: bool,
     capabilities: crate::api::ModelCapabilities,
+    bind: Option<tcp::TcpBind>,
 ) -> Result<(), Error> {
     let (shared, turns) = Shared::with_role_scratch_and_upstream_failure(
         log,
@@ -56,17 +58,46 @@ pub async fn serve<D: Distiller, S: Spotter>(
         turns,
     };
 
+    // The TCP bind's credential state (docs/web-bind.md), armed before either spawn:
+    // the UDS router mounts the host-only credential routes (`/auth/link` & co.), and
+    // the TCP listener mounts the gated stack — the split *is* the trust model, so it
+    // lives in listener topology rather than per-conn inference.
+    let web = bind.map(tcp::arm);
+    let web_auth = web.as_ref().map(|(auth, _)| Arc::clone(auth));
+
     // `with_shared_state` carries the Arc into every conn's TypeSet; `listeners()`
     // upgrades to the multi-listener builder (carrying that state over) so we can
-    // `bind_uds`. The same builder's `bind_tcp`/`bind_env` is the deferred-TCP
-    // path (docs/transport.md) — a config switch, not an abstraction to build.
+    // `bind_uds`.
     let server = trillium_tokio::config()
         .with_shared_state(Arc::clone(&shared))
         .listeners()
         .bind_uds(&socket)
         .map_err(|e| -> Error { format!("failed to bind {}: {e}", socket.display()).into() })?
-        .spawn(router());
+        .spawn((trillium_head::head(), tcp::host_router(web_auth), router()));
     eprintln!("control socket: {}", socket.display());
+
+    // The optional TCP listener beside the UDS (docs/web-bind.md): the same router
+    // behind the hardening + auth gate, sharing the UDS server's swansong so both
+    // stop as one. Held for the whole await like `server` below.
+    let mut _tcp_server = None;
+    if let Some((auth, listener)) = web {
+        let open = listener.open;
+        let addr = listener.addr.clone();
+        let handle = tcp::spawn(
+            listener,
+            Arc::clone(&auth),
+            server.swansong(),
+            Arc::clone(&shared),
+        )
+        .map_err(|e| -> Error { format!("failed to bind {addr}: {e}").into() })?;
+        let link = auth.mint_link();
+        eprintln!("web: {} (bound {addr})", auth.public_base());
+        eprintln!("  {link}");
+        if open && webbrowser::open(&link).is_err() {
+            eprintln!("[could not open a browser for {link}]");
+        }
+        _tcp_server = Some(handle);
+    }
 
     // The one state-topic differ (docs/control-api.md): recomputes the topics on any
     // change signal and publishes the ones that moved, so N connected clients cost one

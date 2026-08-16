@@ -248,6 +248,35 @@ pub(crate) async fn review_level(socket: PathBuf, level: String) -> CliResult {
     Ok(())
 }
 
+/// Mint and open a fresh bootstrap link against a running daemon's TCP bind
+/// (docs/web-bind.md). `--qr` renders the authenticator enrollment QR at the
+/// terminal instead — the one place the TOTP secret is ever displayed; `--bearer`
+/// prints the program token. Both come over the Unix socket only.
+pub(crate) async fn open(socket: PathBuf, print: bool, qr: bool, bearer: bool) -> CliResult {
+    let client = ControlClient::new(socket);
+    if bearer {
+        println!("{}", client.auth_bearer().await?);
+        return Ok(());
+    }
+    if qr {
+        let uri = client.auth_otpauth().await?;
+        let code = qrcode::QrCode::new(uri.as_bytes())
+            .map_err(|e| format!("could not encode the enrollment QR: {e}"))?;
+        println!(
+            "{}",
+            code.render::<qrcode::render::unicode::Dense1x2>().build()
+        );
+        println!("{uri}");
+        return Ok(());
+    }
+    let url = client.auth_link().await?;
+    println!("{url}");
+    if !print && webbrowser::open(&url).is_err() {
+        eprintln!("[could not open a browser — use the printed link]");
+    }
+    Ok(())
+}
+
 pub(crate) async fn interrupt(socket: PathBuf) -> CliResult {
     ControlClient::new(socket).interrupt().await?;
     println!("interrupted");
