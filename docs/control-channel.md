@@ -39,6 +39,13 @@ Ephemeral control state — a pending approval, current status, live process tai
 Every route is served under the `/v1` prefix; the paths here omit it
 ([control-api](control-api.md) is the consumer-facing reference).
 
+Every terminal response **halts** its conn — trillium's router does not halt on
+a route match, and the TCP spawn mounts the frontend handler after the router,
+which treats an un-halted conn as unclaimed ([web-bind.md](web-bind.md)). The
+error helpers (`fail`/`respond` in `daemon/errors.rs`) halt centrally; success
+paths halt per-route. The `/v1/events` validating half is the deliberate
+exception: on success it must fall through to the SSE half of its own route.
+
 **Writes:**
 
 - `POST /turns {text}` → 202. Enqueues a user turn. Returns immediately; submission is decoupled from inference. With `?wait`, the connection is held until the daemon **settles** (the turn reaches a gate or completes) and the response is the resulting `/state` snapshot instead of the 202 — synchronous "submit, read what happened" with no `/state` poll loop.

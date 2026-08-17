@@ -100,15 +100,19 @@ impl ErrorBody {
 }
 
 /// Answer a conn with a typed error, taking the status from the code so the two can
-/// never drift apart.
+/// never drift apart. Terminal — halts, like [`respond`].
 pub(crate) fn fail(conn: Conn, code: ErrorCode, message: impl Into<String>) -> Conn {
     respond(conn, ErrorBody::new(code, message))
 }
 
-/// Answer a conn with a typed error carrying corrective `detail`.
+/// Answer a conn with a typed error carrying corrective `detail`. Terminal: the conn
+/// is halted, because a handler mounted later in the stack (the TCP spawn's
+/// `frontend`, docs/web-bind.md) treats an un-halted conn as unclaimed and would
+/// overwrite the response.
 pub(crate) fn respond(conn: Conn, body: ErrorBody) -> Conn {
     conn.with_status(body.code.status())
         .with_body(body.to_json())
+        .halt()
 }
 
 #[cfg(test)]

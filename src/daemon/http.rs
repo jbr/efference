@@ -141,7 +141,9 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                     if wait {
                         settle_and_state(&shared, conn).await
                     } else {
-                        conn.with_status(202).with_body(r#"{"status":"accepted"}"#)
+                        conn.with_status(202)
+                            .with_body(r#"{"status":"accepted"}"#)
+                            .halt()
                     }
                 }
                 Err(e) => fail(conn, ErrorCode::BadRequest, format!("bad /turns body: {e}")),
@@ -201,7 +203,9 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 if wait {
                     settle_and_state(&shared, conn).await
                 } else {
-                    conn.with_status(200).with_body(r#"{"status":"resolved"}"#)
+                    conn.with_status(200)
+                        .with_body(r#"{"status":"resolved"}"#)
+                        .halt()
                 }
             } else {
                 // The precondition failed: that id is not the pending gate — already
@@ -229,6 +233,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             shared.interrupt();
             conn.with_status(200)
                 .with_body(r#"{"status":"interrupted"}"#)
+                .halt()
         })
         // The turn engine's operator dials as one resource (docs/control-channel.md):
         // `pace`, `review_level`, and the read-only `running` — named exactly as their
@@ -237,7 +242,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
             };
-            conn.with_status(200).with_body(shared.loop_json())
+            conn.with_status(200).with_body(shared.loop_json()).halt()
         })
         // Move the dials — either or both in one call, which the two verb-routes
         // this replaces could not do. Validated whole before anything is applied,
@@ -275,7 +280,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             if let Some(level) = level {
                 shared.set_review_level(level);
             }
-            conn.with_status(200).with_body(shared.loop_json())
+            conn.with_status(200).with_body(shared.loop_json()).halt()
         })
         // The process resource (docs/supervisor.md, docs/control-api.md): every
         // running tool-spawned process — foreground and background share the one
@@ -287,7 +292,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             };
             let body =
                 serde_json::to_string(&shared.process_states()).unwrap_or_else(|_| "[]".into());
-            conn.with_status(200).with_body(body)
+            conn.with_status(200).with_body(body).halt()
         })
         // One running process's representation.
         .get("/v1/processes/:id", |conn: Conn| async move {
@@ -301,7 +306,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 .running_process(id)
                 .map(|p| serde_json::to_string(&p))
             {
-                Some(Ok(body)) => conn.with_status(200).with_body(body),
+                Some(Ok(body)) => conn.with_status(200).with_body(body).halt(),
                 _ => fail(conn, ErrorCode::NotFound, "no running process with that id"),
             }
         })
@@ -330,7 +335,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                         "lost": read.lost,
                         "running": read.running,
                     });
-                    conn.with_status(200).with_body(body.to_string())
+                    conn.with_status(200).with_body(body.to_string()).halt()
                 }
                 None => fail(conn, ErrorCode::NotFound, "no process with that id"),
             }
@@ -393,6 +398,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 .unwrap_or_else(|| "null".into());
             conn.with_status(if detach { 202 } else { 200 })
                 .with_body(representation)
+                .halt()
         })
         // Kill a running process: `killpg` its group; the drain task then sees EOF
         // and fires the exit notification (docs/supervisor.md).
@@ -404,7 +410,9 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 return fail(conn, ErrorCode::BadRequest, "process id must be an integer");
             };
             if shared.kill_process(id) {
-                conn.with_status(200).with_body(r#"{"status":"killed"}"#)
+                conn.with_status(200)
+                    .with_body(r#"{"status":"killed"}"#)
+                    .halt()
             } else {
                 fail(conn, ErrorCode::NotFound, "no running process with that id")
             }
@@ -419,7 +427,9 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             match serde_json::from_str::<NotifyBody>(&body) {
                 Ok(n) => {
                     let id = shared.notify(n.source, n.body, n.slot, n.replaces);
-                    conn.with_status(202).with_body(format!(r#"{{"id":{id}}}"#))
+                    conn.with_status(202)
+                        .with_body(format!(r#"{{"id":{id}}}"#))
+                        .halt()
                 }
                 Err(e) => fail(
                     conn,
@@ -434,9 +444,10 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 return missing_state(conn);
             };
             match conn.param("id").and_then(|s| s.parse::<u64>().ok()) {
-                Some(id) if shared.dismiss_notification(id) => {
-                    conn.with_status(200).with_body(r#"{"status":"dismissed"}"#)
-                }
+                Some(id) if shared.dismiss_notification(id) => conn
+                    .with_status(200)
+                    .with_body(r#"{"status":"dismissed"}"#)
+                    .halt(),
                 Some(_) => fail(
                     conn,
                     ErrorCode::NotFound,
@@ -458,7 +469,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             };
             let body =
                 serde_json::to_string(&shared.pending_proposals()).unwrap_or_else(|_| "[]".into());
-            conn.with_status(200).with_body(body)
+            conn.with_status(200).with_body(body).halt()
         })
         // Move a proposal to its terminal state by its `seq` (the `Proposed` entry's
         // id). Body: `{"state":"committed"|"cancelled","note":"…"}`. Committing folds
@@ -500,11 +511,14 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 }
             };
             match shared.resolve_proposal_decision(seq, commit, decision.note.unwrap_or_default()) {
-                Ok(true) => conn.with_status(200).with_body(if commit {
-                    r#"{"state":"committed"}"#
-                } else {
-                    r#"{"state":"cancelled"}"#
-                }),
+                Ok(true) => conn
+                    .with_status(200)
+                    .with_body(if commit {
+                        r#"{"state":"committed"}"#
+                    } else {
+                        r#"{"state":"cancelled"}"#
+                    })
+                    .halt(),
                 Ok(false) => fail(
                     conn,
                     ErrorCode::NotFound,
@@ -537,7 +551,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                     ErrorCode::BadRequest,
                     "wait needs a predicate: wait=settled",
                 ),
-                None => conn.with_status(200).with_body(shared.state_json()),
+                None => conn.with_status(200).with_body(shared.state_json()).halt(),
             }
         })
         // The durable history as a JSON array. Unbounded by default; `?since=<seq>`
@@ -549,7 +563,10 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 return missing_state(conn);
             };
             match LogSelect::parse(conn.querystring()) {
-                Ok(select) => conn.with_status(200).with_body(shared.log_json(&select)),
+                Ok(select) => conn
+                    .with_status(200)
+                    .with_body(shared.log_json(&select))
+                    .halt(),
                 Err(message) => fail(conn, ErrorCode::BadRequest, message),
             }
         })
@@ -563,7 +580,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 return fail(conn, ErrorCode::BadRequest, "log seq must be an integer");
             };
             match shared.entry_json(seq) {
-                Some(body) => immutable(conn).with_status(200).with_body(body),
+                Some(body) => immutable(conn).with_status(200).with_body(body).halt(),
                 None => fail(conn, ErrorCode::NotFound, "no log entry with that seq"),
             }
         })
@@ -576,7 +593,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             };
             let call_id = conn.param("call_id").unwrap_or_default().to_string();
             match shared.tool_call_json(&call_id) {
-                Some(body) => immutable(conn).with_status(200).with_body(body),
+                Some(body) => immutable(conn).with_status(200).with_body(body).halt(),
                 None => fail(conn, ErrorCode::NotFound, "no tool call with that id"),
             }
         })
@@ -597,7 +614,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 // the handler obtains at server init.
                 |conn: Conn| async move {
                     let Some(shared) = shared_of(&conn) else {
-                        return missing_state(conn).halt();
+                        return missing_state(conn);
                     };
                     match Include::parse(parse_param(conn.querystring(), "include")) {
                         Ok(include) => {
@@ -612,7 +629,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                                 since,
                             })
                         }
-                        Err(message) => fail(conn, ErrorCode::BadRequest, message).halt(),
+                        Err(message) => fail(conn, ErrorCode::BadRequest, message),
                     }
                 },
                 sse(|conn: &mut Conn| match conn.take_state::<EventsRequest>() {
@@ -730,5 +747,5 @@ pub(crate) fn wants_wait(query: &str) -> bool {
 /// inspects `gate` to tell a gate from idle.
 pub(crate) async fn settle_and_state(shared: &Arc<Shared>, conn: Conn) -> Conn {
     let _ = tokio::time::timeout(SETTLE_TIMEOUT, shared.await_settled()).await;
-    conn.with_status(200).with_body(shared.state_json())
+    conn.with_status(200).with_body(shared.state_json()).halt()
 }

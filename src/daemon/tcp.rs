@@ -285,15 +285,14 @@ fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
                 .or_else(|| inner.authority())
                 .map(str::to_string)
             else {
-                return fail(conn, ErrorCode::Forbidden, "request names no host").halt();
+                return fail(conn, ErrorCode::Forbidden, "request names no host");
             };
             if !auth.host_allowed(&host) {
                 return fail(
                     conn,
                     ErrorCode::Forbidden,
                     format!("host {host:?} is not this daemon's name"),
-                )
-                .halt();
+                );
             }
             let method = conn.method();
             let safe = matches!(method, Method::Get | Method::Head | Method::Options);
@@ -311,8 +310,7 @@ fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
                         conn,
                         ErrorCode::Forbidden,
                         format!("origin {origin:?} is not this daemon"),
-                    )
-                    .halt();
+                    );
                 }
                 // Form posts can only spell form encodings, so requiring JSON on
                 // body-bearing methods closes the no-preflight CSRF shapes.
@@ -326,8 +324,7 @@ fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
                             conn,
                             ErrorCode::BadRequest,
                             "unsafe methods require content-type: application/json",
-                        )
-                        .halt();
+                        );
                     }
                 }
             }
@@ -349,8 +346,7 @@ fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
                     conn,
                     ErrorCode::Unauthorized,
                     "no valid session cookie or bearer; POST /auth/session with a current code",
-                )
-                .halt();
+                );
             }
             conn
         }
@@ -412,6 +408,7 @@ pub(crate) fn public_router(auth: Arc<TcpAuth>) -> Router {
                         conn.with_cookie(cookie)
                             .with_status(200)
                             .with_body(r#"{"status":"authed"}"#)
+                            .halt()
                     }
                     Err(CodeRejection::Locked(remaining)) => {
                         let secs = remaining.as_secs().max(1);
@@ -459,7 +456,8 @@ pub(crate) fn host_router(auth: Option<Arc<TcpAuth>>) -> Router {
                 match auth {
                     Some(auth) => conn
                         .with_status(200)
-                        .with_body(serde_json::json!({ "url": auth.mint_link() }).to_string()),
+                        .with_body(serde_json::json!({ "url": auth.mint_link() }).to_string())
+                        .halt(),
                     None => no_bind(conn),
                 }
             }
@@ -470,7 +468,8 @@ pub(crate) fn host_router(auth: Option<Arc<TcpAuth>>) -> Router {
                 match auth {
                     Some(auth) => conn
                         .with_status(200)
-                        .with_body(serde_json::json!({ "uri": auth.otpauth_uri() }).to_string()),
+                        .with_body(serde_json::json!({ "uri": auth.otpauth_uri() }).to_string())
+                        .halt(),
                     None => no_bind(conn),
                 }
             }
@@ -481,7 +480,8 @@ pub(crate) fn host_router(auth: Option<Arc<TcpAuth>>) -> Router {
                 match auth {
                     Some(auth) => conn
                         .with_status(200)
-                        .with_body(serde_json::json!({ "bearer": auth.bearer() }).to_string()),
+                        .with_body(serde_json::json!({ "bearer": auth.bearer() }).to_string())
+                        .halt(),
                     None => no_bind(conn),
                 }
             }
