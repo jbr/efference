@@ -115,10 +115,33 @@ strip, not just the header word.
 ## The gate surface
 
 The pending approval gate (`web/src/ui/Gate.tsx`) renders from the `gate` state
-topic, in the transcript flow above the composer rather than a modal — the call
-whole (name, full input, the logged spotter stance + reason via the `spotFor`
-selector), because a gate resolved over a snippet is not an informed choice. All
-four decisions ride `PUT /v1/approvals/:call_id` (`Decision` in `api/types.ts`):
+topic, in the transcript flow above the composer rather than a modal, and is
+**the affordance only**. The call it decides is already on screen: a gated call
+has no result entry, so that call and its `Spot` verdict are the transcript's
+last two entries, directly above. Reading order is therefore call → verdict →
+affordance, from entry order alone, as in the TUI ([tui.md](tui.md)). The
+surface rendered the call itself once, through `JSON.stringify` — which put a
+`write`'s file body on screen as one escaped line, and an `edit`'s `anchor` and
+`content` likewise, on the one surface where a human commits. Rendering it a
+second time through the cordon's `callView` would have been readable and still
+duplicated the whole body against the `CallBlock` above it; not rendering it is
+what removes both. The `gate.reason` fallback survives for a gate held with no
+`Spot` entry behind it — a window the stream's coherence rule closes
+([control-api.md](control-api.md)) — so it is robustness rather than a path that
+normally renders.
+
+Because the affordance sits in the flow rather than pinned, it can be scrolled
+away from. `GateCue` is a fixed marker, shown by an `IntersectionObserver` on the
+surface exactly while the surface is out of view; it names the call (the part
+that is off-screen when it shows) and jumps to the document tail. Two properties
+are deliberate: it **never scrolls on its own** — a pending decision does not get
+to move the page out from under someone reading — and the jump is a jump, not a
+smooth `scrollIntoView`. `useFollowTail` pins to the bottom after every render
+while the viewport is near it, so an animated scroll toward the tail re-engages
+the follow partway down and is cancelled by the next render. Any future
+scroll-to-somewhere affordance meets the same constraint.
+
+All four decisions ride `PUT /v1/approvals/:call_id` (`Decision` in `api/types.ts`):
 approve, abort, redirect with steering text, and allow-with-prefix (a
 `config_edit` carrying a `command` change, prefilled from the call's own
 `command` field, plus an optional note). A `409 gate_moved` is handled in

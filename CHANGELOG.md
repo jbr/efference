@@ -13,10 +13,12 @@ behind a change, see [`journal/`](journal/).
 - The web strip carries the glanceable state: the usage line (context occupancy, session cost), per-process elapsed clocks and mute/unmute, pending notifications with dismiss, and a banner when the connection is not live.
 - The web client grows a controls strip: interrupt, hold/resume, pace and review-level dials, and per-process verbs — background handoff (with the optional note) and kill.
 - The web transcript follows its tail — new entries and streamed output keep the viewport at the bottom, scrolling up holds position, a cold open lands at the tail — and the preamble collapses to one expandable line.
-- The web client renders the pending approval gate — the whole call (name, full input, logged spotter stance + reason) in the transcript flow, with all four resolutions (approve, abort, redirect with steering text, allow-with-prefix) and `409 gate_moved` folding the corrective gate into the view without a second round-trip.
+- The web client renders the pending approval gate in the transcript flow, directly under the call and verdict it decides, with all four resolutions (approve, abort, redirect with steering text, allow-with-prefix) and `409 gate_moved` folding the corrective gate into the view without a second round-trip.
+- A gate cue: while the pending gate is scrolled out of view, a fixed marker names the waiting call and jumps to it.
 - A web client, served by the TCP bind: React + TypeScript in `web/`, built and embedded into the binary at compile time (trillium-frontend; `--features dev-proxy` for HMR). First slice: fragment-token/TOTP login (replacing the inline bootstrap page), the live transcript over one `/v1/events` stream with `?since` resume, streamed prose and coarse turn-phase, and a composer.
 
 ### Fixed
+- The gate no longer dumps the pending call as escaped JSON — a `write`'s file body rendered as one `\n`-escaped line on the surface where a human commits. The call and its verdict render once, in the transcript above the affordance.
 - Every terminal `/v1` handler halts its conn: trillium's router doesn't halt on match, and the TCP bind mounts the frontend handler after the router — under `dev-proxy` it forwarded answered-but-unhalted conns to Vite, 502ing every plain JSON route.
 - The web client's connection survives React StrictMode's mount → cleanup → remount (dev builds only): the connector is owned by the effect and rebuilt on remount, instead of being permanently closed by the simulated unmount.
 - The TCP gate now reads every `cookie` header field line (via trillium-cookies): browsers split one line per cookie over h2/h3, so any unrelated cookie on the daemon's host locked browsers out of cookie auth while curl (one line) passed.

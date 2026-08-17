@@ -79,6 +79,22 @@ pre {
   padding-left: 0.6rem;
 }
 
+/* The gate cue: shown only while the affordance is scrolled out of view.
+   Sits above the sticky composer, in the content column. */
+.gate-cue {
+  position: fixed;
+  bottom: 7.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  cursor: pointer;
+  border: 1px solid #d90;
+  background: Canvas;
+  border-left: 3px solid #d90;
+  padding: 0.3rem 0.7rem;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.3);
+}
+
 .controls {
   display: flex;
   gap: 0.4rem;
