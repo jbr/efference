@@ -109,6 +109,42 @@ defaults, which are sized for documents: a transcript is a sequence of short
 turns, and default heading and paragraph margins put more space *inside* one turn
 than the entry separation puts *between* two.
 
+## Syntax highlighting
+
+`ui/highlight.ts` owns one Shiki highlighter; `ui/Code.tsx` renders through it.
+Three decisions:
+
+- **The fine-grained bundle**, over a preset. The app embeds into the binary at
+  compile time, so the full grammar set is not affordable; the languages are
+  exactly the ones `render/parse.ts`'s `langForPath` can name, loaded as dynamic
+  imports so the grammars are their own chunks rather than main-bundle weight.
+- **The JavaScript regex engine**, not the Oniguruma WASM one — no `.wasm` to
+  ship, and no `wasm-unsafe-eval` needed in the CSP the untrusted-output pass
+  will add.
+- **Tokens, not HTML.** `codeToTokens` returns `{ content, color }[]` grouped by
+  line, which the components render as spans. `codeToHtml` would return a markup
+  string, and nothing on this page turns untrusted text into markup. The line
+  grouping is also the shape the numbered-gutter view already wanted, so a
+  distilled `read` is highlighted *and* keeps its per-line original line numbers.
+
+Highlighting is best-effort: until the grammars load, and permanently if they
+fail to, every caller renders the plain text it did before. The one rule carried
+from the TUI is that a block is highlighted **only when its language is known** —
+the TUI's renderer used to default to `rust`, which was right in ferritin and
+wrong here, where the commonest untagged block is a tool result, so `ls` output
+was coloured as Rust. `data-lang` stays on the element either way: it records
+what the cordon inferred, independent of what got coloured.
+
+Fenced blocks inside prose route through the same component, so prose code and
+tool code share one language map. Inside a `<pre>`, highlighted lines are joined
+by explicit newline text rather than one element each — an element per line gives
+a blank line zero height, which silently eats every empty line in the source.
+
+The TUI's highlighting concerns that do *not* transfer are the repaint ones
+(per-block memoization, continuing a growing block from the previous frame's
+parse state): those exist because ratatui repaints the whole viewport, and the
+DOM is retained between renders.
+
 ## Transcript ergonomics
 
 Two behaviours over the render-whole transcript. **Follow-tail**

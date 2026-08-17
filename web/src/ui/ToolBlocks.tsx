@@ -6,6 +6,7 @@
 // verbatim raw. `data-lang` on code bodies is the future highlighter's hook.
 
 import type { RawResult, ToolCall, WireState } from "../api/types.ts";
+import { Code, NumberedCode } from "./Code.tsx";
 import {
   callView,
   resultRender,
@@ -23,7 +24,7 @@ export function CallBlock({ call }: { call: ToolCall }) {
       </div>
       {view.intent !== null && <div className="dim intent">{view.intent}</div>}
       {view.body !== null && (
-        <pre data-lang={view.body.lang ?? undefined}>{view.body.text}</pre>
+        <Code text={view.body.text} lang={view.body.lang} />
       )}
     </div>
   );
@@ -42,18 +43,9 @@ function Body({ body }: { body: ResultView }) {
         </pre>
       );
     case "code":
-      return <pre data-lang={body.lang ?? undefined}>{body.text}</pre>;
+      return <Code text={body.text} lang={body.lang} />;
     case "numbered":
-      return (
-        <pre data-lang={body.lang ?? undefined}>
-          {body.lines.map(([n, text]) => (
-            <div key={n}>
-              <span className="lineno">{String(n).padStart(5)} </span>
-              {text}
-            </div>
-          ))}
-        </pre>
-      );
+      return <NumberedCode lines={body.lines} lang={body.lang} />;
     case "text":
       return <pre>{body.text}</pre>;
   }

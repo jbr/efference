@@ -12,13 +12,31 @@
 // `javascript:` or `data:` link in a model's output does not survive into an
 // href. Neither should be switched off without reading that unit.
 
+import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Code } from "./Code.tsx";
+
+/** A fenced block goes through the same highlighter as a tool result body,
+ * so prose code and tool code are coloured by one language map rather than
+ * two. Only a fence carries `language-*`; inline code has no class and stays
+ * an ordinary `<code>`. `<pre>` unwraps to nothing because `Code` renders
+ * its own. */
+const components: Components = {
+  pre: ({ children }) => <>{children}</>,
+  code: ({ className, children }) => {
+    const lang = /language-(\w+)/.exec(className ?? "")?.[1];
+    if (lang === undefined) return <code>{children}</code>;
+    return <Code text={String(children).replace(/\n$/, "")} lang={lang} />;
+  },
+};
 
 export function Markdown({ children }: { children: string }) {
   return (
     <div className="prose">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {children}
+      </ReactMarkdown>
     </div>
   );
 }
