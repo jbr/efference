@@ -4,6 +4,7 @@
 // and content-on-the-page precedes layout.
 
 import type { ContentBlock, LogEntry, WireState } from "../api/types.ts";
+import { wireView } from "../render/distill.ts";
 import type { Streaming } from "../session/store.ts";
 import { useFollowTail } from "./useFollowTail.ts";
 
@@ -50,11 +51,32 @@ function Entry({ entry }: { entry: LogEntry }) {
     );
   }
   if ("ToolResult" in p) {
+    const { raw, wire } = p.ToolResult;
+    const view = wireView(raw, wire);
+    // The primary render is what the model saw (the distillate is the
+    // output); `view` is null for a Raw wire state, where raw *is* that.
+    // For every other state the raw content stays one tap away — the audit
+    // view over the entry the client already holds.
+    if (view === null) {
+      return (
+        <Block
+          kind={`result${raw.is_error ? " (error)" : ""}`}
+          body={raw.content}
+        />
+      );
+    }
     return (
-      <Block
-        kind={`result (${wireLabel(p.ToolResult.wire)}${p.ToolResult.raw.is_error ? ", error" : ""})`}
-        body={p.ToolResult.raw.content}
-      />
+      <div className="block">
+        <div className="kind">
+          result ({wireLabel(wire)}
+          {view.isError ? ", error" : ""})
+        </div>
+        <pre>{view.text}</pre>
+        <details className="dim">
+          <summary className="kind">raw</summary>
+          <pre>{raw.content}</pre>
+        </details>
+      </div>
     );
   }
   if ("Mark" in p) {

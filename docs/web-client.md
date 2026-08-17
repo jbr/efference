@@ -14,10 +14,13 @@ the reference TUI does.
   faithful: every log entry renders, because a gate resolved over a snippet is not an
   informed choice. What it does not copy is the TUI's furniture — control strip, focus
   model, block menu — which is form-factor idiom, not shared invariant.
-- **Tool results are plain text.** No port of the TUI's per-tool parsers; rich
-  rendering waits for structured results / the daemon-side render document (the
-  reserved `render` field on log frames). A UI finding made in either client is
-  promoted to a shared home and inherited, never re-implemented per client.
+- **A tool result's primary view is what the model saw.** The distillate is the
+  output; raw is the audit view, one tap away. Rendering that view client-side
+  runs through the cordon (below) — decided, deletable debt, not the "shared
+  home" a promoted UI finding normally gets. The long-term shared home is
+  structured tool output (audience-tagged content blocks, or per-tool result
+  schemas), which deletes the cordon whole; the reserved `render` field on log
+  frames remains the daemon-side alternative if structure is slow to arrive.
 - **Content before styling.** The visual layer is deliberately minimal until the
   information surface is complete.
 
@@ -51,6 +54,21 @@ the daemon sets `event:` to the frame's kind, and `EventSource` dispatches named
 events — a client would register one listener per known kind and silently drop
 frames from a newer daemon. Reconnection resumes by `?since=` (the daemon does not
 read `Last-Event-ID`), replaying the durable subset exactly.
+
+## The cordon — `web/src/render/`
+
+A deliberate, temporary duplicate of daemon rendering logic, kept in one
+directory so it can be deleted whole when structured tool output lands. Its
+first resident is `distill.ts`: a literal port of `src/project/render.rs`
+(the verdict renderer — keep-ranges to `@@` hunks, the `⟢` note, the
+truncation breadcrumb, the triage-failure and elision texts), with tests
+mirroring `src/project/test/distilled.rs` case for case so divergence is
+findable by diffing. `Transcript` renders a non-`Raw` result's wire view as
+the primary body and the raw content behind a per-result `<details>` — the
+raw/distilled toggle, from the entry the client already holds. Ports here
+stay literal (same names, same strings) and never grow beyond mirrors: a
+rendering idea that isn't a mirror belongs to the structured-output
+successor, not the cordon.
 
 ## Transcript ergonomics
 
