@@ -100,3 +100,10 @@ select {
   font-size: 0.9em;
   padding-bottom: 0.25rem;
 }
+
+/* The connection is not live: loud on purpose, phone-visible. */
+.banner {
+  background: #d90;
+  color: #000;
+  padding: 0.2rem 0.5rem;
+}

@@ -24,11 +24,16 @@ export function App() {
           {gate ? " · gate pending" : ""}
         </span>
       </header>
+      {session.connection !== "live" && (
+        <div className="banner">{session.connection}…</div>
+      )}
       <Controls
         pace={session.topics.pace ?? null}
         reviewLevel={session.topics.review_level ?? null}
         running={session.topics.running ?? false}
         processes={session.topics.processes ?? []}
+        usage={session.topics.usage ?? null}
+        notifications={session.topics.notifications ?? []}
       />
       <Transcript entries={session.entries} streaming={session.streaming} />
       {gate && (

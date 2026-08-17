@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The web strip carries the glanceable state: the usage line (context occupancy, session cost), per-process elapsed clocks and mute/unmute, pending notifications with dismiss, and a banner when the connection is not live.
 - The web client grows a controls strip: interrupt, hold/resume, pace and review-level dials, and per-process verbs — background handoff (with the optional note) and kill.
 - The web transcript follows its tail — new entries and streamed output keep the viewport at the bottom, scrolling up holds position, a cold open lands at the tail — and the preamble collapses to one expandable line.
 - The web client renders the pending approval gate — the whole call (name, full input, logged spotter stance + reason) in the transcript flow, with all four resolutions (approve, abort, redirect with steering text, allow-with-prefix) and `409 gate_moved` folding the corrective gate into the view without a second round-trip.

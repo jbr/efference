@@ -65,15 +65,21 @@ stands (the positions above).
 
 ## The controls strip
 
-The operator dials (`ui/Controls.tsx`), rendered under the header from the
-topics the store already carries: interrupt (`POST /v1/loop/interrupt`,
-enabled while `running`), hold/resume and the pace select (one
-`PATCH /v1/loop`, which also moves the review-level select — the api layer's
-`patchLoop` translates to the wire's partial-`pace` shape), and one row per
-process with the verbs — the background handoff with its optional note
+The operator dials and the ambient state (`ui/Controls.tsx`), rendered under
+the header from the topics the store already carries: interrupt
+(`POST /v1/loop/interrupt`, enabled while `running`), hold/resume and the
+pace select (one `PATCH /v1/loop`, which also moves the review-level select —
+the api layer's `patchLoop` translates to the wire's partial-`pace` shape),
+and the usage line (context occupancy and the session cost, whichever halves
+the provider filled). One row per process: command, elapsed (client-computed
+from `spawned_at`, ticked once a second while any process runs), muted flag,
+and the verbs — mute/unmute, the background handoff with its optional note
 (`PATCH /v1/processes/:id`, a 202) on the foreground entry, kill
-(`DELETE /v1/processes/:id`) on any. Process *display* beyond command and
-flags (elapsed, mute) is the glanceable-state surface, not this one.
+(`DELETE /v1/processes/:id`) on any. Pending notifications render one row
+each with dismiss (`DELETE /v1/notifications/:id`) — on an idle loop the
+inbox delivers immediately, so these rows only appear while a tool is
+mid-run. A non-`live` connection shows as a full-width banner above the
+strip, not just the header word.
 
 ## The gate surface
 

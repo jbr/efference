@@ -100,6 +100,9 @@ export const patchProcess = (
 ) => patch<Process | null>(`/v1/processes/${id}`, body);
 export const killProcess = (id: number) =>
   del<{ status: string }>(`/v1/processes/${id}`);
+// Remove a pending notification before it reaches a triage gate (docs/inbox.md).
+export const dismissNotification = (id: number) =>
+  del<{ status: string }>(`/v1/notifications/${id}`);
 
 // Trade a TOTP code for the session cookie (docs/web-bind.md). Outside /v1:
 // auth is the bind's surface, not the session's.
