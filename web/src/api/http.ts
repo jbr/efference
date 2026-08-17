@@ -9,6 +9,8 @@ import type {
   Decision,
   ErrorEnvelope,
   LogEntry,
+  Process,
+  ReviewLevel,
   StateSnapshot,
 } from "./types.ts";
 
@@ -56,6 +58,7 @@ export const put = <T>(path: string, body: unknown) =>
   request<T>("PUT", path, body);
 export const patch = <T>(path: string, body: unknown) =>
   request<T>("PATCH", path, body);
+export const del = <T>(path: string) => request<T>("DELETE", path);
 
 // ---- the routes the client uses today; grows with the ui ----
 
@@ -70,6 +73,33 @@ export const resolveApproval = (callId: CallId, decision: Decision) =>
     `/v1/approvals/${encodeURIComponent(callId)}`,
     decision,
   );
+
+// The operator dials (docs/control-api.md): one PATCH can move pace and
+// review level together; `pace` is itself partial.
+export interface LoopPatch {
+  speedMs?: number;
+  held?: boolean;
+  reviewLevel?: ReviewLevel;
+}
+export const patchLoop = ({ speedMs, held, reviewLevel }: LoopPatch) =>
+  patch<{ pace: unknown; review_level: string; running: boolean }>("/v1/loop", {
+    ...(speedMs !== undefined || held !== undefined
+      ? { pace: { speed_ms: speedMs, held } }
+      : {}),
+    ...(reviewLevel !== undefined ? { review_level: reviewLevel } : {}),
+  });
+// Signals the running tool; it deletes no state.
+export const interruptLoop = () =>
+  post<{ status: string }>("/v1/loop/interrupt", {});
+// `background: true` on the foreground process is the handoff — expect 202,
+// the flip lands at the detach race (docs/control-api.md); `note` rides it as
+// the next user message. `muted` is the dismiss toggle.
+export const patchProcess = (
+  id: number,
+  body: { background?: boolean; muted?: boolean; note?: string },
+) => patch<Process | null>(`/v1/processes/${id}`, body);
+export const killProcess = (id: number) =>
+  del<{ status: string }>(`/v1/processes/${id}`);
 
 // Trade a TOTP code for the session cookie (docs/web-bind.md). Outside /v1:
 // auth is the bind's surface, not the session's.

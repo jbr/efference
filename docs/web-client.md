@@ -63,6 +63,18 @@ collapses** to a native `<details>` line that expands on tap — presentation
 of one audit entry, not a fold affordance; render-whole for tool results
 stands (the positions above).
 
+## The controls strip
+
+The operator dials (`ui/Controls.tsx`), rendered under the header from the
+topics the store already carries: interrupt (`POST /v1/loop/interrupt`,
+enabled while `running`), hold/resume and the pace select (one
+`PATCH /v1/loop`, which also moves the review-level select — the api layer's
+`patchLoop` translates to the wire's partial-`pace` shape), and one row per
+process with the verbs — the background handoff with its optional note
+(`PATCH /v1/processes/:id`, a 202) on the foreground entry, kill
+(`DELETE /v1/processes/:id`) on any. Process *display* beyond command and
+flags (elapsed, mute) is the glanceable-state surface, not this one.
+
 ## The gate surface
 
 The pending approval gate (`web/src/ui/Gate.tsx`) renders from the `gate` state

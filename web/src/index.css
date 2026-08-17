@@ -79,14 +79,24 @@ pre {
   padding-left: 0.6rem;
 }
 
-.gate .controls {
+.controls {
   display: flex;
   gap: 0.4rem;
   margin-top: 0.3rem;
+  align-items: center;
 }
 
-.gate .controls input {
+.controls input {
   font: inherit;
   flex: 1;
   min-width: 0;
+}
+
+select {
+  font: inherit;
+}
+
+.controls-strip {
+  font-size: 0.9em;
+  padding-bottom: 0.25rem;
 }
