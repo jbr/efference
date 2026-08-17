@@ -3,9 +3,9 @@
 // tool results first, no folding). Deliberately crude: this is the churn zone,
 // and content-on-the-page precedes layout.
 
-import type { ContentBlock, LogEntry, WireState } from "../api/types.ts";
-import { wireView } from "../render/distill.ts";
+import type { CallId, ContentBlock, LogEntry } from "../api/types.ts";
 import type { Streaming } from "../session/store.ts";
+import { CallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
 
 const text = (blocks: ContentBlock[]) =>
@@ -19,14 +19,13 @@ const text = (blocks: ContentBlock[]) =>
     )
     .join("\n");
 
-const wireLabel = (wire: WireState) => {
-  if (wire === "Raw") return "raw";
-  if (wire === "Elided") return "elided";
-  if ("Distilled" in wire) return "distilled";
-  return `triage failed: ${wire.TriageFailed.why}`;
-};
-
-function Entry({ entry }: { entry: LogEntry }) {
+function Entry({
+  entry,
+  toolOf,
+}: {
+  entry: LogEntry;
+  toolOf: (callId: CallId) => string | null;
+}) {
   const p = entry.payload;
   if ("User" in p) {
     return <Block kind="user" body={text(p.User)} />;
@@ -41,43 +40,14 @@ function Entry({ entry }: { entry: LogEntry }) {
           <Block kind="assistant" body={text(p.Assistant.text)} />
         )}
         {p.Assistant.calls.map((call) => (
-          <Block
-            key={call.id}
-            kind={`tool: ${call.name}`}
-            body={JSON.stringify(call.input, null, 2)}
-          />
+          <CallBlock key={call.id} call={call} />
         ))}
       </>
     );
   }
   if ("ToolResult" in p) {
-    const { raw, wire } = p.ToolResult;
-    const view = wireView(raw, wire);
-    // The primary render is what the model saw (the distillate is the
-    // output); `view` is null for a Raw wire state, where raw *is* that.
-    // For every other state the raw content stays one tap away — the audit
-    // view over the entry the client already holds.
-    if (view === null) {
-      return (
-        <Block
-          kind={`result${raw.is_error ? " (error)" : ""}`}
-          body={raw.content}
-        />
-      );
-    }
-    return (
-      <div className="block">
-        <div className="kind">
-          result ({wireLabel(wire)}
-          {view.isError ? ", error" : ""})
-        </div>
-        <pre>{view.text}</pre>
-        <details className="dim">
-          <summary className="kind">raw</summary>
-          <pre>{raw.content}</pre>
-        </details>
-      </div>
-    );
+    const { call_id, raw, wire } = p.ToolResult;
+    return <ResultBlock tool={toolOf(call_id)} raw={raw} wire={wire} />;
   }
   if ("Mark" in p) {
     return <Block kind="mark" body={p.Mark.note} dim />;
@@ -165,10 +135,21 @@ export function Transcript({
   streaming: Streaming;
 }) {
   useFollowTail();
+  // A result names its call by id; the call (and its tool name) lives in an
+  // earlier Assistant entry. One pass per render keeps Entry lookups O(1).
+  const calls = new Map<CallId, string>();
+  for (const entry of entries) {
+    if ("Assistant" in entry.payload) {
+      for (const call of entry.payload.Assistant.calls) {
+        calls.set(call.id, call.name);
+      }
+    }
+  }
+  const toolOf = (callId: CallId) => calls.get(callId) ?? null;
   return (
     <div className="transcript">
       {entries.map((entry) => (
-        <Entry key={entry.seq} entry={entry} />
+        <Entry key={entry.seq} entry={entry} toolOf={toolOf} />
       ))}
       <StreamingTail streaming={streaming} />
     </div>

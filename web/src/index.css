@@ -101,6 +101,30 @@ select {
   padding-bottom: 0.25rem;
 }
 
+/* Tool-result views (docs/web-client.md, the cordon's display half). Line-
+   level diff coloring only — token-level highlighting is the deferred
+   syntax-highlighter step, which will hook the data-lang attribute. */
+.diff-added {
+  color: light-dark(#1a7f37, #57ab5a);
+}
+
+.diff-removed {
+  color: light-dark(#cf222e, #e5534b);
+}
+
+.diff-hunk {
+  opacity: 0.6;
+}
+
+.lineno {
+  opacity: 0.45;
+  user-select: none;
+}
+
+.intent {
+  font-style: italic;
+}
+
 /* The connection is not live: loud on purpose, phone-visible. */
 .banner {
   background: #d90;

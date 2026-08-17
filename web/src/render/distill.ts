@@ -16,8 +16,9 @@ export const PEEK_LINE_CAP = 2000;
 type Range = [number, number];
 
 /** Mirrors Rust `str::lines`: split on \n, strip a trailing \r per line, no
- * phantom empty line after a trailing newline. */
-function rustLines(content: string): string[] {
+ * phantom empty line after a trailing newline. Shared with parse.ts so both
+ * halves of the cordon number lines identically. */
+export function rustLines(content: string): string[] {
   if (content === "") return [];
   const parts = content.split("\n");
   if (parts.at(-1) === "") parts.pop();
@@ -79,6 +80,29 @@ export function renderDistilled(
     out += `\n… [${dropped} more lines truncated before triage]`;
   }
   return out;
+}
+
+/** A kept line paired with its 1-based line number in the raw content. */
+export type NumberedLine = [number, string];
+
+/** Mirrors `distillate` + `Distillate::numbered_lines`, plus the total the
+ * TUI's "kept N of M lines" header divides by (shown + truncated). */
+export function distillateKept(
+  content: string,
+  keep: Keep,
+): { kept: NumberedLine[]; total: number } {
+  const all = rustLines(content);
+  const shown = all.slice(0, PEEK_LINE_CAP);
+  const dropped = all.length - shown.length;
+  const ranges = normalize(
+    keep === "All" ? [[1, shown.length]] : keep === "None" ? [] : keep.Ranges,
+    shown.length,
+  );
+  const kept: NumberedLine[] = [];
+  for (const [s, e] of ranges) {
+    for (let i = s; i <= e; i++) kept.push([i, shown[i - 1]]);
+  }
+  return { kept, total: shown.length + dropped };
 }
 
 /** Mirrors `render_triage_failure`. */

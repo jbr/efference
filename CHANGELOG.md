@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The web client renders tool calls and results tool-aware: edit diffs colored line-by-line, `read` results framing-stripped with a numbered gutter, call headers summarizing their identifying argument with the `intent` leading the entry — and a distilled result keeps its tool's rendering at whatever subset triage kept.
 - The web client's tool results show the wire view first — the distillate (`@@` hunks + note), elision, or triage failure the model actually saw — with raw one tap away per result.
 - The web strip carries the glanceable state: the usage line (context occupancy, session cost), per-process elapsed clocks and mute/unmute, pending notifications with dismiss, and a banner when the connection is not live.
 - The web client grows a controls strip: interrupt, hold/resume, pace and review-level dials, and per-process verbs — background handoff (with the optional note) and kill.

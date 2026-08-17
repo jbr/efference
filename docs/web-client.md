@@ -57,18 +57,31 @@ read `Last-Event-ID`), replaying the durable subset exactly.
 
 ## The cordon — `web/src/render/`
 
-A deliberate, temporary duplicate of daemon rendering logic, kept in one
-directory so it can be deleted whole when structured tool output lands. Its
-first resident is `distill.ts`: a literal port of `src/project/render.rs`
-(the verdict renderer — keep-ranges to `@@` hunks, the `⟢` note, the
-truncation breadcrumb, the triage-failure and elision texts), with tests
-mirroring `src/project/test/distilled.rs` case for case so divergence is
-findable by diffing. `Transcript` renders a non-`Raw` result's wire view as
-the primary body and the raw content behind a per-result `<details>` — the
+A deliberate, temporary duplicate of daemon and TUI rendering logic, kept in
+one directory so it can be deleted whole when structured tool output lands.
+Two residents:
+
+- `distill.ts` — a literal port of `src/project/render.rs` (the verdict
+  renderer: keep-ranges resolution, `@@` hunks, the `⟢` note, the truncation
+  breadcrumb, triage-failure and elision texts), tests mirroring
+  `src/project/test/distilled.rs` case for case.
+- `parse.ts` — a literal port of the TUI's per-tool parsing and dispatch
+  (`src/tui/projection/tools.rs` + the per-wire-state match in
+  `src/tui/projection.rs`): the `===DIFF===` classification for the edit
+  tools, `read`'s sentinel stripping and extension→language map, per-tool
+  call summaries with the `intent` leading the entry, and the distilled
+  composition — the parse runs over the whole raw, the verdict's kept line
+  numbers filter the rows it produced, so a triaged view keeps its tool's
+  rendering (`kept N of M lines` in the header).
+
+`ui/ToolBlocks.tsx` is the display half: colored diff lines (line-level
+only), numbered gutters whose jumps show what triage dropped, `data-lang` on
+code bodies as the future syntax-highlighter's hook, and the raw content
+behind a per-result `<details>` whenever the body isn't verbatim raw — the
 raw/distilled toggle, from the entry the client already holds. Ports here
-stay literal (same names, same strings) and never grow beyond mirrors: a
-rendering idea that isn't a mirror belongs to the structured-output
-successor, not the cordon.
+stay literal (same names, same strings, same classifications) and never grow
+beyond mirrors: a rendering idea that isn't a mirror belongs to the
+structured-output successor, not the cordon.
 
 ## Transcript ergonomics
 
