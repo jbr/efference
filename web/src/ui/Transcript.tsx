@@ -5,6 +5,7 @@
 
 import type { ContentBlock, LogEntry, WireState } from "../api/types.ts";
 import type { Streaming } from "../session/store.ts";
+import { useFollowTail } from "./useFollowTail.ts";
 
 const text = (blocks: ContentBlock[]) =>
   blocks
@@ -80,7 +81,15 @@ function Entry({ entry }: { entry: LogEntry }) {
     );
   }
   if ("Preamble" in p) {
-    return <Block kind="preamble" body={p.Preamble.system} dim />;
+    // Collapsed by default: this is presentation of one audit entry — the
+    // wall of system prompt ahead of the first user turn — not a fold
+    // affordance; render-whole for tool results stands (docs/web-client.md).
+    return (
+      <details className="block dim">
+        <summary className="kind">preamble</summary>
+        <pre>{p.Preamble.system}</pre>
+      </details>
+    );
   }
   return <Block kind="unknown entry" body={JSON.stringify(p)} dim />;
 }
@@ -133,6 +142,7 @@ export function Transcript({
   entries: LogEntry[];
   streaming: Streaming;
 }) {
+  useFollowTail();
   return (
     <div className="transcript">
       {entries.map((entry) => (

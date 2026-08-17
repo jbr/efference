@@ -40,6 +40,10 @@ header {
   opacity: 0.7;
 }
 
+summary.kind {
+  cursor: pointer;
+}
+
 pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

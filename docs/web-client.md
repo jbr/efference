@@ -52,6 +52,17 @@ events — a client would register one listener per known kind and silently drop
 frames from a newer daemon. Reconnection resumes by `?since=` (the daemon does not
 read `Last-Event-ID`), replaying the durable subset exactly.
 
+## Transcript ergonomics
+
+Two behaviours over the render-whole transcript. **Follow-tail**
+(`ui/useFollowTail.ts`): the transcript scrolls the window, so "following"
+means the viewport sits at the document's bottom — new entries and streamed
+output keep it pinned there, scrolling up holds position, and a cold open
+lands at the tail rather than the top of the preamble. **The preamble
+collapses** to a native `<details>` line that expands on tap — presentation
+of one audit entry, not a fold affordance; render-whole for tool results
+stands (the positions above).
+
 ## The gate surface
 
 The pending approval gate (`web/src/ui/Gate.tsx`) renders from the `gate` state

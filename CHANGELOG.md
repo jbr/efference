@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The web transcript follows its tail — new entries and streamed output keep the viewport at the bottom, scrolling up holds position, a cold open lands at the tail — and the preamble collapses to one expandable line.
 - The web client renders the pending approval gate — the whole call (name, full input, logged spotter stance + reason) in the transcript flow, with all four resolutions (approve, abort, redirect with steering text, allow-with-prefix) and `409 gate_moved` folding the corrective gate into the view without a second round-trip.
 - A web client, served by the TCP bind: React + TypeScript in `web/`, built and embedded into the binary at compile time (trillium-frontend; `--features dev-proxy` for HMR). First slice: fragment-token/TOTP login (replacing the inline bootstrap page), the live transcript over one `/v1/events` stream with `?since` resume, streamed prose and coarse turn-phase, and a composer.
 
