@@ -4,7 +4,13 @@
 // standard error envelope; it surfaces as a thrown ApiError so callers branch
 // on `code`, not status prose.
 
-import type { ErrorEnvelope, LogEntry, StateSnapshot } from "./types.ts";
+import type {
+  CallId,
+  Decision,
+  ErrorEnvelope,
+  LogEntry,
+  StateSnapshot,
+} from "./types.ts";
 
 export class ApiError extends Error {
   code: ErrorEnvelope["code"];
@@ -57,6 +63,13 @@ export const fetchState = () => get<StateSnapshot>("/v1/state");
 export const fetchLogTail = (n: number) => get<LogEntry[]>(`/v1/log?tail=${n}`);
 export const submitTurn = (text: string) =>
   post<{ status: string }>("/v1/turns", { text });
+// The id is a precondition: a 409 gate_moved answer means that call is no
+// longer the pending gate, and `detail` carries the current one.
+export const resolveApproval = (callId: CallId, decision: Decision) =>
+  put<{ status: string }>(
+    `/v1/approvals/${encodeURIComponent(callId)}`,
+    decision,
+  );
 
 // Trade a TOTP code for the session cookie (docs/web-bind.md). Outside /v1:
 // auth is the bind's surface, not the session's.

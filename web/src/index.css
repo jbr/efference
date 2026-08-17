@@ -69,3 +69,20 @@ pre {
 .error {
   color: #d66;
 }
+
+.gate {
+  border-left: 3px solid #d90;
+  padding-left: 0.6rem;
+}
+
+.gate .controls {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.gate .controls input {
+  font: inherit;
+  flex: 1;
+  min-width: 0;
+}

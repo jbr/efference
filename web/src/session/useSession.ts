@@ -5,13 +5,24 @@
 // mount → cleanup → remount cycle (close() is permanent on a Connector, so
 // the remount must build a fresh one — the store fold tolerates the re-seed).
 // The returned connector is a stable facade over whichever connector is
-// currently live. Everything below this hook is framework-free.
+// currently live; actions are the session-layer verbs bound to this store.
+// Everything below this hook is framework-free.
 
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import type { CallId, Decision } from "../api/types.ts";
+import { resolveGate } from "./actions.ts";
 import { connect, type Connector } from "./connect.ts";
 import { Store, type Session } from "./store.ts";
 
-export function useSession(): { session: Session; connector: Connector } {
+export interface SessionActions {
+  resolveGate(callId: CallId, decision: Decision): Promise<void>;
+}
+
+export function useSession(): {
+  session: Session;
+  connector: Connector;
+  actions: SessionActions;
+} {
   const store = useMemo(() => new Store(), []);
   const live = useRef<Connector | null>(null);
   useEffect(() => {
@@ -29,6 +40,12 @@ export function useSession(): { session: Session; connector: Connector } {
     }),
     [],
   );
+  const actions = useMemo<SessionActions>(
+    () => ({
+      resolveGate: (callId, decision) => resolveGate(store, callId, decision),
+    }),
+    [store],
+  );
   const session = useSyncExternalStore(store.subscribe, store.snapshot);
-  return { session, connector };
+  return { session, connector, actions };
 }

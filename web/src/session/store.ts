@@ -11,6 +11,7 @@ import type {
   LogEntry,
   OutputData,
   Seq,
+  Spot,
   StateTopics,
 } from "../api/types.ts";
 
@@ -60,6 +61,16 @@ export const emptySession: Session = {
 const BUFFER_CAP = 256 * 1024;
 
 const cap = (s: string) => (s.length > BUFFER_CAP ? s.slice(-BUFFER_CAP) : s);
+
+/** The most recent spotter verdict logged for a call, if any — the stance +
+ * reason the gate surface renders beside the pending call. */
+export function spotFor(entries: LogEntry[], callId: CallId): Spot | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const p = entries[i].payload;
+    if ("Spot" in p && p.Spot.call_id === callId) return p.Spot;
+  }
+  return null;
+}
 
 /** Seed the transcript window from a `GET /log?tail=` read. */
 export function seed(session: Session, entries: LogEntry[]): Session {

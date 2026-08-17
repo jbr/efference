@@ -103,6 +103,15 @@ export interface ConfigEdit {
   note: string;
 }
 
+// ---- approval decisions (the PUT /v1/approvals/:call_id body) ----
+
+export type Decision =
+  | { decision: "approve" }
+  | { decision: "abort" }
+  | { decision: "redirect"; message: string }
+  // Allow-with-prefix: approve and persist the change (docs/permissions.md).
+  | { decision: "config_edit"; change: ConfigChange; note?: string };
+
 // ---- state topics (the GET /state snapshot ≡ the fold of `state` frames) ----
 
 export interface Gate {

@@ -8,9 +8,12 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The web client renders the pending approval gate — the whole call (name, full input, logged spotter stance + reason) in the transcript flow, with all four resolutions (approve, abort, redirect with steering text, allow-with-prefix) and `409 gate_moved` folding the corrective gate into the view without a second round-trip.
 - A web client, served by the TCP bind: React + TypeScript in `web/`, built and embedded into the binary at compile time (trillium-frontend; `--features dev-proxy` for HMR). First slice: fragment-token/TOTP login (replacing the inline bootstrap page), the live transcript over one `/v1/events` stream with `?since` resume, streamed prose and coarse turn-phase, and a composer.
 
 ### Fixed
+- Every terminal `/v1` handler halts its conn: trillium's router doesn't halt on match, and the TCP bind mounts the frontend handler after the router — under `dev-proxy` it forwarded answered-but-unhalted conns to Vite, 502ing every plain JSON route.
+- The web client's connection survives React StrictMode's mount → cleanup → remount (dev builds only): the connector is owned by the effect and rebuilt on remount, instead of being permanently closed by the simulated unmount.
 - The TCP gate now reads every `cookie` header field line (via trillium-cookies): browsers split one line per cookie over h2/h3, so any unrelated cookie on the daemon's host locked browsers out of cookie auth while curl (one line) passed.
 - `efference serve --bind <addr:port>` adds a TLS-terminating TCP listener beside the Unix socket — the same `/v1` API behind a hardening + auth gate (Host allowlist, Origin/Content-Type checks, cookie or bearer), with all credentials HKDF-derived from one injected `EFFERENCE_ROOT_SECRET`, a TOTP bootstrap (burned codes, rate-limited with lockout) served from an anonymous page at `/`, and `efference open` (`--qr`, `--bearer`) minting fragment-token links and authenticator enrollment over the UDS. The bind flag family reads `EFFERENCE_BIND`/`EFFERENCE_HOST`/`EFFERENCE_TLS_CERT`/`EFFERENCE_TLS_KEY` as defaults; `--bind ""` overrides back to UDS-only. A TLS bind also serves HTTP/3 (QUIC on the same port, advertised via alt-svc).
 - Every tool call carries a required `intent` — one line on why the call is being made, injected into every mounted tool's schema and stripped before dispatch. It leads the call entry in the TUI and heads the result block the fork peek triages, so the verdict's `note` answers it. The spotter does not see it.

@@ -29,7 +29,7 @@ the wire:
 | layer | job | React? |
 | --- | --- | --- |
 | `web/src/api/` | mirrored `/v1` types (`types.ts`), the fetch wrapper + error envelope (`http.ts`), the SSE reader (`stream.ts`) | no |
-| `web/src/session/` | the fold: frames → an immutable `Session` snapshot (`store.ts`), the connect lifecycle (`connect.ts`), one `useSyncExternalStore` binding (`useSession.ts`) | binding only |
+| `web/src/session/` | the fold: frames → an immutable `Session` snapshot (`store.ts`), the connect lifecycle (`connect.ts`), session verbs whose error recovery folds into the store (`actions.ts`), one `useSyncExternalStore` binding (`useSession.ts`) | binding only |
 | `web/src/ui/` | display — transcript, login, composer; the churn zone | yes |
 
 `types.ts` is the one place wire shapes are declared client-side; nothing in `ui/`
@@ -39,11 +39,34 @@ promises (idempotent log replay, whole-topic state replacement, buffer settlemen
 when an entry commits). When the control API moves, `api/` and the fold are the
 whole blast radius.
 
+The binding (`useSession.ts`) owns the store in a memo but the connector in the
+effect: connecting is a side effect, and `Connector::close()` is permanent, so
+React StrictMode's mount → cleanup → remount cycle (dev builds only) must build
+a fresh connector on remount — the fold's idempotent replay is what makes the
+re-seed harmless. The hook hands out a stable facade over whichever connector
+is currently live.
+
 The stream reader is fetch + a hand-rolled SSE parser rather than `EventSource`:
 the daemon sets `event:` to the frame's kind, and `EventSource` dispatches named
 events — a client would register one listener per known kind and silently drop
 frames from a newer daemon. Reconnection resumes by `?since=` (the daemon does not
 read `Last-Event-ID`), replaying the durable subset exactly.
+
+## The gate surface
+
+The pending approval gate (`web/src/ui/Gate.tsx`) renders from the `gate` state
+topic, in the transcript flow above the composer rather than a modal — the call
+whole (name, full input, the logged spotter stance + reason via the `spotFor`
+selector), because a gate resolved over a snippet is not an informed choice. All
+four decisions ride `PUT /v1/approvals/:call_id` (`Decision` in `api/types.ts`):
+approve, abort, redirect with steering text, and allow-with-prefix (a
+`config_edit` carrying a `command` change, prefilled from the call's own
+`command` field, plus an optional note). A `409 gate_moved` is handled in
+`session/actions.ts` by folding the response's corrective `detail` into the
+store as a synthetic state frame — no second round-trip; the surface re-renders
+from it. When the gate changes under the surface for any reason, the inputs
+reset and a notice says so, because a decision composed against one call must
+not land on another.
 
 ## Serving and auth
 
