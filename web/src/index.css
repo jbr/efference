@@ -70,6 +70,81 @@ pre {
   align-self: flex-end;
 }
 
+/* Rendered markdown prose. Tightened against the browser defaults, which
+   are sized for documents: a transcript is a sequence of short turns, and
+   default heading and paragraph margins put more space inside one turn than
+   the entry separation puts between two. */
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+.prose p,
+.prose ul,
+.prose ol,
+.prose blockquote,
+.prose table {
+  margin: 0.4rem 0;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose h5,
+.prose h6 {
+  font-size: 1em;
+  font-weight: bold;
+  margin: 0.8rem 0 0.3rem;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.6em;
+}
+
+.prose li {
+  margin: 0.1rem 0;
+}
+
+.prose code {
+  background: light-dark(#0000000d, #ffffff14);
+  padding: 0 0.25em;
+  border-radius: 3px;
+}
+
+.prose pre {
+  background: light-dark(#0000000d, #ffffff14);
+  padding: 0.5rem 0.6rem;
+  border-radius: 3px;
+  overflow-x: auto;
+}
+
+.prose pre code {
+  background: none;
+  padding: 0;
+}
+
+.prose blockquote {
+  border-left: 2px solid light-dark(#0003, #fff3);
+  padding-left: 0.7rem;
+  margin-left: 0;
+}
+
+.prose table {
+  border-collapse: collapse;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid light-dark(#0003, #fff3);
+  padding: 0.15rem 0.4rem;
+  text-align: left;
+}
+
 .error {
   color: #d66;
 }

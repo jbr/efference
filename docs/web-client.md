@@ -83,6 +83,32 @@ stay literal (same names, same strings, same classifications) and never grow
 beyond mirrors: a rendering idea that isn't a mirror belongs to the
 structured-output successor, not the cordon.
 
+## Prose is rendered as prose
+
+`ui/Markdown.tsx` renders user turns and assistant text as markdown
+(`react-markdown` + `remark-gfm`). Nothing else on the page goes through it, and
+the exclusions are the point: **thinking stays preformatted** because it is
+line-structured rather than flowing prose — it holds lists, indentation and
+snippets, and reflowing it to paragraphs turns `- a\n- b` into `- a - b` (the
+same finding the TUI's `DocumentNode::Lines` exists for, [tui.md](tui.md)) — and
+tool output is tool output, which the cordon already gives per-tool
+representations.
+
+The renderer must produce a **React element tree, never an HTML string**. The
+text is model-authored and the page holds a session credential, so a markup-
+emitting renderer would mean `dangerouslySetInnerHTML` over untrusted content;
+that constraint is what picks the library, not ergonomics. Two `react-markdown`
+defaults carry it and neither should be switched off without reading
+[backlog/web/untrusted-output.md](../backlog/web/untrusted-output.md): raw HTML
+is escaped unless `rehype-raw` is added, and `defaultUrlTransform` passes only
+`http`/`https`/`irc`/`ircs`/`mailto`/`xmpp`, so a `javascript:` or `data:` URL in
+model output never reaches an `href`.
+
+Prose styling is scoped under `.prose` and tightened against the browser
+defaults, which are sized for documents: a transcript is a sequence of short
+turns, and default heading and paragraph margins put more space *inside* one turn
+than the entry separation puts *between* two.
+
 ## Transcript ergonomics
 
 Two behaviours over the render-whole transcript. **Follow-tail**

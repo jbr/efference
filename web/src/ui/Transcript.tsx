@@ -5,6 +5,7 @@
 
 import type { CallId, ContentBlock, LogEntry } from "../api/types.ts";
 import type { Streaming } from "../session/store.ts";
+import { Markdown } from "./Markdown.tsx";
 import { CallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
 
@@ -28,7 +29,7 @@ function Entry({
 }) {
   const p = entry.payload;
   if ("User" in p) {
-    return <Block kind="user" body={text(p.User)} />;
+    return <Block kind="user" body={text(p.User)} prose />;
   }
   if ("Assistant" in p) {
     return (
@@ -37,7 +38,7 @@ function Entry({
           <Block kind="thinking" body={text(p.Assistant.thinking)} dim />
         )}
         {p.Assistant.text.length > 0 && (
-          <Block kind="assistant" body={text(p.Assistant.text)} />
+          <Block kind="assistant" body={text(p.Assistant.text)} prose />
         )}
         {p.Assistant.calls.map((call) => (
           <CallBlock key={call.id} call={call} />
@@ -86,19 +87,25 @@ function Entry({
   return <Block kind="unknown entry" body={JSON.stringify(p)} dim />;
 }
 
+/** `prose` renders the body as markdown; everything else is preformatted
+ * text. The split is deliberate and narrow — see `Markdown.tsx`. Thinking in
+ * particular stays preformatted: it is line-structured, not flowing prose,
+ * and reflowing it collapses "- a\n- b" onto one line. */
 function Block({
   kind,
   body,
   dim,
+  prose,
 }: {
   kind: string;
   body: string;
   dim?: boolean;
+  prose?: boolean;
 }) {
   return (
     <div className={dim ? "block dim" : "block"}>
       <div className="kind">{kind}</div>
-      <pre>{body}</pre>
+      {prose ? <Markdown>{body}</Markdown> : <pre>{body}</pre>}
     </div>
   );
 }
@@ -112,7 +119,7 @@ function StreamingTail({ streaming }: { streaming: Streaming }) {
         <Block kind="thinking…" body={streaming.thinking} dim />
       )}
       {streaming.assistant && (
-        <Block kind="assistant…" body={streaming.assistant} />
+        <Block kind="assistant…" body={streaming.assistant} prose />
       )}
       {streaming.toolName && (
         <Block

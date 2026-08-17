@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The web client renders assistant and user prose as markdown — headings, lists, emphasis, inline code, tables and fenced blocks. Thinking stays preformatted, because it is line-structured and reflowing it collapses its lists onto one line.
 - The web client renders tool calls and results tool-aware: edit diffs colored line-by-line, `read` results framing-stripped with a numbered gutter, call headers summarizing their identifying argument with the `intent` leading the entry — and a distilled result keeps its tool's rendering at whatever subset triage kept.
 - The web client's tool results show the wire view first — the distillate (`@@` hunks + note), elision, or triage failure the model actually saw — with raw one tap away per result.
 - The web strip carries the glanceable state: the usage line (context occupancy, session cost), per-process elapsed clocks and mute/unmute, pending notifications with dismiss, and a banner when the connection is not live.
