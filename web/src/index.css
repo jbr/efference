@@ -35,6 +35,38 @@ header {
   margin: 0.75rem 0;
 }
 
+/* The hierarchy (docs/web-client.md): session → batch → call. Depth is drawn
+   as a connector down the left of each container, so a call's args, verdict
+   and result read as one unit rather than three adjacent blocks. Structure
+   only — what a level ultimately looks like is the design pass. */
+.batch {
+  margin: 0.75rem 0;
+}
+
+.call {
+  border-left: 1px solid light-dark(#0000001f, #ffffff26);
+  padding-left: 0.7rem;
+  margin: 0.5rem 0;
+}
+
+/* A call's parts belong to it, so they sit tighter than session-level
+   siblings do. */
+.call > .block {
+  margin: 0.3rem 0;
+}
+
+.spot {
+  margin-top: 0.3rem;
+}
+
+/* Authorship is structural: the operator's turn carries an accent gutter and
+   the agent's is the unmarked default voice, so neither needs a label naming
+   it. */
+.block.user {
+  border-left: 3px solid light-dark(#2b6cb0, #63b3ed);
+  padding-left: 0.7rem;
+}
+
 .block .kind {
   font-size: 0.8em;
   opacity: 0.7;

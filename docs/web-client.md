@@ -83,6 +83,68 @@ stay literal (same names, same strings, same classifications) and never grow
 beyond mirrors: a rendering idea that isn't a mirror belongs to the
 structured-output successor, not the cordon.
 
+## The transcript hierarchy
+
+`session/tree.ts` projects the flat log into the containment the display
+renders — a pure `entries → tree` function beside the fold, not grouping logic
+inside components, so it is testable as data. It is to this client what
+`tui/projection.rs` is to the TUI: a second projection of the same log to a
+different target.
+
+```
+session
+├─ user text / thinking / agent text / mark / ambient / config-edit / preamble
+└─ batch                    the calls issued in one step
+   └─ call                  one call, whole
+      ├─ intent, args
+      ├─ spot               the spotter's stance + reason
+      └─ result             carries its own keep + note
+```
+
+Two containers, `batch` and `call`; everything else is a leaf sibling at session
+level. A result and a verdict are attached to the call they name rather than
+emitted where they fall in the log — that attachment is the point, and it is
+what makes a result *belong to* its call instead of merely following it.
+
+**What is deliberately not a container.** There is no per-user-message grouping.
+An operator interjection is often incidental (*"check this path: …"*, an API
+tip), and mid-trajectory injection ([control-channel.md](control-channel.md))
+makes those normal rather than rare, so hanging subsequent calls off the message
+that preceded them would encode a causality that is usually absent. `step` — one
+model request — is a real boundary that is computed but not nested on: nesting
+would put agent prose a level deeper than the calls issued in the same breath,
+and the prose is frequently the answer. The cost, stated so it is not
+rediscovered: per-step cost accounting has no node to hang on.
+
+**Vocabulary**, mostly already the codebase's: `call` (one call, whole), `batch`
+(the fork's word for the calls of one step), `step`
+([control-channel.md](control-channel.md)'s "between-step juncture"), `block`
+(a leaf). `turn` is avoided in this vocabulary — it already means both a human
+message (`POST /turns`) and a model request. Choosing `call` for the container
+reverses [tui.md](tui.md)'s "a call and its result are separate entries"; that
+is flat-model reasoning, and the TUI still reads that way.
+
+**Authorship is structural, not lexical.** A user turn carries an accent gutter;
+an agent turn is the unmarked default voice. Neither is labelled, because a label
+per entry is what made every entry look alike — the thing to read was always the
+noun above the block. Everything that is *not* one of the two voices keeps its
+label, because those genuinely need naming.
+
+`Triage` is not rendered. Its one visible fact — how much of the output survived
+— the result header already states as `kept N of M lines`, so a `keep: all` line
+after every result said nothing the reader did not have. Its batch-scoped fields
+(`inbox`, `retries`) have no surface yet; when they get one it is the batch
+node's.
+
+**Thinking is a first-class sibling**, not merely rendered. Reasoning is where a
+misunderstanding is visible before it becomes a wrong call, so reading it is one
+of the better moments to redirect — an argument about prominence, not just
+inclusion.
+
+The pre-commit tail renders flat rather than inside a batch: nothing there has
+committed, so its calls have no results to contain and no verdicts to carry, and
+the committed entry supersedes the whole set at once.
+
 ## Prose is rendered as prose
 
 `ui/Markdown.tsx` renders user turns and assistant text as markdown
