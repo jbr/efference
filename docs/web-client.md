@@ -311,7 +311,9 @@ or a `/language-(\w+)/` capture. Links come from `react-markdown`'s
 
 **A `Content-Security-Policy` on every response the bind produces**
 (`SecurityHeaders` in `src/daemon/tcp.rs`), alongside `x-content-type-options:
-nosniff` and `referrer-policy: no-referrer`. It sits outermost in the handler
+nosniff`, `referrer-policy: no-referrer`, and `x-frame-options: DENY` (redundant
+with `frame-ancestors` for anything current, and one header for browsers that
+predate CSP3). It sits outermost in the handler
 stack so its `before_send` runs last, and the headers land on the SPA index, a
 hashed asset, a `/v1` rejection and a 404 alike — a handler that answered without
 them would be the hole. The stack is built once by `stack()` and used by both the

@@ -5,12 +5,12 @@
 //
 // The renderer produces a React element tree, never an HTML string: the
 // text is model-authored, and a page holding a session credential must
-// never turn untrusted content into markup (backlog/web/untrusted-output.md).
+// never turn untrusted content into markup (docs/web-client.md).
 // Two properties of react-markdown carry that, and both are defaults rather
 // than configuration — raw HTML is escaped unless `rehype-raw` is added, and
 // `defaultUrlTransform` passes only http/https/irc/ircs/mailto/xmpp, so a
 // `javascript:` or `data:` link in a model's output does not survive into an
-// href. Neither should be switched off without reading that unit.
+// href. Neither should be switched off without reading that section.
 
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";

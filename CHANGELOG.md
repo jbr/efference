@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The TCP bind serves a `Content-Security-Policy` on every response — `default-src 'self'` with no `unsafe-` escape — plus `x-content-type-options`, `referrer-policy` and `x-frame-options`. An eslint rule bans `dangerouslySetInnerHTML` and `innerHTML` in `web/src/`, so untrusted content cannot become markup.
 - The web transcript renders its hierarchy: the calls of one step group into a batch, and a call contains its arguments, the spotter's verdict, and its result. Authorship is structural — the operator's turn carries an accent gutter, the agent's is the unmarked default voice — so neither is labelled, and `Triage` stops rendering as its own block.
 - The web client highlights code: tool result bodies, call arguments, and fenced blocks in prose, through one Shiki highlighter over the languages `langForPath` names. A distilled `read` is highlighted and keeps its numbered gutter. Only a known language is coloured; an untagged block stays plain.
 - The web client renders assistant and user prose as markdown — headings, lists, emphasis, inline code, tables and fenced blocks. Thinking stays preformatted, because it is line-structured and reflowing it collapses its lists onto one line.

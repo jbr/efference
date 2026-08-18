@@ -369,7 +369,7 @@ pub(crate) fn stack(auth: Arc<TcpAuth>) -> impl trillium::Handler {
 /// `style-src` accommodation: token colours are set through React's `style` prop,
 /// which is CSSOM, and CSP governs inline `<style>` elements and `style=""`
 /// attributes parsed from markup rather than CSSOM mutations
-/// (backlog/web/untrusted-output.md).
+/// (docs/web-client.md).
 #[cfg(not(feature = "dev-proxy"))]
 const CSP: &str = "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; \
                    form-action 'none'; object-src 'none'";
@@ -386,7 +386,7 @@ const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe
 
 /// Response headers that bound what a string escaping the client's escaping could
 /// do. Defence in depth behind the invariant that nothing turns untrusted content
-/// into markup (backlog/web/untrusted-output.md): every body on this page is model-
+/// into markup (docs/web-client.md): every body on this page is model-
 /// or tool-authored, and the page holds a credential for a channel that runs
 /// commands. `frame-ancestors 'none'` also keeps the session out of an iframe,
 /// which no surface here wants.
@@ -396,6 +396,9 @@ impl trillium::Handler for SecurityHeaders {
     async fn before_send(&self, conn: trillium::Conn) -> trillium::Conn {
         conn.with_response_header(KnownHeaderName::ContentSecurityPolicy, CSP)
             .with_response_header("x-content-type-options", "nosniff")
+            // Redundant with `frame-ancestors` for anything current, and one
+            // header for the browsers that predate CSP3.
+            .with_response_header("x-frame-options", "DENY")
             .with_response_header(KnownHeaderName::ReferrerPolicy, "no-referrer")
     }
 }

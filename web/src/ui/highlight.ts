@@ -7,7 +7,7 @@
 //
 // - **The JavaScript regex engine, not the Oniguruma WASM one.** No `.wasm`
 //   to ship or fetch, and no `wasm-unsafe-eval` needed in the CSP the
-//   untrusted-output pass will add (backlog/web/untrusted-output.md).
+//   CSP the bind serves (docs/web-client.md).
 // - **Tokens, not HTML.** `codeToTokens` returns plain
 //   `{ content, color }[]` grouped by line, which the callers render as
 //   spans. `codeToHtml` would hand back a markup string, and nothing on

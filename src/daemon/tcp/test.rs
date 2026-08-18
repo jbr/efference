@@ -338,7 +338,7 @@ fn host_and_origin_parsing() {
 /// produced it — the SPA index, a hashed asset, and an unauthenticated `/v1`
 /// rejection alike. `SecurityHeaders` sits outermost so its `before_send` runs
 /// last; a handler that answered without it would be the hole
-/// (backlog/web/untrusted-output.md).
+/// (docs/web-client.md).
 #[tokio::test]
 async fn every_response_carries_the_security_headers() {
     let auth = armed("root");
@@ -358,6 +358,11 @@ async fn every_response_carries_the_security_headers() {
             conn.response_headers().get_str("x-content-type-options"),
             Some("nosniff"),
             "{path} did not deny content sniffing"
+        );
+        assert_eq!(
+            conn.response_headers().get_str("x-frame-options"),
+            Some("DENY"),
+            "{path} did not deny framing"
         );
     }
 }
