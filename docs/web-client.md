@@ -288,6 +288,51 @@ from it. When the gate changes under the surface for any reason, the inputs
 reset and a notice says so, because a decision composed against one call must
 not land on another.
 
+## Untrusted content
+
+Everything the transcript displays is untrusted by construction — model-authored
+text, tool output, file contents, MCP server responses — on a page that holds a
+session credential for a control channel that runs commands. One invariant and
+one backstop.
+
+**Nothing turns untrusted content into markup.** JSX text nodes and React-escaped
+attributes are the only sinks; there is no `dangerouslySetInnerHTML` and no
+`innerHTML` assignment in `web/src/`, and an eslint rule
+(`no-restricted-syntax` in `web/eslint.config.js`) keeps it that way, so reaching
+for one has to be an argument rather than a habit. This is why the markdown
+renderer must produce elements and the highlighter must produce tokens: both were
+chosen against this constraint rather than for ergonomics.
+
+The one payload-derived attribute is `data-lang`, from `langForPath`'s closed set
+or a `/language-(\w+)/` capture. Links come from `react-markdown`'s
+`defaultUrlTransform`, which passes only `http`/`https`/`irc`/`ircs`/`mailto`/
+`xmpp` — so a `javascript:` or `data:` URL in model output never reaches an
+`href`.
+
+**A `Content-Security-Policy` on every response the bind produces**
+(`SecurityHeaders` in `src/daemon/tcp.rs`), alongside `x-content-type-options:
+nosniff` and `referrer-policy: no-referrer`. It sits outermost in the handler
+stack so its `before_send` runs last, and the headers land on the SPA index, a
+hashed asset, a `/v1` rejection and a 404 alike — a handler that answered without
+them would be the hole. The stack is built once by `stack()` and used by both the
+listener and the tests, because a hand-copied test stack is what lets the two
+drift.
+
+The embedded build loads one external module script and one external stylesheet,
+both same-origin and hashed, with the grammar chunks imported dynamically from the
+same origin — so `default-src 'self'` needs no hash, nonce, or `unsafe-` escape.
+Highlighting needs no `style-src` accommodation: token colours are set through
+React's `style` prop, which is CSSOM, and CSP governs inline `<style>` elements and
+`style=""` attributes parsed from markup rather than CSSOM mutations. Under
+`--features dev-proxy` the page is Vite's — an inline module preamble and an HMR
+socket — so the policy relaxes, gated on the same `cfg` as the proxy so a release
+build cannot serve it. A test asserts the shipped policy contains no `unsafe-`.
+
+CSRF is a different threat and is already answered: the session cookie is `Secure`,
+`HttpOnly`, `SameSite=Strict`, `Path=/` ([web-bind.md](web-bind.md)). A CSRF token
+would not help against injection — script running in this origin can read one out
+of the DOM.
+
 ## Serving and auth
 
 The gate's anonymous surface is every GET outside `/v1` plus `POST /auth/session`

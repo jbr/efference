@@ -124,20 +124,7 @@ pub(crate) fn spawn(
     swansong: trillium_tokio::Swansong,
     shared: Arc<Shared>,
 ) -> io::Result<trillium_server_common::ServerHandle> {
-    let handler = (
-        // HEAD support: rewrites to GET on the way in, strips the body (keeping
-        // content-length) on the way out. First, so the gate only ever sees GET.
-        trillium_head::head(),
-        // Parses the request cookie jar (every field line — see `authed`) and
-        // serializes the response's. Ahead of the gate, which reads the jar.
-        CookiesHandler::new(),
-        gate(Arc::clone(&auth)),
-        public_router(auth),
-        router(),
-        // Last: any GET neither router claimed is the web client's surface
-        // (docs/web-client.md) — an asset, or the SPA index.
-        frontend(),
-    );
+    let handler = stack(auth);
     let config = trillium_tokio::config()
         .with_swansong(swansong)
         .with_shared_state(shared)
@@ -350,6 +337,66 @@ fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
             }
             conn
         }
+    }
+}
+
+/// The handler stack the TCP listener mounts, in one place so the tests exercise
+/// the same one rather than a copy that can drift from it.
+pub(crate) fn stack(auth: Arc<TcpAuth>) -> impl trillium::Handler {
+    (
+        // Outermost, so its `before_send` runs last and the headers land on every
+        // response the stack produces — including the routers' errors.
+        SecurityHeaders,
+        // HEAD support: rewrites to GET on the way in, strips the body (keeping
+        // content-length) on the way out. Before the gate, so it only ever sees GET.
+        trillium_head::head(),
+        // Parses the request cookie jar (every field line — see `authed`) and
+        // serializes the response's. Ahead of the gate, which reads the jar.
+        CookiesHandler::new(),
+        gate(Arc::clone(&auth)),
+        public_router(auth),
+        router(),
+        // Last: any GET neither router claimed is the web client's surface
+        // (docs/web-client.md) — an asset, or the SPA index.
+        frontend(),
+    )
+}
+
+/// The policy the embedded build is served under. Everything the page loads is
+/// same-origin and external — one module script and one stylesheet, both hashed,
+/// with the grammar chunks imported dynamically from the same origin — so `'self'`
+/// needs no hash, nonce, or `unsafe-` escape. Syntax highlighting needs no
+/// `style-src` accommodation: token colours are set through React's `style` prop,
+/// which is CSSOM, and CSP governs inline `<style>` elements and `style=""`
+/// attributes parsed from markup rather than CSSOM mutations
+/// (backlog/web/untrusted-output.md).
+#[cfg(not(feature = "dev-proxy"))]
+const CSP: &str = "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; \
+                   form-action 'none'; object-src 'none'";
+
+/// Under `dev-proxy` the page is Vite's, not the build's: it injects an inline
+/// module preamble and talks to its HMR server over a WebSocket. Relaxing for that
+/// means the strict policy above is not the one exercised in development — the
+/// reason this is gated on the same `cfg` as the proxy rather than on a runtime
+/// flag, so a release build cannot serve it.
+#[cfg(feature = "dev-proxy")]
+const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
+                   style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; \
+                   base-uri 'none'; frame-ancestors 'none'; object-src 'none'";
+
+/// Response headers that bound what a string escaping the client's escaping could
+/// do. Defence in depth behind the invariant that nothing turns untrusted content
+/// into markup (backlog/web/untrusted-output.md): every body on this page is model-
+/// or tool-authored, and the page holds a credential for a channel that runs
+/// commands. `frame-ancestors 'none'` also keeps the session out of an iframe,
+/// which no surface here wants.
+struct SecurityHeaders;
+
+impl trillium::Handler for SecurityHeaders {
+    async fn before_send(&self, conn: trillium::Conn) -> trillium::Conn {
+        conn.with_response_header(KnownHeaderName::ContentSecurityPolicy, CSP)
+            .with_response_header("x-content-type-options", "nosniff")
+            .with_response_header(KnownHeaderName::ReferrerPolicy, "no-referrer")
     }
 }
 

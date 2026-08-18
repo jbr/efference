@@ -24,6 +24,27 @@ export default tseslint.config(
   {
     rules: {
       "@typescript-eslint/explicit-function-return-type": "off",
+      // Nothing here may turn untrusted text into markup: every body on the
+      // page is model- or tool-authored, and the page holds a session
+      // credential for a control channel that runs commands
+      // (backlog/web/untrusted-output.md). JSX text nodes and React-escaped
+      // attributes are the only sanctioned sinks; these two are the doors out
+      // of that, so reaching for one has to be an argument rather than a
+      // habit.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+          message:
+            "Untrusted content must never become markup — see backlog/web/untrusted-output.md.",
+        },
+        {
+          selector:
+            "AssignmentExpression > MemberExpression[property.name=/^(inner|outer)HTML$/]",
+          message:
+            "Untrusted content must never become markup — see backlog/web/untrusted-output.md.",
+        },
+      ],
     },
   },
   prettier,

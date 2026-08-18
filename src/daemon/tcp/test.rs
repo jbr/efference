@@ -36,21 +36,14 @@ fn init(shared: Arc<Shared>) -> impl trillium::Handler {
     })
 }
 
-/// The exact handler stack `spawn` mounts on the TCP listener, virtually hosted at
-/// the bind's public name so the gate's Host check sees what a real conn carries.
+/// The handler stack `spawn` mounts, from `stack` itself rather than a copy of it,
+/// virtually hosted at the bind's public name so the gate's Host check sees what a
+/// real conn carries.
 async fn tcp_server(auth: &Arc<TcpAuth>) -> (TestServer<impl trillium::Handler>, TurnsGuard) {
     let (shared, turns_rx) = Shared::new(Log::in_memory());
-    let server = TestServer::new((
-        init(shared),
-        trillium_head::head(),
-        CookiesHandler::new(),
-        gate(Arc::clone(auth)),
-        public_router(Arc::clone(auth)),
-        router(),
-        frontend(),
-    ))
-    .await
-    .with_host("localhost");
+    let server = TestServer::new((init(shared), stack(Arc::clone(auth))))
+        .await
+        .with_host("localhost");
     (server, TurnsGuard(turns_rx))
 }
 
@@ -339,4 +332,54 @@ fn host_and_origin_parsing() {
     assert_eq!(origin_host("https://example.ts.net:8443"), "example.ts.net");
     assert_eq!(origin_host("http://localhost:3000"), "localhost");
     assert_eq!(origin_host("null"), "null");
+}
+
+/// Every response the bind produces carries the security headers, whatever
+/// produced it — the SPA index, a hashed asset, and an unauthenticated `/v1`
+/// rejection alike. `SecurityHeaders` sits outermost so its `before_send` runs
+/// last; a handler that answered without it would be the hole
+/// (backlog/web/untrusted-output.md).
+#[tokio::test]
+async fn every_response_carries_the_security_headers() {
+    let auth = armed("root");
+    let (server, _turns) = tcp_server(&auth).await;
+    for path in ["/", "/v1/state", "/nonexistent"] {
+        let conn = server.get(path).await;
+        let csp = conn
+            .response_headers()
+            .get_str(KnownHeaderName::ContentSecurityPolicy)
+            .unwrap_or_default()
+            .to_string();
+        assert!(
+            csp.contains("frame-ancestors 'none'") && csp.contains("object-src 'none'"),
+            "{path} carried no usable content-security-policy: {csp:?}"
+        );
+        assert_eq!(
+            conn.response_headers().get_str("x-content-type-options"),
+            Some("nosniff"),
+            "{path} did not deny content sniffing"
+        );
+    }
+}
+
+/// The embedded build loads nothing inline and nothing cross-origin, so its policy
+/// admits no `unsafe-` escape. Pinned because relaxing it is exactly the change
+/// that should have to be argued for, and because the `dev-proxy` policy — which
+/// does relax, for Vite — must not be able to reach a release build.
+#[cfg(not(feature = "dev-proxy"))]
+#[tokio::test]
+async fn the_shipped_policy_admits_no_unsafe_escape() {
+    let auth = armed("root");
+    let (server, _turns) = tcp_server(&auth).await;
+    let conn = server.get("/").await;
+    let csp = conn
+        .response_headers()
+        .get_str(KnownHeaderName::ContentSecurityPolicy)
+        .unwrap_or_default()
+        .to_string();
+    assert!(csp.starts_with("default-src 'self'"), "{csp:?}");
+    assert!(
+        !csp.contains("unsafe-"),
+        "shipped policy must stay strict: {csp:?}"
+    );
 }
