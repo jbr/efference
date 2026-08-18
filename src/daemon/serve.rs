@@ -93,6 +93,7 @@ pub async fn serve<D: Distiller, S: Spotter>(
         let link = auth.mint_link();
         eprintln!("web: {} (bound {addr})", auth.public_base());
         eprintln!("  {link}");
+        handle.info().await; // wait for server to come up before launching browser
         if open && webbrowser::open(&link).is_err() {
             eprintln!("[could not open a browser for {link}]");
         }
