@@ -26,6 +26,36 @@ export function useSession(): {
   const store = useMemo(() => new Store(), []);
   const live = useRef<Connector | null>(null);
   useEffect(() => {
+    // A dev build interposes the scrubber (record.ts) between the stream and
+    // the fold, so a momentary pre-commit state can be held and looked at. The
+    // connection itself is unchanged — same catch-up read, same stream, same
+    // frames. `import.meta.env.DEV` folds to `false` in a production build, so
+    // neither the branch nor the module it imports reaches a shipped bundle.
+    if (import.meta.env.DEV) {
+      let connector: Connector | null = null;
+      let recorder: { close(): void } | null = null;
+      let cancelled = false;
+      void import("./record.ts").then(({ record }) => {
+        const installed = record(store);
+        connector = connect(store, installed.tap);
+        recorder = installed;
+        // The import resolves after StrictMode's cleanup has already run, so
+        // checking `cancelled` *before* building would leak a connection the
+        // cleanup never saw. Build, then tear down if the effect is gone.
+        if (cancelled) {
+          connector.close();
+          installed.close();
+        } else {
+          live.current = connector;
+        }
+      });
+      return () => {
+        cancelled = true;
+        live.current = null;
+        connector?.close();
+        recorder?.close();
+      };
+    }
     const connector = connect(store);
     live.current = connector;
     return () => {

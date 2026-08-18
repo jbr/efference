@@ -356,3 +356,43 @@ and a broader index fallback would answer scanner probes `200`.
 - `pnpm check` in `web/` — typecheck, lint, format check, vitest.
 - `pnpm dev` standalone also works: `web/vite.config.ts` proxies `/v1` and `/auth`
   to a daemon on `:7878`.
+
+### Scrubbing the stream — `web/src/session/record.ts`
+
+A dev build interposes a recorder between the stream reader and the fold.
+`connect` takes an optional `FrameTap`; the recorder's keeps every frame on a
+tape in arrival order and decides when the store consumes it. The connection is
+otherwise unchanged — same catch-up read, same `GET /events`, same frames — so
+what a held position shows is a state the client genuinely passed through.
+Nothing is synthesized, reordered, or stood in for.
+
+It exists because a pre-commit state is real but momentary. A tool call's input
+arrives over a few hundred milliseconds and is then superseded by the committed
+entry, and a screenshot taken through a browser extension shares the event loop
+with the render it is trying to observe. Holding the fold removes the race
+entirely, where slowing the stream only widens it.
+
+- `hold` stops folding; frames keep arriving and keep landing on the tape.
+- `step(n)` folds `n` more, forward one at a time so the render re-runs per
+  frame the way it does live — a position reached in one bulk fold can hide a
+  stale-memo bug that only appears when each delta drove its own render.
+- `seek(n)` puts the store at exactly `n` frames, refolding from the tape's base
+  when it goes backwards. `connection` is carried across that refold rather than
+  rewound: no frame carries it, so restoring it would report `connecting…` over
+  a session that is streaming.
+- `resume` folds everything held back and tracks the live end again.
+
+Driven by `window.__scrub` from devtools, and by a `efference:scrub` DOM
+CustomEvent — an extension's scripts run in an isolated world that shares the
+DOM and nothing else, so a global the page set is invisible to them. A fixed
+corner badge names the mode and position, without which two screenshots at
+different cursors are indistinguishable.
+
+The tape is in memory and covers the current session: a reload starts a new one,
+and so does an HMR update to a `session/` module. Repeatability across reloads
+would mean persisting the tape, or serving a recorded session through the
+daemon's own code — the latter being the only way the TUI gets it too
+([../backlog/session-replay.md](../backlog/session-replay.md)).
+
+The whole module sits behind `import.meta.env.DEV` in `useSession.ts`, which a
+production build folds to `false`; the branch and the module go with it.

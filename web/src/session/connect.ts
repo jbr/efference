@@ -4,6 +4,7 @@
 // stream reader replays by cursor; a 401 anywhere parks the session as
 // unauthenticated until Login mints a cookie and calls retry().
 
+import type { Frame } from "../api/types.ts";
 import { ApiError, fetchLogTail } from "../api/http.ts";
 import { openStream, type StreamHandle } from "../api/stream.ts";
 import { applyFrame, seed, type Store } from "./store.ts";
@@ -16,7 +17,24 @@ export interface Connector {
   close(): void;
 }
 
-export function connect(store: Store): Connector {
+/**
+ * What a connection does with each arriving frame. The default folds it into the
+ * store at once; the dev scrubber (`record.ts`) interposes to keep a tape of the
+ * frames as they arrived and control when they fold.
+ *
+ * `reset` marks the boundary a fresh catch-up read draws: everything the tap
+ * holds from before it describes a store state that the re-seed has replaced.
+ */
+export interface FrameTap {
+  reset(): void;
+  frame(frame: Frame): void;
+}
+
+export function connect(store: Store, tap?: FrameTap): Connector {
+  const sink: FrameTap = tap ?? {
+    reset: () => {},
+    frame: (frame) => store.update((s) => applyFrame(s, frame)),
+  };
   let stream: StreamHandle | null = null;
   let closed = false;
 
@@ -38,9 +56,10 @@ export function connect(store: Store): Connector {
       // keep retrying, and state topics arrive on connect regardless. The
       // transcript window just starts empty until retry() re-seeds.
     }
+    sink.reset();
     const since = store.snapshot().lastSeq;
     stream = openStream(since === null ? 0 : since + 1, {
-      onFrame: (frame) => store.update((s) => applyFrame(s, frame)),
+      onFrame: (frame) => sink.frame(frame),
       onConnect: () => store.update((s) => ({ ...s, connection: "live" })),
       onDisconnect: () =>
         store.update((s) => ({ ...s, connection: "reconnecting" })),
