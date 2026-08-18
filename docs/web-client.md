@@ -145,6 +145,29 @@ The pre-commit tail renders flat rather than inside a batch: nothing there has
 committed, so its calls have no results to contain and no verdicts to carry, and
 the committed entry supersedes the whole set at once.
 
+## A call's input, while it arrives
+
+While a call's input streams, the accumulated buffer is a *prefix* of a JSON
+document. `render/partial.ts` (mirroring the TUI's `projection/partial.rs`,
+[tui.md](tui.md)) splits it positionally: within an object only the last key can
+be incomplete, because the bytes for the earlier ones arrived and closed. The
+settled pairs go through the same `callView` a committed call renders with — so
+the header fills in (`calling write · src/api.rs…`) as bytes land and the block
+keeps its shape when the entry commits — while the pair still arriving renders
+only as content: a multi-line string as a code block in the language of whatever
+*settled* path names it, a single-line one as a dim `key: value…` line. A
+half-arrived value never backs an identity claim (`write src/api.r` is
+well-formed, plausible, and false), and before anything structural arrives the
+raw characters show, which claim nothing.
+
+The split is read off the parser rather than guessed: a `partial-json` parse at
+`Allow.COLLECTION` drops an incomplete trailing string along with its key, one
+at `Allow.COLLECTION | Allow.STR` keeps it, and the key the second has that the
+first lacks is exactly the value in flight — the same differencing the TUI reads
+off jiter's two `PartialMode`s. Parity with the TUI's rule is pinned by
+`render/partial.test.ts`, ported case-for-case, including the byte-at-a-time
+sweep that no prefix ever settles a value the whole document contradicts.
+
 ## Prose is rendered as prose
 
 `ui/Markdown.tsx` renders user turns and assistant text as markdown
@@ -216,9 +239,15 @@ changes.** `Entry` is memoized on its log entry, so a streaming turn re-renders
 only the pre-commit tail. `toolOf` is memoized for that reason — a fresh closure
 per render would break every entry's memo at once.
 
-What does *not* transfer is continuing a growing block from the previous frame's
-parse state: that exists because ratatui repaints the viewport, and here the
-growing block is the live tail, which is not highlighted.
+The one growing block — a call's in-flight value — cannot use that memo: its
+text changes on every delta, and a whole-buffer re-tokenize per chunk is O(n²)
+over a large file write. `StreamingTokenizer` (`ui/highlight.ts`) instead
+resumes from Shiki's grammar state at the last complete line, so each delta
+tokenizes only what arrived since; `StreamingCode` (`ui/Code.tsx`) renders
+through it with the same markup as `Code`, so the block does not change
+appearance at commit when it hands over. Its contract — tokenizing in chunks
+equals one whole-buffer pass, at every prefix — is pinned by
+`ui/highlight.test.ts`.
 
 ## Transcript ergonomics
 

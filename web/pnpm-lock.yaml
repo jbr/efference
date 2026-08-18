@@ -13,6 +13,9 @@ importers:
       "@shikijs/themes":
         specifier: ^4.4.3
         version: 4.4.3
+      partial-json:
+        specifier: ^0.1.7
+        version: 0.1.7
       react:
         specifier: ^19.2.7
         version: 19.2.8
@@ -2184,6 +2187,12 @@ packages:
         integrity: sha512-z1e/HMG90obSGeidlli3hj7cbocou0/wa5HacvI3ASx34PecNjNQeaHNo5WIZpWofN9kgkqV1q5YvXe3F0FoPw==,
       }
 
+  partial-json@0.1.7:
+    resolution:
+      {
+        integrity: sha512-Njv/59hHaokb/hRUjce3Hdv12wd60MtM9Z5Olmn+nehe0QDAsRtRbJPvJ0Z91TusF0SuZRIvnM+S4l6EIP8leA==,
+      }
+
   path-exists@4.0.0:
     resolution:
       {
@@ -4191,6 +4200,8 @@ snapshots:
   parse5@8.0.1:
     dependencies:
       entities: 8.0.0
+
+  partial-json@0.1.7: {}
 
   path-exists@4.0.0: {}
 

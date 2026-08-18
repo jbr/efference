@@ -18,7 +18,11 @@
 // forever if they fail to, callers render the same plain text they did
 // before. Nothing here is on the path to *reading* a transcript.
 
-import { createHighlighterCore, type HighlighterCore } from "shiki/core";
+import {
+  createHighlighterCore,
+  type GrammarState,
+  type HighlighterCore,
+} from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 
@@ -121,4 +125,99 @@ export function useHighlight():
       }
     };
   }, [core, dark]);
+}
+
+/**
+ * Tokenizing for an append-only buffer — a tool call's contents while they
+ * stream. Re-tokenizing the whole buffer per delta is O(n) work per chunk and
+ * O(n²) over a large file write; Shiki's grammar state makes tokenizing
+ * resumable at a line boundary instead. Tokens for complete lines are kept,
+ * and each update tokenizes only what arrived since the last complete line.
+ *
+ * The correctness property (pinned by test): the result is identical to
+ * tokenizing the whole buffer at once.
+ */
+export class StreamingTokenizer {
+  /** Token lines for [`prefix`], which is complete-line (`\n`-terminated)
+   * and only ever extends. */
+  private done: Token[][] = [];
+  private prefix = "";
+  /** The grammar's state at the end of [`prefix`] — what makes the next
+   * lines tokenizable without the ones already done. */
+  private state: GrammarState | undefined = undefined;
+
+  constructor(
+    private readonly core: HighlighterCore,
+    private readonly lang: string,
+    private readonly theme: string,
+  ) {}
+
+  tokens(text: string): Token[][] {
+    if (!text.startsWith(this.prefix)) {
+      // Not an append: a new call reusing this component slot, or a buffer
+      // that hit the store's cap and slid. Start over.
+      this.done = [];
+      this.prefix = "";
+      this.state = undefined;
+    }
+    const rest = text.slice(this.prefix.length);
+    const cut = rest.lastIndexOf("\n");
+    if (cut >= 0) {
+      const closed = this.core.codeToTokensBase(rest.slice(0, cut), {
+        lang: this.lang,
+        theme: this.theme,
+        grammarState: this.state,
+      });
+      this.done.push(...closed);
+      this.state = this.core.getLastGrammarState(closed);
+      this.prefix = text.slice(0, this.prefix.length + cut + 1);
+    }
+    // The line still open re-tokenizes every time — it is one line.
+    const open = this.core.codeToTokensBase(text.slice(this.prefix.length), {
+      lang: this.lang,
+      theme: this.theme,
+      grammarState: this.state,
+    });
+    return [...this.done, ...open];
+  }
+}
+
+/** [`StreamingTokenizer`] as a hook: `null` outside highlighting's reach
+ * (grammars loading or failed, unknown language), tokens otherwise. The
+ * tokenizer is memoized on language and theme, so it persists across the
+ * deltas of one value and starts over when either changes. Advancing it
+ * inside the memo is safe: the same text tokenizes to the same result, so a
+ * double invocation redoes only the open line. If React ever drops the memo,
+ * the fresh tokenizer's first call is one whole-buffer pass — the cost this
+ * hook exists to avoid paying *per delta*, acceptable once. */
+export function useStreamingTokens(
+  text: string,
+  lang: string | null,
+): Token[][] | null {
+  useEffect(start, []);
+  const core = useSyncExternalStore(
+    subscribe,
+    () => highlighter,
+    () => null,
+  );
+  const dark = useSyncExternalStore(
+    subscribeScheme,
+    () => darkQuery().matches,
+    () => false,
+  );
+  const tokenizer = useMemo(
+    () =>
+      core !== null && lang !== null && core.getLoadedLanguages().includes(lang)
+        ? new StreamingTokenizer(core, lang, dark ? THEMES.dark : THEMES.light)
+        : null,
+    [core, lang, dark],
+  );
+  return useMemo(() => {
+    if (tokenizer === null) return null;
+    try {
+      return tokenizer.tokens(text);
+    } catch {
+      return null;
+    }
+  }, [tokenizer, text]);
 }

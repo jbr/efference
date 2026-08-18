@@ -12,7 +12,7 @@
 
 import { Fragment, useMemo } from "react";
 import type { Token } from "./highlight.ts";
-import { useHighlight } from "./highlight.ts";
+import { useHighlight, useStreamingTokens } from "./highlight.ts";
 
 function Line({ tokens }: { tokens: Token[] }) {
   return (
@@ -42,6 +42,35 @@ export function Code({ text, lang }: { text: string; lang: string | null }) {
     () => (highlight && lang !== null ? highlight(text, lang) : null),
     [highlight, text, lang],
   );
+  return <CodeBody text={text} lang={lang} lines={lines} />;
+}
+
+/** [`Code`] for a value still arriving: the text grows at the end on every
+ * delta, so the memo above would re-tokenize the whole buffer per chunk —
+ * O(n²) over a large file write. The streaming tokenizer keeps the finished
+ * lines' tokens and does only the arriving tail (`highlight.ts`). Same
+ * markup, so the block does not change appearance when the call commits and
+ * this component hands over to [`Code`]. */
+export function StreamingCode({
+  text,
+  lang,
+}: {
+  text: string;
+  lang: string | null;
+}) {
+  const lines = useStreamingTokens(text, lang);
+  return <CodeBody text={text} lang={lang} lines={lines} />;
+}
+
+function CodeBody({
+  text,
+  lang,
+  lines,
+}: {
+  text: string;
+  lang: string | null;
+  lines: Token[][] | null;
+}) {
   return (
     <pre data-lang={lang ?? undefined}>
       {lines === null

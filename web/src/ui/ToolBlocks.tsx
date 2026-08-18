@@ -7,7 +7,12 @@
 
 import { useMemo } from "react";
 import type { RawResult, ToolCall, WireState } from "../api/types.ts";
-import { Code, NumberedCode } from "./Code.tsx";
+import { Code, NumberedCode, StreamingCode } from "./Code.tsx";
+import {
+  hasStructure,
+  partialInput,
+  streamingLang,
+} from "../render/partial.ts";
 import {
   callView,
   resultRender,
@@ -27,6 +32,65 @@ export function CallBlock({ call }: { call: ToolCall }) {
       {view.body !== null && (
         <Code text={view.body.text} lang={view.body.lang} />
       )}
+    </div>
+  );
+}
+
+/**
+ * A call whose input is still arriving, rendered from the part that has —
+ * the settled arguments as arguments, the one value in flight as content
+ * (`render/partial.ts`, mirroring `src/tui/projection/nodes.rs`).
+ *
+ * The settled half goes through the same [`callView`] a committed call uses,
+ * so the header fills in as bytes land rather than changing shape at commit.
+ * The in-flight value never reaches it: what [`callView`] produces is an
+ * identity claim (`write · src/api.rs`), and only a value whose closing quote
+ * has arrived may back one. Before anything structural arrives, the raw
+ * characters show — they claim nothing, which is what makes them safe.
+ */
+export function LiveCallBlock({
+  name,
+  input,
+}: {
+  name: string;
+  input: string;
+}) {
+  const parsed = useMemo(() => partialInput(input), [input]);
+  if (parsed === null || !hasStructure(parsed)) {
+    return (
+      <div className="block">
+        <div className="kind">calling {name}…</div>
+        <pre className="dim">{input}</pre>
+      </div>
+    );
+  }
+  const view = callView(name, parsed.settled);
+  const { arriving } = parsed;
+  return (
+    <div className="block">
+      <div className="kind">
+        calling {name}
+        {view.summary !== null && <> · {view.summary}</>}…
+      </div>
+      {view.intent !== null && <div className="dim intent">{view.intent}</div>}
+      {view.body !== null && (
+        <Code text={view.body.text} lang={view.body.lang} />
+      )}
+      {arriving !== null &&
+        (arriving.text.includes("\n") ? (
+          // A string with newlines is the case worth rendering as a block —
+          // a file's contents, a heredoc — in the language of whatever
+          // settled path names it, which is why the path arriving first is
+          // what makes this worth doing.
+          <StreamingCode
+            text={arriving.text}
+            lang={streamingLang(parsed.settled)}
+          />
+        ) : (
+          <div className="dim">
+            {arriving.key}: {arriving.text}…
+          </div>
+        ))}
     </div>
   );
 }

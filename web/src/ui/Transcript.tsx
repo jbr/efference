@@ -13,7 +13,7 @@ import {
   type LeafNode,
 } from "../session/tree.ts";
 import { Markdown } from "./Markdown.tsx";
-import { CallBlock, ResultBlock } from "./ToolBlocks.tsx";
+import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
 
 const text = (blocks: ContentBlock[]) =>
@@ -171,7 +171,7 @@ function LiveBlockView({ block }: { block: LiveBlock }) {
   if (block.kind === "text") {
     return <Block kind="assistant…" body={block.text} prose />;
   }
-  return <Block kind={`calling ${block.name ?? ""}…`} body={block.text} />;
+  return <LiveCallBlock name={block.name ?? ""} input={block.text} />;
 }
 
 /** The pre-commit tail: the in-flight response's blocks, in wire order, each
