@@ -222,21 +222,39 @@ impl Completion {
 /// — a turn spent thinking or emitting a large tool-call input produced no output at all and read
 /// as a hung harness. Typing the channel is what makes the other phases expressible; each variant
 /// is one phase a turn can be in.
+/// **Every variant carries the `index` of the content block it belongs to**, because a
+/// streamed fragment is partial delivery *of a specific item* and a client has to know which.
+/// Without it a client can only hold one slot per kind, and a response with two tool calls
+/// overwrites the first the moment the second opens — the arriving input a client had been
+/// showing simply disappears. That is the same single-slot failure thinking already hit once
+/// (docs/tui.md); the slot is the defect, not the field it happened to be in.
+///
+/// The provider scopes its own stream this way — the assembler already keys blocks by `index`
+/// and reads a `tool_use` block's `id` — so this preserves that scoping rather than inventing
+/// one. `index` is per-response, and the loop runs one request at a time, so "the block at
+/// `index` of the response now in flight" is unambiguous; the committed `LogEntry` supersedes
+/// the whole live set.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Streamed {
     /// A fragment of assistant prose.
-    Text(String),
+    Text { index: usize, text: String },
     /// A fragment of extended-thinking text. Never part of the assistant's answer — a client
     /// showing this must mark it as thinking, not prose.
-    Thinking(String),
+    Thinking { index: usize, text: String },
     /// The model began emitting a tool call. Arrives at `content_block_start`, *before* the
     /// arguments stream, so a client can name the pending call immediately — the arguments alone
-    /// can take many seconds to arrive for a large input.
-    ToolStart { name: String },
+    /// can take many seconds to arrive for a large input. `id` is the `tool_use` id the eventual
+    /// `ToolResult` and every per-call annotation key on, so a client can bind the live block to
+    /// the call it becomes before the call commits.
+    ToolStart {
+        index: usize,
+        id: String,
+        name: String,
+    },
     /// A fragment of a tool call's JSON input. Deliberately not parsed: it's a partial byte slice
     /// of a JSON document, so the only honest use is progress (that bytes are arriving), not
     /// content.
-    ToolInput(String),
+    ToolInput { index: usize, fragment: String },
 }
 
 #[cfg(test)]

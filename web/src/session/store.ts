@@ -15,14 +15,27 @@ import type {
   StateTopics,
 } from "../api/types.ts";
 
+/** One content block of the in-flight response, identified by its wire `index`
+ * (docs/control-api.md). A block is the unit a delta appends to, so holding a
+ * list of them — rather than one buffer per kind — is what lets a response with
+ * two tool calls show both: with a single slot the second call's start wiped the
+ * first, and the arguments already on screen vanished. */
+export interface LiveBlock {
+  index: number;
+  kind: "thinking" | "text" | "call";
+  /** Prose or thinking text; for a call, its verbatim partial JSON input —
+   * displayable, never parseable mid-stream. */
+  text: string;
+  /** Calls only: the `tool_use` id its result and annotations key on. */
+  callId?: CallId;
+  /** Calls only. */
+  name?: string;
+}
+
 /** Pre-commit output: what the model is emitting ahead of the next log entry. */
 export interface Streaming {
-  thinking: string;
-  assistant: string;
-  /** Set from `tool_call_start`; the phase indicator while input streams. */
-  toolName: string | null;
-  /** Verbatim partial JSON — displayable, never parseable mid-stream. */
-  toolInput: string;
+  /** The in-flight response's blocks, in wire order. */
+  blocks: LiveBlock[];
   /** Live tool output by call id, cleared when the result commits. */
   toolOutput: Record<CallId, string>;
   processOutput: Record<number, string>;
@@ -41,10 +54,7 @@ export interface Session {
 }
 
 export const emptyStreaming: Streaming = {
-  thinking: "",
-  assistant: "",
-  toolName: null,
-  toolInput: "",
+  blocks: [],
   toolOutput: {},
   processOutput: {},
 };
@@ -122,13 +132,7 @@ function applyLog(session: Session, entry: LogEntry): Session {
  */
 function settle(streaming: Streaming, entry: LogEntry): Streaming {
   if ("Assistant" in entry.payload) {
-    return {
-      ...streaming,
-      thinking: "",
-      assistant: "",
-      toolName: null,
-      toolInput: "",
-    };
+    return { ...streaming, blocks: [] };
   }
   if ("ToolResult" in entry.payload) {
     const toolOutput = { ...streaming.toolOutput };
@@ -138,6 +142,28 @@ function settle(streaming: Streaming, entry: LogEntry): Streaming {
   return streaming;
 }
 
+/** Append to the block at `index`, opening it if this is its first delta. The
+ * block list stays sorted by index, which is wire order. */
+function appendBlock(
+  streaming: Streaming,
+  index: number,
+  kind: LiveBlock["kind"],
+  text: string,
+): Streaming {
+  const at = streaming.blocks.findIndex((b) => b.index === index);
+  if (at === -1) {
+    return {
+      ...streaming,
+      blocks: [...streaming.blocks, { index, kind, text: cap(text) }].sort(
+        (a, b) => a.index - b.index,
+      ),
+    };
+  }
+  const blocks = [...streaming.blocks];
+  blocks[at] = { ...blocks[at], text: cap(blocks[at].text + text) };
+  return { ...streaming, blocks };
+}
+
 function applyOutput(
   streaming: Streaming,
   kind: string,
@@ -145,33 +171,39 @@ function applyOutput(
 ): Streaming {
   switch (kind) {
     case "assistant_delta":
-      if ("text" in data) {
-        return {
-          ...streaming,
-          assistant: cap(streaming.assistant + data.text),
-        };
+      if ("index" in data && "text" in data) {
+        return appendBlock(streaming, data.index, "text", data.text);
       }
       return streaming;
     case "thinking_delta":
-      if ("text" in data) {
-        return { ...streaming, thinking: cap(streaming.thinking + data.text) };
+      if ("index" in data && "text" in data) {
+        return appendBlock(streaming, data.index, "thinking", data.text);
       }
       return streaming;
     case "tool_call_start":
-      if ("name" in data) {
-        return { ...streaming, toolName: data.name, toolInput: "" };
-      }
-      return streaming;
-    case "tool_call_input":
-      if ("fragment" in data) {
+      if ("index" in data && "call_id" in data && "name" in data) {
         return {
           ...streaming,
-          toolInput: cap(streaming.toolInput + data.fragment),
+          blocks: [
+            ...streaming.blocks.filter((b) => b.index !== data.index),
+            {
+              index: data.index,
+              kind: "call" as const,
+              text: "",
+              callId: data.call_id,
+              name: data.name,
+            },
+          ].sort((a, b) => a.index - b.index),
         };
       }
       return streaming;
+    case "tool_call_input":
+      if ("index" in data && "fragment" in data) {
+        return appendBlock(streaming, data.index, "call", data.fragment);
+      }
+      return streaming;
     case "tool_output":
-      if ("call_id" in data) {
+      if ("call_id" in data && "chunk" in data) {
         return {
           ...streaming,
           toolOutput: {

@@ -5,6 +5,7 @@
 // lines — with the raw content one tap away whenever the body isn't
 // verbatim raw. `data-lang` on code bodies is the future highlighter's hook.
 
+import { useMemo } from "react";
 import type { RawResult, ToolCall, WireState } from "../api/types.ts";
 import { Code, NumberedCode } from "./Code.tsx";
 import {
@@ -15,7 +16,7 @@ import {
 } from "../render/parse.ts";
 
 export function CallBlock({ call }: { call: ToolCall }) {
-  const view = callView(call.name, call.input);
+  const view = useMemo(() => callView(call.name, call.input), [call]);
   return (
     <div className="block">
       <div className="kind">
@@ -60,7 +61,11 @@ export function ResultBlock({
   raw: RawResult;
   wire: WireState;
 }) {
-  const view = resultRender(tool, raw, wire);
+  // The cordon parses the whole raw result — sentinel stripping, diff
+  // classification, the kept-line filter. A store update re-renders every
+  // entry, so without this a streamed token re-parses every result in the
+  // session.
+  const view = useMemo(() => resultRender(tool, raw, wire), [tool, raw, wire]);
   const label = [wireLabel(wire), view.sizeLabel, view.isError ? "error" : null]
     .filter((part) => part !== null)
     .join(", ");

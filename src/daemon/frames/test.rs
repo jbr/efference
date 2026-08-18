@@ -73,12 +73,21 @@ fn output_frames_carry_no_seq_and_nest_under_data() {
 #[test]
 fn every_output_delta_maps_to_a_kind_and_no_cursor() {
     let deltas = [
-        StreamDelta::AssistantText("a".into()),
-        StreamDelta::ThinkingText("t".into()),
+        StreamDelta::AssistantText {
+            index: 0,
+            text: "a".into(),
+        },
+        StreamDelta::ThinkingText {
+            index: 0,
+            text: "t".into(),
+        },
         StreamDelta::ToolCallStart {
+            index: 1,
+            call_id: "toolu_1".into(),
             name: "bash".into(),
         },
         StreamDelta::ToolCallInput {
+            index: 1,
             fragment: "{\"c".into(),
         },
         StreamDelta::ToolOutput {

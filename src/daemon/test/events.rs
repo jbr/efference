@@ -127,7 +127,10 @@ async fn the_output_class_carries_ephemeral_deltas() {
 
     // Published only after the subscription exists (the handler subscribed
     // before returning the response headers `events()` just awaited).
-    shared.publish_delta(StreamDelta::AssistantText("hello ".into()));
+    shared.publish_delta(StreamDelta::AssistantText {
+        index: 0,
+        text: "hello ".into(),
+    });
     shared.publish_delta(StreamDelta::ToolOutput {
         call_id: "toolu_5".into(),
         chunk: "line of output\n".into(),

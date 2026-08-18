@@ -432,18 +432,33 @@ through rather than receiving a stream.
 under `data`. A late subscriber starts from the next delta; a lagging one drops
 the oldest. The committed entry on the `log` class is the authoritative copy.
 
-- `assistant_delta` — `{ "text": "<fragment>" }`
-- `thinking_delta` — `{ "text": "<fragment>" }` — extended thinking, never the
+- `assistant_delta` — `{ "index": <n>, "text": "<fragment>" }`
+- `thinking_delta` — `{ "index": <n>, "text": "<fragment>" }` — extended thinking, never the
   assistant's answer; a client must render it as thinking or not at all.
-- `tool_call_start` — `{ "name": "<tool>" }` — the model began emitting a tool call,
-  named *before* its arguments stream (a large input takes seconds to arrive).
-- `tool_call_input` — `{ "fragment": "<partial json>" }` — arguments arriving, verbatim.
-  A client may display these but must not **parse** them as a complete document: mid-stream they
-  are a partial slice.
+- `tool_call_start` — `{ "index": <n>, "call_id": "…", "name": "<tool>" }` — the model began
+  emitting a tool call, named *before* its arguments stream (a large input takes seconds to
+  arrive). `call_id` is the id its eventual `tool_result` and every per-call annotation key
+  on, so a client can bind the live block to the call it becomes before the call commits.
+- `tool_call_input` — `{ "index": <n>, "fragment": "<partial json>" }` — arguments arriving,
+  verbatim. A client may display these but must not **parse** them as a complete document:
+  mid-stream they are a partial slice.
 - `tool_output` — `{ "call_id": "…", "chunk": "…" }`
 - `process_output` — `{ "id": <n>, "chunk": "…" }` — a background process's output,
   keyed by the bare process id (rendered `p#<n>` in prose, never in machine-facing
   fields).
+
+**Every delta names the item it appends to.** A streamed fragment is partial delivery *of a
+specific item*, so the four model-stream kinds carry the `index` of the content block they
+belong to, exactly as `tool_output` and `process_output` have always carried a `call_id` and
+a process id. A client that cannot tell which item a fragment belongs to can only hold one
+buffer per kind, and a response containing two tool calls then overwrites the first when the
+second opens — the arriving arguments a client had been showing simply disappear. There is
+no bound on how many blocks a response may contain, so this is a property of the protocol,
+not a workaround for a provider quirk.
+
+`index` is scoped to **the response now in flight**: it restarts at 0 per response, and the
+loop issues one request at a time, so it is unambiguous without further qualification. The
+committed entry on the `log` class supersedes the whole live set for that response.
 
 The three middle kinds exist so a client can show *which phase* a turn is in. Without them
 only prose reaches the stream, and a turn spent thinking or emitting a large tool input

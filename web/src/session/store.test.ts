@@ -69,24 +69,103 @@ describe("the state fold", () => {
 });
 
 describe("the output tail", () => {
-  it("accumulates deltas per kind", () => {
+  it("accumulates deltas into the block each one names", () => {
     const s = fold(emptySession, [
-      { class: "output", kind: "thinking_delta", data: { text: "hm" } },
-      { class: "output", kind: "assistant_delta", data: { text: "I'll " } },
-      { class: "output", kind: "assistant_delta", data: { text: "look" } },
-      { class: "output", kind: "tool_call_start", data: { name: "bash" } },
-      { class: "output", kind: "tool_call_input", data: { fragment: '{"cmd' } },
+      {
+        class: "output",
+        kind: "thinking_delta",
+        data: { index: 0, text: "hm" },
+      },
+      {
+        class: "output",
+        kind: "assistant_delta",
+        data: { index: 1, text: "I'll " },
+      },
+      {
+        class: "output",
+        kind: "assistant_delta",
+        data: { index: 1, text: "look" },
+      },
+      {
+        class: "output",
+        kind: "tool_call_start",
+        data: { index: 2, call_id: "toolu_a", name: "bash" },
+      },
+      {
+        class: "output",
+        kind: "tool_call_input",
+        data: { index: 2, fragment: '{"cmd' },
+      },
     ]);
-    expect(s.streaming.thinking).toBe("hm");
-    expect(s.streaming.assistant).toBe("I'll look");
-    expect(s.streaming.toolName).toBe("bash");
-    expect(s.streaming.toolInput).toBe('{"cmd');
+    expect(s.streaming.blocks).toEqual([
+      { index: 0, kind: "thinking", text: "hm" },
+      { index: 1, kind: "text", text: "I'll look" },
+      {
+        index: 2,
+        kind: "call",
+        text: '{"cmd',
+        callId: "toolu_a",
+        name: "bash",
+      },
+    ]);
+  });
+
+  // The defect the block scoping exists for: with one buffer per kind, the
+  // second call's start reset the shared input buffer and the first call's
+  // arriving arguments vanished from the display (docs/control-api.md).
+  it("keeps two calls in one response distinct", () => {
+    const s = fold(emptySession, [
+      {
+        class: "output",
+        kind: "tool_call_start",
+        data: { index: 0, call_id: "toolu_a", name: "read" },
+      },
+      {
+        class: "output",
+        kind: "tool_call_input",
+        data: { index: 0, fragment: '{"paths"' },
+      },
+      {
+        class: "output",
+        kind: "tool_call_start",
+        data: { index: 1, call_id: "toolu_b", name: "bash" },
+      },
+      {
+        class: "output",
+        kind: "tool_call_input",
+        data: { index: 1, fragment: '{"command"' },
+      },
+    ]);
+    expect(s.streaming.blocks).toEqual([
+      {
+        index: 0,
+        kind: "call",
+        text: '{"paths"',
+        callId: "toolu_a",
+        name: "read",
+      },
+      {
+        index: 1,
+        kind: "call",
+        text: '{"command"',
+        callId: "toolu_b",
+        name: "bash",
+      },
+    ]);
   });
 
   it("clears the assistant buffers when the assistant entry commits", () => {
     const streamed = fold(emptySession, [
-      { class: "output", kind: "assistant_delta", data: { text: "prose" } },
-      { class: "output", kind: "tool_call_start", data: { name: "bash" } },
+      {
+        class: "output",
+        kind: "assistant_delta",
+        data: { index: 0, text: "prose" },
+      },
+      {
+        class: "output",
+        kind: "tool_call_start",
+        data: { index: 1, call_id: "toolu_a", name: "bash" },
+      },
     ]);
     const committed = fold(streamed, [
       {
@@ -98,8 +177,7 @@ describe("the output tail", () => {
         }),
       },
     ]);
-    expect(committed.streaming.assistant).toBe("");
-    expect(committed.streaming.toolName).toBeNull();
+    expect(committed.streaming.blocks).toEqual([]);
   });
 
   it("clears a call's live output when its result commits, keeping others", () => {

@@ -181,18 +181,25 @@ impl Frame {
     /// which is the whole reason they are a distinct durability class.
     pub(crate) fn output(delta: &StreamDelta) -> Self {
         let (kind, data) = match delta {
-            StreamDelta::AssistantText(text) => {
-                ("assistant_delta", serde_json::json!({ "text": text }))
-            }
-            StreamDelta::ThinkingText(text) => {
-                ("thinking_delta", serde_json::json!({ "text": text }))
-            }
-            StreamDelta::ToolCallStart { name } => {
-                ("tool_call_start", serde_json::json!({ "name": name }))
-            }
-            StreamDelta::ToolCallInput { fragment } => (
+            StreamDelta::AssistantText { index, text } => (
+                "assistant_delta",
+                serde_json::json!({ "index": index, "text": text }),
+            ),
+            StreamDelta::ThinkingText { index, text } => (
+                "thinking_delta",
+                serde_json::json!({ "index": index, "text": text }),
+            ),
+            StreamDelta::ToolCallStart {
+                index,
+                call_id,
+                name,
+            } => (
+                "tool_call_start",
+                serde_json::json!({ "index": index, "call_id": call_id, "name": name }),
+            ),
+            StreamDelta::ToolCallInput { index, fragment } => (
                 "tool_call_input",
-                serde_json::json!({ "fragment": fragment }),
+                serde_json::json!({ "index": index, "fragment": fragment }),
             ),
             StreamDelta::ToolOutput { call_id, chunk } => (
                 "tool_output",

@@ -20,7 +20,7 @@
 
 import { createHighlighterCore, type HighlighterCore } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 
 /** One entry per language `langForPath` returns. Dynamic imports so the
  * grammars are their own chunks rather than main-bundle weight. */
@@ -89,7 +89,13 @@ function subscribeScheme(listener: () => void) {
 /** A `(code, lang) => lines of tokens` function, or `null` while the
  * grammars are still loading (or if they failed). Re-renders its caller
  * once when highlighting becomes available, and again whenever the system
- * colour scheme flips — the theme is chosen per call, not baked in. */
+ * colour scheme flips — the theme is chosen per call, not baked in.
+ *
+ * The returned function is **stable** across renders (it changes only when the
+ * highlighter or the theme does) so that callers can memoize their tokens on
+ * it. That is load-bearing, not tidiness: a store update re-renders the whole
+ * transcript, so an unstable identity re-tokenizes every code block in the
+ * session on every streamed token. */
 export function useHighlight():
   ((code: string, lang: string) => Token[][] | null) | null {
   useEffect(start, []);
@@ -103,14 +109,16 @@ export function useHighlight():
     () => darkQuery().matches,
     () => false,
   );
-  if (core === null) return null;
-  const theme = dark ? THEMES.dark : THEMES.light;
-  return (code, lang) => {
-    if (!core.getLoadedLanguages().includes(lang)) return null;
-    try {
-      return core.codeToTokens(code, { lang, theme }).tokens;
-    } catch {
-      return null;
-    }
-  };
+  return useMemo(() => {
+    if (core === null) return null;
+    const theme = dark ? THEMES.dark : THEMES.light;
+    return (code: string, lang: string) => {
+      if (!core.getLoadedLanguages().includes(lang)) return null;
+      try {
+        return core.codeToTokens(code, { lang, theme }).tokens;
+      } catch {
+        return null;
+      }
+    };
+  }, [core, dark]);
 }

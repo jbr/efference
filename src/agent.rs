@@ -162,10 +162,20 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             let completion = match client
                 .complete(&messages, &tools, ToolChoice::auto(), |streamed| {
                     shared.publish_delta(match streamed {
-                        Streamed::Text(text) => StreamDelta::AssistantText(text),
-                        Streamed::Thinking(text) => StreamDelta::ThinkingText(text),
-                        Streamed::ToolStart { name } => StreamDelta::ToolCallStart { name },
-                        Streamed::ToolInput(fragment) => StreamDelta::ToolCallInput { fragment },
+                        Streamed::Text { index, text } => {
+                            StreamDelta::AssistantText { index, text }
+                        }
+                        Streamed::Thinking { index, text } => {
+                            StreamDelta::ThinkingText { index, text }
+                        }
+                        Streamed::ToolStart { index, id, name } => StreamDelta::ToolCallStart {
+                            index,
+                            call_id: id,
+                            name,
+                        },
+                        Streamed::ToolInput { index, fragment } => {
+                            StreamDelta::ToolCallInput { index, fragment }
+                        }
                     });
                 })
                 .await

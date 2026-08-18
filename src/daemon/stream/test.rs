@@ -87,7 +87,10 @@ async fn sse_fields_carry_the_kind_and_the_cursor() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
     let mut stream = control_stream(Arc::clone(&shared), Include::default(), 0);
     shared.append(1, user("hello")).unwrap();
-    shared.publish_delta(StreamDelta::AssistantText("hi".into()));
+    shared.publish_delta(StreamDelta::AssistantText {
+        index: 0,
+        text: "hi".into(),
+    });
 
     let mut kinds = Vec::new();
     while let Ok(Some(event)) =
@@ -307,7 +310,10 @@ async fn a_delta_arriving_while_parked_is_not_dropped() {
 
     collect(&mut stream).await;
 
-    shared.publish_delta(StreamDelta::AssistantText("while parked".into()));
+    shared.publish_delta(StreamDelta::AssistantText {
+        index: 0,
+        text: "while parked".into(),
+    });
 
     let seen = collect(&mut stream).await;
     assert_eq!(
@@ -330,7 +336,10 @@ async fn the_durable_class_is_drained_first() {
 
     // Publish deltas first, then append: the durable entry must still lead.
     for i in 0..5 {
-        shared.publish_delta(StreamDelta::AssistantText(format!("chunk {i}")));
+        shared.publish_delta(StreamDelta::AssistantText {
+            index: 0,
+            text: format!("chunk {i}"),
+        });
     }
     shared.append(1, user("committed")).unwrap();
 

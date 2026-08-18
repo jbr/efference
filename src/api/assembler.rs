@@ -151,8 +151,12 @@ impl Assembler {
                 // Name a tool call the moment it opens, before its arguments stream: a large input
                 // can take seconds to arrive, and "calling `bash`…" is the difference between a
                 // visible phase and apparent silence (docs/transport.md).
-                if let BlockAccum::ToolUse { name, .. } = &block {
-                    streamed = Some(Streamed::ToolStart { name: name.clone() });
+                if let BlockAccum::ToolUse { id, name, .. } = &block {
+                    streamed = Some(Streamed::ToolStart {
+                        index,
+                        id: id.clone(),
+                        name: name.clone(),
+                    });
                 }
                 self.blocks.push(block);
             }
@@ -177,7 +181,10 @@ impl Assembler {
                             .and_then(Value::as_str)
                             .unwrap_or_default();
                         buf.push_str(frag);
-                        streamed = Some(Streamed::Text(frag.to_string()));
+                        streamed = Some(Streamed::Text {
+                            index,
+                            text: frag.to_string(),
+                        });
                     }
                     ("input_json_delta", BlockAccum::ToolUse { partial_json, .. }) => {
                         let frag = delta
@@ -185,7 +192,10 @@ impl Assembler {
                             .and_then(Value::as_str)
                             .unwrap_or_default();
                         partial_json.push_str(frag);
-                        streamed = Some(Streamed::ToolInput(frag.to_string()));
+                        streamed = Some(Streamed::ToolInput {
+                            index,
+                            fragment: frag.to_string(),
+                        });
                     }
                     ("thinking_delta", BlockAccum::Thinking { text, .. }) => {
                         let frag = delta
@@ -193,7 +203,10 @@ impl Assembler {
                             .and_then(Value::as_str)
                             .unwrap_or_default();
                         text.push_str(frag);
-                        streamed = Some(Streamed::Thinking(frag.to_string()));
+                        streamed = Some(Streamed::Thinking {
+                            index,
+                            text: frag.to_string(),
+                        });
                     }
                     ("signature_delta", BlockAccum::Thinking { signature, .. }) => {
                         signature.push_str(

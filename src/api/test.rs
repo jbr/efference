@@ -261,19 +261,34 @@ fn every_phase_reaches_the_live_sink_not_just_prose() {
     assert_eq!(
         seen,
         vec![
-            Streamed::Thinking("weighing ".into()),
-            Streamed::Thinking("the options".into()),
-            // The call is named before a single argument byte arrives.
+            Streamed::Thinking {
+                index: 0,
+                text: "weighing ".into()
+            },
+            Streamed::Thinking {
+                index: 0,
+                text: "the options".into()
+            },
+            // The call is named before a single argument byte arrives, and carries the
+            // `tool_use` id its result will key on.
             Streamed::ToolStart {
+                index: 1,
+                id: "toolu_1".into(),
                 name: "bash".into()
             },
-            Streamed::ToolInput("{\"comm".into()),
-            Streamed::ToolInput("and\":\"ls\"}".into()),
+            Streamed::ToolInput {
+                index: 1,
+                fragment: "{\"comm".into()
+            },
+            Streamed::ToolInput {
+                index: 1,
+                fragment: "and\":\"ls\"}".into()
+            },
         ],
         "a thinking-then-tool-call turn must not stream silently"
     );
     // A signature delta carries no live signal — it's replay metadata, not progress.
-    assert!(!seen.iter().any(|s| matches!(s, Streamed::Text(_))));
+    assert!(!seen.iter().any(|s| matches!(s, Streamed::Text { .. })));
 }
 
 /// Consecutive equal statuses increment the diagnostic counter; a different
@@ -323,8 +338,14 @@ fn prose_still_reaches_the_sink_as_text() {
     assert_eq!(
         seen,
         vec![
-            Streamed::Text("let me ".into()),
-            Streamed::Text("look".into())
+            Streamed::Text {
+                index: 0,
+                text: "let me ".into()
+            },
+            Streamed::Text {
+                index: 0,
+                text: "look".into()
+            }
         ]
     );
 }
@@ -748,5 +769,59 @@ fn request_includes_temperature_when_set() {
     assert!(
         json.contains("\"temperature\":0.7"),
         "temperature: 0.7 present"
+    );
+}
+
+/// **Two tool calls in one response stay distinguishable on the live sink.** Blocks
+/// stream sequentially, so an unscoped sink cannot tell the second call's input from the
+/// first's continuing: a client holding one slot per kind resets it when the second
+/// `ToolStart` arrives and the first call's arriving arguments vanish from the display.
+/// Carrying `index` — and the `tool_use` id the eventual result keys on — is what lets a
+/// client bind each fragment to the call it belongs to (docs/control-api.md).
+#[test]
+fn parallel_tool_calls_are_scoped_to_their_blocks() {
+    let seen = live(&[
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"tool_use","id":"toolu_a","name":"read","input":{}}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"input_json_delta","partial_json":"{\"paths\""}}"#,
+        ),
+        ("content_block_stop", r#"{"index":0}"#),
+        (
+            "content_block_start",
+            r#"{"index":1,"content_block":{"type":"tool_use","id":"toolu_b","name":"bash","input":{}}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":1,"delta":{"type":"input_json_delta","partial_json":"{\"command\""}}"#,
+        ),
+        ("content_block_stop", r#"{"index":1}"#),
+    ]);
+    assert_eq!(
+        seen,
+        vec![
+            Streamed::ToolStart {
+                index: 0,
+                id: "toolu_a".into(),
+                name: "read".into()
+            },
+            Streamed::ToolInput {
+                index: 0,
+                fragment: "{\"paths\"".into()
+            },
+            Streamed::ToolStart {
+                index: 1,
+                id: "toolu_b".into(),
+                name: "bash".into()
+            },
+            Streamed::ToolInput {
+                index: 1,
+                fragment: "{\"command\"".into()
+            },
+        ],
+        "each call's fragments must name the block they belong to"
     );
 }

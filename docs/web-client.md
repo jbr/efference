@@ -140,10 +140,23 @@ tool code share one language map. Inside a `<pre>`, highlighted lines are joined
 by explicit newline text rather than one element each — an element per line gives
 a blank line zero height, which silently eats every empty line in the source.
 
-The TUI's highlighting concerns that do *not* transfer are the repaint ones
-(per-block memoization, continuing a growing block from the previous frame's
-parse state): those exist because ratatui repaints the whole viewport, and the
-DOM is retained between renders.
+**Highlighting is memoized per block, and so is the cordon's parse.** The TUI's
+"compute once per block, not once per frame" finding transfers, for a different
+reason than repaints: a store update re-renders the whole transcript, so without
+memoization every streamed token re-tokenized every code block in the session and
+re-parsed every tool result. Measured by the page ceasing to respond for the
+length of a turn. `useHighlight` therefore returns a *stable* function — an
+unstable identity silently defeats every caller's memo.
+
+The rule that actually bounds the work is the TUI's, stated the same way
+([tui.md](tui.md)): **a committed entry is re-rendered only when the entry
+changes.** `Entry` is memoized on its log entry, so a streaming turn re-renders
+only the pre-commit tail. `toolOf` is memoized for that reason — a fresh closure
+per render would break every entry's memo at once.
+
+What does *not* transfer is continuing a growing block from the previous frame's
+parse state: that exists because ratatui repaints the viewport, and here the
+growing block is the live tail, which is not highlighted.
 
 ## Transcript ergonomics
 

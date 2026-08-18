@@ -3,6 +3,7 @@
 // tool results first, no folding). Deliberately crude: this is the churn zone,
 // and content-on-the-page precedes layout.
 
+import { memo, useMemo } from "react";
 import type { CallId, ContentBlock, LogEntry } from "../api/types.ts";
 import type { Streaming } from "../session/store.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -20,7 +21,16 @@ const text = (blocks: ContentBlock[]) =>
     )
     .join("\n");
 
-function Entry({
+/** Memoized on its entry: a committed entry's rendering is a function of that
+ * entry alone, so it must not re-render because something else streamed. The
+ * transcript re-renders on every delta, and re-rendering a committed entry
+ * means re-parsing its markdown and re-tokenizing its code — which, on a
+ * session holding a few large results, is enough to stop the page responding
+ * while a turn streams. The TUI states the same rule for its own incremental
+ * projection: a committed entry is re-projected only when a call it owns
+ * changes (docs/tui.md). `toolOf` must therefore be stable, or this memo
+ * never holds. */
+const Entry = memo(function Entry({
   entry,
   toolOf,
 }: {
@@ -85,7 +95,7 @@ function Entry({
     );
   }
   return <Block kind="unknown entry" body={JSON.stringify(p)} dim />;
-}
+});
 
 /** `prose` renders the body as markdown; everything else is preformatted
  * text. The split is deliberate and narrow — see `Markdown.tsx`. Thinking in
@@ -110,23 +120,38 @@ function Block({
   );
 }
 
-/** The lossy pre-commit tail: the coarse phase a turn is in, live. */
+/** The pre-commit tail: the in-flight response's blocks, in wire order, each
+ * identified by the `index` its deltas name (docs/control-api.md). A response
+ * with two tool calls renders both — with one buffer per kind the second call's
+ * start wiped the first, and the arguments already on screen disappeared. */
 function StreamingTail({ streaming }: { streaming: Streaming }) {
   const liveOutput = Object.entries(streaming.toolOutput);
   return (
     <>
-      {streaming.thinking && (
-        <Block kind="thinking…" body={streaming.thinking} dim />
-      )}
-      {streaming.assistant && (
-        <Block kind="assistant…" body={streaming.assistant} prose />
-      )}
-      {streaming.toolName && (
-        <Block
-          kind={`calling ${streaming.toolName}…`}
-          body={streaming.toolInput}
-        />
-      )}
+      {streaming.blocks.map((block) => {
+        if (block.kind === "thinking") {
+          return (
+            <Block key={block.index} kind="thinking…" body={block.text} dim />
+          );
+        }
+        if (block.kind === "text") {
+          return (
+            <Block
+              key={block.index}
+              kind="assistant…"
+              body={block.text}
+              prose
+            />
+          );
+        }
+        return (
+          <Block
+            key={block.index}
+            kind={`calling ${block.name ?? ""}…`}
+            body={block.text}
+          />
+        );
+      })}
       {liveOutput.map(([callId, chunk]) => (
         <Block key={callId} kind="output…" body={chunk} />
       ))}
@@ -143,16 +168,19 @@ export function Transcript({
 }) {
   useFollowTail();
   // A result names its call by id; the call (and its tool name) lives in an
-  // earlier Assistant entry. One pass per render keeps Entry lookups O(1).
-  const calls = new Map<CallId, string>();
-  for (const entry of entries) {
-    if ("Assistant" in entry.payload) {
-      for (const call of entry.payload.Assistant.calls) {
-        calls.set(call.id, call.name);
+  // earlier Assistant entry. Built once per entries change, not per render:
+  // its identity is a dependency of every Entry's memo.
+  const toolOf = useMemo(() => {
+    const calls = new Map<CallId, string>();
+    for (const entry of entries) {
+      if ("Assistant" in entry.payload) {
+        for (const call of entry.payload.Assistant.calls) {
+          calls.set(call.id, call.name);
+        }
       }
     }
-  }
-  const toolOf = (callId: CallId) => calls.get(callId) ?? null;
+    return (callId: CallId) => calls.get(callId) ?? null;
+  }, [entries]);
   return (
     <div className="transcript">
       {entries.map((entry) => (

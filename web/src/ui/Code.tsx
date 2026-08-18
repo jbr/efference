@@ -10,7 +10,7 @@
 // `data-lang` stays on the element whether or not highlighting ran: it is
 // the record of what the cordon inferred, independent of what got coloured.
 
-import { Fragment } from "react";
+import { Fragment, useMemo } from "react";
 import type { Token } from "./highlight.ts";
 import { useHighlight } from "./highlight.ts";
 
@@ -35,7 +35,13 @@ function Line({ tokens }: { tokens: Token[] }) {
  * replaces. */
 export function Code({ text, lang }: { text: string; lang: string | null }) {
   const highlight = useHighlight();
-  const lines = highlight && lang !== null ? highlight(text, lang) : null;
+  // Memoized on the text, not recomputed per render: a store update
+  // re-renders the whole transcript, and tokenizing every committed block on
+  // every streamed token is what made the page stop responding mid-stream.
+  const lines = useMemo(
+    () => (highlight && lang !== null ? highlight(text, lang) : null),
+    [highlight, text, lang],
+  );
   return (
     <pre data-lang={lang ?? undefined}>
       {lines === null
@@ -66,8 +72,14 @@ export function NumberedCode({
   lang: string | null;
 }) {
   const highlight = useHighlight();
+  // `lines` is rebuilt by the cordon on every render, so it cannot be a memo
+  // dependency — joining is cheap, and the string it produces compares by
+  // value, which is what keeps the tokenizing off the render path.
   const text = lines.map(([, line]) => line).join("\n");
-  const tokens = highlight && lang !== null ? highlight(text, lang) : null;
+  const tokens = useMemo(
+    () => (highlight && lang !== null ? highlight(text, lang) : null),
+    [highlight, text, lang],
+  );
   return (
     <pre data-lang={lang ?? undefined}>
       {lines.map(([n, line], i) => (

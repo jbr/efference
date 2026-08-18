@@ -209,10 +209,14 @@ export type OutputKind =
   | "tool_output"
   | "process_output";
 
+// Every model-stream delta names the content block it appends to (`index`), and
+// a call additionally the `call_id` its result keys on — a fragment is partial
+// delivery of a specific item (docs/control-api.md). `tool_output` and
+// `process_output` were always keyed this way.
 export type OutputData =
-  | { text: string }
-  | { name: string }
-  | { fragment: string }
+  | { index: number; text: string }
+  | { index: number; call_id: CallId; name: string }
+  | { index: number; fragment: string }
   | { call_id: CallId; chunk: string }
   | { id: number; chunk: string };
 

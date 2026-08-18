@@ -57,27 +57,37 @@ use crate::tools::Toolbox;
 /// The authoritative text always lands as a committed [`LogEntry`] on `/events`, so
 /// the stream is a live convenience with the durable log as its backstop — which is
 /// exactly why it can ride a lossy `broadcast` where `/events` must tail the log.
+/// Every model-stream variant carries the content-block `index` it belongs to, and
+/// `ToolCallStart` additionally the `tool_use` id: a fragment is partial delivery *of a
+/// specific item*, and a client that cannot tell which holds one slot per kind and loses the
+/// first tool call's arriving input the moment a second opens. [`ToolOutput`](Self::ToolOutput)
+/// and [`ProcessOutput`](Self::ProcessOutput) were always keyed this way; these variants now
+/// match them (docs/control-api.md).
 #[derive(Clone)]
 pub enum StreamDelta {
     /// A fragment of assistant prose as the model streams it from the upstream SSE.
-    AssistantText(String),
+    AssistantText { index: usize, text: String },
     /// A fragment of extended-thinking text as the model streams it. A separate variant from
     /// [`AssistantText`](Self::AssistantText) because it is *not* the assistant's answer — a client
     /// must render it as thinking or not at all, never as prose.
-    ThinkingText(String),
+    ThinkingText { index: usize, text: String },
     /// The model began emitting a tool call, named before its arguments stream. Together with
     /// [`ThinkingText`](Self::ThinkingText) this is what makes a generation phase visible at all:
     /// before these existed only prose reached the stream, so a turn spent thinking or emitting a
     /// large tool input published nothing and read as a hung harness
     /// (docs/transport.md).
-    ToolCallStart { name: String },
+    ToolCallStart {
+        index: usize,
+        call_id: String,
+        name: String,
+    },
     /// A fragment of a tool call's JSON input, verbatim. The bytes are passed through rather than
     /// summarized as a count: they are a partial slice of a JSON document, so a client must not
     /// *parse* them as if complete — but showing what actually arrived claims no structure, and
     /// `{"command":"cargo test` tells an operator far more than a byte count does. (Rendering a
     /// partial document *structurally* is a real option — `jiter`'s partial mode, `actson`'s push
     /// parser — and is filed as its own design question.)
-    ToolCallInput { fragment: String },
+    ToolCallInput { index: usize, fragment: String },
     /// A chunk of a running tool's combined output, tagged by its `tool_use` id.
     ToolOutput { call_id: String, chunk: String },
     /// A chunk of a running background process's output, tagged by the process's
