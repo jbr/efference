@@ -2,8 +2,13 @@ use super::*;
 
 #[test]
 fn system_prompt_appends_role_section_when_present() {
-    let without = system_prompt(None, None, None);
-    let with = system_prompt(None, Some("Your role for this session:\n\nStay put."), None);
+    let without = system_prompt("m", None, None, None);
+    let with = system_prompt(
+        "m",
+        None,
+        Some("Your role for this session:\n\nStay put."),
+        None,
+    );
     // The role section is appended verbatim after the env block; without a role the
     // prompt is exactly the preamble + env (no trailing role text).
     assert!(with.starts_with(&without));
@@ -16,6 +21,7 @@ fn system_prompt_appends_role_section_when_present() {
 #[test]
 fn system_prompt_splices_context_block_before_the_role() {
     let s = system_prompt(
+        "m",
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
@@ -23,7 +29,7 @@ fn system_prompt_splices_context_block_before_the_role() {
     assert!(s.contains("<CLAUDE.md>\nhi\n</CLAUDE.md>"));
     assert!(s.find("<CLAUDE.md>").unwrap() < s.find("Your role").unwrap());
     // No block → nothing spliced.
-    assert!(!system_prompt(None, None, None).contains("<CLAUDE.md>"));
+    assert!(!system_prompt("m", None, None, None).contains("<CLAUDE.md>"));
 }
 
 /// The session's config file is never named in the system prompt: the permission perimeter
@@ -32,6 +38,7 @@ fn system_prompt_splices_context_block_before_the_role() {
 #[test]
 fn system_prompt_never_names_the_config_file() {
     let full = system_prompt(
+        "m",
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
@@ -48,6 +55,7 @@ fn system_prompt_never_names_the_config_file() {
 fn system_prompt_appends_the_unmounted_section_last() {
     let unmounted = "# Declared but unavailable\n\n- `sentry` — needs authorization";
     let full = system_prompt(
+        "m",
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         Some(unmounted),
@@ -57,9 +65,25 @@ fn system_prompt_appends_the_unmounted_section_last() {
 
     // Nothing unmounted → byte-identical to the prompt without the parameter.
     let without = system_prompt(
+        "m",
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
     );
     assert!(!without.contains("Declared but unavailable"));
+}
+
+/// The identity line is unconditional and names the configured model verbatim,
+/// ahead of the context block — an untold model answers "which model are you"
+/// from its priors (docs/context.md).
+#[test]
+fn system_prompt_states_the_model_identity() {
+    let s = system_prompt(
+        "anthropic/claude-sonnet-5",
+        Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
+        None,
+        None,
+    );
+    assert!(s.contains("You are anthropic/claude-sonnet-5."));
+    assert!(s.find("You are ").unwrap() < s.find("<CLAUDE.md>").unwrap());
 }

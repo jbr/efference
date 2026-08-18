@@ -196,7 +196,9 @@ request shape.
 Every upstream request appends one JSONL line to the session dir's `usage.jsonl`:
 a wall-clock stamp, the request's origin (`turn` / `peek` / `triage` / `spot` /
 `keepalive`), the upstream response id (Anthropic `msg_…`; an OpenRouter-fronted
-request's generation id), and the four token counts. Implemented in
+request's generation id), the model the response named for itself (per line, not
+per file — the session's model can change, so only a per-request record
+attributes every entry), and the four token counts. Implemented in
 `src/daemon/metrics.rs` (`record_request` / `record_keepalive`), fed by
 `Completion::request_usage`. Transport-only and **never** the canonical log —
 usage must stay out of the projection. The in-memory `Metrics` fold surfaced by

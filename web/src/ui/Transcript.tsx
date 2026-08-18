@@ -16,6 +16,9 @@ import { Markdown } from "./Markdown.tsx";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
 
+// Blank-line joined: these bodies render as markdown, and distinct wire
+// blocks are separate paragraphs — a single newline would soft-wrap the last
+// line of one block into the first of the next.
 const text = (blocks: ContentBlock[]) =>
   blocks
     .map((b) =>
@@ -25,12 +28,13 @@ const text = (blocks: ContentBlock[]) =>
           ? b.Thinking.text
           : "[redacted thinking]",
     )
-    .join("\n");
+    .join("\n\n");
 
 /** `prose` renders the body as markdown; everything else is preformatted
- * text. The split is deliberate and narrow — see `Markdown.tsx`. Thinking in
- * particular stays preformatted: it is line-structured, not flowing prose,
- * and reflowing it collapses "- a\n- b" onto one line. */
+ * text. The split is deliberate — see `Markdown.tsx`. Thinking renders as
+ * prose: every measured corpus is blank-line-separated paragraphs whose one
+ * markdown construct is inline code (docs/web-client.md names the reversal
+ * trigger — a model whose thinking lines run together). */
 function Block({
   kind,
   body,
@@ -81,13 +85,13 @@ function Leaf({ node }: { node: LeafNode }) {
     // Which half of the step this leaf stands for is in its key: the
     // projection emits thinking and prose as separate nodes.
     return node.key.endsWith(":thinking") ? (
-      <Block kind="thinking" body={text(p.Assistant.thinking)} dim />
+      <Block kind="thinking" body={text(p.Assistant.thinking)} dim prose />
     ) : (
       <Block kind={null} body={text(p.Assistant.text)} prose />
     );
   }
   if ("Mark" in p) {
-    return <Block kind="mark" body={p.Mark.note} dim />;
+    return <Block kind="mark" body={p.Mark.note} dim prose />;
   }
   if ("Ambient" in p) {
     return (
@@ -166,7 +170,7 @@ const MemoLeaf = memo(Leaf);
 
 function LiveBlockView({ block }: { block: LiveBlock }) {
   if (block.kind === "thinking") {
-    return <Block kind="thinking…" body={block.text} dim />;
+    return <Block kind="thinking…" body={block.text} dim prose />;
   }
   if (block.kind === "text") {
     return <Block kind="assistant…" body={block.text} prose />;

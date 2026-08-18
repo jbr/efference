@@ -275,11 +275,14 @@ impl Client {
         struct KeepaliveResponse {
             #[serde(default)]
             id: Option<String>,
+            #[serde(default)]
+            model: Option<String>,
             usage: Usage,
         }
         let parsed: KeepaliveResponse = serde_json::from_str(&text)?;
         Ok(RequestUsage {
             id: parsed.id,
+            model: parsed.model,
             usage: parsed.usage,
         })
     }

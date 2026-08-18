@@ -8,6 +8,9 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The system prompt states the configured model unconditionally (`You are {model}.`), and every `usage.jsonl` line records the model that served the request.
+- The web client renders thinking and consolidation-mark notes as markdown; an unknown tool's JSON envelope drops the `intent` it already shows as a leading line.
+- The web gate surface distinguishes its own resolution from an external one: the next gate after your approval arrives silently, a call resolved in another session says so, and a bounced decision reports that it did not land.
 - The web client renders a tool call's input as it arrives: settled arguments fill the header through the committed call's own renderer, the one value still in flight shows as decoded content — incrementally syntax-highlighted when a settled path names its language — and the block keeps its shape when the entry commits.
 - A dev build of the web client records every control-stream frame it receives and can hold, step, and seek the fold — so a momentary pre-commit state can be put on screen and kept there. Driven from devtools or by a DOM event; absent from a production build.
 - The TCP bind serves a `Content-Security-Policy` on every response — `default-src 'self'` with no `unsafe-` escape — plus `x-content-type-options`, `referrer-policy` and `x-frame-options`. An eslint rule bans `dangerouslySetInnerHTML` and `innerHTML` in `web/src/`, so untrusted content cannot become markup.

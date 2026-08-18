@@ -31,34 +31,67 @@ export function GateSurface({
 }: {
   gate: Gate;
   spot: Spot | null;
-  resolve: (decision: Decision) => Promise<void>;
+  resolve: (decision: Decision) => Promise<"applied" | "moved">;
 }) {
   const [steer, setSteer] = useState("");
   const [prefix, setPrefix] = useState(() => commandOf(gate.input) ?? "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{
+    text: string;
+    error: boolean;
+  } | null>(null);
+  // Whether this surface's own decision resolved the call it was showing.
+  // The distinction the pending-call change below turns on: after our own
+  // approve, the next call gating is the expected course of events, not news.
+  const [resolvedHere, setResolvedHere] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
 
-  // The gate changed under this surface (resolved elsewhere, or a
-  // gate_moved correction): reset the inputs and say so, because a decision
-  // composed against the old call must not land on the new one.
-  const [forCall, setForCall] = useState(gate.call_id);
-  if (forCall !== gate.call_id) {
-    setForCall(gate.call_id);
+  // The pending call changed under this surface. Always reset the inputs — a
+  // decision composed against the old call must not land on the new one. Say
+  // so only when this surface did not cause the change: after our own
+  // resolution the next gate arriving is normal (a batch with several gated
+  // calls does this on every approval, and the daemon's diffing topic
+  // publisher may never show the cleared state between). An unprompted
+  // change means another session decided this call.
+  const [drafts, setDrafts] = useState(() => ({
+    call: gate.call_id,
+    prefill: commandOf(gate.input) ?? "",
+  }));
+  if (drafts.call !== gate.call_id) {
+    const dirty = steer !== "" || note !== "" || prefix !== drafts.prefill;
+    const prefill = commandOf(gate.input) ?? "";
+    setDrafts({ call: gate.call_id, prefill });
     setSteer("");
-    setPrefix(commandOf(gate.input) ?? "");
+    setPrefix(prefill);
     setNote("");
-    setNotice("the gate moved — this is now the pending call");
+    setResolvedHere(false);
+    setNotice(
+      resolvedHere
+        ? null
+        : {
+            text: dirty
+              ? "that call was resolved in another session — this is a different call, and the draft composed against the old one was cleared"
+              : "that call was resolved in another session — this is a different call",
+            error: false,
+          },
+    );
   }
 
   async function send(decision: Decision) {
     setBusy(true);
     setNotice(null);
     try {
-      await resolve(decision);
+      if ((await resolve(decision)) === "applied") {
+        setResolvedHere(true);
+      } else {
+        setNotice({
+          text: "that decision did not land — the call had already been resolved elsewhere",
+          error: false,
+        });
+      }
     } catch (e) {
-      setNotice(`${e}`);
+      setNotice({ text: `${e}`, error: true });
     } finally {
       setBusy(false);
     }
@@ -77,7 +110,9 @@ export function GateSurface({
         {!spot && gate.reason && (
           <div className="dim">spotter: {gate.reason}</div>
         )}
-        {notice && <div className="error">{notice}</div>}
+        {notice && (
+          <div className={notice.error ? "error" : "dim"}>{notice.text}</div>
+        )}
         <div className="controls">
           <button
             disabled={busy}

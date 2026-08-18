@@ -49,6 +49,7 @@ fn state_reports_cache_telemetry() {
         RequestOrigin::Turn,
         RequestUsage {
             id: None,
+            model: None,
             usage: Usage {
                 input_tokens: 6,
                 output_tokens: 10,
@@ -62,6 +63,7 @@ fn state_reports_cache_telemetry() {
         RequestOrigin::Turn,
         RequestUsage {
             id: None,
+            model: None,
             usage: Usage {
                 input_tokens: 6,
                 output_tokens: 12,
@@ -118,6 +120,7 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
         RequestOrigin::Turn,
         RequestUsage {
             id: None,
+            model: None,
             usage: Usage {
                 input_tokens: 6,
                 output_tokens: 12,

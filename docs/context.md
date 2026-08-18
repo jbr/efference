@@ -10,6 +10,18 @@ truth for what the session starts knowing, the same way it already is for the se
 perimeter. Schema in `src/config.rs`; resolution and render in `src/context.rs`; splicing
 in `src/env.rs`; the read/write grants in `src/policy.rs`.
 
+## The identity line
+
+Ahead of the `[context]` block, the system prompt states the configured model
+verbatim — `You are {model}.` — unconditionally (`src/env.rs`). An untold model
+answers "which model are you" from its training priors, usually wrongly, and a
+log that mixes models across a session needs the current one to know which
+earlier turns were not its own. The line is also where a knowledge-cutoff note
+would attach; provider metadata has a slot for one (OpenRouter's
+`knowledge_cutoff`) that is unpopulated today, so the cutoff is not rendered
+([../backlog/model-identity.md](../backlog/model-identity.md) holds the
+render-when-present remainder).
+
 ## One mechanism, three config shapes
 
 CLAUDE.md-alikes, "skills", and "memories" are one mechanism: markdown files the operator

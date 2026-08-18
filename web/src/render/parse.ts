@@ -321,6 +321,13 @@ export function callView(name: string, input: unknown): CallView {
     const summary = [path, operation].filter((s) => s !== null).join(" · ");
     return view(summary === "" ? null : summary, null);
   }
+  // The envelope drops `intent`: it already renders as the call's leading
+  // line, and repeating it inside the JSON showed the same sentence twice.
+  if (intent !== null) {
+    const rest = { ...obj };
+    delete rest.intent;
+    return view(null, { lang: "json", text: pretty(rest) });
+  }
   return view(null, { lang: "json", text: pretty(input) });
 }
 

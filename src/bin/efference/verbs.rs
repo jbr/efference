@@ -85,7 +85,12 @@ pub(crate) async fn wire(
         // No unmounted-servers section: this offline view mounts no connected
         // providers at all (see the note below), so it has nothing to report
         // about which of them failed.
-        efference::env::system_prompt(context_block.as_deref(), role_section.as_deref(), None)
+        efference::env::system_prompt(
+            model,
+            context_block.as_deref(),
+            role_section.as_deref(),
+            None,
+        )
     };
     // The full tools[] a real turn sends — world tools + the harness tools
     // (`consolidate`, the docs/supervisor.md and docs/inbox.md tools) — so the dev view matches.

@@ -6,26 +6,31 @@ import type { CallId, Decision, Gate } from "../api/types.ts";
 import { applyFrame, type Store } from "./store.ts";
 
 /**
- * Resolve the pending gate (docs/control-api.md). Success changes nothing
- * here — the daemon pushes the cleared/next `gate` topic on the stream. A
- * `gate_moved` rejection carries the current gate (or null) as corrective
- * detail; folding it as a synthetic state frame re-renders the surface
- * without a second round-trip. Anything else rethrows for the ui to show.
+ * Resolve the pending gate (docs/control-api.md). `"applied"` means the
+ * decision landed; the daemon pushes the cleared/next `gate` topic on the
+ * stream, so success changes nothing here. A `gate_moved` rejection means it
+ * did not — that call was no longer the pending gate — and carries the
+ * current gate (or null) as corrective detail; folding it as a synthetic
+ * state frame re-renders the surface without a second round-trip, and the
+ * `"moved"` return is how the surface knows to say so rather than treating
+ * its own resolution as the cause. Anything else rethrows for the ui to
+ * show.
  */
 export async function resolveGate(
   store: Store,
   callId: CallId,
   decision: Decision,
-): Promise<void> {
+): Promise<"applied" | "moved"> {
   try {
     await resolveApproval(callId, decision);
+    return "applied";
   } catch (error) {
     if (error instanceof ApiError && error.code === "gate_moved") {
       const gate = (error.detail ?? null) as Gate | null;
       store.update((s) =>
         applyFrame(s, { class: "state", kind: "gate", data: gate }),
       );
-      return;
+      return "moved";
     }
     throw error;
   }

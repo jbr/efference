@@ -64,13 +64,17 @@ pub enum RequestOrigin {
 }
 
 /// One line of `usage.jsonl`: when, which shape, the upstream's own id for the
-/// request, and the four token counts.
+/// request, the model that served it, and the four token counts. The model is
+/// per line rather than per file because the session's model can change
+/// mid-log, so only a per-request record attributes every entry.
 #[derive(Serialize)]
 struct UsageLine<'a> {
     at_ms: u128,
     origin: RequestOrigin,
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<&'a str>,
     input: u64,
     output: u64,
     cache_read: u64,
@@ -106,6 +110,7 @@ impl Shared {
                 .unwrap_or_default(),
             origin,
             id: request.id.as_deref(),
+            model: request.model.as_deref(),
             input: request.usage.input_tokens,
             output: request.usage.output_tokens,
             cache_read: request.usage.cache_read_input_tokens,

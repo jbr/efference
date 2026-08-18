@@ -272,6 +272,7 @@ pub(crate) async fn serve(
     };
     let context_block = resolved.render();
     let system = efference::env::system_prompt(
+        model,
         context_block.as_deref(),
         role_section.as_deref(),
         unmounted_section.as_deref(),

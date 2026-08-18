@@ -26,11 +26,16 @@ fn keepalive_advances_touch_clock_not_cap_clock() {
         RequestOrigin::Turn,
         RequestUsage {
             id: None,
+            model: None,
             usage: usage.clone(),
         },
     ); // real turn → stamps both clocks
     std::thread::sleep(Duration::from_millis(5));
-    shared.record_keepalive(RequestUsage { id: None, usage }); // ping → advances the touch clock only
+    shared.record_keepalive(RequestUsage {
+        id: None,
+        model: None,
+        usage,
+    }); // ping → advances the touch clock only
 
     let (touch, turn) = shared.keepalive_clocks();
     let (touch, turn) = (touch.unwrap(), turn.unwrap());
@@ -64,10 +69,15 @@ fn recorded_requests_land_in_the_usage_record() {
         RequestOrigin::Peek,
         RequestUsage {
             id: Some("gen-abc123".into()),
+            model: None,
             usage: usage.clone(),
         },
     );
-    shared.record_keepalive(RequestUsage { id: None, usage });
+    shared.record_keepalive(RequestUsage {
+        id: None,
+        model: None,
+        usage,
+    });
 
     let lines: Vec<Value> = std::fs::read_to_string(&usage_path)
         .expect("usage record exists")

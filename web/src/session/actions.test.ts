@@ -21,7 +21,8 @@ test("gate_moved applies the corrective gate, no second request", async () => {
       json(409, { code: "gate_moved", message: "moved", detail: next }),
     );
   vi.stubGlobal("fetch", fetch);
-  await resolveGate(store, "a", { decision: "approve" });
+  const outcome = await resolveGate(store, "a", { decision: "approve" });
+  expect(outcome).toBe("moved");
   expect(store.snapshot().topics.gate).toEqual(next);
   expect(fetch).toHaveBeenCalledTimes(1);
 });
@@ -50,7 +51,8 @@ test("success changes nothing — the stream owns the topic", async () => {
     "fetch",
     vi.fn().mockResolvedValue(json(200, { status: "resolved" })),
   );
-  await resolveGate(store, "a", { decision: "approve" });
+  const outcome = await resolveGate(store, "a", { decision: "approve" });
+  expect(outcome).toBe("applied");
   expect(store.snapshot().topics.gate).toBeUndefined();
 });
 

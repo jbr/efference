@@ -140,6 +140,11 @@ test("call views summarize known tools and envelope the rest", () => {
     callView("edit", { file_path: "a.rs", operation: "replace" }).summary,
   ).toBe("a.rs · replace");
   expect(callView("mystery", { x: 1 }).body?.lang).toBe("json");
+  // The envelope drops `intent` — it already renders as the leading line.
+  const enveloped = callView("mystery", { intent: "why", x: 1 });
+  expect(enveloped.intent).toBe("why");
+  expect(enveloped.body?.text).not.toContain("why");
+  expect(enveloped.body?.text).toContain("x");
 });
 
 test("diff-tool set and language map mirror the Rust", () => {

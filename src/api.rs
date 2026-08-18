@@ -200,6 +200,10 @@ pub struct Completion {
 #[derive(Debug, Clone)]
 pub struct RequestUsage {
     pub id: Option<String>,
+    /// The model the response named for itself — recorded per request because the
+    /// session's model can change, so no single header attributes every entry
+    /// (docs/log-and-projection.md). Optional defensively, like `id`.
+    pub model: Option<String>,
     pub usage: Usage,
 }
 
@@ -208,6 +212,7 @@ impl Completion {
     pub fn request_usage(&self) -> RequestUsage {
         RequestUsage {
             id: self.id.clone(),
+            model: Some(self.model.clone()),
             usage: self.usage.clone(),
         }
     }

@@ -15,7 +15,7 @@ import { connect, type Connector } from "./connect.ts";
 import { Store, type Session } from "./store.ts";
 
 export interface SessionActions {
-  resolveGate(callId: CallId, decision: Decision): Promise<void>;
+  resolveGate(callId: CallId, decision: Decision): Promise<"applied" | "moved">;
 }
 
 export function useSession(): {

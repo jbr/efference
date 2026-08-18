@@ -1,7 +1,10 @@
-// Prose rendering (docs/web-client.md). Assistant and user turns are
-// markdown and are rendered as such; every other body on the page is not
-// prose and does not come through here — thinking is line-structured (a
-// reflow turns "- a\n- b" into "- a - b"), and tool output is tool output.
+// Prose rendering (docs/web-client.md). User turns, assistant text,
+// thinking, and consolidation-mark notes are markdown and render as such;
+// tool output is not prose and does not come through here — the cordon owns
+// its representation. Thinking's markdown treatment carries a named reversal
+// trigger (docs/web-client.md): a model whose thinking is line-structured
+// rather than paragraph-separated would merge lines here, and that sighting
+// flips thinking back to preformatted.
 //
 // The renderer produces a React element tree, never an HTML string: the
 // text is model-authored, and a page holding a session credential must

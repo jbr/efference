@@ -170,14 +170,23 @@ sweep that no prefix ever settles a value the whole document contradicts.
 
 ## Prose is rendered as prose
 
-`ui/Markdown.tsx` renders user turns and assistant text as markdown
-(`react-markdown` + `remark-gfm`). Nothing else on the page goes through it, and
-the exclusions are the point: **thinking stays preformatted** because it is
-line-structured rather than flowing prose — it holds lists, indentation and
-snippets, and reflowing it to paragraphs turns `- a\n- b` into `- a - b` (the
-same finding the TUI's `DocumentNode::Lines` exists for, [tui.md](tui.md)) — and
-tool output is tool output, which the cordon already gives per-tool
-representations.
+`ui/Markdown.tsx` renders user turns, assistant text, thinking, and
+consolidation-mark notes as markdown (`react-markdown` + `remark-gfm`). Tool
+output does not come through it — the cordon gives it per-tool
+representations — and that exclusion is the point of the split.
+
+Thinking as prose is a default with a **named reversal trigger**. The measured
+corpora (322 blocks across two Claude models and two harnesses, 2026-08-18)
+are uniformly blank-line-separated paragraphs whose one markdown construct is
+inline code — for that shape, markdown renders the backticks and can mangle
+nothing. A model whose thinking is line-structured — bare adjacent lines that
+markdown would merge into one paragraph — is the sighting that flips thinking
+back to preformatted (or to markdown-with-hard-breaks, which serves both
+shapes). The TUI still renders thinking preformatted
+(`DocumentNode::Lines`, [tui.md](tui.md)). A mark's note has no such caveat:
+the projection re-injects it as a user-role text message, so it is prose on
+the wire already. Distinct wire blocks within one prose body are joined with a
+blank line, since a single newline would soft-wrap the seam between them.
 
 The renderer must produce a **React element tree, never an HTML string**. The
 text is model-authored and the page holds a session credential, so a markup-
@@ -312,10 +321,19 @@ approve, abort, redirect with steering text, and allow-with-prefix (a
 `config_edit` carrying a `command` change, prefilled from the call's own
 `command` field, plus an optional note). A `409 gate_moved` is handled in
 `session/actions.ts` by folding the response's corrective `detail` into the
-store as a synthetic state frame — no second round-trip; the surface re-renders
-from it. When the gate changes under the surface for any reason, the inputs
-reset and a notice says so, because a decision composed against one call must
-not land on another.
+store as a synthetic state frame — no second round-trip; `resolveGate` returns
+`"moved"` rather than `"applied"` so the surface can say the decision did not
+land.
+
+When the pending call changes under the surface, the inputs always reset — a
+decision composed against one call must not land on another — but whether a
+notice appears depends on who caused the change. After the surface's own
+resolution, the next call gating is the expected course (a batch with several
+gated calls does it on every approval, and the daemon's diffing topic
+publisher may coalesce away the cleared state between), so the reset is
+silent. An unprompted change means another session decided the call; the
+notice says so, mentions the cleared draft only when one existed, and renders
+informational rather than in the error class.
 
 ## Untrusted content
 
