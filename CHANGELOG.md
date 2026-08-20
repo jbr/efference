@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- `[context]` groups take `exclude = [...]`: paths pruned from a directory's expansion (relative to it, component-matched, skipped unread), so a foreign-owned layout's index file or retired subtree stays out of the preamble without restructuring the directory.
 - Submission ids on user turns: `POST /v1/turns` adopts a client-minted `submission_id` (daemon-minted when absent), echoes it in the 202, and records it on the resulting `User` entry as never-projected log metadata; the web client keys its pending-turn echoes on it, replacing content-match reconciliation.
 - Web transcript refinements from use: whole calls click open the inspector (with a hover tint), read/write results truncate to 12 lines with a `⋯ N more lines` affordance (the inspector holds the whole body; the per-result raw accordion is gone), wrapped numbered lines align under their text instead of the gutter, and focus rings are the accent, not UA blue.
 - The web client's top bar: sticky chrome with the serif wordmark, a breathing status dot, and the usage meter (context bar + session cost); the theme select and density toggles move into the bottom panel's new interface tab, and the old controls strip is gone.

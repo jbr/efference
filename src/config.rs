@@ -189,6 +189,11 @@ pub struct ContextEntry {
     /// Raw SQL-ish sort override for a multi-file source (`"modified desc"`); `None` = default
     /// `name asc`. Stored verbatim — parsed at render time (a later increment). Group-only.
     pub sort: Option<String>,
+    /// Paths pruned from a directory's expansion, relative to each configured directory
+    /// (`exclude = ["MEMORY.md", "archive"]` drops that file and that subtree). Matched
+    /// component-wise during the walk, so an excluded subtree is never read — an unreadable
+    /// file inside it cannot fail boot. Group-only; filters expansion, never an explicit path.
+    pub exclude: Vec<String>,
     /// A prose hint for the model about how to use this entry's files — e.g. how to read or write
     /// a memory. Rendered inside the group's tag as a `<description>` element. Group-only; a bare
     /// path carrying `description` is rejected in [`validate_context_entry`].

@@ -204,7 +204,7 @@ pub fn resolve(entries: &[ContextEntry], base: &Path) -> Result<Resolved, Resolv
                 continue;
             }
         };
-        let files = resolve_files(paths, base)?;
+        let files = resolve_files(paths, base, &entry.exclude)?;
         // The operator's label is a file's own tag only when the entry resolves to exactly one file;
         // otherwise the label is a group wrapper and members are named individually.
         let labeled_single = entry.heading.is_some() && files.len() == 1;
@@ -260,7 +260,17 @@ pub fn resolve(entries: &[ContextEntry], base: &Path) -> Result<Resolved, Resolv
 /// which is what makes a Claude-Code-style skills tree (`skills/<name>/SKILL.md`, one dir per
 /// skill) land as one listing per skill — sorted name-ascending by display path; an explicit list
 /// keeps its order. (Globs are a later increment; a `*` path just won't stat and fails closed.)
-fn resolve_files(paths: &[String], base: &Path) -> Result<Vec<(String, PathBuf)>, ResolveError> {
+///
+/// `exclude` prunes the expansion (docs/context.md): each entry names a path relative
+/// to the configured directory, matched component-wise, and a matched file or subtree is skipped
+/// **during the walk** — never read, so an unreadable file inside an excluded subtree cannot fail
+/// boot. Explicit paths are never filtered: an operator who lists a file and excludes it wrote a
+/// contradiction the explicit mention wins.
+fn resolve_files(
+    paths: &[String],
+    base: &Path,
+    exclude: &[String],
+) -> Result<Vec<(String, PathBuf)>, ResolveError> {
     let mut out = Vec::new();
     for p in paths {
         let full = base.join(p);
@@ -271,7 +281,8 @@ fn resolve_files(paths: &[String], base: &Path) -> Result<Vec<(String, PathBuf)>
             if let Ok(canon) = full.canonicalize() {
                 seen.insert(canon);
             }
-            walk_md(&full, Path::new(p), &mut found, &mut seen)?;
+            let root = Path::new(p);
+            walk_md(&full, root, root, exclude, &mut found, &mut seen)?;
             found.sort_by(|a, b| a.0.cmp(&b.0));
             out.extend(found);
         } else {
@@ -292,6 +303,8 @@ fn resolve_files(paths: &[String], base: &Path) -> Result<Vec<(String, PathBuf)>
 fn walk_md(
     dir: &Path,
     display_dir: &Path,
+    root: &Path,
+    exclude: &[String],
     out: &mut Vec<(String, PathBuf)>,
     seen: &mut std::collections::HashSet<PathBuf>,
 ) -> Result<(), ResolveError> {
@@ -306,15 +319,23 @@ fn walk_md(
             continue;
         }
         let child = entry.path();
+        let child_display = display_dir.join(&name);
+        // Pruned before the stat: an excluded child (file or subtree) is skipped unread,
+        // so nothing inside it can fail the load. `root` is the configured directory the
+        // exclude entries are relative to; `starts_with` matches whole components.
+        if let Ok(rel) = child_display.strip_prefix(root)
+            && exclude.iter().any(|e| rel.starts_with(e))
+        {
+            continue;
+        }
         // `metadata` follows symlinks, so a link to a dir/file behaves as what it points at.
         let meta = std::fs::metadata(&child).map_err(|e| ResolveError::Io(child.clone(), e))?;
-        let child_display = display_dir.join(&name);
         if meta.is_dir() {
             let canon = child
                 .canonicalize()
                 .map_err(|e| ResolveError::Io(child.clone(), e))?;
             if seen.insert(canon) {
-                walk_md(&child, &child_display, out, seen)?;
+                walk_md(&child, &child_display, root, exclude, out, seen)?;
             }
         } else if meta.is_file() && child.extension().and_then(|e| e.to_str()) == Some("md") {
             out.push((child_display.to_string_lossy().into_owned(), child));

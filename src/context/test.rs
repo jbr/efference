@@ -19,6 +19,7 @@ fn bare(path: &str) -> ContextEntry {
         source: ContextSource::Files(vec![path.into()]),
         grants: ContextGrants::default(),
         sort: None,
+        exclude: Vec::new(),
         description: None,
     }
 }
@@ -29,8 +30,62 @@ fn labeled(heading: &str, paths: &[&str]) -> ContextEntry {
         source: ContextSource::Files(paths.iter().map(|s| s.to_string()).collect()),
         grants: ContextGrants::default(),
         sort: None,
+        exclude: Vec::new(),
         description: None,
     }
+}
+
+/// `exclude` prunes a directory's expansion (docs/context.md): a named file and a
+/// named subtree disappear from the listing, and the subtree is pruned *unread* — a file
+/// inside it that would fail the load (unterminated frontmatter) never gets the chance.
+#[test]
+fn exclude_prunes_files_and_subtrees_unread() {
+    let dir = tmpdir("exclude");
+    let mem = dir.join("memory");
+    std::fs::create_dir_all(mem.join("archive")).unwrap();
+    std::fs::write(mem.join("MEMORY.md"), "# index\n").unwrap();
+    std::fs::write(mem.join("keep.md"), "kept\n").unwrap();
+    std::fs::write(mem.join("keep2.md"), "also kept\n").unwrap();
+    std::fs::write(mem.join("archive/old.md"), "---\nnever closed\n").unwrap();
+
+    let mut entry = labeled("Memories", &["memory"]);
+    entry.exclude = vec!["MEMORY.md".into(), "archive".into()];
+    let resolved = resolve(&[entry], &dir).unwrap();
+    let names: Vec<&str> = resolved.sections[0]
+        .items
+        .iter()
+        .map(|i| match i {
+            Item::Inline { name, .. } | Item::Listed { name, .. } | Item::Exec { name, .. } => {
+                name.as_str()
+            }
+        })
+        .collect();
+    assert_eq!(
+        names,
+        vec!["keep", "keep2"],
+        "index and archive pruned: {names:?}"
+    );
+
+    // Without the exclude, the archive's broken frontmatter fails the load —
+    // proof the exclusion above pruned before reading.
+    assert!(resolve(&[labeled("Memories", &["memory"])], &dir).is_err());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// An exclude matches whole path components, not string prefixes: excluding `arch`
+/// does not touch `archive/`.
+#[test]
+fn exclude_matches_components_not_string_prefixes() {
+    let dir = tmpdir("exclude-components");
+    let mem = dir.join("memory");
+    std::fs::create_dir_all(mem.join("archive")).unwrap();
+    std::fs::write(mem.join("archive/old.md"), "old\n").unwrap();
+
+    let mut entry = labeled("Memories", &["memory"]);
+    entry.exclude = vec!["arch".into()];
+    let resolved = resolve(&[entry], &dir).unwrap();
+    assert_eq!(resolved.sections[0].items.len(), 1, "archive/ survives");
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]

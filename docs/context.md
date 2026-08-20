@@ -41,15 +41,24 @@ Skills   = { paths = ["skills/a.md", "skills/b.md"] }          # labeled group, 
 A **bare path** (the key is the path) renders with no heading and may carry only
 `update`. A **labeled group** (the value carries `path`/`paths`) points at a location; its
 key is a heading — *pure presentation*, zero meaning to the harness. "Memories" and
-"Skills" are never tool concepts, just rows an operator wrote. `create`, `sort`, and
-`description` are group-only (they are about a location of many files); a directory
-expands to every `.md` file **recursively** beneath it — which is what makes a
+"Skills" are never tool concepts, just rows an operator wrote. `create`, `sort`,
+`exclude`, and `description` are group-only (they are about a location of many files); a
+directory expands to every `.md` file **recursively** beneath it — which is what makes a
 Claude-Code-style skills tree (`skills/<name>/SKILL.md`, one directory per skill) land as
 one listing per skill — skipping hidden children, following symlinks with a cycle guard
 (a symlinked skill collection is a real layout), default order `name asc` by display path
 (the SQL-ish `sort` override is parsed but not yet applied). Validation fails closed on
 the nonsense shapes (`false` entries, group-only keys on a bare path, `exec` mixed with
 files).
+
+`exclude` prunes the expansion: each entry names a path relative to the configured
+directory (`exclude = ["MEMORY.md", "archive"]` drops that file and that subtree),
+matched by whole path components during the walk — an excluded subtree is skipped
+*unread*, so a file inside it that would fail the load cannot. It filters expansion only,
+never an explicitly listed path. The motivating case is a directory whose layout another
+tool owns — a Claude-Code memory store, say, whose index file duplicates the per-file
+frontmatter this renderer already extracts and whose `archive/` is deliberately retired —
+where the fix must not require restructuring a directory the harness doesn't own.
 
 `description` carries a prose hint for the model about how to use the group's files —
 e.g. for a memory store whose files are read by path with the `read` tool. It renders as a

@@ -8,6 +8,7 @@ fn exec_entry(label: &str, command: &str) -> ContextEntry {
         source: ContextSource::Exec(command.into()),
         grants: ContextGrants::default(),
         sort: None,
+        exclude: Vec::new(),
         description: None,
     }
 }

@@ -91,6 +91,11 @@ pub(super) struct RawContextEntry {
     create: bool,
     #[serde(default)]
     sort: Option<String>,
+    /// Paths pruned from a directory's expansion (`exclude = ["MEMORY.md", "archive"]`),
+    /// relative to each configured directory. Group-only; a bare path carrying `exclude`
+    /// is rejected in [`validate_context_entry`].
+    #[serde(default)]
+    exclude: Vec<String>,
     /// A prose hint rendered inside the group's tag — what the model should know
     /// about how to use these files (e.g. how to read or write a memory). Group-only;
     /// a bare path carrying `description` is rejected in [`validate_context_entry`].
@@ -341,6 +346,7 @@ pub(super) fn validate_context_entry(
             source: ContextSource::Files(vec![key]),
             grants: ContextGrants::default(),
             sort: None,
+            exclude: Vec::new(),
             description: None,
         },
         RawContextValue::Sugar(false) => return Err(ValidationError::ContextDisabled(key)),
@@ -349,7 +355,7 @@ pub(super) fn validate_context_entry(
             if let Some(exec) = t.exec {
                 // A dynamic section is a labeled group whose body is command stdout: it has no
                 // files, so file grants and a sort would be meaningless — reject the mix.
-                if has_files || t.update || t.create || t.sort.is_some() {
+                if has_files || t.update || t.create || t.sort.is_some() || !t.exclude.is_empty() {
                     return Err(ValidationError::ContextExecConflict(key));
                 }
                 ContextEntry {
@@ -357,6 +363,7 @@ pub(super) fn validate_context_entry(
                     source: ContextSource::Exec(exec),
                     grants: ContextGrants::default(),
                     sort: None,
+                    exclude: Vec::new(),
                     description: t.description,
                 }
             } else if has_files {
@@ -372,6 +379,7 @@ pub(super) fn validate_context_entry(
                         create: t.create,
                     },
                     sort: t.sort,
+                    exclude: t.exclude,
                     description: t.description,
                 }
             } else {
@@ -386,6 +394,9 @@ pub(super) fn validate_context_entry(
                 if t.description.is_some() {
                     return Err(ValidationError::ContextBarePathGrant(key, "description"));
                 }
+                if !t.exclude.is_empty() {
+                    return Err(ValidationError::ContextBarePathGrant(key, "exclude"));
+                }
                 ContextEntry {
                     heading: None,
                     source: ContextSource::Files(vec![key]),
@@ -394,6 +405,7 @@ pub(super) fn validate_context_entry(
                         create: false,
                     },
                     sort: None,
+                    exclude: Vec::new(),
                     description: None,
                 }
             }

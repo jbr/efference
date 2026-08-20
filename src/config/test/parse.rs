@@ -119,6 +119,7 @@ fn parses_context_entry_shapes() {
                 source: ContextSource::Files(vec!["./CLAUDE.md".into()]),
                 grants: ContextGrants::default(),
                 sort: None,
+                exclude: Vec::new(),
                 description: None,
             },
             ContextEntry {
@@ -129,6 +130,7 @@ fn parses_context_entry_shapes() {
                     create: false,
                 },
                 sort: None,
+                exclude: Vec::new(),
                 description: None,
             },
             ContextEntry {
@@ -139,6 +141,7 @@ fn parses_context_entry_shapes() {
                     create: true,
                 },
                 sort: None,
+                exclude: Vec::new(),
                 description: None,
             },
         ],
@@ -161,6 +164,7 @@ fn parses_context_group_with_paths_and_sort() {
             source: ContextSource::Files(vec!["a/*.md".into(), "b/*.md".into()]),
             grants: ContextGrants::default(),
             sort: Some("modified desc".into()),
+            exclude: Vec::new(),
             description: None,
         }],
     );
@@ -182,6 +186,7 @@ fn parses_context_group_with_description() {
             source: ContextSource::Files(vec!["./memories/".into()]),
             grants: ContextGrants::default(),
             sort: None,
+            exclude: Vec::new(),
             description: Some("Use the read and write tools to access.".into()),
         }],
     );
@@ -201,6 +206,57 @@ fn context_description_on_bare_path_fails() {
     ));
 }
 
+/// A labeled group's `exclude` — paths pruned from the directory expansion.
+#[test]
+fn parses_context_group_with_exclude() {
+    let role = parse_str(
+        r#"
+            [context]
+            Memories = { path = "./memories/", exclude = ["MEMORY.md", "archive"] }
+            "#,
+    );
+    assert_eq!(
+        role.context,
+        vec![ContextEntry {
+            heading: Some("Memories".into()),
+            source: ContextSource::Files(vec!["./memories/".into()]),
+            grants: ContextGrants::default(),
+            sort: None,
+            exclude: vec!["MEMORY.md".into(), "archive".into()],
+            description: None,
+        }],
+    );
+}
+
+/// `exclude` on a bare path fails — it filters a directory expansion, and a bare path is
+/// one file; group-only like `create`, `sort`, and `description`.
+#[test]
+fn context_exclude_on_bare_path_fails() {
+    let err = super::parse(
+        Path::new("bad.toml"),
+        "[context]\n\"./notes.md\" = { exclude = [\"x.md\"] }\n",
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        LoadError::Validate(_, ValidationError::ContextBarePathGrant(_, "exclude"))
+    ));
+}
+
+/// `exclude` beside `exec` fails — command stdout has no files to prune.
+#[test]
+fn context_exclude_on_exec_fails() {
+    let err = super::parse(
+        Path::new("bad.toml"),
+        "[context]\nDate = { exec = \"date\", exclude = [\"x.md\"] }\n",
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        LoadError::Validate(_, ValidationError::ContextExecConflict(_))
+    ));
+}
+
 /// An `exec` entry is a labeled dynamic section with no files, grants, or sort.
 #[test]
 fn parses_context_exec_entry() {
@@ -217,6 +273,7 @@ fn parses_context_exec_entry() {
             source: ContextSource::Exec("date".into()),
             grants: ContextGrants::default(),
             sort: None,
+            exclude: Vec::new(),
             description: None,
         }],
     );
