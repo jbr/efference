@@ -17,6 +17,14 @@ body {
   padding: 0 1rem;
 }
 
+/* Focus in the accent, everywhere — the UA blue reads as someone else's
+   design. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
 a {
   color: var(--fg-dim);
 }
@@ -221,6 +229,16 @@ input[type="checkbox"] {
   border-left: 1px solid var(--border-strong);
   padding-left: 1rem;
   margin: 0.6rem 0;
+}
+
+/* The whole call opens the inspector; the hover says so. */
+.call.clickable {
+  cursor: pointer;
+}
+
+.call.clickable:hover {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
 .call-head {
@@ -650,6 +668,13 @@ pre {
 
 .composer-input textarea:focus {
   outline: none;
+  box-shadow: none;
+}
+
+/* The box is the focus affordance, not the borderless textarea inside it. */
+.composer-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
 }
 
 .composer-input textarea::placeholder {
@@ -829,6 +854,26 @@ select {
 .lineno {
   color: var(--fg-ghost);
   user-select: none;
+}
+
+/* A wrapped numbered line continues under its own text, not the gutter. */
+.numbered-line {
+  display: flex;
+}
+
+.numbered-line .lineno {
+  flex: none;
+}
+
+.numbered-line .line-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.more-lines {
+  display: block;
+  font-size: 0.8em;
+  margin-top: 0.35rem;
 }
 
 /* The mock's intent rhythm: close under the call head, clear air below. */

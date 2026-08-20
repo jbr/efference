@@ -216,6 +216,14 @@ const Call = memo(function Call({
     node.result !== null && "ToolResult" in node.result.payload
       ? node.result.payload.ToolResult
       : null;
+  // The whole call opens the inspector — but never out from under a text
+  // selection or a click that was for a control inside it.
+  const open = (event: React.MouseEvent) => {
+    if (window.getSelection()?.isCollapsed === false) return;
+    const target = event.target as Element;
+    if (target.closest("button, a, summary, input, select, textarea")) return;
+    onInspect(node.callId);
+  };
   // A resolved consolidate collapses to its header. Its input is the summary
   // the ⊙ mark below renders in full — the pair projects normally, so the
   // log holds the summary twice (docs/consolidate.md) — and its result is a
@@ -224,7 +232,7 @@ const Call = memo(function Call({
   // error is information.
   if (node.name === "consolidate" && result !== null && !result.raw.is_error) {
     return (
-      <div className="call">
+      <div className="call clickable" onClick={open}>
         <div className="call-head">
           <span className="prompt">›</span>
           <span className="call-tool">consolidate</span>
@@ -234,7 +242,7 @@ const Call = memo(function Call({
     );
   }
   return (
-    <div className="call">
+    <div className="call clickable" onClick={open}>
       {call !== null && <CallBlock call={call} />}
       {node.spot !== null && <SpotLine spot={node.spot} />}
       {result !== null && (

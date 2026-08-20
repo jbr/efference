@@ -116,6 +116,38 @@ export function LiveCallBlock({
   );
 }
 
+/** How much of a file body the transcript shows; the inspector holds the
+ * whole thing. Slack of 2 so the indicator never stands in for fewer lines
+ * than it occupies. */
+const TRUNCATE_AT = 12;
+
+/** Truncate a read/write result's body for the transcript view. Render-whole
+ * survives this: a gate decides a call, never a result, so no pending
+ * decision rests on a truncated body — and the full body is one click away
+ * (docs/web-client.md). */
+function truncateBody(
+  body: ResultView,
+  tool: string | null,
+): { body: ResultView; hidden: number } {
+  if (tool !== "read" && tool !== "write") return { body, hidden: 0 };
+  if (body.kind === "numbered" && body.lines.length > TRUNCATE_AT + 2) {
+    return {
+      body: { ...body, lines: body.lines.slice(0, TRUNCATE_AT) },
+      hidden: body.lines.length - TRUNCATE_AT,
+    };
+  }
+  if (body.kind === "code" || body.kind === "text") {
+    const lines = body.text.split("\n");
+    if (lines.length > TRUNCATE_AT + 2) {
+      return {
+        body: { ...body, text: lines.slice(0, TRUNCATE_AT).join("\n") },
+        hidden: lines.length - TRUNCATE_AT,
+      };
+    }
+  }
+  return { body, hidden: 0 };
+}
+
 export function ResultBody({ body }: { body: ResultView }) {
   switch (body.kind) {
     case "diff":
@@ -153,6 +185,10 @@ export function ResultBlock({
   // entry, so without this a streamed token re-parses every result in the
   // session.
   const view = useMemo(() => resultRender(tool, raw, wire), [tool, raw, wire]);
+  const { body, hidden } = useMemo(
+    () => truncateBody(view.body, tool),
+    [view, tool],
+  );
   const label = [wireLabel(wire), view.sizeLabel, view.isError ? "error" : null]
     .filter((part) => part !== null)
     .join(", ");
@@ -169,7 +205,15 @@ export function ResultBlock({
           </>
         )}
       </div>
-      <ResultBody body={view.body} />
+      <ResultBody body={body} />
+      {hidden > 0 &&
+        (onInspect !== undefined ? (
+          <button className="linkish more-lines" onClick={onInspect}>
+            ⋯ {hidden} more lines — inspect →
+          </button>
+        ) : (
+          <div className="more-lines dim">⋯ {hidden} more lines</div>
+        ))}
       {view.note !== null && (
         // The distiller's note sits beside the result as its own annotation
         // row — that rung's account *of* the output, not something the tool
@@ -181,12 +225,8 @@ export function ResultBlock({
           <span className="note-text">{view.note}</span>
         </div>
       )}
-      {view.rawDiffers && (
-        <details className="dim">
-          <summary className="kind">raw</summary>
-          <pre>{raw.content}</pre>
-        </details>
-      )}
+      {/* The per-result raw <details> is gone: raw is the inspector's tab
+          now, one click on the call away. */}
     </div>
   );
 }

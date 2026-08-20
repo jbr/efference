@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Web transcript refinements from use: whole calls click open the inspector (with a hover tint), read/write results truncate to 12 lines with a `⋯ N more lines` affordance (the inspector holds the whole body; the per-result raw accordion is gone), wrapped numbered lines align under their text instead of the gutter, and focus rings are the accent, not UA blue.
 - The web client's top bar: sticky chrome with the serif wordmark, a breathing status dot, and the usage meter (context bar + session cost); the theme select and density toggles move into the bottom panel's new interface tab, and the old controls strip is gone.
 - The web client grows an inspector: a call-scoped right drawer (result / args / raw / spot tabs, file stubbed for the coming file view) with a "what the fork returned" panel — raw size, surfaced count, the keep ranges, the wire state — opened from any result's `inspect →` link.
 - The web client grows a bottom panel docked with the composer: tasks (process rows beside a live output tail — background-process output's first rendering surface — with mute, handoff, kill), inbox (dismiss), and policy — the effective perimeter with pending proposals merged in committed sort position and committable from the client, closing the config-edit loop without a terminal.

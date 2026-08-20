@@ -78,9 +78,9 @@ Two residents:
 
 `ui/ToolBlocks.tsx` is the display half: colored diff lines (line-level
 only), numbered gutters whose jumps show what triage dropped, `data-lang` on
-code bodies as the future syntax-highlighter's hook, and the raw content
-behind a per-result `<details>` whenever the body isn't verbatim raw — the
-raw/distilled toggle, from the entry the client already holds. Ports here
+code bodies as the syntax-highlighter's hook, and — since the inspector —
+no per-result raw `<details>`: raw is the inspector's tab, from the entry
+the client already holds. Ports here
 stay literal (same names, same strings, same classifications) and never grow
 beyond mirrors: a rendering idea that isn't a mirror belongs to the
 structured-output successor, not the cordon.
@@ -425,9 +425,11 @@ both change that height.
 
 ## The inspector
 
-`ui/Inspector.tsx`: a call-scoped right drawer, opened from a result
-header's `inspect →` link and closed with `✕` — "raw is one tap away"
-promoted from the per-result `<details>` to a standing surface. The
+`ui/Inspector.tsx`: a call-scoped right drawer, opened by clicking anywhere
+on a call (hover tints the connector; clicks on controls inside, and clicks
+that end a text selection, don't count) or its result header's `inspect →`
+link, closed with `✕` — "raw is one tap away" promoted from the per-result
+`<details>` to a standing surface. The
 selection is a call id held in `App`, which builds the transcript tree once
 and shares it with both consumers; the node is re-found from the tree each
 render, so a result or verdict landing after the drawer opened shows up in
@@ -444,6 +446,14 @@ from the keep, the keep itself (`All` / `None` / `Ranges(a..b, …)`), the
 wire state, and the distiller's note — the audit view of
 [redaction-fork.md](redaction-fork.md)'s output. Stepping between calls from
 the drawer waits on the deferred key binds.
+
+With the inspector holding the whole body, **read and write results
+truncate in the transcript**: the first 12 lines, then a
+`⋯ N more lines — inspect →` affordance (never for a tail shorter than the
+indicator itself). This is the first revision to render-whole, and it is
+safe for the reason the position existed: a gate decides a *call*, never a
+result, so no pending decision rests on a truncated body — and the full
+body is one click away. Other tools' results still render whole.
 
 ## The gate surface
 

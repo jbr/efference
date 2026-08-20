@@ -112,9 +112,13 @@ export function NumberedCode({
   return (
     <pre data-lang={lang ?? undefined}>
       {lines.map(([n, line], i) => (
-        <div key={n}>
+        // Two cells so a wrapped line continues under its own text, not
+        // under the gutter number.
+        <div className="numbered-line" key={n}>
           <span className="lineno">{String(n).padStart(5)} </span>
-          {tokens?.[i] === undefined ? line : <Line tokens={tokens[i]} />}
+          <span className="line-body">
+            {tokens?.[i] === undefined ? line : <Line tokens={tokens[i]} />}
+          </span>
         </div>
       ))}
     </pre>
