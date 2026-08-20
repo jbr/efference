@@ -21,8 +21,10 @@ the reference TUI does.
   structured tool output (audience-tagged content blocks, or per-tool result
   schemas), which deletes the cordon whole; the reserved `render` field on log
   frames remains the daemon-side alternative if structure is slow to arrive.
-- **Content before styling.** The visual layer is deliberately minimal until the
-  information surface is complete.
+- **Content before styling.** This gated the first slice; with the information
+  surface substantially built, styling now arrives from the design pass
+  ([backlog/web/README.md](../backlog/web/README.md) records the mock source and
+  how to read it), starting with the theme layer below.
 
 ## Layering — the churn gradient
 
@@ -257,6 +259,46 @@ through it with the same markup as `Code`, so the block does not change
 appearance at commit when it hands over. Its contract — tokenizing in chunks
 equals one whole-buffer pass, at every prefix — is pinned by
 `ui/highlight.test.ts`.
+
+## Theming
+
+`web/src/theme.css` holds every color as a custom property; components reference
+tokens only. A theme is one override block: After Dark (dark, magenta accent) is
+the default set on `:root` — which is also the pre-script paint — and Daylight
+overrides under `:root[data-theme="daylight"]`. `ui/theme.ts` resolves the
+choice — explicit and persisted in localStorage, or the system scheme when none
+is stored — and sets `data-theme` on `<html>`; `initTheme()` runs before first
+render, and a `ThemeSelect` in the header carries the options. Glow is a token,
+not a decoration: After Dark's accent halo (`--accent-glow`) goes `transparent`
+in Daylight, and every box-shadow through it disappears with it. Adding a theme
+is authoring an override block plus a select option
+([backlog/web/plain-themes.md](../backlog/web/plain-themes.md) is the pending
+pair).
+
+Syntax colors derive from the same tokens. Shiki v4 dropped
+`createCssVariablesTheme`, so `ui/shikiTheme.ts` hand-authors the same shape:
+the one registered theme's "colors" are `var(--shiki-*)` strings, which pass
+through tokenization into token colors, land on React's `style` prop, and
+resolve in the browser against `--shiki-*` aliases of the semantic tokens. A
+theme swap therefore recolors code with no re-render and no re-tokenize, and
+the scheme subscription `useHighlight` once carried is gone. The passthrough is
+pinned by `highlight.test.ts`.
+
+Fonts are self-hosted: official OFL builds, unmodified, in `web/public/fonts/`
+with their license texts beside them (the README there lists the files —
+Newsreader variable roman + italic; IBM Plex Mono 400, 400 italic, 500; IBM
+Plex Sans is deliberately absent and `--font-ui` falls back to `system-ui`).
+Self-hosting is forced rather than chosen: the CSP is `default-src 'self'`, so
+a Google Fonts link cannot load. The files ship whole because subsetting counts
+as modification under the OFL's reserved-name clause. The serif is the agent's
+voice — `.prose` and the intent line — while a user turn's prose and everything
+tool-shaped stay in the mono.
+
+One asset trap, recorded because it will recur: Vite inlines small `src/`
+assets as `data:` URIs, and the CSP has no `data:` source. Daylight's
+paper-grain SVG therefore lives in `public/` (never inlined, served as-is),
+not `src/assets/` — anything else CSS references by URL follows the same rule
+or grows a hash in `default-src`.
 
 ## Transcript ergonomics
 

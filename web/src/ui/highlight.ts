@@ -25,6 +25,7 @@ import {
 } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { CSS_VARIABLES_THEME, cssVariablesTheme } from "./shikiTheme.ts";
 
 /** One entry per language `langForPath` returns. Dynamic imports so the
  * grammars are their own chunks rather than main-bundle weight. */
@@ -41,8 +42,6 @@ const LANGS = [
   import("@shikijs/langs/html"),
   import("@shikijs/langs/css"),
 ];
-
-const THEMES = { light: "github-light", dark: "github-dark" } as const;
 
 export interface Token {
   content: string;
@@ -62,10 +61,7 @@ function start() {
   started = true;
   void createHighlighterCore({
     langs: LANGS,
-    themes: [
-      import("@shikijs/themes/github-light"),
-      import("@shikijs/themes/github-dark"),
-    ],
+    themes: [cssVariablesTheme],
     engine: createJavaScriptRegexEngine(),
   })
     .then((core) => {
@@ -82,24 +78,18 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-const darkQuery = () => window.matchMedia("(prefers-color-scheme: dark)");
-
-function subscribeScheme(listener: () => void) {
-  const query = darkQuery();
-  query.addEventListener("change", listener);
-  return () => query.removeEventListener("change", listener);
-}
-
 /** A `(code, lang) => lines of tokens` function, or `null` while the
- * grammars are still loading (or if they failed). Re-renders its caller
- * once when highlighting becomes available, and again whenever the system
- * colour scheme flips — the theme is chosen per call, not baked in.
+ * grammars are still loading (or if they failed). Re-renders its caller once
+ * when highlighting becomes available. The one theme is the css-variables
+ * theme (ui/shikiTheme.ts): token "colors" are var() references the browser
+ * resolves against the active theme's tokens, so a theme swap recolors every
+ * block with no re-render and no re-tokenize.
  *
  * The returned function is **stable** across renders (it changes only when the
- * highlighter or the theme does) so that callers can memoize their tokens on
- * it. That is load-bearing, not tidiness: a store update re-renders the whole
- * transcript, so an unstable identity re-tokenizes every code block in the
- * session on every streamed token. */
+ * highlighter does) so that callers can memoize their tokens on it. That is
+ * load-bearing, not tidiness: a store update re-renders the whole transcript,
+ * so an unstable identity re-tokenizes every code block in the session on
+ * every streamed token. */
 export function useHighlight():
   ((code: string, lang: string) => Token[][] | null) | null {
   useEffect(start, []);
@@ -108,23 +98,18 @@ export function useHighlight():
     () => highlighter,
     () => null,
   );
-  const dark = useSyncExternalStore(
-    subscribeScheme,
-    () => darkQuery().matches,
-    () => false,
-  );
   return useMemo(() => {
     if (core === null) return null;
-    const theme = dark ? THEMES.dark : THEMES.light;
     return (code: string, lang: string) => {
       if (!core.getLoadedLanguages().includes(lang)) return null;
       try {
-        return core.codeToTokens(code, { lang, theme }).tokens;
+        return core.codeToTokens(code, { lang, theme: CSS_VARIABLES_THEME })
+          .tokens;
       } catch {
         return null;
       }
     };
-  }, [core, dark]);
+  }, [core]);
 }
 
 /**
@@ -200,17 +185,12 @@ export function useStreamingTokens(
     () => highlighter,
     () => null,
   );
-  const dark = useSyncExternalStore(
-    subscribeScheme,
-    () => darkQuery().matches,
-    () => false,
-  );
   const tokenizer = useMemo(
     () =>
       core !== null && lang !== null && core.getLoadedLanguages().includes(lang)
-        ? new StreamingTokenizer(core, lang, dark ? THEMES.dark : THEMES.light)
+        ? new StreamingTokenizer(core, lang, CSS_VARIABLES_THEME)
         : null,
-    [core, lang, dark],
+    [core, lang],
   );
   return useMemo(() => {
     if (tokenizer === null) return null;

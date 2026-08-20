@@ -1,10 +1,31 @@
+import { useState } from "react";
 import { spotFor } from "../session/store.ts";
 import { useSession } from "../session/useSession.ts";
 import { Composer } from "./Composer.tsx";
 import { Controls } from "./Controls.tsx";
 import { GateSurface } from "./Gate.tsx";
 import { Login } from "./Login.tsx";
+import { setThemeChoice, themeChoice, type ThemeChoice } from "./theme.ts";
 import { Transcript } from "./Transcript.tsx";
+
+function ThemeSelect() {
+  const [choice, setChoice] = useState(themeChoice);
+  return (
+    <select
+      aria-label="theme"
+      value={choice}
+      onChange={(event) => {
+        const next = event.target.value as ThemeChoice;
+        setThemeChoice(next);
+        setChoice(next);
+      }}
+    >
+      <option value="system">system</option>
+      <option value="after-dark">after dark</option>
+      <option value="daylight">daylight</option>
+    </select>
+  );
+}
 
 export function App() {
   const { session, connector, actions } = useSession();
@@ -23,6 +44,7 @@ export function App() {
           {session.topics.running ? " · running" : ""}
           {gate ? " · gate pending" : ""}
         </span>
+        <ThemeSelect />
       </header>
       {session.connection !== "live" && (
         <div className="banner">{session.connection}…</div>

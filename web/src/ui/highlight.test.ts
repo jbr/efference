@@ -7,8 +7,9 @@ import { createHighlighterCore } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import { beforeAll, describe, expect, it } from "vitest";
 import { StreamingTokenizer } from "./highlight.ts";
+import { CSS_VARIABLES_THEME, cssVariablesTheme } from "./shikiTheme.ts";
 
-const THEME = "github-dark";
+const THEME = CSS_VARIABLES_THEME;
 
 // Multi-line constructs on purpose: the raw string and the doc comment span
 // lines, so a tokenizer that lost grammar state at a boundary would color the
@@ -33,12 +34,31 @@ const drawn = (lines: { content: string; color?: string }[][]) =>
 beforeAll(async () => {
   core = await createHighlighterCore({
     langs: [import("@shikijs/langs/rust")],
-    themes: [import("@shikijs/themes/github-dark")],
+    themes: [cssVariablesTheme],
     engine: createJavaScriptRegexEngine(),
   });
 });
 
 const whole = () => core.codeToTokensBase(CODE, { lang: "rust", theme: THEME });
+
+describe("the css-variables theme", () => {
+  // Shiki v4 has no createCssVariablesTheme; ui/shikiTheme.ts hand-authors
+  // the same shape. This pins what that relies on: var() strings pass
+  // through tokenization untouched, so the browser — not shiki — resolves
+  // them against the active theme's tokens.
+  it("passes var() colors through to tokens", () => {
+    const colors = new Set(
+      whole()
+        .flat()
+        .map(({ color }) => color)
+        .filter((color) => color !== undefined),
+    );
+    expect(colors.size).toBeGreaterThan(1);
+    for (const color of colors) {
+      expect(color).toMatch(/^var\(--shiki-[a-z-]+\)$/);
+    }
+  });
+});
 
 describe("StreamingTokenizer", () => {
   it("matches the one-shot tokens at every prefix, fed byte by byte", () => {

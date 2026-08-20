@@ -1,0 +1,166 @@
+/* Theme tokens (docs/web-client.md). Every color in the app resolves through
+   these custom properties: a theme is one block of overrides, so adding one is
+   authoring, not rework. After Dark is the default set on :root — that is also
+   the pre-script paint — and ui/theme.ts sets data-theme to the resolved
+   choice. The --shiki-* aliases at the bottom are what the highlighter's
+   css-variables theme reads (ui/shikiTheme.ts), so code recolors with the
+   theme without re-tokenizing. */
+
+/* Fonts are self-hosted from public/fonts/ (see the README there): the CSP is
+   default-src 'self', so a fonts.googleapis.com link cannot load. Missing
+   files fall back down the stack rather than breaking anything. */
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/newsreader-var.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/newsreader-italic-var.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+/* Plex Mono ships static weights; the three faces below are the ones the
+   design uses. IBM Plex Sans is not self-hosted — --font-ui falls back to
+   system-ui, and nothing visible leans on the sans. */
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/plex-mono-regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/plex-mono-italic.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/plex-mono-medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-ui: "IBM Plex Sans", system-ui, sans-serif;
+  --font-prose: "Newsreader", Georgia, serif;
+
+  /* After Dark. */
+  --bg-page: #16131d;
+  --bg-surface: #1a1723;
+  --bg-raised: #201c2a;
+  --bg-inset: #1b1825;
+  --bg-chip: #2a2636;
+
+  --border: #2a2636;
+  --border-subtle: #221e2c;
+  --border-strong: #2e2840;
+  --border-control: #342e42;
+
+  --fg: #cfc8db;
+  --fg-bright: #ece7f4;
+  --fg-muted: #a79fb6;
+  --fg-dim: #948ca6;
+  --fg-faint: #5e5872;
+  --fg-ghost: #4a4458;
+  --fg-deleted: #8c8499;
+
+  --accent: #e14b95;
+  --accent-contrast: #f0ebf6;
+  /* Glow is a theme property, not a decoration Daylight forgot: the light
+     theme sets it transparent, and every box-shadow through it disappears. */
+  --accent-glow: rgb(225 75 149 / 0.45);
+  --selection: rgb(225 75 149 / 0.28);
+  --meter: #9a6be6;
+  --warn: #dd9900;
+
+  --code-type: #c9bd9c;
+  --code-tool: #9db0cb;
+  --code-path: #9dc0b0;
+  --diff-add: #a6c49c;
+  --diff-del: #cc8e96;
+  --diff-add-bg: rgb(166 196 156 / 0.07);
+  --diff-del-bg: rgb(204 142 150 / 0.07);
+}
+
+:root[data-theme="daylight"] {
+  color-scheme: light;
+
+  --bg-page: #faf7fb;
+  --bg-surface: #fefdfe;
+  --bg-raised: #ffffff;
+  --bg-inset: #f6f1f7;
+  --bg-chip: #e5dce8;
+
+  --border: #e5dce8;
+  --border-subtle: #ede6ef;
+  --border-strong: #d8cddb;
+  --border-control: #cfc3d2;
+
+  --fg: #2b2430;
+  --fg-bright: #1d1720;
+  --fg-muted: #4b4352;
+  --fg-dim: #6e6678;
+  --fg-faint: #978c9e;
+  --fg-ghost: #b3a6b8;
+  --fg-deleted: #7b7386;
+
+  --accent: #a23569;
+  --accent-contrast: #fefdfe;
+  --accent-glow: transparent;
+  --selection: rgb(162 53 105 / 0.2);
+  --meter: #6e4fa8;
+  --warn: #dd9900;
+
+  --code-type: #7a6248;
+  --code-tool: #4e6486;
+  --code-path: #47705c;
+  --diff-add: #4f7a47;
+  --diff-del: #a4515c;
+  --diff-add-bg: rgb(79 122 71 / 0.1);
+  --diff-del-bg: rgb(164 81 92 / 0.09);
+}
+
+/* Daylight's paper grain. A file in public/, not the mock's data: URI and
+   not an src/ asset: the CSP has no data: source, and Vite inlines small
+   src/ assets as exactly that. public/ files are served as-is. */
+:root[data-theme="daylight"] body {
+  background-image: url("/paper.svg");
+}
+
+/* What the highlighter's theme resolves against. Aliases of the semantic
+   tokens above, so they need no per-theme block: var() resolves at use.
+   Provisional mapping — the syntax palette converges with the TUI's
+   eventually (backlog/web/theme.md tracks that from the backlog side). */
+:root {
+  --shiki-foreground: var(--fg);
+  --shiki-token-comment: var(--fg-faint);
+  --shiki-token-keyword: var(--code-tool);
+  --shiki-token-string: var(--code-path);
+  --shiki-token-constant: var(--code-type);
+  --shiki-token-type: var(--code-type);
+  --shiki-token-function: var(--fg-bright);
+  --shiki-token-parameter: var(--fg);
+  --shiki-token-punctuation: var(--fg-dim);
+  --shiki-token-link: var(--code-path);
+}
+
+::selection {
+  background: var(--selection);
+}

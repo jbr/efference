@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The web client is themed: After Dark and Daylight as CSS-token sets behind a header select (plus a follow-system option), self-hosted Newsreader and IBM Plex Mono with their OFL texts, and syntax colors that resolve through the same tokens — a theme swap recolors code without re-tokenizing.
 - The system prompt states the configured model unconditionally (`You are {model}.`), and every `usage.jsonl` line records the model that served the request.
 - The web client renders thinking and consolidation-mark notes as markdown; an unknown tool's JSON envelope drops the `intent` it already shows as a leading line.
 - The web gate surface distinguishes its own resolution from an external one: the next gate after your approval arrives silently, a call resolved in another session says so, and a bounced decision reports that it did not land.
