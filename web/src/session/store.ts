@@ -7,6 +7,7 @@
 
 import type {
   CallId,
+  ContentBlock,
   Frame,
   LogEntry,
   OutputData,
@@ -51,6 +52,12 @@ export interface Session {
   lastSeq: Seq | null;
   topics: StateTopics;
   streaming: Streaming;
+  /** Turns the daemon accepted (a 202) whose `User` entries have not streamed
+   * back yet — the operator's delivery signal (docs/web-client.md). Ordered;
+   * an arriving `User` entry drops the first content match, the TUI's
+   * reconciliation rule (the submit response carries only a status, so there
+   * is nothing better to key on). */
+  pendingTurns: string[];
 }
 
 export const emptyStreaming: Streaming = {
@@ -65,6 +72,7 @@ export const emptySession: Session = {
   lastSeq: null,
   topics: {},
   streaming: emptyStreaming,
+  pendingTurns: [],
 };
 
 /** Cap per streaming buffer; the committed entry is the authoritative copy. */
@@ -80,6 +88,22 @@ export function spotFor(entries: LogEntry[], callId: CallId): Spot | null {
     if ("Spot" in p && p.Spot.call_id === callId) return p.Spot;
   }
   return null;
+}
+
+/** Queue a turn the daemon just accepted; `applyLog` settles it when the
+ * matching `User` entry arrives. */
+export function pushPendingTurn(session: Session, text: string): Session {
+  return { ...session, pendingTurns: [...session.pendingTurns, text] };
+}
+
+const userText = (blocks: ContentBlock[]) =>
+  blocks.map((b) => ("Text" in b ? b.Text : "")).join("\n\n");
+
+function settlePendingTurns(pending: string[], entry: LogEntry): string[] {
+  if (!("User" in entry.payload)) return pending;
+  const at = pending.indexOf(userText(entry.payload.User));
+  if (at === -1) return pending;
+  return [...pending.slice(0, at), ...pending.slice(at + 1)];
 }
 
 /** Seed the transcript window from a `GET /log?tail=` read. */
@@ -122,6 +146,7 @@ function applyLog(session: Session, entry: LogEntry): Session {
     entries: [...session.entries, entry],
     lastSeq: entry.seq,
     streaming: settle(session.streaming, entry),
+    pendingTurns: settlePendingTurns(session.pendingTurns, entry),
   };
 }
 

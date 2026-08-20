@@ -20,15 +20,39 @@ import {
   type ResultView,
 } from "../render/parse.ts";
 
+/** The call's header row: the accent prompt, the tool, its identifying
+ * argument. One shape for committed and streaming calls, so a call does not
+ * change appearance at commit. */
+function CallHead({
+  name,
+  summary,
+  arriving,
+}: {
+  name: string;
+  summary: string | null;
+  arriving?: boolean;
+}) {
+  return (
+    <div className="call-head">
+      <span className="prompt">›</span>
+      <span className="call-tool">{name}</span>
+      {summary !== null && (
+        <>
+          <span className="call-sep">·</span>
+          <span className="call-target">{summary}</span>
+        </>
+      )}
+      {arriving === true && <span className="dim">…</span>}
+    </div>
+  );
+}
+
 export function CallBlock({ call }: { call: ToolCall }) {
   const view = useMemo(() => callView(call.name, call.input), [call]);
   return (
     <div className="block">
-      <div className="kind">
-        tool: {call.name}
-        {view.summary !== null && <> · {view.summary}</>}
-      </div>
-      {view.intent !== null && <div className="dim intent">{view.intent}</div>}
+      <CallHead name={call.name} summary={view.summary} />
+      {view.intent !== null && <div className="intent">{view.intent}</div>}
       {view.body !== null && (
         <Code text={view.body.text} lang={view.body.lang} />
       )}
@@ -59,7 +83,7 @@ export function LiveCallBlock({
   if (parsed === null || !hasStructure(parsed)) {
     return (
       <div className="block">
-        <div className="kind">calling {name}…</div>
+        <CallHead name={name} summary={null} arriving />
         <pre className="dim">{input}</pre>
       </div>
     );
@@ -68,11 +92,8 @@ export function LiveCallBlock({
   const { arriving } = parsed;
   return (
     <div className="block">
-      <div className="kind">
-        calling {name}
-        {view.summary !== null && <> · {view.summary}</>}…
-      </div>
-      {view.intent !== null && <div className="dim intent">{view.intent}</div>}
+      <CallHead name={name} summary={view.summary} arriving />
+      {view.intent !== null && <div className="intent">{view.intent}</div>}
       {view.body !== null && (
         <Code text={view.body.text} lang={view.body.lang} />
       )}
@@ -137,7 +158,17 @@ export function ResultBlock({
     <div className="block">
       <div className="kind">result ({label})</div>
       <Body body={view.body} />
-      {view.note !== null && <div className="dim">⟢ {view.note}</div>}
+      {view.note !== null && (
+        // The distiller's note sits beside the result as its own annotation
+        // row — that rung's account *of* the output, not something the tool
+        // printed (docs/tui.md renders it as an `Annotation` entry for the
+        // same reason). The ✧ is display chrome; the wire's distillate keeps
+        // its ⟢ (render/distill.ts).
+        <div className="note">
+          <span className="note-glyph">✧</span>
+          <span className="note-text">{view.note}</span>
+        </div>
+      )}
       {view.rawDiffers && (
         <details className="dim">
           <summary className="kind">raw</summary>

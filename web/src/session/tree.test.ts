@@ -114,7 +114,9 @@ describe("the transcript tree", () => {
   it("keeps user turns and other entries as session-level leaves", () => {
     const nodes = buildTree([
       entry(1, { User: [{ Text: "hi" }] }),
-      entry(2, { Mark: { note: "a breadcrumb" } } as LogEntry["payload"]),
+      entry(2, {
+        Mark: { kind: { Boundary: { upto: 1 } }, note: "a breadcrumb" },
+      }),
     ]);
     expect(nodes.map((n) => n.kind)).toEqual(["leaf", "leaf"]);
   });
@@ -136,5 +138,33 @@ describe("the transcript tree", () => {
       entry(2, { ToolResult: { call_id: "a", raw, wire: "Raw" } }),
     ];
     expect(buildTree(entries)).toEqual(buildTree(entries));
+  });
+});
+
+describe("the consolidation mark", () => {
+  it("counts the committed entries at or below its boundary", () => {
+    const nodes = buildTree([
+      entry(1, { User: [{ Text: "hi" }] }),
+      assistant(2, { text: true }),
+      entry(3, { User: [{ Text: "more" }] }),
+      entry(4, {
+        Mark: { kind: { Boundary: { upto: 3 } }, note: "summary" },
+      }),
+    ]);
+    const mark = nodes.at(-1);
+    expect(mark?.kind).toBe("leaf");
+    expect(mark?.kind === "leaf" && mark.replaces).toBe(3);
+  });
+
+  it("excludes entries past the boundary", () => {
+    const nodes = buildTree([
+      entry(1, { User: [{ Text: "hi" }] }),
+      entry(2, { User: [{ Text: "later" }] }),
+      entry(3, {
+        Mark: { kind: { Boundary: { upto: 1 } }, note: "summary" },
+      }),
+    ]);
+    const mark = nodes.at(-1);
+    expect(mark?.kind === "leaf" && mark.replaces).toBe(1);
   });
 });

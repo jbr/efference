@@ -7,6 +7,37 @@ import { GateSurface } from "./Gate.tsx";
 import { Login } from "./Login.tsx";
 import { setThemeChoice, themeChoice, type ThemeChoice } from "./theme.ts";
 import { Transcript } from "./Transcript.tsx";
+import {
+  setViewSetting,
+  useViewSettings,
+  type ViewSettings,
+} from "./viewSettings.ts";
+
+const VIEW_LABELS: Record<keyof ViewSettings, string> = {
+  thinking: "thinking",
+  clearSpots: "clear spots",
+  ambient: "ambient",
+};
+
+/** The transcript density switches (docs/web-client.md). Hiding is
+ * display-only; the entries stay in the store. */
+function ViewToggles() {
+  const settings = useViewSettings();
+  return (
+    <div className="view-toggles">
+      {(Object.keys(VIEW_LABELS) as (keyof ViewSettings)[]).map((key) => (
+        <label key={key}>
+          <input
+            type="checkbox"
+            checked={settings[key]}
+            onChange={(event) => setViewSetting(key, event.target.checked)}
+          />
+          {VIEW_LABELS[key]}
+        </label>
+      ))}
+    </div>
+  );
+}
 
 function ThemeSelect() {
   const [choice, setChoice] = useState(themeChoice);
@@ -44,6 +75,7 @@ export function App() {
           {session.topics.running ? " · running" : ""}
           {gate ? " · gate pending" : ""}
         </span>
+        <ViewToggles />
         <ThemeSelect />
       </header>
       {session.connection !== "live" && (
@@ -57,7 +89,11 @@ export function App() {
         usage={session.topics.usage ?? null}
         notifications={session.topics.notifications ?? []}
       />
-      <Transcript entries={session.entries} streaming={session.streaming} />
+      <Transcript
+        entries={session.entries}
+        streaming={session.streaming}
+        pending={session.pendingTurns}
+      />
       {gate && (
         <GateSurface
           gate={gate}
@@ -65,7 +101,7 @@ export function App() {
           resolve={(decision) => actions.resolveGate(gate.call_id, decision)}
         />
       )}
-      <Composer />
+      <Composer submit={actions.submitTurn} />
     </div>
   );
 }

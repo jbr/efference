@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The web transcript wears the design pass: a label gutter (`you`/`thinking`/`batch`/`ambient`/`config`), batch surfaces with accent call chrome, the serif voice for intent lines, spot reasons and distiller notes, density toggles (thinking, clear spots, ambient), a delivery echo for submitted turns, a live-output peek, and consolidation marks that name their extent.
 - The web client is themed: After Dark and Daylight as CSS-token sets behind a header select (plus a follow-system option), self-hosted Newsreader and IBM Plex Mono with their OFL texts, and syntax colors that resolve through the same tokens — a theme swap recolors code without re-tokenizing.
 - The system prompt states the configured model unconditionally (`You are {model}.`), and every `usage.jsonl` line records the model that served the request.
 - The web client renders thinking and consolidation-mark notes as markdown; an unknown tool's JSON envelope drops the `intent` it already shows as a leading line.

@@ -126,11 +126,15 @@ message (`POST /turns`) and a model request. Choosing `call` for the container
 reverses [tui.md](tui.md)'s "a call and its result are separate entries"; that
 is flat-model reasoning, and the TUI still reads that way.
 
-**Authorship is structural, not lexical.** A user turn carries an accent gutter;
-an agent turn is the unmarked default voice. Neither is labelled, because a label
-per entry is what made every entry look alike — the thing to read was always the
-noun above the block. Everything that is *not* one of the two voices keeps its
-label, because those genuinely need naming.
+**Authorship is structural first.** A user turn carries an accent gutter; an
+agent turn is the unmarked default voice. Every session-level entry renders as
+a two-column row — a label gutter beside the content — and the design pass put
+a `you` label in that gutter beside the accent (2026-08-19, held lightly: it
+reads as cohesive with the labelled column, reversing the first slice's
+label-free user turn, and may reverse back after use). Non-voice entries keep
+their labels, because those genuinely need naming. The earlier failure mode —
+a noun *above* every block making every entry look alike — is what the gutter
+avoids: labels sit beside content, not between entries.
 
 `Triage` is not rendered. Its one visible fact — how much of the output survived
 — the result header already states as `kept N of M lines`, so a `keep: all` line
@@ -310,6 +314,43 @@ lands at the tail rather than the top of the preamble. **The preamble
 collapses** to a native `<details>` line that expands on tap — presentation
 of one audit entry, not a fold affordance; render-whole for tool results
 stands (the positions above).
+
+**Density toggles** (`ui/viewSettings.ts`, persisted like the theme): three
+switches hide thinking, clear spot verdicts, and ambient entries. Hiding is
+display-only — the entries stay in the store and reappear on toggle — and a
+verdict that gated or watched always renders; only the routine `clear` hides.
+
+**The pending-turn echo.** A submitted turn the daemon accepted (a 202)
+renders immediately as a dimmed, `⋯ pending`-marked user turn after the live
+tail, and flips to a committed turn when the matching `User` entry streams
+back — the operator's delivery signal, which matters most across a reconnect,
+when "did that land?" is otherwise unanswerable from the screen. The queue
+lives on the session (`pendingTurns`), pushed by the submit action after the
+202 and settled by the fold: an arriving `User` entry drops the first content
+match, the TUI's reconciliation rule (the submit response carries only a
+status, so there is nothing better to key on; identical queued turns settle
+one at a time, in order).
+
+**The live-output peek.** A running tool's streamed output shows as the last
+10 lines, dimmed, under a `⋯ running · N lines` header — a glance at a live
+process, not a truncation: the whole output arrives, whole, when the call
+commits. The one exception to render-whole, carried from the TUI
+([tui.md](tui.md)). Background-process output is the bottom panel's surface,
+not the transcript's.
+
+**The consolidation mark** renders as a boundary: a dashed rule with
+`⊙ consolidated through #N · M entries`, then the replacing summary as prose
+between the rules. The count is committed entries at or below the boundary's
+`upto` — client-computed from the window; the wire's token delta is provider
+accounting the client does not hold. There is no expand affordance behind it:
+render-whole means every entry the fold replaced is already on screen above,
+so the mark's job is to say where the model's context stops carrying the raw
+log, not to reveal anything. The `consolidate` call itself collapses to its
+header once resolved — its input is the summary the mark renders in full
+(the pair projects normally, so the log holds the summary twice), and its
+result is a constant acknowledgement. A pending, gated, or failed
+consolidate renders whole: the gate surface expects the call on screen, and
+an error is information.
 
 ## The controls strip
 

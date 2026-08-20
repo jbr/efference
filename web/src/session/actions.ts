@@ -1,9 +1,24 @@
 // Session-layer actions: api calls whose error recovery folds back into the
 // store. Framework-free, like the rest of this layer.
 
-import { ApiError, resolveApproval } from "../api/http.ts";
+import {
+  ApiError,
+  resolveApproval,
+  submitTurn as postTurn,
+} from "../api/http.ts";
 import type { CallId, Decision, Gate } from "../api/types.ts";
-import { applyFrame, type Store } from "./store.ts";
+import { applyFrame, pushPendingTurn, type Store } from "./store.ts";
+
+/**
+ * Submit a turn and queue its delivery echo. The queue push happens after the
+ * 202 — "accepted by the daemon, not yet on the wire" is exactly what the
+ * pending state means — so a failed POST leaves nothing to reconcile and the
+ * error propagates to the composer as before.
+ */
+export async function submitTurn(store: Store, text: string): Promise<void> {
+  await postTurn(text);
+  store.update((s) => pushPendingTurn(s, text));
+}
 
 /**
  * Resolve the pending gate (docs/control-api.md). `"applied"` means the

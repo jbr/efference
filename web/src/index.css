@@ -41,41 +41,223 @@ header {
   color: var(--fg-dim);
 }
 
-.block {
-  margin: 0.75rem 0;
+/* The transcript row (docs/web-client.md): a label gutter and a content
+   column. Non-voice entries name themselves in the gutter; the user turn
+   carries the accent gutter on its content and, per the design pass, the
+   `you` label too; an assistant turn is the unmarked default voice. */
+.entry {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  column-gap: 1.3rem;
+  margin: 1.2rem 0;
 }
 
-/* The hierarchy (docs/web-client.md): session → batch → call. Depth is drawn
-   as a connector down the left of each container, so a call's args, verdict
-   and result read as one unit rather than three adjacent blocks. Structure
-   only — what a level ultimately looks like is the design pass. */
+.entry > .label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  text-align: right;
+  padding-top: 0.3rem;
+  user-select: none;
+  overflow-wrap: normal;
+}
+
+.entry > .content {
+  min-width: 0;
+}
+
+.entry.user > .content {
+  border-left: 2px solid var(--accent);
+  box-shadow: -3px 0 12px var(--accent-glow);
+  padding-left: 0.9rem;
+}
+
+.entry.pending > .content {
+  opacity: 0.6;
+}
+
+.pending-mark {
+  font-size: 0.6875rem;
+  color: var(--fg-faint);
+  margin-top: 0.4rem;
+}
+
+.entry.thinking > .content .prose {
+  font-style: italic;
+  font-weight: 300;
+  color: var(--fg-dim);
+}
+
+.entry.ambient > .content,
+.entry.config > .content {
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+}
+
+.ambient-source {
+  color: var(--fg);
+}
+
+/* The hierarchy (docs/web-client.md): session → batch → call. The batch is a
+   surface; depth below it is a connector down the call's left, so a call's
+   args, verdict and result read as one unit rather than three adjacent
+   blocks. */
 .batch {
-  margin: 0.75rem 0;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.8rem 0 1rem;
+  margin: 1.4rem 0;
+}
+
+.batch .entry {
+  margin: 0.4rem 0;
+}
+
+.entry.batch-head > .content {
+  font-size: 0.6875rem;
+  color: var(--fg-faint);
+  padding-top: 0.3rem;
 }
 
 .call {
   border-left: 1px solid var(--border-strong);
-  padding-left: 0.7rem;
-  margin: 0.5rem 0;
+  padding-left: 1rem;
+  margin: 0.6rem 0;
+}
+
+.call-head {
+  display: flex;
+  gap: 0.55rem;
+  align-items: baseline;
+}
+
+.prompt {
+  color: var(--accent);
+  text-shadow: 0 0 9px var(--accent-glow);
+}
+
+.call-tool {
+  color: var(--code-tool);
+}
+
+.call-sep {
+  color: var(--fg-faint);
+}
+
+.call-target {
+  color: var(--code-path);
+  overflow-wrap: anywhere;
 }
 
 /* A call's parts belong to it, so they sit tighter than session-level
    siblings do. */
-.call > .block {
-  margin: 0.3rem 0;
+.call > .block,
+.block {
+  margin: 0.5rem 0;
 }
 
 .spot {
-  margin-top: 0.3rem;
+  display: flex;
+  gap: 0.7rem;
+  align-items: baseline;
+  margin: 0.5rem 0;
 }
 
-/* Authorship is structural: the operator's turn carries an accent gutter and
-   the agent's is the unmarked default voice, so neither needs a label naming
-   it. */
-.block.user {
-  border-left: 2px solid var(--accent);
-  box-shadow: -3px 0 12px var(--accent-glow);
-  padding-left: 0.7rem;
+.spot-label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+.spot-reason {
+  font-family: var(--font-prose);
+  font-size: 1.05em;
+  font-weight: 300;
+  color: var(--fg-muted);
+}
+
+/* The distiller's note: an annotation beside the result, not tool output. */
+.note {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  margin-top: 0.5rem;
+}
+
+.note-glyph {
+  color: var(--accent);
+  text-shadow: 0 0 9px var(--accent-glow);
+}
+
+.note-text {
+  font-family: var(--font-prose);
+  font-size: 1.05em;
+  font-weight: 300;
+  color: var(--fg-muted);
+}
+
+/* The consolidation mark: a rule naming the extent the wire folded behind,
+   with the replacing summary as content between the rules. */
+.consolidation {
+  margin: 1.5rem 0;
+}
+
+.consolidation-rule {
+  border-top: 1px dashed var(--fg-ghost);
+  padding-top: 0.9rem;
+  display: flex;
+  gap: 0.9rem;
+  align-items: baseline;
+  margin-bottom: 0.9rem;
+  font-size: 0.6875rem;
+}
+
+.consolidation-rule.closing {
+  padding-top: 0;
+  margin: 1rem 0 0;
+}
+
+.consolidation-rule .glyph {
+  font-size: 0.85rem;
+  color: var(--accent);
+  text-shadow: 0 0 9px var(--accent-glow);
+}
+
+.consolidation-rule .c-label {
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.consolidation-rule .c-count {
+  color: var(--fg-faint);
+}
+
+/* The live-output peek's header line. */
+.peek-head {
+  font-size: 0.8em;
+  color: var(--fg-faint);
+  margin-bottom: 0.3rem;
+}
+
+.view-toggles {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  font-size: 0.8em;
+  color: var(--fg-dim);
+}
+
+.view-toggles label {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .block .kind {
@@ -127,7 +309,7 @@ pre {
   line-height: 1.5;
 }
 
-.block.user .prose {
+.entry.user .prose {
   font-family: var(--font-mono);
   font-size: 1em;
 }

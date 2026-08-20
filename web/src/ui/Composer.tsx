@@ -1,11 +1,15 @@
-// The composer: POST /v1/turns. Submission is decoupled from inference
-// (docs/control-api.md), so a 202 is success — the turn's effects arrive on
-// the stream like everything else.
+// The composer: POST /v1/turns, through the session action so an accepted
+// turn queues its delivery echo (docs/control-api.md — submission is
+// decoupled from inference, so a 202 is success; the turn's effects arrive
+// on the stream like everything else).
 
 import { useState } from "react";
-import { submitTurn } from "../api/http.ts";
 
-export function Composer() {
+export function Composer({
+  submit: send,
+}: {
+  submit: (text: string) => Promise<void>;
+}) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -13,7 +17,7 @@ export function Composer() {
     const text = draft.trim();
     if (!text) return;
     try {
-      await submitTurn(text);
+      await send(text);
       setDraft("");
       setError(null);
     } catch (e) {

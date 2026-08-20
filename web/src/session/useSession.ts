@@ -10,12 +10,13 @@
 
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type { CallId, Decision } from "../api/types.ts";
-import { resolveGate } from "./actions.ts";
+import { resolveGate, submitTurn } from "./actions.ts";
 import { connect, type Connector } from "./connect.ts";
 import { Store, type Session } from "./store.ts";
 
 export interface SessionActions {
   resolveGate(callId: CallId, decision: Decision): Promise<"applied" | "moved">;
+  submitTurn(text: string): Promise<void>;
 }
 
 export function useSession(): {
@@ -73,6 +74,7 @@ export function useSession(): {
   const actions = useMemo<SessionActions>(
     () => ({
       resolveGate: (callId, decision) => resolveGate(store, callId, decision),
+      submitTurn: (text) => submitTurn(store, text),
     }),
     [store],
   );

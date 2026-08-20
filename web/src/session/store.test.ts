@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Frame, LogEntry } from "../api/types.ts";
-import { applyFrame, emptySession, seed, type Session } from "./store.ts";
+import {
+  applyFrame,
+  emptySession,
+  pushPendingTurn,
+  seed,
+  type Session,
+} from "./store.ts";
 
 const entry = (seq: number, payload: LogEntry["payload"]): LogEntry => ({
   seq,
@@ -208,5 +214,40 @@ describe("the output tail", () => {
       },
     ]);
     expect(committed.streaming.toolOutput).toEqual({ toolu_b: "bbb" });
+  });
+});
+
+describe("pending turns", () => {
+  it("settles the first content match when the User entry arrives", () => {
+    const queued = pushPendingTurn(
+      pushPendingTurn(emptySession, "first"),
+      "second",
+    );
+    const s = fold(queued, [logFrame(entry(1, { User: [{ Text: "first" }] }))]);
+    expect(s.pendingTurns).toEqual(["second"]);
+  });
+
+  it("leaves the queue alone for a User entry that matches nothing", () => {
+    const queued = pushPendingTurn(emptySession, "mine");
+    const s = fold(queued, [
+      logFrame(entry(1, { User: [{ Text: "someone else's" }] })),
+    ]);
+    expect(s.pendingTurns).toEqual(["mine"]);
+  });
+
+  it("settles identical turns one at a time, in order", () => {
+    const queued = pushPendingTurn(pushPendingTurn(emptySession, "go"), "go");
+    const once = fold(queued, [logFrame(entry(1, { User: [{ Text: "go" }] }))]);
+    expect(once.pendingTurns).toEqual(["go"]);
+    const twice = fold(once, [logFrame(entry(2, { User: [{ Text: "go" }] }))]);
+    expect(twice.pendingTurns).toEqual([]);
+  });
+
+  it("ignores non-User entries", () => {
+    const queued = pushPendingTurn(emptySession, "pending");
+    const s = fold(queued, [
+      logFrame(entry(1, { Assistant: { thinking: [], text: [], calls: [] } })),
+    ]);
+    expect(s.pendingTurns).toEqual(["pending"]);
   });
 });

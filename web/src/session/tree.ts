@@ -28,6 +28,11 @@ export interface LeafNode {
   kind: "leaf";
   key: string;
   entry: LogEntry;
+  /** Marks only: how many committed entries sit at or below the boundary's
+   * `upto` — the span the consolidation replaced on the wire. Client-computed
+   * from the window; the wire's token delta is provider accounting the client
+   * does not hold, so the count is entries, not tokens. */
+  replaces?: number;
 }
 
 /** One call, with everything the harness said about it. */
@@ -76,9 +81,28 @@ export type TranscriptNode = LeafNode | BatchNode;
 export function buildTree(entries: LogEntry[]): TranscriptNode[] {
   const nodes: TranscriptNode[] = [];
   const byCall = new Map<CallId, CallNode>();
+  const seqs: Seq[] = [];
 
   for (const entry of entries) {
     const p = entry.payload;
+    seqs.push(entry.seq);
+
+    if ("Mark" in p) {
+      // Tolerant of a mark kind this client does not know: it renders as a
+      // plain note rather than a boundary with an extent.
+      const upto =
+        typeof p.Mark.kind === "object" && "Boundary" in p.Mark.kind
+          ? p.Mark.kind.Boundary.upto
+          : null;
+      nodes.push({
+        kind: "leaf",
+        key: `${entry.seq}`,
+        entry,
+        replaces:
+          upto === null ? undefined : seqs.filter((s) => s <= upto).length,
+      });
+      continue;
+    }
 
     if ("Assistant" in p) {
       const { thinking, text, calls } = p.Assistant;
