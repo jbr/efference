@@ -115,6 +115,7 @@ export function GateSurface({
         )}
         <div className="controls">
           <button
+            className="primary"
             disabled={busy}
             onClick={() => void send({ decision: "approve" })}
           >

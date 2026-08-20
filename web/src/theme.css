@@ -83,6 +83,10 @@
 
   --accent: #e14b95;
   --accent-contrast: #f0ebf6;
+  /* The primary button: After Dark tints, Daylight fills — the mock's two
+     treatments, one pair of tokens. */
+  --btn-primary-bg: rgb(225 75 149 / 0.12);
+  --btn-primary-fg: #f0ebf6;
   /* Glow is a theme property, not a decoration Daylight forgot: the light
      theme sets it transparent, and every box-shadow through it disappears. */
   --accent-glow: rgb(225 75 149 / 0.45);
@@ -123,6 +127,8 @@
 
   --accent: #a23569;
   --accent-contrast: #fefdfe;
+  --btn-primary-bg: #a23569;
+  --btn-primary-fg: #fefdfe;
   --accent-glow: transparent;
   --selection: rgb(162 53 105 / 0.2);
   --meter: #6e4fa8;

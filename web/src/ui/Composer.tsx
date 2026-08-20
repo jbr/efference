@@ -135,8 +135,8 @@ export function Composer({
             rides along with the pending result
           </span>
         )}
+        <button>send</button>
       </div>
-      <button>send</button>
     </form>
   );
 }

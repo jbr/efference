@@ -31,8 +31,63 @@ a:hover {
   letter-spacing: 0.3ch;
 }
 
+/* The control language, from the mock: flat bordered mono. A class-styled
+   control (panel tabs, process rows) overrides these by specificity. */
 button {
   font: inherit;
+  font-size: 0.8em;
+  padding: 0.3rem 0.85rem;
+  border: 1px solid var(--border-control);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  color: var(--fg-bright);
+  border-color: var(--border-strong);
+}
+
+button:disabled {
+  color: var(--fg-ghost);
+  cursor: default;
+}
+
+button.primary {
+  border-color: var(--accent);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  box-shadow: 0 0 14px var(--accent-glow);
+}
+
+select {
+  font: inherit;
+  font-size: 0.8em;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--border-control);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--fg);
+}
+
+input:not([type="checkbox"]) {
+  font: inherit;
+  font-size: 0.9em;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border-control);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  color: var(--fg);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--fg-faint);
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
 }
 
 header {
@@ -570,7 +625,9 @@ pre {
   padding-top: 0.2rem;
 }
 
-.composer > button {
+/* Send sits inside the input box, bottom-right — the mock has no send
+   button at all, but touch needs one; flat and out of the way. */
+.composer-input button {
   align-self: flex-end;
 }
 
