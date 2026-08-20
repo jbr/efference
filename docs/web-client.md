@@ -331,7 +331,13 @@ lives on the session (`pendingTurns`), pushed by the submit action after the
 202 and settled by the fold: an arriving `User` entry drops the first content
 match, the TUI's reconciliation rule (the submit response carries only a
 status, so there is nothing better to key on; identical queued turns settle
-one at a time, in order).
+one at a time, in order). Two orderings make delivery arrive outside the
+fold, and both are handled: the entry's log frame can fold *before* the 202
+body resolves (the daemon commits and broadcasts independently of writing the
+response), so the push takes the pre-submit log cursor and skips itself when
+a newer matching `User` entry already folded; and a re-seed (`seed`) settles
+pending turns against the entries it absorbs beyond the cursor, since those
+never pass through `applyLog`.
 
 **The live-output peek.** A running tool's streamed output shows as the last
 10 lines, dimmed, under a `⋯ running · N lines` header — a glance at a live
