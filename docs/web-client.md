@@ -370,19 +370,42 @@ input carries a "rides along with the pending result" hint: the
 mid-trajectory injection semantics ([control-channel.md](control-channel.md)),
 stated at the point where the text is being typed.
 
-The strip under the header (`ui/Controls.tsx`) keeps the ambient furniture
-whose homes land with later units: the usage line (context occupancy and the
-session cost, whichever halves the provider filled — the top bar's, when it
-exists), one row per process — command, elapsed (client-computed from
-`spawned_at`, ticked once a second while any process runs), muted flag, and
-the verbs: mute/unmute, the background handoff with its optional note
-(`PATCH /v1/processes/:id`, a 202) on the foreground entry, kill
-(`DELETE /v1/processes/:id`) on any — and pending notifications, one row
-each with dismiss (`DELETE /v1/notifications/:id`); on an idle loop the
-inbox delivers immediately, so those rows only appear while a tool is
-mid-run. Process and notification rows are the bottom panel's, when it
-lands. A non-`live` connection shows as a full-width banner above the strip,
-not just the header word.
+The strip under the header (`ui/Controls.tsx`) is down to the usage line —
+context occupancy and the session cost, whichever halves the provider filled
+— which moves to the top bar when that unit lands. A non-`live` connection
+shows as a full-width banner above the strip, not just the header word.
+
+## The bottom panel
+
+`ui/Panel.tsx`: tasks, inbox, policy — docked with the composer (`.dock`,
+one sticky footer), collapsed to its tab strip by default, the open tab
+persisted like the theme, counts riding the tabs.
+
+- **tasks** — one row per process (command, pid, elapsed ticked once a
+  second, muted flag) beside a detail pane: the command line, the verbs —
+  mute/unmute, the background handoff with its optional note
+  (`PATCH /v1/processes/:id`, a 202) on the foreground entry, kill
+  (`DELETE /v1/processes/:id`) on any — and a live tail pinned to its
+  bottom. The tail is `streaming.processOutput`'s rendering surface, the one
+  streaming topic that previously folded into the store and rendered
+  nowhere. The mock's "foreground" verb is deliberately absent: the wire has
+  a background handoff, not a foregrounding.
+- **inbox** — pending notifications with dismiss
+  (`DELETE /v1/notifications/:id`); on an idle loop the inbox delivers
+  immediately, so rows only exist while a tool is mid-run.
+- **policy** — the perimeter from `role` (scope, commands, paths, tools)
+  with pending proposals merged *in their committed sort position*,
+  ⊕-flagged, each carrying commit and cancel (`PATCH /v1/proposals/:seq`).
+  The sort rule is the TUI's, and the reason travels with it: committing a
+  proposal must not move it, because reflow at the moment of confirmation is
+  how you lose track of what you confirmed. `ui/policy.ts` computes the
+  rows, and `ui/policy.test.ts` pins the invariant (same index before and
+  after commit). This closes the config-edit loop from this client: an agent
+  that proposes a grant no longer blocks on a human at a terminal.
+
+The gate cue's bottom offset is measured from the dock's height with a
+`ResizeObserver` rather than guessed in CSS — the panel and the composer
+both change that height.
 
 ## The gate surface
 

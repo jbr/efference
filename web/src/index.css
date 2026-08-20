@@ -287,15 +287,201 @@ pre {
   margin: 0.15rem 0 0;
 }
 
+/* The dock: the bottom panel and the composer, pinned together under the
+   scrolling transcript. */
+.dock {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-page);
+}
+
 .composer {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  position: sticky;
-  bottom: 0;
   padding: 0.6rem 0;
-  background: var(--bg-page);
   border-top: 1px solid var(--border-subtle);
+}
+
+.panel {
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+}
+
+.panel-tabs {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.panel-tabs .spacer {
+  flex: 1;
+}
+
+.panel-tab {
+  font-size: 0.75em;
+  padding: 0.45rem 1rem;
+  border: none;
+  border-right: 1px solid var(--border-subtle);
+  background: none;
+  color: var(--fg-faint);
+  cursor: pointer;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.panel-tab.open {
+  color: var(--fg-bright);
+  background: var(--bg-page);
+}
+
+.panel-tab .chip {
+  font-size: 0.9em;
+  color: var(--fg-dim);
+  background: var(--bg-chip);
+  border-radius: 8px;
+  padding: 0 0.4rem;
+}
+
+.panel-empty {
+  padding: 0.8rem 1rem;
+  font-size: 0.85em;
+}
+
+.panel-body {
+  height: 11rem;
+  overflow: hidden;
+}
+
+.panel-body.tasks {
+  display: grid;
+  grid-template-columns: 15rem 1fr;
+}
+
+.proc-list {
+  border-right: 1px solid var(--border-subtle);
+  overflow-y: auto;
+}
+
+.proc-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 0.8em;
+  padding: 0.5rem 0.9rem;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  background: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.proc-row.picked {
+  background: var(--bg-page);
+  color: var(--fg-bright);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.proc-name {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.proc-name .dot.idle {
+  background: none;
+  border: 1px solid var(--fg-ghost);
+}
+
+.proc-meta {
+  display: block;
+  font-size: 0.9em;
+  margin-top: 0.15rem;
+}
+
+.proc-detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.proc-head {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.45rem 0.9rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.8em;
+}
+
+.proc-head .spacer {
+  flex: 1;
+}
+
+.proc-head input {
+  font: inherit;
+  min-width: 0;
+  width: 14rem;
+}
+
+.proc-command {
+  color: var(--code-path);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tail {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8em;
+  line-height: 1.6;
+}
+
+.panel-body.inbox,
+.panel-body.policy {
+  overflow-y: auto;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85em;
+}
+
+.inbox-row {
+  display: flex;
+  gap: 0.7rem;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.25rem 0;
+}
+
+.policy-row {
+  display: flex;
+  gap: 0.9rem;
+  align-items: baseline;
+  padding: 0.15rem 0;
+}
+
+.policy-section {
+  flex: none;
+  width: 5.5rem;
+  text-align: right;
+  font-size: 0.8em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.policy-verbs {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.policy-verbs button {
+  font-size: 0.8em;
 }
 
 /* The status row: turn state on the left, the loop dials on the right. The
@@ -351,6 +537,10 @@ pre {
   padding-top: 0.1rem;
 }
 
+/* The block cursor is the native caret: `caret-shape` shipped in Chromium
+   (verified Chrome 151); a browser without it falls back to the accent bar.
+   The mirror-div overlay this avoids is the version that would need its own
+   pass — don't build it. */
 .composer-input textarea {
   font: inherit;
   line-height: 1.5;
@@ -362,6 +552,7 @@ pre {
   padding: 0;
   resize: vertical;
   caret-color: var(--accent);
+  caret-shape: block;
 }
 
 .composer-input textarea:focus {
@@ -486,10 +677,10 @@ pre {
 }
 
 /* The gate cue: shown only while the affordance is scrolled out of view.
-   Sits above the sticky composer, in the content column. */
+   Sits above the dock; the bottom offset is measured from the dock's height
+   (Gate.tsx), because the panel and composer change it. */
 .gate-cue {
   position: fixed;
-  bottom: 7.5rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 1;

@@ -103,6 +103,13 @@ export const killProcess = (id: number) =>
 // Remove a pending notification before it reaches a triage gate (docs/inbox.md).
 export const dismissNotification = (id: number) =>
   del<{ status: string }>(`/v1/notifications/${id}`);
+// Resolve a pending config-edit proposal (docs/control-api.md): the
+// orchestrator-above decides; committed folds the change into the effective
+// config, cancelled is audit-only.
+export const resolveProposal = (
+  seq: number,
+  state: "committed" | "cancelled",
+) => patch<{ state: string }>(`/v1/proposals/${seq}`, { state });
 
 // Trade a TOTP code for the session cookie (docs/web-bind.md). Outside /v1:
 // auth is the bind's surface, not the session's.

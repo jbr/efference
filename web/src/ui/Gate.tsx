@@ -190,6 +190,20 @@ function GateCue({
   target: React.RefObject<HTMLDivElement | null>;
 }) {
   const [hidden, setHidden] = useState(true);
+  // The cue floats just above the dock, whose height moves (the bottom
+  // panel expands and collapses, the textarea resizes) — so the offset is
+  // measured, not guessed in CSS.
+  const [bottom, setBottom] = useState(120);
+
+  useEffect(() => {
+    const dock = document.querySelector(".dock");
+    if (!(dock instanceof HTMLElement)) return;
+    const update = () => setBottom(dock.offsetHeight + 8);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = target.current;
@@ -207,6 +221,7 @@ function GateCue({
   return (
     <button
       className="gate-cue"
+      style={{ bottom }}
       onClick={() => window.scrollTo(0, document.documentElement.scrollHeight)}
     >
       ⏸ {gate.name}

@@ -5,6 +5,7 @@ import { Composer } from "./Composer.tsx";
 import { Controls } from "./Controls.tsx";
 import { GateSurface } from "./Gate.tsx";
 import { Login } from "./Login.tsx";
+import { Panel } from "./Panel.tsx";
 import { setThemeChoice, themeChoice, type ThemeChoice } from "./theme.ts";
 import { Transcript } from "./Transcript.tsx";
 import {
@@ -81,11 +82,7 @@ export function App() {
       {session.connection !== "live" && (
         <div className="banner">{session.connection}…</div>
       )}
-      <Controls
-        processes={session.topics.processes ?? []}
-        usage={session.topics.usage ?? null}
-        notifications={session.topics.notifications ?? []}
-      />
+      <Controls usage={session.topics.usage ?? null} />
       <Transcript
         entries={session.entries}
         streaming={session.streaming}
@@ -98,12 +95,21 @@ export function App() {
           resolve={(decision) => actions.resolveGate(gate.call_id, decision)}
         />
       )}
-      <Composer
-        submit={actions.submitTurn}
-        pace={session.topics.pace ?? null}
-        reviewLevel={session.topics.review_level ?? null}
-        running={session.topics.running ?? false}
-      />
+      <div className="dock">
+        <Panel
+          processes={session.topics.processes ?? []}
+          notifications={session.topics.notifications ?? []}
+          role={session.topics.role ?? null}
+          proposals={session.topics.proposals ?? []}
+          processOutput={session.streaming.processOutput}
+        />
+        <Composer
+          submit={actions.submitTurn}
+          pace={session.topics.pace ?? null}
+          reviewLevel={session.topics.review_level ?? null}
+          running={session.topics.running ?? false}
+        />
+      </div>
     </div>
   );
 }
