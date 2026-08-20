@@ -18,9 +18,15 @@ import type {
   Role,
 } from "../api/types.ts";
 import { policyRows } from "./policy.ts";
+import { setThemeChoice, themeChoice, type ThemeChoice } from "./theme.ts";
+import {
+  setViewSetting,
+  useViewSettings,
+  type ViewSettings,
+} from "./viewSettings.ts";
 
-type Tab = "tasks" | "inbox" | "policy";
-const TABS: Tab[] = ["tasks", "inbox", "policy"];
+type Tab = "tasks" | "inbox" | "policy" | "interface";
+const TABS: Tab[] = ["tasks", "inbox", "policy", "interface"];
 
 const KEY = "panel";
 
@@ -217,6 +223,53 @@ function Policy({
   );
 }
 
+const VIEW_LABELS: Record<keyof ViewSettings, string> = {
+  thinking: "thinking",
+  clearSpots: "clear spots",
+  ambient: "ambient",
+};
+
+/** Interface preferences: the theme, and the transcript density switches.
+ * Buried here on purpose — none of these is an affordance used *during* a
+ * session, so they do not merit constant display (jbr, 2026-08-19). Hiding
+ * via the switches is display-only; the entries stay in the store. */
+function Interface() {
+  const settings = useViewSettings();
+  const [choice, setChoice] = useState(themeChoice);
+  return (
+    <div className="panel-body interface">
+      <label className="dim">
+        theme{" "}
+        <select
+          value={choice}
+          onChange={(event) => {
+            const next = event.target.value as ThemeChoice;
+            setThemeChoice(next);
+            setChoice(next);
+          }}
+        >
+          <option value="system">system</option>
+          <option value="after-dark">after dark</option>
+          <option value="daylight">daylight</option>
+        </select>
+      </label>
+      <div className="view-toggles">
+        show:
+        {(Object.keys(VIEW_LABELS) as (keyof ViewSettings)[]).map((key) => (
+          <label key={key}>
+            <input
+              type="checkbox"
+              checked={settings[key]}
+              onChange={(event) => setViewSetting(key, event.target.checked)}
+            />
+            {VIEW_LABELS[key]}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Panel({
   processes,
   notifications,
@@ -246,6 +299,7 @@ export function Panel({
     tasks: processes.length,
     inbox: notifications.length,
     policy: proposals.length,
+    interface: 0,
   };
   return (
     <div className="panel">
@@ -275,6 +329,7 @@ export function Panel({
       {open === "policy" && (
         <Policy role={role} proposals={proposals} act={act} />
       )}
+      {open === "interface" && <Interface />}
     </div>
   );
 }

@@ -90,10 +90,48 @@ input[type="checkbox"] {
   accent-color: var(--accent);
 }
 
-header {
+/* The top bar: sticky interface chrome. Opaque over the scrolling
+   transcript; the wordmark speaks in the serif. */
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
-  justify-content: space-between;
-  padding: 0.5rem 0;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.45rem 0;
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.8em;
+}
+
+.top-bar .spacer {
+  flex: 1;
+}
+
+.wordmark {
+  font-family: var(--font-prose);
+  font-size: 1.6em;
+  color: var(--fg-bright);
+  letter-spacing: -0.01em;
+}
+
+.usage-strong {
+  color: var(--fg);
+}
+
+.meter {
+  width: 6.5rem;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-chip);
+  overflow: hidden;
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--meter);
 }
 
 .dim {
@@ -766,9 +804,13 @@ select {
   font: inherit;
 }
 
-.controls-strip {
-  font-size: 0.9em;
-  padding-bottom: 0.25rem;
+.panel-body.interface {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 0.8rem 0.9rem;
+  font-size: 0.85em;
 }
 
 /* Tool-result views (docs/web-client.md, the cordon's display half). */

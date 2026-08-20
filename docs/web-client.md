@@ -272,7 +272,7 @@ the default set on `:root` — which is also the pre-script paint — and Daylig
 overrides under `:root[data-theme="daylight"]`. `ui/theme.ts` resolves the
 choice — explicit and persisted in localStorage, or the system scheme when none
 is stored — and sets `data-theme` on `<html>`; `initTheme()` runs before first
-render, and a `ThemeSelect` in the header carries the options. Glow is a token,
+render, and the select lives in the bottom panel's interface tab. Glow is a token,
 not a decoration: After Dark's accent halo (`--accent-glow`) goes `transparent`
 in Daylight, and every box-shadow through it disappears with it. Adding a theme
 is authoring an override block plus a select option
@@ -354,7 +354,21 @@ result is a constant acknowledgement. A pending, gated, or failed
 consolidate renders whole: the gate surface expects the call on screen, and
 an error is information.
 
-## The composer area, and what remains of the strip
+## The top bar
+
+`ui/TopBar.tsx`: sticky interface chrome — the serif wordmark, the session
+status dot (breathing while the loop runs), and the usage meter: context
+occupancy as numbers and a thin bar, plus the session cost. Deliberately
+minimal — the mock's bar is a dumping ground of imagined status items, and
+additions happen one argued element at a time
+([backlog/web/upstream-failure.md](../backlog/web/upstream-failure.md) is
+the next argued one). Loop state is not restated here: the dot breathes,
+and the banner, the gate cue, and the composer's turn-state carry the rest.
+Two elements wait on the wire: the model name and the working directory,
+which no `/v1` topic carries yet
+([backlog/session-identity-topic.md](../backlog/session-identity-topic.md)).
+
+## The composer area
 
 The loop dials live on the composer's status row (`ui/Composer.tsx`): gates
 arrive at the composer, so it is where current state is controlled.
@@ -370,10 +384,9 @@ input carries a "rides along with the pending result" hint: the
 mid-trajectory injection semantics ([control-channel.md](control-channel.md)),
 stated at the point where the text is being typed.
 
-The strip under the header (`ui/Controls.tsx`) is down to the usage line —
-context occupancy and the session cost, whichever halves the provider filled
-— which moves to the top bar when that unit lands. A non-`live` connection
-shows as a full-width banner above the strip, not just the header word.
+The controls strip is gone; its last resident, the usage line, lives in the
+top bar. A non-`live` connection still shows as a full-width banner under
+the bar, not just a dimmed word.
 
 ## The bottom panel
 
@@ -393,6 +406,9 @@ persisted like the theme, counts riding the tabs.
 - **inbox** — pending notifications with dismiss
   (`DELETE /v1/notifications/:id`); on an idle loop the inbox delivers
   immediately, so rows only exist while a tool is mid-run.
+- **interface** — the theme select and the transcript density switches,
+  buried on purpose: neither is an affordance used *during* a session, so
+  they do not merit constant display (moved out of the header, 2026-08-19).
 - **policy** — the perimeter from `role` (scope, commands, paths, tools)
   with pending proposals merged *in their committed sort position*,
   ⊕-flagged, each carrying commit and cancel (`PATCH /v1/proposals/:seq`).
