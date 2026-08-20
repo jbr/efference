@@ -183,7 +183,9 @@ raw in a header — non-ASCII, control characters, leading or trailing
 whitespace, or one that would be mistaken for an encoding marker — is carried
 as `=?base64?<standard base64 of the UTF-8 bytes>?=`.
 
-They are derived in `src/mcp/http.rs`, at the one point that already holds the
+The derivation and value encoding are `mcplease::headers::standard_headers` —
+the same code a server validates with, so client and server cannot drift.
+`src/mcp/http.rs` attaches them at the one point that already holds the
 message, because what makes them useful is that they *agree* with the body: a
 server that enforces them answers a disagreement with a `HeaderMismatch` naming
 which field mismatched.

@@ -11,7 +11,7 @@ fs-mcp = { path = "../fs-mcp" }
 semantic-edit-mcp = { path = "../semantic-edit-mcp" }
 # `client` is the transport-agnostic client protocol (docs/tools.md); the
 # in-process servers above bring the `server` half through their own dependency.
-mcplease = { version = "0.4", features = ["client"], default-features = false }
+mcplease = { version = "0.4.2", features = ["client"], default-features = false }
 anyhow = "1"
 # Lightweight logging facade + env-driven backend. The daemon emits request sizes,
 # fork-peek fallbacks, capped tool results, and full API error bodies; control verbosity

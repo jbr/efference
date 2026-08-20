@@ -22,17 +22,15 @@
 //!
 //! `2026-07-28` adds two *required* headers derived from the body —
 //! `Mcp-Method` on every request and `Mcp-Name` on the methods that address a
-//! specific tool, prompt, or resource (SEP-2243). They are derived here, in the
-//! one place that already holds the message, because the whole point of them is
-//! that they agree with the body; a server that enforces them rejects a
-//! disagreement with `HeaderMismatch`.
+//! specific tool, prompt, or resource (SEP-2243). The derivation (and its
+//! value encoding) is `mcplease::headers::standard_headers` — the same code a
+//! server validates with, so the two cannot drift; `base_conn` attaches them
+//! in the one place that already holds the message. A server that enforces
+//! them rejects a disagreement with `HeaderMismatch`.
 
 use anyhow::Context;
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64;
 use futures_lite::StreamExt;
 use mcplease::types::JsonRpcMessage;
-use serde_json::Value;
 use trillium_client::sse::{EventStream, SseErrorKind};
 use trillium_client::{Client as HttpClient, Conn, HeaderValue};
 
@@ -80,7 +78,7 @@ impl HttpTransport {
     /// per-message standard headers `2026-07-28` requires.
     fn base_conn(&self, message: &JsonRpcMessage) -> Conn {
         let mut conn = self.standing_conn();
-        for (name, value) in standard_headers(message) {
+        for (name, value) in mcplease::headers::standard_headers(message) {
             conn = conn.with_request_header(name, value);
         }
         conn
@@ -168,77 +166,6 @@ impl HttpTransport {
         }
         Ok(())
     }
-}
-
-/// The standard request headers `2026-07-28` requires on every streamable-HTTP
-/// POST (SEP-2243). `Mcp-Method` mirrors the body's `method` on all requests;
-/// `Mcp-Name` mirrors `params.name` or `params.uri` on the three methods that
-/// address a specific thing.
-///
-/// They are **required for compliance**, and a server that enforces them
-/// rejects the request with a `HeaderMismatch` naming the disagreement rather
-/// than failing obscurely — which is how their absence was found. Servers
-/// differ on whether they enforce: ferritin does not, Sentry does.
-///
-/// Deriving them here rather than at the call sites is the point: the headers
-/// have to agree with the body, so the one place that already has the body is
-/// the only place they can be derived without drifting.
-pub(super) fn standard_headers(message: &JsonRpcMessage) -> Vec<(&'static str, String)> {
-    let (method, params) = match message {
-        JsonRpcMessage::Request(request) => (&request.method, &request.params),
-        JsonRpcMessage::Notification(notification) => (&notification.method, &notification.params),
-        // A response has no `method`; these headers describe a request.
-        JsonRpcMessage::Response(_) => return Vec::new(),
-    };
-    let mut headers = vec![("mcp-method", encode_header_value(method))];
-    if let Some(name) = mcp_name(method, params.as_ref()) {
-        headers.push(("mcp-name", encode_header_value(&name)));
-    }
-    headers
-}
-
-/// `Mcp-Name`'s source field: `params.name` for a tool or prompt, `params.uri`
-/// for a resource. No other method carries it.
-pub(super) fn mcp_name(method: &str, params: Option<&Value>) -> Option<String> {
-    let field = match method {
-        "tools/call" | "prompts/get" => "name",
-        "resources/read" => "uri",
-        _ => return None,
-    };
-    Some(params?.get(field)?.as_str()?.to_string())
-}
-
-const SENTINEL_PREFIX: &str = "=?base64?";
-const SENTINEL_SUFFIX: &str = "?=";
-
-/// A header value per the spec's Value Encoding rules: as-is when it is safe to
-/// send raw, and `=?base64?<standard base64 of the UTF-8 bytes>?=` when it is
-/// not.
-///
-/// A value that *looks* encoded but is not gets encoded too, so the server
-/// cannot mistake a literal `=?base64?…?=` for a marker — the one rule here
-/// that exists purely to remove an ambiguity rather than to carry bytes safely.
-pub(super) fn encode_header_value(value: &str) -> String {
-    if is_header_safe(value) {
-        return value.to_string();
-    }
-    format!(
-        "{SENTINEL_PREFIX}{}{SENTINEL_SUFFIX}",
-        BASE64.encode(value.as_bytes())
-    )
-}
-
-/// Whether a value can ride in a header raw: visible ASCII, space, or tab
-/// (RFC 9110), no leading or trailing whitespace to be stripped in transit, and
-/// not something a server would read as an encoding marker.
-fn is_header_safe(value: &str) -> bool {
-    let looks_encoded = value.starts_with(SENTINEL_PREFIX) && value.ends_with(SENTINEL_SUFFIX);
-    !looks_encoded
-        && value
-            .bytes()
-            .all(|b| (0x20..=0x7e).contains(&b) || b == 0x09)
-        && !value.starts_with([' ', '\t'])
-        && !value.ends_with([' ', '\t'])
 }
 
 /// Read the `WWW-Authenticate` challenge off a `401` into the typed error the
