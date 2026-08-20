@@ -67,6 +67,7 @@ fn preamble_snapshots_the_structured_context_listing() {
     let listing = Resolved {
         sections: vec![Section {
             heading: Some("Skills".into()),
+            description: None,
             items: vec![Item::Listed {
                 name: "ferritin".into(),
                 description: "look up Rust docs".into(),

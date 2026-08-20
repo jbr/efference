@@ -43,16 +43,20 @@ pub fn system_prompt(
     role_section: Option<&str>,
     unmounted: Option<&str>,
 ) -> String {
-    // `include_str!` keeps the file's trailing newline; trim it so the join is clean.
-    let mut prompt = PREAMBLE.trim_end().to_string();
+    let mut prompt = String::new();
     // Identity, unconditionally (docs/context.md): an untold model answers "which
     // model are you" from its training priors, and a log that mixes models needs
     // the current one to know which earlier turns were not its own. The configured
     // model string, verbatim — it is also the line a knowledge-cutoff note would
     // extend when provider metadata carries one.
-    prompt.push_str("\n\nYou are ");
+    // Leads the system prompt so the model knows what it is before reading anything else.
+    prompt.push_str("You are ");
     prompt.push_str(model);
     prompt.push('.');
+    // How the harness works — `include_str!` keeps the file's trailing newline;
+    // trim it so the join is clean.
+    prompt.push_str("\n\n");
+    prompt.push_str(PREAMBLE.trim_end());
     // Knowledge (what the session knows) sits before the perimeter (what it may do)
     // (docs/context.md).
     if let Some(block) = context_block {

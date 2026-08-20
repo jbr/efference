@@ -85,6 +85,7 @@ fn surfaced_context_item_projects_at_triage_position() {
     let listing = Resolved {
         sections: vec![Section {
             heading: Some("Skills".into()),
+            description: None,
             items: vec![Item::Listed {
                 name: "ferritin".into(),
                 description: "look up Rust docs".into(),

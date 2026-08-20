@@ -16,6 +16,7 @@ fn render_pins_the_tagged_bytes() {
         sections: vec![
             Section {
                 heading: None,
+                description: None,
                 items: vec![Item::Inline {
                     name: "CLAUDE.md".into(),
                     path: "CLAUDE.md".into(),
@@ -24,6 +25,7 @@ fn render_pins_the_tagged_bytes() {
             },
             Section {
                 heading: Some("Skills".into()),
+                description: None,
                 items: vec![Item::Listed {
                     name: "verify".into(),
                     description: "Drive the flow end to end.".into(),
@@ -42,6 +44,7 @@ fn render_pins_the_tagged_bytes() {
         sections: vec![
             Section {
                 heading: None,
+                description: None,
                 items: vec![Item::Inline {
                     name: "CLAUDE.md".into(),
                     path: "./CLAUDE.md".into(),
@@ -50,6 +53,7 @@ fn render_pins_the_tagged_bytes() {
             },
             Section {
                 heading: Some("Skills".into()),
+                description: None,
                 items: vec![Item::Listed {
                     name: "verify".into(),
                     description: "Drive the flow end to end.".into(),
@@ -73,6 +77,7 @@ fn render_uses_the_heading_verbatim_as_a_tag() {
     let resolved = Resolved {
         sections: vec![Section {
             heading: Some("Project Tips".into()),
+            description: None,
             items: vec![Item::Listed {
                 name: "style".into(),
                 description: "Two-space indent.".into(),
@@ -83,4 +88,27 @@ fn render_uses_the_heading_verbatim_as_a_tag() {
     assert!(resolved.render().unwrap().contains(
         "<Project Tips>\n<style path=\"tips/style.md\">Two-space indent.</style>\n</Project Tips>"
     ));
+}
+
+/// A section's `description` renders as a `<description>` child element inside the group wrapper,
+/// before the file items — so the model sees the prose hint before the file listing.
+#[test]
+fn render_group_description_as_child_element() {
+    let resolved = Resolved {
+        sections: vec![Section {
+            heading: Some("Memories".into()),
+            description: Some("Use the read and write tools to access these files.".into()),
+            items: vec![Item::Listed {
+                name: "design-decisions".into(),
+                description: "How we work.".into(),
+                path: "memory/design-decisions.md".into(),
+            }],
+        }],
+    };
+    let rendered = resolved.render().unwrap();
+    assert!(rendered.contains(
+        "<Memories>\n<description>Use the read and write tools to access these files.</description>\n<design-decisions"
+    ));
+    // The description must come before the first item.
+    assert!(rendered.find("<description>").unwrap() < rendered.find("<design-decisions").unwrap());
 }

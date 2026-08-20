@@ -119,6 +119,7 @@ fn parses_context_entry_shapes() {
                 source: ContextSource::Files(vec!["./CLAUDE.md".into()]),
                 grants: ContextGrants::default(),
                 sort: None,
+                description: None,
             },
             ContextEntry {
                 heading: None,
@@ -128,6 +129,7 @@ fn parses_context_entry_shapes() {
                     create: false,
                 },
                 sort: None,
+                description: None,
             },
             ContextEntry {
                 heading: Some("Memories".into()),
@@ -137,6 +139,7 @@ fn parses_context_entry_shapes() {
                     create: true,
                 },
                 sort: None,
+                description: None,
             },
         ],
     );
@@ -158,8 +161,44 @@ fn parses_context_group_with_paths_and_sort() {
             source: ContextSource::Files(vec!["a/*.md".into(), "b/*.md".into()]),
             grants: ContextGrants::default(),
             sort: Some("modified desc".into()),
+            description: None,
         }],
     );
+}
+
+/// A labeled group's `description` — a prose hint for the model about how to use the files.
+#[test]
+fn parses_context_group_with_description() {
+    let role = parse_str(
+        r#"
+            [context]
+            Memories = { path = "./memories/", description = "Use the read and write tools to access." }
+            "#,
+    );
+    assert_eq!(
+        role.context,
+        vec![ContextEntry {
+            heading: Some("Memories".into()),
+            source: ContextSource::Files(vec!["./memories/".into()]),
+            grants: ContextGrants::default(),
+            sort: None,
+            description: Some("Use the read and write tools to access.".into()),
+        }],
+    );
+}
+
+/// `description` on a bare path fails — it's group-only, like `create` and `sort`.
+#[test]
+fn context_description_on_bare_path_fails() {
+    let err = super::parse(
+        Path::new("bad.toml"),
+        "[context]\n\"./notes.md\" = { description = \"how to use\" }\n",
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        LoadError::Validate(_, ValidationError::ContextBarePathGrant(_, "description"))
+    ));
 }
 
 /// An `exec` entry is a labeled dynamic section with no files, grants, or sort.
@@ -178,6 +217,7 @@ fn parses_context_exec_entry() {
             source: ContextSource::Exec("date".into()),
             grants: ContextGrants::default(),
             sort: None,
+            description: None,
         }],
     );
 }

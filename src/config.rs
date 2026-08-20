@@ -189,6 +189,10 @@ pub struct ContextEntry {
     /// Raw SQL-ish sort override for a multi-file source (`"modified desc"`); `None` = default
     /// `name asc`. Stored verbatim — parsed at render time (a later increment). Group-only.
     pub sort: Option<String>,
+    /// A prose hint for the model about how to use this entry's files — e.g. how to read or write
+    /// a memory. Rendered inside the group's tag as a `<description>` element. Group-only; a bare
+    /// path carrying `description` is rejected in [`validate_context_entry`].
+    pub description: Option<String>,
 }
 
 /// Where a [`ContextEntry`]'s bytes come from.

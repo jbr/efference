@@ -91,6 +91,11 @@ pub(super) struct RawContextEntry {
     create: bool,
     #[serde(default)]
     sort: Option<String>,
+    /// A prose hint rendered inside the group's tag — what the model should know
+    /// about how to use these files (e.g. how to read or write a memory). Group-only;
+    /// a bare path carrying `description` is rejected in [`validate_context_entry`].
+    #[serde(default)]
+    description: Option<String>,
 }
 
 /// A `[paths]` value: either the `true`/`false` sugar (`true` = read+write) or an explicit
@@ -336,6 +341,7 @@ pub(super) fn validate_context_entry(
             source: ContextSource::Files(vec![key]),
             grants: ContextGrants::default(),
             sort: None,
+            description: None,
         },
         RawContextValue::Sugar(false) => return Err(ValidationError::ContextDisabled(key)),
         RawContextValue::Table(t) => {
@@ -351,6 +357,7 @@ pub(super) fn validate_context_entry(
                     source: ContextSource::Exec(exec),
                     grants: ContextGrants::default(),
                     sort: None,
+                    description: t.description,
                 }
             } else if has_files {
                 // Labeled group: the key is a heading; the location is `path` then any `paths`.
@@ -365,6 +372,7 @@ pub(super) fn validate_context_entry(
                         create: t.create,
                     },
                     sort: t.sort,
+                    description: t.description,
                 }
             } else {
                 // Bare path carrying grants: the key itself is the path, no heading. Only `update`
@@ -375,6 +383,9 @@ pub(super) fn validate_context_entry(
                 if t.sort.is_some() {
                     return Err(ValidationError::ContextBarePathGrant(key, "sort"));
                 }
+                if t.description.is_some() {
+                    return Err(ValidationError::ContextBarePathGrant(key, "description"));
+                }
                 ContextEntry {
                     heading: None,
                     source: ContextSource::Files(vec![key]),
@@ -383,6 +394,7 @@ pub(super) fn validate_context_entry(
                         create: false,
                     },
                     sort: None,
+                    description: None,
                 }
             }
         }

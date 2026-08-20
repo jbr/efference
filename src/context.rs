@@ -30,10 +30,13 @@ pub struct Resolved {
 }
 
 /// One rendered section: a labeled group (`heading = Some`) or a bare entry (`heading = None`).
+/// `description` is the operator's prose hint about how to use these files (e.g. how to read or
+/// write a memory), rendered as a `<description>` child element inside the group wrapper.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Section {
     pub heading: Option<String>,
     pub items: Vec<Item>,
+    pub description: Option<String>,
 }
 
 /// A single resolved context item — an inlined file (body in full) or a listed stub (read on demand).
@@ -88,12 +91,18 @@ impl Resolved {
         }
         let mut blocks = vec![LEAD_IN.to_string()];
         for section in &self.sections {
-            let inner = section
-                .items
-                .iter()
-                .map(render_item)
-                .collect::<Vec<_>>()
-                .join("\n");
+            let mut inner = String::new();
+            if let Some(desc) = &section.description {
+                inner.push_str(&format!("<description>{desc}</description>\n"));
+            }
+            inner.push_str(
+                &section
+                    .items
+                    .iter()
+                    .map(render_item)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
             blocks.push(match &section.heading {
                 Some(heading) => format!("<{heading}>\n{inner}\n</{heading}>"),
                 None => inner,
@@ -185,6 +194,7 @@ pub fn resolve(entries: &[ContextEntry], base: &Path) -> Result<Resolved, Resolv
                 let body = run_exec(command, base, EXEC_TIMEOUT)?;
                 sections.push(Section {
                     heading: None,
+                    description: entry.description.clone(),
                     items: vec![Item::Exec {
                         name,
                         command: command.clone(),
@@ -235,7 +245,11 @@ pub fn resolve(entries: &[ContextEntry], base: &Path) -> Result<Resolved, Resolv
         }
         let heading =
             (entry.heading.is_some() && !labeled_single).then(|| entry.heading.clone().unwrap());
-        sections.push(Section { heading, items });
+        sections.push(Section {
+            heading,
+            description: entry.description.clone(),
+            items,
+        });
     }
     Ok(Resolved { sections })
 }

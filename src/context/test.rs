@@ -19,6 +19,7 @@ fn bare(path: &str) -> ContextEntry {
         source: ContextSource::Files(vec![path.into()]),
         grants: ContextGrants::default(),
         sort: None,
+        description: None,
     }
 }
 
@@ -28,6 +29,7 @@ fn labeled(heading: &str, paths: &[&str]) -> ContextEntry {
         source: ContextSource::Files(paths.iter().map(|s| s.to_string()).collect()),
         grants: ContextGrants::default(),
         sort: None,
+        description: None,
     }
 }
 
@@ -40,6 +42,7 @@ fn resolve_bare_inline_file_uses_the_basename() {
         resolved.sections,
         vec![Section {
             heading: None,
+            description: None,
             items: vec![Item::Inline {
                 name: "CLAUDE".into(),
                 path: "CLAUDE.md".into(),
@@ -65,6 +68,7 @@ fn resolve_prefers_frontmatter_name_and_lists_a_described_file() {
         resolved.sections,
         vec![Section {
             heading: None,
+            description: None,
             items: vec![Item::Listed {
                 name: "verify".into(),
                 description: "Drive it.".into(),
@@ -85,6 +89,7 @@ fn resolve_labeled_single_file_collapses_label_to_the_tag() {
         resolved.sections,
         vec![Section {
             heading: None,
+            description: None,
             items: vec![Item::Inline {
                 name: "Architecture".into(),
                 path: "arch.md".into(),
@@ -119,6 +124,7 @@ fn resolve_labeled_dir_wraps_sorted_members() {
         resolved.sections,
         vec![Section {
             heading: Some("Skills".into()),
+            description: None,
             items: vec![
                 Item::Listed {
                     name: "release".into(),
@@ -166,6 +172,7 @@ fn resolve_dir_walks_recursively_for_the_skills_layout() {
         resolved.sections,
         vec![Section {
             heading: Some("Skills".into()),
+            description: None,
             items: vec![
                 Item::Listed {
                     name: "alpha".into(),
@@ -212,6 +219,7 @@ fn resolve_follows_a_symlinked_directory() {
                 description: "From elsewhere.".into(),
                 path: "skills/linked/SKILL.md".into(),
             }],
+            description: None,
         }]
     );
     std::fs::remove_dir_all(&dir).unwrap();

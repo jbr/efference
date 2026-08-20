@@ -8,6 +8,7 @@ fn exec_entry(label: &str, command: &str) -> ContextEntry {
         source: ContextSource::Exec(command.into()),
         grants: ContextGrants::default(),
         sort: None,
+        description: None,
     }
 }
 
@@ -33,6 +34,7 @@ fn resolve_exec_section_lands_in_document_order() {
         resolved.sections[1],
         Section {
             heading: None,
+            description: None,
             items: vec![Item::Exec {
                 name: "Date".into(),
                 command: "echo from a command".into(),

@@ -9,6 +9,7 @@ fn ctx_entry(paths: &[&str], update: bool, create: bool) -> ContextEntry {
         source: ContextSource::Files(paths.iter().map(|s| s.to_string()).collect()),
         grants: ContextGrants { update, create },
         sort: None,
+        description: None,
     }
 }
 
@@ -193,6 +194,7 @@ fn exec_entry_grants_nothing() {
         source: ContextSource::Exec("date".into()),
         grants: ContextGrants::default(),
         sort: None,
+        description: None,
     }]);
     assert_eq!(
         structured(

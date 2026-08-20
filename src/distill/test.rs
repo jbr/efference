@@ -367,6 +367,7 @@ fn preamble_with(items: Vec<Item>) -> LogEntry {
             context: Resolved {
                 sections: vec![Section {
                     heading: Some("Skills".into()),
+                    description: None,
                     items,
                 }],
             },

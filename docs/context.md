@@ -12,13 +12,15 @@ in `src/env.rs`; the read/write grants in `src/policy.rs`.
 
 ## The identity line
 
-Ahead of the `[context]` block, the system prompt states the configured model
-verbatim — `You are {model}.` — unconditionally (`src/env.rs`). An untold model
-answers "which model are you" from its training priors, usually wrongly, and a
-log that mixes models across a session needs the current one to know which
-earlier turns were not its own. The line is also where a knowledge-cutoff note
-would attach; provider metadata has a slot for one (OpenRouter's
-`knowledge_cutoff`) that is unpopulated today, so the cutoff is not rendered
+The very first line of the system prompt is `You are {model}.` — the configured
+model verbatim, unconditionally (`src/env.rs`). It leads the prompt so the model
+knows what it is before reading anything else: the harness instructions, the
+`[context]` block, and the role all follow. An untold model answers "which model
+are you" from its training priors, usually wrongly, and a log that mixes models
+across a session needs the current one to know which earlier turns were not its
+own. The line is also where a knowledge-cutoff note would attach; provider
+metadata has a slot for one (OpenRouter's `knowledge_cutoff`) that is
+unpopulated today, so the cutoff is not rendered
 ([../backlog/model-identity.md](../backlog/model-identity.md) holds the
 render-when-present remainder).
 
@@ -39,14 +41,20 @@ Skills   = { paths = ["skills/a.md", "skills/b.md"] }          # labeled group, 
 A **bare path** (the key is the path) renders with no heading and may carry only
 `update`. A **labeled group** (the value carries `path`/`paths`) points at a location; its
 key is a heading — *pure presentation*, zero meaning to the harness. "Memories" and
-"Skills" are never tool concepts, just rows an operator wrote. `create` and `sort` are
-group-only (they are about a location of many files); a directory expands to every `.md`
-file **recursively** beneath it — which is what makes a Claude-Code-style skills tree
-(`skills/<name>/SKILL.md`, one directory per skill) land as one listing per skill —
-skipping hidden children, following symlinks with a cycle guard (a symlinked skill
-collection is a real layout), default order `name asc` by display path (the SQL-ish
-`sort` override is parsed but not yet applied). Validation fails closed on the nonsense
-shapes (`false` entries, group-only keys on a bare path, `exec` mixed with files).
+"Skills" are never tool concepts, just rows an operator wrote. `create`, `sort`, and
+`description` are group-only (they are about a location of many files); a directory
+expands to every `.md` file **recursively** beneath it — which is what makes a
+Claude-Code-style skills tree (`skills/<name>/SKILL.md`, one directory per skill) land as
+one listing per skill — skipping hidden children, following symlinks with a cycle guard
+(a symlinked skill collection is a real layout), default order `name asc` by display path
+(the SQL-ish `sort` override is parsed but not yet applied). Validation fails closed on
+the nonsense shapes (`false` entries, group-only keys on a bare path, `exec` mixed with
+files).
+
+`description` carries a prose hint for the model about how to use the group's files —
+e.g. for a memory store whose files are read by path with the `read` tool. It renders as a
+`<description>` child element inside the group wrapper, before the file listing. It has no
+meaning to the harness; the model decides what to do with it.
 
 ## Mode is the file's call; grants are the operator's
 
@@ -77,8 +85,10 @@ a memory store: descriptions are the index, `read` is recall, a write is a save,
 
 `context::Resolved::render` renders each file as a `<name>…</name>` tag — the operator's
 label (when a labeled entry resolves to one file), else the frontmatter `name`, else the
-basename — and wraps a multi-file group in a verbatim `<Heading>` tag. Inlined bodies ride
-verbatim inside their tag, so a body's own `#`/`---`/``` cannot blur a boundary. The
+basename — and wraps a multi-file group in a verbatim `<Heading>` tag. When the group
+carries a `description`, it renders as a `<description>…</description>` child element
+before the file listing. Inlined bodies ride verbatim inside their tag, so a body's own
+`#`/`---`/``` cannot blur a boundary. The
 format is byte-pinned and deliberately cheap to flip: whether tags actually beat markdown
 here is an unverified assumption, recorded for A/B in
 `backlog/preamble-format-experiment.md`. The block splices into the system prompt after
