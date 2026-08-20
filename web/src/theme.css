@@ -164,3 +164,24 @@
 ::selection {
   background: var(--selection);
 }
+
+/* Motion, from the mock: the breathing status dot. Plain keyframes; anyone
+   animating through them respects reduced motion via the guard below. */
+@keyframes ef-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .breathing {
+    animation: none;
+    opacity: 1;
+  }
+}

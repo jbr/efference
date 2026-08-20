@@ -1,33 +1,13 @@
-// The strip under the header (docs/web-client.md): the operator dials —
-// interrupt, pace + hold, review level — and the ambient furniture beside
-// them: the usage line, one row per process (elapsed, mute, background
-// handoff, kill), pending notifications with dismiss. Control furniture,
-// not transcript content.
+// The strip under the header (docs/web-client.md): the ambient furniture —
+// the usage line, one row per process (elapsed, mute, background handoff,
+// kill), pending notifications with dismiss. The loop dials moved to the
+// composer's status row (that is where gates arrive and state is
+// controlled); the rows here redistribute to the top bar and the bottom
+// panel as those units land.
 
 import { useEffect, useState } from "react";
-import {
-  dismissNotification,
-  interruptLoop,
-  killProcess,
-  patchLoop,
-  patchProcess,
-} from "../api/http.ts";
-import type {
-  Pace,
-  PendingNotification,
-  Process,
-  ReviewLevel,
-  Usage,
-} from "../api/types.ts";
-
-const PACES: [number, string][] = [
-  [0, "full"],
-  [2000, "2s"],
-  [10000, "10s"],
-  [30000, "30s"],
-];
-
-const LEVELS: ReviewLevel[] = ["autonomous", "spotter_human", "human_only"];
+import { dismissNotification, killProcess, patchProcess } from "../api/http.ts";
+import type { PendingNotification, Process, Usage } from "../api/types.ts";
 
 /** Re-render once a second while `active`, for the elapsed clocks. */
 function useTick(active: boolean) {
@@ -66,16 +46,10 @@ function usageLine(usage: Usage): string {
 }
 
 export function Controls({
-  pace,
-  reviewLevel,
-  running,
   processes,
   usage,
   notifications,
 }: {
-  pace: Pace | null;
-  reviewLevel: ReviewLevel | null;
-  running: boolean;
   processes: Process[];
   usage: Usage | null;
   notifications: PendingNotification[];
@@ -87,55 +61,10 @@ export function Controls({
     void call.then(() => setError(null)).catch((e) => setError(`${e}`));
   useTick(processes.length > 0);
 
-  const speed = pace?.speed_ms ?? 0;
   return (
     <div className="controls-strip dim">
       {error && <div className="error">{error}</div>}
-      <div className="controls">
-        <button disabled={!running} onClick={() => act(interruptLoop())}>
-          interrupt
-        </button>
-        <button
-          onClick={() => act(patchLoop({ held: !(pace?.held ?? false) }))}
-        >
-          {pace?.held ? "resume" : "hold"}
-        </button>
-        <label>
-          pace{" "}
-          <select
-            value={speed}
-            onChange={(e) =>
-              act(patchLoop({ speedMs: Number(e.target.value) }))
-            }
-          >
-            {!PACES.some(([ms]) => ms === speed) && (
-              <option value={speed}>{speed} ms</option>
-            )}
-            {PACES.map(([ms, label]) => (
-              <option key={ms} value={ms}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          review{" "}
-          <select
-            value={reviewLevel ?? ""}
-            onChange={(e) =>
-              act(patchLoop({ reviewLevel: e.target.value as ReviewLevel }))
-            }
-          >
-            {reviewLevel === null && <option value="" disabled hidden />}
-            {LEVELS.map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
-        </label>
-        {usage && <span>{usageLine(usage)}</span>}
-      </div>
+      {usage && <div className="controls">{usageLine(usage)}</div>}
       {processes.map((proc) => (
         <div className="controls" key={proc.id}>
           <span>

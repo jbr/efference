@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The web composer is where loop state is controlled: the dials (interrupt, hold, pace, review level) moved onto its status row beside a turn-state indicator, the input is the accent-prompt box, and a "rides along with the pending result" hint states the injection semantics while the loop runs.
 - The web transcript wears the design pass: a label gutter (`you`/`thinking`/`batch`/`ambient`/`config`), batch surfaces with accent call chrome, the serif voice for intent lines, spot reasons and distiller notes, density toggles (thinking, clear spots, ambient), a delivery echo for submitted turns, a live-output peek, and consolidation marks that name their extent.
 - The web client is themed: After Dark and Daylight as CSS-token sets behind a header select (plus a follow-system option), self-hosted Newsreader and IBM Plex Mono with their OFL texts, and syntax colors that resolve through the same tokens — a theme swap recolors code without re-tokenizing.
 - The system prompt states the configured model unconditionally (`You are {model}.`), and every `usage.jsonl` line records the model that served the request.

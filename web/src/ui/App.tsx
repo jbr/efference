@@ -82,9 +82,6 @@ export function App() {
         <div className="banner">{session.connection}…</div>
       )}
       <Controls
-        pace={session.topics.pace ?? null}
-        reviewLevel={session.topics.review_level ?? null}
-        running={session.topics.running ?? false}
         processes={session.topics.processes ?? []}
         usage={session.topics.usage ?? null}
         notifications={session.topics.notifications ?? []}
@@ -101,7 +98,12 @@ export function App() {
           resolve={(decision) => actions.resolveGate(gate.call_id, decision)}
         />
       )}
-      <Composer submit={actions.submitTurn} />
+      <Composer
+        submit={actions.submitTurn}
+        pace={session.topics.pace ?? null}
+        reviewLevel={session.topics.review_level ?? null}
+        running={session.topics.running ?? false}
+      />
     </div>
   );
 }

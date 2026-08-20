@@ -354,23 +354,35 @@ result is a constant acknowledgement. A pending, gated, or failed
 consolidate renders whole: the gate surface expects the call on screen, and
 an error is information.
 
-## The controls strip
+## The composer area, and what remains of the strip
 
-The operator dials and the ambient state (`ui/Controls.tsx`), rendered under
-the header from the topics the store already carries: interrupt
-(`POST /v1/loop/interrupt`, enabled while `running`), hold/resume and the
-pace select (one `PATCH /v1/loop`, which also moves the review-level select —
-the api layer's `patchLoop` translates to the wire's partial-`pace` shape),
-and the usage line (context occupancy and the session cost, whichever halves
-the provider filled). One row per process: command, elapsed (client-computed
-from `spawned_at`, ticked once a second while any process runs), muted flag,
-and the verbs — mute/unmute, the background handoff with its optional note
+The loop dials live on the composer's status row (`ui/Composer.tsx`): gates
+arrive at the composer, so it is where current state is controlled.
+Interrupt (`POST /v1/loop/interrupt`, enabled while `running`), hold/resume,
+the pace select, and the review-level select — one `PATCH /v1/loop` for the
+dials; the api layer's `patchLoop` translates to the wire's partial-`pace`
+shape. The row leads with the turn state — a breathing accent dot beside
+"your turn" in the serif when the loop is idle, a dim `running…` while it
+moves — and the space between state and dials is reserved for the key-hint
+strip (binds are deferred to interactive suggestions;
+[backlog/web/README.md](../backlog/web/README.md)). While the loop runs, the
+input carries a "rides along with the pending result" hint: the
+mid-trajectory injection semantics ([control-channel.md](control-channel.md)),
+stated at the point where the text is being typed.
+
+The strip under the header (`ui/Controls.tsx`) keeps the ambient furniture
+whose homes land with later units: the usage line (context occupancy and the
+session cost, whichever halves the provider filled — the top bar's, when it
+exists), one row per process — command, elapsed (client-computed from
+`spawned_at`, ticked once a second while any process runs), muted flag, and
+the verbs: mute/unmute, the background handoff with its optional note
 (`PATCH /v1/processes/:id`, a 202) on the foreground entry, kill
-(`DELETE /v1/processes/:id`) on any. Pending notifications render one row
-each with dismiss (`DELETE /v1/notifications/:id`) — on an idle loop the
-inbox delivers immediately, so these rows only appear while a tool is
-mid-run. A non-`live` connection shows as a full-width banner above the
-strip, not just the header word.
+(`DELETE /v1/processes/:id`) on any — and pending notifications, one row
+each with dismiss (`DELETE /v1/notifications/:id`); on an idle loop the
+inbox delivers immediately, so those rows only appear while a tool is
+mid-run. Process and notification rows are the bottom panel's, when it
+lands. A non-`live` connection shows as a full-width banner above the strip,
+not just the header word.
 
 ## The gate surface
 
