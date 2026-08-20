@@ -11,7 +11,10 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
     assert!(shared.is_settled(), "a fresh daemon is idle");
 
     // Submitted but not yet dequeued — busy (the submit-race guard via the queued count).
-    shared.submit_turn("hi".into());
+    shared.submit_turn(SubmittedTurn {
+        text: "hi".into(),
+        submission_id: "sub-test".into(),
+    });
     assert!(
         !shared.is_settled(),
         "a queued turn is busy before the loop sees it"
@@ -46,7 +49,10 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn await_settled_returns_when_the_loop_parks() {
     let (shared, _rx) = Shared::new(Log::in_memory());
-    shared.submit_turn("hi".into());
+    shared.submit_turn(SubmittedTurn {
+        text: "hi".into(),
+        submission_id: "sub-test".into(),
+    });
     shared.dequeued_turn(); // busy, mid-turn
 
     let waiter = {
@@ -83,9 +89,18 @@ fn drain_injected_turns_delivers_queued_turns_and_balances_settle() {
     };
 
     // Three turns arrive while the loop is busy (mid-trajectory), one of them blank.
-    shared.submit_turn("first".into());
-    shared.submit_turn("   ".into());
-    shared.submit_turn("second".into());
+    shared.submit_turn(SubmittedTurn {
+        text: "first".into(),
+        submission_id: "sub-1".into(),
+    });
+    shared.submit_turn(SubmittedTurn {
+        text: "   ".into(),
+        submission_id: "sub-2".into(),
+    });
+    shared.submit_turn(SubmittedTurn {
+        text: "second".into(),
+        submission_id: "sub-3".into(),
+    });
     assert!(
         !shared.is_settled(),
         "queued turns → not settled while they wait"
@@ -93,8 +108,8 @@ fn drain_injected_turns_delivers_queued_turns_and_balances_settle() {
 
     let drained = frontend.drain_injected_turns();
     assert_eq!(
-        drained,
-        vec!["first".to_string(), "second".to_string()],
+        drained.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
+        vec!["first", "second"],
         "non-blank turns in submission order; the blank one is dropped"
     );
     assert!(
@@ -169,7 +184,10 @@ async fn a_submit_resumes_and_skips_the_seam() {
     shared.set_pace(None, Some(true));
     assert!(shared.pace_snapshot().1, "held before submit");
 
-    shared.submit_turn("go".into());
+    shared.submit_turn(SubmittedTurn {
+        text: "go".into(),
+        submission_id: "sub-test".into(),
+    });
     assert!(!shared.pace_snapshot().1, "submit dropped the hold");
 
     // A turn is queued, so the seam returns at once even though we had been held.
@@ -188,7 +206,10 @@ async fn a_submit_interrupts_a_finite_paced_sleep() {
     let s2 = Arc::clone(&shared);
     let seam = tokio::spawn(async move { s2.pace_at_seam().await });
     tokio::time::sleep(Duration::from_millis(20)).await; // let the seam enter its sleep
-    shared.submit_turn("urgent".into()); // fires the pace interrupt
+    shared.submit_turn(SubmittedTurn {
+        text: "urgent".into(),
+        submission_id: "sub-test".into(),
+    }); // fires the pace interrupt
 
     tokio::time::timeout(Duration::from_millis(500), seam)
         .await

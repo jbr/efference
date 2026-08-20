@@ -49,7 +49,7 @@ async fn tcp_server(auth: &Arc<TcpAuth>) -> (TestServer<impl trillium::Handler>,
 
 /// Keeps the turn-inbox receiver alive for the server's lifetime, so a routed
 /// `POST /turns` has a live channel to land on.
-struct TurnsGuard(#[allow(dead_code)] mpsc::UnboundedReceiver<String>);
+struct TurnsGuard(#[allow(dead_code)] mpsc::UnboundedReceiver<SubmittedTurn>);
 
 /// The six digits currently valid for this auth's derived TOTP secret.
 fn current_code(auth: &TcpAuth) -> String {

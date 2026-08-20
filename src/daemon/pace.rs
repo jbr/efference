@@ -17,7 +17,7 @@ pub(super) struct Pace {
 }
 
 impl Shared {
-    pub(super) fn submit_turn(&self, text: String) {
+    pub(super) fn submit_turn(&self, turn: SubmittedTurn) {
         // Count the turn as queued *before* sending, so `is_settled` reads "busy" the instant
         // the turn is accepted — even before the loop dequeues it (the `/settle` submit race,
         // docs/permissions.md).
@@ -33,7 +33,7 @@ impl Shared {
         self.pace_interrupt.notify_waiters();
         // The receiver lives in the loop's `RemoteFrontend`; a send fails only if
         // the loop has exited, in which case the daemon is shutting down anyway.
-        let _ = self.turns_tx.send(text);
+        let _ = self.turns_tx.send(turn);
     }
 
     /// The current pace `(speed, held)` — surfaced on `GET /state` and read by the juncture sleep.

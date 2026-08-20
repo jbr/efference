@@ -61,6 +61,15 @@ impl Client {
         self.post("/turns", body).await.map(drop)
     }
 
+    /// Enqueue a user turn under a client-minted submission id
+    /// (docs/control-api.md): the id is recorded on the resulting `User`
+    /// entry and echoed in the returned 202 body, so the caller can reconcile
+    /// delivery by exact key rather than content.
+    pub async fn turn_with_submission_id(&self, text: &str, submission_id: &str) -> Result<String> {
+        let body = serde_json::json!({ "text": text, "submission_id": submission_id }).to_string();
+        self.post("/turns", body).await
+    }
+
     /// Submit a turn and **block until the daemon settles** (`POST /turns?wait`) — the turn
     /// reaches a gate or completes — returning the resulting `/state` JSON. Collapses
     /// "act → poll `/state` in a loop → read" into one round-trip

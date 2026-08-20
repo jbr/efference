@@ -108,6 +108,60 @@ fn legacy_preamble_without_context_reads_back_empty() {
     }
 }
 
+/// `submission_id` (docs/control-api.md) survives the jsonl round-trip when
+/// present and is skipped entirely when absent — so a log predating the field
+/// and an entry the loop originated itself serialize byte-identically to
+/// before it existed.
+#[test]
+fn submission_id_round_trips_and_is_skipped_when_absent() {
+    let path =
+        std::env::temp_dir().join(format!("efference-submission-{}.jsonl", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+
+    let mut log = Log::create(&path).unwrap();
+    log.append_submission(
+        0,
+        Payload::User(vec![ContentBlock::Text("hi".into())]),
+        Some("sub-abc".into()),
+    )
+    .unwrap();
+    log.append(0, Payload::User(vec![ContentBlock::Text("note".into())]))
+        .unwrap();
+    drop(log);
+
+    let raw = std::fs::read_to_string(&path).unwrap();
+    let lines: Vec<&str> = raw.lines().collect();
+    assert!(lines[0].contains(r#""submission_id":"sub-abc""#));
+    assert!(!lines[1].contains("submission_id"));
+
+    let loaded = load(&path).unwrap();
+    assert_eq!(loaded[0].submission_id.as_deref(), Some("sub-abc"));
+    assert_eq!(loaded[1].submission_id, None);
+
+    std::fs::remove_file(&path).unwrap();
+}
+
+/// `submission_id` is log metadata like `at` (docs/log-and-projection.md):
+/// two logs identical except for it must project to the same wire bytes.
+#[test]
+fn submission_id_never_reaches_the_projection() {
+    let mut with = Log::in_memory();
+    with.append_submission(
+        0,
+        Payload::User(vec![ContentBlock::Text("hello".into())]),
+        Some("sub-xyz".into()),
+    )
+    .unwrap();
+    let mut without = Log::in_memory();
+    without
+        .append(0, Payload::User(vec![ContentBlock::Text("hello".into())]))
+        .unwrap();
+    assert_eq!(
+        serde_json::to_string(&project(with.entries())).unwrap(),
+        serde_json::to_string(&project(without.entries())).unwrap(),
+    );
+}
+
 /// Blank lines tolerated; entry count survives.
 #[test]
 fn load_tolerates_blank_lines() {

@@ -217,86 +217,65 @@ describe("the output tail", () => {
   });
 });
 
+/** A `User` entry as the daemon logs a socket submission: the text under the
+ * submission id the client (or daemon) minted for the POST. */
+const submitted = (seq: number, id: string, text: string): LogEntry => ({
+  ...entry(seq, { User: [{ Text: text }] }),
+  submission_id: id,
+});
+
 describe("pending turns", () => {
-  it("settles the first content match when the User entry arrives", () => {
+  it("settles exactly the turn whose entry arrives, by submission id", () => {
     const queued = pushPendingTurn(
-      pushPendingTurn(emptySession, "first", null),
+      pushPendingTurn(emptySession, "sub-a", "first"),
+      "sub-b",
       "second",
-      null,
     );
-    const s = fold(queued, [logFrame(entry(1, { User: [{ Text: "first" }] }))]);
-    expect(s.pendingTurns).toEqual(["second"]);
+    const s = fold(queued, [logFrame(submitted(1, "sub-a", "first"))]);
+    expect(s.pendingTurns).toEqual([{ id: "sub-b", text: "second" }]);
   });
 
-  it("leaves the queue alone for a User entry that matches nothing", () => {
-    const queued = pushPendingTurn(emptySession, "mine", null);
+  it("leaves the queue alone for an entry with someone else's id", () => {
+    const queued = pushPendingTurn(emptySession, "sub-mine", "mine");
     const s = fold(queued, [
-      logFrame(entry(1, { User: [{ Text: "someone else's" }] })),
+      logFrame(submitted(1, "sub-other", "someone else's")),
     ]);
-    expect(s.pendingTurns).toEqual(["mine"]);
+    expect(s.pendingTurns).toEqual([{ id: "sub-mine", text: "mine" }]);
   });
 
-  it("settles identical turns one at a time, in order", () => {
+  it("settles identical texts independently — ids, not content, key them", () => {
     const queued = pushPendingTurn(
-      pushPendingTurn(emptySession, "go", null),
+      pushPendingTurn(emptySession, "sub-1", "go"),
+      "sub-2",
       "go",
-      null,
     );
-    const once = fold(queued, [logFrame(entry(1, { User: [{ Text: "go" }] }))]);
-    expect(once.pendingTurns).toEqual(["go"]);
-    const twice = fold(once, [logFrame(entry(2, { User: [{ Text: "go" }] }))]);
+    const once = fold(queued, [logFrame(submitted(1, "sub-2", "go"))]);
+    expect(once.pendingTurns).toEqual([{ id: "sub-1", text: "go" }]);
+    const twice = fold(once, [logFrame(submitted(2, "sub-1", "go"))]);
     expect(twice.pendingTurns).toEqual([]);
   });
 
-  it("ignores non-User entries", () => {
-    const queued = pushPendingTurn(emptySession, "pending", null);
+  it("ignores entries with no submission id", () => {
+    const queued = pushPendingTurn(emptySession, "sub-x", "pending");
     const s = fold(queued, [
-      logFrame(entry(1, { Assistant: { thinking: [], text: [], calls: [] } })),
+      logFrame(entry(1, { User: [{ Text: "pending" }] })),
     ]);
-    expect(s.pendingTurns).toEqual(["pending"]);
+    expect(s.pendingTurns).toEqual([{ id: "sub-x", text: "pending" }]);
   });
 
   it("skips the push when the entry already folded ahead of the 202", () => {
-    // The submit response can lose the race to the entry's own log frame; the
-    // pre-submit cursor (seq 4 here) marks the entry as this turn's delivery.
-    const folded = fold(seed(emptySession, [entry(4, { Assistant: { thinking: [], text: [], calls: [] } })]), [
-      logFrame(entry(5, { User: [{ Text: "raced" }] })),
-    ]);
-    const s = pushPendingTurn(folded, "raced", 4);
-    expect(s.pendingTurns).toEqual([]);
-  });
-
-  it("still queues when the only content match predates the submit", () => {
-    // An identical turn sent earlier in the session is not this submission's
-    // delivery: entries at or below the pre-submit cursor don't count.
+    // The submit response can lose the race to the entry's own log frame;
+    // the id makes "already delivered" an exact check.
     const folded = fold(emptySession, [
-      logFrame(entry(1, { User: [{ Text: "again" }] })),
+      logFrame(submitted(1, "sub-r", "raced")),
     ]);
-    const s = pushPendingTurn(folded, "again", 1);
-    expect(s.pendingTurns).toEqual(["again"]);
+    const s = pushPendingTurn(folded, "sub-r", "raced");
+    expect(s.pendingTurns).toEqual([]);
   });
 
   it("settles from a re-seed that absorbed the User entry", () => {
-    const queued = pushPendingTurn(
-      fold(emptySession, [logFrame(entry(1, { Assistant: { thinking: [], text: [], calls: [] } }))]),
-      "reseeded",
-      1,
-    );
-    const s = seed(queued, [
-      entry(1, { Assistant: { thinking: [], text: [], calls: [] } }),
-      entry(2, { User: [{ Text: "reseeded" }] }),
-    ]);
+    const queued = pushPendingTurn(emptySession, "sub-s", "reseeded");
+    const s = seed(queued, [submitted(1, "sub-s", "reseeded")]);
     expect(s.pendingTurns).toEqual([]);
-  });
-
-  it("does not settle from seeded entries already behind the cursor", () => {
-    // A tail window mostly re-reads entries the fold has seen; an old identical
-    // User entry among them is not this pending turn's delivery.
-    const seen = fold(emptySession, [
-      logFrame(entry(1, { User: [{ Text: "echo" }] })),
-    ]);
-    const queued = pushPendingTurn(seen, "echo", 1);
-    const s = seed(queued, [entry(1, { User: [{ Text: "echo" }] })]);
-    expect(s.pendingTurns).toEqual(["echo"]);
   });
 });

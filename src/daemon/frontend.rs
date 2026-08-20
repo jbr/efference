@@ -9,11 +9,11 @@ use super::*;
 pub struct RemoteFrontend {
     pub(super) shared: Arc<Shared>,
     /// Single-consumer receiver of the turn inbox.
-    pub(super) turns: mpsc::UnboundedReceiver<String>,
+    pub(super) turns: mpsc::UnboundedReceiver<SubmittedTurn>,
 }
 
 impl Frontend for RemoteFrontend {
-    async fn read_user_turn(&mut self) -> Option<String> {
+    async fn read_user_turn(&mut self) -> Option<SubmittedTurn> {
         // Mark the loop parked so `/settle` reports idle while we wait (and wake any waiter).
         self.shared.parking();
         // Blocks until a `POST /turns` arrives. `None` (all senders dropped) only
@@ -26,7 +26,7 @@ impl Frontend for RemoteFrontend {
         turn
     }
 
-    fn drain_injected_turns(&mut self) -> Vec<String> {
+    fn drain_injected_turns(&mut self) -> Vec<SubmittedTurn> {
         // Non-blocking pull of everything queued right now (docs/control-channel.md).
         // Each drained turn consumes its `queued` count — the loop is already running, so we
         // only balance the counter (never touch `running`), or `/settle` would read "busy"
@@ -34,10 +34,10 @@ impl Frontend for RemoteFrontend {
         // mid-trajectory empty submit mirrors the idle path's blank-keep-idling, never landing
         // an empty `User` entry on the wire.
         let mut turns = Vec::new();
-        while let Ok(text) = self.turns.try_recv() {
+        while let Ok(turn) = self.turns.try_recv() {
             self.shared.injected_turn_dequeued();
-            if !text.trim().is_empty() {
-                turns.push(text);
+            if !turn.text.trim().is_empty() {
+                turns.push(turn);
             }
         }
         turns

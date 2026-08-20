@@ -327,17 +327,17 @@ renders immediately as a dimmed, `⋯ pending`-marked user turn after the live
 tail, and flips to a committed turn when the matching `User` entry streams
 back — the operator's delivery signal, which matters most across a reconnect,
 when "did that land?" is otherwise unanswerable from the screen. The queue
-lives on the session (`pendingTurns`), pushed by the submit action after the
-202 and settled by the fold: an arriving `User` entry drops the first content
-match, the TUI's reconciliation rule (the submit response carries only a
-status, so there is nothing better to key on; identical queued turns settle
-one at a time, in order). Two orderings make delivery arrive outside the
-fold, and both are handled: the entry's log frame can fold *before* the 202
-body resolves (the daemon commits and broadcasts independently of writing the
-response), so the push takes the pre-submit log cursor and skips itself when
-a newer matching `User` entry already folded; and a re-seed (`seed`) settles
-pending turns against the entries it absorbs beyond the cursor, since those
-never pass through `applyLog`.
+lives on the session (`pendingTurns`), keyed by the submission id the submit
+action mints and the daemon echoes onto the resulting `User` entry
+(docs/control-api.md), so settling is an exact lookup: the fold drops the
+pending turn whose id an arriving entry carries. Two orderings make delivery
+arrive outside the fold, and both are handled: the entry's log frame can fold
+*before* the 202 body resolves (the daemon commits and broadcasts
+independently of writing the response), so the push skips itself when the
+entry with its id already folded; and a re-seed (`seed`) settles pending
+turns against the entries it absorbs, since those never pass through
+`applyLog`. (The TUI settles its echoes by content match instead — sound
+there because its push is optimistic, ordered before any possible arrival.)
 
 **The live-output peek.** A running tool's streamed output shows as the last
 10 lines, dimmed, under a `⋯ running · N lines` header — a glance at a live

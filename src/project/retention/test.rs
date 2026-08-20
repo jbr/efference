@@ -11,6 +11,7 @@ fn result(seq: u64, lines: usize, wire: WireState) -> LogEntry {
         seq,
         turn: 0,
         at: Timestamp(1000 + seq),
+        submission_id: None,
         payload: Payload::ToolResult {
             call_id: CallId(format!("call_{seq}")),
             raw: RawResult {

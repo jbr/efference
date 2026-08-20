@@ -7,7 +7,6 @@
 
 import type {
   CallId,
-  ContentBlock,
   Frame,
   LogEntry,
   OutputData,
@@ -54,10 +53,17 @@ export interface Session {
   streaming: Streaming;
   /** Turns the daemon accepted (a 202) whose `User` entries have not streamed
    * back yet — the operator's delivery signal (docs/web-client.md). Ordered;
-   * an arriving `User` entry drops the first content match, the TUI's
-   * reconciliation rule (the submit response carries only a status, so there
-   * is nothing better to key on). */
-  pendingTurns: string[];
+   * each is keyed by the client-minted submission id the daemon echoes onto
+   * the resulting `User` entry, so settling is an exact lookup rather than a
+   * content match. */
+  pendingTurns: PendingTurn[];
+}
+
+/** One queued delivery echo: the submitted text (for display) under the
+ * submission id its `User` entry will carry (docs/control-api.md). */
+export interface PendingTurn {
+  id: string;
+  text: string;
 }
 
 export const emptyStreaming: Streaming = {
@@ -91,52 +97,39 @@ export function spotFor(entries: LogEntry[], callId: CallId): Spot | null {
 }
 
 /** Queue a turn the daemon just accepted; `applyLog` settles it when the
- * matching `User` entry arrives. `sinceSeq` is the log cursor from before the
- * submit: the daemon commits the `User` entry and broadcasts its frame
- * independently of writing the 202 body, so the entry can fold *before* the
- * submit response resolves — queueing then would strand a pending copy nothing
- * will ever settle. An entry newer than the pre-submit cursor with this
- * content means the turn is already delivered, so there is nothing to queue. */
+ * `User` entry carrying `id` arrives. The daemon commits the entry and
+ * broadcasts its frame independently of writing the 202 body, so the entry
+ * can fold *before* the submit response resolves — queueing then would strand
+ * an echo nothing will ever settle, so a turn whose entry already folded is
+ * not queued at all. */
 export function pushPendingTurn(
   session: Session,
+  id: string,
   text: string,
-  sinceSeq: Seq | null,
 ): Session {
-  const delivered = session.entries.some(
-    (e) =>
-      (sinceSeq === null || e.seq > sinceSeq) &&
-      "User" in e.payload &&
-      userText(e.payload.User) === text,
-  );
-  if (delivered) return session;
-  return { ...session, pendingTurns: [...session.pendingTurns, text] };
+  if (session.entries.some((e) => e.submission_id === id)) return session;
+  return { ...session, pendingTurns: [...session.pendingTurns, { id, text }] };
 }
 
-const userText = (blocks: ContentBlock[]) =>
-  blocks.map((b) => ("Text" in b ? b.Text : "")).join("\n\n");
+const settlePendingTurns = (
+  pending: PendingTurn[],
+  entry: LogEntry,
+): PendingTurn[] =>
+  entry.submission_id === undefined
+    ? pending
+    : pending.filter((p) => p.id !== entry.submission_id);
 
-function settlePendingTurns(pending: string[], entry: LogEntry): string[] {
-  if (!("User" in entry.payload)) return pending;
-  const at = pending.indexOf(userText(entry.payload.User));
-  if (at === -1) return pending;
-  return [...pending.slice(0, at), ...pending.slice(at + 1)];
-}
-
-/** Seed the transcript window from a `GET /log?tail=` read. Entries beyond the
- * cursor are new facts arriving outside `applyLog`, so they settle pending
- * turns here the way a streamed frame would — a re-seed (retry after login,
- * a fresh catch-up read) must not strand a queued turn whose `User` entry it
- * absorbed. */
+/** Seed the transcript window from a `GET /log?tail=` read, settling any
+ * pending turn whose `User` entry the window absorbed — a re-seed (retry
+ * after login, a fresh catch-up read) arrives outside `applyLog`, and must
+ * not strand a queued echo. */
 export function seed(session: Session, entries: LogEntry[]): Session {
   const last = entries.at(-1);
-  const pendingTurns = entries
-    .filter((e) => session.lastSeq === null || e.seq > session.lastSeq)
-    .reduce(settlePendingTurns, session.pendingTurns);
   return {
     ...session,
     entries,
     lastSeq: last ? last.seq : session.lastSeq,
-    pendingTurns,
+    pendingTurns: entries.reduce(settlePendingTurns, session.pendingTurns),
   };
 }
 

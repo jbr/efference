@@ -132,6 +132,7 @@ fn entry(seq: u64, payload: efference::log::Payload) -> efference::log::LogEntry
         seq,
         turn: 1,
         at: efference::log::Timestamp(0),
+        submission_id: None,
         payload,
     }
 }

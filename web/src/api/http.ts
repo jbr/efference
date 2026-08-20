@@ -64,8 +64,11 @@ export const del = <T>(path: string) => request<T>("DELETE", path);
 
 export const fetchState = () => get<StateSnapshot>("/v1/state");
 export const fetchLogTail = (n: number) => get<LogEntry[]>(`/v1/log?tail=${n}`);
-export const submitTurn = (text: string) =>
-  post<{ status: string }>("/v1/turns", { text });
+export const submitTurn = (text: string, submissionId: string) =>
+  post<{ status: string; submission_id: string }>("/v1/turns", {
+    text,
+    submission_id: submissionId,
+  });
 // The id is a precondition: a 409 gate_moved answer means that call is no
 // longer the pending gate, and `detail` carries the current one.
 export const resolveApproval = (callId: CallId, decision: Decision) =>

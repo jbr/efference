@@ -5,16 +5,16 @@ use super::*;
 /// How the idle loop was woken (docs/supervisor.md): a user turn, a blank line (keep idling),
 /// a notification event (run a standalone triage), or shutdown.
 pub(super) enum IdleWake {
-    Turn(String),
+    Turn(SubmittedTurn),
     Blank,
     Event,
     Shutdown,
 }
 
 impl IdleWake {
-    pub(super) fn from_turn(line: Option<String>) -> Self {
-        match line {
-            Some(l) if !l.trim().is_empty() => IdleWake::Turn(l),
+    pub(super) fn from_turn(turn: Option<SubmittedTurn>) -> Self {
+        match turn {
+            Some(t) if !t.text.trim().is_empty() => IdleWake::Turn(t),
             Some(_) => IdleWake::Blank,
             None => IdleWake::Shutdown,
         }

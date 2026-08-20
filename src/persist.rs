@@ -57,11 +57,24 @@ impl Log {
     /// can't lose an acknowledged entry (we stop short of `fsync` per line in
     /// Phase 0 — a deliberate durability/throughput tradeoff to revisit).
     pub fn append(&mut self, turn: Turn, payload: Payload) -> io::Result<Seq> {
+        self.append_submission(turn, payload, None)
+    }
+
+    /// [`append`](Self::append) with the submission id of the `POST /v1/turns`
+    /// the entry realizes (docs/control-api.md) — the loop's user-turn appends
+    /// use this; everything else appends without one.
+    pub fn append_submission(
+        &mut self,
+        turn: Turn,
+        payload: Payload,
+        submission_id: Option<String>,
+    ) -> io::Result<Seq> {
         let seq = self.entries.len() as Seq;
         let entry = LogEntry {
             seq,
             turn,
             at: Timestamp::now(),
+            submission_id,
             payload,
         };
         if let Some(sink) = &mut self.sink {

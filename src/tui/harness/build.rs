@@ -14,6 +14,7 @@ impl Screenplay<'_> {
             seq,
             turn: 1,
             at: Timestamp(0),
+            submission_id: None,
             payload,
         }))
     }

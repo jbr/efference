@@ -14,6 +14,10 @@ export interface LogEntry {
   seq: Seq;
   turn: number;
   at: number;
+  /** The `POST /v1/turns` submission this entry realized — present on every
+   * socket-submitted `User` entry (client-minted or daemon-minted), absent on
+   * entries the loop originates itself (docs/control-api.md). */
+  submission_id?: string;
   payload: Payload;
 }
 

@@ -43,7 +43,7 @@ use crate::api::{
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
 use crate::distill::Distiller;
-use crate::frontend::{Approval, Frontend, Interrupt};
+use crate::frontend::{Approval, Frontend, Interrupt, SubmittedTurn};
 use crate::log::{CallId, EditState, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{ApiMessage, Retention, place_trailing_cache_breakpoint, project};
@@ -108,7 +108,7 @@ pub struct Shared {
     /// synchronous `project`/append — never an `await`.
     log: Mutex<Log>,
     /// Sender half of the turn inbox; handlers push, the loop drains the receiver.
-    turns_tx: mpsc::UnboundedSender<String>,
+    turns_tx: mpsc::UnboundedSender<SubmittedTurn>,
     /// In-flight approval gates keyed by the `tool_use` `CallId` (already unique,
     /// already on the wire — no new id scheme).
     approvals: Mutex<HashMap<CallId, oneshot::Sender<Approval>>>,
@@ -287,13 +287,16 @@ impl Shared {
     /// Build the shared state under the built-in default role (no config). The real
     /// daemon uses [`Shared::with_role`]; this convenience keeps the many tests that
     /// don't exercise role config terse.
-    pub fn new(log: Log) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
+    pub fn new(log: Log) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
         Self::with_role(log, LoadedConfig::default())
     }
 
     /// Build the shared state under a resolved role and hand back the turn-inbox
     /// receiver for the loop.
-    pub fn with_role(log: Log, role: LoadedConfig) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
+    pub fn with_role(
+        log: Log,
+        role: LoadedConfig,
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
         Self::with_role_and_scratch(log, role, None)
     }
 
@@ -304,7 +307,7 @@ impl Shared {
         log: Log,
         role: LoadedConfig,
         scratch: Option<PathBuf>,
-    ) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
         Self::with_role_scratch_and_upstream_failure(log, role, scratch, upstream_failure_state())
     }
 
@@ -316,7 +319,7 @@ impl Shared {
         role: LoadedConfig,
         scratch: Option<PathBuf>,
         upstream_failure: UpstreamFailureState,
-    ) -> (Arc<Self>, mpsc::UnboundedReceiver<String>) {
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
         let (turns_tx, turns_rx) = mpsc::unbounded_channel();
 
         // Bounded ring: a consumer that falls this far behind drops the oldest
@@ -452,6 +455,27 @@ impl Shared {
         call: &crate::log::ToolCall,
     ) -> Result<Option<crate::log::ToolCall>, String> {
         crate::expand::expand_call(&self.expander, call)
+    }
+
+    /// [`append`](Self::append) carrying the submission id of the
+    /// `POST /v1/turns` the entry realizes (docs/control-api.md) — the loop's
+    /// user-turn appends route here so the entry names its originating
+    /// submission.
+    pub fn append_submission(
+        &self,
+        turn: Turn,
+        payload: Payload,
+        submission_id: String,
+    ) -> io::Result<Seq> {
+        // User turns only — a submitted turn is never a `ConfigEdit`, so none of
+        // `append`'s proposal-lifecycle handling applies here.
+        let seq = self
+            .log
+            .lock()
+            .unwrap()
+            .append_submission(turn, payload, Some(submission_id))?;
+        self.appended.notify_waiters();
+        Ok(seq)
     }
 
     /// Append to the log (durably) and wake SSE tailers. The single appender is

@@ -20,6 +20,17 @@
 
 use crate::log::{ConfigChange, ToolCall};
 
+/// A user turn as it arrived over the control channel: the text plus the
+/// submission id that names this `POST /v1/turns` in the 202 body and on the
+/// resulting `User` entry (docs/control-api.md). The id is adopted from the
+/// client when it minted one, daemon-minted otherwise, so every submitted
+/// turn carries one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubmittedTurn {
+    pub text: String,
+    pub submission_id: String,
+}
+
 /// The operator's intent when interrupting a *running* tool (docs/supervisor.md).
 /// Both reach the one intervention point pace can't — mid-tool — but differ in
 /// what happens to the child.
@@ -63,7 +74,7 @@ pub enum Approval {
 #[allow(async_fn_in_trait)] // single-consumer interaction; no Send bound needed.
 pub trait Frontend {
     /// Read the next user turn. `None` = end of input → quit.
-    async fn read_user_turn(&mut self) -> Option<String>;
+    async fn read_user_turn(&mut self) -> Option<SubmittedTurn>;
 
     /// Non-blocking drain of any user turns submitted **while the loop was
     /// mid-trajectory** (docs/control-channel.md). The loop calls this at
@@ -73,7 +84,7 @@ pub trait Frontend {
     /// whole trajectory ends. Returns the queued turns in submission order (blank
     /// turns filtered); empty when nothing is queued. Default: none — a frontend with
     /// no out-of-band turn queue never has anything to drain.
-    fn drain_injected_turns(&mut self) -> Vec<String> {
+    fn drain_injected_turns(&mut self) -> Vec<SubmittedTurn> {
         Vec::new()
     }
 

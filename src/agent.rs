@@ -21,7 +21,7 @@ use crate::config::Refreshed;
 use crate::consolidate;
 use crate::daemon::{RequestOrigin, Shared, StreamDelta};
 use crate::distill::{BgVerdict, Distiller, Pending, is_peek_tool};
-use crate::frontend::{Approval, Frontend};
+use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
     ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Mark, MarkKind, Notification,
@@ -105,9 +105,13 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 // Escalated: fall into the trajectory with no new user turn — the model
                 // responds to the pinned event at the wire tail.
             }
-            IdleWake::Turn(line) => {
+            IdleWake::Turn(submitted) => {
                 turn += 1;
-                shared.append(turn, Payload::User(vec![ContentBlock::Text(line)]))?;
+                shared.append_submission(
+                    turn,
+                    Payload::User(vec![ContentBlock::Text(submitted.text)]),
+                    submitted.submission_id,
+                )?;
             }
         }
 
@@ -137,9 +141,13 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             // undismissable), which `project` merges into the trailing tool_result message
             // as `[tool_result…, text]`. A turn arriving while the loop is idle still takes
             // the fast path (the outer `select!`); this only catches mid-trajectory ones.
-            for line in frontend.drain_injected_turns() {
+            for submitted in frontend.drain_injected_turns() {
                 turn += 1;
-                shared.append(turn, Payload::User(vec![ContentBlock::Text(line)]))?;
+                shared.append_submission(
+                    turn,
+                    Payload::User(vec![ContentBlock::Text(submitted.text)]),
+                    submitted.submission_id,
+                )?;
             }
             // Project, then place the single trailing cache breakpoint just before
             // sending — projection stays pure; the breakpoint walks the tail each

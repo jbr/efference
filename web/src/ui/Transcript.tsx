@@ -6,7 +6,7 @@
 
 import { memo, useMemo } from "react";
 import type { ConfigEdit, ContentBlock, Mark, Spot } from "../api/types.ts";
-import type { LiveBlock, Streaming } from "../session/store.ts";
+import type { LiveBlock, PendingTurn, Streaming } from "../session/store.ts";
 import type {
   BatchNode,
   CallNode,
@@ -364,12 +364,12 @@ function StreamingTail({ streaming }: { streaming: Streaming }) {
 /** The submitted turns the daemon accepted but has not put on the wire —
  * dimmed, `⋯`-marked echoes after the live tail, re-rendered as committed
  * turns when the matching `User` entry streams back (`session/store.ts`). */
-function PendingTurns({ pending }: { pending: string[] }) {
+function PendingTurns({ pending }: { pending: PendingTurn[] }) {
   return (
     <>
-      {pending.map((turn, i) => (
-        <Entry key={`pending:${i}`} label="you" as="user pending">
-          <Markdown>{turn}</Markdown>
+      {pending.map((turn) => (
+        <Entry key={`pending:${turn.id}`} label="you" as="user pending">
+          <Markdown>{turn.text}</Markdown>
           <div className="pending-mark">⋯ pending</div>
         </Entry>
       ))}
@@ -386,7 +386,7 @@ export function Transcript({
   /** The projected tree — built once in App, shared with the inspector. */
   nodes: TranscriptNode[];
   streaming: Streaming;
-  pending: string[];
+  pending: PendingTurn[];
   onInspect: (callId: CallId) => void;
 }) {
   useFollowTail();

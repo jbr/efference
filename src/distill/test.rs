@@ -354,6 +354,7 @@ fn entry(seq: u64, payload: Payload) -> LogEntry {
         seq,
         turn: 0,
         at: Timestamp(1000 + seq),
+        submission_id: None,
         payload,
     }
 }

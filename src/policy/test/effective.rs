@@ -9,6 +9,7 @@ fn edit_entry(state: EditState, change: ConfigChange) -> LogEntry {
         seq: 0,
         turn: 0,
         at: Timestamp(0),
+        submission_id: None,
         payload: Payload::ConfigEdit(ConfigEdit {
             state,
             resolves: None,

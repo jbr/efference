@@ -5,6 +5,26 @@ use super::*;
 #[derive(Deserialize)]
 pub(crate) struct TurnBody {
     pub(crate) text: String,
+    /// The client's identifier for this submission (docs/control-api.md),
+    /// adopted when present and daemon-minted otherwise — the conn-id
+    /// adopt-or-mint rule at submission granularity. Echoed in the 202 body
+    /// and recorded on the resulting `User` entry as `submission_id`.
+    #[serde(default)]
+    pub(crate) submission_id: Option<String>,
+}
+
+/// Cap on a client-minted submission id: long enough for any uuid-ish scheme,
+/// short enough that the log can't be bloated through the field.
+const SUBMISSION_ID_MAX: usize = 128;
+
+/// Mint a submission id for a `POST /v1/turns` whose body didn't carry one, so
+/// every submitted turn is identified in the log regardless of client
+/// (docs/control-api.md).
+fn mint_submission_id() -> String {
+    use rand::Rng;
+    let mut bytes = [0u8; 16];
+    rand::rng().fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Body of `PATCH /processes/:id` (docs/supervisor.md, docs/control-api.md): the
@@ -133,17 +153,40 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             let wait = wants_wait(conn.querystring());
             let body = conn.request_body_string().await.unwrap_or_default();
             match serde_json::from_str::<TurnBody>(&body) {
-                Ok(TurnBody { text }) => {
-                    shared.submit_turn(text);
+                Ok(TurnBody {
+                    text,
+                    submission_id,
+                }) => {
+                    if submission_id
+                        .as_ref()
+                        .is_some_and(|id| id.len() > SUBMISSION_ID_MAX || id.is_empty())
+                    {
+                        return fail(
+                            conn,
+                            ErrorCode::BadRequest,
+                            format!("submission_id must be 1–{SUBMISSION_ID_MAX} bytes"),
+                        );
+                    }
+                    let submission_id = submission_id.unwrap_or_else(mint_submission_id);
+                    shared.submit_turn(SubmittedTurn {
+                        text,
+                        submission_id: submission_id.clone(),
+                    });
                     // `?wait`: hold the connection until the turn reaches a gate or completes,
                     // then answer with the resulting state — "act → read state" in one round-trip
                     // (docs/permissions.md).
                     if wait {
                         settle_and_state(&shared, conn).await
                     } else {
-                        conn.with_status(202)
-                            .with_body(r#"{"status":"accepted"}"#)
-                            .halt()
+                        // The id is informational here: the turn's effects — including
+                        // the `User` entry carrying this id — can arrive on the stream
+                        // before this body resolves, so clients must not sequence
+                        // state on it (docs/control-api.md).
+                        let body = serde_json::json!({
+                            "status": "accepted",
+                            "submission_id": submission_id,
+                        });
+                        conn.with_status(202).with_body(body.to_string()).halt()
                     }
                 }
                 Err(e) => fail(conn, ErrorCode::BadRequest, format!("bad /turns body: {e}")),

@@ -51,6 +51,15 @@ pub struct LogEntry {
     pub seq: Seq,
     pub turn: Turn,
     pub at: Timestamp,
+    /// The submission id of the `POST /v1/turns` this entry realized
+    /// (docs/control-api.md): client-minted when the body carried one,
+    /// daemon-minted otherwise, `None` on entries the loop originates itself
+    /// (redirects, handoff notes). **Log metadata only** — never projected,
+    /// like `at` and `turn` (docs/log-and-projection.md). Clients key delivery
+    /// reconciliation on it; it also records which socket submission produced
+    /// the entry, for audit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submission_id: Option<String>,
     pub payload: Payload,
 }
 

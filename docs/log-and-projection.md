@@ -11,13 +11,19 @@ caching constraint that shapes both.
 ### `LogEntry`
 
 ```rust
-struct LogEntry { seq: u64, turn: u32, at: Timestamp, payload: Payload }
+struct LogEntry { seq: u64, turn: u32, at: Timestamp, submission_id: Option<String>, payload: Payload }
 ```
 
 `seq` is the monotone address space `project` reads over. `turn` is log
 metadata — which agent turn produced the entry. `at` is a wall-clock
 timestamp, also metadata only: timestamps are **never projected**, so their
 non-determinism cannot touch the wire and cannot break caching.
+`submission_id` is metadata of the same kind: the `POST /v1/turns` submission
+a `User` entry realized (docs/control-api.md), present on every
+socket-submitted turn and absent on entries the loop originates itself —
+never projected, keyed on by clients reconciling delivery, and an audit
+record of which submission produced the entry. It is skipped when `None`, so
+pre-existing logs read back unchanged.
 
 ### `Payload`
 

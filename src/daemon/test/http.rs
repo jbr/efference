@@ -41,6 +41,44 @@ async fn review_level_over_the_router() {
     let _ = std::fs::remove_file(&log_path);
 }
 
+/// `POST /turns` submission ids (docs/control-api.md): a client-minted id is
+/// adopted — echoed in the 202 body and carried on the queued turn — a body
+/// without one gets a daemon-minted id, and an oversized one is rejected
+/// without enqueueing anything.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn turn_submission_ids_adopt_or_mint() {
+    let (shared, mut turns_rx) = Shared::new(Log::in_memory());
+    let client = test_client(&shared).await;
+
+    // Client-minted: adopted verbatim, echoed back, and on the queued turn.
+    let body = client
+        .turn_with_submission_id("hello", "sub-mine")
+        .await
+        .unwrap();
+    assert!(
+        body.contains(r#""submission_id":"sub-mine""#),
+        "echo: {body}"
+    );
+    let queued = turns_rx.recv().await.unwrap();
+    assert_eq!(queued.text, "hello");
+    assert_eq!(queued.submission_id, "sub-mine");
+
+    // Absent: daemon-minted, so every submitted turn is identified.
+    client.turn("bare").await.unwrap();
+    let queued = turns_rx.recv().await.unwrap();
+    assert_eq!(queued.text, "bare");
+    assert!(!queued.submission_id.is_empty(), "minted when absent");
+
+    // Oversized: rejected in the typed envelope, nothing enqueued.
+    let err = client
+        .turn_with_submission_id("nope", &"x".repeat(129))
+        .await
+        .expect_err("oversized id → 400")
+        .to_string();
+    assert!(err.contains(r#""code":"bad_request""#), "typed code: {err}");
+    assert!(turns_rx.try_recv().is_err(), "rejected turn never queued");
+}
+
 /// A `config_edit` decision body decodes into its change, the wire shape the orchestrator
 /// posts to upgrade a gate (docs/permissions.md). A `lifetime` from an older
 /// client is ignored rather than rejected — every committed change is written to the file now,

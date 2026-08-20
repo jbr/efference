@@ -6,6 +6,7 @@ fn entry(seq: u64, payload: Payload) -> LogEntry {
         seq,
         turn: 1,
         at: Timestamp(0),
+        submission_id: None,
         payload,
     }
 }

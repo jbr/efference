@@ -76,11 +76,21 @@ it.
 Enqueue a user turn. Also seeds turn 1 on an idle daemon. Submission is
 decoupled from inference.
 
-- Body: `{ "text": "<string>" }`
-- `202 {"status":"accepted"}` — enqueued; watch `/events` (or `/state`) for the result.
+- Body: `{ "text": "<string>", "submission_id": "<string, optional>" }` —
+  `submission_id` identifies this submission: adopted when the client minted
+  one (1–128 bytes), daemon-minted otherwise, and recorded on the resulting
+  `User` entry as its `submission_id` (log metadata, never projected). A
+  client that minted the id can settle its own delivery echo by exact key,
+  and the log records which submission produced each turn.
+- `202 {"status":"accepted","submission_id":"<string>"}` — enqueued; watch
+  `/events` (or `/state`) for the result. The echoed id is informational: any
+  effect of a request — including the `User` entry carrying this id — may
+  arrive on `/events` **before** the response body resolves (the daemon
+  commits and broadcasts independently of writing the response), so clients
+  must not sequence state on a response.
 - `?wait` — hold the connection until the daemon **settles** (the turn reaches a
   gate or completes), then return the `/state` snapshot (`200`) instead of `202`.
-- `400 bad_request` — unparseable body
+- `400 bad_request` — unparseable body, or a `submission_id` outside 1–128 bytes
 
 #### `PUT /approvals/:call_id`
 Resolve the pending approval gate, addressed by the tool call's `tool_use` id
