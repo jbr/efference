@@ -4,10 +4,14 @@
 
 @import "./theme.css";
 
+/* The vertical rhythm in one place: the mock runs generous leading (1.75 on
+   transcript mono, 1.8 on code) and the browser default is ~1.2 — the gap
+   between those two is what reads as cramped. */
 body {
   font-family: var(--font-mono);
   background: var(--bg-page);
   color: var(--fg);
+  line-height: 1.65;
   max-width: 60rem;
   margin: 0 auto;
   padding: 0 1rem;
@@ -49,7 +53,7 @@ header {
   display: grid;
   grid-template-columns: 6rem 1fr;
   column-gap: 1.3rem;
-  margin: 1.2rem 0;
+  margin: 1.4rem 0;
 }
 
 .entry > .label {
@@ -107,12 +111,12 @@ header {
   background: var(--bg-surface);
   border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 0.8rem 0 1rem;
+  padding: 1rem 0 1.2rem;
   margin: 1.4rem 0;
 }
 
 .batch .entry {
-  margin: 0.4rem 0;
+  margin: 0.5rem 0;
 }
 
 .entry.batch-head > .content {
@@ -152,17 +156,25 @@ header {
 }
 
 /* A call's parts belong to it, so they sit tighter than session-level
-   siblings do. */
+   siblings do — but on one consistent half-step, not each part's own gap. */
 .call > .block,
 .block {
-  margin: 0.5rem 0;
+  margin: 0.6rem 0;
+}
+
+.block .kind {
+  margin-bottom: 0.35rem;
+}
+
+.block > details {
+  margin-top: 0.5rem;
 }
 
 .spot {
   display: flex;
   gap: 0.7rem;
   align-items: baseline;
-  margin: 0.5rem 0;
+  margin: 0.6rem 0;
 }
 
 .spot-label {
@@ -185,7 +197,7 @@ header {
   display: flex;
   gap: 0.6rem;
   align-items: baseline;
-  margin-top: 0.5rem;
+  margin-top: 0.65rem;
 }
 
 .note-glyph {
@@ -272,6 +284,7 @@ summary.kind {
 pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  line-height: 1.7;
   margin: 0.15rem 0 0;
 }
 
@@ -306,7 +319,7 @@ pre {
 .prose {
   font-family: var(--font-prose);
   font-size: 1.125em;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .entry.user .prose {
@@ -333,7 +346,7 @@ pre {
 .prose ol,
 .prose blockquote,
 .prose table {
-  margin: 0.4rem 0;
+  margin: 0.5rem 0;
 }
 
 .prose h1,
@@ -353,7 +366,7 @@ pre {
 }
 
 .prose li {
-  margin: 0.1rem 0;
+  margin: 0.2rem 0;
 }
 
 .prose code {
@@ -458,11 +471,14 @@ select {
   user-select: none;
 }
 
+/* The mock's intent rhythm: close under the call head, clear air below. */
 .intent {
   font-family: var(--font-prose);
   font-style: italic;
   font-size: 1.125em;
+  line-height: 1.5;
   color: var(--fg-muted);
+  margin: 0.3rem 0 0.7rem;
 }
 
 /* The connection is not live: loud on purpose, phone-visible. */
