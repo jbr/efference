@@ -49,15 +49,44 @@ export function Composer({
 
   const speed = pace?.speed_ms ?? 0;
   return (
-    <form
-      className="composer"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-    >
-      {error && <div className="error">{error}</div>}
-      <div className="composer-status">
+    <>
+      <form
+        className="composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <div className="col composer-inner">
+          {error && <div className="error">{error}</div>}
+          <div className="composer-input">
+            <span className="prompt">›</span>
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+              placeholder="send a turn (enter to send, shift-enter for newline)"
+              rows={3}
+            />
+            {running && (
+              <span className="ride-along">
+                rides along with the pending result
+              </span>
+            )}
+            <button>send</button>
+          </div>
+        </div>
+      </form>
+      {/* The status bar: the dock's outermost row, at the window edge below
+          the composer — chrome frames content, as in a native status bar.
+          Full-bleed: turn state at the far left, the loop dials at the far
+          right. */}
+      <div className="status-bar">
         <span className="turn-state">
           <span className={running ? "dot breathing" : "dot"} />
           {running ? (
@@ -116,27 +145,6 @@ export function Composer({
           </select>
         </label>
       </div>
-      <div className="composer-input">
-        <span className="prompt">›</span>
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              void submit();
-            }
-          }}
-          placeholder="send a turn (enter to send, shift-enter for newline)"
-          rows={3}
-        />
-        {running && (
-          <span className="ride-along">
-            rides along with the pending result
-          </span>
-        )}
-        <button>send</button>
-      </div>
-    </form>
+    </>
   );
 }

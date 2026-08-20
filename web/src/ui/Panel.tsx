@@ -303,33 +303,39 @@ export function Panel({
   };
   return (
     <div className="panel">
+      {/* The tab strip bleeds full width like the rest of the chrome; the
+          tabs themselves sit in the content column. */}
       <div className="panel-tabs">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            className={open === tab ? "panel-tab open" : "panel-tab"}
-            onClick={() => pick(tab)}
-          >
-            {tab}
-            {counts[tab] > 0 && <span className="chip">{counts[tab]}</span>}
-          </button>
-        ))}
-        <span className="spacer" />
-        {open !== null && (
-          <button className="panel-tab" onClick={() => pick(open)}>
-            collapse
-          </button>
-        )}
+        <div className="panel-tabs-inner">
+          {TABS.map((tab) => (
+            <button
+              key={tab}
+              className={open === tab ? "panel-tab open" : "panel-tab"}
+              onClick={() => pick(tab)}
+            >
+              {tab}
+              {counts[tab] > 0 && <span className="chip">{counts[tab]}</span>}
+            </button>
+          ))}
+          <span className="spacer" />
+          {open !== null && (
+            <button className="panel-tab" onClick={() => pick(open)}>
+              collapse
+            </button>
+          )}
+        </div>
       </div>
-      {error && <div className="error">{error}</div>}
-      {open === "tasks" && (
-        <Tasks processes={processes} output={processOutput} act={act} />
-      )}
-      {open === "inbox" && <Inbox notifications={notifications} act={act} />}
-      {open === "policy" && (
-        <Policy role={role} proposals={proposals} act={act} />
-      )}
-      {open === "interface" && <Interface />}
+      <div className="col">
+        {error && <div className="error">{error}</div>}
+        {open === "tasks" && (
+          <Tasks processes={processes} output={processOutput} act={act} />
+        )}
+        {open === "inbox" && <Inbox notifications={notifications} act={act} />}
+        {open === "policy" && (
+          <Policy role={role} proposals={proposals} act={act} />
+        )}
+        {open === "interface" && <Interface />}
+      </div>
     </div>
   );
 }

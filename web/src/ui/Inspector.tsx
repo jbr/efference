@@ -4,12 +4,45 @@
 // view over the same CallNode the transcript renders, so it re-uses the
 // cordon's renderers rather than growing its own.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Keep, RawResult, WireState } from "../api/types.ts";
 import type { CallNode } from "../session/tree.ts";
 import { Code } from "./Code.tsx";
 import { ResultBody } from "./ToolBlocks.tsx";
 import { callView, resultRender, wireLabel } from "../render/parse.ts";
+
+/** Drag-to-resize, persisted. The drawer floats over the content (the
+ * content column never moves for it — index.css), so resizing is purely the
+ * drawer's own reflow. Clamped so it can neither collapse below usability
+ * nor swallow the whole viewport. */
+const WIDTH_KEY = "inspector-width";
+const clampWidth = (w: number) =>
+  Math.min(Math.max(w, 280), Math.max(320, window.innerWidth - 320));
+
+function useDrawerWidth() {
+  const [width, setWidth] = useState(() =>
+    clampWidth(Number(localStorage.getItem(WIDTH_KEY)) || 396),
+  );
+  const dragging = useRef(false);
+  const grip = {
+    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+      dragging.current = true;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragging.current) return;
+      const w = clampWidth(window.innerWidth - e.clientX);
+      setWidth(w);
+      localStorage.setItem(WIDTH_KEY, String(w));
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => {
+      dragging.current = false;
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    },
+  };
+  return { width, grip };
+}
 
 type Tab = "result" | "args" | "raw" | "spot" | "file";
 const TABS: Tab[] = ["result", "args", "raw", "spot", "file"];
@@ -67,9 +100,14 @@ function ForkPanel({ raw, wire }: { raw: RawResult; wire: WireState }) {
 
 export function Inspector({
   node,
+  closing,
+  onSlideOut,
   onClose,
 }: {
   node: CallNode;
+  /** The exit transition is running; `onSlideOut` unmounts when it lands. */
+  closing: boolean;
+  onSlideOut: () => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("result");
@@ -92,8 +130,23 @@ export function Inspector({
       result !== null ? resultRender(node.name, result.raw, result.wire) : null,
     [node.name, result],
   );
+  const { width, grip } = useDrawerWidth();
   return (
-    <div className="inspector">
+    <div
+      className={closing ? "inspector closing" : "inspector"}
+      style={{ width }}
+      onTransitionEnd={(e) => {
+        // Keyed to the transform: only the slide's own end means done, not
+        // any other property a future style might transition.
+        if (
+          closing &&
+          e.target === e.currentTarget &&
+          e.propertyName === "transform"
+        )
+          onSlideOut();
+      }}
+    >
+      <div className="inspector-grip" {...grip} />
       <div className="inspector-head">
         <span className="inspector-title">inspecting</span>
         <span className="call-head">

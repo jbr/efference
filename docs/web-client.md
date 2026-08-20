@@ -360,6 +360,20 @@ result is a constant acknowledgement. A pending, gated, or failed
 consolidate renders whole: the gate surface expects the call on screen, and
 an error is information.
 
+## Chrome and the content column
+
+The page is full width; content sits in a centered `.col` (60rem). The chrome
+— the top bar, the connection banner, the dock's tab strip, composer band, and
+status bar — bleeds to the viewport edges, and each bar's affordances anchor
+to the window edges too: the wordmark and usage meter, the panel tabs, the
+turn state and loop dials (full width for parity across the bars,
+2026-08-20). Only content keeps the column: the transcript, the panel panes,
+the composer input. Chrome is also invisible to text selection (`user-select: none`
+across labels, bars, tabs, and controls) — only content selects: transcript
+text, commands, results. Inside the column, entry content carries a right
+inset balancing the label gutter's air, so text in a block does not run flush
+against the column edge.
+
 ## The top bar
 
 `ui/TopBar.tsx`: sticky interface chrome — the serif wordmark, the session
@@ -376,19 +390,33 @@ which no `/v1` topic carries yet
 
 ## The composer area
 
-The loop dials live on the composer's status row (`ui/Composer.tsx`): gates
-arrive at the composer, so it is where current state is controlled.
+The loop dials live on the dock's status bar (`ui/Composer.tsx`): gates
+arrive at the composer, so its dock is where current state is controlled.
 Interrupt (`POST /v1/loop/interrupt`, enabled while `running`), hold/resume,
 the pace select, and the review-level select — one `PATCH /v1/loop` for the
 dials; the api layer's `patchLoop` translates to the wire's partial-`pace`
-shape. The row leads with the turn state — a breathing accent dot beside
-"your turn" in the serif when the loop is idle, a dim `running…` while it
-moves — and the space between state and dials is reserved for the key-hint
-strip (binds are deferred to interactive suggestions;
-[backlog/web/README.md](../backlog/web/README.md)). While the loop runs, the
-input carries a "rides along with the pending result" hint: the
-mid-trajectory injection semantics ([control-channel.md](control-channel.md)),
-stated at the point where the text is being typed.
+shape. The status bar is the dock's **outermost row, below the composer at
+the window edge**, full-bleed with the turn state at the far left and the
+dials at the far right — chrome frames content, as in a native status bar
+(the row originally sat *above* the input, which put the interactive content
+at the window edge; reversed on use, 2026-08-20). The turn state is a
+breathing accent dot beside "your turn" in the serif when the loop is idle,
+a dim `running…` while it moves; the span between state and dials is
+reserved for the key-hint strip (binds are deferred to interactive
+suggestions; [backlog/web/README.md](../backlog/web/README.md)). While the
+loop runs, the input carries a "rides along with the pending result" hint:
+the mid-trajectory injection semantics
+([control-channel.md](control-channel.md)), stated at the point where the
+text is being typed.
+
+The input is inset into the dock rather than floating on it: the composer
+band shares the dock's surface color, and the box is near-square (2px) in
+the chrome's flat language. The field auto-grows with the draft
+(`field-sizing: content`, 3–10 lines), replacing the manual resize grip; a
+`1ch` right padding gives the block caret its cell at the wrap column, where
+zero padding clipped it to a sliver. A `contenteditable` composer (live
+markdown styling) is an anticipated replacement for the textarea; nothing
+here should grow attachments to the textarea being one.
 
 The controls strip is gone; its last resident, the usage line, lives in the
 top bar. A non-`live` connection still shows as a full-width banner under
@@ -433,14 +461,34 @@ both change that height.
 
 `ui/Inspector.tsx`: a call-scoped right drawer, opened by clicking anywhere
 on a call (hover tints the connector; clicks on controls inside, and clicks
-that end a text selection, don't count) or its result header's `inspect →`
-link, closed with `✕` — "raw is one tap away" promoted from the per-result
-`<details>` to a standing surface. The
+that end a text selection, don't count) — "raw is one tap away" promoted
+from the per-result `<details>` to a standing surface. Clicking the
+inspected call again closes the drawer (the call is a huge central target
+where the `✕` is a distant corner one — Fitts); a different call switches
+without closing, and the `✕` remains. The
 selection is a call id held in `App`, which builds the transcript tree once
 and shares it with both consumers; the node is re-found from the tree each
 render, so a result or verdict landing after the drawer opened shows up in
-it. While the drawer is open the content column yields to it
-(`body:has(.inspector)`) rather than being covered.
+it. The drawer **floats over the content, which stays in place** — opening a
+second view does not get to move the text someone is reading (the earlier
+`body:has(.inspector)` margin yield did exactly that, and was reversed on
+use). Its left edge is a drag-to-resize grip — width clamped
+at both ends and persisted like the theme. It is opaque: a frosted variant
+(translucent surface over `backdrop-filter` blur) was tried and dropped —
+re-blurring a backdrop that is also moving stuttered against the slide on
+modest hardware, and deferring the blur until after the slide left a
+noticeable fade-in for little gain (2026-08-20).
+
+The drawer slides in and out (`transition` on `transform` only — composited,
+never layout; the resting state is the identity transform). Entry is
+CSS-only via `@starting-style`; exit needs App-side state because React
+unmounts before CSS can animate: `shown` holds the last call id through the
+slide-out, unmounting on `transitionend` with a timeout fallback
+(`transitionend` does not fire in a hidden tab), and reopening mid-slide
+cancels the pending unmount. Switching calls while open does not re-slide —
+the element never unmounts. The unmount handler keys on the *transform's*
+`transitionend` specifically, so a future transition on another property
+cannot unmount the drawer early.
 
 Tabs — `result` / `args` / `raw` / `spot`, all views over data the client
 already holds, rendered through the cordon's existing renderers rather than
@@ -454,9 +502,11 @@ wire state, and the distiller's note — the audit view of
 the drawer waits on the deferred key binds.
 
 With the inspector holding the whole body, **read and write results
-truncate in the transcript**: the first 12 lines, then a
-`⋯ N more lines — inspect →` affordance (never for a tail shorter than the
-indicator itself). This is the first revision to render-whole, and it is
+truncate in the transcript**: the first 12 lines, then a `⋯ N more lines`
+indicator (never for a tail shorter than the indicator itself). There is no
+per-result `inspect →` link: the whole call is the inspection affordance, and
+its hover state is the discovery surface. This is the first revision to
+render-whole, and it is
 safe for the reason the position existed: a gate decides a *call*, never a
 result, so no pending decision rests on a truncated body — and the full
 body is one click away. Other tools' results still render whole.
@@ -465,7 +515,7 @@ body is one click away. Other tools' results still render whole.
 
 The pending approval gate (`web/src/ui/Gate.tsx`) renders from the `gate` state
 topic, in the transcript flow above the composer rather than a modal, and is
-**the affordance only**. The call it decides is already on screen: a gated call
+**the affordance only** there. The call it decides is already on screen: a gated call
 has no result entry, so that call and its `Spot` verdict are the transcript's
 last two entries, directly above. Reading order is therefore call → verdict →
 affordance, from entry order alone, as in the TUI ([tui.md](tui.md)). The
@@ -480,20 +530,32 @@ what removes both. The `gate.reason` fallback survives for a gate held with no
 normally renders.
 
 Because the affordance sits in the flow rather than pinned, it can be scrolled
-away from. `GateCue` is a fixed marker, shown by an `IntersectionObserver` on the
-surface exactly while the surface is out of view; it names the call (the part
-that is off-screen when it shows) and jumps to the document tail. Two properties
-are deliberate: it **never scrolls on its own** — a pending decision does not get
-to move the page out from under someone reading — and the jump is a jump, not a
-smooth `scrollIntoView`. `useFollowTail` pins to the bottom after every render
-while the viewport is near it, so an animated scroll toward the tail re-engages
-the follow partway down and is cancelled by the next render. Any future
+away from. While an `IntersectionObserver` reports the in-flow surface out of
+view, a **floating gate panel** pins above the dock — and it is the one place
+the call renders a second time (via the same `CallBlock`/`SpotLine` the
+transcript uses: header, intent, full command, verdict), because the entries
+the in-flow surface leans on are exactly what is off-screen. The panel shares
+the in-flow surface's form state — one set of drafts, rendered in both places —
+so a decision composed in one survives into the other. It collapses, without
+resolving the gate, to a compact cue naming the call (it may be covering text
+the operator is reading); the cue expands it back, and it re-expands for each
+new call. Two properties are deliberate: the floating surface **never scrolls
+the page on its own** — a pending decision does not get to move the page out
+from under someone reading — and its `jump to call ↓` is a jump to the document
+tail (the gated call has no result, so the gate *is* the tail), not a smooth
+`scrollIntoView`. `useFollowTail` pins to the bottom after every render while
+the viewport is near it, so an animated scroll toward the tail re-engages the
+follow partway down and is cancelled by the next render. Any future
 scroll-to-somewhere affordance meets the same constraint.
 
 All four decisions ride `PUT /v1/approvals/:call_id` (`Decision` in `api/types.ts`):
 approve, abort, redirect with steering text, and allow-with-prefix (a
-`config_edit` carrying a `command` change, prefilled from the call's own
-`command` field, plus an optional note). A `409 gate_moved` is handled in
+`config_edit` carrying a `command` change, plus an optional note). The prefix
+input prefills from the verdict's `probed_prefix` — the candidate the spotter's
+promotion question named ([permissions.md](permissions.md)), so the operator
+ratifies the same prefix the spotter answered for — falling back to the call's
+whole `command` field (allowing exactly this command) when no probe rode the
+call. A `409 gate_moved` is handled in
 `session/actions.ts` by folding the response's corrective `detail` into the
 store as a synthetic state frame — no second round-trip; `resolveGate` returns
 `"moved"` rather than `"applied"` so the surface can say the decision did not

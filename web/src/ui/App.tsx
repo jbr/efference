@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CallId } from "../api/types.ts";
 import { spotFor } from "../session/store.ts";
 import { buildTree, type CallNode } from "../session/tree.ts";
@@ -19,16 +19,40 @@ export function App() {
   // up in an open inspector.
   const nodes = useMemo(() => buildTree(session.entries), [session.entries]);
   const [inspecting, setInspecting] = useState<CallId | null>(null);
-  const onInspect = useCallback((id: CallId) => setInspecting(id), []);
+  // Clicking the call being inspected closes the drawer: the call is a huge
+  // central target where the ✕ is a distant corner one (Fitts), and a second
+  // click on "show me this" reading as "stop showing me this" is the toggle
+  // idiom. A different call switches without closing.
+  const onInspect = useCallback(
+    (id: CallId) => setInspecting((prev) => (prev === id ? null : id)),
+    [],
+  );
+  // The drawer's slide-out needs it mounted after `inspecting` clears —
+  // React unmounts before CSS can animate — so `shown` holds the last call
+  // id through the exit transition. `done` unmounts on `transitionend`, with
+  // a timeout fallback (transitionend does not fire in a hidden tab);
+  // reopening mid-slide cancels the pending unmount by making `closing`
+  // false again. Entry needs no state: `@starting-style` animates the mount
+  // frame (index.css).
+  const [shown, setShown] = useState<CallId | null>(null);
+  if (inspecting !== null && inspecting !== shown) setShown(inspecting);
+  const closing = inspecting === null && shown !== null;
+  const done = useCallback(() => setShown(null), []);
+  useEffect(() => {
+    if (!closing) return;
+    const id = setTimeout(done, 350);
+    return () => clearTimeout(id);
+  }, [closing, done]);
+
   const inspected = useMemo<CallNode | null>(() => {
-    if (inspecting === null) return null;
+    if (shown === null) return null;
     for (const node of nodes) {
       if (node.kind !== "batch") continue;
-      const call = node.calls.find((c) => c.callId === inspecting);
+      const call = node.calls.find((c) => c.callId === shown);
       if (call !== undefined) return call;
     }
     return null;
-  }, [nodes, inspecting]);
+  }, [nodes, shown]);
 
   if (session.connection === "unauthenticated") {
     return <Login onAuthenticated={() => connector.retry()} />;
@@ -43,7 +67,9 @@ export function App() {
         usage={session.topics.usage ?? null}
       />
       {session.connection !== "live" && (
-        <div className="banner">{session.connection}…</div>
+        <div className="banner">
+          <div className="col">{session.connection}…</div>
+        </div>
       )}
       <Transcript
         nodes={nodes}
@@ -52,14 +78,21 @@ export function App() {
         onInspect={onInspect}
       />
       {inspected !== null && (
-        <Inspector node={inspected} onClose={() => setInspecting(null)} />
+        <Inspector
+          node={inspected}
+          closing={closing}
+          onSlideOut={done}
+          onClose={() => setInspecting(null)}
+        />
       )}
       {gate && (
-        <GateSurface
-          gate={gate}
-          spot={spotFor(session.entries, gate.call_id)}
-          resolve={(decision) => actions.resolveGate(gate.call_id, decision)}
-        />
+        <div className="col">
+          <GateSurface
+            gate={gate}
+            spot={spotFor(session.entries, gate.call_id)}
+            resolve={(decision) => actions.resolveGate(gate.call_id, decision)}
+          />
+        </div>
       )}
       <div className="dock">
         <Panel

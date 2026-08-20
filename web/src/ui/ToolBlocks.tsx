@@ -173,12 +173,10 @@ export function ResultBlock({
   tool,
   raw,
   wire,
-  onInspect,
 }: {
   tool: string | null;
   raw: RawResult;
   wire: WireState;
-  onInspect?: () => void;
 }) {
   // The cordon parses the whole raw result — sentinel stripping, diff
   // classification, the kept-line filter. A store update re-renders every
@@ -194,26 +192,13 @@ export function ResultBlock({
     .join(", ");
   return (
     <div className="block">
-      <div className="kind result-head">
-        result ({label})
-        {onInspect !== undefined && (
-          <>
-            <span className="spacer" />
-            <button className="linkish" onClick={onInspect}>
-              inspect →
-            </button>
-          </>
-        )}
-      </div>
+      {/* No inspect link: the whole call is the inspection affordance, and
+          the call's hover state is the discovery surface (Transcript.tsx). */}
+      <div className="kind result-head">result ({label})</div>
       <ResultBody body={body} />
-      {hidden > 0 &&
-        (onInspect !== undefined ? (
-          <button className="linkish more-lines" onClick={onInspect}>
-            ⋯ {hidden} more lines — inspect →
-          </button>
-        ) : (
-          <div className="more-lines dim">⋯ {hidden} more lines</div>
-        ))}
+      {hidden > 0 && (
+        <div className="more-lines dim">⋯ {hidden} more lines</div>
+      )}
       {view.note !== null && (
         // The distiller's note sits beside the result as its own annotation
         // row — that rung's account *of* the output, not something the tool

@@ -61,13 +61,15 @@ export function TopBar({
 }) {
   return (
     <header className="top-bar">
-      <span className="wordmark">efference</span>
-      <span
-        className={running ? "dot breathing" : "dot"}
-        title={`${connection}${running ? " · running" : ""}`}
-      />
-      <span className="spacer" />
-      {usage !== null && <UsageMeter usage={usage} />}
+      <div className="top-bar-inner">
+        <span className="wordmark">efference</span>
+        <span
+          className={running ? "dot breathing" : "dot"}
+          title={`${connection}${running ? " · running" : ""}`}
+        />
+        <span className="spacer" />
+        {usage !== null && <UsageMeter usage={usage} />}
+      </div>
     </header>
   );
 }

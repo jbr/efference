@@ -57,7 +57,7 @@ export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
   }, []);
 
   return (
-    <div className="login">
+    <div className="login col">
       <h1>efference</h1>
       <p>{status}</p>
       {showForm && (

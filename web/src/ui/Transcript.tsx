@@ -62,8 +62,9 @@ function Entry({
  * of the call's content — a different rung's judgment *about* the call
  * (docs/tui.md). The stance leads, because that is the scannable part. A
  * clear verdict is the routine case, so it hides behind the density toggle;
- * anything that gated or watched always shows. */
-function SpotLine({ spot }: { spot: Spot }) {
+ * anything that gated or watched always shows. Exported for the floating
+ * gate panel (Gate.tsx), which restates the verdict while it is off-screen. */
+export function SpotLine({ spot }: { spot: Spot }) {
   const { clearSpots } = useViewSettings();
   const clear = spot.stance === "clear" || spot.stance === "clear_always";
   if (clear && !clearSpots) return null;
@@ -246,22 +247,19 @@ const Call = memo(function Call({
       {call !== null && <CallBlock call={call} />}
       {node.spot !== null && <SpotLine spot={node.spot} />}
       {result !== null && (
-        <ResultBlock
-          tool={node.name}
-          raw={result.raw}
-          wire={result.wire}
-          onInspect={() => onInspect(node.callId)}
-        />
+        <ResultBlock tool={node.name} raw={result.raw} wire={result.wire} />
       )}
     </div>
   );
 });
 
-/** The calls of one step. A batch of one is still a batch — the node is what
- * gives depth-based styling and per-batch state a home. The header states the
- * count and nothing else: the mock's duration was invented, and per-batch
- * facts that arrive later (`inbox`, `retries`) belong on this row when they
- * get a surface. */
+/** The calls of one step. A batch of one is still a batch structurally — the
+ * node is what gives depth-based styling and per-batch state a home — but it
+ * labels itself `tool call`: a batch of one flattens to a call semantically,
+ * and `batch` appears only when there is a plurality to name. The header
+ * states the count and nothing else: the mock's duration was invented, and
+ * per-batch facts that arrive later (`inbox`, `retries`) belong on this row
+ * when they get a surface. */
 function Batch({
   node,
   onInspect,
@@ -272,8 +270,8 @@ function Batch({
   const n = node.calls.length;
   return (
     <div className="batch">
-      <Entry label="batch" as="batch-head">
-        {n === 1 ? "1 call" : `${n} calls`}
+      <Entry label={n === 1 ? "tool call" : "batch"} as="batch-head">
+        {n === 1 ? null : `${n} calls`}
       </Entry>
       <Entry label={null}>
         {node.calls.map((call) => (
@@ -398,7 +396,7 @@ export function Transcript({
         (ambient || !("Ambient" in node.entry.payload))),
   );
   return (
-    <div className="transcript">
+    <div className="transcript col">
       {shown.map((node) =>
         node.kind === "batch" ? (
           <Batch key={node.key} node={node} onInspect={onInspect} />
