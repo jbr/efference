@@ -407,6 +407,28 @@ The gate cue's bottom offset is measured from the dock's height with a
 `ResizeObserver` rather than guessed in CSS — the panel and the composer
 both change that height.
 
+## The inspector
+
+`ui/Inspector.tsx`: a call-scoped right drawer, opened from a result
+header's `inspect →` link and closed with `✕` — "raw is one tap away"
+promoted from the per-result `<details>` to a standing surface. The
+selection is a call id held in `App`, which builds the transcript tree once
+and shares it with both consumers; the node is re-found from the tree each
+render, so a result or verdict landing after the drawer opened shows up in
+it. While the drawer is open the content column yields to it
+(`body:has(.inspector)`) rather than being covered.
+
+Tabs — `result` / `args` / `raw` / `spot`, all views over data the client
+already holds, rendered through the cordon's existing renderers rather than
+a second implementation; and `file`, present but inert — it is the punted
+full-screen file view ([backlog/web/file-view.md](../backlog/web/file-view.md)),
+kept visible so the shape is honest about what is coming. Below the tabs,
+**what the fork returned**: the raw line count, the surfaced count computed
+from the keep, the keep itself (`All` / `None` / `Ranges(a..b, …)`), the
+wire state, and the distiller's note — the audit view of
+[redaction-fork.md](redaction-fork.md)'s output. Stepping between calls from
+the drawer waits on the deferred key binds.
+
 ## The gate surface
 
 The pending approval gate (`web/src/ui/Gate.tsx`) renders from the `gate` state

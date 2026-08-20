@@ -116,7 +116,7 @@ export function LiveCallBlock({
   );
 }
 
-function Body({ body }: { body: ResultView }) {
+export function ResultBody({ body }: { body: ResultView }) {
   switch (body.kind) {
     case "diff":
       return (
@@ -141,10 +141,12 @@ export function ResultBlock({
   tool,
   raw,
   wire,
+  onInspect,
 }: {
   tool: string | null;
   raw: RawResult;
   wire: WireState;
+  onInspect?: () => void;
 }) {
   // The cordon parses the whole raw result — sentinel stripping, diff
   // classification, the kept-line filter. A store update re-renders every
@@ -156,8 +158,18 @@ export function ResultBlock({
     .join(", ");
   return (
     <div className="block">
-      <div className="kind">result ({label})</div>
-      <Body body={view.body} />
+      <div className="kind result-head">
+        result ({label})
+        {onInspect !== undefined && (
+          <>
+            <span className="spacer" />
+            <button className="linkish" onClick={onInspect}>
+              inspect →
+            </button>
+          </>
+        )}
+      </div>
+      <ResultBody body={view.body} />
       {view.note !== null && (
         // The distiller's note sits beside the result as its own annotation
         // row — that rung's account *of* the output, not something the tool

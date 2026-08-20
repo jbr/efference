@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import type { CallId } from "../api/types.ts";
 import { spotFor } from "../session/store.ts";
+import { buildTree, type CallNode } from "../session/tree.ts";
 import { useSession } from "../session/useSession.ts";
 import { Composer } from "./Composer.tsx";
 import { Controls } from "./Controls.tsx";
 import { GateSurface } from "./Gate.tsx";
+import { Inspector } from "./Inspector.tsx";
 import { Login } from "./Login.tsx";
 import { Panel } from "./Panel.tsx";
 import { setThemeChoice, themeChoice, type ThemeChoice } from "./theme.ts";
@@ -61,6 +64,22 @@ function ThemeSelect() {
 
 export function App() {
   const { session, connector, actions } = useSession();
+  // One projection, shared: the transcript renders it, the inspector reads
+  // the selected call out of it. The selection is a call id, not a node —
+  // the node is re-found each render so a landing result or verdict shows
+  // up in an open inspector.
+  const nodes = useMemo(() => buildTree(session.entries), [session.entries]);
+  const [inspecting, setInspecting] = useState<CallId | null>(null);
+  const onInspect = useCallback((id: CallId) => setInspecting(id), []);
+  const inspected = useMemo<CallNode | null>(() => {
+    if (inspecting === null) return null;
+    for (const node of nodes) {
+      if (node.kind !== "batch") continue;
+      const call = node.calls.find((c) => c.callId === inspecting);
+      if (call !== undefined) return call;
+    }
+    return null;
+  }, [nodes, inspecting]);
 
   if (session.connection === "unauthenticated") {
     return <Login onAuthenticated={() => connector.retry()} />;
@@ -84,10 +103,14 @@ export function App() {
       )}
       <Controls usage={session.topics.usage ?? null} />
       <Transcript
-        entries={session.entries}
+        nodes={nodes}
         streaming={session.streaming}
         pending={session.pendingTurns}
+        onInspect={onInspect}
       />
+      {inspected !== null && (
+        <Inspector node={inspected} onClose={() => setInspecting(null)} />
+      )}
       {gate && (
         <GateSurface
           gate={gate}

@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- The web client grows an inspector: a call-scoped right drawer (result / args / raw / spot tabs, file stubbed for the coming file view) with a "what the fork returned" panel — raw size, surfaced count, the keep ranges, the wire state — opened from any result's `inspect →` link.
 - The web client grows a bottom panel docked with the composer: tasks (process rows beside a live output tail — background-process output's first rendering surface — with mute, handoff, kill), inbox (dismiss), and policy — the effective perimeter with pending proposals merged in committed sort position and committable from the client, closing the config-edit loop without a terminal.
 - The web composer is where loop state is controlled: the dials (interrupt, hold, pace, review level) moved onto its status row beside a turn-state indicator, the input is the accent-prompt box, and a "rides along with the pending result" hint states the injection semantics while the loop runs.
 - The web transcript wears the design pass: a label gutter (`you`/`thinking`/`batch`/`ambient`/`config`), batch surfaces with accent call chrome, the serif voice for intent lines, spot reasons and distiller notes, density toggles (thinking, clear spots, ambient), a delivery echo for submitted turns, a live-output peek, and consolidation marks that name their extent.

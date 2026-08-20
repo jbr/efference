@@ -5,20 +5,15 @@
 // toggles hide, they never drop).
 
 import { memo, useMemo } from "react";
-import type {
-  ConfigEdit,
-  ContentBlock,
-  LogEntry,
-  Mark,
-  Spot,
-} from "../api/types.ts";
+import type { ConfigEdit, ContentBlock, Mark, Spot } from "../api/types.ts";
 import type { LiveBlock, Streaming } from "../session/store.ts";
-import {
-  buildTree,
-  type BatchNode,
-  type CallNode,
-  type LeafNode,
+import type {
+  BatchNode,
+  CallNode,
+  LeafNode,
+  TranscriptNode,
 } from "../session/tree.ts";
+import type { CallId } from "../api/types.ts";
 import { Markdown } from "./Markdown.tsx";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
@@ -204,7 +199,13 @@ function Leaf({ node }: { node: LeafNode }) {
 /** One call, whole: what was asked, what the harness made of it, what came
  * back. The container is what makes a result *belong to* its call rather than
  * merely follow it. */
-const Call = memo(function Call({ node }: { node: CallNode }) {
+const Call = memo(function Call({
+  node,
+  onInspect,
+}: {
+  node: CallNode;
+  onInspect: (callId: CallId) => void;
+}) {
   const call = useMemo(() => {
     const issued = node.issued.payload;
     return "Assistant" in issued
@@ -237,7 +238,12 @@ const Call = memo(function Call({ node }: { node: CallNode }) {
       {call !== null && <CallBlock call={call} />}
       {node.spot !== null && <SpotLine spot={node.spot} />}
       {result !== null && (
-        <ResultBlock tool={node.name} raw={result.raw} wire={result.wire} />
+        <ResultBlock
+          tool={node.name}
+          raw={result.raw}
+          wire={result.wire}
+          onInspect={() => onInspect(node.callId)}
+        />
       )}
     </div>
   );
@@ -248,7 +254,13 @@ const Call = memo(function Call({ node }: { node: CallNode }) {
  * count and nothing else: the mock's duration was invented, and per-batch
  * facts that arrive later (`inbox`, `retries`) belong on this row when they
  * get a surface. */
-function Batch({ node }: { node: BatchNode }) {
+function Batch({
+  node,
+  onInspect,
+}: {
+  node: BatchNode;
+  onInspect: (callId: CallId) => void;
+}) {
   const n = node.calls.length;
   return (
     <div className="batch">
@@ -257,7 +269,7 @@ function Batch({ node }: { node: BatchNode }) {
       </Entry>
       <Entry label={null}>
         {node.calls.map((call) => (
-          <Call key={call.key} node={call} />
+          <Call key={call.key} node={call} onInspect={onInspect} />
         ))}
       </Entry>
     </div>
@@ -358,17 +370,19 @@ function PendingTurns({ pending }: { pending: string[] }) {
 }
 
 export function Transcript({
-  entries,
+  nodes,
   streaming,
   pending,
+  onInspect,
 }: {
-  entries: LogEntry[];
+  /** The projected tree — built once in App, shared with the inspector. */
+  nodes: TranscriptNode[];
   streaming: Streaming;
   pending: string[];
+  onInspect: (callId: CallId) => void;
 }) {
   useFollowTail();
   const { thinking, ambient } = useViewSettings();
-  const nodes = useMemo(() => buildTree(entries), [entries]);
   const shown = nodes.filter(
     (node) =>
       node.kind !== "leaf" ||
@@ -379,7 +393,7 @@ export function Transcript({
     <div className="transcript">
       {shown.map((node) =>
         node.kind === "batch" ? (
-          <Batch key={node.key} node={node} />
+          <Batch key={node.key} node={node} onInspect={onInspect} />
         ) : (
           <MemoLeaf key={node.key} node={node} />
         ),
