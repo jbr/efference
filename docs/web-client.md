@@ -294,9 +294,11 @@ Newsreader variable roman + italic; IBM Plex Mono 400, 400 italic, 500; IBM
 Plex Sans is deliberately absent and `--font-ui` falls back to `system-ui`).
 Self-hosting is forced rather than chosen: the CSP is `default-src 'self'`, so
 a Google Fonts link cannot load. The files ship whole because subsetting counts
-as modification under the OFL's reserved-name clause. The serif is the agent's
-voice — `.prose` and the intent line — while a user turn's prose and everything
-tool-shaped stay in the mono.
+as modification under the OFL's reserved-name clause. The serif is the voice of
+prose — assistant text, thinking, user turns (the mock drew user turns mono;
+reversed on use, 2026-08-19), the intent line — while everything tool-shaped
+stays in the mono. The user turn's accent gutter carries no glow, dropped on
+use the same day.
 
 One asset trap, recorded because it will recur: Vite inlines small `src/`
 assets as `data:` URIs, and the CSP has no `data:` source. Daylight's

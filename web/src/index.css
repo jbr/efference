@@ -73,7 +73,6 @@ header {
 
 .entry.user > .content {
   border-left: 2px solid var(--accent);
-  box-shadow: -3px 0 12px var(--accent-glow);
   padding-left: 0.9rem;
 }
 
@@ -313,18 +312,13 @@ pre {
    default heading and paragraph margins put more space inside one turn than
    the entry separation puts between two.
 
-   The agent's voice is the serif; a user turn's prose stays in the mono
-   voice (the mock's split). The serif runs a step larger because Newsreader
-   sits visually smaller than the mono at equal px. */
+   Both voices read in the serif — a user turn is prose too (the mock drew
+   it mono; reversed on use, 2026-08-19). The serif runs a step larger
+   because Newsreader sits visually smaller than the mono at equal px. */
 .prose {
   font-family: var(--font-prose);
   font-size: 1.125em;
   line-height: 1.55;
-}
-
-.entry.user .prose {
-  font-family: var(--font-mono);
-  font-size: 1em;
 }
 
 .prose code,
