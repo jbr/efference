@@ -181,6 +181,58 @@ async fn the_cookie_authenticates_among_other_cookies_and_split_field_lines() {
         .assert_status(200);
 }
 
+/// `/files` is the operator's read surface over the working directory
+/// (docs/web-bind.md), and the one route the bearer does not open. A bearer holder
+/// reading it would bypass `[paths]` — including the deny that keeps a session out
+/// of every other session's log — so the gate requires the browser's cookie there
+/// and says why, with a 403 rather than a 401: the credential is valid, and
+/// presenting it again would not help.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn files_takes_the_cookie_and_refuses_the_bearer() {
+    let auth = armed("files-cookie-only");
+    let (server, _guard) = tcp_server(&auth).await;
+
+    // Anonymous is not enough, unlike every other GET outside `/v1`.
+    server
+        .get("/files/")
+        .await
+        .assert_status(401)
+        .assert_body_contains(r#""code":"unauthorized""#);
+
+    // The bearer opens `/v1` and not this.
+    let bearer = format!("Bearer {}", auth.bearer());
+    server
+        .get("/v1/state")
+        .with_request_header(KnownHeaderName::Authorization, bearer.clone())
+        .await
+        .assert_status(200);
+    server
+        .get("/files/")
+        .with_request_header(KnownHeaderName::Authorization, bearer)
+        .await
+        .assert_status(403)
+        .assert_body_contains(r#""code":"forbidden""#);
+
+    // The cookie does open it — the surface exists, it is only credential-scoped.
+    let session = server
+        .post("/auth/session")
+        .with_json_body(&serde_json::json!({ "code": current_code(&auth) }))
+        .await;
+    session.assert_status(200);
+    let cookie = session
+        .header(KnownHeaderName::SetCookie)
+        .expect("a session cookie was set")
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+    server
+        .get("/files/")
+        .with_request_header(KnownHeaderName::Cookie, cookie)
+        .await
+        .assert_status(200);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_bearer_authenticates_programs() {
     let auth = armed("bearer-authenticates");

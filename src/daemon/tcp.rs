@@ -36,6 +36,14 @@ pub struct TcpBind {
     pub open: bool,
 }
 
+/// Which credential a conn presented. The bind accepts two, and one route
+/// ([`files`](super::files)) accepts only the browser's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Credential {
+    Cookie,
+    Bearer,
+}
+
 /// A PEM cert chain and private key, read by the CLI so a bad path fails at flag
 /// resolution rather than mid-boot.
 pub struct TlsPem {
@@ -182,9 +190,13 @@ impl TcpAuth {
         self.hosts.contains(&host)
     }
 
-    /// Whether the conn presents a valid credential: the session cookie, or the
+    /// Which credential the conn presents, if any: the session cookie, or the
     /// bearer for programs (which can set headers where `EventSource` cannot).
-    fn authed(&self, conn: &Conn) -> bool {
+    ///
+    /// *Which* one matters, not just whether there is one — `/files` accepts only
+    /// the cookie (docs/web-bind.md), so the kind has to survive this check rather
+    /// than collapsing to a bool here.
+    fn credential(&self, conn: &Conn) -> Option<Credential> {
         // Read through the jar `CookiesHandler` parsed, never `get_str` on the
         // raw header: the cookie header arrives as several field lines when an
         // h2/h3 client splits one line per cookie (RFC 9113 §8.2.3), and
@@ -195,7 +207,7 @@ impl TcpAuth {
         if let Some(value) = conn.cookies().get(auth::COOKIE_NAME).map(Cookie::value)
             && auth::cookie_is_valid(&self.cookie_key, value, SystemTime::now())
         {
-            return true;
+            return Some(Credential::Cookie);
         }
         if let Some(authorization) = conn
             .request_headers()
@@ -203,9 +215,9 @@ impl TcpAuth {
             && let Some(token) = authorization.strip_prefix("Bearer ")
             && self.root.bearer_matches(token.trim())
         {
-            return true;
+            return Some(Credential::Bearer);
         }
-        false
+        None
     }
 
     /// Verify a six-digit code under the lockout, burning the accepted step. The
@@ -317,25 +329,41 @@ fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
             }
             // `trillium_head::head()` runs ahead of the gate, so a HEAD arrives
             // here already rewritten to GET. Anonymous surface: every GET outside
-            // `/v1` — the web client's shell and hashed assets, same posture as the
-            // inline bootstrap page before it (docs/web-client.md) — plus the
-            // credential mint. `/v1` is the whole sensitive surface on this
-            // listener; a non-GET outside it fails closed here rather than 404ing.
+            // the guarded prefixes — the web client's shell and hashed assets, same
+            // posture as the inline bootstrap page before it (docs/web-client.md) —
+            // plus the credential mint. A non-GET outside them fails closed here
+            // rather than 404ing.
             let path = conn.path();
             let v1 = path == "/v1" || path.starts_with("/v1/");
+            // `/files` is guarded on the same footing as `/v1`, and more narrowly:
+            // it is the operator's read surface over the working directory, so it
+            // takes the cookie only (docs/web-bind.md). A bearer holder reading it
+            // would bypass `[paths]`, including the deny that keeps a session out of
+            // other sessions' logs.
+            let files = path == "/files" || path.starts_with("/files/");
             let anonymous = match method {
-                Method::Get => !v1,
+                Method::Get => !v1 && !files,
                 Method::Post => path == "/auth/session",
                 _ => false,
             };
-            if !anonymous && !auth.authed(&conn) {
-                return fail(
+            if anonymous {
+                return conn;
+            }
+            match auth.credential(&conn) {
+                None => fail(
                     conn,
                     ErrorCode::Unauthorized,
                     "no valid session cookie or bearer; POST /auth/session with a current code",
-                );
+                ),
+                // Not `Unauthorized`: the credential is valid, and re-authenticating
+                // as the same program would not help. This surface is the browser's.
+                Some(Credential::Bearer) if files => fail(
+                    conn,
+                    ErrorCode::Forbidden,
+                    "/files takes the session cookie, not the bearer",
+                ),
+                Some(_) => conn,
             }
-            conn
         }
     }
 }
@@ -343,6 +371,15 @@ fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
 /// The handler stack the TCP listener mounts, in one place so the tests exercise
 /// the same one rather than a copy that can drift from it.
 pub(crate) fn stack(auth: Arc<TcpAuth>) -> impl trillium::Handler {
+    stack_with_files(auth, super::files::Files::at_cwd())
+}
+
+/// [`stack`] with the file root injected, so tests can serve a scratch directory
+/// instead of whatever the test process's cwd happens to be.
+pub(crate) fn stack_with_files(
+    auth: Arc<TcpAuth>,
+    files: super::files::Files,
+) -> impl trillium::Handler {
     (
         // Outermost, so its `before_send` runs last and the headers land on every
         // response the stack produces — including the routers' errors.
@@ -356,7 +393,11 @@ pub(crate) fn stack(auth: Arc<TcpAuth>) -> impl trillium::Handler {
         gate(Arc::clone(&auth)),
         public_router(auth),
         router(),
-        // Last: any GET neither router claimed is the web client's surface
+        // The operator's read surface over the working directory (docs/web-bind.md),
+        // mounted only here so the UDS never serves it. It claims `/files` and
+        // passes everything else through.
+        files,
+        // Last: any GET neither router nor `/files` claimed is the web client's surface
         // (docs/web-client.md) — an asset, or the SPA index.
         frontend(),
     )

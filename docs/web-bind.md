@@ -122,13 +122,66 @@ Runs before every TCP route, in order:
    no-preflight CSRF shapes. A localhost or LAN bind is not a trust boundary while a
    browser is present; these ship with the bind, not after it.
 3. **Credential check** — valid cookie or bearer, else `401 unauthorized`. The
-   anonymous surface is every GET outside `/v1` — the web client's shell and hashed
-   assets ([web-client.md](web-client.md)), which reveal nothing session-specific —
-   plus `POST /auth/session` (the mint). `/v1` is the whole sensitive surface on this
-   listener; a non-GET outside it fails closed rather than 404ing.
+   anonymous surface is every GET outside the guarded prefixes — the web client's
+   shell and hashed assets ([web-client.md](web-client.md)), which reveal nothing
+   session-specific — plus `POST /auth/session` (the mint). The guarded prefixes are
+   `/v1` and `/files`; a non-GET outside them fails closed rather than 404ing.
+   `/files` is guarded more narrowly still: it takes the **cookie only**, and a
+   valid bearer gets `403 forbidden` there rather than `401`, because the credential
+   is fine and presenting it again would not help.
 
 The `401`/`403`/`429` codes are `ErrorCode` variants in the standard error envelope
 ([control-api.md](control-api.md)).
+
+## `/files` — the operator's read surface over the working directory
+
+`src/daemon/files.rs`, mounted on the TCP spawn only, after both routers and before
+the web client's frontend handler. Read-only and human-facing: it is what running a
+static file server beside the daemon was doing, moved inside it, so project files
+are readable through the same page the session runs in — including from away from
+the machine. It is the server half of the file viewer
+([../backlog/web/file-view/](../backlog/web/file-view/README.md)).
+
+- `GET /files/<path>` → the file's bytes.
+- `GET /files/<dir>/` → a JSON listing: `path` (relative to the root) and `entries`
+  of `{name, kind, size, modified_at, symlink}`, sorted by name. `kind` follows
+  symlinks while `symlink` records that the entry is one. The slashless spelling
+  `301`s to the slashed one, so a listing's relative links compose.
+- Anything else, including any non-GET, is refused — this surface never mutates.
+
+**Not under `/v1`, and not the bearer's.** `/v1` is the control API, where every
+client is equal and a bearer holder is one of them. Working-directory reads from a
+bearer would bypass `[paths]` entirely, including the injected deny that keeps a
+session out of every other session's log ([permissions.md](permissions.md)). Nothing
+reaches that today — the root is stripped from tool children, so a session cannot
+derive the bearer — but requiring the cookie closes it structurally rather than by
+argument.
+
+**Content-type is never the file's own.** Every body is
+`text/plain; charset=utf-8`. Serving a repository's `.html` as `text/html` would be
+same-origin script execution on a page that holds a session credential for a channel
+that runs commands; `nosniff` rides every response already, so both halves are
+covered.
+
+**The root is the process working directory** — session-stable, the same root the
+built-in tools resolve relative paths against — with no coupling to the session's
+`[paths]` grants: the perimeter restrains the agent, not the operator. Resolution
+canonicalizes and then re-checks containment, because the escape worth closing is a
+symlink *inside* the root pointing out of it. (`..` is popped lexically too, though
+over HTTP it never arrives — URL parsing removes dot segments before the request
+goes out.)
+
+**Refusals, not degraded renders.** A file that is not valid UTF-8 is
+`415 unsupported_content`; one past `files::MAX_BYTES` (500 KiB) is
+`413 too_large`. Both are stated so the viewer can say *why* rather than showing a
+blank pane. This is also why a body is read whole rather than streamed: streaming
+commits to `200` with its first byte, after which "not text" could only arrive as
+replacement characters. Lifting the ceiling would mean range requests and
+prefix-only validation together, which is a different design.
+
+Listings omit `.git`, `target`, and `node_modules`. The read route does not consult
+that set — anything you can name, you can read; the listing only keeps a tree from
+drowning in build output.
 
 ## Auth routes live beside `/v1`, not under it
 

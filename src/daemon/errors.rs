@@ -47,6 +47,15 @@ pub(crate) enum ErrorCode {
     /// TOTP verification is locked out (docs/web-bind.md); the response carries
     /// `Retry-After`. A client acts by waiting, not by retrying immediately. 429.
     RateLimited,
+    /// `/files` was asked for something it does not serve as text — today, a file
+    /// that is not valid UTF-8 (docs/web-bind.md). A client acts by saying so
+    /// instead of rendering: no retry helps, and no other body is coming. 415.
+    UnsupportedContent,
+    /// `/files` was asked for a file past the view limit
+    /// ([`files::MAX_BYTES`](super::files::MAX_BYTES)). Distinct from
+    /// [`UnsupportedContent`](Self::UnsupportedContent) because the file *is* text
+    /// and a client says something different about it. 413.
+    TooLarge,
 }
 
 impl ErrorCode {
@@ -59,6 +68,8 @@ impl ErrorCode {
             Self::Forbidden => 403,
             Self::NotFound => 404,
             Self::GateMoved => 409,
+            Self::TooLarge => 413,
+            Self::UnsupportedContent => 415,
             Self::RateLimited => 429,
             Self::Internal => 500,
         }

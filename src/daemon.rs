@@ -601,6 +601,8 @@ mod config_edits;
 // resource-renamed gate.
 #[allow(dead_code)]
 mod errors;
+// The file viewer's read surface (docs/web-bind.md), mounted on the TCP spawn only.
+mod files;
 // The control-stream frame envelope (docs/control-api.md), defined ahead of its
 // construction sites, like `WireState`'s variants were: pinning the contract first is
 // what keeps adding the unified endpoint from also reshaping it. `dead_code` until the

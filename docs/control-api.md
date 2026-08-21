@@ -23,8 +23,11 @@ timestamp) holding `control.sock`, `log.jsonl`, and `config.toml`.
 With `serve --bind`, the same routes are also served on a TCP listener behind a
 hardening + auth gate — cookie or bearer, plus `401 unauthorized` /
 `403 forbidden` / `429 rate_limited` in the standard error envelope, and the
-`/auth/*` routes beside `/v1`. That surface is [web-bind.md](web-bind.md); the
-UDS stays auth-exempt and everything below is unchanged on it.
+`/auth/*` routes beside `/v1`. That listener also carries `/files` — the
+operator's read-only view of the working directory, cookie-only and outside the
+version prefix because it is a human surface rather than a control one. Both are
+[web-bind.md](web-bind.md); the UDS stays auth-exempt and everything below is
+unchanged on it.
 
 A client finds the socket by:
 
@@ -520,6 +523,8 @@ returning the same code cannot disagree about the status:
 | `invalid_decision` | 400 | a well-formed decision verb the daemon doesn't implement — the client is version-skewed, not buggy |
 | `not_found` | 404 | no such notification id, proposal `seq`, or process id |
 | `gate_moved` | 409 | `PUT /approvals/:call_id` whose id is not the pending gate; `detail` carries the current gate |
+| `too_large` | 413 | `/files` was asked for a file past the view limit ([web-bind.md](web-bind.md)) |
+| `unsupported_content` | 415 | `/files` was asked for something it does not serve as text — today, a file that is not valid UTF-8 |
 | `internal` | 500 | a log append or config write failed; absent shared state |
 
 A code earns its place when a client would *act* differently on it, not when
