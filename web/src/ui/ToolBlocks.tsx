@@ -19,6 +19,7 @@ import {
   wireLabel,
   type ResultView,
 } from "../render/parse.ts";
+import { openablePaths } from "../session/touchedFiles.ts";
 
 /** The call's header row: the accent prompt, the tool, its identifying
  * argument. One shape for committed and streaming calls, so a call does not
@@ -27,10 +28,12 @@ function CallHead({
   name,
   summary,
   arriving,
+  trailing,
 }: {
   name: string;
   summary: string | null;
   arriving?: boolean;
+  trailing?: React.ReactNode;
 }) {
   return (
     <div className="call-head">
@@ -43,15 +46,63 @@ function CallHead({
         </>
       )}
       {arriving === true && <span className="dim">…</span>}
+      {trailing}
     </div>
   );
 }
 
-export function CallBlock({ call }: { call: ToolCall }) {
+/** The `open ⤢` links a call carries: one per viewable file it names —
+ * within-cwd only (session/touchedFiles.ts) — opening the *current* file
+ * from disk, never the file at the time of the call. Buttons, so the call's
+ * open-the-inspector click handler ignores them (Transcript.tsx). */
+export function OpenFileLinks({
+  paths,
+  onOpenFile,
+}: {
+  paths: string[];
+  onOpenFile: (path: string) => void;
+}) {
+  if (paths.length === 0) return null;
+  return (
+    <span className="open-file-links">
+      {paths.map((path) => (
+        <button
+          key={path}
+          className="linkish open-file"
+          title={`view ${path} as it is now on disk`}
+          onClick={() => onOpenFile(path)}
+        >
+          {paths.length === 1 ? "open ⤢" : `${path.split("/").at(-1)} ⤢`}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+export function CallBlock({
+  call,
+  onOpenFile,
+}: {
+  call: ToolCall;
+  onOpenFile?: (path: string) => void;
+}) {
   const view = useMemo(() => callView(call.name, call.input), [call]);
+  const paths = useMemo(
+    () =>
+      onOpenFile === undefined ? [] : openablePaths(call.name, call.input),
+    [call, onOpenFile],
+  );
   return (
     <div className="block">
-      <CallHead name={call.name} summary={view.summary} />
+      <CallHead
+        name={call.name}
+        summary={view.summary}
+        trailing={
+          onOpenFile !== undefined && (
+            <OpenFileLinks paths={paths} onOpenFile={onOpenFile} />
+          )
+        }
+      />
       {view.intent !== null && <div className="intent">{view.intent}</div>}
       {view.body !== null && (
         <Code text={view.body.text} lang={view.body.lang} />

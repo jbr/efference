@@ -96,9 +96,13 @@ function CodeBody({
 export function NumberedCode({
   lines,
   lang,
+  lineClass,
 }: {
   lines: [number, string][];
   lang: string | null;
+  /** Extra class per line number — the file viewer's change tint and
+   * deletion seam; absent everywhere else. */
+  lineClass?: (n: number) => string | undefined;
 }) {
   const highlight = useHighlight();
   // `lines` is rebuilt by the cordon on every render, so it cannot be a memo
@@ -113,8 +117,15 @@ export function NumberedCode({
     <pre data-lang={lang ?? undefined}>
       {lines.map(([n, line], i) => (
         // Two cells so a wrapped line continues under its own text, not
-        // under the gutter number.
-        <div className="numbered-line" key={n}>
+        // under the gutter number. `data-line` is the scroll anchor the file
+        // viewer jumps to.
+        <div
+          className={["numbered-line", lineClass?.(n)]
+            .filter((c) => c !== undefined)
+            .join(" ")}
+          data-line={n}
+          key={n}
+        >
           <span className="lineno">{String(n).padStart(5)} </span>
           <span className="line-body">
             {tokens?.[i] === undefined ? line : <Line tokens={tokens[i]} />}

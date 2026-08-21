@@ -538,6 +538,70 @@ safe for the reason the position existed: a gate decides a *call*, never a
 result, so no pending decision rests on a truncated body — and the full
 body is one click away. Other tools' results still render whole.
 
+## The file viewer
+
+`ui/FileView.tsx`: a full-screen overlay showing what a file *is* — read from
+disk over `/files` ([web-bind.md](web-bind.md)) — where the inspector shows
+what a call *did*. The transcript stays mounted behind it and uses the
+inspector's overlay machinery (`@starting-style` entry, `.closing` +
+`transitionend` exit with the timeout fallback, `shown`-through-the-slide in
+`App`); Escape closes. No router: the overlay is App state, like the drawer.
+
+Entry is the `open ⤢` affordance: on a call's header row in the transcript
+(one link per viewable file the call names; buttons, so the
+open-the-inspector click ignores them) and in the inspector's footer,
+labelled `open current file` — footer rather than tab, because the drawer is
+call-scoped history and the file on disk is now. Which files a call names is
+`session/touchedFiles.ts`: `write`'s `path`, the edit tools' `file_path`,
+`read`'s `paths`. **Within-cwd only, categorically** — an absolute or
+`..`-leading path yields no affordance and is never followed; the call's own
+log diff is its surface. That is a scope position (no arbitrary reads from
+elsewhere on the system), not a resolution gap, and it also sidesteps the
+client not knowing the cwd (the identity topic,
+[../backlog/session-identity-topic.md](../backlog/session-identity-topic.md),
+would be the mapping if the scope ever widens).
+
+**Highlights come from diffing successive fetches, never from the tool
+call.** `session/lineDiff.ts` is the one diff engine: hand-rolled Myers over
+lines, common affixes trimmed first, an edit-distance budget past which the
+middle reports as one changed block. The bytes last rendered per path live
+in a module-scoped map, so a highlight means *what changed since you last
+looked* — identical for an agent edit and a save from emacs, and surviving
+close/reopen of the overlay. A pure deletion has no line to tint and reports
+as a seam (`removedAt`), drawn as a dashed rule on the line after it. Source
+view tints lines (`NumberedCode`'s `lineClass`, `data-line` as the scroll
+anchor); rendered markdown tints at **block granularity** — the same line
+ranges mapped onto top-level blocks via hast `position` by a rehype plugin
+stamping `data-changed` (`ui/Markdown.tsx`), sub-block precision
+deliberately not wanted: the reader who wants lines toggles to source.
+
+**Freshness is two sources through one mechanism.** A committed, non-errored
+edit in the log (the `lastEdit` derivation) triggers an immediate
+conditional GET; a 2 s conditional-GET poll while the tab is visible covers
+edits from outside, answered 304 by the endpoint's ETag until something
+changes. A refusal drops the held validator, because a file restored with
+its old mtime would otherwise revalidate 304 against the refusal screen. A
+daemon-side fs watch is the intended replacement for the poll
+([../backlog/web/file-view/watch.md](../backlog/web/file-view/watch.md));
+the diff machinery is identical either way, so promoting changes no client
+code.
+
+**Following the agent** is the same signal steering the view: an edit
+landing on the open path re-fetches now; one landing elsewhere switches the
+view to that file and scrolls to the first change. Edits and writes move
+the view; a bare `read` never does — reads are the coming tree's
+working-set annotation instead. The `following ⇢` toggle suppresses the
+switch and the scroll while keeping the live reload and the highlights.
+
+**Refusals render legibly against the path** — "not a text file",
+"too large to view", "no such file under the working directory" — never a
+blank pane: the endpoint refuses rather than degrades, so every body that
+arrives is whole, and there is no truncation state, windowed fetch, or
+virtualization here. Markdown files default to rendered with a
+`source`/`rendered` toggle; other files are highlighted source with
+absolute line numbers. `api/files.ts` is the fetch (refusals as values, not
+thrown errors, because the viewer renders them).
+
 ## The gate surface
 
 The pending approval gate (`web/src/ui/Gate.tsx`) renders from the `gate` state

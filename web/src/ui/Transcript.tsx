@@ -203,9 +203,11 @@ function Leaf({ node }: { node: LeafNode }) {
 const Call = memo(function Call({
   node,
   onInspect,
+  onOpenFile,
 }: {
   node: CallNode;
   onInspect: (callId: CallId) => void;
+  onOpenFile: (path: string) => void;
 }) {
   const call = useMemo(() => {
     const issued = node.issued.payload;
@@ -244,7 +246,7 @@ const Call = memo(function Call({
   }
   return (
     <div className="call clickable" onClick={open}>
-      {call !== null && <CallBlock call={call} />}
+      {call !== null && <CallBlock call={call} onOpenFile={onOpenFile} />}
       {node.spot !== null && <SpotLine spot={node.spot} />}
       {result !== null && (
         <ResultBlock tool={node.name} raw={result.raw} wire={result.wire} />
@@ -263,9 +265,11 @@ const Call = memo(function Call({
 function Batch({
   node,
   onInspect,
+  onOpenFile,
 }: {
   node: BatchNode;
   onInspect: (callId: CallId) => void;
+  onOpenFile: (path: string) => void;
 }) {
   const n = node.calls.length;
   return (
@@ -275,7 +279,12 @@ function Batch({
       </Entry>
       <Entry label={null}>
         {node.calls.map((call) => (
-          <Call key={call.key} node={call} onInspect={onInspect} />
+          <Call
+            key={call.key}
+            node={call}
+            onInspect={onInspect}
+            onOpenFile={onOpenFile}
+          />
         ))}
       </Entry>
     </div>
@@ -380,12 +389,14 @@ export function Transcript({
   streaming,
   pending,
   onInspect,
+  onOpenFile,
 }: {
   /** The projected tree — built once in App, shared with the inspector. */
   nodes: TranscriptNode[];
   streaming: Streaming;
   pending: PendingTurn[];
   onInspect: (callId: CallId) => void;
+  onOpenFile: (path: string) => void;
 }) {
   useFollowTail();
   const { thinking, ambient } = useViewSettings();
@@ -399,7 +410,12 @@ export function Transcript({
     <div className="transcript col">
       {shown.map((node) =>
         node.kind === "batch" ? (
-          <Batch key={node.key} node={node} onInspect={onInspect} />
+          <Batch
+            key={node.key}
+            node={node}
+            onInspect={onInspect}
+            onOpenFile={onOpenFile}
+          />
         ) : (
           <MemoLeaf key={node.key} node={node} />
         ),

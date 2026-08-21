@@ -15,6 +15,7 @@
 // `javascript:` or `data:` link in a model's output does not survive into an
 // href. Neither should be switched off without reading that section.
 
+import { useMemo } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -34,10 +35,57 @@ const components: Components = {
   },
 };
 
-export function Markdown({ children }: { children: string }) {
+/** The shape of a hast node this file needs — structural, because hast's own
+ * types are a transitive dependency this package does not declare. */
+interface StampNode {
+  type: string;
+  position?: { start: { line: number }; end: { line: number } };
+  properties?: Record<string, unknown>;
+  children?: StampNode[];
+}
+
+/** Stamp `data-changed` onto every top-level block whose source lines overlap
+ * a changed range — the file viewer's markdown highlight, at block granularity
+ * by design (backlog/web/file-view/viewer.md). mdast/hast `position` is the
+ * source-to-output mapping, so the one line diff serves this view too; the
+ * stamp is an attribute and the tint is CSS. */
+const stampChanged =
+  (ranges: [number, number][]) => () => (tree: StampNode) => {
+    for (const node of tree.children ?? []) {
+      if (node.type !== "element" || node.position === undefined) continue;
+      const start = node.position.start.line;
+      const end = node.position.end.line;
+      if (ranges.some(([a, b]) => a <= end && start <= b)) {
+        node.properties = { ...node.properties, "data-changed": "" };
+      }
+    }
+  };
+
+export function Markdown({
+  children,
+  changedLines,
+}: {
+  children: string;
+  /** 1-based source line ranges to stamp as changed (the file viewer);
+   * absent everywhere else. */
+  changedLines?: [number, number][];
+}) {
+  // Memoized because a fresh plugin array makes react-markdown reprocess on
+  // every render of the caller.
+  const rehypePlugins = useMemo(
+    () =>
+      changedLines === undefined || changedLines.length === 0
+        ? []
+        : [stampChanged(changedLines)],
+    [changedLines],
+  );
   return (
     <div className="prose">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={rehypePlugins}
+        components={components}
+      >
         {children}
       </ReactMarkdown>
     </div>

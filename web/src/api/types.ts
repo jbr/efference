@@ -244,6 +244,8 @@ export interface ErrorEnvelope {
     | "unauthorized"
     | "forbidden"
     | "rate_limited"
+    | "unsupported_content"
+    | "too_large"
     | "internal";
   message: string;
   detail?: unknown;

@@ -10,6 +10,7 @@ import type { CallNode } from "../session/tree.ts";
 import { Code } from "./Code.tsx";
 import { ResultBody } from "./ToolBlocks.tsx";
 import { callView, resultRender, wireLabel } from "../render/parse.ts";
+import { openablePaths } from "../session/touchedFiles.ts";
 
 /** Drag-to-resize, persisted. The drawer floats over the content (the
  * content column never moves for it — index.css), so resizing is purely the
@@ -110,12 +111,14 @@ export function Inspector({
   closing,
   onSlideOut,
   onClose,
+  onOpenFile,
 }: {
   node: CallNode;
   /** The exit transition is running; `onSlideOut` unmounts when it lands. */
   closing: boolean;
   onSlideOut: () => void;
   onClose: () => void;
+  onOpenFile: (path: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>("result");
   const call = useMemo(() => {
@@ -222,7 +225,44 @@ export function Inspector({
             <div className="dim">no verdict logged</div>
           ))}
       </div>
+      {call !== null && (
+        // In the footer, and labelled current: this drawer is the historical
+        // record of what the call did; the file on disk is *now*, which is
+        // why there is no `file` tab (backlog/web/file-view/README.md).
+        <InspectorOpen
+          name={call.name}
+          input={call.input}
+          onOpenFile={onOpenFile}
+        />
+      )}
       {result !== null && <ForkPanel raw={result.raw} wire={result.wire} />}
+    </div>
+  );
+}
+
+function InspectorOpen({
+  name,
+  input,
+  onOpenFile,
+}: {
+  name: string;
+  input: unknown;
+  onOpenFile: (path: string) => void;
+}) {
+  const paths = useMemo(() => openablePaths(name, input), [name, input]);
+  if (paths.length === 0) return null;
+  return (
+    <div className="inspector-open">
+      {paths.map((path) => (
+        <button
+          key={path}
+          className="linkish open-file"
+          title={`view ${path} as it is now on disk`}
+          onClick={() => onOpenFile(path)}
+        >
+          open {paths.length === 1 ? "current file" : path} ⤢
+        </button>
+      ))}
     </div>
   );
 }

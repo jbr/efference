@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CallId } from "../api/types.ts";
 import { spotFor } from "../session/store.ts";
+import { lastEdit } from "../session/touchedFiles.ts";
 import { buildTree, type CallNode } from "../session/tree.ts";
 import { useSession } from "../session/useSession.ts";
 import { Composer } from "./Composer.tsx";
+import { FileView } from "./FileView.tsx";
 import { GateSurface } from "./Gate.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { Login } from "./Login.tsx";
@@ -54,6 +56,28 @@ export function App() {
     return null;
   }, [nodes, shown]);
 
+  // The file viewer (FileView.tsx): opened by a call's `open ⤢`, dismissed
+  // like the inspector — `shownFile` holds the seed path through the exit
+  // slide. Following moves the viewer's own path internally; this is only
+  // where it starts.
+  const [viewingFile, setViewingFile] = useState<string | null>(null);
+  const [shownFile, setShownFile] = useState<string | null>(null);
+  if (viewingFile !== null && viewingFile !== shownFile)
+    setShownFile(viewingFile);
+  const fileClosing = viewingFile === null && shownFile !== null;
+  const fileDone = useCallback(() => setShownFile(null), []);
+  useEffect(() => {
+    if (!fileClosing) return;
+    const id = setTimeout(fileDone, 350);
+    return () => clearTimeout(id);
+  }, [fileClosing, fileDone]);
+  const onOpenFile = useCallback((path: string) => setViewingFile(path), []);
+  const closeFile = useCallback(() => setViewingFile(null), []);
+  const newestEdit = useMemo(
+    () => lastEdit(session.entries),
+    [session.entries],
+  );
+
   if (session.connection === "unauthenticated") {
     return <Login onAuthenticated={() => connector.retry()} />;
   }
@@ -77,6 +101,7 @@ export function App() {
         streaming={session.streaming}
         pending={session.pendingTurns}
         onInspect={onInspect}
+        onOpenFile={onOpenFile}
       />
       {inspected !== null && (
         <Inspector
@@ -84,6 +109,16 @@ export function App() {
           closing={closing}
           onSlideOut={done}
           onClose={() => setInspecting(null)}
+          onOpenFile={onOpenFile}
+        />
+      )}
+      {shownFile !== null && (
+        <FileView
+          path={shownFile}
+          lastEdit={newestEdit}
+          closing={fileClosing}
+          onSlideOut={fileDone}
+          onClose={closeFile}
         />
       )}
       {gate && (

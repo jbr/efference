@@ -1195,3 +1195,131 @@ select {
 .call-type {
   color: var(--code-type);
 }
+
+/* The file viewer (FileView.tsx): a full-screen overlay over the transcript,
+   which stays mounted behind it — same entry/exit machinery as the inspector
+   (@starting-style in, .closing + transitionend out), above it (z-index),
+   and like it floating rather than reflowing the content beneath. */
+.file-view {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-page);
+  display: flex;
+  flex-direction: column;
+  z-index: 3;
+  transition: transform 0.2s ease-out;
+}
+
+@starting-style {
+  .file-view {
+    transform: translateY(100%);
+  }
+}
+
+.file-view.closing {
+  transform: translateY(100%);
+  transition: transform 0.2s ease-in;
+}
+
+.file-view-head {
+  flex: none;
+  display: flex;
+  gap: 0.9rem;
+  align-items: baseline;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  user-select: none;
+}
+
+.file-view-head .spacer {
+  flex: 1;
+}
+
+.file-view-title {
+  font-size: 0.6875rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.file-view-path {
+  font-size: 0.85em;
+  color: var(--fg-bright);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.file-view-head .follow.on {
+  color: var(--accent);
+}
+
+.file-view-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 0 4rem;
+}
+
+/* Wider than the transcript's column: this is a code-reading surface. */
+.file-view-col {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0 1.2rem;
+}
+
+.file-refusal {
+  padding: 3rem 0;
+  text-align: center;
+}
+
+.file-refusal-what {
+  font-family: var(--font-serif, inherit);
+  font-size: 1.1em;
+  margin-bottom: 0.4rem;
+}
+
+/* "What changed since you last looked" — the diff tint on re-fetch
+   (session/lineDiff.ts). A pure deletion has no line to tint, so the seam
+   is a rule on the line after it. */
+.numbered-line.changed {
+  background: var(--diff-add-bg);
+}
+
+.numbered-line.removed-before {
+  border-top: 1px dashed var(--diff-del);
+}
+
+/* Markdown highlights at block granularity: the stamped top-level block
+   carries the same tint (Markdown.tsx). */
+.prose [data-changed] {
+  background: var(--diff-add-bg);
+}
+
+/* A call's open ⤢ links sit at the end of its header row; dim until the
+   call's hover, like the rest of the call's affordance surface. */
+.open-file-links {
+  display: inline-flex;
+  gap: 0.6rem;
+  margin-left: 0.4rem;
+}
+
+.open-file-links .open-file {
+  font-size: 0.8em;
+  color: var(--fg-faint);
+}
+
+.call.clickable:hover .open-file-links .open-file,
+.open-file-links .open-file:hover {
+  color: var(--accent);
+}
+
+.inspector-open {
+  flex: none;
+  border-top: 1px solid var(--border-subtle);
+  padding: 0.5rem 0.9rem;
+  display: flex;
+  gap: 0.8rem;
+}
