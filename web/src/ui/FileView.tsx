@@ -1,7 +1,9 @@
-// The file viewer (docs/web-client.md; backlog/web/file-view/viewer.md): a
-// full-screen overlay showing what a file *is* — read from disk over /files
-// (docs/web-bind.md) — where the inspector shows what a call *did*. The
-// transcript stays mounted behind it, one dismissal away.
+// The file viewer (docs/web-client.md): an overlay filling the band between
+// the top bar and the dock, showing what a file *is* — read from disk over
+// /files (docs/web-bind.md) — where the inspector shows what a call *did*.
+// The transcript stays mounted behind it, one dismissal away; the dock stays
+// visible and working, so the composer and gate remain at hand while
+// reading.
 //
 // Highlights come from diffing successive fetches, never from the tool call:
 // the client keeps the bytes it last showed per path and diffs each re-fetch
@@ -39,6 +41,28 @@ interface Refusal {
  * and reopening the viewer: the reader did look, whether or not the overlay
  * stayed mounted. Client-session-scoped, like everything derived here. */
 const lastShown = new Map<string, string>();
+
+/** The band between the sticky chrome: below the top bar, above the dock.
+ * Both edges are measured, not guessed in CSS — the dock's height moves
+ * (the panel expands and collapses, the textarea resizes) — the same shape
+ * as the gate float's dock offset (Gate.tsx). */
+function useChromeBand(): { top: number; bottom: number } {
+  const [band, setBand] = useState({ top: 0, bottom: 0 });
+  useEffect(() => {
+    const bar = document.querySelector(".top-bar");
+    const dock = document.querySelector(".dock");
+    if (!(bar instanceof HTMLElement) || !(dock instanceof HTMLElement))
+      return;
+    const update = () =>
+      setBand({ top: bar.offsetHeight, bottom: dock.offsetHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(bar);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, []);
+  return band;
+}
 
 /** The refusal, legible against the path — never a blank pane. The endpoint
  * refuses rather than degrades (docs/web-bind.md), so every body that does
@@ -186,6 +210,7 @@ export function FileView({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const band = useChromeBand();
   const lang = useMemo(() => langForPath(current), [current]);
   const isMarkdown = lang === "markdown";
 
@@ -212,6 +237,7 @@ export function FileView({
   return (
     <div
       className={closing ? "file-view closing" : "file-view"}
+      style={{ top: band.top, bottom: band.bottom }}
       onTransitionEnd={(e) => {
         if (
           closing &&

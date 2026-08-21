@@ -63,10 +63,15 @@ const jumpToTail = () =>
 export function GateSurface({
   gate,
   spot,
+  covered,
   resolve,
 }: {
   gate: Gate;
   spot: Spot | null;
+  /** The file viewer is open over the transcript: the in-flow surface may be
+   * geometrically in view yet occluded, which the IntersectionObserver
+   * cannot see — so treat it as away and float. */
+  covered: boolean;
   resolve: (decision: Decision) => Promise<"applied" | "moved">;
 }) {
   const [steer, setSteer] = useState("");
@@ -222,15 +227,19 @@ export function GateSurface({
   const { summary } = callView(gate.name, gate.input);
   return (
     <>
-      {away &&
+      {(away || covered) &&
         (floatOpen ? (
           <div className="gate-float" style={{ bottom }}>
             <div className="gate-float-head">
               <span className="kind">⏸ awaiting approval</span>
               <span className="spacer" />
-              <button className="linkish" onClick={jumpToTail}>
-                jump to call ↓
-              </button>
+              {/* Jumping to the tail while the viewer covers it would land
+                  behind the viewer. */}
+              {!covered && (
+                <button className="linkish" onClick={jumpToTail}>
+                  jump to call ↓
+                </button>
+              )}
               <button className="linkish" onClick={() => setFloatOpen(false)}>
                 collapse ✕
               </button>

@@ -126,6 +126,7 @@ export function App() {
           <GateSurface
             gate={gate}
             spot={spotFor(session.entries, gate.call_id)}
+            covered={shownFile !== null}
             resolve={(decision) => actions.resolveGate(gate.call_id, decision)}
           />
         </div>

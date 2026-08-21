@@ -520,7 +520,7 @@ is call-scoped, so a tab here would read as "the file at the time of this
 call", while a file read from disk is the file *now*, and serving the
 historical reading would mean snapshotting every file at every edit. The
 division held instead is that the inspector shows what a call did — from the
-log, which holds it — and the coming file viewer shows what a file is
+log, which holds it — and the file viewer shows what a file is
 ([backlog/web/file-view/](../backlog/web/file-view/README.md)). Below the tabs,
 **what the fork returned**: the raw line count, the surfaced count computed
 from the keep, the keep itself (`All` / `None` / `Ranges(a..b, …)`), the
@@ -540,9 +540,18 @@ body is one click away. Other tools' results still render whole.
 
 ## The file viewer
 
-`ui/FileView.tsx`: a full-screen overlay showing what a file *is* — read from
-disk over `/files` ([web-bind.md](web-bind.md)) — where the inspector shows
-what a call *did*. The transcript stays mounted behind it and uses the
+`ui/FileView.tsx`: an overlay filling the band between the top bar and the
+dock, showing what a file *is* — read from disk over `/files`
+([web-bind.md](web-bind.md)) — where the inspector shows what a call *did*.
+The chrome stays visible and working: the composer, the panel, and a pending
+gate remain at hand while reading. The band's edges are measured
+(`useChromeBand`, a `ResizeObserver` on `.top-bar` and `.dock`, the same
+shape as the gate float's dock offset) because the dock's height moves; the
+app column is `min-height: 100dvh` flex with the transcript growing, so the
+dock sits at the viewport bottom even under a short transcript and the
+band's bottom edge meets it. The slide-out passes behind the dock (both
+carry a z-index, dock later in the DOM); the viewer sits below the inspector
+and the gate float. The transcript stays mounted behind it and uses the
 inspector's overlay machinery (`@starting-style` entry, `.closing` +
 `transitionend` exit with the timeout fallback, `shown`-through-the-slide in
 `App`); Escape closes. No router: the overlay is App state, like the drawer.
@@ -622,7 +631,11 @@ normally renders.
 
 Because the affordance sits in the flow rather than pinned, it can be scrolled
 away from. While an `IntersectionObserver` reports the in-flow surface out of
-view, a **floating gate panel** pins above the dock — and it is the one place
+view — or the file viewer is open, which occludes the surface without moving
+it out of the observer's geometric view (the `covered` prop from `App`; the
+float renders above the viewer, its jump-to-call link dropped because the
+tail it would land on is behind the viewer) — a **floating gate panel** pins
+above the dock — and it is the one place
 the call renders a second time (via the same `CallBlock`/`SpotLine` the
 transcript uses: header, intent, full command, verdict), because the entries
 the in-flow surface leans on are exactly what is off-screen. The panel shares
