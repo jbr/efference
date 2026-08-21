@@ -206,6 +206,35 @@ Listings omit `.git`, `target`, and `node_modules`. The read route does not cons
 that set — anything you can name, you can read; the listing only keeps a tree from
 drowning in build output.
 
+### Watching for changes
+
+The same URLs content-negotiate: a `GET /files/<path>` whose `Accept` header
+**explicitly names** `text/event-stream` gets a stream of change pokes instead of
+the body. Explicit-only — `*/*`, a fetch's default, gets the file — so only a
+client that asked to stream ever streams; `EventSource` sends exactly the right
+header. Cookie-only like the rest of the surface, and the subscription's lifetime
+*is* the connection: tab closes, socket closes, watch drops. No registry, no
+control-channel frame class — the control channel stays broadcast-topic shaped.
+
+Behind the route sits the core watcher, `src/fswatch.rs`: one notify debouncer,
+consumers on a tokio broadcast channel, watches registered per directory and
+refcounted by guards. Events are **pokes, never content** — `event: change`,
+data the file's root-relative path — and the client answers a poke with the same
+conditional GET it would otherwise poll with, so no event is load-bearing: a
+lagged receiver pokes rather than skips (the cost of a spurious poke is a 304;
+the cost of a missed one would be correctness), and the channel stays shallow.
+
+A file's watch is on its **parent directory** with a filter, for the same
+reasons as the config watcher (`daemon/watch.rs`): notify cannot watch a missing
+path, and editors save via rename-replace. The parent must resolve; the file
+need not exist — so a stream opened against a refusal screen reports the file's
+arrival, and one held across a delete reports the restore. Streams idle-comment
+on the same 15 s heartbeat as `/v1/events`. Directory-scope streams are refused
+for now; they arrive with the tree
+([../backlog/web/file-view/navigation.md](../backlog/web/file-view/navigation.md)),
+and with them the gitignore-aware discovery scope — the watcher consults no
+ignore set today because every watch is an explicitly named path.
+
 ## Auth routes live beside `/v1`, not under it
 
 The first surface with no per-session home, previewing the host process's routing

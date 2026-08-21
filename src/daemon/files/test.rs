@@ -314,3 +314,132 @@ async fn writes_are_refused() {
         "h"
     );
 }
+
+/// A raw client over the same handler shape as [`server`], for the stream tests:
+/// `TestServer`'s assertions buffer the whole body, which an event stream never
+/// ends.
+async fn raw_client(scratch: &Scratch) -> trillium_client::Client {
+    let mut handler = (Files::rooted_at(scratch.path()), |conn: Conn| async move {
+        conn.with_status(FELL_THROUGH).halt()
+    });
+    let context = trillium_testing::init(&mut handler).await;
+    trillium_client::Client::new(
+        trillium_testing::ServerConnector::new(handler).with_context(context),
+    )
+    .with_base("http://localhost/")
+}
+
+/// Read the stream until `needle` appears in the body, or fail after a timeout.
+async fn read_until(conn: &mut trillium_client::Conn, needle: &str) -> String {
+    use futures_lite::AsyncReadExt;
+    let mut body = Vec::new();
+    let mut buf = [0u8; 1024];
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while !String::from_utf8_lossy(&body).contains(needle) {
+            let n = conn
+                .response_body()
+                .read(&mut buf)
+                .await
+                .expect("read body");
+            assert_ne!(n, 0, "the stream ended before {needle:?}");
+            body.extend_from_slice(&buf[..n]);
+        }
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "{needle:?} within the timeout; got {:?}",
+            String::from_utf8_lossy(&body)
+        )
+    });
+    String::from_utf8_lossy(&body).into_owned()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_explicit_event_stream_accept_streams_change_pokes() {
+    let scratch = Scratch::new("stream");
+    scratch.write("watched.txt", "first");
+    let client = raw_client(&scratch).await;
+
+    let mut conn = client
+        .get("/files/watched.txt")
+        .with_request_header(KnownHeaderName::Accept, "text/event-stream")
+        .await
+        .expect("open stream");
+    assert_eq!(conn.status().map(|s| s as u16), Some(200));
+    assert!(
+        conn.response_headers()
+            .get_str(KnownHeaderName::ContentType)
+            .is_some_and(|t| t.contains("text/event-stream")),
+        "an event-stream content type"
+    );
+
+    scratch.write("watched.txt", "second");
+    let body = read_until(&mut conn, "event: change").await;
+    assert!(body.contains("data: watched.txt"), "{body}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stream_on_a_missing_file_reports_its_arrival() {
+    // The watch is on the parent directory, so the file need not exist when the
+    // stream opens — a viewer sitting on a refusal screen hears the restore.
+    let scratch = Scratch::new("arrival");
+    let client = raw_client(&scratch).await;
+
+    let mut conn = client
+        .get("/files/coming.txt")
+        .with_request_header(KnownHeaderName::Accept, "text/event-stream")
+        .await
+        .expect("open stream");
+    assert_eq!(conn.status().map(|s| s as u16), Some(200));
+
+    scratch.write("coming.txt", "arrived");
+    let body = read_until(&mut conn, "event: change").await;
+    assert!(body.contains("data: coming.txt"), "{body}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_default_accept_gets_the_file_never_a_stream() {
+    // The negotiation is explicit-only: `*/*` — a fetch's default — must get
+    // the body, or every plain read would stream (docs/web-bind.md).
+    let scratch = Scratch::new("default-accept");
+    scratch.write("plain.txt", "the body");
+    let server = server(&scratch).await;
+
+    server
+        .get("/files/plain.txt")
+        .with_request_header(KnownHeaderName::Accept, "*/*")
+        .await
+        .assert_status(200)
+        .assert_header("content-type", "text/plain; charset=utf-8")
+        .assert_body("the body");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn directory_streams_are_refused_for_now() {
+    let scratch = Scratch::new("dir-stream");
+    scratch.write("sub/nested.txt", "n");
+    let server = server(&scratch).await;
+
+    server
+        .get("/files/sub/")
+        .with_request_header(KnownHeaderName::Accept, "text/event-stream")
+        .await
+        .assert_status(400);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stream_outside_the_root_is_not_found() {
+    let scratch = Scratch::new("stream-escape");
+    let server = server(&scratch).await;
+
+    // As with the read route's `..` test: URL parsing flattens dot segments
+    // before the request goes out, so the assertion is "did not open a stream",
+    // whichever layer refused. The handler's own guard is `resolve` on the
+    // parent, shared with the read route.
+    let conn = server
+        .get("/files/../outside.txt")
+        .with_request_header(KnownHeaderName::Accept, "text/event-stream")
+        .await;
+    assert_ne!(conn.status(), trillium::Status::Ok);
+}

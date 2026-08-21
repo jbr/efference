@@ -48,10 +48,14 @@
 //! to read any file into the transcript.
 
 use super::*;
+use crate::fswatch::{FsChange, FsWatch, WatchGuard};
 use crate::log::Timestamp;
 use percent_encoding::percent_decode_str;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+use tokio::sync::broadcast::error::RecvError;
 use trillium::{KnownHeaderName, Method};
+use trillium_sse::SseConnExt;
 
 /// The largest file served. Chosen against real source files rather than a round
 /// number: a 5k-line single-file C implementation runs about 200 kB, and this
@@ -61,10 +65,11 @@ use trillium::{KnownHeaderName, Method};
 /// the viewer is expected to meet (jbr, 2026-08-20).
 pub(crate) const MAX_BYTES: u64 = 500 * 1024;
 
-/// Names a listing never reports. The read route does **not** consult this: anything
-/// you can name, you can read; the listing only keeps the tree from drowning in
-/// build output. Whether this becomes gitignore-derived or operator-toggleable is
-/// the navigation unit's question (backlog/web/file-view/navigation.md).
+/// Names a listing never reports. Neither the read route nor the change streams
+/// consult this: anything you can name, you can read and watch; the listing only
+/// keeps the tree from drowning in build output. The settled direction is
+/// gitignore-derived, arriving with the tree's directory streams
+/// (docs/web-bind.md).
 const IGNORED: [&str; 3] = [".git", "target", "node_modules"];
 
 /// The viewer's read surface, rooted at one canonical directory. A root that could
@@ -73,6 +78,10 @@ const IGNORED: [&str; 3] = [".git", "target", "node_modules"];
 #[derive(Debug, Clone)]
 pub(crate) struct Files {
     root: Option<Arc<PathBuf>>,
+    /// The core watcher behind the change streams (`crate::fswatch`). `None` if
+    /// the watcher could not start, in which case streams are refused while
+    /// reads keep working.
+    watch: Option<Arc<FsWatch>>,
 }
 
 impl Files {
@@ -80,7 +89,10 @@ impl Files {
     pub(crate) fn at_cwd() -> Self {
         match std::env::current_dir() {
             Ok(cwd) => Self::rooted_at(cwd),
-            Err(_) => Self { root: None },
+            Err(_) => Self {
+                root: None,
+                watch: None,
+            },
         }
     }
 
@@ -89,6 +101,7 @@ impl Files {
     pub(crate) fn rooted_at(root: impl AsRef<Path>) -> Self {
         Self {
             root: root.as_ref().canonicalize().ok().map(Arc::new),
+            watch: FsWatch::new().ok(),
         }
     }
 
@@ -126,6 +139,141 @@ impl Files {
         let resolved = path.canonicalize().ok()?;
         resolved.starts_with(root.as_path()).then_some(resolved)
     }
+
+    /// `GET` with an Accept that names `text/event-stream`: change pokes for one
+    /// file, over the core watcher (`crate::fswatch`; docs/web-bind.md). Each
+    /// event is the file's root-relative path and nothing else — the client
+    /// answers with the conditional GET it would otherwise poll with, so the
+    /// stream replaces only the timer.
+    ///
+    /// The *parent directory* must resolve; the file itself need not exist. The
+    /// watch is directory-level (editors save via rename-replace, and notify
+    /// cannot watch a missing path), which is also what lets a held stream
+    /// report a deleted file's restoration, and a stream opened on a refusal
+    /// screen report the file's arrival. Directory streams are the navigation
+    /// unit's, not served yet.
+    async fn stream(&self, conn: Conn, rest: &str) -> Conn {
+        let Some(watch) = self.watch.as_ref() else {
+            return fail(
+                conn,
+                ErrorCode::Internal,
+                "the change watcher is not running",
+            );
+        };
+        let root = self.root.as_ref().expect("root checked").clone();
+        let Some((parent, name)) = rest.rsplit_once('/') else {
+            // Unreachable in practice: run() guarantees `rest` is empty or
+            // '/'-led, and empty is a directory spelling.
+            return fail(conn, ErrorCode::BadRequest, "stream a file path");
+        };
+        if name.is_empty() {
+            return fail(
+                conn,
+                ErrorCode::BadRequest,
+                "directory streams are not served yet; stream a file path",
+            );
+        }
+        let Ok(name) = percent_decode_str(name).decode_utf8() else {
+            return fail(
+                conn,
+                ErrorCode::NotFound,
+                "no such path under the working directory",
+            );
+        };
+        if name == "." || name == ".." || name.contains('/') || name.contains('\0') {
+            return fail(
+                conn,
+                ErrorCode::NotFound,
+                "no such path under the working directory",
+            );
+        }
+        let Some(dir) = self.resolve(parent) else {
+            return fail(
+                conn,
+                ErrorCode::NotFound,
+                "no such path under the working directory",
+            );
+        };
+        if !tokio::fs::metadata(&dir).await.is_ok_and(|m| m.is_dir()) {
+            return fail(
+                conn,
+                ErrorCode::NotFound,
+                "no such path under the working directory",
+            );
+        }
+        let file = dir.join(name.as_ref());
+        if tokio::fs::metadata(&file).await.is_ok_and(|m| m.is_dir()) {
+            return fail(
+                conn,
+                ErrorCode::BadRequest,
+                "directory streams are not served yet; stream a file path",
+            );
+        }
+        let rel = file
+            .strip_prefix(root.as_path())
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .into_owned();
+        let guard = match watch.watch_dir(&dir) {
+            Ok(guard) => guard,
+            Err(e) => return fail(conn, ErrorCode::Internal, format!("cannot watch: {e}")),
+        };
+        // Subscribe under the guard: the watch is active before the first
+        // response byte, so no change between headers and the loop is missed.
+        let rx = watch.subscribe();
+        conn.with_sse_stream_and_heartbeat(Box::pin(changes(rx, guard, file, rel)), HEARTBEAT)
+            .halt()
+    }
+}
+
+/// The idle-comment interval, as `/v1/events` uses: proxies and keepalive
+/// middleboxes see traffic on a quiet stream.
+const HEARTBEAT: Duration = Duration::from_secs(15);
+
+/// One change poke: `event: change`, data = the file's root-relative path.
+struct ChangeEvent {
+    data: String,
+}
+
+impl Eventable for ChangeEvent {
+    fn data(&self) -> Option<&str> {
+        Some(&self.data)
+    }
+    fn event_type(&self) -> Option<&str> {
+        Some("change")
+    }
+}
+
+/// The per-connection poke stream: the broadcast filtered to one file, owning
+/// the [`WatchGuard`] so the watch lives exactly as long as the connection. A
+/// lagged receiver pokes rather than skips — the client's answer to any poke
+/// is a conditional GET, so a spurious one costs a 304 and a missed one would
+/// cost correctness.
+fn changes(
+    rx: tokio::sync::broadcast::Receiver<FsChange>,
+    guard: WatchGuard,
+    file: PathBuf,
+    rel: String,
+) -> impl Stream<Item = ChangeEvent> + Send + Sync + 'static {
+    futures_lite::stream::unfold(
+        (rx, guard, file, rel),
+        |(mut rx, guard, file, rel)| async move {
+            loop {
+                match rx.recv().await {
+                    Ok(FsChange { path }) if path == file => {
+                        let event = ChangeEvent { data: rel.clone() };
+                        return Some((event, (rx, guard, file, rel)));
+                    }
+                    Ok(_) => continue,
+                    Err(RecvError::Lagged(_)) => {
+                        let event = ChangeEvent { data: rel.clone() };
+                        return Some((event, (rx, guard, file, rel)));
+                    }
+                    Err(RecvError::Closed) => return None,
+                }
+            }
+        },
+    )
 }
 
 /// One entry of a directory listing. `kind` follows symlinks (a link to a directory
@@ -200,6 +348,17 @@ impl trillium::Handler for Files {
                 ErrorCode::Internal,
                 "no working directory to serve files from",
             );
+        }
+        // Content negotiation (docs/web-bind.md): a request whose Accept
+        // *explicitly* names `text/event-stream` gets a stream of change pokes
+        // instead of the body. Explicit-only — `*/*` (a fetch's default) gets
+        // the file, so only a client that asked to stream ever streams.
+        if conn
+            .request_headers()
+            .get_str(KnownHeaderName::Accept)
+            .is_some_and(|accept| accept.contains("text/event-stream"))
+        {
+            return self.stream(conn, &rest).await;
         }
         let Some(path) = self.resolve(&rest) else {
             return fail(

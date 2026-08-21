@@ -37,7 +37,7 @@ trillium = "1.3.0"
 # gate reads `authority()` from — h2's `:authority` is not consulted by
 # `trillium::Conn::host()` (docs/web-bind.md).
 trillium-http = "1.6"
-trillium-client = { version = "0.9.13", features = ["sse"] }
+trillium-client = { version = "0.9.14", features = ["sse"] }
 trillium-client-retry = "0.0.1"
 trillium-rustls = "0.11.3"
 # 0.6.4 adds `UnixClientConfig` — the client-side Unix-socket connector the
@@ -59,7 +59,7 @@ trillium-sse = "0.3.0"
 # The web client (docs/web-client.md): builds `web/` at compile time and embeds
 # the dist assets in the binary; the `dev-proxy` feature below proxies to a
 # spawned Vite dev server instead (HMR). Build mode needs pnpm on PATH.
-trillium-frontend = "0.4.2"
+trillium-frontend = "0.4.3"
 # The TCP gate's cookie jar (docs/web-bind.md). Parsing must cover every cookie
 # field line — h2/h3 clients split one line per cookie — which the raw-header
 # read it replaced did not.

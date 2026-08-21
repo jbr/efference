@@ -2,10 +2,25 @@
 // directory text files, outside /v1. Refusals are values rather than thrown
 // errors because the viewer renders them as content — "not a text file",
 // "too large to view" — instead of branching away from them. The conditional
-// GET is the viewer's poll: 304 while unchanged, the new body in the same
+// GET answers a change poke: 304 while unchanged, the new body in the same
 // round trip when not.
+//
+// The same URLs content-negotiate: an Accept naming text/event-stream gets a
+// stream of change pokes instead of the body. The Accept here is explicit so
+// a read is always a read — the server only streams for an explicit ask, but
+// the request states which side it wants rather than leaning on the
+// negotiation's default.
 
 import type { ErrorEnvelope } from "./types.ts";
+
+const fileUrl = (path: string): string =>
+  "/files/" + path.split("/").map(encodeURIComponent).join("/");
+
+/** The change-poke stream for one file — EventSource sends
+ * `Accept: text/event-stream`, which is the negotiation. Same-origin, so the
+ * session cookie rides along. */
+export const fileStream = (path: string): EventSource =>
+  new EventSource(fileUrl(path));
 
 export type FileFetch =
   | { kind: "ok"; text: string; etag: string | null }
@@ -20,9 +35,11 @@ export async function fetchFile(
   path: string,
   etag?: string | null,
 ): Promise<FileFetch> {
-  const url = "/files/" + path.split("/").map(encodeURIComponent).join("/");
-  const response = await fetch(url, {
-    headers: etag == null ? {} : { "if-none-match": etag },
+  const response = await fetch(fileUrl(path), {
+    headers: {
+      accept: "text/plain",
+      ...(etag == null ? {} : { "if-none-match": etag }),
+    },
   });
   if (response.status === 304) return { kind: "unchanged" };
   if (response.ok) {

@@ -586,14 +586,16 @@ deliberately not wanted: the reader who wants lines toggles to source.
 
 **Freshness is two sources through one mechanism.** A committed, non-errored
 edit in the log (the `lastEdit` derivation) triggers an immediate
-conditional GET; a 2 s conditional-GET poll while the tab is visible covers
-edits from outside, answered 304 by the endpoint's ETag until something
-changes. A refusal drops the held validator, because a file restored with
-its old mtime would otherwise revalidate 304 against the refusal screen. A
-daemon-side fs watch is the intended replacement for the poll
-([../backlog/web/file-view/watch.md](../backlog/web/file-view/watch.md));
-the diff machinery is identical either way, so promoting changes no client
-code.
+conditional GET; the daemon's change stream covers edits from outside — an
+`EventSource` on the same `/files` URL (the content negotiation and the
+watcher behind it are [web-bind.md](web-bind.md) "Watching for changes"),
+held while the tab is visible and closed while hidden. Every poke, and
+every (re)open of the stream — which is what covers changes missed while
+hidden or disconnected, since `EventSource` reconnects on its own —
+answers with the same conditional GET, so the stream carries no content and
+replaced only the old 2 s poll's timer when it landed. A refusal drops the
+held validator, because a file restored with its old mtime would otherwise
+revalidate 304 against the refusal screen.
 
 **Following the agent** is the same signal steering the view: an edit
 landing on the open path re-fetches now; one landing elsewhere switches the

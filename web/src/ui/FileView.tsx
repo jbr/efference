@@ -10,12 +10,13 @@
 // against them, so a highlight means "what changed since you last looked" —
 // identical for an agent edit and a save from emacs. Freshness is two
 // sources folded into one mechanism: a committed edit in the log triggers an
-// immediate conditional GET, and a 2 s conditional-GET poll (304 while
-// unchanged) covers edits from outside. A daemon-side fs watch is the
-// eventual replacement for the poll; nothing here changes for it.
+// immediate conditional GET, and the daemon's change stream (an EventSource
+// on the same /files URL) covers edits from outside — every poke, and every
+// (re)open of the stream, answers with the same conditional GET, so the
+// stream carries no content and replaces only the old poll's timer.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchFile } from "../api/files.ts";
+import { fetchFile, fileStream } from "../api/files.ts";
 import {
   diffLines,
   NO_CHANGES,
@@ -154,14 +155,32 @@ export function FileView({
     void load(current, false);
   }, [current, load]);
 
-  // The poll: one conditional GET every couple of seconds while the tab is
-  // visible — the common answer is a bodiless 304 (docs/web-bind.md).
+  // The change stream (docs/web-bind.md): pokes for the open path, held only
+  // while the tab is visible — the poll's `document.hidden` check, become
+  // closing the stream. `onopen` re-fetches conditionally, which covers what
+  // a hidden interval or a dropped connection missed (EventSource reconnects
+  // on its own); a poke's answer is the same conditional GET.
   useEffect(() => {
-    const id = setInterval(() => {
-      if (document.hidden) return;
-      void load(current, true);
-    }, 2000);
-    return () => clearInterval(id);
+    let source: EventSource | null = null;
+    const open = () => {
+      source = fileStream(current);
+      source.addEventListener("change", () => void load(current, true));
+      source.onopen = () => void load(current, true);
+    };
+    const visibility = () => {
+      if (document.hidden) {
+        source?.close();
+        source = null;
+      } else if (source === null) {
+        open();
+      }
+    };
+    if (!document.hidden) open();
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      source?.close();
+      document.removeEventListener("visibilitychange", visibility);
+    };
   }, [current, load]);
 
   // Following the agent: a landed edit on the open path re-fetches now

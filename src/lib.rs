@@ -11,6 +11,7 @@ pub mod distill;
 pub mod env;
 pub mod expand;
 pub mod frontend;
+pub mod fswatch;
 pub mod inbox;
 pub mod log;
 pub mod mcp;
