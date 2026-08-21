@@ -39,6 +39,13 @@
 //! the built-in tools resolve relative paths against (`src/policy.rs`). Path
 //! resolution canonicalizes and then **re-checks containment**, because the
 //! escape worth closing is a symlink inside the root pointing out of it, not `..`.
+//!
+//! Within the root nothing is withheld for being sensitive — dotfiles included, so a
+//! cookie holder can read `.env`. That posture, and why a dotfile deny was weighed
+//! and not built, is in docs/web-bind.md; the short of it is that concealing a path
+//! from the listing while still serving it by name would imply a protection that is
+//! not there, and the same cookie already reaches `/v1`, where the agent can be made
+//! to read any file into the transcript.
 
 use super::*;
 use crate::log::Timestamp;

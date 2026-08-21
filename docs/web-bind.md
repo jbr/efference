@@ -171,6 +171,29 @@ symlink *inside* the root pointing out of it. (`..` is popped lexically too, tho
 over HTTP it never arrives — URL parsing removes dot segments before the request
 goes out.)
 
+**Nothing under the root is withheld, dotfiles included.** No path is refused for
+being sensitive, and the listing's omissions above are volume rather than
+concealment — `.git` and `target` stay readable by name. Concealing a path from the
+listing while still serving it by name is the shape deliberately not built: it would
+imply a protection that is not there. What binding therefore exposes, to
+whoever holds the session cookie, is every text file under the working directory —
+`.env` among them. Two things bound that. The cookie is machine-scoped and lives 30
+days, so the exposure window is the cookie's rather than the session's; and the same
+cookie already reaches `/v1`, where approving a gate or injecting a turn can have the
+*agent* read any file into the transcript, so a stolen credential does not become
+materially worse for this route existing. The widening that is real is narrower: an
+operator who deliberately fenced the session into a subdirectory with `[paths]` will
+still find the whole working directory readable through the browser, because that
+fence is the agent's and this surface is not the agent's.
+
+An operator with literal secrets in-tree is the case to know about, and `--bind` is
+the opt-in that carries it. The alternatives were weighed and left unbuilt as
+complexity ahead of need (jbr, 2026-08-20): a dotfile deny catches `.env` while
+missing `secrets.yaml` and `*.pem`, and buys that partial cover at the cost of
+`.github/`, `.envrc`, and `.claude/`; an operator-set exclusion would have to live in
+argv or env rather than `config.toml`, since a knob widening what `/files` serves is
+exactly the kind the session must not be able to propose.
+
 **Refusals, not degraded renders.** A file that is not valid UTF-8 is
 `415 unsupported_content`; one past `files::MAX_BYTES` (500 KiB) is
 `413 too_large`. Both are stated so the viewer can say *why* rather than showing a
