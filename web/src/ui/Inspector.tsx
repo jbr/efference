@@ -44,8 +44,15 @@ function useDrawerWidth() {
   return { width, grip };
 }
 
-type Tab = "result" | "args" | "raw" | "spot" | "file";
-const TABS: Tab[] = ["result", "args", "raw", "spot", "file"];
+// No `file` tab: the drawer is call-scoped, so a tab here reads as "the file
+// at the time of this call", while a file read from disk is the file *now* —
+// and serving the historical reading would mean snapshotting every file at
+// every edit. The division is that the inspector shows what a call did (from
+// the log, which holds it) and the file view shows what a file is
+// (backlog/web/file-view/README.md); the viewer opens from `open ⤢`, labelled
+// as current.
+type Tab = "result" | "args" | "raw" | "spot";
+const TABS: Tab[] = ["result", "args", "raw", "spot"];
 
 const keepLabel = (keep: Keep): string => {
   if (keep === "All") return "All";
@@ -168,11 +175,6 @@ export function Inspector({
           <button
             key={t}
             className={t === tab ? "inspector-tab open" : "inspector-tab"}
-            // The file tab is the punted full-screen file view
-            // (backlog/web/file-view.md): present so the shape is honest,
-            // inert until the endpoint exists.
-            disabled={t === "file"}
-            title={t === "file" ? "file view — not built yet" : undefined}
             onClick={() => setTab(t)}
           >
             {t}

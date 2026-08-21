@@ -44,6 +44,14 @@ promises (idempotent log replay, whole-topic state replacement, buffer settlemen
 when an entry commits). When the control API moves, `api/` and the fold are the
 whole blast radius.
 
+The split carries a second load beyond rate of change. This layout targets the
+desktop browser, and the phone is expected to need drill-down views rather than a
+reflow of it — but it is one app meeting both, over the same screens. So fetching,
+folding, and derivation stay in `api/`, `session/`, and hooks rather than inside
+the components that arrange them, and meeting the phone stays a **layout** change
+rather than a second implementation. Not being responsive today is the licence;
+wiring logic into a desktop-shaped component is not.
+
 The binding (`useSession.ts`) owns the store in a memo but the connector in the
 effect: connecting is a side effect, and `Connector::close()` is permanent, so
 React StrictMode's mount → cleanup → remount cycle (dev builds only) must build
@@ -507,9 +515,13 @@ cannot unmount the drawer early.
 
 Tabs — `result` / `args` / `raw` / `spot`, all views over data the client
 already holds, rendered through the cordon's existing renderers rather than
-a second implementation; and `file`, present but inert — it is the punted
-full-screen file view ([backlog/web/file-view.md](../backlog/web/file-view.md)),
-kept visible so the shape is honest about what is coming. Below the tabs,
+a second implementation. There is deliberately **no `file` tab**: the drawer
+is call-scoped, so a tab here would read as "the file at the time of this
+call", while a file read from disk is the file *now*, and serving the
+historical reading would mean snapshotting every file at every edit. The
+division held instead is that the inspector shows what a call did — from the
+log, which holds it — and the coming file viewer shows what a file is
+([backlog/web/file-view/](../backlog/web/file-view/README.md)). Below the tabs,
 **what the fork returned**: the raw line count, the surfaced count computed
 from the keep, the keep itself (`All` / `None` / `Ranges(a..b, …)`), the
 wire state, and the distiller's note — the audit view of
