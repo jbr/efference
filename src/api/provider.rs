@@ -148,6 +148,10 @@ impl Provider {
                 Ok(ModelCapabilities {
                     context_length,
                     max_output_tokens: model.max_tokens,
+                    // Claude thinking is governed by the tier allowlist
+                    // (`api::thinking`), not this bit — `supports_reasoning`
+                    // describes OpenRouter's normalized `reasoning` parameter.
+                    supports_reasoning: false,
                 })
             }
             Self::OpenRouter => {
@@ -170,6 +174,8 @@ impl Provider {
                 struct ModelEndpoint {
                     context_length: Option<u64>,
                     max_completion_tokens: Option<u64>,
+                    #[serde(default)]
+                    supported_parameters: Vec<String>,
                 }
                 let body: Body = serde_json::from_str(body)?;
                 let context_length = body
@@ -189,9 +195,18 @@ impl Provider {
                     .iter()
                     .filter_map(|e| e.max_completion_tokens)
                     .min();
+                // Min-style, like the ceilings: routing is unpinned, so a
+                // `thinking` block is sent only if *every* endpoint currently
+                // serving the model lists `reasoning`.
+                let supports_reasoning = body
+                    .data
+                    .endpoints
+                    .iter()
+                    .all(|e| e.supported_parameters.iter().any(|p| p == "reasoning"));
                 Ok(ModelCapabilities {
                     context_length,
                     max_output_tokens,
+                    supports_reasoning,
                 })
             }
         }
@@ -214,6 +229,12 @@ pub struct ModelCapabilities {
     pub context_length: u64,
     /// Maximum response tokens, where the provider reports one.
     pub max_output_tokens: Option<u64>,
+    /// Whether every endpoint currently serving the model lists OpenRouter's
+    /// normalized `reasoning` in `supported_parameters` — the foreign-model input
+    /// to the thinking matrix (`api::thinking`; docs/transport.md). Always `false`
+    /// from the Anthropic provider, whose thinking is governed by the Claude tier
+    /// allowlist instead.
+    pub supports_reasoning: bool,
 }
 
 impl Endpoint {

@@ -58,6 +58,11 @@ pub struct Client {
     model: String,
     system: String,
     temperature: Option<u8>,
+    /// The boot-time capability lookup's answer to "does this model take
+    /// OpenRouter's normalized `reasoning`" (`ModelCapabilities::supports_reasoning`)
+    /// — one input to the thinking matrix (`Thinking::for_request`). `false` when no
+    /// lookup ran (the spotter's client), which only ever omits the field.
+    model_reasoning: bool,
     upstream_failure: UpstreamFailureState,
 }
 
@@ -100,6 +105,7 @@ impl Client {
             model: model.into(),
             system: system.into(),
             temperature,
+            model_reasoning: false,
             upstream_failure,
         }
     }
@@ -130,6 +136,13 @@ impl Client {
         }
     }
 
+    /// Record the capability lookup's reasoning answer
+    /// (`ModelCapabilities::supports_reasoning`) — an input to the thinking matrix.
+    pub fn with_model_reasoning(mut self, model_reasoning: bool) -> Self {
+        self.model_reasoning = model_reasoning;
+        self
+    }
+
     /// One streaming round-trip: serialize `messages`, POST with `stream: true`,
     /// and fold the SSE event stream back into a [`Completion`]. Each live signal — prose,
     /// thinking, a tool call opening, its arguments arriving — is handed to `on_delta` as a
@@ -156,7 +169,7 @@ impl Client {
             system: &self.system,
             tools,
             tool_choice,
-            thinking: Thinking::for_request(&self.model, &tool_choice),
+            thinking: Thinking::for_request(&self.model, &tool_choice, self.model_reasoning),
             temperature: self
                 .temperature
                 .map(|t| self.endpoint.provider.map_temperature(t)),
@@ -247,7 +260,7 @@ impl Client {
             system: &self.system,
             tools,
             tool_choice,
-            thinking: THINKING_DISABLED,
+            thinking: Thinking::for_keepalive(&self.model),
             temperature: self
                 .temperature
                 .map(|t| self.endpoint.provider.map_temperature(t)),

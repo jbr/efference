@@ -84,15 +84,23 @@ signatures preserved verbatim because the API rejects a modified block on
 replay. Same-model replay only ever happens (the model is locked per session),
 so a signature always returns to the model that minted it.
 
-The `thinking` **request** field rides on `tool_choice`, which makes the one
-illegal pairing unrepresentable: forced `tool_choice` is incompatible with
-thinking (400), so a forced choice → `disabled`, `auto` → `adaptive`
-(`display: "summarized"`). The main agent turn and the fork peek both send `auto` —
+The `thinking` **request** field rides on `tool_choice`, the model family, and
+the boot capability lookup (`Thinking::for_request`). On Claude the one illegal
+pairing is unrepresentable: forced `tool_choice` is incompatible with thinking
+(400), so a forced choice → `disabled`, `auto` → `adaptive`
+(`display: "summarized"`) on the recognized tiers (not Haiku). **Foreign models
+never get `disabled`** — a mandatory-reasoning endpoint rejects an explicit
+disable outright (probed live, 2026-08-21) — they get `adaptive` on `auto` when
+the metadata grants `reasoning` (the foreign-provider section below), and the
+field **omitted** otherwise, forced choice included: probed, a
+mandatory-reasoning endpoint thinks and then honors the forced call. The main
+agent turn and the fork peek both send `auto` —
 the shared envelope ([redaction-fork.md](redaction-fork.md)): identical
 `tool_choice` and thinking are part of what lets the peek read the agent lineage's
 cache — so both may think (the fork's thinking is discarded with its throwaway
-tail); the spotter still forces its `spot` tool → thinking off; the keepalive is
-`disabled` independently (`max_tokens: 0` rejects thinking-on). Toggling thinking
+tail); the spotter still forces its `spot` tool → thinking off (`disabled` on
+Claude, omitted foreign); the keepalive follows the same family split
+independently (`max_tokens: 0` rejects thinking-on). Toggling thinking
 keeps the tools+system cache tier valid (see
 [log-and-projection.md](log-and-projection.md)), and it's set once per
 call-type and never flipped turn-to-turn, so it stays out of the cached
@@ -289,26 +297,26 @@ Anthropic path is control over breakpoint *placement* and the `1h` TTL; the shor
 foreign TTLs keep the keepalive relevant, though whether a `max_tokens: 0` ping
 refreshes a non-Anthropic cache is unverified.
 
-**Thinking.** Adaptive thinking is an Anthropic `thinking` block most foreign
-models don't accept, so `supports_adaptive_thinking` is an **allowlist** (a
-recognized non-Haiku Claude tier), not "everything but Haiku" — a foreign model
-gets no `thinking` block by default. `EFFERENCE_THINKING=adaptive|off|auto`
-overrides per session (there is no portable capability query: OpenRouter's
-`supported_parameters` describes its normalized `reasoning` param, not the
-Anthropic `thinking` block).
+**Thinking.** A foreign model's `auto`-turn adaptive is granted by the
+capability lookup: `ModelCapabilities::supports_reasoning` — min-style like the
+ceilings, every endpoint currently serving the model must list `reasoning` in
+`supported_parameters` — sends the same `thinking:{type:adaptive}` block, which
+OpenRouter's compat layer translates to its normalized `reasoning`. A foreign
+model not granted it gets no `thinking` field at all — omission, never
+`disabled`, which mandatory-reasoning endpoints reject outright.
+`EFFERENCE_THINKING=adaptive|off|auto` still overrides the `auto`-turn decision
+per session.
 
-That metadata stays out of `supports_adaptive_thinking` even though a boot-time
-capability query now exists (above) and OpenRouter's `reasoning.supported_efforts`
-field happens to track the adaptive-capable Claude generation cleanly (present on
-4.6+, absent on haiku-4.5 and the 4.5/4.1 tier). The signal is invalid, not just
-inconvenient: it describes OpenRouter's *normalized* interface, not the block
-efference sends — proof: `thinkingmachines/inkling` advertises `supported_efforts`
-but rejects an Anthropic `thinking` block, so the field is strictly broader than
-"accepts `thinking:{type:adaptive}`" and cannot replace the Claude-family gate.
-It stays useful offline, as a reference for setting `EFFERENCE_THINKING` by
-hand. Whether acceptance can instead be determined from the response JSON
-itself (a probe, or first-turn observation) is an open question parked in the
-backlog.
+This reverses an earlier position, on re-probed evidence (2026-08-21, three
+foreign models through `/api/v1/messages`): `stealth/ox-alpha` (reasoning
+mandatory — the case that forced the change, an explicit `disabled` 400ing
+every request), `deepseek/deepseek-v4-flash` (default-off; thinks when the
+block is sent), and `thinkingmachines/inkling` all accept the adaptive block.
+inkling is the load-bearing re-test: an earlier probe had it rejecting the
+Anthropic block while advertising reasoning support, which is why metadata was
+previously kept out of the decision as an invalid signal. That rejection no
+longer reproduces — retired as fixed upstream (OpenRouter's translation,
+presumably), not as wrong at the time.
 
 ---
 

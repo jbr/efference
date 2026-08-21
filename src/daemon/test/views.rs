@@ -109,6 +109,7 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
     shared.set_capabilities(crate::api::ModelCapabilities {
         context_length: 200_000,
         max_output_tokens: Some(64_000),
+        supports_reasoning: false,
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["context"]["limit"], 200_000);

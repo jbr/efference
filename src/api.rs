@@ -67,15 +67,19 @@ struct Request<'a> {
     tools: &'a [Value],
     tool_choice: ToolChoice,
     /// Extended thinking (docs/transport.md, docs/transport.md). Rides on
-    /// `tool_choice` and the model: **adaptive** on the main agent turn (`tool_choice: auto`)
-    /// when the model supports it, **disabled** whenever the choice is forced (forced
-    /// `tool_choice` is incompatible with thinking — 400 — and the fork forces its distiller)
-    /// or the model can't run adaptive thinking (Haiku 4.5; see `supports_adaptive_thinking`).
-    /// Keepalive is disabled independently (`max_tokens: 0` rejects `enabled`; adaptive there
-    /// is untested). Set once per call-type and never flipped turn-to-turn, so it stays out of
-    /// the cached prefix's way (toggling thinking keeps the tools+system tier valid;
-    /// docs/log-and-projection.md). (`disabled` 400s on Fable 5, which can't disable thinking — not a
-    /// serve target yet.)
+    /// `tool_choice`, the model, and the capability lookup — the matrix is
+    /// [`Thinking::for_request`]: adaptive on the main agent turn when the model takes
+    /// it (recognized Claude tiers, or a foreign model whose metadata lists
+    /// `reasoning`), explicit `disabled` only ever on Claude (forced `tool_choice` is
+    /// incompatible with thinking there — 400 — and the fork forces its distiller), and
+    /// the field **omitted** for every other foreign case — an explicit `disabled` is
+    /// rejected outright by mandatory-reasoning endpoints. Keepalive is handled
+    /// independently (`max_tokens: 0` rejects `enabled`; adaptive there is untested).
+    /// Set once per call-type and never flipped turn-to-turn, so it stays out of the
+    /// cached prefix's way (toggling thinking keeps the tools+system tier valid;
+    /// docs/log-and-projection.md). (`disabled` also 400s on Fable 5, which can't
+    /// disable thinking — not a serve target yet.)
+    #[serde(skip_serializing_if = "Thinking::is_omit")]
     thinking: Thinking,
     /// Sampling temperature, in the provider's native float range. Omits when
     /// `None` (the session didn't set `--temperature`), letting the API default
@@ -99,7 +103,7 @@ const THINKING_ADAPTIVE: Thinking = Thinking::Adaptive {
 
 /// Per-process override for adaptive thinking, read once from `EFFERENCE_THINKING`:
 /// `adaptive` forces it on, `off`/`disabled` forces it off, `auto` (or unset) defers
-/// to the model allowlist. Read once — env is process-stable and thinking must not
+/// to the Claude allowlist and the capability lookup. Read once — env is process-stable and thinking must not
 /// flip turn-to-turn or it would perturb the cached prefix (docs/transport.md). An
 /// unrecognized value warns once and falls back to `auto`.
 static THINKING_OVERRIDE: std::sync::LazyLock<Option<bool>> = std::sync::LazyLock::new(|| {

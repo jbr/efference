@@ -122,6 +122,98 @@ fn openrouter_capabilities_take_min_across_endpoints() {
     let caps = Provider::OpenRouter.parse_capabilities(body).unwrap();
     assert_eq!(caps.context_length, 195000);
     assert_eq!(caps.max_output_tokens, Some(32000));
+    // No endpoint above lists `supported_parameters` at all → not granted.
+    assert!(!caps.supports_reasoning);
+}
+
+/// `supports_reasoning` is min-style like the ceilings: granted only when every
+/// endpoint currently serving the model lists `reasoning` — routing is unpinned,
+/// so a `thinking` block must be safe on whichever endpoint the request lands on.
+#[test]
+fn openrouter_reasoning_capability_requires_every_endpoint() {
+    let all = r#"{"data": {"endpoints": [
+        {"context_length": 1000000, "supported_parameters": ["reasoning", "tools"]},
+        {"context_length": 1000000, "supported_parameters": ["tools", "reasoning"]}
+    ]}}"#;
+    assert!(
+        Provider::OpenRouter
+            .parse_capabilities(all)
+            .unwrap()
+            .supports_reasoning
+    );
+    let mixed = r#"{"data": {"endpoints": [
+        {"context_length": 1000000, "supported_parameters": ["reasoning", "tools"]},
+        {"context_length": 1000000, "supported_parameters": ["tools"]}
+    ]}}"#;
+    assert!(
+        !Provider::OpenRouter
+            .parse_capabilities(mixed)
+            .unwrap()
+            .supports_reasoning
+    );
+}
+
+/// The thinking matrix (docs/transport.md): Claude keeps the Anthropic pairings
+/// (adaptive on `auto` for recognized tiers, explicit `disabled` on forced choice
+/// and Haiku); foreign models never see `disabled` — adaptive on `auto` when the
+/// capability lookup grants `reasoning`, the field omitted otherwise, forced
+/// choice included. Probed live (`stealth/ox-alpha`, 2026-08-21): a
+/// mandatory-reasoning endpoint 400s on an explicit disable but thinks and then
+/// honors a forced call with the field omitted.
+#[test]
+fn thinking_matrix_never_disables_foreign_models() {
+    use super::thinking::Thinking;
+    let auto = ToolChoice::auto();
+    let forced = ToolChoice::force("retain");
+    let m = Thinking::for_request;
+    assert!(matches!(
+        m("claude-fable-5", &auto, false),
+        Thinking::Adaptive { .. }
+    ));
+    assert!(matches!(
+        m("claude-fable-5", &forced, false),
+        Thinking::Disabled
+    ));
+    assert!(matches!(
+        m("claude-haiku-4-5-20251001", &auto, false),
+        Thinking::Disabled
+    ));
+    assert!(matches!(
+        m("stealth/ox-alpha", &auto, true),
+        Thinking::Adaptive { .. }
+    ));
+    assert!(matches!(
+        m("stealth/ox-alpha", &forced, true),
+        Thinking::Omit
+    ));
+    assert!(matches!(
+        m("deepseek/deepseek-chat", &auto, false),
+        Thinking::Omit
+    ));
+    assert!(matches!(
+        m("deepseek/deepseek-chat", &forced, false),
+        Thinking::Omit
+    ));
+    assert!(matches!(
+        Thinking::for_keepalive("claude-haiku-4-5-20251001"),
+        Thinking::Disabled
+    ));
+    assert!(matches!(
+        Thinking::for_keepalive("stealth/ox-alpha"),
+        Thinking::Omit
+    ));
+}
+
+/// An `Omit` never reaches the wire: the request body carries no `thinking` key
+/// at all, where a Claude request carries the adaptive block.
+#[test]
+fn omitted_thinking_is_absent_from_the_request_body() {
+    let foreign =
+        render_request_pretty("deepseek/deepseek-chat", "", &[], ToolChoice::auto(), &[]).unwrap();
+    assert!(!foreign.contains("thinking"), "{foreign}");
+    let claude = render_request_pretty("claude-fable-5", "", &[], ToolChoice::auto(), &[]).unwrap();
+    assert!(claude.contains("\"thinking\""), "{claude}");
+    assert!(claude.contains("adaptive"), "{claude}");
 }
 
 /// A model no endpoint currently serves (or that reports no context length at

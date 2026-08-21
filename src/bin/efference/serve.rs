@@ -289,7 +289,8 @@ pub(crate) async fn serve(
         },
     )?;
 
-    let client = Client::new(endpoint.clone(), model, system, temperature);
+    let client = Client::new(endpoint.clone(), model, system, temperature)
+        .with_model_reasoning(capabilities.supports_reasoning);
 
     // The independent permission rung (docs/permissions.md): a fresh-context spotter
     // on its own Haiku-band client, built from the same endpoint. It re-decides the calls

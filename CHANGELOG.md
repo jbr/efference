@@ -10,6 +10,9 @@ behind a change, see [`journal/`](journal/).
 ### Changed
 - web: syntax highlighting runs precompiled grammars on Shiki's raw JavaScript engine — the Oniguruma-to-`RegExp` transpiler leaves the main chunk (−56 kB raw, −19 kB gzip; ~11 kB smaller gzipped overall), at an ES2024 (`RegExp` `v` flag) floor.
 
+### Fixed
+- Foreign models think: the `thinking` field is omitted rather than sent as `disabled` for non-Claude models (mandatory-reasoning endpoints rejected the explicit disable, and no OpenRouter model ever produced thinking blocks), with adaptive granted on auto turns when every serving endpoint lists `reasoning` in the boot capability lookup.
+
 ### Added
 - File change streams: `GET /files/<path>` with `Accept: text/event-stream` serves change pokes for that file over a core fs watcher (`src/fswatch.rs` — one notify debouncer, consumers on a broadcast channel, refcounted parent-directory watches); the viewer's 2 s poll replaced by an `EventSource` whose every poke and reopen answers with the same conditional GET.
 - web: the file viewer — an overlay filling the band between the top bar and the dock, so the composer and a pending gate stay at hand (the gate float shows while the viewer covers the in-flow surface) — opened from `open ⤢` on any call naming a within-cwd file, and in the inspector footer, showing the file as it is on disk over `/files`: absolute-numbered highlighted source, markdown rendered with a source toggle, changes-since-you-last-looked highlights from diffing successive fetches (line tint in source, block tint in markdown), freshness from log-frame refetch plus the change stream, and follow-the-agent across files with a toggle that keeps live reload while suppressing the jumps.

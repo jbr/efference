@@ -6,7 +6,10 @@ use super::*;
 /// model decide when/how much to think and interleaves it across turns; `display: "summarized"`
 /// captures a readable model-authored summary into the log (same token cost as omitted). The
 /// serde tag renders `{"type":"adaptive","display":"summarized"}` / `{"type":"disabled"}`
-/// exactly.
+/// exactly. `Omit` leaves the field off the request entirely (the `Request` field's
+/// `skip_serializing_if`), letting the endpoint apply its own default — the only safe
+/// spelling for foreign models, where an explicit `disabled` is rejected outright by
+/// mandatory-reasoning endpoints (probed live on `stealth/ox-alpha`, 2026-08-21).
 #[derive(Serialize, Clone, Copy)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(super) enum Thinking {
@@ -15,39 +18,69 @@ pub(super) enum Thinking {
         #[serde(skip_serializing_if = "Option::is_none")]
         display: Option<&'static str>,
     },
+    /// Never serialized — `is_omit` gates the field off the request.
+    Omit,
 }
 
 impl Thinking {
-    /// Thinking rides on `tool_choice` and the model: forced choice ⟺ no thinking (the API
-    /// rejects the combination), and a model that can't run adaptive thinking (e.g. Haiku
-    /// 4.5) never gets it even on `auto`. Encoding both here makes the illegal pairings
-    /// unrepresentable (docs/transport.md).
-    pub(super) fn for_request(model: &str, tool_choice: &ToolChoice) -> Self {
+    pub(super) fn is_omit(&self) -> bool {
+        matches!(self, Self::Omit)
+    }
+
+    /// Thinking rides on `tool_choice`, the model, and the capability lookup
+    /// (docs/transport.md):
+    ///
+    /// - **Claude models** keep the Anthropic matrix: adaptive on `auto` for the
+    ///   recognized tiers (not Haiku), explicit `disabled` otherwise — forced choice ⟺
+    ///   no thinking there (the API rejects the combination, and the fork forces its
+    ///   distiller).
+    /// - **Foreign models** (reached via OpenRouter) never get `disabled`: adaptive on
+    ///   `auto` when the boot-time metadata says the model takes OpenRouter's normalized
+    ///   `reasoning` (`model_reasoning`, from `supported_parameters`) — the compat layer
+    ///   translates the block — and the field omitted otherwise, including on forced
+    ///   choice: probed live, a mandatory-reasoning endpoint thinks and then honors the
+    ///   forced call, while an explicit `disabled` 400s (2026-08-21).
+    ///
+    /// An explicit `EFFERENCE_THINKING` overrides the `auto`-turn decision either way.
+    pub(super) fn for_request(
+        model: &str,
+        tool_choice: &ToolChoice,
+        model_reasoning: bool,
+    ) -> Self {
+        let adaptive = THINKING_OVERRIDE
+            .unwrap_or_else(|| is_recognized_adaptive_claude(model) || model_reasoning);
         match tool_choice.kind {
-            "auto" if supports_adaptive_thinking(model) => THINKING_ADAPTIVE,
-            _ => THINKING_DISABLED,
+            "auto" if adaptive => THINKING_ADAPTIVE,
+            _ if is_claude_family(model) => THINKING_DISABLED,
+            _ => Thinking::Omit,
+        }
+    }
+
+    /// The keepalive's thinking (docs/transport.md): explicit `disabled` on Claude
+    /// (`max_tokens: 0` rejects `enabled`; adaptive there is untested), the field
+    /// omitted for foreign models — the same "never `disabled` off-family" rule as
+    /// [`Self::for_request`].
+    pub(super) fn for_keepalive(model: &str) -> Self {
+        if is_claude_family(model) {
+            THINKING_DISABLED
+        } else {
+            Thinking::Omit
         }
     }
 }
 
-/// Whether to send `thinking: {type:"adaptive"}` for `model` (docs/transport.md,
-/// docs/transport.md). An explicit `EFFERENCE_THINKING` wins; otherwise this
-/// is an **allowlist**, not "everything but haiku": most non-Anthropic models (reached
-/// via OpenRouter) don't accept the Anthropic `thinking` field at all, so the safe
-/// default is off unless the model is a recognized adaptive-capable Claude tier
-/// (Sonnet/Opus/Fable — **not** Haiku, which takes `enabled`+`budget_tokens` only).
-/// Matched by substring so both bare ids (`claude-opus-4-8`) and provider-scoped slugs
-/// (`anthropic/claude-opus-4.1`) match. There is no portable capability query for this
-/// — OpenRouter's `supported_parameters` describes its normalized `reasoning` interface,
-/// not the Anthropic `thinking` block — so recognition lives here; override per session
-/// with `EFFERENCE_THINKING=adaptive|off`.
-pub(super) fn supports_adaptive_thinking(model: &str) -> bool {
-    THINKING_OVERRIDE.unwrap_or_else(|| is_recognized_adaptive_claude(model))
+/// A Claude-family model id — direct (`claude-…`) or provider-scoped
+/// (`anthropic/…`). These speak the Anthropic `thinking` block natively, so an
+/// explicit `disabled` is safe and, with forced tool choice, required. Everything
+/// else gets the field omitted rather than disabled.
+pub(super) fn is_claude_family(model: &str) -> bool {
+    model.contains("claude") || model.contains("anthropic")
 }
 
-/// The allowlist behind [`supports_adaptive_thinking`]'s `auto` default: a Claude
-/// family model (direct id or `anthropic/…` slug) that isn't Haiku. Everything
-/// foreign (`openai/…`, `google/…`, …) falls outside it and thus gets no `thinking`.
+/// The Claude half of [`Thinking::for_request`]'s `auto` default: a Claude family
+/// model (direct id or `anthropic/…` slug) that isn't Haiku. Foreign models
+/// (`openai/…`, `google/…`, …) fall outside it and are governed by the capability
+/// lookup instead.
 ///
 /// Adaptive thinking (`{type:"adaptive"}`) is a Claude **4.6+** feature; pre-4.6
 /// tiers (Opus 4.5/4.1, Sonnet 4.5/4, …) speak the older `{type:"enabled",
