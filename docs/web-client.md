@@ -218,9 +218,20 @@ Three decisions:
   compile time, so the full grammar set is not affordable; the languages are
   exactly the ones `render/parse.ts`'s `langForPath` can name, loaded as dynamic
   imports so the grammars are their own chunks rather than main-bundle weight.
-- **The JavaScript regex engine**, not the Oniguruma WASM one — no `.wasm` to
-  ship, and no `wasm-unsafe-eval` needed in the CSP the untrusted-output pass
-  will add.
+- **The JavaScript engine over precompiled grammars**, not the Oniguruma WASM
+  one — no `.wasm` to ship, and no `wasm-unsafe-eval` needed in the CSP the
+  bind serves. Of the two JavaScript engines it is the *raw* one:
+  `createJavaScriptRegexEngine` carries a transpiler that converts each
+  grammar's Oniguruma patterns to JavaScript `RegExp` at load time, and it sits
+  in the main chunk. `@shikijs/langs-precompiled` ships grammars whose patterns
+  are already JavaScript regex literals, so `createJavaScriptRawEngine` runs
+  them with no transpiler: the main chunk loses 56 kB (19 kB gzip, back under
+  Vite's 500 kB warning) and startup does no transpiling. The precompiled
+  grammar chunks are larger than their source-pattern equivalents, but less so
+  than the transpiler weighs — every chunk gzipped, the whole app is ~11 kB
+  smaller. The literals carry the `v` (unicodeSets) flag, an ES2024 floor
+  (Chrome 112, Safari 17, Firefox 116) the desktop browsers this targets
+  clear.
 - **Tokens, not HTML.** `codeToTokens` returns `{ content, color }[]` grouped by
   line, which the components render as spans. `codeToHtml` would return a markup
   string, and nothing on this page turns untrusted text into markup. The line
@@ -378,12 +389,16 @@ against the column edge.
 
 `ui/TopBar.tsx`: sticky interface chrome — the serif wordmark, the session
 status dot (breathing while the loop runs), and the usage meter: context
-occupancy as numbers and a thin bar, plus the session cost. Deliberately
-minimal — the mock's bar is a dumping ground of imagined status items, and
-additions happen one argued element at a time
-([backlog/web/upstream-failure.md](../backlog/web/upstream-failure.md) is
-the next argued one). Loop state is not restated here: the dot breathes,
-and the banner, the gate cue, and the composer's turn-state carry the rest.
+occupancy as numbers and a thin bar, plus the session cost. It also carries
+the `upstream_failure` topic when one is set: `upstream 429 ×3` in a
+warn-tinted chip left of the meter, the count covering consecutive matching
+statuses and elided at one. The daemon does not clear the value after a
+success (docs/transport.md), so the chip reads as the *last observed*
+transport failure — its title says so — and it is what makes a stalling
+loop's cause visible. Deliberately minimal otherwise — the mock's bar is a
+dumping ground of imagined status items, and additions happen one argued
+element at a time. Loop state is not restated here: the dot breathes, and
+the banner, the gate cue, and the composer's turn-state carry the rest.
 Two elements wait on the wire: the model name and the working directory,
 which no `/v1` topic carries yet
 ([backlog/session-identity-topic.md](../backlog/session-identity-topic.md)).

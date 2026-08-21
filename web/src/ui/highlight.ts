@@ -5,9 +5,16 @@
 //
 // Two choices worth keeping:
 //
-// - **The JavaScript regex engine, not the Oniguruma WASM one.** No `.wasm`
-//   to ship or fetch, and no `wasm-unsafe-eval` needed in the CSP the
-//   CSP the bind serves (docs/web-client.md).
+// - **The JavaScript raw engine over precompiled grammars, not the Oniguruma
+//   WASM one.** No `.wasm` to ship or fetch, and no `wasm-unsafe-eval` needed
+//   in the CSP the bind serves (docs/web-client.md). *Raw*, not *regex*: the
+//   regex engine carries a transpiler that converts each grammar's Oniguruma
+//   patterns to JavaScript `RegExp` at load time — 147 kB of main chunk.
+//   `@shikijs/langs-precompiled` ships grammars whose patterns are already
+//   JavaScript regex literals, so the raw engine runs them with no
+//   transpiler. The literals carry the `v` (unicodeSets) flag: an ES2024
+//   floor — Chrome 112, Safari 17, Firefox 116 — which the desktop browsers
+//   this targets clear.
 // - **Tokens, not HTML.** `codeToTokens` returns plain
 //   `{ content, color }[]` grouped by line, which the callers render as
 //   spans. `codeToHtml` would hand back a markup string, and nothing on
@@ -23,24 +30,27 @@ import {
   type GrammarState,
   type HighlighterCore,
 } from "shiki/core";
-import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
+import { createJavaScriptRawEngine } from "shiki/engine/javascript";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { CSS_VARIABLES_THEME, cssVariablesTheme } from "./shikiTheme.ts";
 
 /** One entry per language `langForPath` returns. Dynamic imports so the
- * grammars are their own chunks rather than main-bundle weight. */
+ * grammars are their own chunks rather than main-bundle weight; precompiled,
+ * so the engine needs no transpiler (see above). Every language named here is
+ * published precompiled — a missing one would have to fall back to
+ * `@shikijs/langs` *and* drag the regex engine back in for all of them. */
 const LANGS = [
-  import("@shikijs/langs/rust"),
-  import("@shikijs/langs/toml"),
-  import("@shikijs/langs/markdown"),
-  import("@shikijs/langs/json"),
-  import("@shikijs/langs/javascript"),
-  import("@shikijs/langs/typescript"),
-  import("@shikijs/langs/python"),
-  import("@shikijs/langs/bash"),
-  import("@shikijs/langs/yaml"),
-  import("@shikijs/langs/html"),
-  import("@shikijs/langs/css"),
+  import("@shikijs/langs-precompiled/rust"),
+  import("@shikijs/langs-precompiled/toml"),
+  import("@shikijs/langs-precompiled/markdown"),
+  import("@shikijs/langs-precompiled/json"),
+  import("@shikijs/langs-precompiled/javascript"),
+  import("@shikijs/langs-precompiled/typescript"),
+  import("@shikijs/langs-precompiled/python"),
+  import("@shikijs/langs-precompiled/bash"),
+  import("@shikijs/langs-precompiled/yaml"),
+  import("@shikijs/langs-precompiled/html"),
+  import("@shikijs/langs-precompiled/css"),
 ];
 
 export interface Token {
@@ -62,7 +72,7 @@ function start() {
   void createHighlighterCore({
     langs: LANGS,
     themes: [cssVariablesTheme],
-    engine: createJavaScriptRegexEngine(),
+    engine: createJavaScriptRawEngine(),
   })
     .then((core) => {
       highlighter = core;

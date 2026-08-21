@@ -4,7 +4,7 @@
 // is implementation; this equality is the contract.
 
 import { createHighlighterCore } from "shiki/core";
-import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
+import { createJavaScriptRawEngine } from "shiki/engine/javascript";
 import { beforeAll, describe, expect, it } from "vitest";
 import { StreamingTokenizer } from "./highlight.ts";
 import { CSS_VARIABLES_THEME, cssVariablesTheme } from "./shikiTheme.ts";
@@ -33,9 +33,9 @@ const drawn = (lines: { content: string; color?: string }[][]) =>
 
 beforeAll(async () => {
   core = await createHighlighterCore({
-    langs: [import("@shikijs/langs/rust")],
+    langs: [import("@shikijs/langs-precompiled/rust")],
     themes: [cssVariablesTheme],
-    engine: createJavaScriptRegexEngine(),
+    engine: createJavaScriptRawEngine(),
   });
 });
 

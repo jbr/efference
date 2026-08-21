@@ -65,6 +65,7 @@ export function App() {
         running={session.topics.running ?? false}
         connection={session.connection}
         usage={session.topics.usage ?? null}
+        upstreamFailure={session.topics.upstream_failure ?? null}
       />
       {session.connection !== "live" && (
         <div className="banner">

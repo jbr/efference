@@ -177,6 +177,15 @@ export interface Pace {
 
 export type ReviewLevel = "autonomous" | "spotter_human" | "human_only";
 
+// The last non-success upstream response, with consecutive occurrences of that
+// status. Ephemeral transport diagnostics: never log content (docs/transport.md).
+// It is not cleared by a later success — the daemon keeps it as the last
+// observed transport failure.
+export interface UpstreamFailure {
+  status: number;
+  count: number;
+}
+
 // One optional field per state topic, each named by its topic; `null` is a
 // cleared topic, absence an unsubscribed one.
 export interface StateTopics {
@@ -189,7 +198,7 @@ export interface StateTopics {
   pace?: Pace | null;
   review_level?: ReviewLevel | null;
   running?: boolean | null;
-  upstream_failure?: unknown;
+  upstream_failure?: UpstreamFailure | null;
 }
 
 export interface StateSnapshot extends StateTopics {

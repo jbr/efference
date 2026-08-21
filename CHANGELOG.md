@@ -7,7 +7,11 @@ behind a change, see [`journal/`](journal/).
 
 ## [Unreleased]
 
+### Changed
+- web: syntax highlighting runs precompiled grammars on Shiki's raw JavaScript engine — the Oniguruma-to-`RegExp` transpiler leaves the main chunk (−56 kB raw, −19 kB gzip; ~11 kB smaller gzipped overall), at an ES2024 (`RegExp` `v` flag) floor.
+
 ### Added
+- web: the top bar surfaces `upstream_failure` — `upstream 429 ×3` left of the usage meter, the count over consecutive matching statuses; it stays after a success as the last observed transport failure, as in the TUI.
 - web: application-chrome layout — full-bleed bars (top bar, banner, tab strip, status bar) with affordances anchored to the window edges and content in a centered column; the loop dials moved to a status bar at the window edge below the composer; the composer inset into the dock, near-square, auto-growing (`field-sizing`) with block-caret room at the wrap column; chrome unselectable; right inset inside blocks; the inspector floats over content (which no longer shifts on open/close) with a drag-to-resize left edge, slides in and out (composited transform), and closes on a second click of the inspected call; per-result `inspect →` links dropped (the call itself is the affordance).
 - web: the gate's floating cue grew into a full floating panel — call, intent, spotter verdict, and controls pinned above the dock while the in-flow surface is scrolled away, collapsible back to the cue; the allow-prefix input prefills from the spotter's probed prefix; a batch of one labels itself `tool call`.
 - `[context]` groups take `exclude = [...]`: paths pruned from a directory's expansion (relative to it, component-matched, skipped unread), so a foreign-owned layout's index file or retired subtree stays out of the preamble without restructuring the directory.

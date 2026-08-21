@@ -5,7 +5,7 @@
 // breathes while running, and the banner, gate cue, and composer turn-state
 // carry the rest.
 
-import type { Usage } from "../api/types.ts";
+import type { UpstreamFailure, Usage } from "../api/types.ts";
 import type { Connection } from "../session/store.ts";
 
 const tokens = (n: number) =>
@@ -50,14 +50,32 @@ function UsageMeter({ usage }: { usage: Usage }) {
   );
 }
 
+/** The last non-success upstream response. It stays after a success — the
+ * daemon defines no all-clear boundary — so it reads as "last observed",
+ * not "currently failing"; the title says so. A stalling loop with no
+ * visible cause is what it is here for. */
+function UpstreamFailureChip({ failure }: { failure: UpstreamFailure }) {
+  return (
+    <span
+      className="upstream-failure"
+      title="last non-success upstream response (not cleared by a later success)"
+    >
+      upstream {failure.status}
+      {failure.count > 1 && ` ×${failure.count}`}
+    </span>
+  );
+}
+
 export function TopBar({
   running,
   connection,
   usage,
+  upstreamFailure,
 }: {
   running: boolean;
   connection: Connection;
   usage: Usage | null;
+  upstreamFailure: UpstreamFailure | null;
 }) {
   return (
     <header className="top-bar">
@@ -68,6 +86,9 @@ export function TopBar({
           title={`${connection}${running ? " · running" : ""}`}
         />
         <span className="spacer" />
+        {upstreamFailure !== null && (
+          <UpstreamFailureChip failure={upstreamFailure} />
+        )}
         {usage !== null && <UsageMeter usage={usage} />}
       </div>
     </header>

@@ -169,6 +169,17 @@ input[type="checkbox"] {
   letter-spacing: -0.01em;
 }
 
+/* The upstream diagnostic: a warn-tinted chip left of the usage meter. Tinted
+   rather than filled — the banner owns the loud treatment, and this one stays
+   on screen after a success (docs/web-client.md "The top bar"). */
+.upstream-failure {
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  padding: 0 0.4rem;
+  white-space: nowrap;
+}
+
 .usage-strong {
   color: var(--fg);
 }
