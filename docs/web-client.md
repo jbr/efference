@@ -196,7 +196,11 @@ inline code — for that shape, markdown renders the backticks and can mangle
 nothing. A model whose thinking is line-structured — bare adjacent lines that
 markdown would merge into one paragraph — is the sighting that flips thinking
 back to preformatted (or to markdown-with-hard-breaks, which serves both
-shapes). The TUI still renders thinking preformatted
+shapes). The first sighting to arrive was the opposite one (`stealth/ox-alpha`,
+2026-08-21, the first foreign model to think here at all): thinking rich in
+real markdown — numbered lists, headed sections — which rendered correctly
+and would have been strictly worse preformatted. Evidence for the default,
+not the trigger; the trigger stands unfired. The TUI still renders thinking preformatted
 (`DocumentNode::Lines`, [tui.md](tui.md)). A mark's note has no such caveat:
 the projection re-injects it as a user-role text message, so it is prose on
 the wire already. Distinct wire blocks within one prose body are joined with a
