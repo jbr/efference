@@ -443,3 +443,28 @@ async fn a_stream_outside_the_root_is_not_found() {
         .await;
     assert_ne!(conn.status(), trillium::Status::Ok);
 }
+
+/// On case-insensitive APFS, a wrong-case URL resolves and reads fine, but
+/// notify reports the on-disk spelling — the filter must adopt the canonical
+/// final segment at open or the stream never fires (found in review,
+/// 2026-08-21). macOS-only: on a case-sensitive fs the wrong-case path simply
+/// doesn't exist.
+#[cfg(target_os = "macos")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_wrong_case_stream_still_fires_where_the_fs_is_case_insensitive() {
+    let scratch = Scratch::new("case");
+    scratch.write("cased.txt", "first");
+    let client = raw_client(&scratch).await;
+
+    let mut conn = client
+        .get("/files/CASED.txt")
+        .with_request_header(KnownHeaderName::Accept, "text/event-stream")
+        .await
+        .expect("open stream");
+    assert_eq!(conn.status().map(|s| s as u16), Some(200));
+
+    scratch.write("cased.txt", "second");
+    let body = read_until(&mut conn, "event: change").await;
+    // The event data carries the disk spelling, not the URL's.
+    assert!(body.contains("data: cased.txt"), "{body}");
+}

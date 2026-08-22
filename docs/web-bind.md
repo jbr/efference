@@ -228,8 +228,21 @@ A file's watch is on its **parent directory** with a filter, for the same
 reasons as the config watcher (`daemon/watch.rs`): notify cannot watch a missing
 path, and editors save via rename-replace. The parent must resolve; the file
 need not exist — so a stream opened against a refusal screen reports the file's
-arrival, and one held across a delete reports the restore. Streams idle-comment
-on the same 15 s heartbeat as `/v1/events`. Directory-scope streams are refused
+arrival, and one held across a delete reports the restore. The filter compares
+against notify's reported spelling, so an existing file's canonical final
+segment is adopted at open — a wrong-case or differently-normalized URL on
+case-insensitive APFS would otherwise open a stream that never fires (found in
+review, 2026-08-21). Streams idle-comment on the same 15 s heartbeat as
+`/v1/events`.
+
+Two contract points from the same review. The client's half: neither
+watch-then-subscribe order is airtight against a change landing during stream
+setup, so the consumer must answer stream *open* — not just pokes — with a
+conditional GET; the viewer does. A known unhandled edge: if the watched
+*directory* itself is deleted and recreated, some notify backends kill the
+watch silently and nothing here detects or re-registers it — the stream stays
+open (heartbeating) but deaf. Accepted for now; the fix belongs to whatever
+teaches the watcher about watch death, not to per-stream code. Directory-scope streams are refused
 for now; they arrive with the tree
 ([../backlog/web/file-view/navigation.md](../backlog/web/file-view/navigation.md)),
 and with them the gitignore-aware discovery scope — the watcher consults no

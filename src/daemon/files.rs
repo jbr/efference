@@ -201,13 +201,26 @@ impl Files {
                 "no such path under the working directory",
             );
         }
-        let file = dir.join(name.as_ref());
+        let mut file = dir.join(name.as_ref());
         if tokio::fs::metadata(&file).await.is_ok_and(|m| m.is_dir()) {
             return fail(
                 conn,
                 ErrorCode::BadRequest,
                 "directory streams are not served yet; stream a file path",
             );
+        }
+        // The poke filter compares byte-wise against notify's reported (disk)
+        // spelling, so adopt the canonical final segment when the file exists —
+        // a wrong-case or differently-normalized URL spelling on APFS otherwise
+        // opens a stream that never fires (found in review, 2026-08-21). Only
+        // within this directory: a symlink resolving elsewhere keeps the given
+        // name, since the events that arrive here name the directory's own
+        // entry. A not-yet-existing file keeps the given spelling too — its
+        // eventual creator is usually the process the URL's spelling came from.
+        if let Ok(canonical) = tokio::fs::canonicalize(&file).await
+            && canonical.parent() == Some(dir.as_path())
+        {
+            file = canonical;
         }
         let rel = file
             .strip_prefix(root.as_path())
@@ -218,8 +231,14 @@ impl Files {
             Ok(guard) => guard,
             Err(e) => return fail(conn, ErrorCode::Internal, format!("cannot watch: {e}")),
         };
-        // Subscribe under the guard: the watch is active before the first
-        // response byte, so no change between headers and the loop is missed.
+        // Subscribe after registering the watch. Neither order is airtight on
+        // its own — a change between registration and subscription is seen by
+        // notify but dropped by the broadcast (no receiver yet); the reverse
+        // order loses the change entirely — which is why the client's side of
+        // the contract matters: the viewer conditional-GETs on stream *open*
+        // (docs/web-client.md), so anything that landed before the
+        // subscription is picked up by that fetch, and anything after it
+        // pokes.
         let rx = watch.subscribe();
         conn.with_sse_stream_and_heartbeat(Box::pin(changes(rx, guard, file, rel)), HEARTBEAT)
             .halt()
