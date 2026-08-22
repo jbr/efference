@@ -99,6 +99,13 @@ impl FsWatch {
         self.tx.subscribe()
     }
 
+    /// Test probe: how many directories are currently watched — lets a
+    /// transport-level test pin that a closed stream releases its watch.
+    #[cfg(test)]
+    pub fn watched_count(&self) -> usize {
+        self.state.lock().expect("fswatch lock").watched.len()
+    }
+
     /// Watch a directory (non-recursive), refcounted: the guard keeps it
     /// watched, and the last guard's drop unwatches. `dir` should be canonical
     /// — events compare against it byte-wise, and macOS reports `/private/var`

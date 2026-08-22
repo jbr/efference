@@ -210,24 +210,46 @@ impl Files {
             );
         }
         // The poke filter compares byte-wise against notify's reported (disk)
-        // spelling, so adopt the canonical final segment when the file exists —
-        // a wrong-case or differently-normalized URL spelling on APFS otherwise
-        // opens a stream that never fires (found in review, 2026-08-21). Only
-        // within this directory: a symlink resolving elsewhere keeps the given
-        // name, since the events that arrive here name the directory's own
-        // entry. A not-yet-existing file keeps the given spelling too — its
-        // eventual creator is usually the process the URL's spelling came from.
-        if let Ok(canonical) = tokio::fs::canonicalize(&file).await
-            && canonical.parent() == Some(dir.as_path())
-        {
-            file = canonical;
-        }
+        // spelling, so when the path resolves, adopt its canonical form *and
+        // watch the canonical parent*: a wrong-case URL spelling on APFS, and a
+        // symlink resolving into a nested directory of the root, each otherwise
+        // open a stream that never fires — the events either carry the disk
+        // spelling or land under a directory the given parent's non-recursive
+        // watch cannot see (both found in review, 2026-08-21). Containment is
+        // re-checked as the read route's `resolve` does it: a link out of the
+        // root is refused, never served-but-deaf. A not-yet-existing file keeps
+        // the given spelling and parent — its eventual creator is usually the
+        // process the URL's spelling came from. One inherent loss either way:
+        // after adoption, a rename over the *link itself* emits under the
+        // link's spelling and is missed — either spelling loses one of the two
+        // edit paths, and the adopted one follows the read route.
+        let watched_dir = match tokio::fs::canonicalize(&file).await {
+            Ok(canonical) => {
+                if !canonical.starts_with(root.as_path()) {
+                    return fail(
+                        conn,
+                        ErrorCode::NotFound,
+                        "no such path under the working directory",
+                    );
+                }
+                let parent = canonical.parent().unwrap_or(&dir).to_path_buf();
+                file = canonical;
+                parent
+            }
+            Err(_) => dir,
+        };
+        // SSE field values cannot carry raw line terminators: trillium-sse
+        // renders LF as a legal multi-line data field, but a lone CR in a file
+        // name (legal on disk) would reach the wire intact and browsers split
+        // fields on it — a workspace file name forging pokes for arbitrary
+        // paths (review, 2026-08-21). Percent-encode both.
         let rel = file
             .strip_prefix(root.as_path())
             .unwrap_or(&file)
             .to_string_lossy()
-            .into_owned();
-        let guard = match watch.watch_dir(&dir) {
+            .replace('\r', "%0D")
+            .replace('\n', "%0A");
+        let guard = match watch.watch_dir(&watched_dir) {
             Ok(guard) => guard,
             Err(e) => return fail(conn, ErrorCode::Internal, format!("cannot watch: {e}")),
         };
@@ -477,6 +499,20 @@ async fn read(conn: Conn, path: &Path, meta: &std::fs::Metadata) -> Conn {
     let Ok(bytes) = tokio::fs::read(path).await else {
         return fail(conn, ErrorCode::NotFound, "cannot read this file");
     };
+    // The stat-based ceiling above refuses cheaply without touching the file;
+    // this re-check closes the stat→read window a racing local writer could
+    // grow the file through (review, 2026-08-21) — the one gap in "refuse
+    // rather than degrade".
+    if bytes.len() as u64 > MAX_BYTES {
+        return fail(
+            conn,
+            ErrorCode::TooLarge,
+            format!(
+                "{} bytes exceeds the {MAX_BYTES}-byte view limit",
+                bytes.len()
+            ),
+        );
+    }
     let Ok(text) = String::from_utf8(bytes) else {
         return fail(
             conn,

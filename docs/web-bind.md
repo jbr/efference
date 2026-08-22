@@ -229,11 +229,16 @@ reasons as the config watcher (`daemon/watch.rs`): notify cannot watch a missing
 path, and editors save via rename-replace. The parent must resolve; the file
 need not exist — so a stream opened against a refusal screen reports the file's
 arrival, and one held across a delete reports the restore. The filter compares
-against notify's reported spelling, so an existing file's canonical final
-segment is adopted at open — a wrong-case or differently-normalized URL on
-case-insensitive APFS would otherwise open a stream that never fires (found in
-review, 2026-08-21). Streams idle-comment on the same 15 s heartbeat as
-`/v1/events`.
+against notify's reported spelling, so a path that resolves is adopted in
+canonical form and its **canonical parent** is the watched directory — a
+wrong-case URL on case-insensitive APFS, and a symlink resolving into a nested
+directory of the root, would each otherwise open a stream that never fires
+(review findings, 2026-08-21); a link out of the root is refused, as the read
+route refuses it. After adoption a rename over the link *itself* is the edit
+path that goes unseen — either spelling loses one of the two. Event data
+percent-encodes CR/LF in names: a lone CR (legal on disk) reaching the wire
+would let a workspace file name forge pokes, since browsers split SSE fields
+on it. Streams idle-comment on the same 15 s heartbeat as `/v1/events`.
 
 Two contract points from the same review. The client's half: neither
 watch-then-subscribe order is airtight against a change landing during stream

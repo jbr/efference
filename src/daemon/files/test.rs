@@ -468,3 +468,112 @@ async fn a_wrong_case_stream_still_fires_where_the_fs_is_case_insensitive() {
     // The event data carries the disk spelling, not the URL's.
     assert!(body.contains("data: cased.txt"), "{body}");
 }
+
+/// The feature's central lifetime claim, pinned through the HTTP layer: a
+/// closed stream connection releases its watch (the guard drops with the
+/// stream's state). Also pins `data:` at nested depth — `rel` was otherwise
+/// only exercised at the root. The drop is noticed when the server next
+/// writes, so the loop keeps poking the file until the count falls.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_closed_stream_releases_its_watch() {
+    let scratch = Scratch::new("teardown");
+    scratch.write("sub/held.txt", "h");
+    let files = Files::rooted_at(scratch.path());
+    let watch = files.watch.clone().expect("watcher");
+    let mut handler = (files, |conn: Conn| async move {
+        conn.with_status(FELL_THROUGH).halt()
+    });
+    let context = trillium_testing::init(&mut handler).await;
+    let client = trillium_client::Client::new(
+        trillium_testing::ServerConnector::new(handler).with_context(context),
+    )
+    .with_base("http://localhost/");
+
+    let mut conn = client
+        .get("/files/sub/held.txt")
+        .with_request_header(KnownHeaderName::Accept, "text/event-stream")
+        .await
+        .expect("open stream");
+    assert_eq!(conn.status().map(|s| s as u16), Some(200));
+    assert_eq!(watch.watched_count(), 1);
+
+    scratch.write("sub/held.txt", "h2");
+    let body = read_until(&mut conn, "event: change").await;
+    assert!(body.contains("data: sub/held.txt"), "{body}");
+
+    drop(conn);
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while watch.watched_count() != 0 {
+            scratch.write("sub/held.txt", "again");
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        }
+    })
+    .await
+    .expect("the watch must release after the stream closes");
+}
+
+/// A symlink resolving into a *nested* directory of the root: the canonical
+/// target's parent is watched (a non-recursive watch on the link's own
+/// directory would never see the target's events), and the event data carries
+/// the canonical spelling — the read route's resolution, applied to the
+/// stream.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_symlink_into_a_nested_directory_streams_its_target() {
+    let scratch = Scratch::new("nested-link");
+    let target = scratch.write("sub/target.txt", "t");
+    std::os::unix::fs::symlink(&target, scratch.path().join("link.txt")).expect("symlink");
+    let client = raw_client(&scratch).await;
+
+    let mut conn = client
+        .get("/files/link.txt")
+        .with_request_header(KnownHeaderName::Accept, "text/event-stream")
+        .await
+        .expect("open stream");
+    assert_eq!(conn.status().map(|s| s as u16), Some(200));
+
+    scratch.write("sub/target.txt", "changed");
+    let body = read_until(&mut conn, "event: change").await;
+    assert!(body.contains("data: sub/target.txt"), "{body}");
+}
+
+/// A stream through a symlink out of the root is refused, as the read route
+/// refuses the read — never served-but-deaf.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stream_through_a_symlink_out_of_the_root_is_refused() {
+    let outside = Scratch::new("stream-outside");
+    let secret = outside.write("secret.txt", "not yours");
+    let scratch = Scratch::new("stream-escape-link");
+    std::os::unix::fs::symlink(&secret, scratch.path().join("escape.txt")).expect("symlink");
+    let server = server(&scratch).await;
+
+    server
+        .get("/files/escape.txt")
+        .with_request_header(KnownHeaderName::Accept, "text/event-stream")
+        .await
+        .assert_status(404);
+}
+
+/// A lone CR in a file name (legal on disk) must not reach the SSE wire raw:
+/// browsers split fields on it, which would let a workspace file name forge
+/// pokes for arbitrary paths. The `rel` boundary percent-encodes it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_carriage_return_in_a_name_cannot_forge_events() {
+    let scratch = Scratch::new("cr-name");
+    scratch.write("evil\rname.txt", "x");
+    let client = raw_client(&scratch).await;
+
+    let mut conn = client
+        .get("/files/evil%0Dname.txt")
+        .with_request_header(KnownHeaderName::Accept, "text/event-stream")
+        .await
+        .expect("open stream");
+    assert_eq!(conn.status().map(|s| s as u16), Some(200));
+
+    scratch.write("evil\rname.txt", "y");
+    let body = read_until(&mut conn, "event: change").await;
+    assert!(body.contains("data: evil%0Dname.txt"), "{body:?}");
+    assert!(
+        !body.contains('\r'),
+        "a raw CR reached the SSE wire: {body:?}"
+    );
+}
