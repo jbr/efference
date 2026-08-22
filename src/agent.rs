@@ -225,7 +225,27 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 u.cache_creation_input_tokens
             );
             shared.record_request(RequestOrigin::Turn, completion.request_usage());
+            let hit_cap = completion.stop_reason.as_deref() == Some("max_tokens");
             shared.append(turn, completion.assistant)?;
+
+            // A cap-terminated turn is legible, not silent: whatever arrived
+            // before the cap — on a long-reasoning model, often thinking alone —
+            // is committed above, and this names why the model went quiet
+            // (docs/transport.md). Observed live before this existed: a
+            // multi-minute think ended at the cap and the session just sat
+            // idle, reading as a hang.
+            if hit_cap {
+                eprintln!("[turn ended at the output-token cap]");
+                shared.notify(
+                    "turn".to_string(),
+                    "The last model turn ended at the output-token cap — what it \
+                     produced before the cap (possibly only thinking) is committed. \
+                     Send a turn to continue."
+                        .to_string(),
+                    Some("max-tokens".to_string()),
+                    None,
+                );
+            }
 
             if calls.is_empty() {
                 break; // model is done with this turn → wait for the next.

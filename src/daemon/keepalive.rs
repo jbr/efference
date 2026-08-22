@@ -37,11 +37,25 @@ pub(crate) async fn keepalive_loop(client: Arc<Client>, shared: Arc<Shared>, too
             .await
         {
             Ok(request) => {
-                eprintln!(
-                    "[keepalive: cache read {} — TTL refreshed]",
-                    request.usage.cache_read_input_tokens
-                );
+                // The read-only tripwire: `max_tokens: 0` is supposed to
+                // generate nothing, but a mandatory-reasoning endpoint reasons
+                // anyway (observed live 2026-08-21: ~4k thinking tokens per
+                // ping, billed as output). One offense ends the keepalive for
+                // the session — a runtime observation, not a provider
+                // assumption, so it also catches any future endpoint that
+                // stops honoring the contract.
+                let generated = request.usage.output_tokens;
+                let cache_read = request.usage.cache_read_input_tokens;
                 shared.record_keepalive(request);
+                if generated > 0 {
+                    eprintln!(
+                        "[keepalive generated {generated} output tokens on a max_tokens:0 \
+                         ping — not a read-only refresh on this endpoint; keepalive off \
+                         for this session]"
+                    );
+                    return;
+                }
+                eprintln!("[keepalive: cache read {cache_read} — TTL refreshed]");
             }
             Err(e) => eprintln!("[keepalive failed: {e}]"),
         }

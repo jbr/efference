@@ -29,7 +29,7 @@ impl Shared {
     /// **superseded**: archived-and-replaced, never edited (records are immutable,
     /// docs/log-and-projection.md). A superseded-while-pending entry is simply dropped — it never reached a
     /// gate, so from the log's perspective it never happened. Returns the new id.
-    pub(super) fn notify(
+    pub(crate) fn notify(
         &self,
         source: String,
         body: String,

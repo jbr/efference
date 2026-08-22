@@ -11,6 +11,8 @@ behind a change, see [`journal/`](journal/).
 - web: syntax highlighting runs precompiled grammars on Shiki's raw JavaScript engine — the Oniguruma-to-`RegExp` transpiler leaves the main chunk (−56 kB raw, −19 kB gzip; ~11 kB smaller gzipped overall), at an ES2024 (`RegExp` `v` flag) floor.
 
 ### Fixed
+- The per-turn output budget follows the model's reported cap (`max_output_tokens` from the boot lookup) instead of a hardcoded 4096, which a reasoning model's thinking exhausted before any text arrived; a cap-terminated turn now commits what arrived and posts a notification instead of silently going idle.
+- Keepalive carries a read-only tripwire: a `max_tokens: 0` ping that reports generated output tokens (mandatory-reasoning endpoints think on pings, ~4k tokens each) ends the keepalive for the session.
 - Foreign models think: the `thinking` field is omitted rather than sent as `disabled` for non-Claude models (mandatory-reasoning endpoints rejected the explicit disable, and no OpenRouter model ever produced thinking blocks), with adaptive granted on auto turns when every serving endpoint lists `reasoning` in the boot capability lookup.
 
 ### Added

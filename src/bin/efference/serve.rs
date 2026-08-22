@@ -289,8 +289,15 @@ pub(crate) async fn serve(
         },
     )?;
 
-    let client = Client::new(endpoint.clone(), model, system, temperature)
+    let mut client = Client::new(endpoint.clone(), model, system, temperature)
         .with_model_reasoning(capabilities.supports_reasoning);
+    // The output budget follows the model's reported cap (a reasoning model's
+    // thinking bills against it; the 4096 default starves a long think). No
+    // report → the default stands.
+    if let Some(cap) = capabilities.max_output_tokens {
+        client = client.with_max_output(cap);
+    }
+    let client = client;
 
     // The independent permission rung (docs/permissions.md): a fresh-context spotter
     // on its own Haiku-band client, built from the same endpoint. It re-decides the calls

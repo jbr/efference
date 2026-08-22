@@ -63,6 +63,13 @@ pub struct Client {
     /// — one input to the thinking matrix (`Thinking::for_request`). `false` when no
     /// lookup ran (the spotter's client), which only ever omits the field.
     model_reasoning: bool,
+    /// The per-turn output budget. Defaults to the pre-reasoning-era 4096;
+    /// [`Self::with_max_output`] raises it to the model's reported cap — a
+    /// reasoning model's thinking bills against this budget, and a long think
+    /// against 4096 terminates at the cap before any text or call arrives
+    /// (observed live, 2026-08-21). Session-constant, so it never perturbs the
+    /// cached prefix.
+    max_tokens: u32,
     upstream_failure: UpstreamFailureState,
 }
 
@@ -106,6 +113,7 @@ impl Client {
             system: system.into(),
             temperature,
             model_reasoning: false,
+            max_tokens: MAX_TOKENS,
             upstream_failure,
         }
     }
@@ -143,6 +151,13 @@ impl Client {
         self
     }
 
+    /// Raise the per-turn output budget to the model's reported cap
+    /// (`ModelCapabilities::max_output_tokens`). Values past `u32::MAX` clamp.
+    pub fn with_max_output(mut self, cap: u64) -> Self {
+        self.max_tokens = u32::try_from(cap).unwrap_or(u32::MAX);
+        self
+    }
+
     /// One streaming round-trip: serialize `messages`, POST with `stream: true`,
     /// and fold the SSE event stream back into a [`Completion`]. Each live signal — prose,
     /// thinking, a tool call opening, its arguments arriving — is handed to `on_delta` as a
@@ -165,7 +180,7 @@ impl Client {
     ) -> Result<Completion, Error> {
         let request = Request {
             model: &self.model,
-            max_tokens: MAX_TOKENS,
+            max_tokens: self.max_tokens,
             system: &self.system,
             tools,
             tool_choice,

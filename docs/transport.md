@@ -248,9 +248,17 @@ regress (serve already requires the live messages endpoint). Per provider:
   `max_completion_tokens`. Routing is unpinned, so the effective ceiling is
   the **min** across endpoints until provider pinning lands.
 
-The parsed `ModelCapabilities` (`context_length`, `max_output_tokens`; grown
-one field per consumer) is transport-only — held in `Shared`, never logged or
-projected. `GET /state` surfaces it as `usage.context = {limit, used}`, where
+The parsed `ModelCapabilities` (`context_length`, `max_output_tokens`,
+`supports_reasoning`; grown one field per consumer) is transport-only — held
+in `Shared`, never logged or projected. `max_output_tokens` sets the
+per-turn output budget (`Client::with_max_output`): a reasoning model's
+thinking bills against `max_tokens`, and the pre-reasoning 4096 default —
+which stands only when the provider reports no cap — starves a long think,
+terminating the turn at the cap before any text or call arrives (observed
+live, 2026-08-21; the committed turn was thinking alone). A cap-terminated
+turn commits whatever arrived and posts a notification naming the cap
+(`agent.rs` on `stop_reason: "max_tokens"`) — before that existed, the
+session just sat idle, reading as a hang. `GET /state` surfaces it as `usage.context = {limit, used}`, where
 `used` is the last request's total prompt tokens (`input_tokens` +
 `cache_read_input_tokens` + `cache_creation_input_tokens` — `input_tokens`
 alone is only the uncached remainder; null until the first request). The TUI
@@ -383,6 +391,15 @@ turn is discarded; the log is never touched.
 
 This call is non-streaming by design: `max_tokens: 0` is rejected by the API
 when paired with `stream: true`.
+
+That contract is not universal, so the loop carries a **read-only tripwire**:
+a keepalive whose usage reports `output_tokens > 0` ends the keepalive for the
+session (`daemon/keepalive.rs`). Observed live (2026-08-21): a
+mandatory-reasoning endpoint reasons on a `max_tokens: 0` ping — ~4k thinking
+tokens per ping, billed as output — turning the free refresh into a recurring
+charge. A runtime observation rather than a provider gate, so it also catches
+any future endpoint that stops honoring the contract; the offending ping's
+usage is still recorded.
 
 The prefix bytes sent by a keepalive must be byte-identical to what a real turn
 sends, or the ping writes a new cache entry instead of refreshing the live one.
