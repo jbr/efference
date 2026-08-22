@@ -20,6 +20,7 @@ import {
   type ResultView,
 } from "../render/parse.ts";
 import { openablePaths } from "../session/touchedFiles.ts";
+import { useNarrow } from "./useNarrow.ts";
 
 /** The call's header row: the accent prompt, the tool, its identifying
  * argument. One shape for committed and streaming calls, so a call does not
@@ -87,11 +88,26 @@ export function CallBlock({
   onOpenFile?: (path: string) => void;
 }) {
   const view = useMemo(() => callView(call.name, call.input), [call]);
+  const narrow = useNarrow();
   const paths = useMemo(
     () =>
       onOpenFile === undefined ? [] : openablePaths(call.name, call.input),
     [call, onOpenFile],
   );
+  // The call's body (a write's file contents, an edit's anchor and
+  // replacement) truncates on narrow like a result does — the args tab of
+  // the tap-to-inspect sheet holds the whole thing.
+  const body = useMemo(() => {
+    if (view.body === null) return null;
+    if (!narrow) return { text: view.body.text, hidden: 0 };
+    const lines = view.body.text.split("\n");
+    if (lines.length <= NARROW_TRUNCATE_AT + 2)
+      return { text: view.body.text, hidden: 0 };
+    return {
+      text: lines.slice(0, NARROW_TRUNCATE_AT).join("\n"),
+      hidden: lines.length - NARROW_TRUNCATE_AT,
+    };
+  }, [view, narrow]);
   return (
     <div className="block">
       <CallHead
@@ -104,9 +120,21 @@ export function CallBlock({
         }
       />
       {view.intent !== null && <div className="intent">{view.intent}</div>}
-      {view.body !== null && (
-        <Code text={view.body.text} lang={view.body.lang} />
+      {body !== null && (
+        <Code text={body.text} lang={view.body?.lang ?? null} />
       )}
+      {body !== null && body.hidden > 0 && <MoreLines hidden={body.hidden} />}
+    </div>
+  );
+}
+
+/** The truncation marker. On narrow it names the affordance — there is no
+ * hover on touch, so nothing else says the body is one tap away. */
+function MoreLines({ hidden }: { hidden: number }) {
+  const narrow = useNarrow();
+  return (
+    <div className="more-lines dim">
+      ⋯ {hidden} more lines{narrow && " · tap to inspect"}
     </div>
   );
 }
@@ -172,27 +200,40 @@ export function LiveCallBlock({
  * than it occupies. */
 const TRUNCATE_AT = 12;
 
-/** Truncate a read/write result's body for the transcript view. Render-whole
- * survives this: a gate decides a call, never a result, so no pending
- * decision rests on a truncated body — and the full body is one click away
+/** The phone's tighter budget, and it applies to every tool: at ~400pt a
+ * long result is minutes of scrolling, so the transcript shows a glance —
+ * header, a few lines, the kept count, the note — and the tap-to-inspect
+ * sheet holds the body (the drill-down posture, docs/web-client.md). */
+const NARROW_TRUNCATE_AT = 4;
+
+/** Truncate a result's body for the transcript view — read/write at desktop
+ * width, every tool at phone width. Render-whole survives this: a gate
+ * decides a call, never a result, so no pending decision rests on a
+ * truncated body — and the full body is one click away
  * (docs/web-client.md). */
 function truncateBody(
   body: ResultView,
   tool: string | null,
+  narrow: boolean,
 ): { body: ResultView; hidden: number } {
-  if (tool !== "read" && tool !== "write") return { body, hidden: 0 };
-  if (body.kind === "numbered" && body.lines.length > TRUNCATE_AT + 2) {
+  if (!narrow && tool !== "read" && tool !== "write")
+    return { body, hidden: 0 };
+  const limit = narrow ? NARROW_TRUNCATE_AT : TRUNCATE_AT;
+  if (
+    (body.kind === "numbered" || body.kind === "diff") &&
+    body.lines.length > limit + 2
+  ) {
     return {
-      body: { ...body, lines: body.lines.slice(0, TRUNCATE_AT) },
-      hidden: body.lines.length - TRUNCATE_AT,
+      body: { ...body, lines: body.lines.slice(0, limit) } as ResultView,
+      hidden: body.lines.length - limit,
     };
   }
   if (body.kind === "code" || body.kind === "text") {
     const lines = body.text.split("\n");
-    if (lines.length > TRUNCATE_AT + 2) {
+    if (lines.length > limit + 2) {
       return {
-        body: { ...body, text: lines.slice(0, TRUNCATE_AT).join("\n") },
-        hidden: lines.length - TRUNCATE_AT,
+        body: { ...body, text: lines.slice(0, limit).join("\n") },
+        hidden: lines.length - limit,
       };
     }
   }
@@ -234,9 +275,10 @@ export function ResultBlock({
   // entry, so without this a streamed token re-parses every result in the
   // session.
   const view = useMemo(() => resultRender(tool, raw, wire), [tool, raw, wire]);
+  const narrow = useNarrow();
   const { body, hidden } = useMemo(
-    () => truncateBody(view.body, tool),
-    [view, tool],
+    () => truncateBody(view.body, tool, narrow),
+    [view, tool, narrow],
   );
   const label = [wireLabel(wire), view.sizeLabel, view.isError ? "error" : null]
     .filter((part) => part !== null)
@@ -247,9 +289,7 @@ export function ResultBlock({
           the call's hover state is the discovery surface (Transcript.tsx). */}
       <div className="kind result-head">result ({label})</div>
       <ResultBody body={body} />
-      {hidden > 0 && (
-        <div className="more-lines dim">⋯ {hidden} more lines</div>
-      )}
+      {hidden > 0 && <MoreLines hidden={hidden} />}
       {view.note !== null && (
         // The distiller's note sits beside the result as its own annotation
         // row — that rung's account *of* the output, not something the tool

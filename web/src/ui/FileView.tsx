@@ -52,8 +52,7 @@ function useChromeBand(): { top: number; bottom: number } {
   useEffect(() => {
     const bar = document.querySelector(".top-bar");
     const dock = document.querySelector(".dock");
-    if (!(bar instanceof HTMLElement) || !(dock instanceof HTMLElement))
-      return;
+    if (!(bar instanceof HTMLElement) || !(dock instanceof HTMLElement)) return;
     const update = () =>
       setBand({ top: bar.offsetHeight, bottom: dock.offsetHeight });
     update();

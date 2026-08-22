@@ -8,7 +8,9 @@ import { Composer } from "./Composer.tsx";
 import { FileView } from "./FileView.tsx";
 import { GateSurface } from "./Gate.tsx";
 import { Inspector } from "./Inspector.tsx";
+import { JumpToLatest } from "./JumpToLatest.tsx";
 import { Login } from "./Login.tsx";
+import { useOverlayHistory } from "./overlayHistory.ts";
 import { Panel } from "./Panel.tsx";
 import { TopBar } from "./TopBar.tsx";
 import { Transcript } from "./Transcript.tsx";
@@ -73,6 +75,18 @@ export function App() {
   }, [fileClosing, fileDone]);
   const onOpenFile = useCallback((path: string) => setViewingFile(path), []);
   const closeFile = useCallback(() => setViewingFile(null), []);
+
+  // Back/edge-swipe dismisses overlays (ui/overlayHistory.ts). The file
+  // viewer closes first: it renders over the transcript the inspector's
+  // sheet also occupies, and it is always the later-opened of the two here
+  // (its only entry points are a call's open ⤢ and the inspector footer).
+  useOverlayHistory(
+    (inspecting !== null ? 1 : 0) + (viewingFile !== null ? 1 : 0),
+    useCallback(() => {
+      if (viewingFile !== null) setViewingFile(null);
+      else setInspecting(null);
+    }, [viewingFile]),
+  );
   const newestEdit = useMemo(
     () => lastEdit(session.entries),
     [session.entries],
@@ -121,6 +135,10 @@ export function App() {
           onClose={closeFile}
         />
       )}
+      {/* Hidden while a gate is pending (the gate float/cue owns the
+          above-dock slot and carries its own jump) and while the file viewer
+          covers the transcript the jump would land in. */}
+      <JumpToLatest hidden={gate != null || shownFile !== null} />
       {gate && (
         <div className="col">
           <GateSurface
@@ -144,6 +162,7 @@ export function App() {
           pace={session.topics.pace ?? null}
           reviewLevel={session.topics.review_level ?? null}
           running={session.topics.running ?? false}
+          gatePending={gate != null}
         />
       </div>
     </div>

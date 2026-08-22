@@ -49,8 +49,8 @@ desktop browser, and the phone is expected to need drill-down views rather than 
 reflow of it — but it is one app meeting both, over the same screens. So fetching,
 folding, and derivation stay in `api/`, `session/`, and hooks rather than inside
 the components that arrange them, and meeting the phone stays a **layout** change
-rather than a second implementation. Not being responsive today is the licence;
-wiring logic into a desktop-shaped component is not.
+rather than a second implementation. Wiring logic into a desktop-shaped component
+is what the split forbids; the phone breakpoint below is what the licence bought.
 
 The binding (`useSession.ts`) owns the store in a memo but the connector in the
 effect: connecting is a side effect, and `Connector::close()` is permanent, so
@@ -64,6 +64,76 @@ the daemon sets `event:` to the frame's kind, and `EventSource` dispatches named
 events — a client would register one listener per known kind and silently drop
 frames from a newer daemon. Reconnection resumes by `?since=` (the daemon does not
 read `Last-Event-ID`), replaying the durable subset exactly.
+
+## The phone breakpoint
+
+An interim usability pass (2026-08-22), not the mobile design pass the backlog
+scopes — the minimum that makes the desktop layout survivable on a ~400pt
+viewport, iterated live in the iOS simulator. One width breakpoint, 700px,
+declared twice on purpose: the `@media (max-width: 700px)` block at the end of
+`index.css`, and `ui/useNarrow.ts` (a `matchMedia` binding, the one JS-side
+reading) for what CSS cannot switch. Change both together.
+
+What narrow changes:
+
+- **The label gutter stacks.** The entry grid drops to one column — label above
+  content, left-aligned — because a 6rem gutter plus insets is ~40% of a phone's
+  width. The user turn's accent border is on the content, so it survives.
+- **Every tool's result truncates to a glance** — 4 lines, the `⋯ N more lines`
+  marker, the note — because at 32ch a long result is minutes of scrolling. The
+  tap-to-inspect sheet holds the body; this is the drill-down posture arriving
+  empirically. Desktop keeps read/write-only truncation at 12. Call bodies (a
+  write's contents, an edit's replacement) truncate on the same budget — the
+  sheet's args tab holds the whole — and the marker appends `· tap to inspect`
+  on narrow, because touch has no hover to discover the affordance with.
+- **The inspector is a full-width sheet** (`100vw` overriding the persisted
+  inline width; the resize grip hides — it has no touch meaning).
+- **The composer band collapses when unfocused** to reclaim the dock's third of
+  the screen: a floating `✎ compose` chip (accent-bordered; labelled `draft…`
+  when one is held) summons the band and focuses the field, `⌄` or Escape or a
+  successful send puts it away, and the draft survives collapse. The chip
+  yields to a pending gate — the float owns the above-dock slot and carries its
+  own steering input.
+- **The composer stops advertising the keyboard**: placeholder drops the
+  enter/shift-enter advice, Enter inserts a newline instead of sending (a phone
+  has no shift-enter, so intercepting Enter would make multi-line drafts
+  impossible), and the send button sends. The ride-along hint shortens.
+- Chrome rows tighten: the status bar wraps instead of clipping the dials off
+  the right edge, the usage meter narrows, the upstream chip ellipsizes, and
+  the gate's decision rows wrap so `allow prefix` stays on screen (verified
+  live: a `human_only` gate decided by tap from the simulator).
+
+**Overlays are history-backed** (`ui/overlayHistory.ts`, both form factors):
+each open overlay — inspector, file viewer — owns one history entry, so the
+back button and Safari's edge swipe (which *is* history-back) dismiss the
+overlay instead of leaving the app. Not a router: the overlays remain App
+state, and the hook *reconciles* — App reports how many overlays are open, the
+hook pushes or consumes entries to match — so every existing close path (✕,
+Escape, tapping the inspected call again) converges without touching history
+itself. Forward navigation onto a consumed overlay entry is re-consumed:
+which overlay it stood for is deliberately not recorded.
+
+Two WebKit findings the composer carries, fixed for all widths because they only
+*manifested* narrow: the textarea's flex basis is `100%` rather than `flex: 1`'s
+`0%` (WebKit's `field-sizing: content` shrink-wraps the inline axis when the
+basis is indefinite, which collapsed the field to ~1ch); and the ride-along hint
+must be allowed to wrap (`max-width` instead of `nowrap` — as a flex item its
+nowrap min-content width was the whole sentence, which crushed the textarea
+whenever the loop ran).
+
+**The jump-to-latest chip** (`ui/JumpToLatest.tsx`, both form factors): a fixed
+chip above the dock, shown only while the viewport is away from the tail,
+tapping it an instant jump — the gate float's constraint (never smooth-scroll
+toward the tail; `useFollowTail` re-pins mid-animation) travels with the shared
+`jumpToTail` in `ui/float.ts`, extracted from Gate.tsx when this second consumer
+arrived along with `useDockOffset`. Hidden while a gate is pending (the float
+owns that slot and carries its own jump) and while the file viewer covers the
+transcript.
+
+Known nit: wire-vocabulary glyphs quoted in an *inline-code span* (a model
+writing `` `⟢` `` in its own prose) render as tofu on iOS — IBM Plex Mono lacks
+U+27E2 and the iOS mono fallbacks don't fill it; the serif covers it, as does
+the renderer's own `✧` note chrome (backlog/icebox.md holds the fix candidates).
 
 ## The cordon — `web/src/render/`
 

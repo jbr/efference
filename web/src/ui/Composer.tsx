@@ -6,9 +6,11 @@
 // (docs/control-api.md — submission is decoupled from inference; a 202 is
 // success, the turn's effects arrive on the stream).
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { interruptLoop, patchLoop } from "../api/http.ts";
 import type { Pace, ReviewLevel } from "../api/types.ts";
+import { useDockOffset } from "./float.ts";
+import { useNarrow } from "./useNarrow.ts";
 
 const PACES: [number, string][] = [
   [0, "full"],
@@ -24,14 +26,30 @@ export function Composer({
   pace,
   reviewLevel,
   running,
+  gatePending,
 }: {
   submit: (text: string) => Promise<void>;
   pace: Pace | null;
   reviewLevel: ReviewLevel | null;
   running: boolean;
+  /** A gate float may own the above-dock slot; the compose chip yields to
+   * it (the float carries its own steering input). */
+  gatePending: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const narrow = useNarrow();
+  // On narrow the composer band collapses when not in use — the dock is a
+  // third of a phone screen otherwise — and the floating compose chip
+  // summons it (docs/web-client.md "The phone breakpoint"). The draft
+  // survives collapse; only the band's visibility changes.
+  const [expanded, setExpanded] = useState(false);
+  const field = useRef<HTMLTextAreaElement>(null);
+  const fabBottom = useDockOffset();
+  const collapsed = narrow && !expanded;
+  useEffect(() => {
+    if (narrow && expanded) field.current?.focus();
+  }, [narrow, expanded]);
   const act = (call: Promise<unknown>) =>
     void call.then(() => setError(null)).catch((e) => setError(`${e}`));
 
@@ -42,6 +60,7 @@ export function Composer({
       await send(text);
       setDraft("");
       setError(null);
+      setExpanded(false);
     } catch (e) {
       setError(`${e}`);
     }
@@ -50,8 +69,18 @@ export function Composer({
   const speed = pace?.speed_ms ?? 0;
   return (
     <>
+      {collapsed && !gatePending && (
+        <button
+          className="compose-fab"
+          style={{ bottom: fabBottom }}
+          onClick={() => setExpanded(true)}
+        >
+          ✎ {draft.trim() ? "draft…" : "compose"}
+        </button>
+      )}
       <form
         className="composer"
+        hidden={collapsed}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -62,21 +91,40 @@ export function Composer({
           <div className="composer-input">
             <span className="prompt">›</span>
             <textarea
+              ref={field}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                // On a phone there is no shift-enter, so intercepting Enter
+                // would make multi-line drafts impossible: return inserts a
+                // newline and the send button sends.
+                if (!narrow && event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   void submit();
                 }
+                if (narrow && event.key === "Escape") setExpanded(false);
               }}
-              placeholder="send a turn (enter to send, shift-enter for newline)"
+              placeholder={
+                narrow
+                  ? "send a turn"
+                  : "send a turn (enter to send, shift-enter for newline)"
+              }
               rows={3}
             />
             {running && (
               <span className="ride-along">
-                rides along with the pending result
+                {narrow ? "rides along" : "rides along with the pending result"}
               </span>
+            )}
+            {narrow && (
+              <button
+                type="button"
+                className="linkish"
+                title="put the composer away; the draft keeps"
+                onClick={() => setExpanded(false)}
+              >
+                ⌄
+              </button>
             )}
             <button>send</button>
           </div>

@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Decision, Gate, Spot } from "../api/types.ts";
 import { callView } from "../render/parse.ts";
+import { jumpToTail, useDockOffset } from "./float.ts";
 import { CallBlock } from "./ToolBlocks.tsx";
 import { SpotLine } from "./Transcript.tsx";
 
@@ -30,35 +31,6 @@ const commandOf = (input: unknown): string | null =>
  * call. */
 const prefillFor = (gate: Gate, spot: Spot | null): string =>
   spot?.probed_prefix ?? commandOf(gate.input) ?? "";
-
-/** The dock's measured height plus a margin: the floating surfaces sit just
- * above the dock, whose height moves (the bottom panel expands and
- * collapses, the textarea resizes) — so the offset is measured, not guessed
- * in CSS. */
-function useDockOffset(): number {
-  const [bottom, setBottom] = useState(120);
-  useEffect(() => {
-    const dock = document.querySelector(".dock");
-    if (!(dock instanceof HTMLElement)) return;
-    const update = () => setBottom(dock.offsetHeight + 8);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(dock);
-    return () => observer.disconnect();
-  }, []);
-  return bottom;
-}
-
-/** The jump the floating surfaces offer. It scrolls to the document tail
- * rather than to the surface: a gated call has no result entry, so the gate
- * *is* the tail, and going there brings the call and its verdict along. It
- * also has to be a jump, not a smooth `scrollIntoView`. `useFollowTail` pins
- * to the bottom after every render while the viewport is near it, so an
- * animated scroll toward the tail re-engages the follow partway down and is
- * cancelled by the next render — including the one caused by the in-flow
- * surface coming into view. */
-const jumpToTail = () =>
-  window.scrollTo(0, document.documentElement.scrollHeight);
 
 export function GateSurface({
   gate,
