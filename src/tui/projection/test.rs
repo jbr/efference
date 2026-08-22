@@ -385,8 +385,17 @@ fn renders_transcript_to_a_test_backend() {
     let (approve_tx, _approve_rx) = tokio::sync::mpsc::unbounded_channel();
     let (pace_tx, _pace_rx) = tokio::sync::mpsc::unbounded_channel();
     let (interrupt_tx, _interrupt_rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut state =
-        InteractiveState::new(rx, submit_tx, approve_tx, pace_tx, interrupt_tx, rc, theme);
+    let (sidebar_tx, _sidebar_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut state = InteractiveState::new(
+        rx,
+        submit_tx,
+        approve_tx,
+        pace_tx,
+        interrupt_tx,
+        sidebar_tx,
+        rc,
+        theme,
+    );
     state.document.document = project(
         &sample_log(),
         &LiveTail::default(),

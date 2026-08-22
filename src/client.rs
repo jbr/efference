@@ -159,6 +159,14 @@ impl Client {
         Ok(Some(id))
     }
 
+    /// Kill a background process (`DELETE /processes/:id`, docs/supervisor.md) —
+    /// SIGKILL to its whole process group; the drain task sees EOF and fires the
+    /// exit notification like any other exit. A stale id answers 404 and is the
+    /// caller's cue to drop focus from the vanished row.
+    pub async fn kill_process(&self, id: u64) -> Result<()> {
+        self.delete(&format!("/processes/{id}")).await.map(drop)
+    }
+
     /// Set the operator's pace dial / hold overlay (`PATCH /loop {pace}`,
     /// docs/control-channel.md). Both optional: `speed_ms` sets the between-turns
     /// delay, `held` toggles the pause. Returns the daemon's resulting `(speed_ms, held)`.

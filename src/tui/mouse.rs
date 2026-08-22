@@ -3,6 +3,7 @@ use std::io::Write;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, layout::Position, prelude::Backend};
 
+use super::SidebarReturn;
 use super::events::handle_action;
 use super::utils::set_cursor_shape;
 use crate::tui::document::TuiAction;
@@ -173,6 +174,44 @@ impl<'a> super::InteractiveState<'a> {
     pub(super) fn handle_click(&mut self) {
         // Handle any clicked action from previous iteration
         if let Some(click_pos) = self.viewport.clicked_position.take() {
+            // The sidebar's verbs resolve before its rows (a verb sits on a focused
+            // row's line), and both before anything underneath — a click on the panel
+            // focuses the sidebar the way a click on an entry does (docs/tui.md).
+            if let Some((row, idx)) = self
+                .sidebar_verb_hits
+                .iter()
+                .find(|(rect, _, _)| rect.contains(click_pos))
+                .map(|(_, r, i)| (*r, *i))
+            {
+                self.composing = false;
+                self.strip_focus = None;
+                if self.sidebar_focus != Some(row) {
+                    self.sidebar_return.get_or_insert(SidebarReturn::Transcript);
+                    self.sidebar_focus = Some(row);
+                    self.sidebar_verb_focus = 0;
+                }
+                self.sidebar_open = true;
+                self.sidebar_verb_focus = idx;
+                self.activate_sidebar_row();
+                return;
+            }
+            if let Some(row) = self
+                .sidebar_hits
+                .iter()
+                .find(|(rect, _)| rect.contains(click_pos))
+                .map(|(_, r)| *r)
+            {
+                self.composing = false;
+                self.strip_focus = None;
+                if self.sidebar_focus != Some(row) {
+                    self.sidebar_verb_focus = 0;
+                }
+                self.sidebar_return.get_or_insert(SidebarReturn::Transcript);
+                self.sidebar_open = true;
+                self.sidebar_focus = Some(row);
+                return;
+            }
+
             // The block menu sits *on* the focused unit's header row, which is
             // itself the expand action's click target — so menu items resolve
             // first, or every menu click would just expand the block

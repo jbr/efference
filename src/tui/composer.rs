@@ -431,10 +431,27 @@ impl Composer {
     }
 
     fn insert_text(&mut self, text: &str) {
-        if !self.replace_selection(text) {
+        // Sanitize at the single insert point (typed, pasted, staged): the buffer
+        // must render. Tabs become the four spaces every render path already
+        // displays them as (write_text, render_span widths); other control
+        // characters are dropped — they would corrupt the paint, not express
+        // intent. `\n` survives: it is a real composer feature (^J).
+        let clean: String = text
+            .chars()
+            .flat_map(|c| match c {
+                '\n' => vec![c],
+                '\t' => vec![' '; 4],
+                c if c.is_control() => vec![],
+                c => vec![c],
+            })
+            .collect();
+        if clean.is_empty() {
+            return;
+        }
+        if !self.replace_selection(&clean) {
             let start = self.cursor;
-            self.replace_range(start..start, text);
-            self.cursor = start + text.len();
+            self.replace_range(start..start, &clean);
+            self.cursor = start + clean.len();
         }
     }
 

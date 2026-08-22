@@ -52,6 +52,9 @@ pub(super) struct InteractiveTheme {
     pub strip_hint_focused_style: Style,
     /// Control strip — the omnipresent tail (dimmer than the context verbs)
     pub strip_tail_style: Style,
+    /// Sidebar (docs/tui.md) — the focused row's left-edge `▌` bar, the same
+    /// glyph-and-column treatment as a focused transcript unit
+    pub sidebar_focus_bar_style: Style,
 }
 
 impl InteractiveTheme {
@@ -153,6 +156,7 @@ impl InteractiveTheme {
             strip_tail_style: Style::default()
                 .bg(to_ratatui(surface))
                 .fg(to_ratatui(muted_fg)),
+            sidebar_focus_bar_style: Style::default().fg(to_ratatui(accent_fg)),
         }
     }
 }

@@ -15,6 +15,7 @@ pub async fn run(client: Client, theme: Option<String>, frame_cost: bool) -> Res
     let (pace_tx, mut pace_rx) = tokio::sync::mpsc::unbounded_channel::<PaceCmd>();
     let (interrupt_tx, mut interrupt_rx) =
         tokio::sync::mpsc::unbounded_channel::<crate::frontend::Interrupt>();
+    let (sidebar_tx, mut sidebar_rx) = tokio::sync::mpsc::unbounded_channel::<SidebarCmd>();
 
     // The bridge feeds the UI thread everything — log entries, live deltas, and the
     // state topics (gate/processes/usage/policy/pace/running) as level-triggered
@@ -67,6 +68,29 @@ pub async fn run(client: Client, theme: Option<String>, frame_cost: bool) -> Res
         }
     });
 
+    // Sidebar verbs (docs/tui.md): the focused row's kill / commit / cancel,
+    // each a direct control-channel call addressed by identity.
+    let sidebar_client = client.clone();
+    let sidebar_dispatcher = tokio::spawn(async move {
+        while let Some(cmd) = sidebar_rx.recv().await {
+            match cmd {
+                SidebarCmd::KillProcess(id) => {
+                    let _ = sidebar_client.kill_process(id).await;
+                }
+                SidebarCmd::CommitProposal(seq) => {
+                    let _ = sidebar_client
+                        .commit_proposal(seq, "committed from the TUI")
+                        .await;
+                }
+                SidebarCmd::CancelProposal(seq) => {
+                    let _ = sidebar_client
+                        .cancel_proposal(seq, "cancelled from the TUI")
+                        .await;
+                }
+            }
+        }
+    });
+
     // The crossterm UI loop is blocking — run it off the async runtime.
     let ui = tokio::task::spawn_blocking(move || {
         let senders = Senders {
@@ -74,6 +98,7 @@ pub async fn run(client: Client, theme: Option<String>, frame_cost: bool) -> Res
             approve: approve_tx,
             pace: pace_tx,
             interrupt: interrupt_tx,
+            sidebar: sidebar_tx,
         };
         ui_loop(rx, senders, theme, None, frame_cost)
     });
@@ -84,6 +109,7 @@ pub async fn run(client: Client, theme: Option<String>, frame_cost: bool) -> Res
     approver.abort();
     pacer.abort();
     interrupter.abort();
+    sidebar_dispatcher.abort();
     result.context("the TUI event loop failed")
 }
 
@@ -130,6 +156,7 @@ async fn run_offline(
     let (pace_tx, pace_rx) = tokio::sync::mpsc::unbounded_channel::<PaceCmd>();
     let (interrupt_tx, interrupt_rx) =
         tokio::sync::mpsc::unbounded_channel::<crate::frontend::Interrupt>();
+    let (sidebar_tx, sidebar_rx) = tokio::sync::mpsc::unbounded_channel::<SidebarCmd>();
 
     for entry in entries {
         let _ = tx.send(TuiEvent::Entry(entry));
@@ -149,6 +176,7 @@ async fn run_offline(
             approve: approve_tx,
             pace: pace_tx,
             interrupt: interrupt_tx,
+            sidebar: sidebar_tx,
         };
         ui_loop(rx, senders, theme, viewing, frame_cost)
     });
@@ -164,6 +192,7 @@ async fn run_offline(
     drop(approve_rx);
     drop(pace_rx);
     drop(interrupt_rx);
+    drop(sidebar_rx);
 
     result.context("the TUI event loop failed")
 }

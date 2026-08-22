@@ -4,13 +4,17 @@ use super::*;
 
 impl<'a> InteractiveState<'a> {
     /// Create new interactive state. The document starts empty; it is filled in
-    /// as [`TuiEvent`]s arrive over `events`.
+    /// as [`TuiEvent`]s arrive over `events`. The argument count is the stateful
+    /// surface itself — one receiver plus the intent channels the UI dispatches on
+    /// (docs/tui.md) — not an accident to bundle away.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::tui) fn new(
         events: Receiver<TuiEvent>,
         submit_tx: UnboundedSender<String>,
         approve_tx: UnboundedSender<(String, Approval)>,
         pace_tx: UnboundedSender<PaceCmd>,
         interrupt_tx: UnboundedSender<Interrupt>,
+        sidebar_tx: UnboundedSender<SidebarCmd>,
         render_context: RenderContext,
         theme: InteractiveTheme,
     ) -> Self {
@@ -90,6 +94,13 @@ impl<'a> InteractiveState<'a> {
             approve_tx,
             pace_tx,
             interrupt_tx,
+            sidebar_tx,
+            sidebar_open: false,
+            sidebar_focus: None,
+            sidebar_return: None,
+            sidebar_verb_focus: 0,
+            sidebar_hits: Vec::new(),
+            sidebar_verb_hits: Vec::new(),
             loop_running: false,
             pace: None,
             processes: Vec::new(),

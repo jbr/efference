@@ -169,6 +169,9 @@ impl<'a> InteractiveState<'a> {
         if let Some(idx) = self.strip_focus {
             return self.handle_strip_key(key, idx, terminal);
         }
+        if self.sidebar_open {
+            return self.handle_sidebar_key(key, terminal);
+        }
 
         self.handle_command_key(key, terminal)
     }
@@ -219,7 +222,13 @@ impl<'a> InteractiveState<'a> {
                 self.focus_transcript_from_composer();
                 false
             }
-            KeyCode::Down | KeyCode::Tab => {
+            // Tab toggles the sidebar (docs/tui.md) from the strip as from the
+            // transcript; `↓` alone still drops to the composer.
+            KeyCode::Tab => {
+                self.toggle_sidebar();
+                false
+            }
+            KeyCode::Down => {
                 self.leave_strip_down();
                 false
             }
@@ -319,7 +328,8 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// Command-mode keys (composer unfocused): M1's single-key transcript commands.
-    fn handle_command_key(
+    /// `pub(super)`: the sidebar falls unmatched keys through to it, as the strip does.
+    pub(super) fn handle_command_key(
         &mut self,
         key: KeyEvent,
         terminal: &mut Terminal<impl Backend + Write>,
@@ -330,15 +340,21 @@ impl<'a> InteractiveState<'a> {
                 return true;
             }
 
+            // Tab toggles the sidebar (docs/tui.md) — the second column focus can
+            // move onto from command mode. It used to alias `↓` here; the arrow
+            // (and j / C-n) keep that meaning alone.
+            (KeyCode::Tab, _) => {
+                self.toggle_sidebar();
+            }
+
             // Move focus *down a unit* (docs/tui.md) — the y-axis of the focus model,
             // reusing ferritin's cursor + auto-scroll. `↓` past the last unit falls
             // back into the composer, the symmetric counterpart of the `↑`-spill, so
             // the transcript and composer read as one continuous vertical space. j /
-            // Ctrl-n / Tab alias the arrow.
+            // Ctrl-n alias the arrow.
             (KeyCode::Char('j'), _)
             | (KeyCode::Down, _)
-            | (KeyCode::Char('n'), KeyModifiers::CONTROL)
-            | (KeyCode::Tab, _) => {
+            | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
                 self.handle_navigate_down();
                 // Navigation owns scrolling now, so it must also re-arm/detach
                 // stream-following — else the `ui_loop`'s bottom re-pin (mod.rs)

@@ -47,6 +47,7 @@ pub(crate) mod render_span;
 pub(crate) mod render_status_bar;
 pub(crate) mod render_table;
 pub(crate) mod render_theme_picker;
+pub(crate) mod sidebar;
 pub(crate) mod span_style;
 pub(crate) mod state;
 pub(crate) mod table_layout;
@@ -243,6 +244,51 @@ pub(crate) struct PolicyEntry {
     pub label: String,
     pub proposed: bool,
     pub seq: Option<u64>,
+}
+
+/// An actionable sidebar row, held by *identity* rather than screen position
+/// (docs/tui.md). A process is its spawn-minted id; a proposal is the `seq` of its
+/// `Proposed` log entry. Focus stored as an index into a frame-rebuilt list would
+/// silently substitute whatever occupies the position after the list reorders or
+/// shrinks — a process exits between focus landing and `⏎`, and the press fires a
+/// different row. Identity makes that substitution impossible: each activation
+/// re-resolves against current data, and a vanished row no-ops instead of firing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SidebarRow {
+    Process(u64),
+    Proposal(u64),
+}
+
+impl SidebarRow {
+    /// The stable key two renders of the same row compare equal on.
+    pub(crate) fn id(self) -> u64 {
+        match self {
+            SidebarRow::Process(id) | SidebarRow::Proposal(id) => id,
+        }
+    }
+}
+
+/// Where focus came from when it entered the sidebar (docs/tui.md): Tab in the
+/// sidebar returns there. The composer is not a source — Tab types in it — so the
+/// alternatives are the strip (at its item) and the transcript.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SidebarReturn {
+    Strip(usize),
+    Transcript,
+}
+
+/// A verb dispatched from a focused sidebar row, sent to the tokio side, which
+/// issues the matching control-channel call (docs/tui.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SidebarCmd {
+    /// `DELETE /processes/:id` — SIGKILL the process group (docs/supervisor.md).
+    KillProcess(u64),
+    /// `PATCH /proposals/:seq {state:"committed"}` — fold the change into the
+    /// effective config (docs/permissions.md).
+    CommitProposal(u64),
+    /// `PATCH /proposals/:seq {state:"cancelled"}` — drop it without touching
+    /// the effective config (docs/permissions.md).
+    CancelProposal(u64),
 }
 
 /// The effective policy and its pending proposals, from `GET /state`'s `role` +

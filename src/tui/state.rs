@@ -22,7 +22,8 @@ use crate::tui::document::{Document, DocumentNode, NodePath, TuiAction};
 use crate::tui::projection::{self, LiveTail, Phase};
 use crate::tui::render_context::{RenderContext, ThemeError};
 use crate::tui::{
-    BgProc, PaceCmd, PaceView, PendingGate, TuiEvent, UpstreamFailureView, UsageStats,
+    BgProc, PaceCmd, PaceView, PendingGate, SidebarCmd, SidebarReturn, SidebarRow, TuiEvent,
+    UpstreamFailureView, UsageStats,
 };
 
 use crossbeam_channel::Receiver;
@@ -446,6 +447,35 @@ pub(super) struct InteractiveState<'a> {
     /// `PATCH /processes/:id {background: true}` (the foreground→background handoff, docs/supervisor.md).
     /// A no-op if nothing is running.
     pub interrupt_tx: UnboundedSender<Interrupt>,
+    /// Dispatches a focused sidebar row's verb to the tokio side, which issues the
+    /// matching control-channel call (docs/tui.md). Fire-and-forget: a stale row
+    /// (process exited, proposal resolved elsewhere) is answered 404 by the daemon
+    /// and surfaces as a debug message here.
+    pub sidebar_tx: UnboundedSender<SidebarCmd>,
+    /// Whether the sidebar holds the focus context (docs/tui.md) — mutually
+    /// exclusive with `composing` and with `strip_focus`, the third context on top
+    /// of the vertical axis. Separate from [`sidebar_focus`](Self::sidebar_focus)
+    /// because the column can be focused with *no row selected*: the selected
+    /// row can vanish under the operator (a process exits between focus landing
+    /// and `⏎`), and identity forbids letting the press fall through to whatever
+    /// occupies the position now. Open-and-unfocused, `⏎` no-ops until an arrow
+    /// key picks a row.
+    pub sidebar_open: bool,
+    /// The actionable row the sidebar's keys act on, held by identity
+    /// ([`SidebarRow`]) rather than screen position; `None` while the column is
+    /// open with nothing selected.
+    pub sidebar_focus: Option<SidebarRow>,
+    /// Where Tab-in-the-sidebar returns to: the strip at item `i`, or the
+    /// transcript. Set when focus enters the sidebar; the composer can't be the
+    /// source (Tab types there), and Esc homes to it regardless.
+    pub sidebar_return: Option<SidebarReturn>,
+    /// Which of the focused row's verbs `←`/`→` have selected and `⏎` fires.
+    /// Reset to the leading verb whenever the row changes, like the block menu's.
+    pub sidebar_verb_focus: usize,
+    /// The sidebar rows' rendered rects, rebuilt each frame — what a mouse click
+    /// resolves into row focus (`sidebar_verb_hits` likewise for verbs).
+    pub sidebar_hits: Vec<(Rect, SidebarRow)>,
+    pub sidebar_verb_hits: Vec<(Rect, SidebarRow, usize)>,
     /// Whether the loop is executing a turn, polled from `GET /state`'s `running` (docs/tui.md).
     /// Graduated Esc reads it (via [`is_loop_active`](Self::is_loop_active)) to choose
     /// pause-vs-swallow — reliable through a *silent* long tool, where streaming

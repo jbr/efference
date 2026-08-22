@@ -4,12 +4,17 @@
 //! transcript: rendered directly into its `Rect` at absolute coordinates, fed by the
 //! `/state` poll. A 1-column `│` divides it from the transcript on its left edge.
 //!
-//! Sections render top-down until they run out of room; this first cut is a pure
-//! readout (focus into the sidebar + proposal commit/cancel are later steps).
+//! Sections render top-down until they run out of room. Actionable rows — processes
+//! and proposed grants — carry the sidebar's focus: the focused row shows a left-edge
+//! `▌` bar (the transcript unit marker, one column in from the divider) and its verb
+//! menu trailing the row's text (`▸ kill`, `▸ commit · cancel`), in the block menu's
+//! grammar. Row and verb rects are recorded per frame for click dispatch
+//! (`sidebar_hits` / `sidebar_verb_hits`); the verbs themselves dispatch by identity
+//! through `tui/sidebar.rs`.
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 
-use super::PolicyEntry;
+use super::SidebarRow;
 use super::render_frame::fmt_secs;
 use super::state::InteractiveState;
 
@@ -24,7 +29,7 @@ fn put(buf: &mut Buffer, x: u16, y: u16, max_w: u16, text: &str, style: Style) {
 }
 
 impl<'a> InteractiveState<'a> {
-    pub(super) fn render_sidebar(&self, buf: &mut Buffer, area: Rect) {
+    pub(super) fn render_sidebar(&mut self, buf: &mut Buffer, area: Rect) {
         let bg = self.theme.document_bg_style;
         let header = self.theme.breadcrumb_current_style;
         let muted = self.theme.muted_style;
@@ -43,10 +48,19 @@ impl<'a> InteractiveState<'a> {
             }
         }
 
+        // Hits are rebuilt with the frame, like the strip's and block menu's.
+        self.sidebar_hits.clear();
+        self.sidebar_verb_hits.clear();
+
         let x0 = area.x + 2; // content start: past the divider + one space
         let max_w = area.width.saturating_sub(3); // trailing pad
         let bottom = area.y + area.height;
         let mut y = area.y;
+
+        // Owned snapshots for the render walk: the verb menus record hits through
+        // `&mut self`, which cannot run while the view structs are borrowed.
+        let processes = self.processes.clone();
+        let policy = self.policy.clone();
 
         // PROCESSES — one running process per two lines (handle/command, then timing).
         if y < bottom {
@@ -59,9 +73,14 @@ impl<'a> InteractiveState<'a> {
                 header,
             );
             y += 1;
-            for p in &self.processes {
-                if y >= bottom {
+            for p in &processes {
+                if y + 1 >= bottom {
                     break;
+                }
+                let row = SidebarRow::Process(p.id);
+                let focused = self.sidebar_focus == Some(row);
+                if focused {
+                    self.paint_focus_bar(buf, area.x, y, 2);
                 }
                 put(
                     buf,
@@ -71,23 +90,22 @@ impl<'a> InteractiveState<'a> {
                     &format!("{}  {}", p.handle(), p.command),
                     text,
                 );
-                y += 1;
-                if y >= bottom {
-                    break;
-                }
-                put(
-                    buf,
-                    x0 + 3,
-                    y,
-                    max_w.saturating_sub(3),
-                    &format!(
-                        "{} · idle {}",
-                        fmt_secs(p.running_secs),
-                        fmt_secs(p.idle_secs)
-                    ),
-                    muted,
+                // Every actionable row is clickable, focused or not — the click is
+                // how a row *becomes* focused.
+                self.sidebar_hits.push((Rect::new(x0, y, max_w, 2), row));
+                let timing = format!(
+                    "{} · idle {}",
+                    fmt_secs(p.running_secs),
+                    fmt_secs(p.idle_secs)
                 );
-                y += 1;
+                put(buf, x0 + 3, y + 1, max_w.saturating_sub(3), &timing, muted);
+                if focused {
+                    // The verb menu trails the timing on the row's second line, so
+                    // focusing never reflows the column (the block menu's rule).
+                    let tx = x0 + 3 + timing.chars().count() as u16 + 2;
+                    self.render_row_verbs(buf, tx, y + 1, area.x + area.width, row);
+                }
+                y += 2;
             }
             y += 1; // section gap
         }
@@ -203,7 +221,7 @@ impl<'a> InteractiveState<'a> {
         // POLICY — the effective perimeter + its pending proposals. A proposed grant
         // renders in its committed position with a trailing `⊕` and a muted style
         // (docs/permissions.md); committing it drops the marker in place.
-        if let Some(policy) = &self.policy {
+        if let Some(policy) = &policy {
             if y < bottom {
                 put(buf, x0, y, max_w, "▾ POLICY", header);
                 y += 1;
@@ -237,28 +255,32 @@ impl<'a> InteractiveState<'a> {
                 );
                 y += 1;
             }
-            if let Some((_, t)) = &policy.scope_proposal
+            if let Some((seq, t)) = &policy.scope_proposal
                 && y < bottom
             {
-                put(
+                self.render_policy_line(
                     buf,
-                    x0 + 1,
+                    area,
                     y,
-                    max_w.saturating_sub(1),
                     &format!("scope  {t}  ⊕"),
+                    SidebarRow::Proposal(*seq),
                     muted,
                 );
                 y += 1;
             }
 
-            let section = |buf: &mut Buffer, y: &mut u16, name: &str, entries: &[PolicyEntry]| {
-                if entries.is_empty() || *y >= bottom {
-                    return;
+            for (name, entries) in [
+                ("commands", &policy.commands),
+                ("paths", &policy.paths),
+                ("tools", &policy.tools),
+            ] {
+                if entries.is_empty() || y >= bottom {
+                    continue;
                 }
-                put(buf, x0 + 1, *y, max_w.saturating_sub(1), name, muted);
-                *y += 1;
+                put(buf, x0 + 1, y, max_w.saturating_sub(1), name, muted);
+                y += 1;
                 for e in entries {
-                    if *y >= bottom {
+                    if y >= bottom {
                         break;
                     }
                     let (style, suffix) = if e.proposed {
@@ -266,20 +288,116 @@ impl<'a> InteractiveState<'a> {
                     } else {
                         (text, "")
                     };
-                    put(
-                        buf,
-                        x0 + 3,
-                        *y,
-                        max_w.saturating_sub(3),
-                        &format!("{}{}", e.label, suffix),
-                        style,
-                    );
-                    *y += 1;
+                    let row_id = e.seq.map(SidebarRow::Proposal);
+                    match row_id.filter(|_| e.proposed) {
+                        Some(id) => {
+                            self.render_policy_line(
+                                buf,
+                                area,
+                                y,
+                                &format!("{}{}", e.label, suffix),
+                                id,
+                                style,
+                            );
+                        }
+                        None => {
+                            put(
+                                buf,
+                                x0 + 3,
+                                y,
+                                max_w.saturating_sub(3),
+                                &format!("{}{}", e.label, suffix),
+                                style,
+                            );
+                        }
+                    }
+                    y += 1;
                 }
+            }
+        }
+    }
+
+    /// One actionable POLICY line: the label, plus — when it is the focused row —
+    /// the `▌` bar and the verb menu trailing it, truncated from the label side so
+    /// the verbs (what `⏎` fires) always render whole. Records the row hit rect.
+    /// Content geometry (`x0`, `max_w`) derives from the panel rect, as everywhere
+    /// else in this module.
+    fn render_policy_line(
+        &mut self,
+        buf: &mut Buffer,
+        area: Rect,
+        y: u16,
+        label: &str,
+        row: SidebarRow,
+        style: Style,
+    ) {
+        let x0 = area.x + 2;
+        let max_w = area.width.saturating_sub(3);
+        let focused = self.sidebar_focus == Some(row);
+        // Actionable rows are clickable focused or not — the click is how a row
+        // *becomes* focused.
+        self.sidebar_hits
+            .push((Rect::new(x0 + 3, y, max_w - 3, 1), row));
+        if !focused {
+            put(buf, x0 + 3, y, max_w.saturating_sub(3), label, style);
+            return;
+        }
+        self.paint_focus_bar(buf, area.x, y, 1);
+        // The menu's width claims the line first; the label gets what remains.
+        let menu_w: u16 = self
+            .sidebar_verbs(row)
+            .iter()
+            .map(|v| 3 + v.label().chars().count() as u16 + 1)
+            .sum();
+        let label_room = max_w.saturating_sub(3 + menu_w + 1);
+        put(buf, x0 + 3, y, label_room, label, style);
+        let tx = x0 + 3 + label_room + 1;
+        self.render_row_verbs(buf, tx, y, area.x + area.width, row);
+    }
+
+    /// The focused row's left-edge bar: a `▌` per line in the pad column between
+    /// the divider and the content — the transcript unit marker, one column over.
+    fn paint_focus_bar(&self, buf: &mut Buffer, x: u16, y: u16, height: u16) {
+        for dy in 0..height {
+            if let Some(cell) = buf.cell_mut((x + 1, y + dy)) {
+                cell.set_char('▌')
+                    .set_style(self.theme.sidebar_focus_bar_style);
+            }
+        }
+    }
+
+    /// A focused row's verb menu: each verb as `▸ label` with a reserved marker
+    /// cell (the block menu's grammar), the selected one in the strip's focused
+    /// style. Records each verb's rect for click dispatch; verbs cut from the
+    /// right at the panel edge are simply not offered — the `←`/`→` selection
+    /// clamps to what is on screen.
+    fn render_row_verbs(
+        &mut self,
+        buf: &mut Buffer,
+        mut x: u16,
+        y: u16,
+        max_x: u16,
+        row: SidebarRow,
+    ) {
+        let selected = self.sidebar_verb_focus;
+        for (i, verb) in self.sidebar_verbs(row).into_iter().enumerate() {
+            let text = format!(
+                "{} {}",
+                if i == selected { "▸" } else { "  " },
+                verb.label()
+            );
+            let w = text.chars().count() as u16;
+            if x + w > max_x {
+                break;
+            }
+            let style = if i == selected {
+                self.theme.strip_item_focused_style
+            } else {
+                self.theme.strip_item_style
             };
-            section(buf, &mut y, "commands", &policy.commands);
-            section(buf, &mut y, "paths", &policy.paths);
-            section(buf, &mut y, "tools", &policy.tools);
+            put(buf, x, y, w, &text, style);
+            self.sidebar_verb_hits.push((Rect::new(x, y, w, 1), row, i));
+            x += w + 1;
         }
     }
 }

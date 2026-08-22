@@ -6,15 +6,16 @@ use crate::tui::frame_cost::FrameCost;
 use ratatui::prelude::Backend;
 use std::io::Write;
 
-/// The four channels the UI sends the operator's intent over, carried together
-/// because every entry point builds all four at once and hands them straight to the
-/// state. The tokio side turns each into its control-channel `POST`; an offline run
+/// The five channels the UI sends the operator's intent over, carried together
+/// because every entry point builds all five at once and hands them straight to the
+/// state. The tokio side turns each into its control-channel call; an offline run
 /// (the gallery, a read-only view) holds the far-ends so a send can't error.
 pub(super) struct Senders {
     pub submit: tokio::sync::mpsc::UnboundedSender<String>,
     pub approve: tokio::sync::mpsc::UnboundedSender<(String, crate::frontend::Approval)>,
     pub pace: tokio::sync::mpsc::UnboundedSender<PaceCmd>,
     pub interrupt: tokio::sync::mpsc::UnboundedSender<crate::frontend::Interrupt>,
+    pub sidebar: tokio::sync::mpsc::UnboundedSender<SidebarCmd>,
 }
 
 /// The blocking crossterm UI loop. Owns the terminal, the [`InteractiveState`],
@@ -89,6 +90,7 @@ pub(super) fn ui_loop(
         senders.approve,
         senders.pace,
         senders.interrupt,
+        senders.sidebar,
         render_context,
         theme,
     );

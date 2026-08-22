@@ -56,6 +56,10 @@ impl<'a> InteractiveState<'a> {
             }
             UiMode::Normal => {
                 self.viewport.keyboard_cursor = KeyboardCursor::VirtualTop;
+                // Sidebar focus rides this rung home too: it is "not at rest in the
+                // composer", and Esc is one-directional toward the composer.
+                self.close_sidebar();
+                self.sidebar_return = None;
                 // A read-only view has no composer to return to (docs/tui.md), so its
                 // steady state is the strip — the only surface still carrying verbs.
                 if let Some(label) = &self.viewing {

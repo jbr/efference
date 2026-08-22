@@ -25,6 +25,7 @@ use ratatui::{
 };
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
+use super::SidebarCmd;
 use super::TuiEvent;
 use super::grid::frame_grid;
 use super::render_context::{OutputMode, RenderContext};
@@ -62,6 +63,9 @@ pub(crate) struct Screenplay<'a> {
     /// the hard rung of graduated Esc ([`took_interrupt`](Screenplay::took_interrupt))
     /// or the background handoff ([`took_background`](Screenplay::took_background)).
     interrupt_rx: UnboundedReceiver<crate::frontend::Interrupt>,
+    /// Held so a scenario can assert a sidebar verb dispatched
+    /// ([`took_sidebar_cmd`](Screenplay::took_sidebar_cmd)).
+    sidebar_rx: UnboundedReceiver<SidebarCmd>,
 }
 
 impl Screenplay<'static> {
@@ -84,12 +88,14 @@ impl Screenplay<'static> {
         let (approve_tx, approve_rx) = unbounded_channel();
         let (pace_tx, pace_rx) = unbounded_channel();
         let (interrupt_tx, interrupt_rx) = unbounded_channel();
+        let (sidebar_tx, sidebar_rx) = unbounded_channel();
         let state = InteractiveState::new(
             event_rx,
             submit_tx,
             approve_tx,
             pace_tx,
             interrupt_tx,
+            sidebar_tx,
             rc,
             theme,
         );
@@ -98,6 +104,7 @@ impl Screenplay<'static> {
             width,
             height,
             next_seq: 1,
+            sidebar_rx,
             _event_tx: event_tx,
             submit_rx,
             approve_rx,
@@ -216,6 +223,12 @@ impl Screenplay<'_> {
             self.interrupt_rx.try_recv(),
             Ok(crate::frontend::Interrupt::Detach)
         )
+    }
+
+    /// The sidebar verb dispatched since the last check, if any — drains the channel
+    /// the UI would send a focused row's kill / commit / cancel over.
+    pub(crate) fn took_sidebar_cmd(&mut self) -> Option<SidebarCmd> {
+        self.sidebar_rx.try_recv().ok()
     }
 
     /// The user turn a submit sent since the last check, if any — drains the channel

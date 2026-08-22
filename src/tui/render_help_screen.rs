@@ -34,7 +34,7 @@ impl<'a> InteractiveState<'a> {
             ),
             ("", "", bg_style),
             ("Focused block (block menu):", "", title_style),
-            ("  Tab, Shift+Tab", "Move focus between blocks", key_style),
+            ("  Shift+Tab", "Move focus up a block", key_style),
             ("  ← , →", "Choose among the block's verbs", key_style),
             (
                 "  Enter, Space",
@@ -58,6 +58,21 @@ impl<'a> InteractiveState<'a> {
                 "A shown verb's key fires it (e.g. b: background)",
                 key_style,
             ),
+            ("", "", bg_style),
+            ("Sidebar (Tab from command mode):", "", title_style),
+            ("  Tab", "Toggle into / out of the sidebar", key_style),
+            (
+                "  ↑ , ↓",
+                "Move between rows (processes, proposals)",
+                key_style,
+            ),
+            ("  ← , →", "Choose among the row's verbs", key_style),
+            (
+                "  Enter, Click",
+                "Fire it — kill a process; commit or cancel a proposal",
+                key_style,
+            ),
+            ("  Esc", "Back to the composer", key_style),
             ("", "", bg_style),
             ("Pace & interrupt:", "", title_style),
             (
