@@ -276,12 +276,17 @@ export function Panel({
   role,
   proposals,
   processOutput,
+  quiet,
 }: {
   processes: Process[];
   notifications: PendingNotification[];
   role: Role | null;
   proposals: Proposal[];
   processOutput: Record<number, string>;
+  /** Narrow-viewport chrome quieting (docs/web-client.md "The phone
+   * breakpoint"): while true and nothing demands the strip — no open pane,
+   * no counts — the tab row hides entirely; the status row's ⋯ reveals it. */
+  quiet: boolean;
 }) {
   const [open, setOpen] = useState<Tab | null>(
     () => (localStorage.getItem(KEY) as Tab | null) || null,
@@ -301,6 +306,8 @@ export function Panel({
     policy: proposals.length,
     interface: 0,
   };
+  const anyCount = TABS.some((tab) => counts[tab] > 0);
+  if (quiet && open === null && !anyCount) return null;
   return (
     <div className="panel">
       {/* The tab strip bleeds full width like the rest of the chrome; the

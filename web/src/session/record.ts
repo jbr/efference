@@ -234,10 +234,16 @@ class Badge {
 
   render(recorder: Recorder): void {
     if (!this.element) {
+      // An HMR update to a session/ module builds a fresh Recorder (and
+      // Badge) while the old element is still in the DOM — remove any
+      // predecessor so badges don't stack. Top-left, over the wordmark:
+      // the bottom-right corner is where the phone layout's floating chips
+      // and status row live (jbr, 2026-08-22).
+      document.querySelector("[data-scrub-badge]")?.remove();
       this.element = document.createElement("div");
       this.element.dataset.scrubBadge = "";
       this.element.style.cssText =
-        "position:fixed;right:8px;bottom:8px;z-index:99999;" +
+        "position:fixed;left:8px;top:8px;z-index:99999;" +
         "font:12px ui-monospace,monospace;padding:4px 8px;border-radius:4px;" +
         "background:#000c;color:#fff;pointer-events:none;white-space:pre";
       document.body.append(this.element);

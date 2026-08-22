@@ -102,6 +102,13 @@ What narrow changes:
   the right edge, the usage meter narrows, the upstream chip ellipsizes, and
   the gate's decision rows wrap so `allow prefix` stays on screen (verified
   live: a `human_only` gate decided by tap from the simulator).
+- **The chrome quiets.** On a phone every non-transcript pixel is clutter, so
+  at rest the dock is one row — the status dot and turn state — with the
+  dials and the (empty) panel tab strip hidden behind the row's `⋯` toggle
+  (App state, ephemeral on purpose: a reveal is a moment, not a mode).
+  Signal always shows through: `interrupt` stays whenever the loop runs, a
+  held pace stays because a hidden hold reads as a hang, and the tab strip
+  reappears on its own whenever any tab carries a count or a pane is open.
 
 **Overlays are history-backed** (`ui/overlayHistory.ts`, both form factors):
 each open overlay — inspector, file viewer — owns one history entry, so the

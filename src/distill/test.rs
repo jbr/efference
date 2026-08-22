@@ -108,6 +108,41 @@ fn parse_retain_reads_inbox_dispositions() {
     );
 }
 
+/// Notification ids arrive stringified: the peek reads them out of rendered
+/// prose, and a live fork answer whose only defect was `"pin": ["102"]` cost
+/// a full retry (observed 2026-08-22). `"102"` and `102` parse alike; a
+/// non-numeric string still fails the whole input.
+#[test]
+fn parse_retain_accepts_stringified_notification_ids() {
+    let offered = [CALL_ID.to_string()];
+    let p = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({
+                "background": { "mute": [], "pin": [] },
+                "inbox": { "dismiss": [], "pin": ["102"] },
+                "keep": "4-19",
+                "note": "n"
+            }),
+        ),
+        &offered,
+    )
+    .expect("stringified ids parse");
+    assert_eq!(p.inbox, vec![(102, Disposition::Pin)]);
+
+    let bad = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "keep": "all", "inbox": { "pin": ["p#8"] } }),
+        ),
+        &offered,
+    );
+    assert!(
+        bad.is_none(),
+        "a non-numeric id is invention, not transcription"
+    );
+}
+
 #[test]
 fn parse_dispositions_reads_triage_inbox_and_background() {
     // The standalone idle-triage tool carries inbox + background, no `keep`.

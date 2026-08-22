@@ -64,10 +64,34 @@ pub(super) struct RetainInput {
 
 #[derive(Deserialize, Default)]
 pub(super) struct InboxVerdict {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_ids")]
     pub(super) pin: Vec<u64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_ids")]
     pub(super) dismiss: Vec<u64>,
+}
+
+/// Notification ids, accepting `102` and `"102"` alike. The peek reads ids out
+/// of rendered prose (`[seq 102]`), so models stringify them routinely —
+/// observed live 2026-08-22, a fork answer whose only defect was
+/// `"pin": ["102"]`, costing a full retry. A string that isn't a number still
+/// fails the whole parse: tolerance is for transcription, not invention.
+fn lenient_ids<'de, D>(deserializer: D) -> Result<Vec<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Id {
+        Number(u64),
+        Text(String),
+    }
+    let raw = Vec::<Id>::deserialize(deserializer)?;
+    raw.into_iter()
+        .map(|id| match id {
+            Id::Number(n) => Ok(n),
+            Id::Text(s) => s.trim().parse().map_err(serde::de::Error::custom),
+        })
+        .collect()
 }
 
 #[derive(Deserialize, Default)]

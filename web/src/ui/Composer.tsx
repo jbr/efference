@@ -27,6 +27,8 @@ export function Composer({
   reviewLevel,
   running,
   gatePending,
+  quiet,
+  onReveal,
 }: {
   submit: (text: string) => Promise<void>;
   pace: Pace | null;
@@ -35,6 +37,10 @@ export function Composer({
   /** A gate float may own the above-dock slot; the compose chip yields to
    * it (the float carries its own steering input). */
   gatePending: boolean;
+  /** Narrow chrome quieting: dials hidden until the ⋯ reveal (App state,
+   * shared with the panel strip). */
+  quiet: boolean;
+  onReveal: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -145,53 +151,75 @@ export function Composer({
         </span>
         {/* Reserved: the key-hint strip lands here once binds exist. */}
         <span className="spacer" />
-        <button
-          type="button"
-          disabled={!running}
-          onClick={() => act(interruptLoop())}
-        >
-          interrupt
-        </button>
-        <button
-          type="button"
-          onClick={() => act(patchLoop({ held: !(pace?.held ?? false) }))}
-        >
-          {pace?.held ? "resume" : "hold"}
-        </button>
-        <label className="dim">
-          pace{" "}
-          <select
-            value={speed}
-            onChange={(e) =>
-              act(patchLoop({ speedMs: Number(e.target.value) }))
-            }
+        {/* Quiet chrome: on narrow the dials hide until ⋯ reveals them —
+            interrupt stays whenever it is usable (it is the control a phone
+            wants when a run goes wrong), held pace stays because a hidden
+            hold reads as a hang. */}
+        {(!quiet || running) && (
+          <button
+            type="button"
+            disabled={!running}
+            onClick={() => act(interruptLoop())}
           >
-            {!PACES.some(([ms]) => ms === speed) && (
-              <option value={speed}>{speed} ms</option>
-            )}
-            {PACES.map(([ms, label]) => (
-              <option key={ms} value={ms}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="dim">
-          review{" "}
-          <select
-            value={reviewLevel ?? ""}
-            onChange={(e) =>
-              act(patchLoop({ reviewLevel: e.target.value as ReviewLevel }))
-            }
+            interrupt
+          </button>
+        )}
+        {(!quiet || (pace?.held ?? false)) && (
+          <button
+            type="button"
+            onClick={() => act(patchLoop({ held: !(pace?.held ?? false) }))}
           >
-            {reviewLevel === null && <option value="" disabled hidden />}
-            {LEVELS.map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
-        </label>
+            {pace?.held ? "resume" : "hold"}
+          </button>
+        )}
+        {!quiet && (
+          <label className="dim">
+            pace{" "}
+            <select
+              value={speed}
+              onChange={(e) =>
+                act(patchLoop({ speedMs: Number(e.target.value) }))
+              }
+            >
+              {!PACES.some(([ms]) => ms === speed) && (
+                <option value={speed}>{speed} ms</option>
+              )}
+              {PACES.map(([ms, label]) => (
+                <option key={ms} value={ms}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {!quiet && (
+          <label className="dim">
+            review{" "}
+            <select
+              value={reviewLevel ?? ""}
+              onChange={(e) =>
+                act(patchLoop({ reviewLevel: e.target.value as ReviewLevel }))
+              }
+            >
+              {reviewLevel === null && <option value="" disabled hidden />}
+              {LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {narrow && (
+          <button
+            type="button"
+            className="linkish"
+            title={quiet ? "show the dials and panel tabs" : "hide them again"}
+            onClick={onReveal}
+          >
+            {quiet ? "⋯" : "×"}
+          </button>
+        )}
       </div>
     </>
   );

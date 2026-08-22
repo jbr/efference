@@ -14,6 +14,7 @@ import { useOverlayHistory } from "./overlayHistory.ts";
 import { Panel } from "./Panel.tsx";
 import { TopBar } from "./TopBar.tsx";
 import { Transcript } from "./Transcript.tsx";
+import { useNarrow } from "./useNarrow.ts";
 
 export function App() {
   const { session, connector, actions } = useSession();
@@ -62,6 +63,13 @@ export function App() {
   // like the inspector — `shownFile` holds the seed path through the exit
   // slide. Following moves the viewer's own path internally; this is only
   // where it starts.
+  // Narrow chrome quieting: on a phone every non-transcript pixel is
+  // clutter, so the dials and (empty) tab strip hide behind the status
+  // row's ⋯ until revealed. Ephemeral by design — a reveal is a moment,
+  // not a mode worth persisting.
+  const narrow = useNarrow();
+  const [chromeOpen, setChromeOpen] = useState(false);
+
   const [viewingFile, setViewingFile] = useState<string | null>(null);
   const [shownFile, setShownFile] = useState<string | null>(null);
   if (viewingFile !== null && viewingFile !== shownFile)
@@ -97,6 +105,7 @@ export function App() {
   }
 
   const gate = session.topics.gate;
+  const quiet = narrow && !chromeOpen;
   return (
     <div className="app">
       <TopBar
@@ -156,6 +165,7 @@ export function App() {
           role={session.topics.role ?? null}
           proposals={session.topics.proposals ?? []}
           processOutput={session.streaming.processOutput}
+          quiet={quiet}
         />
         <Composer
           submit={actions.submitTurn}
@@ -163,6 +173,8 @@ export function App() {
           reviewLevel={session.topics.review_level ?? null}
           running={session.topics.running ?? false}
           gatePending={gate != null}
+          quiet={quiet}
+          onReveal={() => setChromeOpen((open) => !open)}
         />
       </div>
     </div>
