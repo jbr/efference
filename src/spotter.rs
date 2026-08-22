@@ -187,6 +187,11 @@ impl Spotter for ForkSpot {
         {
             Ok(completion) => {
                 let usage = Some(completion.request_usage());
+                // An unfinalized stream (docs/transport.md) is not a verdict —
+                // fail closed, exactly as an unparseable one does.
+                if completion.upstream_failure().is_some() {
+                    return Spotting::fail_closed(usage);
+                }
                 match parse_spot(&completion) {
                     Some(read) => Spotting {
                         read,

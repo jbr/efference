@@ -212,6 +212,21 @@ pub struct RequestUsage {
 }
 
 impl Completion {
+    /// `Some` when the producing stream died before finalizing (docs/transport.md):
+    /// `assistant` is then a record-only partial — append it for audit, never project
+    /// it, and treat the request as a retryable transient. Reads the mark off the
+    /// payload itself (the assembler sets it there) so appending an unmarked partial
+    /// is unrepresentable.
+    pub fn upstream_failure(&self) -> Option<&str> {
+        match &self.assistant {
+            Payload::Assistant {
+                upstream_failure: Some(why),
+                ..
+            } => Some(why),
+            _ => None,
+        }
+    }
+
     /// This completion's [`RequestUsage`] — the per-request record the daemon persists.
     pub fn request_usage(&self) -> RequestUsage {
         RequestUsage {

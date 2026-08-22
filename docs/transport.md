@@ -26,9 +26,9 @@ live network connection.
 | `content_block_delta` | `text_delta` appends to a text block; `input_json_delta` appends a raw JSON fragment to a tool block |
 | `content_block_stop` | block boundary; no-op (finalization happens in `finish`) |
 | `message_delta` | final `stop_reason`; final `usage` (merged into the `message_start` counts, per field) |
-| `message_stop` | terminal; no-op |
+| `message_stop` | terminal; marks the stream **finalized** (as does OpenRouter's `[DONE]` sentinel) |
 | `ping` | keepalive; no-op |
-| `error` | in-stream error (e.g. `overloaded_error` after a 200); surfaced verbatim |
+| `error` | in-stream error (e.g. `overloaded_error` after a 200); stops assembly, body preserved as the completion's `upstream_failure` |
 
 **Reassembly.** `finish()` collapses the accumulated blocks into a
 `Payload::Assistant { text, calls }`. Tool input is the non-trivial part: the
@@ -41,12 +41,33 @@ once the block closes. An empty accumulator (no fragments received) produces
 see no difference from a non-streaming call — the SSE complexity is fully
 contained inside `api.rs`.
 
-**Two invariants.**
+**Three invariants.**
 
 *Loud-on-unknown.* An unrecognized event type, block type, or delta type is a
 hard error, never a silent drop. The API surface is explicit about what the
-assembler knows how to handle; anything outside that set fails immediately and
-loudly rather than silently losing data.
+assembler knows how to handle; anything outside that set stops assembly
+immediately and loudly rather than silently losing data — the refusal becomes
+the completion's `upstream_failure` (below), so it survives to the log rather
+than only to stderr.
+
+*Finalized-or-marked.* The assembler tracks whether the stream **finalized**
+(`message_stop` observed, or `[DONE]`). A stream that dies without finalizing —
+a silent close, an in-stream `error` event, a mid-stream transport error, an
+event the assembler refused — still assembles, but the completion's payload
+carries `upstream_failure: Some(why)`: a **record-only partial**
+([log-and-projection.md](log-and-projection.md)). The partial content is
+preserved (it is often the only copy anywhere; a cut tool input is kept as its
+raw string rather than erroring the whole partial away), but the provider has
+no record of the generation and doesn't stand behind it, so the entry never
+projects. The dividing line from the max-tokens case is deliberate: a
+cap-terminated response is *finalized* — it carries a `stop_reason` and usage
+and the loop rightly commits it — where an unfinalized stream carries neither.
+Finalized → commit; unfinalized → record-but-retry. A failure observed *after*
+finalization (draining the already-closed stream) does not unmake the
+completion. Before this existed, an aborted stream committed as a clean turn —
+empty or thinking-only, zero usage — indistinguishable from the agent choosing
+silence (observed three times in one session, 2026-08-21; OpenRouter 404'd all
+three generation ids).
 
 *Usage merge.* Both usage-bearing events are read and folded into one `Usage` by
 per-field maximum (`Usage::merge_max`); which event carries a given count is
@@ -128,15 +149,28 @@ wall-clock budget; an HTTP `Retry-After` is honored only within that same
 budget.
 
 The retry handler covers failures while opening a response, before an SSE stream
-has yielded any deltas. A connection that has returned 200 and then drops
-mid-stream is not resumed: it may already have published live deltas and left a
-partially assembled completion.
+has yielded any deltas. A connection that has returned 200 and then dies
+mid-stream is not resumed — it may already have published live deltas — but it
+is not lost either: the partial assembles as a record-only completion
+(finalized-or-marked, above), and the **agent loop retries the whole request**.
+The loop makes up to `STREAM_ABORT_ATTEMPTS` (4) attempts per model call with a
+doubling pause (1s/2s/4s); each aborted attempt's partial is appended to the log
+first. Because a marked entry projects to nothing, every retry re-sends
+byte-identical messages and rides the still-warm cached prefix. On exhaustion
+the loop posts a notification naming the failure (the same pattern as the
+output-token-cap notification) and returns to idle — the operator's view and
+the agent's next triage gate both see that the turn was not completed, rather
+than a silence indistinguishable from the model producing nothing.
 
-An exhausted `complete` request fails the current trajectory rather than the
-daemon. No assistant payload is appended, so the projection remains unchanged;
-the failure is written to the daemon's stderr and the loop returns to idle,
-where the operator can submit another turn or change session configuration.
-Keepalive failures are likewise transport-only and leave the log unchanged.
+An exhausted *open* failure (a non-2xx after the retry handler gives up) still
+fails the current trajectory rather than the daemon, but no longer only to
+stderr: the loop appends an empty record-only assistant entry carrying the
+error body — Anthropic's 4xx bodies name exactly what was malformed, and the
+log is the durable file where stderr is not — and posts the same
+turn-not-completed notification before returning to idle. The projection
+remains unchanged either way. Classifying *which* open failures deserve further
+loop-level retries beyond the transport's own remains deferred. Keepalive
+failures are transport-only and leave the log unchanged.
 
 Every non-2xx response also updates one shared diagnostic: its numeric status and
 how many consecutive responses carried that status. `RetryHandler` is outermost

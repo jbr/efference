@@ -28,6 +28,7 @@ fn pinned_notification_projects_at_triage_position() {
                     name: "bash".into(),
                     input: json!({}),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(1, 0, notification("test-watch", "3 failures")), // pinned
@@ -113,6 +114,7 @@ fn surfaced_context_item_projects_at_triage_position() {
                     name: "grep".into(),
                     input: json!({}),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(

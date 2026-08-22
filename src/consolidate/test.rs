@@ -20,6 +20,7 @@ fn work(seq: Seq) -> LogEntry {
             thinking: vec![],
             text: vec![],
             calls: vec![],
+            upstream_failure: None,
         },
     )
 }

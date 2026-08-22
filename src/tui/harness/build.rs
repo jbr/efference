@@ -53,6 +53,7 @@ impl Screenplay<'_> {
             thinking: vec![],
             text: vec![ContentBlock::Text(text.into())],
             calls,
+            upstream_failure: None,
         })
     }
 
@@ -65,6 +66,7 @@ impl Screenplay<'_> {
             }],
             text: vec![ContentBlock::Text(text.into())],
             calls: vec![],
+            upstream_failure: None,
         })
     }
 

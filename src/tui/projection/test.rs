@@ -29,6 +29,7 @@ fn sample_log() -> Vec<LogEntry> {
                     name: "bash".into(),
                     input: serde_json::json!({ "command": "echo hi" }),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -123,6 +124,7 @@ fn a_long_result_renders_whole() {
                     name: "bash".into(),
                     input: serde_json::json!({ "command": "seq 400" }),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -165,6 +167,7 @@ fn a_failed_result_is_marked_on_the_result_not_the_call() {
                     name: "bash".into(),
                     input: serde_json::json!({ "command": "false" }),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -216,6 +219,7 @@ fn distilled_wire_supersedes_raw() {
                     name: "bash".into(),
                     input: serde_json::json!({ "command": "noise" }),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -290,6 +294,7 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
                     name: "bash".into(),
                     input: serde_json::json!({ "command": "noise" }),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -358,6 +363,7 @@ fn live_tail_renders_after_committed_entries_and_clears_on_commit() {
             thinking: vec![],
             text: vec![ContentBlock::Text("done".into())],
             calls: vec![],
+            upstream_failure: None,
         },
     ));
     assert!(

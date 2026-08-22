@@ -285,10 +285,17 @@ fn adaptive_thinking_allowlist_is_claude_non_haiku() {
     assert!(!is_recognized_adaptive_claude("deepseek/deepseek-chat"));
 }
 
+/// Mirror of `Client::complete`'s read loop (docs/transport.md): an event the
+/// assembler refuses stops the feed and is recorded as the stream's failure, which
+/// `finish` folds into the completion's `upstream_failure` — the partial is never
+/// discarded.
 fn feed(events: &[(&str, &str)]) -> Result<Completion, Error> {
     let mut a = Assembler::new();
     for (ty, data) in events {
-        a.apply(Some(ty), data)?;
+        if let Err(e) = a.apply(Some(ty), data) {
+            a.fail(e.to_string());
+            break;
+        }
     }
     a.finish()
 }
@@ -477,6 +484,7 @@ fn assembles_text_and_split_tool_use() {
             thinking,
             text,
             calls,
+            ..
         } => {
             assert!(thinking.is_empty(), "no thinking blocks in this stream");
             assert_eq!(text, vec![ContentBlock::Text("let me look".into())]);
@@ -503,6 +511,7 @@ fn openrouter_null_cache_usage_does_not_crash() {
             ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#),
             ("content_block_stop", r#"{"index":0}"#),
             ("message_delta", r#"{"delta":{"stop_reason":"max_tokens"},"usage":{"input_tokens":17,"output_tokens":64,"cache_creation_input_tokens":null,"cache_read_input_tokens":0}}"#),
+            ("message_stop", r#"{"type":"message_stop"}"#),
         ])
         .unwrap();
     assert_eq!(completion.model, "thinkingmachines/inkling");
@@ -554,6 +563,7 @@ fn empty_tool_input_is_empty_object() {
             "message_delta",
             r#"{"delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":2}}"#,
         ),
+        ("message_stop", r#"{"type":"message_stop"}"#),
     ])
     .unwrap();
     match completion.assistant {
@@ -581,6 +591,7 @@ fn assembles_thinking_block_leading_the_turn() {
             ("content_block_delta", r#"{"index":1,"delta":{"type":"text_delta","text":"here's the answer"}}"#),
             ("content_block_stop", r#"{"index":1}"#),
             ("message_delta", r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":6}}"#),
+            ("message_stop", r#"{"type":"message_stop"}"#),
         ])
         .unwrap();
     match completion.assistant {
@@ -588,6 +599,7 @@ fn assembles_thinking_block_leading_the_turn() {
             thinking,
             text,
             calls,
+            ..
         } => {
             assert_eq!(
                 thinking,
@@ -612,6 +624,7 @@ fn assembles_redacted_thinking_block() {
             ("content_block_start", r#"{"index":0,"content_block":{"type":"redacted_thinking","data":"ENCRYPTED=="}}"#),
             ("content_block_stop", r#"{"index":0}"#),
             ("message_delta", r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#),
+            ("message_stop", r#"{"type":"message_stop"}"#),
         ])
         .unwrap();
     match completion.assistant {
@@ -625,11 +638,14 @@ fn assembles_redacted_thinking_block() {
     }
 }
 
-/// An unknown event type is loud, never silently dropped.
+/// An unknown event type is loud, never silently dropped: it stops assembly and
+/// the completion carries the why as its `upstream_failure` — record-only, retried,
+/// never committed as a clean turn.
 #[test]
 fn unknown_event_type_is_loud() {
-    let err = feed(&[("surprise", "{}")]).unwrap_err();
-    assert!(err.to_string().contains("surprise"), "{err}");
+    let completion = feed(&[("surprise", "{}")]).unwrap();
+    let why = completion.upstream_failure().expect("must be marked");
+    assert!(why.contains("surprise"), "{why}");
 }
 
 /// OpenRouter's skin terminates the stream with a trailing `[DONE]` sentinel
@@ -657,16 +673,126 @@ fn done_sentinel_is_terminal_not_unknown() {
     }
 }
 
-/// An in-stream `error` event surfaces its full body (the path that keeps the
-/// useful overload/rate-limit detail the pre-stream non-2xx path loses).
+/// An in-stream `error` event (e.g. `overloaded_error` after a 200) surfaces its
+/// full body as the completion's `upstream_failure`, with whatever content arrived
+/// before it preserved — the partial is the only copy anywhere (docs/transport.md).
 #[test]
 fn in_stream_error_surfaces_body() {
-    let err = feed(&[(
-        "error",
-        r#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#,
-    )])
-    .unwrap_err();
-    assert!(err.to_string().contains("overloaded_error"), "{err}");
+    let completion = feed(&[
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"text_delta","text":"half an ans"}}"#,
+        ),
+        (
+            "error",
+            r#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#,
+        ),
+    ])
+    .unwrap();
+    let why = completion.upstream_failure().expect("must be marked");
+    assert!(why.contains("overloaded_error"), "{why}");
+    match &completion.assistant {
+        Payload::Assistant { text, .. } => {
+            assert_eq!(text, &vec![ContentBlock::Text("half an ans".into())]);
+        }
+        other => panic!("expected Payload::Assistant, got {other:?}"),
+    }
+}
+
+/// A stream that closes without `message_stop` / `[DONE]` — the observed upstream
+/// abort (2026-08-21): three consecutive completions died mid-stream, committed as
+/// clean turns, and the daemon settled idle indistinguishable from the agent
+/// choosing silence. Now the completion is marked, its partial (here: thinking
+/// alone, the shape that projected as a dangling thinking block) preserved.
+#[test]
+fn aborted_stream_assembles_as_record_only_partial() {
+    let completion = feed(&[
+        ("message_start", r#"{"message":{"model":"stealth/ox-alpha","usage":{"input_tokens":5,"output_tokens":1}}}"#),
+        ("content_block_start", r#"{"index":0,"content_block":{"type":"thinking","thinking":""}}"#),
+        ("content_block_delta", r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"working through"}}"#),
+        // …and the stream simply ends: no message_delta, no message_stop.
+    ])
+    .unwrap();
+    let why = completion.upstream_failure().expect("must be marked");
+    assert!(why.contains("before finalizing"), "{why}");
+    assert_eq!(completion.stop_reason, None);
+    match &completion.assistant {
+        Payload::Assistant { thinking, .. } => {
+            assert_eq!(thinking.len(), 1, "the partial thinking must survive");
+        }
+        other => panic!("expected Payload::Assistant, got {other:?}"),
+    }
+}
+
+/// The `[DONE]` sentinel alone finalizes — OpenRouter labels it terminally and a
+/// skin that omitted `message_stop` must not read as an abort.
+#[test]
+fn done_sentinel_alone_finalizes() {
+    let completion = feed(&[
+        (
+            "message_start",
+            r#"{"message":{"model":"m","usage":{"input_tokens":1,"output_tokens":1}}}"#,
+        ),
+        (
+            "message_delta",
+            r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#,
+        ),
+        ("data", "[DONE]"),
+    ])
+    .unwrap();
+    assert_eq!(completion.upstream_failure(), None);
+}
+
+/// A failure recorded after finalization (a transport error draining the closed
+/// stream, a stray trailing event) does not unmake the completion — the provider
+/// stood behind it with a `stop_reason` and usage.
+#[test]
+fn failure_after_finalization_keeps_the_completion_clean() {
+    let mut a = Assembler::new();
+    for (ty, data) in [
+        (
+            "message_start",
+            r#"{"message":{"model":"m","usage":{"input_tokens":1,"output_tokens":1}}}"#,
+        ),
+        (
+            "message_delta",
+            r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#,
+        ),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+    ] {
+        a.apply(Some(ty), data).unwrap();
+    }
+    a.fail("connection reset while draining".into());
+    let completion = a.finish().unwrap();
+    assert_eq!(completion.upstream_failure(), None);
+    assert_eq!(completion.stop_reason.as_deref(), Some("end_turn"));
+}
+
+/// An abort can cut a tool input mid-fragment. The record-only entry keeps the raw
+/// bytes as a JSON string rather than erroring the whole partial away — it is never
+/// dispatched or projected, only audited.
+#[test]
+fn aborted_stream_keeps_partial_tool_input_unparsed() {
+    let completion = feed(&[
+        ("content_block_start", r#"{"index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"bash"}}"#),
+        ("content_block_delta", r#"{"index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"cargo t"}}"#),
+        // stream dies mid-input
+    ])
+    .unwrap();
+    assert!(completion.upstream_failure().is_some());
+    match &completion.assistant {
+        Payload::Assistant { calls, .. } => {
+            assert_eq!(
+                calls[0].input,
+                Value::String("{\"command\":\"cargo t".into())
+            );
+        }
+        other => panic!("expected Payload::Assistant, got {other:?}"),
+    }
 }
 
 use crate::project::ApiBlock;

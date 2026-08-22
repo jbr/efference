@@ -13,6 +13,7 @@ fn spot_completion(name: &str, input: Value) -> Completion {
                 name: name.into(),
                 input,
             }],
+            upstream_failure: None,
         },
         id: None,
         model: "test".into(),

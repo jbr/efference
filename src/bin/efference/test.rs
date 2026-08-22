@@ -68,6 +68,7 @@ fn write_fixture_log(path: &Path) {
             thinking: vec![],
             text: vec![efference::log::ContentBlock::Text("hi there".into())],
             calls: vec![],
+            upstream_failure: None,
         },
     )
     .unwrap();
@@ -152,6 +153,7 @@ fn spot_fixture() -> Vec<efference::log::LogEntry> {
                     name: "bash".into(),
                     input: serde_json::json!({ "command": "rm  -rf\n ./build" }),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -289,6 +291,7 @@ fn a_gate_carries_a_completions_results_and_a_prefix_that_stops_short_of_them() 
                 thinking: vec![],
                 text: vec![],
                 calls: vec![call("a"), call("b")],
+                upstream_failure: None,
             },
         ),
         result(2, "a"),
@@ -316,6 +319,7 @@ fn a_gate_carries_its_recorded_first_attempt() {
                 thinking: vec![],
                 text: vec![],
                 calls: vec![call("a")],
+                upstream_failure: None,
             },
         ),
         result(2, "a"),
@@ -330,6 +334,7 @@ fn a_gate_carries_its_recorded_first_attempt() {
                 thinking: vec![],
                 text: vec![],
                 calls: vec![call("b")],
+                upstream_failure: None,
             },
         ),
         result(5, "b"),
@@ -359,6 +364,7 @@ fn a_completion_with_no_results_opens_no_gate() {
             thinking: vec![],
             text: vec![],
             calls: vec![call("a")],
+            upstream_failure: None,
         },
     )];
     assert!(gates(&log).is_empty());

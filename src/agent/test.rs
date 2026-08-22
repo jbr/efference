@@ -42,6 +42,7 @@ pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_sp
                 thinking: vec![],
                 text: vec![],
                 calls: vec![call.clone()],
+                upstream_failure: None,
             },
         )
         .unwrap();
@@ -374,6 +375,7 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
                 thinking: vec![],
                 text: vec![],
                 calls: vec![first.clone(), second.clone()],
+                upstream_failure: None,
             },
         )
         .unwrap();

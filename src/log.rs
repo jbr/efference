@@ -83,6 +83,23 @@ pub enum Payload {
         thinking: Vec<ContentBlock>,
         text: Vec<ContentBlock>,
         calls: Vec<ToolCall>,
+        /// `Some` = the upstream stream died before finalizing (no `message_stop` /
+        /// `[DONE]`, an in-stream `error` event, or a mid-stream transport failure) —
+        /// or, for an entry with no content at all, the request itself failed and this
+        /// records the error body durably (docs/transport.md). The string says why:
+        /// the provider's error verbatim when one arrived, a harness-written note for
+        /// a silent close. Such an entry is **record-only**: the partial (often the
+        /// only copy anywhere) stays in the log for audit, but [`project`] skips the
+        /// entry entirely — the provider has no record of the generation and doesn't
+        /// stand behind it, so it must not enter the trajectory. The assistant-side
+        /// analogue of a [`WireState`] verdict: the mark lives in the entry because
+        /// projection is deterministic over the log alone (docs/log-and-projection.md).
+        /// `None` (the default; skipped when serializing, so finalized entries and old
+        /// logs are byte-identical) = a finalized turn, projected as always.
+        ///
+        /// [`project`]: crate::project::project
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        upstream_failure: Option<String>,
     },
     /// The result of running one tool call. `raw` is immutable; redaction only
     /// flips `wire`.

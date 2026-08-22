@@ -149,7 +149,18 @@ pub(crate) fn entry_nodes(
                 thinking,
                 text,
                 calls,
+                upstream_failure,
             } => {
+                // A record-only partial (docs/transport.md): the stream died before
+                // finalizing, so nothing below is in the model's context. The content
+                // still renders — it may be the only copy of what the model produced —
+                // but the marker keeps it from reading as a committed turn.
+                if let Some(why) = upstream_failure {
+                    nodes.push(annotation_line(
+                        "⚠ stream aborted — recorded, not in context · ",
+                        why,
+                    ));
+                }
                 // Thinking leads, as it does on the wire (`thinking` → `text` →
                 // `tool_use`). It is the *record* of the reasoning: watching it stream past at
                 // generation speed is not reading it, so the transcript has to keep it.

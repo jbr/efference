@@ -30,7 +30,8 @@ pre-existing logs read back unchanged.
 ```rust
 enum Payload {
     User(Vec<ContentBlock>),
-    Assistant { thinking: Vec<ContentBlock>, text: Vec<ContentBlock>, calls: Vec<ToolCall> },
+    Assistant { thinking: Vec<ContentBlock>, text: Vec<ContentBlock>, calls: Vec<ToolCall>,
+                upstream_failure: Option<String> },
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
     Mark(Mark),        // a salience annotation
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
@@ -46,6 +47,14 @@ enum Payload {
 
 `Commit` is a placeholder: when compaction needs an explicit freeze primitive
 it slots in here without touching any other type.
+
+`Assistant.upstream_failure` is the assistant-side analogue of a `WireState`
+verdict: `Some(why)` marks a **record-only** entry — the stream that produced it
+died before finalizing (or, with no content at all, the request itself failed;
+[transport.md](transport.md)) — and `project` skips the entry entirely. The mark
+lives in the entry because projection is a pure function of the log and cannot
+consult ephemeral transport state. `None` is the default and is skipped when
+serializing, so finalized entries and pre-existing logs are byte-identical.
 
 `Preamble` records the full rendered `system` string once at boot, exactly as
 this session's requests carry it. It exists because the `[context]` preamble

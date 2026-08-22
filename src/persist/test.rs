@@ -16,6 +16,7 @@ fn sample(log: &mut Log) {
                 name: "bash".into(),
                 input: json!({ "command": "ls", "timeout": 5 }),
             }],
+            upstream_failure: None,
         },
     )
     .unwrap();

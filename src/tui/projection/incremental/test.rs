@@ -33,6 +33,7 @@ fn assistant_call(seq: u64, text: &str, call_id: &str, command: &str) -> LogEntr
                 call_id,
                 serde_json::json!({ "command": command }),
             )],
+            upstream_failure: None,
         },
     )
 }

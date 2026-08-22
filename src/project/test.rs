@@ -38,6 +38,7 @@ fn sample_log() -> Vec<LogEntry> {
                     // (under `preserve_order`) IndexMap-backed.
                     input: json!({ "command": "ls", "timeout": 5 }),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -103,6 +104,43 @@ fn projection_matches_expected_wire_bytes() {
     assert_eq!(wire, expected);
 }
 
+/// A record-only partial (docs/transport.md) projects to **nothing**: appending one
+/// leaves the wire byte-identical to the log without it. Both properties this unit
+/// rests on live here — the retry that follows an aborted stream re-sends the same
+/// bytes (riding the cached prefix), and a thinking-only partial cannot project as a
+/// dangling thinking block (the observed failure, 2026-08-21).
+#[test]
+fn record_only_partial_projects_to_nothing() {
+    let clean = serde_json::to_string(&project(&sample_log())).unwrap();
+    let mut log = sample_log();
+    log.push(entry(
+        3,
+        2,
+        Payload::Assistant {
+            thinking: vec![ContentBlock::Thinking {
+                text: "eleven thousand characters of thinking".into(),
+                signature: "".into(),
+            }],
+            text: vec![],
+            calls: vec![],
+            upstream_failure: Some("stream ended before finalizing (no message_stop)".into()),
+        },
+    ));
+    // An empty one too — the durable record of a pre-stream request failure.
+    log.push(entry(
+        4,
+        3,
+        Payload::Assistant {
+            thinking: vec![],
+            text: vec![],
+            calls: vec![],
+            upstream_failure: Some("upstream API returned 429: rate limited".into()),
+        },
+    ));
+    let with_partials = serde_json::to_string(&project(&log)).unwrap();
+    assert_eq!(clean, with_partials);
+}
+
 /// Pins the exact wire encoding of a thinking-bearing assistant turn
 /// (docs/transport.md): thinking leads (before text, before `tool_use`), the
 /// `signature` rides verbatim, and `redacted_thinking` renders its opaque `data`. This is
@@ -131,6 +169,7 @@ fn thinking_turn_matches_expected_wire_bytes() {
                     name: "bash".into(),
                     input: json!({ "command": "ls" }),
                 }],
+                upstream_failure: None,
             },
         ),
     ];

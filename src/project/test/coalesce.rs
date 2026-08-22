@@ -20,6 +20,7 @@ fn tool_result_omits_false_is_error_but_keeps_true() {
                     name: "bash".into(),
                     input: json!({}),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -64,6 +65,7 @@ fn consecutive_tool_results_coalesce_into_one_user_message() {
                         input: json!({}),
                     },
                 ],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -125,6 +127,7 @@ fn user_turn_after_tool_result_merges_into_one_message() {
                     name: "bash".into(),
                     input: json!({}),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(

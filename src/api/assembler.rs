@@ -52,6 +52,15 @@ pub(super) struct Assembler {
     model: String,
     stop_reason: Option<String>,
     usage: Usage,
+    /// Whether the stream finalized: `message_stop` (Anthropic) or the `[DONE]`
+    /// sentinel (OpenRouter) observed. A stream that closes without either died
+    /// upstream — the completion assembles as a record-only partial
+    /// (docs/transport.md), never a clean turn.
+    finalized: bool,
+    /// A mid-stream death recorded by [`Assembler::fail`]: an in-stream `error`
+    /// event's body, a transport error, or an unparseable event. Carried into the
+    /// completion's `upstream_failure` so the why survives to the log.
+    failure: Option<String>,
 }
 
 impl Assembler {
@@ -62,7 +71,17 @@ impl Assembler {
             model: String::new(),
             stop_reason: None,
             usage: Usage::default(),
+            finalized: false,
+            failure: None,
         }
+    }
+
+    /// Record why the stream died mid-flight. The caller stops feeding events after
+    /// this; [`Assembler::finish`] folds the message into the completion's
+    /// `upstream_failure` instead of discarding the partial — whatever accumulated
+    /// before the death is the only copy anywhere (docs/transport.md).
+    pub(super) fn fail(&mut self, why: String) {
+        self.failure = Some(why);
     }
 
     /// Fold one SSE event into the running state. `event_type` is the SSE
@@ -82,6 +101,7 @@ impl Assembler {
         // label varies by provider, and treat it as terminal rather than tripping
         // loud-on-unknown below.
         if data.trim() == "[DONE]" {
+            self.finalized = true;
             return Ok(None);
         }
         match event_type {
@@ -244,7 +264,7 @@ impl Assembler {
                 self.usage.merge_max(&usage);
             }
             // Terminal; the body ends after it, so the stream closes on its own.
-            Some("message_stop") => {}
+            Some("message_stop") => self.finalized = true,
             // Keepalive.
             Some("ping") => {}
             // An in-stream error (e.g. `overloaded_error` after a 200) carries a
@@ -258,7 +278,26 @@ impl Assembler {
 
     /// Collapse the accumulated blocks into the assistant turn. Tool inputs parse
     /// here, after all fragments have arrived (an empty input → `{}`).
+    ///
+    /// A stream that never finalized — no `message_stop` / `[DONE]`, or a death
+    /// recorded via [`Assembler::fail`] — assembles into the same `Completion`, but
+    /// with `upstream_failure` set on the payload: a record-only partial the loop
+    /// appends for audit and retries, never a clean turn (docs/transport.md). A
+    /// failure recorded *after* finalization (a transport error while draining the
+    /// already-closed stream) does not unmake the completion: the provider stood
+    /// behind it with a `stop_reason` and usage.
     pub(super) fn finish(self) -> Result<Completion, Error> {
+        let upstream_failure =
+            if self.finalized {
+                if let Some(why) = &self.failure {
+                    log::warn!("stream error after finalization (completion kept): {why}");
+                }
+                None
+            } else {
+                Some(self.failure.unwrap_or_else(|| {
+                    "stream ended before finalizing (no message_stop)".to_string()
+                }))
+            };
         let mut thinking = Vec::new();
         let mut text = Vec::new();
         let mut calls = Vec::new();
@@ -279,7 +318,18 @@ impl Assembler {
                     let input = if partial_json.trim().is_empty() {
                         Value::Object(serde_json::Map::new())
                     } else {
-                        serde_json::from_str(&partial_json)?
+                        match serde_json::from_str(&partial_json) {
+                            Ok(input) => input,
+                            // An aborted stream can cut a tool input mid-fragment. The
+                            // entry is record-only (never projected or dispatched), so
+                            // preserve the raw bytes rather than erroring the whole
+                            // partial away — it may be the only copy of anything.
+                            Err(e) if upstream_failure.is_some() => {
+                                log::warn!("partial tool input kept unparsed: {e}");
+                                Value::String(partial_json)
+                            }
+                            Err(e) => return Err(e.into()),
+                        }
                     };
                     calls.push(ToolCall {
                         id: CallId(id),
@@ -294,6 +344,7 @@ impl Assembler {
                 thinking,
                 text,
                 calls,
+                upstream_failure,
             },
             id: self.id,
             model: self.model,

@@ -33,6 +33,7 @@ fn boundary_mark_folds_span_to_summary() {
                     name: "bash".into(),
                     input: json!({}),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -63,6 +64,7 @@ fn boundary_mark_folds_span_to_summary() {
                     name: "consolidate".into(),
                     input: json!({"summary": "summary of old task"}),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -136,6 +138,7 @@ fn multiple_boundary_marks_each_fold_their_own_span() {
                 thinking: vec![],
                 text: vec![ContentBlock::Text("done A".into())],
                 calls: vec![],
+                upstream_failure: None,
             },
         ),
         // First consolidation: upto=1
@@ -160,6 +163,7 @@ fn multiple_boundary_marks_each_fold_their_own_span() {
                 thinking: vec![],
                 text: vec![ContentBlock::Text("working on B".into())],
                 calls: vec![],
+                upstream_failure: None,
             },
         ),
         // Second consolidation: upto=4
@@ -184,6 +188,7 @@ fn multiple_boundary_marks_each_fold_their_own_span() {
                 thinking: vec![],
                 text: vec![ContentBlock::Text("working on C".into())],
                 calls: vec![],
+                upstream_failure: None,
             },
         ),
     ];
@@ -254,6 +259,7 @@ fn mark_folds_named_span_and_injects_summary() {
                     name: "bash".into(),
                     input: json!({}),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(

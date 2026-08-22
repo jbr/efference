@@ -23,6 +23,7 @@ fn retain_completion(name: &str, input: Value) -> Completion {
                 name: name.into(),
                 input,
             }],
+            upstream_failure: None,
         },
         id: None,
         model: "test".into(),
@@ -201,6 +202,7 @@ fn a_prose_only_response_retries_with_just_the_renewed_ask() {
             thinking: vec![],
             text: vec![crate::log::ContentBlock::Text("hmm, let me think".into())],
             calls: vec![],
+            upstream_failure: None,
         },
         id: None,
         model: "test".into(),
@@ -233,6 +235,7 @@ fn an_empty_response_is_terminal_not_an_invalid_retry() {
         thinking: vec![],
         text: vec![],
         calls: vec![],
+        upstream_failure: None,
     };
     let mut messages = Vec::new();
     assert!(!extend_with_retry(
@@ -481,6 +484,7 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
                 thinking: vec![],
                 text: vec![],
                 calls: calls.clone(),
+                upstream_failure: None,
             },
         ),
     ];

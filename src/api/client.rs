@@ -215,10 +215,31 @@ impl Client {
         };
 
         let mut assembler = Assembler::new();
+        // A mid-stream death — a transport error, an in-stream `error` event, an
+        // unparseable event — stops the read but never discards the partial: the
+        // failure is recorded on the assembler and `finish` folds it into the
+        // completion's `upstream_failure`, alongside whatever content accumulated
+        // (docs/transport.md). Only a failure to *open* the stream (above) is an
+        // `Err` from this function.
         while let Some(event) = events.next().await {
-            let event = event?;
-            if let Some(streamed) = assembler.apply(event.event_type(), event.data())? {
-                on_delta(streamed);
+            let event = match event {
+                Ok(event) => event,
+                Err(e) => {
+                    let why = format!("upstream SSE stream failed mid-stream: {e}");
+                    log::error!("{why}");
+                    assembler.fail(why);
+                    break;
+                }
+            };
+            match assembler.apply(event.event_type(), event.data()) {
+                Ok(Some(streamed)) => on_delta(streamed),
+                Ok(None) => {}
+                Err(e) => {
+                    let why = e.to_string();
+                    log::error!("{why}");
+                    assembler.fail(why);
+                    break;
+                }
             }
         }
         assembler.finish()
@@ -230,10 +251,13 @@ impl Client {
     /// responses carry a JSON `error.message` that names the actual problem. Logged at
     /// `error` so the daemon's log preserves it even though the error also propagates.
     ///
-    /// Note: this still *propagates* (the caller currently treats any completion error
-    /// as terminal). Classifying transient statuses (429 / 529 overload, 5xx) as
-    /// retryable rather than fatal is a separate, deferred change; this only makes the
-    /// failure diagnosable.
+    /// Note: this still *propagates* — the agent loop treats an open failure as
+    /// terminal for the trajectory, though it now records the message durably (an
+    /// empty record-only assistant entry, docs/transport.md) rather than leaving it
+    /// on stderr alone. Classifying transient statuses (429 / 529 overload, 5xx) as
+    /// worth further loop-level retries beyond the RetryHandler's own remains a
+    /// separate, deferred change. Mid-stream deaths are different: they assemble as
+    /// record-only partials and the loop retries them (docs/transport.md).
     async fn sse_open_error(e: SseError) -> Error {
         // `Status` is `Copy`, so binding it doesn't move `e.kind` — `e` stays whole and
         // convertible into its `Conn`.

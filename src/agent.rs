@@ -66,6 +66,15 @@ const MAX_TOOL_RESULT_BYTES: usize = 256 * 1024;
 /// Coalesce a burst of near-simultaneous events into one idle-triage peek (docs/supervisor.md).
 const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 
+/// Attempts per model call when the stream dies before finalizing
+/// (docs/transport.md): each aborted attempt's partial is appended record-only
+/// (it projects to nothing, so the replay re-sends byte-identical messages over
+/// the still-warm prefix), then the request goes again after a doubling pause
+/// (1s/2s/4s). Sized to match the transport's own transient family
+/// (`RETRY_MAX_ATTEMPTS`); observed live 2026-08-21, three consecutive aborts
+/// with a success interleaved — provider flakiness, not a hard fault.
+const STREAM_ABORT_ATTEMPTS: u32 = 4;
+
 /// Drive the loop until input ends. The log lives in [`Shared`]; the loop appends
 /// through it.
 pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
@@ -167,35 +176,106 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
             // generation was `idle`, which reads as *finished*. The cost of a stale `idle` isn't
             // cosmetic: it invites interrupting or abandoning a live session on false signal.
             eprintln!("(generating — turn {turn})");
-            let completion = match client
-                .complete(&messages, &tools, ToolChoice::auto(), |streamed| {
-                    shared.publish_delta(match streamed {
-                        Streamed::Text { index, text } => {
-                            StreamDelta::AssistantText { index, text }
+            // Bounded retry for a stream that dies before finalizing
+            // (docs/transport.md). Each aborted attempt commits its partial as a
+            // record-only entry — the only copy of that content anywhere — which
+            // projects to nothing, so the next attempt re-sends the same bytes.
+            // Before this existed, an aborted stream committed as a clean turn:
+            // empty or thinking-only, `upstream_failure` null, indistinguishable
+            // from the agent choosing silence (observed live 2026-08-21).
+            let mut aborted_attempts: u32 = 0;
+            let completion = loop {
+                let outcome = client
+                    .complete(&messages, &tools, ToolChoice::auto(), |streamed| {
+                        shared.publish_delta(match streamed {
+                            Streamed::Text { index, text } => {
+                                StreamDelta::AssistantText { index, text }
+                            }
+                            Streamed::Thinking { index, text } => {
+                                StreamDelta::ThinkingText { index, text }
+                            }
+                            Streamed::ToolStart { index, id, name } => StreamDelta::ToolCallStart {
+                                index,
+                                call_id: id,
+                                name,
+                            },
+                            Streamed::ToolInput { index, fragment } => {
+                                StreamDelta::ToolCallInput { index, fragment }
+                            }
+                        });
+                    })
+                    .await;
+                match outcome {
+                    Ok(completion) => {
+                        let Some(why) = completion.upstream_failure().map(str::to_string) else {
+                            break Some(completion);
+                        };
+                        aborted_attempts += 1;
+                        turn += 1;
+                        shared.record_request(RequestOrigin::Turn, completion.request_usage());
+                        shared.append(turn, completion.assistant)?;
+                        if aborted_attempts >= STREAM_ABORT_ATTEMPTS {
+                            eprintln!(
+                                "[stream aborted before finalizing, \
+                                 {aborted_attempts} attempts exhausted: {why}]"
+                            );
+                            shared.notify(
+                                "turn".to_string(),
+                                format!(
+                                    "The last model turn was not completed: \
+                                     {STREAM_ABORT_ATTEMPTS} attempts in a row aborted \
+                                     upstream before finalizing (last failure: {why}). \
+                                     Partial output is recorded in the log but is not \
+                                     part of the conversation. Send a turn to retry."
+                                ),
+                                Some("stream-abort".to_string()),
+                                None,
+                            );
+                            break None;
                         }
-                        Streamed::Thinking { index, text } => {
-                            StreamDelta::ThinkingText { index, text }
-                        }
-                        Streamed::ToolStart { index, id, name } => StreamDelta::ToolCallStart {
-                            index,
-                            call_id: id,
-                            name,
-                        },
-                        Streamed::ToolInput { index, fragment } => {
-                            StreamDelta::ToolCallInput { index, fragment }
-                        }
-                    });
-                })
-                .await
-            {
-                Ok(completion) => completion,
-                // No assistant payload exists to append, so the projected prefix remains
-                // unchanged. Treat an exhausted upstream request as a failed turn and
-                // return to the outer idle loop with the daemon and its control socket alive.
-                Err(error) => {
-                    eprintln!("[completion failed: {error}]");
-                    break;
+                        eprintln!(
+                            "[stream aborted before finalizing (attempt \
+                             {aborted_attempts} of {STREAM_ABORT_ATTEMPTS}): {why} — \
+                             retrying]"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs(
+                            1 << (aborted_attempts - 1),
+                        ))
+                        .await;
+                    }
+                    // The request itself failed — nothing streamed, and the transport's
+                    // own retry handler already exhausted the transient family
+                    // (docs/transport.md). An empty record-only entry carries the error
+                    // body into the log (stderr isn't durable), the projected prefix is
+                    // unchanged, and the trajectory fails back to idle with the daemon
+                    // and its control socket alive.
+                    Err(error) => {
+                        eprintln!("[completion failed: {error}]");
+                        turn += 1;
+                        shared.append(
+                            turn,
+                            Payload::Assistant {
+                                thinking: Vec::new(),
+                                text: Vec::new(),
+                                calls: Vec::new(),
+                                upstream_failure: Some(error.to_string()),
+                            },
+                        )?;
+                        shared.notify(
+                            "turn".to_string(),
+                            format!(
+                                "The last model turn was not completed — the upstream \
+                                 request failed: {error}. Send a turn to retry."
+                            ),
+                            Some("stream-abort".to_string()),
+                            None,
+                        );
+                        break None;
+                    }
                 }
+            };
+            let Some(completion) = completion else {
+                break;
             };
             turn += 1;
 

@@ -18,6 +18,7 @@ fn assistant_calling(call_id: &str, command: &str) -> Payload {
             name: crate::bash::NAME.into(),
             input: serde_json::json!({ "command": command }),
         }],
+        upstream_failure: None,
     }
 }
 

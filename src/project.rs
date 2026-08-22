@@ -159,10 +159,21 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
                 // next assistant / boundary / end — byte-identical to a direct push.
                 pending_user_content.extend(blocks.iter().map(block_to_api));
             }
+            // A record-only partial (docs/transport.md): the stream that produced this
+            // entry died before finalizing, so the provider has no record of it and the
+            // content must not enter the trajectory — the observed failure was a
+            // thinking-only partial projecting as a dangling thinking block. Skipped
+            // entirely, like `Ambient`: the retry that follows re-projects to the same
+            // bytes, which is what lets it ride the cached prefix.
+            Payload::Assistant {
+                upstream_failure: Some(_),
+                ..
+            } => {}
             Payload::Assistant {
                 thinking,
                 text,
                 calls,
+                upstream_failure: None,
             } => {
                 flush_pending_user(&mut pending_user_content, &mut messages);
                 // Wire order: thinking → text → tool_use (docs/transport.md). Thinking blocks

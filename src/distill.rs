@@ -277,8 +277,16 @@ async fn peek_with_retries<T>(
             Ok(completion) => completion,
             Err(e) => return Err(format!("peek request failed: {e}")),
         };
-        let parsed = parse(&completion);
         usage.push(completion.request_usage());
+        // An unfinalized peek stream (docs/transport.md) is a transport failure, not a
+        // verdict: whatever partial arrived is untrusted and un-replayable (the in-fork
+        // retry replays the assistant turn, which the API rejects without its thinking
+        // signature intact). Fail the gate — the fallback posture is
+        // distill-failure-fallback.md's open question, decided there, not here.
+        if let Some(why) = completion.upstream_failure() {
+            return Err(format!("peek stream aborted upstream: {why}"));
+        }
+        let parsed = parse(&completion);
         match parsed {
             Ok(verdict) => return Ok(verdict),
             Err(why) => {
@@ -314,6 +322,7 @@ fn extend_with_retry(
         thinking,
         text,
         calls,
+        ..
     } = assistant
     else {
         return false;
@@ -557,12 +566,16 @@ pub async fn peek_attempt(
         .complete(&messages, tools, ToolChoice::auto(), |_| {})
         .await
         .map_err(|e| format!("peek request failed: {e}"))?;
+    if let Some(why) = completion.upstream_failure() {
+        return Err(format!("peek stream aborted upstream: {why}"));
+    }
 
     let (called, inputs, said) = match &completion.assistant {
         Payload::Assistant {
             calls,
             text,
             thinking,
+            ..
         } => (
             calls.iter().map(|c| c.name.clone()).collect(),
             calls.iter().map(|c| c.input.clone()).collect(),

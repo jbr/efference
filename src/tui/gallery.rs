@@ -29,6 +29,7 @@ fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
             thinking: vec![],
             text: vec![ContentBlock::Text(text.into())],
             calls,
+            upstream_failure: None,
         },
     )
 }

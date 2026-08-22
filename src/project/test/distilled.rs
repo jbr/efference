@@ -137,6 +137,7 @@ fn distilled_projects_the_verdict_not_raw() {
                     name: "bash".into(),
                     input: json!({}),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
@@ -185,6 +186,7 @@ fn triage_failed_projects_an_error_never_the_raw() {
                     name: "bash".into(),
                     input: json!({}),
                 }],
+                upstream_failure: None,
             },
         ),
         entry(
