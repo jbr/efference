@@ -51,3 +51,25 @@ fn definition_advertises_the_name_and_a_required_summary() {
     assert_eq!(d["name"], json!(NAME));
     assert_eq!(d["input_schema"]["required"], json!(["summary"]));
 }
+
+/// `consolidate` is loop-owned, so its brief rides the same path as the supervisor
+/// family's (docs/permissions.md); the wire entry keeps the provider shape with no
+/// annotations leak.
+#[test]
+fn consolidate_has_a_brief_and_a_clean_wire_entry() {
+    let b = brief(NAME).expect("consolidate brief");
+    assert!(b.server.is_none());
+    let hints = b.definition.annotations.as_ref().unwrap();
+    assert_eq!(hints.read_only_hint, Some(false));
+    assert_eq!(hints.open_world_hint, Some(false));
+    assert!(brief("bash").is_none());
+
+    let def = definition();
+    let keys: Vec<&str> = def
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(keys, vec!["description", "input_schema", "name"]);
+}

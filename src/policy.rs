@@ -263,7 +263,7 @@ mod probe;
 pub use commands::promotable_command;
 pub(crate) use commands::simple_command_tokens;
 pub use effective::{apply_config_change, effective_config};
-pub(crate) use paths::path_spec;
+pub(crate) use paths::{absolutize, lexical_normalize, path_spec};
 pub use probe::{ProbeLedger, probe_ledger};
 
 use commands::classify_bash;

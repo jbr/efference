@@ -53,6 +53,21 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     tools
 }
 
+/// The spotter's brief for any tool a turn advertises — the lookup mirror of
+/// [`tool_definitions`]: the toolbox providers, then the loop-owned tools
+/// (`consolidate`, the supervisor/inbox family). One lookup covering the whole
+/// array, so a tool in `tools[]` can't be invisible to the permission rung —
+/// the loop-owned family once was, and the spotter judged `check_inbox` and
+/// `list_processes` as bare names, calling them opaque (docs/permissions.md).
+/// Bash stays brief-less by design (judged as command text), and the peek tools
+/// never reach a gate (an un-asked call pairs with a nudge result).
+pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolBrief<'a>> {
+    toolbox
+        .brief(name)
+        .or_else(|| consolidate::brief(name))
+        .or_else(|| supervisor::brief(name))
+}
+
 /// Hard cap on a single tool result's bytes (defense in depth). The fork peek caps
 /// *line count* (`PEEK_LINE_CAP`), but not a pathological single huge line; an
 /// over-cap result is almost always a mistake — e.g. grepping the gitignored session

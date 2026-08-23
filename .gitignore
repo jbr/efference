@@ -6,3 +6,8 @@
 #   op run --env-file=.anthropic.env.op  -- cargo run -- serve ...   # Anthropic
 #   op run --env-file=.openrouter.env.op -- cargo run -- serve --model anthropic/claude-opus-4.1 ...
 *.env.op
+
+# Spotter eval: extracted candidates and sweep results are derived data
+# (eval/spotter/README.md); the curated cases.jsonl is committed.
+eval/spotter/candidates.jsonl
+eval/spotter/results*.jsonl

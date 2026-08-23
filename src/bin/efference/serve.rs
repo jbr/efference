@@ -450,7 +450,9 @@ pub(crate) async fn spotter_check(
         },
     };
 
-    let brief = toolbox.as_ref().and_then(|t| t.brief(&call.name));
+    let brief = toolbox
+        .as_ref()
+        .and_then(|t| efference::agent::brief(t, &call.name));
     // The lookup runs either way, so `--no-brief` still catches a name nothing mounts —
     // the A/B compares two verdicts on the same real tool, not one on a fictional one.
     let sent = if no_brief { None } else { brief.as_ref() };

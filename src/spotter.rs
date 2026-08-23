@@ -237,6 +237,14 @@ impl Spotter for StaticSpotter {
 /// having to restate them), the `$TMPDIR` scratch alias when a scratch dir exists
 /// (docs/tools.md), and the spotter-only watch-for list. Stable
 /// for the whole session, so it caches.
+///
+/// Grants render **resolved to their absolute form** (the same lexical rule the
+/// deterministic rung applies, `src/policy/paths.rs`), with the configured spelling
+/// kept as an annotation, and the block states how a relative path in a move resolves.
+/// A spotter once compared spellings instead of resolving — `scratch/…` "does not
+/// start with `.`" — and gated a plain in-cwd write; leading with the absolute path
+/// makes containment string-visible against the working-directory line above, so no
+/// resolution of the *grant* side is asked of the model.
 fn render_context(role: &Config, scratch: Option<&std::path::Path>) -> String {
     let mut s = String::from("Mission:\n");
     match role
@@ -250,10 +258,16 @@ fn render_context(role: &Config, scratch: Option<&std::path::Path>) -> String {
     }
 
     s.push_str("\n\nScope for this session:\n");
-    let cwd = std::env::current_dir()
+    let cwd = std::env::current_dir().ok();
+    let cwd_display = cwd
+        .as_ref()
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "unknown".into());
-    s.push_str(&format!("- working directory: {cwd}\n"));
+        .unwrap_or_else(|| "unknown".into());
+    s.push_str(&format!("- working directory: {cwd_display}\n"));
+    s.push_str(&format!(
+        "- a relative path in a proposed move resolves against the working directory, by \
+         shell rules: `sub/file` means `{cwd_display}/sub/file`\n"
+    ));
     if role.paths.is_empty() {
         s.push_str("- allowed paths: none configured\n");
     } else {
@@ -271,7 +285,24 @@ fn render_context(role: &Config, scratch: Option<&std::path::Path>) -> String {
             } else {
                 "no access — denied, even though it sits under an allowed parent"
             };
-            s.push_str(&format!("  - {path} ({label})\n"));
+            // The absolute form leads; the configured spelling stays so a move that
+            // types `../x` literally still matches. A grant already in its resolved
+            // spelling renders once, unannotated.
+            let line = match cwd.as_deref() {
+                Some(cwd) => {
+                    let resolved =
+                        crate::policy::lexical_normalize(&crate::policy::absolutize(path, cwd))
+                            .display()
+                            .to_string();
+                    if resolved == *path {
+                        format!("  - {path} ({label})\n")
+                    } else {
+                        format!("  - {resolved} ({label}) — granted as `{path}`\n")
+                    }
+                }
+                None => format!("  - {path} ({label})\n"),
+            };
+            s.push_str(&line);
         }
     }
     // The scratch alias (docs/tools.md): a bash move writes `$TMPDIR/…` and the
@@ -433,10 +464,15 @@ fn render_brief(display: &str, brief: &ToolBrief<'_>) -> String {
 
     let declarations = declarations(definition);
     if !declarations.is_empty() {
-        s.push_str(
-            "\nWhat the server declares about it (self-reported, not verified here — enough to \
-             raise a concern, never enough on its own to settle one):\n",
-        );
+        // The self-reported caveat is for a *server's* claims about its own tool; the
+        // harness's claims about a built-in carry no such distance.
+        s.push_str(match brief.server {
+            Some(_) => {
+                "\nWhat the server declares about it (self-reported, not verified here — \
+                 enough to raise a concern, never enough on its own to settle one):\n"
+            }
+            None => "\nWhat the harness declares about it:\n",
+        });
         for line in declarations {
             s.push_str(&format!("- {line}\n"));
         }

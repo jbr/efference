@@ -325,11 +325,21 @@ Description and schema are clipped to a fixed budget, so a verbose server can't 
 tail on every gated call. It rides the **fresh** block, so nothing about the cached prefix
 moves.
 
+The lookup covers everything a turn advertises, not just the toolbox providers:
+`agent::brief` is the mirror of `agent::tool_definitions`, falling through to the
+loop-owned tools (`consolidate`, the supervisor/inbox family), whose definitions are held
+in the same `ToolDefinition` shape a mount snapshots. That family once joined `tools[]`
+outside the toolbox with no brief path, so the spotter judged `check_inbox` and
+`list_processes` as bare names and called them opaque — the descriptions existed and never
+reached the rung.
+
 The hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are the
 judged party's claims about itself, and the MCP spec warns clients not to make trust
 decisions on them for untrusted servers. They are rendered anyway, labelled as
 self-reported, because the threat model here is **error, not deception**: a well-meaning
 server's hints are true, and a lying one is already out of scope (virtualization's tail).
+A harness-owned tool's hints render without the caveat ("What the harness declares about
+it") — its claims about itself carry no server distance.
 The asymmetry that holds under either model is stated in the prompt — a hint is grounds to
 *gate*, never sufficient on its own to *clear*. An absent hint renders as nothing rather
 than as its negation: "the server said no" and "the server filled nothing in" are
@@ -338,7 +348,11 @@ different evidence.
 **The request layout** is `[persona (system) | scope + watch-for (cached) | the move
 (fresh)]`. The scope block is the config's scope prose plus the `[paths]` grants + cwd, so the
 spotter judges "outside scope" against a fixed, external authority — never the session's own
-narration. The persona is sized to clear Haiku's cache floor on its own, so even a minimal
+narration. Grants render resolved to their absolute form (the same lexical rule the
+deterministic rung applies) with the configured spelling as an annotation, and the block
+states that a move's relative paths resolve against the cwd, with a worked example — a
+spotter once gated a plain in-cwd write by comparing spellings (`scratch/…` "does not
+start with `.`") instead of resolving; absolute grants make containment string-visible. The persona is sized to clear Haiku's cache floor on its own, so even a minimal
 config caches; within a session the scope is fixed, so every spotter call after the first is
 a cache read (the move is the only fresh tail). The verdict is forced through a `spot` tool:
 a graded [`Stance`] (`clear` / `clear_always` / `watch` / `gate`) plus a one-line `reason`

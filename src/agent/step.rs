@@ -109,9 +109,10 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 } else {
                     None
                 };
-                // What the mounted table knows about this tool (docs/permissions.md).
-                // `None` for bash, whose command text is its own description.
-                let brief = toolbox.brief(&call.name);
+                // What the turn's whole `tools[]` knows about this tool — providers
+                // plus the loop-owned family (docs/permissions.md). `None` for bash,
+                // whose command text is its own description.
+                let brief = super::brief(toolbox, &call.name);
                 let spotting = spotter
                     .assess(&role, call, brief.as_ref(), probe.as_deref())
                     .await;

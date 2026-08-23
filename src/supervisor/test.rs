@@ -203,3 +203,56 @@ fn pgid_of_only_running() {
     s.finish(id, None);
     assert_eq!(s.pgid_of(id), None, "exited → no kill target");
 }
+
+/// The family's briefs (docs/permissions.md): every supervisor/inbox tool the loop
+/// dispatches structurally answers `brief` — the spotter once judged these as bare
+/// names because only the providers were consulted — and the annotations carry the
+/// harness's own claims: reads are reads, `kill_process` is the destructive member.
+#[test]
+fn every_supervisor_tool_has_a_brief_with_honest_annotations() {
+    for name in [LIST, READ, KILL, CHECK_INBOX] {
+        let b = brief(name).unwrap_or_else(|| panic!("no brief for {name}"));
+        assert!(b.server.is_none(), "{name} is the harness's own");
+        let hints = b.definition.annotations.as_ref().unwrap();
+        assert_eq!(
+            hints.open_world_hint,
+            Some(false),
+            "{name} is session-local"
+        );
+        assert_eq!(
+            hints.read_only_hint,
+            Some(name != KILL),
+            "{name}: only kill_process mutates"
+        );
+    }
+    assert_eq!(
+        brief(KILL)
+            .unwrap()
+            .definition
+            .annotations
+            .as_ref()
+            .unwrap()
+            .destructive_hint,
+        Some(true)
+    );
+    assert!(brief("bash").is_none());
+}
+
+/// The wire entries stay in the provider shape — name/description/input_schema only,
+/// sorted keys; annotations have no wire slot and must not leak into `tools[]`
+/// (docs/log-and-projection.md byte stability).
+#[test]
+fn wire_definitions_carry_no_annotations() {
+    let defs = tool_definitions();
+    let names: Vec<&str> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec![LIST, READ, KILL, CHECK_INBOX]);
+    for def in &defs {
+        let keys: Vec<&str> = def
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys, vec!["description", "input_schema", "name"], "{def}");
+    }
+}

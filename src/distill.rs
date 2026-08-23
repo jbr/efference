@@ -404,6 +404,68 @@ fn require_coverage(verdict: ParsedRetain, offered: &[String]) -> Result<ParsedR
     ))
 }
 
+/// The number of numbered lines the peek view shows for a raw result — the bound a
+/// `keep` range must land inside. Counts the way [`result_view`] numbers and
+/// `distillate` caps (docs/redaction-fork.md): all three must agree or the verdict's
+/// coordinates drift from what the model saw.
+fn shown_line_count(raw: &RawResult) -> usize {
+    raw.content.lines().count().min(PEEK_LINE_CAP)
+}
+
+/// Verdict validity also includes **bounds** (docs/redaction-fork.md): a `keep` range
+/// lying wholly outside the shown line numbers is a coordinate mistake, not a decision —
+/// observed live when a peek adopted the file line numbers embedded in `grep -n` output
+/// as its retain coordinates — and render-time normalization would drop it, turning
+/// "keep these lines" into silent total loss with no signal on either side. Rejected
+/// here instead, the mistake becomes an in-fork retry whose nudge names the actual
+/// bound. One out-of-range range fails the whole verdict: a partial drop is the same
+/// silent loss at smaller scale, and the retry is a warm prefix extension.
+///
+/// Overshoot from an in-bounds start stays acceptable (render clamps the tail — the
+/// peek's line accounting routinely runs a line or two past the rendering's). A 0 start
+/// is rejected rather than clamped: `0-5` under zero-indexing means shown lines 1–6,
+/// as a typo'd lower bound it means 1–5, and guessing either silently keeps the wrong
+/// lines.
+///
+/// `shown` maps each offered call id to its shown line count; a verdict keyed to an id
+/// that was never offered has no bound to check and passes through — the caller's
+/// reconciliation drops it, the same guard as everywhere else.
+fn require_in_bounds(
+    verdict: ParsedRetain,
+    shown: &[(String, usize)],
+) -> Result<ParsedRetain, String> {
+    for v in &verdict.results {
+        let Keep::Ranges(ranges) = &v.keep else {
+            continue;
+        };
+        let Some(&(_, n)) = shown.iter().find(|(id, _)| *id == v.call_id) else {
+            continue;
+        };
+        for &(s, e) in ranges {
+            let range = if s == e {
+                format!("line {s}")
+            } else {
+                format!("range {s}-{e}")
+            };
+            if s.min(e) == 0 {
+                return Err(format!(
+                    "keep {range} for [{}] starts at 0 — the shown line numbers start at 1",
+                    v.call_id
+                ));
+            }
+            if s.min(e) > n {
+                return Err(format!(
+                    "keep {range} for [{}] is beyond the shown output, which has {n} \
+                     lines — keep ranges index the line numbers shown, not numbers \
+                     inside the output",
+                    v.call_id
+                ));
+            }
+        }
+    }
+    Ok(verdict)
+}
+
 /// Describe a completion that produced no usable verdict, for the `Triage` breadcrumb.
 /// The model's actual input is the most useful form when the asked-for tool was called —
 /// that is what a future reader needs to tell a malformed verdict from a wrong-tool call.
@@ -550,8 +612,8 @@ pub fn peek_request(
 
 /// One fork-peek round trip against a recorded gate, with **no retries**
 /// (backlog/peek-dev-tools.md). Same request, same validity rule (`parse_retain` plus
-/// [`require_coverage`]) as the live gate — only the retry loop is absent, because the
-/// first attempt is the measurement.
+/// [`require_coverage`] and [`require_in_bounds`]) as the live gate — only the retry
+/// loop is absent, because the first attempt is the measurement.
 pub async fn peek_attempt(
     client: &Client,
     tools: &[Value],
@@ -561,6 +623,10 @@ pub async fn peek_attempt(
     background: &[BgView],
 ) -> Result<PeekAttempt, String> {
     let offered: Vec<String> = pending.iter().map(|p| p.call.id.0.clone()).collect();
+    let shown_lines: Vec<(String, usize)> = pending
+        .iter()
+        .map(|p| (p.call.id.0.clone(), shown_line_count(p.raw)))
+        .collect();
     let messages = peek_request(prefix, pending, inbox, background);
     let completion = client
         .complete(&messages, tools, ToolChoice::auto(), |_| {})
@@ -596,7 +662,8 @@ pub async fn peek_attempt(
     };
     let verdict = parse_retain(&completion, &offered)
         .ok_or_else(|| unusable(&completion, RETAIN))
-        .and_then(|v| require_coverage(v, &offered));
+        .and_then(|v| require_coverage(v, &offered))
+        .and_then(|v| require_in_bounds(v, &shown_lines));
     let (why, raw_keep, note) = match verdict {
         Ok(v) => {
             let first = v.results.first();
@@ -637,6 +704,10 @@ impl Distiller for ForkPeek {
         // *validity* ([`require_coverage`]): an incomplete verdict retries in-fork
         // rather than leaving a result untriaged.
         let offered: Vec<String> = pending.iter().map(|p| p.call.id.0.clone()).collect();
+        let shown_lines: Vec<(String, usize)> = pending
+            .iter()
+            .map(|p| (p.call.id.0.clone(), shown_line_count(p.raw)))
+            .collect();
 
         let roster = surfaceable_roster(prefix);
         let messages = peek_messages(prefix, pending, inbox, background, &roster);
@@ -650,7 +721,8 @@ impl Distiller for ForkPeek {
             RETAIN,
             |c| {
                 let verdict = parse_retain(c, &offered).ok_or_else(|| unusable(c, RETAIN))?;
-                require_coverage(verdict, &offered)
+                let verdict = require_coverage(verdict, &offered)?;
+                require_in_bounds(verdict, &shown_lines)
             },
             &mut usage,
             &mut retries,

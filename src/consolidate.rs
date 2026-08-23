@@ -18,26 +18,35 @@
 //! [`RawResult`]: crate::log::RawResult
 //! [`Toolbox`]: crate::tools::Toolbox
 
+use std::sync::LazyLock;
+
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::log::{LogEntry, Payload, Seq};
+use crate::tools::{ToolBrief, anthropic_def};
+use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
 
 /// The wire name. The loop branches on this to take the structural path.
 pub const NAME: &str = "consolidate";
 
-/// The `tools[]` entry advertised alongside the world-facing tools.
+/// The mounted-table entry, in the same [`ToolDefinition`] shape a provider's
+/// mount snapshots, so the spotter's brief (docs/permissions.md) reads this tool
+/// like any other — the loop dispatches it structurally, outside the `Toolbox`,
+/// which once left it brief-less at the rung. Session-local (closed-world) and
+/// not a read; `destructive`/`idempotent` are left unstated — the fold is
+/// reversible in the log but not on the wire, and neither honest answer fits a
+/// one-bit hint.
 ///
 /// Framed per the **"distillate IS the output"** lesson (docs/redaction-fork.md): the
 /// summary *becomes* the record — deliberately no "you can re-read it later", which
 /// manufactured anxiety and over-dropping when the peek believed its work was
 /// recoverable. The raw transcript does survive in the log, but that is an
 /// operator/audit property, not something the prompt dangles.
-pub fn definition() -> Value {
-    json!({
-        "name": NAME,
-        "description": "Consolidate the work you've finished into a concise summary that replaces its detailed transcript in your working context. Best done right as you start a new task: capture what you accomplished and the facts worth carrying forward — interfaces you added, where useful functions live, decisions you made — and write it as you'd want to read it at the top of the next task. This summary becomes the record of that work going forward.",
-        "input_schema": {
+static SCHEMA: LazyLock<ToolDefinition> = LazyLock::new(|| {
+    let mut tool = ToolDefinition::new(
+        NAME,
+        json!({
             "type": "object",
             "properties": {
                 "summary": {
@@ -46,6 +55,41 @@ pub fn definition() -> Value {
                 }
             },
             "required": ["summary"]
+        }),
+    );
+    tool.description = Some(
+        "Consolidate the work you've finished into a concise summary that replaces its \
+         detailed transcript in your working context. Best done right as you start a new \
+         task: capture what you accomplished and the facts worth carrying forward — \
+         interfaces you added, where useful functions live, decisions you made — and \
+         write it as you'd want to read it at the top of the next task. This summary \
+         becomes the record of that work going forward."
+            .into(),
+    );
+    tool.annotations = Some(ToolAnnotations {
+        read_only_hint: Some(false),
+        open_world_hint: Some(false),
+        ..Default::default()
+    });
+    tool
+});
+
+/// The `tools[]` entry advertised alongside the world-facing tools — derived from
+/// the same [`SCHEMA`] the brief reads, through the same `anthropic_def` as a
+/// provider's entries (sorted keys; annotations have no wire slot), so the bytes
+/// stay stable for the session (docs/log-and-projection.md).
+pub fn definition() -> Value {
+    anthropic_def(&SCHEMA)
+}
+
+/// The spotter's brief for `consolidate` (docs/permissions.md); `None` for any
+/// other name. `server: None` — the harness's own.
+pub fn brief(name: &str) -> Option<ToolBrief<'static>> {
+    (name == NAME).then(|| {
+        let schema: &'static ToolDefinition = &SCHEMA;
+        ToolBrief {
+            server: None,
+            definition: schema,
         }
     })
 }

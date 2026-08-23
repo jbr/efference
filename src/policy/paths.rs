@@ -106,7 +106,7 @@ pub(super) fn path_granted(role: &Config, path: &str, perm: Perm, cwd: &Path) ->
 }
 
 /// Make `path` absolute by joining it onto `cwd` if it is relative.
-pub(super) fn absolutize(path: &str, cwd: &Path) -> PathBuf {
+pub(crate) fn absolutize(path: &str, cwd: &Path) -> PathBuf {
     let p = Path::new(path);
     if p.is_absolute() {
         p.to_path_buf()
@@ -118,7 +118,7 @@ pub(super) fn absolutize(path: &str, cwd: &Path) -> PathBuf {
 /// Lexically collapse `.` and `..` without touching the filesystem (so it works for
 /// not-yet-existing write targets). `..` pops a trailing normal component but never
 /// escapes past the root/prefix.
-pub(super) fn lexical_normalize(path: &Path) -> PathBuf {
+pub(crate) fn lexical_normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {

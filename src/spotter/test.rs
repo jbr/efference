@@ -262,12 +262,64 @@ fn render_context_includes_scope_and_watch_for() {
     };
     let ctx = render_context(&role, None);
     assert!(ctx.contains("Fix the build."), "{ctx}");
-    assert!(ctx.contains(". (read, write)"), "{ctx}");
-    assert!(ctx.contains("/refs (read only)"), "{ctx}");
+    // A relative grant leads with its resolved absolute form — string-visible
+    // containment against the working-directory line — keeping the configured
+    // spelling as the annotation; an absolute grant renders once, unannotated.
+    let cwd = std::env::current_dir().unwrap().display().to_string();
+    assert!(
+        ctx.contains(&format!("  - {cwd} (read, write) — granted as `.`")),
+        "{ctx}"
+    );
+    assert!(ctx.contains("  - /refs (read only)\n"), "{ctx}");
+    assert!(!ctx.contains("granted as `/refs`"), "{ctx}");
     assert!(ctx.contains("Don't touch the deploy keys."), "{ctx}");
     assert!(
         !ctx.contains("$TMPDIR"),
         "no scratch → no alias line: {ctx}"
+    );
+}
+
+/// The scope block states how a relative path in a move resolves, with the real cwd
+/// as the worked example — a spotter once gated `scratch/…` as "not under `.`" by
+/// comparing spellings instead of resolving.
+#[test]
+fn render_context_states_relative_path_resolution() {
+    let ctx = render_context(&Config::default(), None);
+    let cwd = std::env::current_dir().unwrap().display().to_string();
+    assert!(
+        ctx.contains(&format!("`sub/file` means `{cwd}/sub/file`")),
+        "{ctx}"
+    );
+}
+
+/// A `..`-relative grant resolves through the parent — the spelling a sibling-repo
+/// grant (`../fs-mcp`) arrives in.
+#[test]
+fn render_context_resolves_parent_relative_grants() {
+    let role = Config {
+        paths: [(
+            "../sibling".to_string(),
+            Perms {
+                read: true,
+                write: true,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        ..Default::default()
+    };
+    let ctx = render_context(&role, None);
+    let parent = std::env::current_dir()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .display()
+        .to_string();
+    assert!(
+        ctx.contains(&format!(
+            "  - {parent}/sibling (read, write) — granted as `../sibling`"
+        )),
+        "{ctx}"
     );
 }
 

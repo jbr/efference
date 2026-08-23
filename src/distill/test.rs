@@ -315,6 +315,93 @@ fn an_incomplete_verdict_is_rejected_naming_the_missing_ids() {
     assert!(why.contains("[b]"), "names the unanswered id: {why}");
 }
 
+/// Bounds are part of verdict validity (docs/redaction-fork.md): a `keep` range wholly
+/// beyond the shown line count is a coordinate mistake — the observed shape was a peek
+/// adopting `grep -n`'s embedded file line numbers (25–401) over a 17-line rendering —
+/// and render-time normalization would drop it silently. The rejection names the bound
+/// so the retry can re-index against the rendering.
+#[test]
+fn a_wholly_out_of_range_keep_is_rejected_naming_the_bound() {
+    let offered = [CALL_ID.to_string()];
+    let shown = [(CALL_ID.to_string(), 17)];
+    let p = parse_retain(
+        &retain_completion(RETAIN, json!({ "keep": "25-401" })),
+        &offered,
+    )
+    .unwrap();
+    let Err(why) = require_in_bounds(p, &shown) else {
+        panic!("a wholly-out-of-range range must be rejected");
+    };
+    assert!(why.contains("25-401"), "names the range: {why}");
+    assert!(why.contains("17"), "names the bound: {why}");
+
+    // Overshoot from an in-bounds start is the peek's line accounting running a line
+    // or two past the rendering's — not a coordinate mistake; render clamps the tail.
+    let p = parse_retain(
+        &retain_completion(RETAIN, json!({ "keep": "10-19" })),
+        &offered,
+    )
+    .unwrap();
+    assert!(require_in_bounds(p, &shown).is_ok());
+}
+
+/// One out-of-range range fails the whole verdict: `[[1,5],[425,430]]` would render
+/// 1–5 and silently drop 425–430 — the same loss at partial scale.
+#[test]
+fn one_out_of_range_range_rejects_the_whole_verdict() {
+    let offered = [CALL_ID.to_string()];
+    let shown = [(CALL_ID.to_string(), 17)];
+    let p = parse_retain(
+        &retain_completion(RETAIN, json!({ "keep": "1-5,425-430" })),
+        &offered,
+    )
+    .unwrap();
+    let Err(why) = require_in_bounds(p, &shown) else {
+        panic!("a mixed verdict with an out-of-range range must be rejected");
+    };
+    assert!(why.contains("425-430"), "names the offending range: {why}");
+}
+
+/// A 0 start is rejected, not clamped: `0-5` under zero-indexing means shown lines
+/// 1–6, as a typo'd lower bound it means 1–5, and guessing either silently keeps the
+/// wrong lines. The nudge restates the 1-based convention.
+#[test]
+fn a_zero_start_is_rejected_not_clamped() {
+    let offered = [CALL_ID.to_string()];
+    let shown = [(CALL_ID.to_string(), 17)];
+    let p = parse_retain(
+        &retain_completion(RETAIN, json!({ "keep": "0-5" })),
+        &offered,
+    )
+    .unwrap();
+    let Err(why) = require_in_bounds(p, &shown) else {
+        panic!("a 0 start must be rejected");
+    };
+    assert!(why.contains("start at 1"), "restates the convention: {why}");
+}
+
+/// Bounds apply only where there are coordinates to check: `all`/`none` carry none,
+/// and a verdict keyed to an id that was never offered has no bound — the caller's
+/// reconciliation drops it, so it passes through here.
+#[test]
+fn bounds_skip_keywords_and_unoffered_ids() {
+    let offered = ["a".to_string(), "b".to_string()];
+    let shown = [("a".to_string(), 3), ("b".to_string(), 3)];
+    let p = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "results": [
+                { "call_id": "a", "keep": "all" },
+                { "call_id": "b", "keep": "none" },
+                { "call_id": "ghost", "keep": "900-901" },
+            ] }),
+        ),
+        &offered,
+    )
+    .unwrap();
+    assert!(require_in_bounds(p, &shown).is_ok());
+}
+
 /// A failed gate (docs/redaction-fork.md) withholds every result as a hard error —
 /// `WireState::TriageFailed`, `Origin::Fallback`, the why in `raw_keep` — never the
 /// untriaged raw.

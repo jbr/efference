@@ -83,8 +83,9 @@ What forcing bought is re-bought harness-side:
   ("not run — nothing is being asked of `…` right now; continue with your task").
   Single-call turns make this a wasted round-trip, not corruption, and the stable
   phrase keeps the un-asked rate greppable from the logged raws.
-- **A non-compliant peek** — the wrong tool, no tool, a malformed verdict, or one
-  that leaves an offered result unanswered (coverage is part of validity) — gets a
+- **A non-compliant peek** — the wrong tool, no tool, a malformed verdict, one that
+  leaves an offered result unanswered (coverage is part of validity), or one whose
+  `keep` range lies wholly outside the shown line numbers (bounds are too) — gets a
   bounded **in-fork retry**: the non-compliant assistant turn is appended to the
   throwaway tail verbatim (thinking blocks included), each of its calls is answered
   with an error `tool_result` carrying the why, the ask is renewed, and the request
