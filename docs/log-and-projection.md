@@ -91,13 +91,25 @@ bytes inline makes projection a copy of stored data: no re-read of a file that
 may have changed, no re-encode whose output could drift across codec versions —
 encoding happens once, at tool-run time. `images` is defaulted and skipped when
 empty, so text-only results and pre-existing logs serialize byte-identically.
-On the wire, a `tool_result` whose entry has images takes the block-array
-content form (`[{text}, {image}…]`, the `[seq]`-prefixed text first); a
-text-only result keeps the bare-string form it always had, so adding the field
-moved no existing bytes. Images ride `Raw` and `Distilled` states — a distill
-verdict addresses text lines, and must not silently eat an image the model
-pulled deliberately — and are shed by `Elided` and `TriageFailed`, which is
-what makes elision the cost-recovery lever for accumulated visual tokens.
+On the wire, image placement is provider-conditional (`ImagePlacement`, chosen
+from the provider once at boot and fixed for the session — `project_with`
+takes it as its second input, so projection stays deterministic: same log +
+same placement → same bytes). On Anthropic (`InToolResult`), a `tool_result`
+whose entry has images takes the block-array content form (`[{text},
+{image}…]`, the `[seq]`-prefixed text first). On OpenRouter
+(`FollowingUserBlock`), the `tool_result` keeps the bare-string form and each
+image trails it as a top-level `image` block in the same user message — the
+portable shape, because OpenRouter's bridge drops `tool_result` images for
+some upstreams (its Anthropic skin documents images as user content only; a
+Gemini upstream 400s). In either placement a text-only result projects the
+bare-string form it always had, so adding images moved no existing bytes, and
+the two placements are byte-identical on any image-free log. Images ride `Raw`
+and `Distilled` states — a distill verdict addresses text lines, and must not
+silently eat an image the model pulled deliberately — and are shed by `Elided`
+and `TriageFailed`, which is what makes elision the cost-recovery lever for
+accumulated visual tokens. The fork peek projects the canonical prefix with
+the same session placement (`ForkPeek.image_placement`), or its request would
+cold the shared cache lineage.
 
 Crucially, `Distilled` stores the **verdict** — which line ranges survive
 (`keep`) and an optional breadcrumb (`note`) — not the rendered bytes.

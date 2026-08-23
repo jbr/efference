@@ -42,6 +42,18 @@ impl Provider {
         }
     }
 
+    /// Where projection places a tool result's images for this provider
+    /// (docs/log-and-projection.md): the Anthropic-native in-`tool_result`
+    /// shape on the native API; the portable following-user-block shape on
+    /// OpenRouter, whose bridge drops `tool_result` images for some upstreams
+    /// (its docs cover images as user content only on the Anthropic skin).
+    pub fn image_placement(&self) -> crate::project::ImagePlacement {
+        match self {
+            Self::Anthropic => crate::project::ImagePlacement::InToolResult,
+            Self::OpenRouter => crate::project::ImagePlacement::FollowingUserBlock,
+        }
+    }
+
     /// The lowercase name, as `EFFERENCE_PROVIDER` spells it — for error
     /// messages and boot output.
     pub fn name(&self) -> &'static str {

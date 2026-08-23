@@ -136,6 +136,47 @@ fn image_tool_result_matches_expected_wire_bytes() {
     assert_eq!(wire, expected);
 }
 
+/// Pins the `FollowingUserBlock` placement's exact wire bytes: the
+/// `tool_result` keeps the bare-string content form (byte-identical to a
+/// text-only result), and each image trails it as a top-level `image` block in
+/// the same user message — the portable shape for bridged providers
+/// (docs/log-and-projection.md).
+#[test]
+fn following_user_block_matches_expected_wire_bytes() {
+    let wire = serde_json::to_string(&project_with(
+        &image_log(WireState::Raw),
+        ImagePlacement::FollowingUserBlock,
+    ))
+    .unwrap();
+    let expected = r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] 1456×819 image/webp, 1560 visual tokens"},{"type":"image","source":{"type":"base64","media_type":"image/webp","data":"UklGRg=="}}]}]"#;
+    assert_eq!(wire, expected);
+}
+
+/// Elision and gate failure shed the trailing image block in the
+/// `FollowingUserBlock` placement too, and a text-only log projects
+/// byte-identically under either placement.
+#[test]
+fn following_user_block_sheds_on_elision_and_is_identity_for_text() {
+    let has_image = |state: WireState| {
+        serde_json::to_string(&project_with(
+            &image_log(state),
+            ImagePlacement::FollowingUserBlock,
+        ))
+        .unwrap()
+        .contains(r#""type":"image""#)
+    };
+    assert!(has_image(WireState::Raw));
+    assert!(!has_image(WireState::Elided));
+    assert!(!has_image(WireState::TriageFailed {
+        why: "peek died".into(),
+    }));
+    let log = sample_log();
+    assert_eq!(
+        serde_json::to_string(&project(&log)).unwrap(),
+        serde_json::to_string(&project_with(&log, ImagePlacement::FollowingUserBlock)).unwrap(),
+    );
+}
+
 /// Images ride `Raw` and `Distilled` (a distill verdict addresses text lines,
 /// not the image the model pulled on purpose) and are shed by `Elided` and
 /// `TriageFailed` — whose results project in the bare-string form, byte-identical

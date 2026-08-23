@@ -40,8 +40,8 @@ use crate::log::{
     Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall, WireState,
 };
 use crate::project::{
-    ApiBlock, ApiMessage, PEEK_LINE_CAP, Role, block_to_api, place_trailing_cache_breakpoint,
-    project,
+    ApiBlock, ApiMessage, ImagePlacement, PEEK_LINE_CAP, Role, block_to_api,
+    place_trailing_cache_breakpoint, project_with,
 };
 use crate::supervisor::BgView;
 
@@ -238,7 +238,13 @@ pub trait Distiller {
 }
 
 /// The model peek — the universal triage gate (docs/redaction-fork.md) realized.
-pub struct ForkPeek;
+pub struct ForkPeek {
+    /// The session's provider-derived image placement — the fork's `project` of
+    /// the canonical prefix must be byte-identical to the agent turn's, or the
+    /// peek pays a cold prefix instead of a cache read (docs/redaction-fork.md,
+    /// docs/log-and-projection.md).
+    pub image_placement: ImagePlacement,
+}
 
 /// Run one peek to a usable verdict, with bounded in-fork retries
 /// (docs/redaction-fork.md). `tool` is the asked-for tool (`retain` or `triage`);
@@ -507,6 +513,7 @@ fn peek_messages(
     inbox: &[ShownNotification],
     background: &[BgView],
     roster: &[Item],
+    placement: ImagePlacement,
 ) -> Vec<ApiMessage> {
     let mut sections = String::new();
     append_inbox_and_background(&mut sections, inbox, background);
@@ -530,7 +537,7 @@ fn peek_messages(
 
     // The prefix hits cache; only the raws and the instruction are fresh, and they are
     // discarded — the canonical lineage never sees raw (docs/redaction-fork.md).
-    let mut messages = project(prefix);
+    let mut messages = project_with(prefix, placement);
     place_trailing_cache_breakpoint(&mut messages);
     let mut content: Vec<ApiBlock> = pending
         .iter()
@@ -605,9 +612,10 @@ pub fn peek_request(
     pending: &[Pending<'_>],
     inbox: &[ShownNotification],
     background: &[BgView],
+    placement: ImagePlacement,
 ) -> Vec<ApiMessage> {
     let roster = surfaceable_roster(prefix);
-    peek_messages(prefix, pending, inbox, background, &roster)
+    peek_messages(prefix, pending, inbox, background, &roster, placement)
 }
 
 /// One fork-peek round trip against a recorded gate, with **no retries**
@@ -627,7 +635,7 @@ pub async fn peek_attempt(
         .iter()
         .map(|p| (p.call.id.0.clone(), shown_line_count(p.raw)))
         .collect();
-    let messages = peek_request(prefix, pending, inbox, background);
+    let messages = peek_request(prefix, pending, inbox, background, client.image_placement());
     let completion = client
         .complete(&messages, tools, ToolChoice::auto(), |_| {})
         .await
@@ -710,7 +718,14 @@ impl Distiller for ForkPeek {
             .collect();
 
         let roster = surfaceable_roster(prefix);
-        let messages = peek_messages(prefix, pending, inbox, background, &roster);
+        let messages = peek_messages(
+            prefix,
+            pending,
+            inbox,
+            background,
+            &roster,
+            self.image_placement,
+        );
 
         let mut usage = Vec::new();
         let mut retries = Vec::new();
@@ -831,7 +846,7 @@ impl Distiller for ForkPeek {
         view.push_str("\n\n");
         view.push_str(TRIAGE_INSTRUCTION);
 
-        let mut messages = project(prefix);
+        let mut messages = project_with(prefix, self.image_placement);
         place_trailing_cache_breakpoint(&mut messages);
         messages.push(ApiMessage {
             role: Role::User,

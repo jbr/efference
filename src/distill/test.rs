@@ -628,7 +628,7 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
         .map(|(call, raw)| Pending { call, raw })
         .collect();
 
-    let messages = peek_messages(&prefix, &pending, &[], &[], &[]);
+    let messages = peek_messages(&prefix, &pending, &[], &[], &[], ImagePlacement::default());
     let tail = messages.last().expect("a tail message");
     assert_eq!(tail.role, Role::User);
 

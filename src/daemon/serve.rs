@@ -20,11 +20,12 @@ pub async fn serve<D: Distiller, S: Spotter>(
     capabilities: crate::api::ModelCapabilities,
     bind: Option<tcp::TcpBind>,
 ) -> Result<(), Error> {
-    let (shared, turns) = Shared::with_role_scratch_and_upstream_failure(
+    let (shared, turns) = Shared::full(
         log,
         role,
         toolbox.scratch_dir().map(std::path::Path::to_path_buf),
         client.upstream_failure(),
+        client.image_placement(),
     );
 
     // Set before the loop spawns: the gate reads it on the loop's thread (backlog/permissions/

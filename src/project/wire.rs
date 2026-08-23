@@ -62,6 +62,13 @@ pub enum ApiBlock {
         #[serde(skip_serializing_if = "Option::is_none")]
         cache_control: Option<CacheControl>,
     },
+    /// A top-level image block in a user message — the
+    /// `ImagePlacement::FollowingUserBlock` carrier (docs/log-and-projection.md).
+    Image {
+        source: ImageSource,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+    },
     ToolResult {
         tool_use_id: String,
         content: ToolResultContent,

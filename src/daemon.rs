@@ -46,7 +46,9 @@ use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend, Interrupt, SubmittedTurn};
 use crate::log::{CallId, EditState, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
-use crate::project::{ApiMessage, Retention, place_trailing_cache_breakpoint, project};
+use crate::project::{
+    ApiMessage, ImagePlacement, Retention, place_trailing_cache_breakpoint, project_with,
+};
 use crate::spotter::Spotter;
 use crate::supervisor::{BgView, Supervisor};
 use crate::tools::Toolbox;
@@ -107,6 +109,9 @@ pub struct Shared {
     /// handlers snapshot it for `GET /log`. The lock is only ever held across the
     /// synchronous `project`/append — never an `await`.
     log: Mutex<Log>,
+    /// Where tool-result images land on the wire (docs/log-and-projection.md):
+    /// provider-derived at boot, fixed for the session.
+    image_placement: ImagePlacement,
     /// Sender half of the turn inbox; handlers push, the loop drains the receiver.
     turns_tx: mpsc::UnboundedSender<SubmittedTurn>,
     /// In-flight approval gates keyed by the `tool_use` `CallId` (already unique,
@@ -320,6 +325,25 @@ impl Shared {
         scratch: Option<PathBuf>,
         upstream_failure: UpstreamFailureState,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+        Self::full(
+            log,
+            role,
+            scratch,
+            upstream_failure,
+            ImagePlacement::default(),
+        )
+    }
+
+    /// The full constructor, with the session's image placement — chosen from
+    /// the provider at boot and fixed thereafter, so the canonical wire and the
+    /// fork's cached prefix project byte-identically (docs/log-and-projection.md).
+    pub(crate) fn full(
+        log: Log,
+        role: LoadedConfig,
+        scratch: Option<PathBuf>,
+        upstream_failure: UpstreamFailureState,
+        image_placement: ImagePlacement,
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
         let (turns_tx, turns_rx) = mpsc::unbounded_channel();
 
         // Bounded ring: a consumer that falls this far behind drops the oldest
@@ -369,6 +393,7 @@ impl Shared {
         };
         let shared = Arc::new(Self {
             log: Mutex::new(log),
+            image_placement,
             turns_tx,
             approvals: Mutex::new(HashMap::new()),
             pending: Mutex::new(None),
@@ -552,7 +577,7 @@ impl Shared {
     /// Project the current log into the wire (docs/README.md). Lock held only for the
     /// synchronous fold.
     pub fn project_messages(&self) -> Vec<ApiMessage> {
-        project(self.log.lock().unwrap().entries())
+        project_with(self.log.lock().unwrap().entries(), self.image_placement)
     }
 
     /// A clone of the entries — handed to the fork distiller, which awaits the

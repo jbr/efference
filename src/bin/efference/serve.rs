@@ -320,10 +320,11 @@ pub(crate) async fn serve(
              config file; config writes still gate for the orchestrator-above"
         );
     }
+    let image_placement = client.image_placement();
     let result = daemon::serve(
         client,
         toolbox,
-        ForkPeek,
+        ForkPeek { image_placement },
         spotter,
         log,
         socket,

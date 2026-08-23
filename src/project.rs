@@ -64,17 +64,41 @@ fn extract_boundaries(log: &[LogEntry]) -> (Vec<Boundary>, HashSet<Seq>) {
     (boundaries, elided)
 }
 
+/// Where a tool result's images land on the wire (docs/log-and-projection.md).
+/// Chosen once at boot from the provider and fixed for the session, so
+/// projection stays deterministic: same log + same placement → same bytes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ImagePlacement {
+    /// Image blocks inside the `tool_result` content array — Anthropic's
+    /// documented shape, verified end-to-end against the native API.
+    #[default]
+    InToolResult,
+    /// The `tool_result` stays text-only; each image follows it as a top-level
+    /// `image` block in the same user message. The portable shape for bridged
+    /// providers whose translation drops `tool_result` images (OpenRouter's
+    /// Anthropic skin documents images as user content only; its Gemini bridge
+    /// 400s on `tool_result` images — the finding is recorded with the
+    /// provider-awareness work).
+    FollowingUserBlock,
+}
+
+/// [`project_with`] at the default (Anthropic-native) image placement.
+pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
+    project_with(log, ImagePlacement::default())
+}
+
 /// Fold the append-only log into the wire transcript.
 ///
-/// Deterministic by construction: a pure function of `log`, with no clock, map
-/// iteration, or other ambient input leaking into the output.
+/// Deterministic by construction: a pure function of `log` and `placement`,
+/// with no clock, map iteration, or other ambient input leaking into the
+/// output.
 ///
 /// When the log contains a [`MarkKind::Boundary`], the span it names (`seq <=
 /// upto`) is elided and replaced by a single user-role summary message injected
 /// at the mark's position. The live conversation after `upto` — and the
 /// consolidate `tool_use` / result that recorded the boundary — project normally
 /// (docs/README.md).
-pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
+pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessage> {
     let (boundaries, elided) = extract_boundaries(log);
     // Notification bodies by arrival `seq`, so a `Triage` can emit a block for each
     // notification it pinned (docs/inbox.md) without re-walking the log.
@@ -196,9 +220,8 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
                     content,
                 });
             }
-            Payload::ToolResult { call_id, raw, wire } => {
-                pending_user_content.push(tool_result_block(entry.seq, call_id, raw, wire))
-            }
+            Payload::ToolResult { call_id, raw, wire } => pending_user_content
+                .extend(tool_result_blocks(entry.seq, call_id, raw, wire, placement)),
             // Marks are in the elided set (extract_boundaries inserts every
             // Boundary mark's own seq); this arm is only reachable for future
             // non-Boundary mark kinds, which can be added here when they land.
@@ -307,7 +330,13 @@ pub(crate) fn block_to_api(block: &ContentBlock) -> ApiBlock {
     }
 }
 
-fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireState) -> ApiBlock {
+fn tool_result_blocks(
+    seq: u64,
+    call_id: &CallId,
+    raw: &RawResult,
+    wire: &WireState,
+    placement: ImagePlacement,
+) -> Vec<ApiBlock> {
     let (content, is_error) = match wire {
         WireState::Raw => (raw.content.clone(), raw.is_error),
         // Re-render the distillate from `raw` + the stored verdict each turn
@@ -343,23 +372,45 @@ fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireSta
         WireState::Raw | WireState::Distilled { .. } => raw.images.as_slice(),
         WireState::Elided | WireState::TriageFailed { .. } => &[],
     };
-    let content = if images.is_empty() {
-        ToolResultContent::Text(prefixed)
-    } else {
-        let mut blocks = vec![ResultBlock::Text { text: prefixed }];
-        blocks.extend(images.iter().map(|image| ResultBlock::Image {
-            source: ImageSource::Base64 {
-                media_type: image.media_type.clone(),
-                data: image.data.clone(),
-            },
-        }));
-        ToolResultContent::Blocks(blocks)
+    let source = |image: &crate::log::ResultImage| ImageSource::Base64 {
+        media_type: image.media_type.clone(),
+        data: image.data.clone(),
     };
-    ApiBlock::ToolResult {
-        tool_use_id: call_id.0.clone(),
-        content,
-        is_error,
-        cache_control: None,
+    match placement {
+        ImagePlacement::InToolResult => {
+            let content = if images.is_empty() {
+                ToolResultContent::Text(prefixed)
+            } else {
+                let mut blocks = vec![ResultBlock::Text { text: prefixed }];
+                blocks.extend(images.iter().map(|image| ResultBlock::Image {
+                    source: source(image),
+                }));
+                ToolResultContent::Blocks(blocks)
+            };
+            vec![ApiBlock::ToolResult {
+                tool_use_id: call_id.0.clone(),
+                content,
+                is_error,
+                cache_control: None,
+            }]
+        }
+        // The tool_result stays in the bare-string form regardless of images —
+        // byte-identical to a text-only result — and each image trails it as a
+        // top-level block in the same user message (role alternation forbids a
+        // separate user message; adjacency is what binds image to result).
+        ImagePlacement::FollowingUserBlock => {
+            let mut blocks = vec![ApiBlock::ToolResult {
+                tool_use_id: call_id.0.clone(),
+                content: ToolResultContent::Text(prefixed),
+                is_error,
+                cache_control: None,
+            }];
+            blocks.extend(images.iter().map(|image| ApiBlock::Image {
+                source: source(image),
+                cache_control: None,
+            }));
+            blocks
+        }
     }
 }
 

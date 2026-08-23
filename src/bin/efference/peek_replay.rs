@@ -145,6 +145,12 @@ pub(crate) async fn peek(
     // grammar the other reader verbs take.
     let (path, label) = resolve_session_log(&path.to_string_lossy())?;
     let entries = efference::persist::load(&path)?;
+    // Replays use the env-declared provider's image placement, matching what a live
+    // session against that provider projects; a keyless dry run falls back to the
+    // default (docs/log-and-projection.md).
+    let placement = efference::api::Endpoint::from_env()
+        .map(|e| e.provider.image_placement())
+        .unwrap_or_default();
     let all = gates(&entries);
     let mut selected: Vec<&Gate> = match seq {
         Some(s) => all.iter().filter(|g| g.seq == s).collect(),
@@ -193,7 +199,13 @@ pub(crate) async fn peek(
                     .zip(&g.raws)
                     .map(|(call, raw)| Pending { call, raw })
                     .collect();
-                tail_chars(&peek_request(&entries[..g.prefix_end], &pending, &[], &[]))
+                tail_chars(&peek_request(
+                    &entries[..g.prefix_end],
+                    &pending,
+                    &[],
+                    &[],
+                    placement,
+                ))
             })
             .sum();
         println!(
@@ -212,7 +224,7 @@ pub(crate) async fn peek(
             .zip(&g.raws)
             .map(|(call, raw)| Pending { call, raw })
             .collect();
-        let messages = peek_request(&entries[..g.prefix_end], &pending, &[], &[]);
+        let messages = peek_request(&entries[..g.prefix_end], &pending, &[], &[], placement);
         eprintln!("note: gate at seq {} · {} result(s)", g.seq, pending.len());
         println!(
             "{}",
@@ -248,7 +260,13 @@ pub(crate) async fn peek(
             .collect();
         // The fork tail — result blocks, roster, ask — is uncached by construction, so
         // its size is what a gate costs beyond re-reading the prefix, on every tool result.
-        uncached += tail_chars(&peek_request(&entries[..g.prefix_end], &pending, &[], &[])) as u64;
+        uncached += tail_chars(&peek_request(
+            &entries[..g.prefix_end],
+            &pending,
+            &[],
+            &[],
+            placement,
+        )) as u64;
         let mut passes = 0usize;
         for draw in 1..=repeat {
             // A transport error is this draw's problem, not the sweep's. Propagating it
