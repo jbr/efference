@@ -24,4 +24,5 @@ pub mod spotter;
 pub mod supervisor;
 pub mod tools;
 pub mod tui;
+pub mod vision;
 pub mod www_authenticate;

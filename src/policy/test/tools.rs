@@ -216,3 +216,43 @@ fn missing_or_malformed_required_path_gates() {
         Verdict::Gate
     );
 }
+
+/// `read_image` follows the same read rule as `read`, keyed on its single
+/// `path` input: clears under a granted read subtree, gates outside it, and
+/// gates when the required path is absent.
+#[test]
+fn read_image_clears_like_a_read() {
+    let mut role = fs_role();
+    role.tools.insert("read_image".to_string());
+    assert_eq!(
+        structured(
+            &role,
+            &call("read_image", serde_json::json!({ "path": "shot.png" }))
+        ),
+        Verdict::Clear
+    );
+    assert_eq!(
+        structured(
+            &role,
+            &call(
+                "read_image",
+                serde_json::json!({ "path": "/refs/mock.png" })
+            )
+        ),
+        Verdict::Clear
+    );
+    assert_eq!(
+        structured(
+            &role,
+            &call(
+                "read_image",
+                serde_json::json!({ "path": "/etc/secret.png" })
+            )
+        ),
+        Verdict::Gate
+    );
+    assert_eq!(
+        structured(&role, &call("read_image", serde_json::json!({}))),
+        Verdict::Gate
+    );
+}

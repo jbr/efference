@@ -12,6 +12,7 @@ pub(crate) fn path_spec(name: &str) -> Option<(&'static str, Perm, Option<&'stat
     Some(match name {
         // Reads: the target must be under a read-or-write grant.
         "read" => ("paths", Perm::Read, None),
+        "read_image" => ("path", Perm::Read, None),
         "list" => ("path", Perm::Read, Some(".")),
         "search" => ("path", Perm::Read, Some(".")),
         "find_anchor" => ("file_path", Perm::Read, None),

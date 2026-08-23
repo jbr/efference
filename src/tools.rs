@@ -30,6 +30,7 @@ use serde_json::{Value, json};
 use crate::bash::{self, Bash, Outcome};
 use crate::frontend::Interrupt;
 use crate::log::{RawResult, ToolCall};
+use read_image::ReadImage;
 
 /// The property the harness adds to every mounted tool's input schema
 /// (docs/tools.md "The `intent` property"): one line of prose saying why the call
@@ -110,6 +111,9 @@ fn with_intent(mut definition: Value) -> Value {
 /// when integrated).
 pub enum Provider {
     Bash(Bash),
+    /// `read_image` (docs/tools.md): pulls an on-disk image into context as a
+    /// `tool_result` image block, at a model-chosen resolution.
+    ReadImage(ReadImage),
     // The MCP servers are boxed: their session state makes them far larger than
     // `Bash`, and an unboxed enum would size every `Provider` to the largest
     // variant (clippy::large_enum_variant). Method calls auto-deref through the box.
@@ -125,6 +129,7 @@ impl Provider {
     fn definitions(&self) -> Vec<Value> {
         match self {
             Provider::Bash(_) => vec![Bash::definition()],
+            Provider::ReadImage(_) => vec![ReadImage::definition()],
             Provider::Fs(s) => s.definitions.clone(),
             Provider::SemanticEdit(s) => s.definitions.clone(),
             Provider::Connected(c) => c.definitions(),
@@ -135,6 +140,7 @@ impl Provider {
     fn handles(&self, name: &str) -> bool {
         match self {
             Provider::Bash(_) => name == bash::NAME,
+            Provider::ReadImage(_) => name == read_image::NAME,
             Provider::Fs(s) => s.handles(name),
             Provider::SemanticEdit(s) => s.handles(name),
             Provider::Connected(c) => c.handles(name),
@@ -147,6 +153,9 @@ impl Provider {
     fn brief(&self, name: &str) -> Option<ToolBrief<'_>> {
         match self {
             Provider::Bash(_) => None,
+            // No brief yet either: nearly every call clears on a path grant, and
+            // the spotter's structured-move render shows the input verbatim.
+            Provider::ReadImage(_) => None,
             Provider::Fs(s) => s.schema(name).map(|definition| ToolBrief {
                 server: None,
                 definition,
@@ -169,6 +178,7 @@ impl Provider {
     fn without_intent<'a>(&self, call: &'a ToolCall) -> Cow<'a, ToolCall> {
         let declares_own = match self {
             Provider::Bash(_) => declares_own_intent(&Bash::definition()["input_schema"]),
+            Provider::ReadImage(_) => declares_own_intent(&ReadImage::definition()["input_schema"]),
             Provider::Fs(s) => s
                 .schema(&call.name)
                 .is_some_and(|d| declares_own_intent(&d.input_schema)),
@@ -211,6 +221,7 @@ impl Provider {
             // committed entry.
             Provider::Fs(s) => s.run_call(&call.name, &call.input).into(),
             Provider::SemanticEdit(s) => s.run_call(&call.name, &call.input).into(),
+            Provider::ReadImage(r) => r.run(&call.input).into(),
             // Async over a wire, but no OS process of the *call's* own and no
             // live stream: the result lands whole. Races `abort` internally
             // (Kill abandons the call; Detach is bash-only and keeps waiting).
@@ -381,6 +392,7 @@ impl Toolbox {
     pub fn bash_and_mcps(cwd: PathBuf, scratch: Option<PathBuf>) -> anyhow::Result<Self> {
         Ok(Self::new(vec![
             Provider::Bash(Bash { tmpdir: scratch }),
+            Provider::ReadImage(ReadImage { cwd: cwd.clone() }),
             // fs-mcp curated down to the tools whose structured, fork-friendly
             // output genuinely beats the shell. `set_working_directory` is managed
             // by efference (the cwd is seeded). `move`/`delete` are dropped: they
@@ -478,3 +490,5 @@ impl Toolbox {
 
 #[cfg(test)]
 mod test;
+
+pub mod read_image;

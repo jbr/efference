@@ -91,10 +91,30 @@ does not hold, and it does not see the field — [permissions.md](permissions.md
 Not everything belongs behind the in-process trait.
 
 **Built-in (in-process):** the generic, language-agnostic primitives — `fs`
-(read / list / search / write) and structured edit (`edit` /
-`retarget_edit` / `undo_edit`). These earn the typed hook: gating, staleness
-checks, and line-numbered rendering for the fork all want direct access to the
-result structure.
+(read / list / search / write), structured edit (`edit` /
+`retarget_edit` / `undo_edit`), and `read_image`. These earn the typed hook:
+gating, staleness checks, and line-numbered rendering for the fork all want
+direct access to the result structure.
+
+### `read_image`
+
+`read_image` (`src/tools/read_image.rs` over the engine in `src/vision.rs`)
+pulls an on-disk image into context as a `tool_result` image block
+([log-and-projection.md](log-and-projection.md)) — the pull half of the
+attachments design: an image enters the transcript only when the model asks,
+at the resolution it asks for. The tool reads a `path` (resolved against the
+session cwd, gated by the same read-path grants as `read`), decodes, sizes to
+the provider's own rule (`vision::resized_size`, a token-budget bound — not
+merely a long edge), encodes, and returns a text header
+(`{w}×{h} {media_type}, {n} visual tokens`, plus the source dimensions when
+downscaled) followed by the image. `long_edge` defaults to 1568 with 2576 as
+the ceiling; the header's cost report and the "re-read larger" note are the
+calibration loop. Encoding policy: fitting API-native bytes pass through
+verbatim; a resize or transcode re-encodes — JPEG stays JPEG (quality 85),
+everything else becomes lossless WebP (the pure-Rust WebP encoder is
+lossless-only). The tier limits are hardcoded to the high-resolution tier
+until provider awareness supplies the session model's own; a standard-tier
+provider downscales further server-side, costing bytes, never correctness.
 
 **Per-language tooling → bash or MCP, not built-in — provisionally.** `cargo`,
 `rustc` / `ferritin`, test runners, and similar language-specific tools are
