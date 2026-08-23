@@ -132,6 +132,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             list,
             no_fallback,
         } => spotter_log(path, stances, summary, list, no_fallback),
+        Command::SpotterEval {
+            cases,
+            labels,
+            model,
+            runs,
+            out,
+            limit,
+            filter,
+            concurrency,
+            persona,
+            no_cost,
+        } => {
+            spotter_eval(
+                cases,
+                labels,
+                model,
+                runs,
+                out,
+                limit,
+                filter,
+                concurrency,
+                persona,
+                no_cost,
+            )
+            .await
+        }
         Command::Attach => attach(client_socket()?).await,
         Command::Tui { theme, frame_cost } => tui(client_socket()?, theme, frame_cost).await,
         Command::View { session, theme } => view(session, name.clone(), theme).await,
@@ -167,6 +193,7 @@ use cli::*;
 use peek_replay::peek;
 use serve::{serve, spotter_check};
 use spot_report::*;
+use spotter_eval::spotter_eval;
 use verbs::*;
 
 mod attach;
@@ -175,6 +202,7 @@ mod mcp_mount;
 mod peek_replay;
 mod serve;
 mod spot_report;
+mod spotter_eval;
 mod verbs;
 
 #[cfg(test)]

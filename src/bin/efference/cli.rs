@@ -584,6 +584,52 @@ pub(crate) enum Command {
         #[arg(long = "no-fallback")]
         no_fallback: bool,
     },
+    /// Dev tool: run the labeled spotter corpus against a model
+    /// (backlog/spotter-eval.md). Each case's config + call renders through the
+    /// production `assess` path; verdicts score against the case's `expected`
+    /// on the binary the system acts on (approve vs route-to-human). Reports
+    /// per-class rates (human-miss = safety, false-gate = friction), the flip
+    /// rate across repeated runs, latency percentiles, token totals, and — on
+    /// OpenRouter — the provider-billed cost per generation id. Per-attempt
+    /// detail lands in a results jsonl for offline cross-tabs.
+    SpotterEval {
+        /// A corpus file (jsonl), repeatable. A case missing an inline
+        /// `expected` is joined against `--labels` by id; still-unlabeled cases
+        /// are skipped and counted.
+        #[arg(long = "cases", required = true)]
+        cases: Vec<PathBuf>,
+        /// A labels file (jsonl of `{id, expected, …}`) joined onto `--cases`
+        /// rows that carry no inline label.
+        #[arg(long)]
+        labels: Option<PathBuf>,
+        /// Spotter model under test.
+        #[arg(long, default_value = "claude-haiku-4-5")]
+        model: String,
+        /// Attempts per case — the spotter is sampled behavior, so per-case
+        /// consistency (the flip rate) is its own quality axis.
+        #[arg(long, default_value_t = 3)]
+        runs: usize,
+        /// Results path. Defaults to `eval/spotter/results-<model>.jsonl`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Run only the first N cases (after `--filter`) — the smoke-test knob.
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Run only cases whose id contains this substring (e.g. `syn/` for the
+        /// synthetics, a session id for one session's cases).
+        #[arg(long)]
+        filter: Option<String>,
+        /// Concurrent in-flight requests.
+        #[arg(long, default_value_t = 4)]
+        concurrency: usize,
+        /// A replacement persona file — the ablation knob: measure a persona
+        /// edit against the same corpus instead of by ad-hoc replays.
+        #[arg(long)]
+        persona: Option<PathBuf>,
+        /// Skip the per-generation cost lookup.
+        #[arg(long = "no-cost")]
+        no_cost: bool,
+    },
 }
 
 /// A spotter [`Stance`](efference::log::Stance) as a `--stance` filter value for the

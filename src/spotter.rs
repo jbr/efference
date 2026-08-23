@@ -134,8 +134,20 @@ impl ForkSpot {
     /// with the persona as its byte-stable system prompt. Shares the acting session's
     /// [`Endpoint`], so it authenticates and routes the same way (docs/transport.md).
     pub fn new(endpoint: Endpoint, model: impl Into<String>) -> Self {
+        Self::with_persona(endpoint, model, PERSONA)
+    }
+
+    /// The same spotter over a replacement persona — the eval's ablation knob
+    /// (backlog/spotter-eval.md): a persona edit measured against the labeled
+    /// corpus instead of by ad-hoc replays. Production always boots [`Self::new`];
+    /// nothing routes a substitute persona into a live session.
+    pub fn with_persona(
+        endpoint: Endpoint,
+        model: impl Into<String>,
+        persona: impl Into<String>,
+    ) -> Self {
         ForkSpot {
-            client: Client::new(endpoint, model, PERSONA, None),
+            client: Client::new(endpoint, model, persona, None),
             scratch: None,
         }
     }
