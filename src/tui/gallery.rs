@@ -41,6 +41,7 @@ fn result(seq: u64, call_id: &str, content: &str, is_error: bool, wire: WireStat
         Payload::ToolResult {
             call_id: CallId(call_id.into()),
             raw: RawResult {
+                images: Vec::new(),
                 content: content.into(),
                 is_error,
             },

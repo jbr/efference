@@ -29,6 +29,7 @@ fn tool_result_omits_false_is_error_but_keeps_true() {
             Payload::ToolResult {
                 call_id: CallId("x".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "boom".into(),
                     is_error: true,
                 },
@@ -74,6 +75,7 @@ fn consecutive_tool_results_coalesce_into_one_user_message() {
             Payload::ToolResult {
                 call_id: CallId("a".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "out-a".into(),
                     is_error: false,
                 },
@@ -86,6 +88,7 @@ fn consecutive_tool_results_coalesce_into_one_user_message() {
             Payload::ToolResult {
                 call_id: CallId("b".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "out-b".into(),
                     is_error: false,
                 },
@@ -136,6 +139,7 @@ fn user_turn_after_tool_result_merges_into_one_message() {
             Payload::ToolResult {
                 call_id: CallId("a".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "tool output".into(),
                     is_error: false,
                 },

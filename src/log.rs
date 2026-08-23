@@ -221,6 +221,31 @@ impl ToolCall {
 pub struct RawResult {
     pub content: String,
     pub is_error: bool,
+    /// Images the tool returned alongside `content` (docs/log-and-projection.md).
+    /// The realized bytes live here, in the log entry itself, so projection is a
+    /// copy of stored data — never a re-read or re-encode of anything on disk.
+    /// Encoding happens once, at tool-run time. Defaulted and skipped when empty,
+    /// so text-only results (and every existing log) serialize byte-identically
+    /// to before the field existed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ResultImage>,
+}
+
+/// One image in a [`RawResult`]: the exact bytes projected onto the wire, plus
+/// the dimensions of the image as encoded. `width`/`height` are log metadata
+/// (audit, TUI, token math) — the wire image block carries only `media_type` +
+/// `data`; the dimensions the *model* needs ride in the result's text content,
+/// written by the tool.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ResultImage {
+    /// An API-accepted media type: `image/jpeg`, `image/png`, `image/gif`, or
+    /// `image/webp`.
+    pub media_type: String,
+    /// Standard base64 of the encoded image, stored exactly as it will appear
+    /// in the wire block's `source.data`.
+    pub data: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// The content of a [`Payload::Mark`] — a breadcrumb left in the record. `note` is

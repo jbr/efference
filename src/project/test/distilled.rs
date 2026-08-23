@@ -146,6 +146,7 @@ fn distilled_projects_the_verdict_not_raw() {
             Payload::ToolResult {
                 call_id: CallId("x".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "the gist line\nten thousand lines of output".into(),
                     is_error: false,
                 },
@@ -195,6 +196,7 @@ fn triage_failed_projects_an_error_never_the_raw() {
             Payload::ToolResult {
                 call_id: CallId("x".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "ten thousand lines of output".into(),
                     is_error: false,
                 },

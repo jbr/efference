@@ -15,6 +15,7 @@ fn result(seq: u64, lines: usize, wire: WireState) -> LogEntry {
         payload: Payload::ToolResult {
             call_id: CallId(format!("call_{seq}")),
             raw: RawResult {
+                images: Vec::new(),
                 content,
                 is_error: false,
             },

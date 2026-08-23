@@ -52,6 +52,7 @@ pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_sp
             withheld(
                 &call,
                 RawResult {
+                    images: Vec::new(),
                     content: "SECRET_TOKEN=hunter2\n…120k of log…".into(),
                     is_error: false,
                 },
@@ -386,6 +387,7 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
                 Payload::ToolResult {
                     call_id: call.id.clone(),
                     raw: RawResult {
+                        images: Vec::new(),
                         content: content.into(),
                         is_error: false,
                     },

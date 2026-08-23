@@ -256,6 +256,7 @@ fn result(seq: u64, id: &str) -> LogEntry {
         Payload::ToolResult {
             call_id: CallId(id.into()),
             raw: RawResult {
+                images: Vec::new(),
                 content: "out".into(),
                 is_error: false,
             },

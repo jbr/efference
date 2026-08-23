@@ -42,6 +42,7 @@ fn boundary_mark_folds_span_to_summary() {
             Payload::ToolResult {
                 call_id: CallId("t1".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "old output".into(),
                     is_error: false,
                 },
@@ -81,6 +82,7 @@ fn boundary_mark_folds_span_to_summary() {
             Payload::ToolResult {
                 call_id: CallId("c1".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "consolidated".into(),
                     is_error: false,
                 },
@@ -268,6 +270,7 @@ fn mark_folds_named_span_and_injects_summary() {
             Payload::ToolResult {
                 call_id: CallId("a".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "out-a".into(),
                     is_error: false,
                 },

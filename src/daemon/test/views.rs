@@ -345,6 +345,7 @@ fn state_reports_triage_retention() {
                 Payload::ToolResult {
                     call_id: CallId(format!("call_{seq}")),
                     raw: RawResult {
+                        images: Vec::new(),
                         content,
                         is_error: false,
                     },

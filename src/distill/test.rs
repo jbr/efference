@@ -612,10 +612,12 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
     ];
     let raws = [
         RawResult {
+            images: Vec::new(),
             content: "alpha\nbeta".into(),
             is_error: false,
         },
         RawResult {
+            images: Vec::new(),
             content: "gamma".into(),
             is_error: false,
         },
@@ -651,7 +653,7 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
         .content
         .iter()
         .filter_map(|b| match b {
-            ApiBlock::ToolResult { content, .. } => Some(content.as_str()),
+            ApiBlock::ToolResult { content, .. } => content.as_text(),
             _ => None,
         })
         .collect();

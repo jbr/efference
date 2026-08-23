@@ -64,7 +64,7 @@ pub enum ApiBlock {
     },
     ToolResult {
         tool_use_id: String,
-        content: String,
+        content: ToolResultContent,
         // Anthropic defaults `is_error` to false; omit it when false to keep the
         // wire (and thus the cache prefix) as lean as possible.
         #[serde(skip_serializing_if = "is_false")]
@@ -72,6 +72,108 @@ pub enum ApiBlock {
         #[serde(skip_serializing_if = "Option::is_none")]
         cache_control: Option<CacheControl>,
     },
+}
+
+/// A `tool_result`'s `content`: the API accepts a bare string or an array of
+/// `text`/`image` blocks. `Text` serializes as the bare string — byte-identical
+/// to when the field was `String`, so a text-only result (every result before
+/// images existed) leaves the pinned wire bytes unmoved; only a result that
+/// actually carries an image takes the array form
+/// (docs/log-and-projection.md).
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(untagged)]
+pub enum ToolResultContent {
+    Text(String),
+    Blocks(Vec<ResultBlock>),
+}
+
+impl From<String> for ToolResultContent {
+    fn from(text: String) -> Self {
+        Self::Text(text)
+    }
+}
+
+impl From<&str> for ToolResultContent {
+    fn from(text: &str) -> Self {
+        Self::Text(text.to_string())
+    }
+}
+
+impl ToolResultContent {
+    /// The text carried by this content, image blocks excluded — the byte count
+    /// consumers were reading off the `String` form before images existed.
+    pub fn text_len(&self) -> usize {
+        match self {
+            Self::Text(text) => text.len(),
+            Self::Blocks(blocks) => blocks
+                .iter()
+                .map(|b| match b {
+                    ResultBlock::Text { text } => text.len(),
+                    ResultBlock::Image { .. } => 0,
+                })
+                .sum(),
+        }
+    }
+
+    /// The bare string of the `Text` form; `None` for a block array.
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Blocks(_) => None,
+        }
+    }
+
+    /// Whether any text block contains `needle`. Image data is never searched.
+    pub fn contains(&self, needle: &str) -> bool {
+        match self {
+            Self::Text(text) => text.contains(needle),
+            Self::Blocks(blocks) => blocks.iter().any(|b| match b {
+                ResultBlock::Text { text } => text.contains(needle),
+                ResultBlock::Image { .. } => false,
+            }),
+        }
+    }
+}
+
+/// Text blocks verbatim (newline-joined in the array form); an image renders as
+/// a `[image <media_type>]` marker, never its bytes.
+impl std::fmt::Display for ToolResultContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text(text) => f.write_str(text),
+            Self::Blocks(blocks) => {
+                for (i, block) in blocks.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str("\n")?;
+                    }
+                    match block {
+                        ResultBlock::Text { text } => f.write_str(text)?,
+                        ResultBlock::Image {
+                            source: ImageSource::Base64 { media_type, .. },
+                        } => write!(f, "[image {media_type}]")?,
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+/// One block inside a block-array `tool_result` content.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ResultBlock {
+    Text { text: String },
+    Image { source: ImageSource },
+}
+
+/// The `source` of a wire image block. Base64 is the only source efference
+/// emits: the stored string is projected verbatim, so the block is exactly as
+/// deterministic as any other stored text (docs/log-and-projection.md).
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ImageSource {
+    Base64 { media_type: String, data: String },
 }
 
 /// Place the single trailing cache breakpoint (docs/log-and-projection.md): walk back

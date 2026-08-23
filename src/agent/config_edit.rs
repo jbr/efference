@@ -46,6 +46,7 @@ pub(super) fn autonomous_gate_message(config_path: Option<&Path>, reason: &str) 
 pub(super) fn config_write_outcome(shared: &Shared, result: RawResult) -> RawResult {
     match crate::daemon::refresh_and_emit(shared) {
         Some(Refreshed::Reverted { error }) => RawResult {
+            images: Vec::new(),
             content: format!(
                 "Your config edit was not adopted: the file did not parse, so it has been restored \
                  to the last valid config and your effective permissions are unchanged. Nothing \
@@ -56,6 +57,7 @@ pub(super) fn config_write_outcome(shared: &Shared, result: RawResult) -> RawRes
             is_error: true,
         },
         Some(Refreshed::RevertFailed { error, io }) => RawResult {
+            images: Vec::new(),
             content: format!(
                 "Your config edit was not adopted: the file did not parse, and restoring the last \
                  valid config also failed, so the file on disk is currently invalid. Your \

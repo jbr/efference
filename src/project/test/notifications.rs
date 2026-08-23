@@ -39,6 +39,7 @@ fn pinned_notification_projects_at_triage_position() {
             Payload::ToolResult {
                 call_id: CallId("t".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "out".into(),
                     is_error: false,
                 },
@@ -123,6 +124,7 @@ fn surfaced_context_item_projects_at_triage_position() {
             Payload::ToolResult {
                 call_id: CallId("t".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "no match".into(),
                     is_error: false,
                 },

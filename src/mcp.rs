@@ -250,7 +250,7 @@ impl ConnectedProvider {
         tokio::select! {
             result = &mut call_future => result.into(),
             interrupt = abort => match interrupt {
-                Interrupt::Kill => RawResult {
+                Interrupt::Kill => RawResult { images: Vec::new(),
                     content: format!("`{}` call cancelled by the operator", call.name),
                     is_error: true,
                 }
@@ -286,6 +286,7 @@ impl ConnectedProvider {
                 // naming what the server asked for — better than the empty
                 // `content` a `CallToolResult` parse would have produced.
                 Ok(ToolCallOutcome::InputRequired(interim)) => RawResult {
+                    images: Vec::new(),
                     content: format!(
                         "`{}` returned an interim result asking for more input ({}), which \
                          efference does not supply",
@@ -295,11 +296,13 @@ impl ConnectedProvider {
                     is_error: true,
                 },
                 Err(e) => RawResult {
+                    images: Vec::new(),
                     content: format!("`{}` returned an unparseable tool result: {e}", self.name),
                     is_error: true,
                 },
             },
             Err(e) => RawResult {
+                images: Vec::new(),
                 content: format!("`{}` call failed: {e}", self.name),
                 is_error: true,
             },
@@ -517,6 +520,7 @@ pub(crate) fn render_result(result: CallToolResult) -> RawResult {
         parts.push("(empty result)".to_string());
     }
     RawResult {
+        images: Vec::new(),
         content: parts.join("\n\n"),
         is_error,
     }

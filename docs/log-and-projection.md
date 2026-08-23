@@ -83,6 +83,22 @@ enum Keep { All, None, Ranges(Vec<(usize, usize)>) }
 reversible: the full result survives in the log regardless of what the wire
 shows.
 
+`RawResult` carries `content: String`, `is_error: bool`, and `images:
+Vec<ResultImage>` — each image the tool returned as `{media_type, data, width,
+height}`, with `data` the standard base64 of the encoded bytes stored **in the
+log entry itself**, exactly as it appears on the wire. Storing the realized
+bytes inline makes projection a copy of stored data: no re-read of a file that
+may have changed, no re-encode whose output could drift across codec versions —
+encoding happens once, at tool-run time. `images` is defaulted and skipped when
+empty, so text-only results and pre-existing logs serialize byte-identically.
+On the wire, a `tool_result` whose entry has images takes the block-array
+content form (`[{text}, {image}…]`, the `[seq]`-prefixed text first); a
+text-only result keeps the bare-string form it always had, so adding the field
+moved no existing bytes. Images ride `Raw` and `Distilled` states — a distill
+verdict addresses text lines, and must not silently eat an image the model
+pulled deliberately — and are shed by `Elided` and `TriageFailed`, which is
+what makes elision the cost-recovery lever for accumulated visual tokens.
+
 Crucially, `Distilled` stores the **verdict** — which line ranges survive
 (`keep`) and an optional breadcrumb (`note`) — not the rendered bytes.
 `project` re-renders the kept hunks from `raw` each turn, so the wire is a

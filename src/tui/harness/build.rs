@@ -126,6 +126,7 @@ impl Screenplay<'_> {
         self.commit(Payload::ToolResult {
             call_id: CallId(call_id.into()),
             raw: RawResult {
+                images: Vec::new(),
                 content: content.into(),
                 is_error,
             },

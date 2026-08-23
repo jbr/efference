@@ -351,7 +351,7 @@ fn extend_with_retry(
         .iter()
         .map(|call| ApiBlock::ToolResult {
             tool_use_id: call.id.0.clone(),
-            content: format!("not accepted — {why}."),
+            content: format!("not accepted — {why}.").into(),
             is_error: true,
             cache_control: None,
         })
@@ -536,7 +536,7 @@ fn peek_messages(
         .iter()
         .map(|p| ApiBlock::ToolResult {
             tool_use_id: p.call.id.0.clone(),
-            content: result_view(p.call, p.raw),
+            content: result_view(p.call, p.raw).into(),
             is_error: p.raw.is_error,
             cache_control: None,
         })

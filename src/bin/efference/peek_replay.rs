@@ -115,7 +115,7 @@ fn tail_chars(messages: &[efference::project::ApiMessage]) -> usize {
         .iter()
         .map(|b| match b {
             efference::project::ApiBlock::Text { text, .. } => text.len(),
-            efference::project::ApiBlock::ToolResult { content, .. } => content.len(),
+            efference::project::ApiBlock::ToolResult { content, .. } => content.text_len(),
             _ => 0,
         })
         .sum()

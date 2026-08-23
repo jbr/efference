@@ -283,6 +283,7 @@ where
             Ok(tool) => tool,
             Err(e) => {
                 return RawResult {
+                    images: Vec::new(),
                     content: format!("invalid input for {name}: {e}"),
                     is_error: true,
                 };
@@ -291,6 +292,7 @@ where
         match tool.call(&mut self.state.borrow_mut(), &request_context()) {
             Ok(result) => crate::mcp::render_result(result),
             Err(e) => RawResult {
+                images: Vec::new(),
                 content: e.to_string(),
                 is_error: true,
             },
@@ -465,6 +467,7 @@ impl Toolbox {
                 provider.run(&call, abort, on_spawn, on_output).await
             }
             None => RawResult {
+                images: Vec::new(),
                 content: format!("unknown tool: {}", call.name),
                 is_error: true,
             }

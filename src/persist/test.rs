@@ -25,6 +25,7 @@ fn sample(log: &mut Log) {
         Payload::ToolResult {
             call_id: CallId("toolu_1".into()),
             raw: RawResult {
+                images: Vec::new(),
                 content: "file.txt".into(),
                 is_error: false,
             },

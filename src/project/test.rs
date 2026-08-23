@@ -47,6 +47,7 @@ fn sample_log() -> Vec<LogEntry> {
             Payload::ToolResult {
                 call_id: CallId("toolu_1".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "file.txt".into(),
                     is_error: false,
                 },
@@ -102,6 +103,79 @@ fn projection_matches_expected_wire_bytes() {
     let wire = serde_json::to_string(&project(&sample_log())).unwrap();
     let expected = r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] file.txt"}]}]"#;
     assert_eq!(wire, expected);
+}
+
+/// A log whose tool result carries one image, in the given wire state.
+fn image_log(wire: WireState) -> Vec<LogEntry> {
+    use crate::log::ResultImage;
+    let mut log = sample_log();
+    if let Payload::ToolResult { raw, wire: w, .. } = &mut log[2].payload {
+        raw.content = "1456×819 image/webp, 1560 visual tokens".into();
+        raw.images = vec![ResultImage {
+            media_type: "image/webp".into(),
+            data: "UklGRg==".into(),
+            width: 1456,
+            height: 819,
+        }];
+        *w = wire;
+    }
+    log
+}
+
+/// Pins the exact wire encoding of an image-bearing tool result: `content`
+/// takes the block-array form — the `[seq]`-prefixed text block first, then one
+/// `image` block per stored image, `source` spelled
+/// `{"type":"base64","media_type":…,"data":…}` with the stored base64 projected
+/// verbatim (docs/log-and-projection.md). This is the byte pin the image slice
+/// moved deliberately; reorder or rename a field here and production cache
+/// breaks silently, so it must break here first.
+#[test]
+fn image_tool_result_matches_expected_wire_bytes() {
+    let wire = serde_json::to_string(&project(&image_log(WireState::Raw))).unwrap();
+    let expected = r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":[{"type":"text","text":"[2] 1456×819 image/webp, 1560 visual tokens"},{"type":"image","source":{"type":"base64","media_type":"image/webp","data":"UklGRg=="}}]}]}]"#;
+    assert_eq!(wire, expected);
+}
+
+/// Images ride `Raw` and `Distilled` (a distill verdict addresses text lines,
+/// not the image the model pulled on purpose) and are shed by `Elided` and
+/// `TriageFailed` — whose results project in the bare-string form, byte-identical
+/// to a text-only result in the same state.
+#[test]
+fn image_survives_distill_and_is_shed_by_elision() {
+    let keeps = |state: WireState| {
+        serde_json::to_string(&project(&image_log(state)))
+            .unwrap()
+            .contains(r#""type":"image""#)
+    };
+    assert!(keeps(WireState::Raw));
+    assert!(keeps(WireState::Distilled {
+        keep: Keep::Ranges(vec![(1, 1)]),
+        note: Some("kept the header".into()),
+    }));
+    assert!(!keeps(WireState::Elided));
+    assert!(!keeps(WireState::TriageFailed {
+        why: "peek died".into(),
+    }));
+}
+
+/// A `RawResult` without images serializes byte-identically to before the
+/// `images` field existed, and a pre-images log line still deserializes — the
+/// additive-schema guarantee that keeps every existing log readable and its
+/// projection unmoved.
+#[test]
+fn imageless_raw_result_serialization_is_unchanged() {
+    let raw = RawResult {
+        content: "file.txt".into(),
+        is_error: false,
+        images: Vec::new(),
+    };
+    assert_eq!(
+        serde_json::to_string(&raw).unwrap(),
+        r#"{"content":"file.txt","is_error":false}"#
+    );
+    let old: RawResult =
+        serde_json::from_str(r#"{"content":"file.txt","is_error":false}"#).unwrap();
+    assert!(old.images.is_empty());
 }
 
 /// A record-only partial (docs/transport.md) projects to **nothing**: appending one

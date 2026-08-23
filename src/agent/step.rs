@@ -204,6 +204,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 Payload::ToolResult {
                     call_id: call.id.clone(),
                     raw: RawResult {
+                        images: Vec::new(),
                         content: "consolidated".into(),
                         is_error: false,
                     },
@@ -223,6 +224,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 match background_command(call) {
                     Some(command) => match shared.spawn_background(command) {
                         Ok(handle) => RawResult {
+                            images: Vec::new(),
                             content: format!(
                                 "backgrounded as {handle}. its recent output will surface in \
                                  your inbox at each step, and you'll get a notification when \
@@ -231,11 +233,13 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                             is_error: false,
                         },
                         Err(e) => RawResult {
+                            images: Vec::new(),
                             content: format!("failed to background: {e}"),
                             is_error: true,
                         },
                     },
                     None => RawResult {
+                        images: Vec::new(),
                         content: "background bash requires a `command`".into(),
                         is_error: true,
                     },
@@ -306,6 +310,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                         let handle = shared.adopt_background(*detached, id);
                         handoff = shared.take_detach_note();
                         RawResult {
+                            images: Vec::new(),
                             content: format!(
                                 "the user moved this command to the background as {handle}. \
                                  it is still running: its recent output will surface in your \

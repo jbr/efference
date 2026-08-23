@@ -333,9 +333,31 @@ fn tool_result_block(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireSta
     // itself; this handle makes it visible at read-time without schema change
     // (docs/README.md).
     let prefixed = format!("[{}] {}", seq, content);
+    // Images ride the wire in `Raw` and `Distilled` states — a distill verdict
+    // addresses text lines and doesn't silently eat an image the model pulled on
+    // purpose. `Elided` is the state that sheds the bytes (that's what elision is
+    // for), and `TriageFailed` projects only its error. Text-only results keep
+    // the bare-string content form, byte-identical to before images existed
+    // (docs/log-and-projection.md).
+    let images = match wire {
+        WireState::Raw | WireState::Distilled { .. } => raw.images.as_slice(),
+        WireState::Elided | WireState::TriageFailed { .. } => &[],
+    };
+    let content = if images.is_empty() {
+        ToolResultContent::Text(prefixed)
+    } else {
+        let mut blocks = vec![ResultBlock::Text { text: prefixed }];
+        blocks.extend(images.iter().map(|image| ResultBlock::Image {
+            source: ImageSource::Base64 {
+                media_type: image.media_type.clone(),
+                data: image.data.clone(),
+            },
+        }));
+        ToolResultContent::Blocks(blocks)
+    };
     ApiBlock::ToolResult {
         tool_use_id: call_id.0.clone(),
-        content: prefixed,
+        content,
         is_error,
         cache_control: None,
     }
@@ -355,4 +377,7 @@ mod wire;
 
 pub use render::{Distillate, distillate, render_distilled, render_triage_failure};
 pub use retention::Retention;
-pub use wire::{ApiBlock, ApiMessage, CacheControl, Role, place_trailing_cache_breakpoint};
+pub use wire::{
+    ApiBlock, ApiMessage, CacheControl, ImageSource, ResultBlock, Role, ToolResultContent,
+    place_trailing_cache_breakpoint,
+};

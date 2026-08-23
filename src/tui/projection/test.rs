@@ -37,6 +37,7 @@ fn sample_log() -> Vec<LogEntry> {
             Payload::ToolResult {
                 call_id: CallId("toolu_1".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "line one\nline two".into(),
                     is_error: false,
                 },
@@ -132,6 +133,7 @@ fn a_long_result_renders_whole() {
             Payload::ToolResult {
                 call_id: CallId("toolu_1".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: body.clone(),
                     is_error: false,
                 },
@@ -175,6 +177,7 @@ fn a_failed_result_is_marked_on_the_result_not_the_call() {
             Payload::ToolResult {
                 call_id: CallId("toolu_1".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "boom".into(),
                     is_error: true,
                 },
@@ -227,6 +230,7 @@ fn distilled_wire_supersedes_raw() {
             Payload::ToolResult {
                 call_id: CallId("toolu_9".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "RAW-NOISE\nthe kept line".into(),
                     is_error: false,
                 },
@@ -302,6 +306,7 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
             Payload::ToolResult {
                 call_id: CallId("toolu_9".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "RAW-NOISE\nthe kept line".into(),
                     is_error: false,
                 },

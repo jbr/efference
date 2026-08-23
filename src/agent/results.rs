@@ -4,6 +4,7 @@ use super::*;
 
 pub(super) fn ok(content: String) -> RawResult {
     RawResult {
+        images: Vec::new(),
         content,
         is_error: false,
     }
@@ -11,6 +12,7 @@ pub(super) fn ok(content: String) -> RawResult {
 
 pub(super) fn err(content: String) -> RawResult {
     RawResult {
+        images: Vec::new(),
         content,
         is_error: true,
     }
@@ -93,6 +95,7 @@ pub(super) fn unasked(call: &ToolCall) -> Payload {
     Payload::ToolResult {
         call_id: call.id.clone(),
         raw: RawResult {
+            images: Vec::new(),
             content: format!(
                 "not run — nothing is being asked of `{}` right now; continue with your task.",
                 call.name
@@ -110,6 +113,7 @@ pub(super) fn aborted(call: &ToolCall) -> Payload {
     Payload::ToolResult {
         call_id: call.id.clone(),
         raw: RawResult {
+            images: Vec::new(),
             content: "aborted by user".into(),
             is_error: true,
         },
@@ -147,6 +151,7 @@ pub(super) fn expansion_error(call: &ToolCall, message: &str) -> Payload {
     Payload::ToolResult {
         call_id: call.id.clone(),
         raw: RawResult {
+            images: Vec::new(),
             content: format!("not run — {message}"),
             is_error: true,
         },
@@ -165,6 +170,7 @@ pub(super) fn rejected(call: &ToolCall) -> Payload {
     Payload::ToolResult {
         call_id: call.id.clone(),
         raw: RawResult {
+            images: Vec::new(),
             content: "Not run — the user replied instead of approving; see their next message."
                 .into(),
             is_error: true,

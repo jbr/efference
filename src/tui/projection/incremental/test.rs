@@ -44,6 +44,7 @@ fn result(seq: u64, call_id: &str, output: &str) -> LogEntry {
         Payload::ToolResult {
             call_id: crate::log::CallId(call_id.to_string()),
             raw: RawResult {
+                images: Vec::new(),
                 content: output.to_string(),
                 is_error: false,
             },
@@ -185,6 +186,7 @@ fn a_raw_toggle_rebuilds_only_its_own_exchange() {
             Payload::ToolResult {
                 call_id: crate::log::CallId("call-1".into()),
                 raw: RawResult {
+                    images: Vec::new(),
                     content: "a\nb\nc".into(),
                     is_error: false,
                 },

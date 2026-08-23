@@ -210,6 +210,7 @@ impl Bash {
                 push_line_break(&mut content);
                 content.push_str("[aborted by user — process group killed]");
                 RawResult {
+                    images: Vec::new(),
                     content,
                     is_error: true,
                 }
@@ -299,7 +300,11 @@ fn render(combined: Vec<u8>, status: ExitStatus) -> RawResult {
     if content.is_empty() {
         content.push_str("(no output)");
     }
-    RawResult { content, is_error }
+    RawResult {
+        images: Vec::new(),
+        content,
+        is_error,
+    }
 }
 
 fn push_line_break(content: &mut String) {
@@ -310,6 +315,7 @@ fn push_line_break(content: &mut String) {
 
 fn error(content: impl Into<String>) -> RawResult {
     RawResult {
+        images: Vec::new(),
         content: content.into(),
         is_error: true,
     }
