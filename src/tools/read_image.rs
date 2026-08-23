@@ -42,8 +42,9 @@ impl ReadImage {
                 area: doubling long_edge roughly quadruples the cost. Body text is \
                 usually legible at the default; small icons and dense UI chrome may need \
                 a re-read at a larger long_edge (up to 2576). Sources are re-encoded to \
-                lossless webp (jpeg stays jpeg) when downscaled or non-native; \
-                JPEG/PNG/GIF/WebP pass through unchanged when they already fit.",
+                lossless webp (jpeg stays jpeg) whenever downscaled or in a non-API \
+                format; an image is passed through byte-identical only when it is \
+                already JPEG/PNG/GIF/WebP and needs no downscale.",
             "input_schema": {
                 "type": "object",
                 "properties": {
