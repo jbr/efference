@@ -51,7 +51,7 @@ fn long_edge_downscales_and_the_header_says_so() {
     assert_eq!(
         result.content,
         "56×34 image/webp, 4 visual tokens \
-         (downscaled from 100×60; re-read with a larger long_edge for more detail)"
+         (downscaled 0.56× from 100×60; re-read with a larger long_edge for more detail)"
     );
     assert_eq!((result.images[0].width, result.images[0].height), (56, 34));
 }

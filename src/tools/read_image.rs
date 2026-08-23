@@ -38,10 +38,12 @@ impl ReadImage {
             "name": NAME,
             "description": "Read an image file into context as an actual image you can see. \
                 The image is downscaled to fit `long_edge` before encoding, and the result \
-                header reports the realized size and visual-token cost. If fine detail is \
-                illegible at the default resolution, re-read with a larger long_edge \
-                (up to 2576). JPEG/PNG/GIF/WebP are sent natively; other common raster \
-                formats are transcoded.",
+                header reports the realized size and visual-token cost. Cost scales with \
+                area: doubling long_edge roughly quadruples the cost. Body text is \
+                usually legible at the default; small icons and dense UI chrome may need \
+                a re-read at a larger long_edge (up to 2576). Sources are re-encoded to \
+                lossless webp (jpeg stays jpeg) when downscaled or non-native; \
+                JPEG/PNG/GIF/WebP pass through unchanged when they already fit.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -90,8 +92,10 @@ impl ReadImage {
         );
         if (prepared.source_width, prepared.source_height) != (prepared.width, prepared.height) {
             content.push_str(&format!(
-                " (downscaled from {}×{}; re-read with a larger long_edge for more detail)",
-                prepared.source_width, prepared.source_height
+                " (downscaled {:.2}× from {}×{}; re-read with a larger long_edge for more detail)",
+                prepared.width as f64 / prepared.source_width as f64,
+                prepared.source_width,
+                prepared.source_height
             ));
         }
 
