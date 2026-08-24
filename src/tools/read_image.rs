@@ -10,17 +10,11 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 
 use crate::log::{RawResult, ResultImage};
-use crate::vision::{self, HIGH_RES_MAX_EDGE, HIGH_RES_MAX_TOKENS};
+use crate::vision::{self, DEFAULT_LONG_EDGE, HIGH_RES_MAX_EDGE, HIGH_RES_MAX_TOKENS};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 
 pub const NAME: &str = "read_image";
-
-/// The default long-edge cap. Deliberately below the high-resolution tier's
-/// native 2576: at 1568 a screenshot stays broadly legible at roughly a third
-/// of the native-cap token cost, and the escalation path is stated in the tool
-/// description — re-read larger when fine detail matters.
-const DEFAULT_LONG_EDGE: u32 = 1568;
 
 /// One 28-px patch is the smallest meaningful image; a lower `long_edge` is
 /// clamped up to it rather than erroring.

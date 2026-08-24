@@ -505,12 +505,20 @@ impl Exchange<'_> {
 }
 
 /// Fold a `CallToolResult` into the loop's [`RawResult`]. Text blocks land
-/// verbatim; non-text blocks land as placeholders naming what was withheld
-/// (the log stays a faithful record that *something* was there); a
-/// structured-only result lands as pretty JSON.
+/// verbatim; image blocks are realized through [`crate::vision::prepare`] into
+/// [`RawResult::images`], with a header line in the text reporting the realized
+/// size and visual-token cost (same shape as `read_image`'s); other non-text
+/// blocks — and images that fail to decode — land as placeholders naming what
+/// was withheld (the log stays a faithful record that *something* was there);
+/// a structured-only result lands as pretty JSON.
 pub(crate) fn render_result(result: CallToolResult) -> RawResult {
     let is_error = result.is_error.unwrap_or(false);
-    let mut parts: Vec<String> = result.content.iter().map(render_block).collect();
+    let mut images = Vec::new();
+    let mut parts: Vec<String> = result
+        .content
+        .iter()
+        .map(|block| render_block(block, &mut images))
+        .collect();
     if parts.is_empty()
         && let Some(structured) = &result.structured_content
     {
@@ -520,7 +528,7 @@ pub(crate) fn render_result(result: CallToolResult) -> RawResult {
         parts.push("(empty result)".to_string());
     }
     RawResult {
-        images: Vec::new(),
+        images,
         content: parts.join("\n\n"),
         is_error,
     }
@@ -547,15 +555,18 @@ fn describe_input_required(interim: &InputRequiredResult) -> String {
     }
 }
 
-fn render_block(block: &ContentBlock) -> String {
+fn render_block(block: &ContentBlock, images: &mut Vec<crate::log::ResultImage>) -> String {
     match block {
         ContentBlock::Text { text, .. } => text.clone(),
         ContentBlock::Image {
             mime_type, data, ..
-        } => format!(
-            "[image {mime_type} ({} base64 bytes) — not rendered]",
-            data.len()
-        ),
+        } => match realize_image(data, images) {
+            Ok(header) => header,
+            Err(e) => format!(
+                "[image {mime_type} ({} base64 bytes) — could not be rendered: {e}]",
+                data.len()
+            ),
+        },
         ContentBlock::Audio {
             mime_type, data, ..
         } => format!(
@@ -576,4 +587,44 @@ fn render_block(block: &ContentBlock) -> String {
             },
         },
     }
+}
+
+/// Decode a base64 image block, size it through [`crate::vision::prepare`] at
+/// the transcript default, push the realized [`ResultImage`], and return the
+/// header line the model reads alongside it. A server sends whatever
+/// resolution it likes; the same cap `read_image` defaults to is what keeps an
+/// unsolicited screenshot from costing native-tier tokens. There is no
+/// re-request knob here — the model cannot re-call an MCP tool "larger" — so
+/// the header reports the downscale without an escalation hint.
+fn realize_image(
+    data: &str,
+    images: &mut Vec<crate::log::ResultImage>,
+) -> Result<String, anyhow::Error> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.trim())?;
+    let prepared = crate::vision::prepare(
+        &bytes,
+        crate::vision::DEFAULT_LONG_EDGE,
+        crate::vision::HIGH_RES_MAX_TOKENS,
+    )?;
+    let mut header = format!(
+        "{}×{} {}, {} visual tokens",
+        prepared.width,
+        prepared.height,
+        prepared.media_type,
+        prepared.visual_tokens()
+    );
+    if (prepared.source_width, prepared.source_height) != (prepared.width, prepared.height) {
+        header.push_str(&format!(
+            " (downscaled from {}×{})",
+            prepared.source_width, prepared.source_height
+        ));
+    }
+    images.push(crate::log::ResultImage {
+        media_type: prepared.media_type.to_string(),
+        data: base64::engine::general_purpose::STANDARD.encode(&prepared.data),
+        width: prepared.width,
+        height: prepared.height,
+    });
+    Ok(header)
 }

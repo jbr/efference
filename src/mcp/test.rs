@@ -492,13 +492,24 @@ async fn live_cargo_mcp_stdio_mount_and_call() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
+/// An image block is realized into `RawResult::images` with a header line in
+/// the text; an undecodable one degrades to a placeholder naming the failure;
+/// a structured-only result lands as pretty JSON.
 #[test]
-fn multimodal_blocks_render_as_placeholders_and_structured_content_as_json() {
+fn image_blocks_realize_and_structured_content_renders_as_json() {
+    use base64::Engine;
+    let img = image::ImageBuffer::from_fn(100, 60, |x, y| {
+        image::Rgb([(x % 256) as u8, (y % 256) as u8, 128u8])
+    });
+    let mut png = Vec::new();
+    image::DynamicImage::ImageRgb8(img)
+        .write_with_encoder(image::codecs::png::PngEncoder::new(&mut png))
+        .unwrap();
     let result = CallToolResult {
         content: vec![
             mcplease::types::ContentBlock::text("plain"),
             mcplease::types::ContentBlock::Image {
-                data: "aGVsbG8=".into(),
+                data: base64::engine::general_purpose::STANDARD.encode(&png),
                 mime_type: "image/png".into(),
                 annotations: None,
                 meta: None,
@@ -507,8 +518,38 @@ fn multimodal_blocks_render_as_placeholders_and_structured_content_as_json() {
         ..CallToolResult::default()
     };
     let rendered = render_result(result);
-    assert!(rendered.content.starts_with("plain\n\n[image image/png"));
+    assert_eq!(
+        rendered.content,
+        "plain\n\n100×60 image/png, 12 visual tokens"
+    );
     assert!(!rendered.is_error);
+    assert_eq!(rendered.images.len(), 1);
+    assert_eq!(rendered.images[0].media_type, "image/png");
+    assert_eq!(
+        (rendered.images[0].width, rendered.images[0].height),
+        (100, 60)
+    );
+
+    // Not an image: `aGVsbG8=` decodes to "hello". The block degrades to a
+    // placeholder and nothing lands in `images`.
+    let undecodable = CallToolResult {
+        content: vec![mcplease::types::ContentBlock::Image {
+            data: "aGVsbG8=".into(),
+            mime_type: "image/png".into(),
+            annotations: None,
+            meta: None,
+        }],
+        ..CallToolResult::default()
+    };
+    let rendered = render_result(undecodable);
+    assert!(
+        rendered
+            .content
+            .starts_with("[image image/png (8 base64 bytes) — could not be rendered:"),
+        "got {:?}",
+        rendered.content
+    );
+    assert!(rendered.images.is_empty());
 
     let structured_only = CallToolResult {
         structured_content: Some(json!({ "answer": 42 })),

@@ -22,6 +22,12 @@ use image::{DynamicImage, ImageFormat};
 pub const HIGH_RES_MAX_EDGE: u32 = 2576;
 pub const HIGH_RES_MAX_TOKENS: u32 = 4784;
 
+/// The default long-edge cap for images entering the transcript. Deliberately
+/// below the high-resolution tier's native 2576: at 1568 a screenshot stays
+/// broadly legible at roughly a third of the native-cap token cost, and the
+/// escalation path is a re-read at a larger edge when fine detail matters.
+pub const DEFAULT_LONG_EDGE: u32 = 1568;
+
 /// Visual tokens for an image at `width × height`: one per 28×28-pixel patch,
 /// `⌈w/28⌉ × ⌈h/28⌉`.
 pub fn visual_tokens(width: u32, height: u32) -> u32 {

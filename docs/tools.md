@@ -149,9 +149,15 @@ the name and arguments as `{"name", "arguments"}`, deserializes to the typed
 `ToolEnum` via `serde_json::from_value`, and calls `Dispatch::call` against the
 shared state with a `RequestContext` naming efference and declaring no client
 capabilities (no wire, so the context that would ride in a request's `_meta` is
-handed over directly). The resulting `CallToolResult` is folded to text by the
-same renderer the connected providers use, so an embedded tool that grows a
-structured or multimodal result reads the same way as a remote one. Any failure
+handed over directly). The resulting `CallToolResult` is folded by the same
+renderer the connected providers use (`render_result` in `src/mcp.rs`): text
+blocks land verbatim; image blocks are realized through the `src/vision.rs`
+engine at `read_image`'s default long edge — sized, encoded once, and stored in
+the result's `images` alongside a header line reporting realized size and
+visual-token cost; audio and binary-resource blocks land as placeholders naming
+what was withheld, as does an image that fails to decode. So an embedded tool
+that grows a structured or multimodal result reads the same way as a remote
+one. Any failure
 (bad input or tool error) becomes an `is_error` result so the `tool_use` always
 gets exactly one paired `tool_result` — the API rejects orphans.
 
