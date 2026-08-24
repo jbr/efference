@@ -627,6 +627,35 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 None => fail(conn, ErrorCode::NotFound, "no log entry with that seq"),
             }
         })
+        // One logged result image's bytes (docs/control-api.md): the dereference target
+        // for the image references every entry view carries — views omit an image's
+        // base64 `data` (entry_view.rs), and a client fetches the pixels here instead,
+        // where they are HTTP-cached rather than re-shipped with every window or
+        // replay. Raw bytes under the stored media type, so the URL works directly as
+        // an `<img src>`; immutable like any single-entry read.
+        .get("/v1/log/:seq/images/:idx", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return missing_state(conn);
+            };
+            let Some(seq) = conn.param("seq").and_then(|s| s.parse::<u64>().ok()) else {
+                return fail(conn, ErrorCode::BadRequest, "log seq must be an integer");
+            };
+            let Some(idx) = conn.param("idx").and_then(|s| s.parse::<usize>().ok()) else {
+                return fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    "image index must be an integer",
+                );
+            };
+            match shared.image_bytes(seq, idx) {
+                Some((media_type, bytes)) => immutable(conn)
+                    .with_response_header("content-type", media_type)
+                    .with_status(200)
+                    .with_body(bytes)
+                    .halt(),
+                None => fail(conn, ErrorCode::NotFound, "no image at that seq and index"),
+            }
+        })
         // One tool call by the `call_id` the log, the gate, and `tool_output` frames all
         // already carry. A call is embedded in an `Assistant` entry rather than being one,
         // which is why it needs an address of its own (docs/control-api.md).

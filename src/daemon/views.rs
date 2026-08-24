@@ -220,21 +220,45 @@ impl Shared {
         })
     }
 
-    /// The selected window of the log, as a JSON array (docs/control-api.md).
+    /// The selected window of the log, as a JSON array (docs/control-api.md). Each
+    /// element is the entry's [`EntryView`] — image `data` omitted, resolvable through
+    /// [`Self::image_bytes`].
     pub(super) fn log_json(&self, select: &LogSelect) -> String {
         let log = self.log.lock().unwrap();
-        serde_json::to_string(window(log.entries(), select)).unwrap_or_else(|_| "[]".into())
+        let views: Vec<_> = window(log.entries(), select)
+            .iter()
+            .map(EntryView)
+            .collect();
+        serde_json::to_string(&views).unwrap_or_else(|_| "[]".into())
     }
 
     /// One entry by `seq`, or `None` if the log has no such position.
     ///
     /// The general form of reference resolution: every reference a windowed client can
     /// hold is ultimately to an entry or to something inside one. Immutably cacheable —
-    /// see [`Self::tool_call_json`].
+    /// see [`Self::tool_call_json`]. Served as the [`EntryView`], like every
+    /// control-channel read of an entry.
     pub(super) fn entry_json(&self, seq: u64) -> Option<String> {
         let log = self.log.lock().unwrap();
         let entry = log.entries().iter().find(|e| e.seq == seq)?;
-        serde_json::to_string(entry).ok()
+        serde_json::to_string(&EntryView(entry)).ok()
+    }
+
+    /// The decoded bytes of one logged result image, addressed by its entry's `seq` and
+    /// its index within that result — the dereference target for the image references
+    /// the views carry (`GET /log/:seq/images/:idx`, docs/control-api.md).
+    pub(super) fn image_bytes(&self, seq: u64, idx: usize) -> Option<(String, Vec<u8>)> {
+        use base64::Engine;
+        let log = self.log.lock().unwrap();
+        let entry = log.entries().iter().find(|e| e.seq == seq)?;
+        let Payload::ToolResult { raw, .. } = &entry.payload else {
+            return None;
+        };
+        let image = raw.images.get(idx)?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&image.data)
+            .ok()?;
+        Some((image.media_type.clone(), bytes))
     }
 
     /// One tool call by its `call_id`, with the `seq` of the entry carrying it.

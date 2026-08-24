@@ -242,7 +242,12 @@ pub struct ResultImage {
     /// `image/webp`.
     pub media_type: String,
     /// Standard base64 of the encoded image, stored exactly as it will appear
-    /// in the wire block's `source.data`.
+    /// in the wire block's `source.data`. `#[serde(default)]` because the
+    /// control-channel views omit this field (the bytes are fetched from
+    /// `GET /log/:seq/images/:idx` instead — `daemon/entry_view.rs`,
+    /// docs/control-api.md), and a client parsing a view with this shared type
+    /// reads it back empty. The log itself always writes it.
+    #[serde(default)]
     pub data: String,
     pub width: u32,
     pub height: u32,

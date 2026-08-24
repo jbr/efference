@@ -158,13 +158,14 @@ pub(crate) struct Frame {
 
 impl Frame {
     /// A durable log frame. The only constructor that sets `seq`, and the only one
-    /// whose `data` is byte-identical to a `GET /log` element.
+    /// whose `data` is byte-identical to a `GET /log` element — both serialize the
+    /// entry's [`EntryView`] (image `data` omitted; entry_view.rs).
     pub(crate) fn log(entry: &LogEntry) -> Self {
         Self {
             class: Class::Log,
             kind: payload_kind(&entry.payload),
             seq: Some(entry.seq),
-            data: raw(entry),
+            data: raw(&EntryView(entry)),
             render: None,
         }
     }

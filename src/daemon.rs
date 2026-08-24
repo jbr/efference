@@ -625,6 +625,7 @@ mod config_edits;
 // answers with. `GateMoved` is still unconstructed: it belongs to the
 // resource-renamed gate.
 #[allow(dead_code)]
+mod entry_view;
 mod errors;
 // The file viewer's read surface (docs/web-bind.md), mounted on the TCP spawn only.
 mod files;
@@ -649,6 +650,7 @@ pub(crate) use watch::refresh_and_emit;
 
 use approvals::Pending;
 use config_edits::{PendingProposal, session_visible_notice};
+use entry_view::EntryView;
 use errors::{ErrorBody, ErrorCode, fail, respond};
 use frames::{Frame, Topic};
 pub use metrics::RequestOrigin;

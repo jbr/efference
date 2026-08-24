@@ -91,6 +91,9 @@ bytes inline makes projection a copy of stored data: no re-read of a file that
 may have changed, no re-encode whose output could drift across codec versions —
 encoding happens once, at tool-run time. `images` is defaulted and skipped when
 empty, so text-only results and pre-existing logs serialize byte-identically.
+(The log file and the wire both keep `data` inline; the control channel is the
+one surface that does not — its entry views omit it and serve the bytes at
+`GET /log/:seq/images/:idx` instead — see [control-api.md](control-api.md).)
 On the wire, image placement is provider-conditional (`ImagePlacement`, chosen
 from the provider once at boot and fixed for the session — `project_with`
 takes it as its second input, so projection stays deterministic: same log +

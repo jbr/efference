@@ -200,3 +200,79 @@ async fn a_tool_call_resolves_by_its_call_id() {
     conn.assert_status(404);
     conn.assert_json_body_with(|body: &Value| assert_eq!(body["code"], "not_found"));
 }
+
+/// A tool result carrying one image whose decoded bytes are `IMAGE_BYTES`.
+fn result_with_image() -> Payload {
+    use base64::Engine;
+    Payload::ToolResult {
+        call_id: CallId("toolu_img".into()),
+        raw: crate::log::RawResult {
+            content: "2×2 image/webp, 1 visual tokens".into(),
+            is_error: false,
+            images: vec![crate::log::ResultImage {
+                media_type: "image/webp".into(),
+                data: base64::engine::general_purpose::STANDARD.encode(IMAGE_BYTES),
+                width: 2,
+                height: 2,
+            }],
+        },
+        wire: crate::log::WireState::Raw,
+    }
+}
+
+const IMAGE_BYTES: &[u8] = &[0x52, 0x49, 0x46, 0x46, 0x00, 0x01, 0x02, 0x03];
+
+/// The log reads serve entries as views — a result image's base64 `data` never rides
+/// `GET /log` or `GET /log/:seq`; the layout metadata does, and the bytes resolve
+/// through `GET /log/:seq/images/:idx` (entry_view.rs, docs/control-api.md).
+#[tokio::test]
+async fn log_reads_reference_images_instead_of_inlining_them() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    shared.append(1, user("look at this")).unwrap();
+    shared.append(1, result_with_image()).unwrap();
+    let app = test_server(&shared).await;
+
+    for path in ["/v1/log", "/v1/log/1"] {
+        let conn = app.get(path).await;
+        let body = conn.body();
+        assert!(
+            !body.contains("UklGR"),
+            "base64 data must not ride {path}: {body}"
+        );
+        assert!(body.contains(r#""media_type":"image/webp""#), "{path}");
+        assert!(body.contains(r#""width":2"#), "{path}");
+    }
+}
+
+/// `GET /log/:seq/images/:idx` answers with the decoded bytes under the stored media
+/// type, immutably cacheable like any single-entry read; every miss shape is a 404 and
+/// malformed addresses are 400s.
+#[tokio::test]
+async fn an_image_resolves_by_seq_and_index() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    shared.append(1, user("look at this")).unwrap();
+    shared.append(1, result_with_image()).unwrap();
+    let app = test_server(&shared).await;
+
+    let conn = app.get("/v1/log/1/images/0").await;
+    conn.assert_ok();
+    conn.assert_header("content-type", "image/webp");
+    conn.assert_header_with("cache-control", |value| {
+        assert!(format!("{value:?}").contains("immutable"));
+    });
+    assert_eq!(conn.body_bytes(), IMAGE_BYTES, "decoded, not base64");
+
+    // Misses: an index past the result's images, an entry that is not a tool result,
+    // and a seq past the head — all the same 404.
+    for path in [
+        "/v1/log/1/images/1",
+        "/v1/log/0/images/0",
+        "/v1/log/9/images/0",
+    ] {
+        let conn = app.get(path).await;
+        conn.assert_status(404);
+        conn.assert_json_body_with(|body: &Value| assert_eq!(body["code"], "not_found"));
+    }
+    app.get("/v1/log/x/images/0").await.assert_status(400);
+    app.get("/v1/log/1/images/-1").await.assert_status(400);
+}

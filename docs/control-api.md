@@ -336,6 +336,26 @@ afterward — so a returning client never refetches an entry it has seen. This i
 a property a log-*window* read cannot offer, and it is the larger reason these
 routes exist; reference resolution is the smaller one.
 
+Every read that serves an entry — the window, this route, and a `log` frame's
+`data` — serializes the same **entry view** (`daemon/entry_view.rs`): the entry
+verbatim, except that a result image's base64 `data` is omitted. A result image
+appears as `{media_type, width, height}` — enough to lay out before fetching —
+and the bytes resolve through the route below. This keeps a multi-megabyte
+image from riding every window, replay, and SSE frame; the log file and the
+wire projection keep the bytes inline
+([log-and-projection.md](log-and-projection.md)).
+
+#### `GET /log/:seq/images/:idx`
+The decoded bytes of one logged result image — the dereference target for the
+image references entry views carry. `:seq` addresses the `ToolResult` entry,
+`:idx` the image's position in its `images` array. The response is the stored
+bytes under the stored media type (`Content-Type: image/webp` etc.), so the URL
+works directly as an `<img src>` in the web client (the session cookie rides
+along ambiently) and as a byte source for a TUI emitting a graphics-protocol
+escape. Immutably cacheable, for the same reason as `/log/:seq`. `404
+not_found` when the seq names no entry, the entry is not a tool result, or the
+index is past its images.
+
 #### `GET /tool_calls/:call_id`
 The tool call with that id, and the `seq` of the entry carrying it:
 
