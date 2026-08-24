@@ -30,6 +30,7 @@ pub(crate) mod gallery;
 pub(crate) mod grid;
 #[cfg(test)]
 pub(crate) mod harness;
+pub(crate) mod image;
 pub(crate) mod keyboard;
 pub(crate) mod markdown;
 pub(crate) mod mouse;
@@ -39,6 +40,7 @@ pub(crate) mod render_context;
 pub(crate) mod render_document;
 pub(crate) mod render_frame;
 pub(crate) mod render_help_screen;
+pub(crate) mod render_image;
 pub(crate) mod render_loading_bar;
 pub(crate) mod render_node;
 pub(crate) mod render_scrollbar;
@@ -114,8 +116,38 @@ pub(crate) enum TuiEvent {
     /// "is something happening" signal graduated Esc reads to choose pause-vs-swallow
     /// (docs/tui.md) — reliable through a silent tool, unlike streaming deltas.
     Running(bool),
+    /// A result image's bytes came back from the control channel, decoded — or
+    /// didn't, with the reason (docs/tui.md). Folded into the
+    /// [`ImageStore`](image::ImageStore); the transcript's reservation for it was
+    /// sized from metadata and does not change, so this repaints without a
+    /// reproject.
+    Image {
+        seq: u64,
+        idx: usize,
+        image: Result<::image::DynamicImage, String>,
+    },
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
+}
+
+/// How the TUI picks its graphics protocol for result images (docs/tui.md).
+/// Detection is a startup act — `Picker::from_query_stdio` runs once in
+/// `ui_loop`, before the crossterm reader thread takes stdin — and tmux makes
+/// detection lie in both directions (its DA1 masks a kitty-capable outer
+/// terminal; passthrough can make OSC 1337 work with nothing detectable saying
+/// so), so the override ships in the same change as detection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ImageMode {
+    /// Query the terminal; fall back to halfblocks when nothing answers.
+    #[default]
+    Auto,
+    /// Force the kitty graphics protocol (a tmux-masked kitty outer terminal).
+    Kitty,
+    /// Force iTerm2's OSC 1337 (env identification is honestly weaker than
+    /// kitty's query fence, so forcing it is sometimes the truth detection missed).
+    Iterm2,
+    /// No image rendering: an image renders as its one-line reference.
+    Off,
 }
 
 /// The operator's pace state, as surfaced by `GET /state`'s `pace`

@@ -372,6 +372,10 @@ pub(crate) enum Command {
         /// lists the available ones. Defaults to "Catppuccin Frappe".
         #[arg(long, env = "EFFERENCE_THEME")]
         theme: Option<String>,
+        /// Result-image rendering: "auto" queries the terminal, "kitty"/"iterm2"
+        /// force a protocol detection missed (tmux), "off" disables.
+        #[arg(long, env = "EFFERENCE_IMAGES", value_enum, default_value_t)]
+        images: ImagesArg,
         /// Time each paint and print the distribution (p50/p90/p99/max, and how
         /// many frames ran over the 30ms tick) on exit. Development
         /// instrumentation for the streaming render.
@@ -392,6 +396,10 @@ pub(crate) enum Command {
         /// "Catppuccin Frappe".
         #[arg(long, env = "EFFERENCE_THEME")]
         theme: Option<String>,
+        /// Result-image rendering: "auto" queries the terminal, "kitty"/"iterm2"
+        /// force a protocol detection missed (tmux), "off" disables.
+        #[arg(long, env = "EFFERENCE_IMAGES", value_enum, default_value_t)]
+        images: ImagesArg,
     },
     /// Element gallery: launch the TUI on a fixed "one of each" transcript (rich
     /// markdown, a shell call, a colored diff, a collapsed long result, an error, a
@@ -402,6 +410,10 @@ pub(crate) enum Command {
         /// "Catppuccin Frappe".
         #[arg(long, env = "EFFERENCE_THEME")]
         theme: Option<String>,
+        /// Result-image rendering: "auto" queries the terminal, "kitty"/"iterm2"
+        /// force a protocol detection missed (tmux), "off" disables.
+        #[arg(long, env = "EFFERENCE_IMAGES", value_enum, default_value_t)]
+        images: ImagesArg,
         /// Also play a scripted live stream into the gallery on a timer: a long
         /// file write whose JSON input arrives fragment by fragment, then a command
         /// whose output streams. Drives the render behaviours that only exist at
@@ -630,6 +642,35 @@ pub(crate) enum Command {
         #[arg(long = "no-cost")]
         no_cost: bool,
     },
+}
+
+/// The `--images` value for the TUI verbs — the CLI face of
+/// [`efference::tui::ImageMode`] (docs/tui.md). Detection lies under tmux in
+/// both directions, so the override covers both: forcing a protocol detection
+/// missed, and turning off one it wrongly claimed.
+#[derive(Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub(crate) enum ImagesArg {
+    /// Query the terminal; halfblocks when nothing answers.
+    #[default]
+    Auto,
+    /// Force the kitty graphics protocol.
+    Kitty,
+    /// Force iTerm2's OSC 1337.
+    Iterm2,
+    /// No image rendering — an image shows as its one-line reference.
+    Off,
+}
+
+impl From<ImagesArg> for efference::tui::ImageMode {
+    fn from(arg: ImagesArg) -> Self {
+        use efference::tui::ImageMode;
+        match arg {
+            ImagesArg::Auto => ImageMode::Auto,
+            ImagesArg::Kitty => ImageMode::Kitty,
+            ImagesArg::Iterm2 => ImageMode::Iterm2,
+            ImagesArg::Off => ImageMode::Off,
+        }
+    }
 }
 
 /// A spotter [`Stance`](efference::log::Stance) as a `--stance` filter value for the

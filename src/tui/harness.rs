@@ -89,6 +89,9 @@ impl Screenplay<'static> {
         let (pace_tx, pace_rx) = unbounded_channel();
         let (interrupt_tx, interrupt_rx) = unbounded_channel();
         let (sidebar_tx, sidebar_rx) = unbounded_channel();
+        // The far end is dropped: a scenario's entries carry their image bytes
+        // inline (the offline shape), so nothing here fetches.
+        let (images_tx, _) = unbounded_channel();
         let state = InteractiveState::new(
             event_rx,
             submit_tx,
@@ -96,6 +99,7 @@ impl Screenplay<'static> {
             pace_tx,
             interrupt_tx,
             sidebar_tx,
+            images_tx,
             rc,
             theme,
         );

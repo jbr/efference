@@ -134,6 +134,37 @@ impl Screenplay<'_> {
         })
     }
 
+    /// Give the scenario the deterministic halfblocks image capability
+    /// (docs/tui.md — snapshots pin halfblocks; the pixel protocols stuff
+    /// escape blobs into cell symbols, which no grid should carry).
+    pub(crate) fn halfblock_images(&mut self) -> &mut Self {
+        self.state
+            .images
+            .set_picker(Some(ratatui_image::picker::Picker::halfblocks()));
+        self
+    }
+
+    /// A committed tool result carrying images (docs/tui.md). An image with
+    /// empty `data` models the live entry view — a reference whose bytes are
+    /// still a fetch away — and one with inline base64 models an offline log,
+    /// which decodes at the event fold and renders immediately.
+    pub(crate) fn tool_result_images(
+        &mut self,
+        call_id: &str,
+        content: &str,
+        images: Vec<crate::log::ResultImage>,
+    ) -> &mut Self {
+        self.commit(Payload::ToolResult {
+            call_id: CallId(call_id.into()),
+            raw: RawResult {
+                images,
+                content: content.into(),
+                is_error: false,
+            },
+            wire: WireState::Raw,
+        })
+    }
+
     /// Mark the agent blocked on approval for `call_id` — the pending gate the
     /// daemon's `/state` poll surfaces, driven through the real `Gate` event so the
     /// inline gate renders exactly as in the app (docs/tui.md).

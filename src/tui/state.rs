@@ -225,6 +225,12 @@ pub(super) struct ViewportState {
     pub cursor_pos: Option<Position>,
     pub clicked_position: Option<Position>,
     pub cached_layout: Option<DocumentLayoutCache>,
+    /// The scroll offset the last completed paint used. `render_frame` compares
+    /// it against the settled offset to know the viewport is **in motion** this
+    /// frame — the signal that swaps a retransmit-per-move image protocol
+    /// (iTerm2, sixel) to its flicker-free halfblocks slice while scrolling
+    /// (docs/tui.md).
+    pub last_painted_scroll: u16,
     /// The document height as of the last completed walk, kept **after**
     /// [`cached_layout`](Self::cached_layout) is invalidated.
     ///
@@ -347,6 +353,11 @@ pub(super) struct LayoutState {
     /// syntax highlighting runs. [`row_visible`](InteractiveState::row_visible) is
     /// the single place that reads it.
     pub measuring: bool,
+    /// True while this frame's scroll offset differs from the last painted one —
+    /// the viewport is moving. Image rendering reads it to hold the halfblocks
+    /// slice under protocols whose native render flashes on every reposition
+    /// (docs/tui.md); a settled follow-up frame restores the crisp render.
+    pub scroll_in_motion: bool,
 }
 
 /// Main interactive state - composes all UI state
@@ -387,6 +398,14 @@ pub(super) struct InteractiveState<'a> {
     /// Computed syntax highlighting, kept between frames so a visible multi-screen
     /// code block is parsed once rather than on every paint (docs/tui.md).
     pub highlight_memo: super::render_code_block::HighlightMemo,
+
+    /// Every result image the transcript references — fetch state, decoded
+    /// pixels, encodings — plus the terminal's graphics capability
+    /// (docs/tui.md). The transcript's image nodes are references into this.
+    pub images: super::image::ImageStore,
+    /// Requests a result image's bytes from the tokio side, which GETs
+    /// `/log/:seq/images/:idx` and answers with a [`TuiEvent::Image`].
+    pub images_tx: UnboundedSender<super::image::ImageKey>,
 
     /// Paint durations, when `--frame-cost` asked for them (`frame_cost.rs`).
     /// `None` is the normal case and costs nothing.

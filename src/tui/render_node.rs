@@ -223,6 +223,19 @@ impl<'a> InteractiveState<'a> {
                 self.layout.pos.y += 1;
             }
 
+            DocumentNode::Image {
+                seq,
+                idx,
+                media_type,
+                width,
+                height,
+            } => {
+                // Block element: position at indent; the image renderer owns the
+                // cursor advance (its height is the reserved footprint).
+                self.layout.pos.x = self.layout.indent;
+                self.render_image_node(*seq, *idx, media_type, *width, *height, buf);
+            }
+
             DocumentNode::HorizontalRule => {
                 // Block element: unconditionally position at indent
                 self.layout.pos.x = self.layout.indent;

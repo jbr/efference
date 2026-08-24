@@ -16,6 +16,7 @@ pub(super) struct Senders {
     pub pace: tokio::sync::mpsc::UnboundedSender<PaceCmd>,
     pub interrupt: tokio::sync::mpsc::UnboundedSender<crate::frontend::Interrupt>,
     pub sidebar: tokio::sync::mpsc::UnboundedSender<SidebarCmd>,
+    pub images: tokio::sync::mpsc::UnboundedSender<crate::tui::image::ImageKey>,
 }
 
 /// The blocking crossterm UI loop. Owns the terminal, the [`InteractiveState`],
@@ -26,6 +27,8 @@ pub(super) fn ui_loop(
     events: Receiver<TuiEvent>,
     senders: Senders,
     theme_name: String,
+    // How to pick the graphics protocol for result images (docs/tui.md).
+    images: ImageMode,
     // `Some(label)` runs the loop as a read-only view of a recorded log
     // (docs/tui.md): no composer, no loop verbs, nothing that can send.
     viewing: Option<String>,
@@ -91,6 +94,7 @@ pub(super) fn ui_loop(
         senders.pace,
         senders.interrupt,
         senders.sidebar,
+        senders.images,
         render_context,
         theme,
     );
@@ -100,6 +104,30 @@ pub(super) fn ui_loop(
     if frame_cost {
         state.frame_cost = Some(Default::default());
     }
+
+    // Detect the graphics protocol **before** the reader thread spawns: the
+    // query writes escapes and reads their answers off stdin, which the reader
+    // is about to own for the session (docs/tui.md — detection is a startup
+    // act; capability is then a plain parameter of rendering).
+    let picker = build_picker(images);
+    if let Some(picker) = &picker {
+        // Name the resolved protocol on the status line at launch — detection
+        // is invisible otherwise, and "which protocol did auto pick" is the
+        // first question when an image renders wrong (docs/tui.md).
+        let font = picker.font_size();
+        state.set_debug_message(format!(
+            "images: {:?} · font {}×{} — ↑ controls",
+            picker.protocol_type(),
+            font.width,
+            font.height,
+        ));
+    }
+    state.images.set_picker(picker);
+    // Aspect-fit padding takes the theme's background so it disappears into
+    // the transcript (iTerm2 renders the default transparent pad as opaque).
+    state
+        .images
+        .set_theme_background(state.theme.document_bg_style.bg);
 
     // Event reader thread: blocks on crossterm reads, forwards to a channel.
     let (event_tx, event_rx) = crossbeam_channel::unbounded();
@@ -240,6 +268,47 @@ pub(super) fn ui_loop(
         eprintln!("{summary}");
     }
     result
+}
+
+/// The terminal's graphics capability per the operator's [`ImageMode`]
+/// (docs/tui.md). `Auto` trusts the in-band query — kitty's query-plus-DA1
+/// fence, iTerm2's env identification — and falls back to halfblocks, which any
+/// color terminal can show. A forced protocol still runs the query for the
+/// font-size-in-pixels answer (it maps image pixels to cells); only when that
+/// fails too does a stock 8×16 stand in.
+fn build_picker(mode: ImageMode) -> Option<ratatui_image::picker::Picker> {
+    use ratatui_image::picker::{Picker, ProtocolType};
+    let forced = match mode {
+        ImageMode::Off => return None,
+        ImageMode::Auto => None,
+        ImageMode::Kitty => Some(ProtocolType::Kitty),
+        ImageMode::Iterm2 => Some(ProtocolType::Iterm2),
+    };
+    // The fallback carries `halfblocks()`'s assumed 10×20 font; a forced
+    // protocol overrides the protocol choice but keeps whichever font answer
+    // the query managed.
+    let mut picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
+    if let Some(protocol) = forced {
+        picker.set_protocol_type(protocol);
+    } else if identifies_as_iterm2() {
+        // iTerm2 answers the capability queries above its own protocol's weight
+        // class — DA1 advertises sixel, and 3.5+ answers the kitty query with a
+        // partial implementation — so query-ranked detection lands on a protocol
+        // iTerm2 then renders as garbage (observed live, 2026-08-23: sixel
+        // control characters as red text). OSC 1337 is its native, 24-bit
+        // protocol; on auto, an iTerm2-identified terminal always gets it.
+        picker.set_protocol_type(ProtocolType::Iterm2);
+    }
+    Some(picker)
+}
+
+/// Whether the environment identifies the terminal as iTerm2 — the same
+/// signals the crate's own env fallback reads (`TERM_PROGRAM`, and
+/// `LC_TERMINAL`, which iTerm2 forwards over ssh).
+fn identifies_as_iterm2() -> bool {
+    [std::env::var("TERM_PROGRAM"), std::env::var("LC_TERMINAL")]
+        .iter()
+        .any(|v| matches!(v.as_deref(), Ok(term) if term.contains("iTerm")))
 }
 
 /// One paint, timed when `--frame-cost` asked for it. The measurement wraps the

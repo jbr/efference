@@ -15,6 +15,7 @@ impl<'a> InteractiveState<'a> {
         pace_tx: UnboundedSender<PaceCmd>,
         interrupt_tx: UnboundedSender<Interrupt>,
         sidebar_tx: UnboundedSender<SidebarCmd>,
+        images_tx: UnboundedSender<crate::tui::image::ImageKey>,
         render_context: RenderContext,
         theme: InteractiveTheme,
     ) -> Self {
@@ -40,6 +41,7 @@ impl<'a> InteractiveState<'a> {
                 scrollbar_dragging: false,
                 keyboard_cursor: KeyboardCursor::VirtualTop,
                 stuck_to_bottom: true,
+                last_painted_scroll: 0,
                 last_document_height: 0,
                 input_height: 1,
                 gate_height: 0,
@@ -57,6 +59,7 @@ impl<'a> InteractiveState<'a> {
                 area: Rect::default(),
                 blockquote_markers: Vec::new(),
                 measuring: false,
+                scroll_in_motion: false,
             },
             ui_mode: UiMode::Normal,
             ui: UiState {
@@ -78,6 +81,8 @@ impl<'a> InteractiveState<'a> {
             events,
             viewing: None,
             highlight_memo: Default::default(),
+            images: Default::default(),
+            images_tx,
             frame_cost: None,
             composer: Composer::new(),
             clipboard: TextClipboard::new(),
@@ -291,6 +296,10 @@ impl<'a> InteractiveState<'a> {
         self.render_context.set_theme_name(theme_name)?;
         self.theme = InteractiveTheme::from_render_context(&self.render_context);
         self.current_theme_name = Some(theme_name.to_string());
+        // Image padding is theme-background-colored (docs/tui.md); re-encode so
+        // it follows the new background rather than keeping the old theme's.
+        self.images
+            .set_theme_background(self.theme.document_bg_style.bg);
         Ok(())
     }
 }

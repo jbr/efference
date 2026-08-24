@@ -100,13 +100,16 @@ impl CallIndex {
         }
     }
 
+    /// A call's committed result, with the `seq` of the entry carrying it — the
+    /// address a result image's bytes resolve through (docs/control-api.md).
     fn result<'l>(
         &self,
         log: &'l [LogEntry],
         call_id: &str,
-    ) -> Option<(&'l RawResult, &'l WireState)> {
-        match &log.get(*self.result_at.get(call_id)?)?.payload {
-            Payload::ToolResult { raw, wire, .. } => Some((raw, wire)),
+    ) -> Option<(u64, &'l RawResult, &'l WireState)> {
+        let entry = log.get(*self.result_at.get(call_id)?)?;
+        match &entry.payload {
+            Payload::ToolResult { raw, wire, .. } => Some((entry.seq, raw, wire)),
             _ => None,
         }
     }
@@ -199,8 +202,8 @@ pub(crate) fn entry_nodes(
                     if is_pending {
                         nodes.push(gate_affordance());
                     }
-                    if let Some((raw, wire)) = result {
-                        nodes.push(result_entry(call, raw, wire, view));
+                    if let Some((seq, raw, wire)) = result {
+                        nodes.push(result_entry(call, seq, raw, wire, view));
                         // The distiller's note is *about* the result, not part of it
                         // — the same rung distinction the spotter's verdict gets — so
                         // it is its own entry rather than a trailing line boxed in
@@ -343,6 +346,7 @@ fn call_entry(call: &ToolCall) -> DocumentNode<'static> {
 /// every streamed token triggers.
 fn result_entry(
     call: &ToolCall,
+    seq: u64,
     raw: &RawResult,
     wire: &WireState,
     view: &ViewState,
@@ -370,7 +374,7 @@ fn result_entry(
     //
     // The note still shows either way: it is the distiller's account of the output,
     // and it is true regardless of which form of the output is on screen.
-    let (body, size) = match wire {
+    let (mut body, size) = match wire {
         WireState::Distilled { keep, .. } if !show_raw => {
             let distillate = crate::project::distillate(&raw.content, keep);
             let kept = distillate.numbered_lines();
@@ -410,6 +414,26 @@ fn result_entry(
             let size = line_count(&body);
             (body, size)
         }
+    };
+
+    // Images ride below the text body, in every view — they are not triaged
+    // lines, and the wire projects them regardless of the text's wire state
+    // (the web client shows them unconditionally for the same reason). The
+    // node is a *reference* (docs/tui.md): the bytes and their encodings live
+    // in the state's image store, so this stays a pure function of the entry.
+    for (idx, image) in raw.images.iter().enumerate() {
+        body.push(DocumentNode::image(
+            seq,
+            idx,
+            image.media_type.clone(),
+            image.width,
+            image.height,
+        ));
+    }
+    let size = match raw.images.len() {
+        0 => size,
+        1 => format!("{size} · 1 image"),
+        n => format!("{size} · {n} images"),
     };
 
     let mut header = vec![Span {

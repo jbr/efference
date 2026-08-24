@@ -50,6 +50,64 @@ fn result(seq: u64, call_id: &str, content: &str, is_error: bool, wire: WireStat
     )
 }
 
+/// A committed tool result carrying one inline image — the offline shape, the
+/// bytes riding the entry the way `persist::load` delivers them (docs/tui.md).
+fn image_result(seq: u64, call_id: &str, content: &str) -> LogEntry {
+    entry(
+        seq,
+        Payload::ToolResult {
+            call_id: CallId(call_id.into()),
+            raw: RawResult {
+                images: vec![test_card()],
+                content: content.into(),
+                is_error: false,
+            },
+            wire: WireState::Raw,
+        },
+    )
+}
+
+/// A generated 600×400 test card: a horizontal hue sweep fading toward black at
+/// the bottom, with a white ring. The gradients show color depth, the ring
+/// shows aspect handling — a circle is where a wrong font-size guess becomes an
+/// ellipse.
+fn test_card() -> crate::log::ResultImage {
+    use base64::Engine;
+    let (w, h) = (600u32, 400u32);
+    let hue = |t: f32, dim: f32| {
+        let f = |n: f32| {
+            let k = (n + t * 6.0) % 6.0;
+            (1.0 - k.min(4.0 - k).clamp(0.0, 1.0)) * dim
+        };
+        [
+            (f(5.0) * 255.0) as u8,
+            (f(3.0) * 255.0) as u8,
+            (f(1.0) * 255.0) as u8,
+            255,
+        ]
+    };
+    let img = ::image::RgbaImage::from_fn(w, h, |x, y| {
+        let (dx, dy) = (x as f32 - 300.0, y as f32 - 200.0);
+        let dist = (dx * dx + dy * dy).sqrt();
+        if (dist - 150.0).abs() < 5.0 {
+            ::image::Rgba([255, 255, 255, 255])
+        } else {
+            let dim = 1.0 - 0.7 * (y as f32 / h as f32);
+            ::image::Rgba(hue(x as f32 / w as f32, dim))
+        }
+    });
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    ::image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut bytes, ::image::ImageFormat::Png)
+        .expect("png-encoding an in-memory buffer");
+    crate::log::ResultImage {
+        media_type: "image/png".into(),
+        data: base64::engine::general_purpose::STANDARD.encode(bytes.into_inner()),
+        width: w,
+        height: h,
+    }
+}
+
 fn call(name: &str, call_id: &str, input: serde_json::Value) -> ToolCall {
     ToolCall {
         id: CallId(call_id.into()),
@@ -256,6 +314,56 @@ pub(super) fn log() -> Vec<LogEntry> {
                 kind: MarkKind::Boundary { upto: 15 },
                 note: "explored the renderer and confirmed the diff path".into(),
             }),
+        ),
+        // An image result (docs/tui.md): the generated test card rides the entry
+        // inline, so the gallery exercises the full decode → encode → paint path
+        // under whatever protocol this terminal answered — halfblocks included.
+        assistant(
+            17,
+            "An image result renders through the terminal's graphics protocol:",
+            vec![call(
+                "read_image",
+                "toolu_g9",
+                serde_json::json!({ "path": "test-card.png" }),
+            )],
+        ),
+        image_result(
+            18,
+            "toolu_g9",
+            "600×400 image/png, 900 visual tokens (test card)",
+        ),
+        // Content below the image, so scrolling can carry it off the *top* —
+        // the halfblocks row-slice path is unreachable when the image is the
+        // last element (a bottom-pinned viewport only ever clips its bottom).
+        user(
+            19,
+            "Scroll the card off the top — the reserved rectangle must hold.",
+        ),
+        assistant(
+            20,
+            "Partial visibility switches to the halfblocks slice, top or bottom: the \
+             pixel protocols paint only from the image's top edge, and the reservation \
+             never reflows — scrolling changes what paints, not what fits.\n\n\
+             - fully visible → the terminal's own protocol, crisp\n\
+             - partially visible → halfblock cells, blitted row by row\n\
+             - `--images off` → a one-line reference, no reservation",
+            vec![call(
+                "bash",
+                "toolu_g10",
+                serde_json::json!({ "command": "seq 1 18 | sed 's/^/scroll ballast line /'" }),
+            )],
+        ),
+        // Tall enough that the card scrolls off the top at ordinary widths —
+        // prose alone only wraps tall on a narrow terminal.
+        result(
+            21,
+            "toolu_g10",
+            &(1..=18)
+                .map(|n| format!("scroll ballast line {n}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            false,
+            WireState::Raw,
         ),
     ]
 }

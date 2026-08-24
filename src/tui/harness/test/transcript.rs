@@ -274,4 +274,5 @@ fn gallery() {
     play.snapshot("gallery");
 }
 
+mod images;
 mod results;

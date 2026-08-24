@@ -16,6 +16,7 @@ impl<'a> InteractiveState<'a> {
             TuiEvent::Entry(entry) => {
                 // A committed entry supersedes whatever was streamed live for it.
                 self.live.commit(&entry);
+                self.resolve_result_images(&entry);
                 // A committed user turn resolves its optimistic pending echo
                 // (docs/tui.md): the entry *is* on the wire now
                 // (`project(log)` is exactly what the request sends), so drop the matching
@@ -166,9 +167,39 @@ impl<'a> InteractiveState<'a> {
                 self.loop_running = running;
                 return false;
             }
+            TuiEvent::Image { seq, idx, image } => {
+                // The reserved footprint was sized from the entry view's metadata,
+                // so landing the pixels repaints without a reproject (docs/tui.md).
+                self.images.insert((seq, idx), image);
+                self.dirty = true;
+            }
             TuiEvent::Disconnected => return true,
         }
         false
+    }
+
+    /// Start resolving a committed entry's result images (docs/tui.md). An image
+    /// that rode the entry itself (an offline log via `persist::load`) decodes in
+    /// place; a data-omitted reference (every live entry view,
+    /// docs/control-api.md) is requested from the tokio fetcher, which answers
+    /// with a [`TuiEvent::Image`]. Slot presence gates both, so a re-delivered
+    /// entry (a reattach replay) resolves nothing twice.
+    fn resolve_result_images(&mut self, entry: &LogEntry) {
+        let Payload::ToolResult { raw, .. } = &entry.payload else {
+            return;
+        };
+        for (idx, image) in raw.images.iter().enumerate() {
+            let key = (entry.seq, idx);
+            if !self.images.needs_fetch(key) {
+                continue;
+            }
+            if image.data.is_empty() {
+                self.images.note_fetching(key);
+                let _ = self.images_tx.send(key);
+            } else {
+                self.images.insert_inline(key, &image.data);
+            }
+        }
     }
 
     /// Recompute every clock-derived display value from the absolute stamps it was

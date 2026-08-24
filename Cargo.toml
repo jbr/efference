@@ -138,6 +138,12 @@ qrcode = { version = "0.14", default-features = false }
 webbrowser = "1.2.4"
 jiter = { version = "0.16.0", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# Terminal image rendering for the TUI (docs/tui.md): protocol detection
+# (kitty/iTerm2), the font-size-in-pixels query, per-protocol encoding, and the
+# cell-skip that keeps ratatui from overwriting a drawn image. Default features
+# off: they re-enable all of `image`'s decoders (the slim set above is the
+# decode surface) and add a pkg-config dependency on libchafa.
+ratatui-image = { version = "11", default-features = false, features = ["crossterm"] }
 
 [features]
 # Serve the web client from a spawned Vite dev server (with HMR) instead of the

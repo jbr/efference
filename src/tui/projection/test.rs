@@ -397,6 +397,7 @@ fn renders_transcript_to_a_test_backend() {
     let (pace_tx, _pace_rx) = tokio::sync::mpsc::unbounded_channel();
     let (interrupt_tx, _interrupt_rx) = tokio::sync::mpsc::unbounded_channel();
     let (sidebar_tx, _sidebar_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (images_tx, _images_rx) = tokio::sync::mpsc::unbounded_channel();
     let mut state = InteractiveState::new(
         rx,
         submit_tx,
@@ -404,6 +405,7 @@ fn renders_transcript_to_a_test_backend() {
         pace_tx,
         interrupt_tx,
         sidebar_tx,
+        images_tx,
         rc,
         theme,
     );

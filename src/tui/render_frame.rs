@@ -176,6 +176,18 @@ impl<'a> InteractiveState<'a> {
             self.scroll_to_bottom();
         }
 
+        // The offset is settled now, so this frame knows whether the viewport is
+        // moving. Image rendering reads the flag to hold the halfblocks slice
+        // under retransmit-per-move protocols (docs/tui.md); the extra `dirty`
+        // schedules one settled repaint right after motion stops, which is the
+        // frame that restores the crisp native render.
+        self.layout.scroll_in_motion =
+            self.viewport.scroll_offset != self.viewport.last_painted_scroll;
+        if self.layout.scroll_in_motion {
+            self.dirty = true;
+        }
+        self.viewport.last_painted_scroll = self.viewport.scroll_offset;
+
         self.render_document(main_area, frame.buffer_mut());
 
         // Live background-process panel, between the transcript and the gate (docs/supervisor.md).

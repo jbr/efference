@@ -396,6 +396,38 @@ impl Client {
         read_2xx(conn, "DELETE", path).await
     }
 
+    /// One logged result image's decoded bytes (`GET /log/:seq/images/:idx`,
+    /// docs/control-api.md) — the dereference target for the image references
+    /// entry views carry (`data` is omitted there; this is where it lives).
+    pub async fn log_image(&self, seq: u64, idx: usize) -> Result<Vec<u8>> {
+        self.get_bytes(&format!("/log/{seq}/images/{idx}")).await
+    }
+
+    /// GET `path`, returning the raw response bytes on a 2xx — for the one
+    /// non-JSON resource (image bytes); everything else reads through
+    /// [`get`](Self::get).
+    async fn get_bytes(&self, path: &str) -> Result<Vec<u8>> {
+        let path = versioned(path);
+        let path = path.as_str();
+        let mut conn = self
+            .http
+            .get(path)
+            .await
+            .with_context(|| format!("GET {path} from the control socket"))?;
+        if conn.status().is_some_and(|s| s.is_success()) {
+            conn.response_body()
+                .read_bytes()
+                .await
+                .with_context(|| format!("reading the response to GET {path}"))
+        } else {
+            let code = conn
+                .status()
+                .map(|s| s.code().to_string())
+                .unwrap_or_else(|| "no status".into());
+            Err(anyhow!("GET {path} → {code}"))
+        }
+    }
+
     /// GET `path`, returning the response body on a 2xx (else an error with the
     /// status + body).
     async fn get(&self, path: &str) -> Result<String> {

@@ -159,15 +159,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .await
         }
         Command::Attach => attach(client_socket()?).await,
-        Command::Tui { theme, frame_cost } => tui(client_socket()?, theme, frame_cost).await,
-        Command::View { session, theme } => view(session, name.clone(), theme).await,
+        Command::Tui {
+            theme,
+            images,
+            frame_cost,
+        } => tui(client_socket()?, theme, images.into(), frame_cost).await,
+        Command::View {
+            session,
+            theme,
+            images,
+        } => view(session, name.clone(), theme, images.into()).await,
         Command::Gallery {
             theme,
+            images,
             stream,
             chunk,
             interval,
             frame_cost,
-        } => gallery(theme, stream, chunk, interval, frame_cost).await,
+        } => gallery(theme, images.into(), stream, chunk, interval, frame_cost).await,
         Command::Wire {
             path,
             messages,

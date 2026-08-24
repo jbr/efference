@@ -2,7 +2,12 @@
 
 use super::*;
 
-pub async fn run(client: Client, theme: Option<String>, frame_cost: bool) -> Result<()> {
+pub async fn run(
+    client: Client,
+    theme: Option<String>,
+    images: ImageMode,
+    frame_cost: bool,
+) -> Result<()> {
     use crate::frontend::Approval;
 
     // Validate the theme up front, before the alt-screen takes over, so a bad
@@ -16,6 +21,8 @@ pub async fn run(client: Client, theme: Option<String>, frame_cost: bool) -> Res
     let (interrupt_tx, mut interrupt_rx) =
         tokio::sync::mpsc::unbounded_channel::<crate::frontend::Interrupt>();
     let (sidebar_tx, mut sidebar_rx) = tokio::sync::mpsc::unbounded_channel::<SidebarCmd>();
+    let (images_tx, mut images_rx) =
+        tokio::sync::mpsc::unbounded_channel::<crate::tui::image::ImageKey>();
 
     // The bridge feeds the UI thread everything — log entries, live deltas, and the
     // state topics (gate/processes/usage/policy/pace/running) as level-triggered
@@ -68,6 +75,27 @@ pub async fn run(client: Client, theme: Option<String>, frame_cost: bool) -> Res
         }
     });
 
+    // Image fetcher (docs/tui.md): dereference a result image the UI thread saw
+    // only as metadata — `GET /log/:seq/images/:idx` over the socket, decoded
+    // here (off the UI thread), landed as a `TuiEvent::Image`. A failure lands
+    // too: the reserved rows render the reason instead of pixels.
+    let image_client = client.clone();
+    let image_events = tx.clone();
+    let fetcher = tokio::spawn(async move {
+        while let Some((seq, idx)) = images_rx.recv().await {
+            let image = match image_client.log_image(seq, idx).await {
+                Ok(bytes) => ::image::load_from_memory(&bytes).map_err(|e| e.to_string()),
+                Err(e) => Err(e.to_string()),
+            };
+            if image_events
+                .send(TuiEvent::Image { seq, idx, image })
+                .is_err()
+            {
+                break; // UI thread gone.
+            }
+        }
+    });
+
     // Sidebar verbs (docs/tui.md): the focused row's kill / commit / cancel,
     // each a direct control-channel call addressed by identity.
     let sidebar_client = client.clone();
@@ -99,8 +127,9 @@ pub async fn run(client: Client, theme: Option<String>, frame_cost: bool) -> Res
             pace: pace_tx,
             interrupt: interrupt_tx,
             sidebar: sidebar_tx,
+            images: images_tx,
         };
-        ui_loop(rx, senders, theme, None, frame_cost)
+        ui_loop(rx, senders, theme, images, None, frame_cost)
     });
 
     let result = ui.await.context("the TUI thread panicked")?;
@@ -110,6 +139,7 @@ pub async fn run(client: Client, theme: Option<String>, frame_cost: bool) -> Res
     pacer.abort();
     interrupter.abort();
     sidebar_dispatcher.abort();
+    fetcher.abort();
     result.context("the TUI event loop failed")
 }
 
@@ -119,10 +149,11 @@ pub async fn run(client: Client, theme: Option<String>, frame_cost: bool) -> Res
 /// render behaviours get driven without an upstream.
 pub async fn run_gallery(
     theme: Option<String>,
+    images: ImageMode,
     stream: Option<gallery::stream::Script>,
     frame_cost: bool,
 ) -> Result<()> {
-    run_offline(gallery::log(), None, theme, stream, frame_cost).await
+    run_offline(gallery::log(), None, theme, images, stream, frame_cost).await
 }
 
 /// Launch the TUI **read-only** on a recorded session's log (`efference view`,
@@ -130,8 +161,13 @@ pub async fn run_gallery(
 /// loaded from a jsonl file rather than a daemon's event stream. `label` names the
 /// session in the status bar. Nothing here can write — the log is read once, and
 /// the read-only state renders no composer and carries no loop verbs.
-pub async fn run_view(entries: Vec<LogEntry>, label: String, theme: Option<String>) -> Result<()> {
-    run_offline(entries, Some(label), theme, None, false).await
+pub async fn run_view(
+    entries: Vec<LogEntry>,
+    label: String,
+    theme: Option<String>,
+    images: ImageMode,
+) -> Result<()> {
+    run_offline(entries, Some(label), theme, images, None, false).await
 }
 
 /// The shared offline runner behind [`run_gallery`] and [`run_view`]: seed the
@@ -144,6 +180,7 @@ async fn run_offline(
     entries: Vec<LogEntry>,
     viewing: Option<String>,
     theme: Option<String>,
+    images: ImageMode,
     stream: Option<gallery::stream::Script>,
     frame_cost: bool,
 ) -> Result<()> {
@@ -157,6 +194,10 @@ async fn run_offline(
     let (interrupt_tx, interrupt_rx) =
         tokio::sync::mpsc::unbounded_channel::<crate::frontend::Interrupt>();
     let (sidebar_tx, sidebar_rx) = tokio::sync::mpsc::unbounded_channel::<SidebarCmd>();
+    // Held like the rest: an offline log's images ride the entries themselves
+    // (docs/control-api.md), so nothing should ever consume a fetch request.
+    let (images_tx, images_rx) =
+        tokio::sync::mpsc::unbounded_channel::<crate::tui::image::ImageKey>();
 
     for entry in entries {
         let _ = tx.send(TuiEvent::Entry(entry));
@@ -177,8 +218,9 @@ async fn run_offline(
             pace: pace_tx,
             interrupt: interrupt_tx,
             sidebar: sidebar_tx,
+            images: images_tx,
         };
-        ui_loop(rx, senders, theme, viewing, frame_cost)
+        ui_loop(rx, senders, theme, images, viewing, frame_cost)
     });
     let result = ui.await.context("the TUI thread panicked")?;
 
@@ -193,6 +235,7 @@ async fn run_offline(
     drop(pace_rx);
     drop(interrupt_rx);
     drop(sidebar_rx);
+    drop(images_rx);
 
     result.context("the TUI event loop failed")
 }

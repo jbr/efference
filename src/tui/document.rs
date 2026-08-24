@@ -163,6 +163,23 @@ pub enum DocumentNode<'a> {
     /// (lines aren't sub-`DocumentNode`s), so it clips as one unit in the accordion.
     Diff { lines: Vec<DiffLine> },
 
+    /// One logged result image (docs/tui.md), by reference: the log address the
+    /// bytes resolve through (`GET /log/:seq/images/:idx`) plus the pixel
+    /// dimensions from the entry view's metadata. The node carries **no pixel
+    /// data and no encoding** — those live in the state's image store, keyed by
+    /// `(seq, idx)` — so the projection stays pure of the terminal's graphics
+    /// capability, and the reserved footprint (a pure function of these
+    /// dimensions and the render width) never changes as bytes arrive, encode,
+    /// or fail.
+    Image {
+        seq: u64,
+        idx: usize,
+        media_type: Cow<'a, str>,
+        /// Pixel dimensions of the encoded image, from the log metadata.
+        width: u32,
+        height: u32,
+    },
+
     /// Horizontal rule/divider
     HorizontalRule,
 
@@ -407,6 +424,23 @@ impl<'a> DocumentNode<'a> {
     /// Convenience constructor for a diff node.
     pub fn diff(lines: Vec<DiffLine>) -> Self {
         DocumentNode::Diff { lines }
+    }
+
+    /// Convenience constructor for a result-image reference.
+    pub fn image(
+        seq: u64,
+        idx: usize,
+        media_type: impl Into<Cow<'a, str>>,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        DocumentNode::Image {
+            seq,
+            idx,
+            media_type: media_type.into(),
+            width,
+            height,
+        }
     }
 
     /// Convenience constructor for a line-numbered code block.

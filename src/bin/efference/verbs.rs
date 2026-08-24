@@ -123,6 +123,7 @@ pub(crate) async fn view(
     session: Option<String>,
     name: Option<String>,
     theme: Option<String>,
+    images: efference::tui::ImageMode,
 ) -> CliResult {
     let Some(target) = session.or(name) else {
         return Err(format!(
@@ -136,7 +137,7 @@ pub(crate) async fn view(
     if entries.is_empty() {
         return Err(format!("{} holds no entries", path.display()).into());
     }
-    efference::tui::run_view(entries, label, theme).await?;
+    efference::tui::run_view(entries, label, theme, images).await?;
     Ok(())
 }
 
@@ -144,6 +145,7 @@ pub(crate) async fn view(
 /// `stream`, a scripted emitter plays live tool-call events over it on a timer.
 pub(crate) async fn gallery(
     theme: Option<String>,
+    images: efference::tui::ImageMode,
     stream: bool,
     chunk: usize,
     interval: u64,
@@ -153,15 +155,20 @@ pub(crate) async fn gallery(
         chunk,
         interval: std::time::Duration::from_millis(interval),
     });
-    efference::tui::run_gallery(theme, script, frame_cost).await?;
+    efference::tui::run_gallery(theme, images, script, frame_cost).await?;
     Ok(())
 }
 
 /// Launch the interactive TUI against the daemon control socket. All rendering
 /// lives in `efference::tui`; here we just hand it a control client and the
 /// optional theme override.
-pub(crate) async fn tui(socket: PathBuf, theme: Option<String>, frame_cost: bool) -> CliResult {
-    efference::tui::run(ControlClient::new(socket), theme, frame_cost).await?;
+pub(crate) async fn tui(
+    socket: PathBuf,
+    theme: Option<String>,
+    images: efference::tui::ImageMode,
+    frame_cost: bool,
+) -> CliResult {
+    efference::tui::run(ControlClient::new(socket), theme, images, frame_cost).await?;
     Ok(())
 }
 
