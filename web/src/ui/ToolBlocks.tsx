@@ -263,10 +263,13 @@ export function ResultBody({ body }: { body: ResultView }) {
 
 export function ResultBlock({
   tool,
+  seq,
   raw,
   wire,
 }: {
   tool: string | null;
+  /** The result entry's seq — the address images resolve through. */
+  seq: number;
   raw: RawResult;
   wire: WireState;
 }) {
@@ -289,6 +292,21 @@ export function ResultBlock({
           the call's hover state is the discovery surface (Transcript.tsx). */}
       <div className="kind result-head">result ({label})</div>
       <ResultBody body={body} />
+      {(raw.images ?? []).map((image, idx) => (
+        // The view carries only the reference (docs/control-api.md); the
+        // bytes come from the image route, cookie-authed and
+        // immutably-cached by the browser. width/height reserve layout
+        // space before the fetch lands.
+        <img
+          key={idx}
+          className="result-image"
+          src={`/v1/log/${seq}/images/${idx}`}
+          width={image.width}
+          height={image.height}
+          alt={`${image.media_type} ${image.width}×${image.height}`}
+          loading="lazy"
+        />
+      ))}
       {hidden > 0 && <MoreLines hidden={hidden} />}
       {view.note !== null && (
         // The distiller's note sits beside the result as its own annotation

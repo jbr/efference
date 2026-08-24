@@ -193,6 +193,13 @@ level. A result and a verdict are attached to the call they name rather than
 emitted where they fall in the log — that attachment is the point, and it is
 what makes a result *belong to* its call instead of merely following it.
 
+A result's images render below its body as plain `<img>` elements pointed at
+`GET /v1/log/{seq}/images/{idx}` ([control-api.md](control-api.md)): the entry
+view carries only `{media_type, width, height}` — the attributes that hold the
+aspect box before the bytes land — and the browser supplies the fetch (ambient
+session cookie), the immutable caching, and lazy loading. Capped at 420px
+display width; full resolution is the browser's own open-image-in-new-tab.
+
 **What is deliberately not a container.** There is no per-user-message grouping.
 An operator interjection is often incidental (*"check this path: …"*, an API
 tip), and mid-trajectory injection ([control-channel.md](control-channel.md))

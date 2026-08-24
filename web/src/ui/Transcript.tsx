@@ -248,8 +248,13 @@ const Call = memo(function Call({
     <div className="call clickable" onClick={open}>
       {call !== null && <CallBlock call={call} onOpenFile={onOpenFile} />}
       {node.spot !== null && <SpotLine spot={node.spot} />}
-      {result !== null && (
-        <ResultBlock tool={node.name} raw={result.raw} wire={result.wire} />
+      {node.result !== null && result !== null && (
+        <ResultBlock
+          tool={node.name}
+          seq={node.result.seq}
+          raw={result.raw}
+          wire={result.wire}
+        />
       )}
     </div>
   );

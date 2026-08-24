@@ -1066,6 +1066,19 @@ select {
   align-items: baseline;
 }
 
+/* A result image, fetched by reference from the image route. Capped well
+   below its native size — the transcript is a reading surface; the full
+   resolution is one browser-native "open image in new tab" away. The
+   width/height attributes hold the aspect box before the bytes land. */
+.result-image {
+  display: block;
+  max-width: min(100%, 420px);
+  height: auto;
+  margin-top: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
 /* The inspector: a fixed right drawer floating over the content, which
    stays in place — opening a second view does not get to move the text
    someone is reading. Opaque: the frosted variant (translucent surface over

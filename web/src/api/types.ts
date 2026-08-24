@@ -52,6 +52,15 @@ export interface ToolCall {
 export interface RawResult {
   content: string;
   is_error: boolean;
+  /** Image references (docs/control-api.md): the view omits the base64 `data`;
+   * the bytes are at `GET /v1/log/{seq}/images/{idx}`. Absent when empty. */
+  images?: ResultImage[];
+}
+
+export interface ResultImage {
+  media_type: string;
+  width: number;
+  height: number;
 }
 
 export type WireState =
