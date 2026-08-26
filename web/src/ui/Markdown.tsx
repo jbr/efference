@@ -1,10 +1,8 @@
 // Prose rendering (docs/web-client.md). User turns, assistant text,
 // thinking, and consolidation-mark notes are markdown and render as such;
 // tool output is not prose and does not come through here — the cordon owns
-// its representation. Thinking's markdown treatment carries a named reversal
-// trigger (docs/web-client.md): a model whose thinking is line-structured
-// rather than paragraph-separated would merge lines here, and that sighting
-// flips thinking back to preformatted.
+// its representation. Thinking is markdown on the same footing as the rest; the
+// reversal trigger it landed with was retired as measured-inert (docs/web-client.md).
 //
 // The renderer produces a React element tree, never an HTML string: the
 // text is model-authored, and a page holding a session credential must

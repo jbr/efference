@@ -273,19 +273,20 @@ consolidation-mark notes as markdown (`react-markdown` + `remark-gfm`). Tool
 output does not come through it — the cordon gives it per-tool
 representations — and that exclusion is the point of the split.
 
-Thinking as prose is a default with a **named reversal trigger**. The measured
-corpora (322 blocks across two Claude models and two harnesses, 2026-08-18)
-are uniformly blank-line-separated paragraphs whose one markdown construct is
-inline code — for that shape, markdown renders the backticks and can mangle
-nothing. A model whose thinking is line-structured — bare adjacent lines that
-markdown would merge into one paragraph — is the sighting that flips thinking
-back to preformatted (or to markdown-with-hard-breaks, which serves both
-shapes). The first sighting to arrive was the opposite one (`stealth/ox-alpha`,
-2026-08-21, the first foreign model to think here at all): thinking rich in
-real markdown — numbered lists, headed sections — which rendered correctly
-and would have been strictly worse preformatted. Evidence for the default,
-not the trigger; the trigger stands unfired. The TUI still renders thinking preformatted
-(`DocumentNode::Lines`, [tui.md](tui.md)). A mark's note has no such caveat:
+Thinking is markdown on the same footing as the rest. It carried a named
+reversal trigger when it landed — a model whose thinking was line-structured,
+bare adjacent lines markdown would merge into one paragraph, would have flipped
+it back to preformatted. That trigger was retired 2026-08-25 as measured-inert:
+across 653 blocks in 20 sessions (including `stealth/ox-alpha`, the most verbose
+thinker seen here), 73.5% carry an explicit markdown construct — inline code 65%,
+numbered lists 40%, bullets 28%, bold 22%, fenced code 16% — while the trigger's
+predicate, a run of adjacent plain-prose lines, appears in 7.8% and is almost
+always a colon lead-in above an `A.`/`B.` enumeration markdown does not read as a
+list. Merging there joins a header to its first item; it destroys nothing. Nothing
+requires thinking to be markdown, any more than prose is required to be; it simply
+is. The TUI still renders thinking preformatted (`DocumentNode::Lines`,
+[tui.md](tui.md)) — [../backlog/tui-thinking-markdown.md](../backlog/tui-thinking-markdown.md).
+A mark's note has no such caveat:
 the projection re-injects it as a user-role text message, so it is prose on
 the wire already. Distinct wire blocks within one prose body are joined with a
 blank line, since a single newline would soft-wrap the seam between them.

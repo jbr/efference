@@ -71,7 +71,10 @@ struct Request<'a> {
     /// [`Thinking::for_request`]: adaptive on the main agent turn when the model takes
     /// it (recognized Claude tiers, or a foreign model whose metadata lists
     /// `reasoning`), explicit `disabled` only ever on Claude (forced `tool_choice` is
-    /// incompatible with thinking there — 400 — and the fork forces its distiller), and
+    /// incompatible with thinking there — 400 — and the **spotter** forces its `spot`
+    /// tool; the fork does not force, because flipping `tool_choice` between forced and
+    /// `auto` moved the request prefix and invalidated the cache every peek —
+    /// docs/redaction-fork.md), and
     /// the field **omitted** for every other foreign case — an explicit `disabled` is
     /// rejected outright by mandatory-reasoning endpoints. Keepalive is handled
     /// independently (`max_tokens: 0` rejects `enabled`; adaptive there is untested).
