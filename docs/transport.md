@@ -279,8 +279,20 @@ regress (serve already requires the live messages endpoint). Per provider:
   window, `max_tokens` the output cap.
 - `openrouter`: `GET /api/v1/models/{author}/{slug}/endpoints` — one entry per
   upstream currently serving the model, each with its own `context_length` /
-  `max_completion_tokens`. Routing is unpinned, so the effective ceiling is
-  the **min** across endpoints until provider pinning lands.
+  `max_completion_tokens`. Routing is unpinned, and the two ceilings aggregate
+  in **opposite** directions because they are used differently.
+  `context_length` takes the **max**: OpenRouter routes only to endpoints that
+  fit the request, so a prompt wider than the narrowest endpoint narrows the
+  routable set rather than failing, and a min under-reports by the width of the
+  narrowest outlier (`z-ai/glm-5.3-flash`, 2026-08-26: seven endpoints at 1M or
+  more, one at 256k — the min reported 256k for a 1M model).
+  `max_completion_tokens` takes the **min**: it is sent as the request's
+  `max_tokens`, and routing skips endpoints that cannot produce a response that
+  long, so a max would silently pin routing to the single widest endpoint and
+  change price and availability as a side effect of a display value. The
+  model-level fields are not used: `context_length` there is the max across
+  endpoints, while `top_provider` describes one designated endpoint (not the
+  originating lab, and not necessarily the cheapest), and the two disagree.
 
 The parsed `ModelCapabilities` (`context_length`, `max_output_tokens`,
 `supports_reasoning`; grown one field per consumer) is transport-only — held
@@ -340,9 +352,10 @@ foreign TTLs keep the keepalive relevant, though whether a `max_tokens: 0` ping
 refreshes a non-Anthropic cache is unverified.
 
 **Thinking.** A foreign model's `auto`-turn adaptive is granted by the
-capability lookup: `ModelCapabilities::supports_reasoning` — min-style like the
-ceilings, every endpoint currently serving the model must list `reasoning` in
-`supported_parameters` — sends the same `thinking:{type:adaptive}` block, which
+capability lookup: `ModelCapabilities::supports_reasoning` — conservative like
+`max_output_tokens` and not like `context_length`, since `thinking` is not a
+routing filter: every endpoint currently serving the model must list
+`reasoning` in `supported_parameters` — sends the same `thinking:{type:adaptive}` block, which
 OpenRouter's compat layer translates to its normalized `reasoning`. A foreign
 model not granted it gets no `thinking` field at all — omission, never
 `disabled`, which mandatory-reasoning endpoints reject outright.

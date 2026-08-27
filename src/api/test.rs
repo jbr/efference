@@ -99,12 +99,14 @@ fn anthropic_capabilities_missing_context_is_an_error() {
     assert!(err.contains("max_input_tokens"), "{err}");
 }
 
-/// The OpenRouter endpoints shape: `context_length` is per serving endpoint
-/// (routing is unpinned), so the effective ceiling is the **min** across them;
-/// likewise `max_completion_tokens`. Trimmed from a live
+/// The OpenRouter endpoints shape: both ceilings are per serving endpoint, and
+/// they aggregate in opposite directions. `context_length` takes the **max** —
+/// routing filters to endpoints that fit, so the widest is reachable.
+/// `max_completion_tokens` takes the **min** — it is sent as `max_tokens`, and a
+/// max there would pin routing to one endpoint. Trimmed from a live
 /// `GET /api/v1/models/anthropic/claude-haiku-4.5/endpoints` response.
 #[test]
-fn openrouter_capabilities_take_min_across_endpoints() {
+fn openrouter_capabilities_aggregate_ceilings_in_opposite_directions() {
     let body = r#"{
         "data": {
             "id": "anthropic/claude-haiku-4.5",
@@ -120,7 +122,7 @@ fn openrouter_capabilities_take_min_across_endpoints() {
         }
     }"#;
     let caps = Provider::OpenRouter.parse_capabilities(body).unwrap();
-    assert_eq!(caps.context_length, 195000);
+    assert_eq!(caps.context_length, 200000);
     assert_eq!(caps.max_output_tokens, Some(32000));
     // No endpoint above lists `supported_parameters` at all → not granted.
     assert!(!caps.supports_reasoning);

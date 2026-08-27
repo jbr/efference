@@ -169,10 +169,10 @@ impl Provider {
             Self::OpenRouter => {
                 // `GET /api/v1/models/{author}/{slug}/endpoints`: one entry per
                 // upstream currently serving the model, each with its own
-                // `context_length` / `max_completion_tokens`. Routing is
-                // unpinned, so the effective ceiling is the **min** across
-                // endpoints — the conservative bound until provider pinning
-                // lands. Model-level fields (`architecture.input_modalities`,
+                // `context_length` / `max_completion_tokens`. The two are
+                // aggregated in opposite directions because they are used in
+                // opposite ways — see the field docs on `ModelCapabilities`.
+                // Model-level fields (`architecture.input_modalities`,
                 // per-endpoint pricing) are ignored until a consumer needs them.
                 #[derive(Deserialize)]
                 struct Body {
@@ -190,26 +190,38 @@ impl Provider {
                     supported_parameters: Vec<String>,
                 }
                 let body: Body = serde_json::from_str(body)?;
+                // Descriptive ceiling: **max**. OpenRouter routes only to
+                // endpoints that fit the request, so a prompt larger than the
+                // smallest endpoint is not an error — it just narrows the
+                // routable set. A min here under-reports by the width of the
+                // narrowest endpoint (z-ai/glm-5.3-flash, 2026-08-26: seven
+                // endpoints at 1M+, one at 256k, min reported 256k).
                 let context_length = body
                     .data
                     .endpoints
                     .iter()
                     .filter_map(|e| e.context_length)
-                    .min()
+                    .max()
                     .ok_or_else(|| -> Error {
                         "OpenRouter model metadata listed no endpoint with a context_length \
                          (is the model currently served?)"
                             .into()
                     })?;
+                // Sent, not merely displayed: this becomes the request's
+                // `max_tokens`, and OpenRouter routes only to endpoints that
+                // support a response that long. So **min** — a max would pin
+                // routing to the single widest endpoint, changing price and
+                // availability as a side effect of a display value.
                 let max_output_tokens = body
                     .data
                     .endpoints
                     .iter()
                     .filter_map(|e| e.max_completion_tokens)
                     .min();
-                // Min-style, like the ceilings: routing is unpinned, so a
-                // `thinking` block is sent only if *every* endpoint currently
-                // serving the model lists `reasoning`.
+                // Conservative like `max_output_tokens`, and for the same
+                // reason: routing is unpinned and a `thinking` block is not a
+                // routing filter, so it is sent only if *every* endpoint
+                // currently serving the model lists `reasoning`.
                 let supports_reasoning = body
                     .data
                     .endpoints
@@ -236,10 +248,15 @@ impl Provider {
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelCapabilities {
     /// Maximum prompt tokens the model accepts. Anthropic `max_input_tokens`;
-    /// OpenRouter: the min `context_length` across the endpoints currently
-    /// serving the model.
+    /// OpenRouter: the **max** `context_length` across the endpoints currently
+    /// serving the model — routing filters to endpoints that fit the request,
+    /// so a wide prompt narrows the routable set rather than failing
+    /// (docs/transport.md).
     pub context_length: u64,
-    /// Maximum response tokens, where the provider reports one.
+    /// Maximum response tokens, where the provider reports one. OpenRouter:
+    /// the **min** `max_completion_tokens` across serving endpoints — unlike
+    /// `context_length` this value is sent as `max_tokens`, and routing skips
+    /// endpoints that cannot produce a response that long (docs/transport.md).
     pub max_output_tokens: Option<u64>,
     /// Whether every endpoint currently serving the model lists OpenRouter's
     /// normalized `reasoning` in `supported_parameters` — the foreign-model input

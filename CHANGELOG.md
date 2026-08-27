@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Changed
+- OpenRouter capability lookup reports `context_length` as the **max** across serving endpoints rather than the min: routing filters to endpoints that fit, so one narrow outlier no longer under-reports the window (`z-ai/glm-5.3-flash` read as 256k against a 1M model). `max_completion_tokens` stays min — it is sent as `max_tokens` and a max would pin routing to the widest endpoint.
 - web: syntax highlighting runs precompiled grammars on Shiki's raw JavaScript engine — the Oniguruma-to-`RegExp` transpiler leaves the main chunk (−56 kB raw, −19 kB gzip; ~11 kB smaller gzipped overall), at an ES2024 (`RegExp` `v` flag) floor.
 - TUI + web: a `read_image` call renders as a one-line header — path inline, `· long_edge N` beside it when set (image tokens scale with area) — instead of a JSON envelope, in both mirrored dispatches.
 - TUI + web: a distilled result whose triage kept every line (a third of measured results) presents like any whole result — no `distilled · kept n of n lines` head; partial distillates keep their count. The web `ResultRender.rawDiffers` field, dead since the per-result raw expander moved to the inspector, is removed for `stateWord`.
