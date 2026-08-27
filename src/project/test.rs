@@ -136,6 +136,57 @@ fn image_tool_result_matches_expected_wire_bytes() {
     assert_eq!(wire, expected);
 }
 
+/// A log whose tool result carries a multi-line body under the given verdict.
+fn distilled_log(keep: Keep, note: Option<&str>) -> Vec<LogEntry> {
+    let mut log = sample_log();
+    if let Payload::ToolResult { raw, wire, .. } = &mut log[2].payload {
+        raw.content = "alpha\nbeta\ngamma\ndelta".into();
+        *wire = WireState::Distilled {
+            keep,
+            note: note.map(str::to_string),
+        };
+    }
+    log
+}
+
+/// Pins the exact wire bytes of a **distilled** tool result — the shape most results
+/// actually take (42 of 44 in one measured session), and which no other pin covered:
+/// the fixture's only result is `WireState::Raw`, so a render change to the dominant
+/// shape used to pass every byte pin.
+///
+/// Three properties are fixed here. A partial verdict carries `@@ lines a-b @@` per
+/// span. A verdict spanning the whole result carries **no header** — the marker exists
+/// to show where curation cut, and one that spans everything states only "all of it"
+/// (backlog/distilled-render-overhead.md). A note renders as a trailing `⟢` breadcrumb.
+///
+/// Distilled results sit in `messages`, ahead of the cache breakpoint, so a change here
+/// moves the production prefix silently. It must break this test first.
+#[test]
+fn distilled_tool_result_matches_expected_wire_bytes() {
+    let partial = serde_json::to_string(&project(&distilled_log(
+        Keep::Ranges(vec![(2, 3)]),
+        Some("the middle mattered"),
+    )))
+    .unwrap();
+    assert_eq!(
+        partial,
+        r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] @@ lines 2-3 @@\nbeta\ngamma\n⟢ the middle mattered"}]}]"#
+    );
+
+    let whole = serde_json::to_string(&project(&distilled_log(Keep::All, None))).unwrap();
+    assert_eq!(
+        whole,
+        r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] alpha\nbeta\ngamma\ndelta"}]}]"#
+    );
+
+    let nothing =
+        serde_json::to_string(&project(&distilled_log(Keep::None, Some("no signal")))).unwrap();
+    assert_eq!(
+        nothing,
+        r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] ⟢ no signal"}]}]"#
+    );
+}
+
 /// Pins the `FollowingUserBlock` placement's exact wire bytes: the
 /// `tool_result` keeps the bare-string content form (byte-identical to a
 /// text-only result), and each image trails it as a top-level `image` block in

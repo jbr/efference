@@ -96,9 +96,17 @@ pub(super) fn render_hunks(
     note: Option<&str>,
 ) -> String {
     let ranges = normalize(ranges, lines.len());
+    // A header marks *where* curation cut. One range spanning everything cut nothing,
+    // so its header states only "all of it" — noise on every fully-retained result, and
+    // on a one-line result it outweighs the line it labels (backlog measured 82 such
+    // headers and 97 results rendering larger than their raw content). Truncation is
+    // reported separately by the caller, so suppressing this hides nothing.
+    let spans_everything = matches!(ranges.as_slice(), [(1, end)] if *end == lines.len());
     let mut parts: Vec<String> = Vec::new();
     for &(start, end) in &ranges {
-        parts.push(hunk_header(start, end));
+        if !spans_everything {
+            parts.push(hunk_header(start, end));
+        }
         for i in start..=end {
             parts.push(lines[i - 1].to_string());
         }

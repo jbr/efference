@@ -7,17 +7,14 @@ fn lines(s: &str) -> Vec<&str> {
     s.lines().collect()
 }
 
-/// The canonical render over a stored verdict (docs/redaction-fork.md): `all` is one verbatim
-/// hunk, `none` collapses to the breadcrumb note, ranges keep only their spans.
+/// The canonical render over a stored verdict (docs/redaction-fork.md): `all` is the
+/// content verbatim and *unheaded*, `none` collapses to the breadcrumb note, ranges keep
+/// only their spans.
 #[test]
 fn render_distilled_covers_all_none_and_ranges() {
     let c = "a\nb\nc\nd\ne";
     let all = render_distilled(c, &Keep::All, None);
-    assert!(all.contains("@@ lines 1-5 @@"), "{all}");
-    assert!(
-        all.lines().any(|l| l == "a") && all.lines().any(|l| l == "e"),
-        "{all}"
-    );
+    assert_eq!(all, c, "a fully-retained result is the result: {all}");
 
     let none = render_distilled(c, &Keep::None, Some("nothing useful here"));
     assert_eq!(none, "⟢ nothing useful here");
@@ -61,15 +58,33 @@ fn render_distilled_truncates_past_the_cap() {
     );
 }
 
+/// A hunk header marks *where* curation cut, so a single range spanning the whole
+/// result carries none: it would state only "all of it". Measured at 82 such headers
+/// across six harness-eval runs, and on a one-line result the header outweighs the line
+/// (backlog/distilled-render-overhead.md).
 #[test]
-fn canonical_hunk_is_verbatim_under_a_diff_header() {
+fn a_range_spanning_everything_gets_no_header() {
     let ls = lines("alpha\nbeta\ngamma");
     let wire = render_hunks(&ls, &[(1, 3)], None);
-    assert!(wire.contains("@@ lines 1-3 @@"), "{wire}");
-    assert!(
-        wire.lines().any(|l| l == "alpha") && wire.lines().any(|l| l == "gamma"),
-        "{wire}"
+    assert_eq!(wire, "alpha\nbeta\ngamma", "{wire}");
+
+    // The one-line case that made triage net-negative on short results.
+    assert_eq!(render_hunks(&lines("done"), &[(1, 1)], None), "done");
+
+    // A note still rides along; it is the breadcrumb, not the position anchor.
+    assert_eq!(
+        render_hunks(&lines("done"), &[(1, 1)], Some("wrote the file")),
+        "done\n⟢ wrote the file"
     );
+}
+
+/// A partial range keeps its header — that is the case the marker exists for.
+#[test]
+fn a_partial_range_keeps_its_header() {
+    let ls = lines("alpha\nbeta\ngamma");
+    let wire = render_hunks(&ls, &[(1, 2)], None);
+    assert!(wire.contains("@@ lines 1-2 @@"), "{wire}");
+    assert!(!wire.contains("gamma"), "{wire}");
     assert!(
         !wire.contains("     1\talpha"),
         "no per-line numbering on the wire: {wire}"
