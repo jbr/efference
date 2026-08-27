@@ -9,14 +9,14 @@ expression: self.render()
  1 │                                                                                │
  2 │   ✻ thinking                                                                   │
  3 │   Two options here:                                                            │
- 4 │   - reflow to paragraphs                                                       │
- 5 │   - keep the lines                                                             │
+ 4 │                                                                                │
+ 5 │     ◦ reflow to paragraphs                                                     │
  6 │                                                                                │
- 7 │   The second one.                                                              │
+ 7 │     ◦ keep the lines                                                           │
  8 │                                                                                │
  9 │   The second one.                                                              │
 10 │                                                                                │
-11 │                                                                                │
+11 │   The second one.                                                              │
 12 │                                                                                │
 13 │                                                                                │
 14 │                                                                                │

@@ -80,6 +80,7 @@ impl<'a> InteractiveState<'a> {
             view: projection::ViewState::default(),
             events,
             viewing: None,
+            dim_register: false,
             highlight_memo: Default::default(),
             images: Default::default(),
             images_tx,

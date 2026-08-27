@@ -286,8 +286,9 @@ predicate, a run of adjacent plain-prose lines, appears in 7.8% and is almost
 always a colon lead-in above an `A.`/`B.` enumeration markdown does not read as a
 list. Merging there joins a header to its first item; it destroys nothing. Nothing
 requires thinking to be markdown, any more than prose is required to be; it simply
-is. The TUI still renders thinking preformatted (`DocumentNode::Lines`,
-[tui.md](tui.md)) — [../backlog/tui-thinking-markdown.md](../backlog/tui-thinking-markdown.md).
+is. The TUI adopted the same treatment on 2026-08-26, inheriting this
+measurement rather than re-deriving it ([tui.md](tui.md) for the dimmed
+register it needed to do so).
 A mark's note has no such caveat:
 the projection re-injects it as a user-role text message, so it is prose on
 the wire already. Distinct wire blocks within one prose body are joined with a

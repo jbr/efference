@@ -395,6 +395,12 @@ pub(super) struct InteractiveState<'a> {
     /// strip rather than the composer — nothing in the UI can send.
     pub viewing: Option<String>,
 
+    /// True while rendering inside a [`DocumentNode::Dimmed`] subtree
+    /// (docs/tui.md). Render-pass scratch, not UI state: it is set and restored
+    /// within a single `render_node` walk, so a frame is still a pure function
+    /// of the state above it — which the snapshot harness depends on.
+    pub dim_register: bool,
+
     /// Computed syntax highlighting, kept between frames so a visible multi-screen
     /// code block is parsed once rather than on every paint (docs/tui.md).
     pub highlight_memo: super::render_code_block::HighlightMemo,

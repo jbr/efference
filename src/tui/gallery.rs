@@ -34,6 +34,47 @@ fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
     )
 }
 
+/// The same, with extended thinking ahead of the prose. Thinking renders as
+/// markdown in the dimmed register, and the register's one real decision — code
+/// keeping its hue where prose goes flat — is only visible in pixels, so the
+/// gallery is where it can be looked at (docs/tui.md).
+fn assistant_thinking(seq: u64, thinking: &str, text: &str) -> LogEntry {
+    entry(
+        seq,
+        Payload::Assistant {
+            thinking: vec![ContentBlock::Thinking {
+                text: thinking.into(),
+                signature: String::new(),
+            }],
+            text: vec![ContentBlock::Text(text.into())],
+            calls: vec![],
+            upstream_failure: None,
+        },
+    )
+}
+
+/// A thinking block exercising the constructs the register has to handle: prose,
+/// a list, inline code, emphasis, and a fenced block with real syntax.
+const THINKING: &str = r#"Two ways to do this, and the difference is **byte stability**:
+
+- reproject each turn — `project` is a pure fold, so it is cheap
+- cache the prefix, which means tracking invalidation across `WireState` flips
+
+The entry point is one function:
+
+```rust
+pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
+    let mut messages = Vec::new();
+    for entry in log {
+        // sorted keys keep the prefix byte-identical
+        messages.extend(entry.wire());
+    }
+    messages
+}
+```
+
+Reprojecting wins."#;
+
 /// A committed tool result for `call_id`, at the given wire state.
 fn result(seq: u64, call_id: &str, content: &str, is_error: bool, wire: WireState) -> LogEntry {
     entry(
@@ -365,5 +406,7 @@ pub(super) fn log() -> Vec<LogEntry> {
             false,
             WireState::Raw,
         ),
+        // Thinking: markdown in the dimmed register, code holding its hue.
+        assistant_thinking(22, THINKING, "Reprojecting, then."),
     ]
 }

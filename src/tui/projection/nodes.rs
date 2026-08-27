@@ -185,16 +185,29 @@ pub(in crate::tui) fn live_thinking_entry(text: &str) -> Option<DocumentNode<'st
     Some(thinking_block(vec![thinking_lines(text)?]))
 }
 
-/// A thinking text as a run of dimmed rows, keeping the model's own line structure.
-/// `None` for text that is empty or only whitespace.
+/// A thinking text as markdown, in the dimmed register. `None` for text that is
+/// empty or only whitespace.
+///
+/// Thinking goes through the same [`MarkdownRenderer`] assistant prose does. It
+/// is not *required* to be markdown, any more than prose is — it simply is:
+/// across 653 blocks in 20 sessions, 73.5% carry an explicit markdown construct.
+/// Rendering it as literal text left fences, inline code, emphasis, and lists as
+/// the characters that spell them, which the web client (already doing this)
+/// made obvious by comparison.
+///
+/// This *fixes* the regression the previous implementation was defending
+/// against. Keeping the model's own line structure was a response to reflowing
+/// `- a\n- b` into `- a - b`; markdown rendering resolves that properly by
+/// making it a list, rather than by refusing to reflow anything.
+///
+/// The dimming is a wrapper, not a per-span choice, because the register is a
+/// property of where the node sits — see [`DocumentNode::Dimmed`].
 fn thinking_lines(text: &str) -> Option<DocumentNode<'static>> {
-    // The model's own lines, kept. Thinking is not flowing prose — it holds lists,
-    // indentation, and snippets, and reflowing it to paragraphs turned "- a\n- b"
-    // into "- a - b". It previously had to: one node per line was one *block* per
-    // line, and the renderer separates blocks by a blank row, so the whole entry
-    // double-spaced. [`DocumentNode::Lines`] renders a run of lines without that.
-    let lines: Vec<Span<'static>> = text.trim_matches('\n').lines().map(dim_span).collect();
-    (!lines.is_empty() && !text.trim().is_empty()).then(|| DocumentNode::styled_lines(lines))
+    if text.trim().is_empty() {
+        return None;
+    }
+    let nodes = markdown(text.trim_matches('\n'));
+    (!nodes.is_empty()).then(|| DocumentNode::dimmed(nodes))
 }
 
 /// The `✻ thinking` entry both the live and committed renders produce.

@@ -25,6 +25,27 @@ impl<'a> InteractiveState<'a> {
     /// Render a single node
     pub(super) fn render_node(&mut self, node: &DocumentNode<'a>, buf: &mut Buffer) {
         match node {
+            // Set the register for the subtree and restore it after: nesting is
+            // possible in principle and saving the prior value keeps it sane,
+            // where an unconditional `= false` would un-dim the rest of an outer
+            // dimmed block.
+            DocumentNode::Dimmed { nodes } => {
+                let outer = self.dim_register;
+                self.dim_register = true;
+                // Children are blocks, separated by a blank row — the same
+                // spacing `Entry` gives its own, so a dimmed subtree reads like
+                // any other block sequence rather than running together.
+                for (idx, child) in nodes.iter().enumerate() {
+                    if idx > 0 {
+                        self.layout.pos.y += 1;
+                    }
+                    let saved_path = self.layout.node_path;
+                    self.layout.node_path.push(idx);
+                    self.render_node(child, buf);
+                    self.layout.node_path = saved_path;
+                }
+                self.dim_register = outer;
+            }
             DocumentNode::Paragraph { spans } => {
                 // Block element: unconditionally position at indent
                 self.layout.pos.x = self.layout.indent;

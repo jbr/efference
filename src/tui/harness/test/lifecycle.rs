@@ -230,11 +230,17 @@ fn scrolling_down_mid_stream_does_not_snap_to_the_end() {
     );
 }
 
-/// **Committed thinking keeps the model's line structure.** It is the copy a human
+/// **Committed thinking keeps the model's structure.** It is the copy a human
 /// reads afterwards, at their own pace (docs/tui.md), and it is not flowing prose:
 /// it holds lists and indentation, which reflowing to paragraphs destroys. It also
-/// has to match the live phase, which shows the same text line by line — otherwise
-/// the block visibly reshapes at the moment the turn commits.
+/// has to match the live phase, which renders the same text the same way —
+/// otherwise the block visibly reshapes at the moment the turn commits.
+///
+/// Thinking renders as markdown now, so a list is a *list*: the invariant is that
+/// the items stay on separate rows, not that the source's `- ` prefix survives
+/// verbatim. The regression this guards — `- a\n- b` reflowed to `- a - b` — is
+/// what refusing to reflow used to prevent and what rendering the list properly
+/// prevents instead.
 #[test]
 fn committed_thinking_keeps_the_lines_the_model_emitted() {
     let mut play = Screenplay::new(80, 24);
@@ -245,15 +251,49 @@ fn committed_thinking_keeps_the_lines_the_model_emitted() {
     );
     play.pin_to_bottom();
     assert!(
-        play.find("- reflow to paragraphs").is_some(),
-        "a list item is on its own row, not joined to its neighbour"
+        play.find("reflow to paragraphs").is_some(),
+        "the first list item is on the screen"
     );
     assert!(
-        play.find("- reflow to paragraphs - keep the lines")
-            .is_none(),
-        "…which is what reflowing to a paragraph did to it"
+        play.find("reflow to paragraphs keep the lines").is_none(),
+        "…and not joined to its neighbour, which is what reflowing did to it"
+    );
+    assert!(
+        play.find("keep the lines").is_some(),
+        "the second item is on its own row"
     );
     play.snapshot("committed_thinking");
+}
+
+/// **A fenced code block inside thinking renders as code.** This is the visible
+/// reason to route thinking through the markdown renderer at all: as literal
+/// lines the fence markers were text and the code had no highlighting.
+///
+/// It is also where the dimmed register has to make a choice, and the one taken
+/// is that code keeps its hue separation while giving up brightness — dimming it
+/// flat would make the block legible as *structure* and useless as *code*
+/// (docs/tui.md). The colors are not visible in the no-color snapshot grid, so
+/// what this pins is the structure; `src/tui/span_style/test.rs` covers the
+/// blend itself.
+#[test]
+fn thinking_renders_a_fenced_code_block_as_code() {
+    let mut play = Screenplay::new(80, 24);
+    play.user("Which signature?");
+    play.assistant_thinking(
+        "The projection entry point:\n\n```rust\nfn project(log: &[LogEntry]) -> Vec<ApiMessage>\n```\n\nThat one.",
+        "That one.",
+    );
+    play.pin_to_bottom();
+    assert!(
+        play.find("fn project(log: &[LogEntry]) -> Vec<ApiMessage>")
+            .is_some(),
+        "the code line renders"
+    );
+    assert!(
+        play.find("```").is_none(),
+        "the fence markers are structure, not text to print"
+    );
+    play.snapshot("thinking_code_block");
 }
 
 /// **Streamed thinking persists, and the commit does not reshape it.**
@@ -280,7 +320,7 @@ fn streamed_thinking_persists_and_does_not_reshape_on_commit() {
         name: "write".into(),
     });
     assert!(
-        play.find("- keep the lines").is_some(),
+        play.find("keep the lines").is_some(),
         "a tool call starting wiped the thinking that led to it"
     );
 

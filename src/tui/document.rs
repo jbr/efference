@@ -134,6 +134,17 @@ pub enum DocumentNode<'a> {
         start: Option<u64>,
     },
 
+    /// Render the children in the **dimmed register**: present, but visibly not
+    /// the assistant's answer. Thinking is the case it exists for — it is
+    /// markdown like prose is, so it goes through the same renderer, but it must
+    /// never be mistaken for the answer, and the TUI has no cascade to inherit a
+    /// muted color from the way a CSS class does (docs/tui.md).
+    ///
+    /// Wrapping rather than a dim variant per style: the register is a property
+    /// of *where* a node sits, not of what the span means, so the markdown
+    /// renderer keeps emitting the same semantic styles either way.
+    Dimmed { nodes: Vec<DocumentNode<'a>> },
+
     /// Code block with syntax highlighting (from markdown fenced blocks)
     CodeBlock {
         lang: Option<Cow<'a, str>>,
@@ -360,6 +371,11 @@ impl<'a> DocumentNode<'a> {
         DocumentNode::Lines {
             lines: lines.into_iter().map(|span| vec![span]).collect(),
         }
+    }
+
+    /// Render `nodes` in the dimmed register ([`DocumentNode::Dimmed`]).
+    pub fn dimmed(nodes: Vec<DocumentNode<'a>>) -> Self {
+        DocumentNode::Dimmed { nodes }
     }
 
     /// Convenience constructor for a metadata block
