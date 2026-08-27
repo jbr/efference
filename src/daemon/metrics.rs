@@ -17,6 +17,16 @@ use super::*;
 #[derive(Default)]
 pub(super) struct Metrics {
     pub(super) last_usage: Option<Usage>,
+    /// The last **main-loop** completion's usage, stamped by `RequestOrigin::Turn`
+    /// alone. Context-window occupancy is a fact about the trajectory's own
+    /// prefix, and the side channels do not share it: a fork peek, a triage, or a
+    /// spotter assessment carries its own much smaller prompt, so reading
+    /// occupancy off [`Metrics::last_usage`] made the reported context *drop*
+    /// mid-turn — observed live 2026-08-23 falling from ~27k to 6.8k and
+    /// correcting when the turn completed. Side-channel usage still belongs in
+    /// the cumulative totals and the cost, which is why this is a second field
+    /// rather than a filter on the first.
+    pub(super) last_turn_usage: Option<Usage>,
     /// Stamped by **any** request — real turn, fork peek, or keepalive ping. The
     /// cache-touch clock: decides when to ping.
     pub(super) last_request_at: Option<Instant>,
@@ -134,6 +144,9 @@ impl Shared {
         self.persist_usage(origin, &request);
         self.spawn_cost_fetch(&request);
         let mut m = self.metrics.lock().unwrap();
+        if origin == RequestOrigin::Turn {
+            m.last_turn_usage = Some(request.usage.clone());
+        }
         Self::fold_usage(&mut m, request.usage);
         m.last_real_turn_at = Some(Instant::now());
     }

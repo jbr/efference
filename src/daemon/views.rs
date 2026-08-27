@@ -99,15 +99,18 @@ impl Shared {
         // function is ever split further.
         let retention = self.retention();
         let metrics = self.metrics.lock().unwrap();
-        // Context-window occupancy (docs/transport.md): the last request's total
-        // prompt tokens — uncached input + cache reads + cache writes; `input_tokens`
-        // alone is only the uncached remainder — against the boot-fetched limit.
-        // `used` is null until the first request; `context` is null entirely when no
-        // capabilities were fetched (tests, offline verbs).
+        // Context-window occupancy (docs/transport.md): the last **main-loop**
+        // request's total prompt tokens — uncached input + cache reads + cache
+        // writes; `input_tokens` alone is only the uncached remainder — against
+        // the boot-fetched limit. Deliberately `last_turn_usage`, not
+        // `last_usage`: the side channels each carry their own, much smaller
+        // prefix, so folding them here made occupancy fall mid-turn and correct
+        // itself afterwards. `used` is null until the first *turn*; `context` is
+        // null entirely when no capabilities were fetched (tests, offline verbs).
         let context = self.capabilities.lock().unwrap().as_ref().map(|caps| {
             serde_json::json!({
                 "limit": caps.context_length,
-                "used": metrics.last_usage.as_ref().map(|u| {
+                "used": metrics.last_turn_usage.as_ref().map(|u| {
                     u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
                 }),
             })

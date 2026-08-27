@@ -135,6 +135,68 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
     assert_eq!(v["usage"]["context"]["used"], 6 + 165 + 9407);
 }
 
+/// **A side-channel request must not move reported occupancy.** The fork peek,
+/// the idle triage, and the spotter each carry their own much smaller prefix, so
+/// folding them into the context readout made it *drop* mid-turn and correct
+/// itself afterwards — observed live 2026-08-23 falling ~27k → 6.8k. Their
+/// tokens still belong in the cumulative totals, which is what this pins on both
+/// sides.
+#[test]
+fn context_occupancy_ignores_side_channel_requests() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    shared.set_capabilities(crate::api::ModelCapabilities {
+        context_length: 200_000,
+        max_output_tokens: Some(64_000),
+        supports_reasoning: false,
+    });
+    let usage = |input, read| RequestUsage {
+        id: None,
+        model: None,
+        usage: Usage {
+            input_tokens: input,
+            output_tokens: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: read,
+        },
+    };
+
+    shared.record_request(RequestOrigin::Turn, usage(10, 27_000));
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["context"]["used"], 27_010);
+
+    // Every non-turn origin, each with a prefix a fraction of the trajectory's.
+    for origin in [
+        RequestOrigin::Peek,
+        RequestOrigin::Triage,
+        RequestOrigin::Spot,
+    ] {
+        shared.record_request(origin, usage(8, 6_800));
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        assert_eq!(
+            v["usage"]["context"]["used"], 27_010,
+            "{origin:?} moved reported occupancy"
+        );
+    }
+    shared.record_keepalive(usage(4, 100));
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["context"]["used"], 27_010, "keepalive moved it");
+
+    // The next real turn does move it — the readout is scoped, not frozen.
+    shared.record_request(RequestOrigin::Turn, usage(12, 31_000));
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["context"]["used"], 31_012);
+
+    // Side-channel spend is still counted; scoping `context` did not hide it.
+    let cumulative = &v["usage"]["cumulative"];
+    assert_eq!(cumulative["input_tokens"], 10 + 8 * 3 + 4 + 12);
+    assert_eq!(
+        cumulative["cache_read_input_tokens"],
+        27_000 + 6_800 * 3 + 100 + 31_000
+    );
+    // And `last` still means the last request of any kind.
+    assert_eq!(v["usage"]["last"]["input_tokens"], 12);
+}
+
 /// `GET /state` reports session cost only when a provider accounting surface
 /// armed it (docs/transport.md): null unarmed (direct Anthropic, tests), and
 /// `{usd, unpriced}` once armed — `unpriced > 0` marks the total an undercount.
