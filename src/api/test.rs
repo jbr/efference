@@ -992,6 +992,97 @@ fn request_includes_temperature_when_set() {
     );
 }
 
+/// **The whole request envelope, pinned to its exact bytes.**
+///
+/// The `messages` pins in `src/project/test.rs` cover the projection's own
+/// output; the provider matches the **whole body**, and the gap between those
+/// two facts has already cost a silent cache break — a tools-array mutation
+/// moved the prefix without failing either projection pin
+/// (docs/log-and-projection.md). This pin closes that gap: every field ahead of
+/// the tail, in serialization order, with `messages` present only far enough to
+/// fix its position relative to the rest.
+///
+/// If this fails, the change under test moves the cached prefix in production.
+/// That is the point — update the expectation deliberately, having decided the
+/// move is worth a cold cache for every live session, rather than reflexively.
+///
+/// Adding a field is caught too: a new key lands somewhere in these bytes.
+#[test]
+fn request_envelope_matches_expected_wire_bytes() {
+    use crate::project::{ApiBlock, ApiMessage, CacheControl, Role};
+
+    let tools = [serde_json::json!({
+        "name": "bash",
+        "description": "run a command",
+        "input_schema": {"type": "object"},
+    })];
+    let messages = [ApiMessage {
+        role: Role::User,
+        content: vec![ApiBlock::Text {
+            text: "hello".into(),
+            cache_control: Some(CacheControl::Ephemeral),
+        }],
+    }];
+    let request = Request {
+        model: "claude-opus-5",
+        max_tokens: 4096,
+        system: "you are a harness",
+        tools: &tools,
+        tool_choice: ToolChoice::auto(),
+        thinking: Thinking::Disabled,
+        temperature: Some(0.7),
+        messages: &messages,
+        stream: true,
+    };
+    let expected = concat!(
+        r#"{"model":"claude-opus-5","max_tokens":4096,"system":"you are a harness","#,
+        r#""tools":[{"description":"run a command","input_schema":{"type":"object"},"name":"bash"}],"#,
+        r#""tool_choice":{"type":"auto","disable_parallel_tool_use":true},"#,
+        r#""thinking":{"type":"disabled"},"temperature":0.7,"#,
+        r#""messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral"}}]}],"#,
+        r#""stream":true}"#,
+    );
+    assert_eq!(serde_json::to_string(&request).unwrap(), expected);
+}
+
+/// The envelope's two omit-when-unset fields drop out **entirely** rather than
+/// serializing null or a default: an absent key and a key with a default value
+/// are different bytes, so this is the shape a session that sets neither
+/// `--temperature` nor a system prompt actually sends.
+#[test]
+fn request_envelope_omits_unset_fields_entirely() {
+    let request = Request {
+        model: "m",
+        max_tokens: 1,
+        system: "",
+        tools: &[],
+        tool_choice: ToolChoice::auto(),
+        thinking: Thinking::Omit,
+        temperature: None,
+        messages: &[],
+        stream: true,
+    };
+    let expected = concat!(
+        r#"{"model":"m","max_tokens":1,"tools":[],"#,
+        r#""tool_choice":{"type":"auto","disable_parallel_tool_use":true},"#,
+        r#""messages":[],"stream":true}"#,
+    );
+    assert_eq!(serde_json::to_string(&request).unwrap(), expected);
+}
+
+/// Tool definitions serialize with **sorted keys**, whatever order they were
+/// declared in. This is what makes `tools[]` byte-stable across processes:
+/// `Value`'s map sorts, where a `HashMap` would randomize per process and move
+/// the prefix on every restart (docs/log-and-projection.md).
+#[test]
+fn tool_definition_keys_serialize_sorted() {
+    let declared = serde_json::json!({"zeta": 1, "alpha": 2, "input_schema": 3});
+    assert_eq!(
+        serde_json::to_string(&declared).unwrap(),
+        r#"{"alpha":2,"input_schema":3,"zeta":1}"#,
+    );
+}
+
 /// **Two tool calls in one response stay distinguishable on the live sink.** Blocks
 /// stream sequentially, so an unscoped sink cannot tell the second call's input from the
 /// first's continuing: a client holding one slot per kind resets it when the second
