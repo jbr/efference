@@ -455,6 +455,49 @@ impl Toolbox {
             .collect()
     }
 
+    /// The names of every mounted tool, in mount order.
+    pub fn names(&self) -> Vec<String> {
+        self.definitions()
+            .iter()
+            .filter_map(|d| d.get("name")?.as_str().map(str::to_string))
+            .collect()
+    }
+
+    /// What a call naming no mounted tool gets back.
+    ///
+    /// `unknown tool: ferritin` is true and useless: it says what failed, not
+    /// what would work. In the incident this is drawn from, `ferritin` was an
+    /// allowed **bash prefix** listed in the session's boot context as a skill,
+    /// and the model built a structured call out of the name rather than running
+    /// it as a command. Nothing on the path corrected it — the result text
+    /// didn't, and the distillate then wrote down a false lesson the raw never
+    /// claimed ("not available in this environment"), which is why the
+    /// correction belongs *here*: a result text that carries it is one a
+    /// summary can only compress, not invent past (docs/tools.md).
+    ///
+    /// Naming what *is* mounted is the general form of the fix. `bash` is
+    /// always mounted, so pointing at it covers the whole family of "this name
+    /// is a program, not a tool" — the case that actually occurred.
+    fn unknown_tool_message(&self, name: &str) -> String {
+        let mut message = format!("unknown tool: {name}\n\n");
+        let names = self.names();
+        if names.is_empty() {
+            message.push_str("No tools are mounted in this session.");
+            return message;
+        }
+        message.push_str(&format!("Mounted tools: {}.", names.join(", ")));
+        if names.iter().any(|n| n == bash::NAME) {
+            let bash = bash::NAME;
+            message.push_str(&format!(
+                "\n\nIf `{name}` is a program rather than a tool, run it through `{bash}`."
+            ));
+            message.push_str(&format!(
+                " `{bash}` is how any command-line program is invoked, including one the session's config allows by name."
+            ));
+        }
+        message
+    }
+
     /// The spotter's brief for a structured tool (docs/permissions.md): what the
     /// mount snapshotted about it, so the rung that judges an unfamiliar tool sees
     /// more than a name and a JSON blob. `None` for bash and for a name no backend
@@ -480,7 +523,7 @@ impl Toolbox {
             }
             None => RawResult {
                 images: Vec::new(),
-                content: format!("unknown tool: {}", call.name),
+                content: self.unknown_tool_message(&call.name),
                 is_error: true,
             }
             .into(),

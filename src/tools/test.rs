@@ -64,6 +64,45 @@ async fn unknown_tool_is_an_error_result_not_a_panic() {
         "got {:?}",
         result.content
     );
+    // The correction rides the result text: naming what failed without naming
+    // what would work is what let a hallucinated name become a dead end
+    // (docs/tools.md).
+    assert!(
+        result.content.contains("Mounted tools: bash"),
+        "names what is mounted: {:?}",
+        result.content
+    );
+    assert!(
+        result.content.contains("run it through `bash`"),
+        "points a program-shaped name at bash: {:?}",
+        result.content
+    );
+}
+
+/// The observed incident: `ferritin` was an allowed bash *prefix* advertised as
+/// a skill, and the model built a structured tool call out of the name. The
+/// result text now carries the route back — bash — instead of a bare denial.
+#[tokio::test]
+async fn an_unknown_name_is_pointed_at_bash() {
+    let toolbox = Toolbox::bash_only();
+    let result = done(
+        toolbox
+            .run(
+                &call("ferritin", json!({})),
+                ready(Interrupt::Kill),
+                |_| {},
+                |_| {},
+            )
+            .await,
+    );
+    assert!(result.is_error);
+    for expected in ["unknown tool: ferritin", "Mounted tools: bash", "`bash`"] {
+        assert!(
+            result.content.contains(expected),
+            "{expected:?} in {:?}",
+            result.content
+        );
+    }
 }
 
 /// Every mounted tool advertises `intent`, and advertises it as required — bash and
