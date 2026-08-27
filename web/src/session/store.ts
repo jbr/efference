@@ -39,6 +39,16 @@ export interface Streaming {
   /** Live tool output by call id, cleared when the result commits. */
   toolOutput: Record<CallId, string>;
   processOutput: Record<number, string>;
+  /** True from an `Assistant` commit until the next log entry: `log` has strict
+   * priority over `output` in `Tail::next_frame` (src/daemon/stream.rs), so the
+   * committing entry can overtake deltas still queued that describe it. Those
+   * arrive after `blocks` was cleared and would open fresh blocks holding the
+   * tail of what just committed — a nameless call block from a trailing `}`, or
+   * the message's last sentence a second time. The committed entry is
+   * authoritative, so dropping them loses nothing. The next log entry
+   * (a `ToolResult`, or a `User` turn) ends the drain; an assistant response
+   * never follows another with no entry between. */
+  draining: boolean;
 }
 
 export type Connection =
@@ -70,6 +80,7 @@ export const emptyStreaming: Streaming = {
   blocks: [],
   toolOutput: {},
   processOutput: {},
+  draining: false,
 };
 
 export const emptySession: Session = {
@@ -174,26 +185,33 @@ function applyLog(session: Session, entry: LogEntry): Session {
  */
 function settle(streaming: Streaming, entry: LogEntry): Streaming {
   if ("Assistant" in entry.payload) {
-    return { ...streaming, blocks: [] };
+    return { ...streaming, blocks: [], draining: true };
   }
   if ("ToolResult" in entry.payload) {
     const toolOutput = { ...streaming.toolOutput };
     delete toolOutput[entry.payload.ToolResult.call_id];
-    return { ...streaming, toolOutput };
+    return { ...streaming, toolOutput, draining: false };
   }
-  return streaming;
+  return { ...streaming, draining: false };
 }
 
 /** Append to the block at `index`, opening it if this is its first delta. The
- * block list stays sorted by index, which is wire order. */
+ * block list stays sorted by index, which is wire order. Deltas arriving while
+ * `draining` describe a response that already committed and are dropped
+ * (see `Streaming.draining`). */
 function appendBlock(
   streaming: Streaming,
   index: number,
   kind: LiveBlock["kind"],
   text: string,
 ): Streaming {
+  if (streaming.draining) return streaming;
   const at = streaming.blocks.findIndex((b) => b.index === index);
   if (at === -1) {
+    // Only `tool_call_start` carries a call's id and name, so a fragment for an
+    // index we never saw start could only open a nameless call block. The
+    // committed entry holds the call's whole input; drop it.
+    if (kind === "call") return streaming;
     return {
       ...streaming,
       blocks: [...streaming.blocks, { index, kind, text: cap(text) }].sort(
@@ -223,6 +241,7 @@ function applyOutput(
       }
       return streaming;
     case "tool_call_start":
+      if (streaming.draining) return streaming;
       if ("index" in data && "call_id" in data && "name" in data) {
         return {
           ...streaming,

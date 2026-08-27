@@ -44,6 +44,20 @@ promises (idempotent log replay, whole-topic state replacement, buffer settlemen
 when an entry commits). When the control API moves, `api/` and the fold are the
 whole blast radius.
 
+The fold treats `output` as **lossy and unordered relative to `log`**, because it
+is: the daemon drains an available log entry before reading output deltas
+(`Tail::next_frame`), so an `Assistant` entry can be emitted ahead of deltas
+still queued that describe it, and those arrive after the commit cleared the
+pre-commit buffers. Folding them opened fresh blocks holding the tail of what
+had just committed — a call block with no name (only `tool_call_start` carries
+one) whose input was a trailing `}`, or the message's last sentence a second
+time — which then survived until the *next* entry committed, a whole
+tool-execution phase later, reading as "it resolved itself". So an `Assistant`
+commit puts the fold in a `draining` state and block deltas are dropped until
+the next log entry ends it; an assistant response never directly follows another,
+so the drain cannot swallow a real one. Tool and process output are unaffected —
+they are keyed by call and process, not scoped to a turn.
+
 The split carries a second load beyond rate of change. This layout targets the
 desktop browser, and the phone is expected to need drill-down views rather than a
 reflow of it — but it is one app meeting both, over the same screens. So fetching,

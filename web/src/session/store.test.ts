@@ -186,6 +186,114 @@ describe("the output tail", () => {
     expect(committed.streaming.blocks).toEqual([]);
   });
 
+
+  // The orphan: `log` has strict priority over `output` in the daemon's
+  // `Tail::next_frame`, so the committing `Assistant` entry can overtake deltas
+  // still queued that describe it. Folding those after `blocks` was cleared
+  // used to open fresh blocks holding the tail of what just committed — a
+  // nameless call block from a trailing `}`, and a duplicate of the message's
+  // last sentence. Both survived until the next assistant entry, a whole
+  // tool-execution phase later.
+  it("drops deltas that arrive after the entry they describe committed", () => {
+    const committed = fold(emptySession, [
+      {
+        class: "output",
+        kind: "tool_call_start",
+        data: { index: 1, call_id: "toolu_a", name: "bash" },
+      },
+      {
+        class: "log",
+        kind: "assistant",
+        seq: 1,
+        data: entry(1, {
+          Assistant: { thinking: [], text: [{ Text: "prose" }], calls: [] },
+        }),
+      },
+      // The stragglers, in the order the connection delivers them.
+      {
+        class: "output",
+        kind: "tool_call_input",
+        data: { index: 1, fragment: "}" },
+      },
+      {
+        class: "output",
+        kind: "assistant_delta",
+        data: { index: 0, text: "prose" },
+      },
+      {
+        class: "output",
+        kind: "tool_call_start",
+        data: { index: 2, call_id: "toolu_b", name: "read" },
+      },
+    ]);
+    expect(committed.streaming.blocks).toEqual([]);
+  });
+
+  it("resumes streaming once the next log entry ends the drain", () => {
+    const drained = fold(emptySession, [
+      {
+        class: "log",
+        kind: "assistant",
+        seq: 1,
+        data: entry(1, {
+          Assistant: { thinking: [], text: [], calls: [] },
+        }),
+      },
+      {
+        class: "log",
+        kind: "tool_result",
+        seq: 2,
+        data: entry(2, {
+          ToolResult: {
+            call_id: "toolu_a",
+            raw: { content: "ok", is_error: false },
+            wire: "Raw",
+          },
+        }),
+      },
+      {
+        class: "output",
+        kind: "assistant_delta",
+        data: { index: 0, text: "next" },
+      },
+    ]);
+    expect(drained.streaming.blocks).toEqual([
+      { index: 0, kind: "text", text: "next" },
+    ]);
+  });
+
+  // Standalone from the drain: only `tool_call_start` carries a call's id and
+  // name, so a fragment for an unseen index can only make a nameless call.
+  it("never opens a call block from a fragment alone", () => {
+    const s = fold(emptySession, [
+      {
+        class: "output",
+        kind: "tool_call_input",
+        data: { index: 0, fragment: '{"a"' },
+      },
+    ]);
+    expect(s.streaming.blocks).toEqual([]);
+  });
+
+  // Process output is not turn-scoped — a backgrounded process emitting while
+  // an assistant entry commits must still reach the tasks pane.
+  it("keeps folding process output through the drain", () => {
+    const s = fold(emptySession, [
+      {
+        class: "log",
+        kind: "assistant",
+        seq: 1,
+        data: entry(1, { Assistant: { thinking: [], text: [], calls: [] } }),
+      },
+      {
+        class: "output",
+        kind: "process_output",
+        data: { id: 7, chunk: "tick" },
+      },
+    ]);
+    expect(s.streaming.processOutput).toEqual({ 7: "tick" });
+  });
+
   it("clears a call's live output when its result commits, keeping others", () => {
     const streamed = fold(emptySession, [
       {
