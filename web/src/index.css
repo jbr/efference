@@ -64,7 +64,6 @@ label,
 .inspector-title,
 .inspector-tabs,
 .fork-title,
-.ride-along,
 .prompt,
 .note-glyph,
 .call-sep {
@@ -795,16 +794,6 @@ pre {
 
 .composer-input textarea::placeholder {
   color: var(--fg-faint);
-}
-
-.ride-along {
-  font-size: 0.75em;
-  color: var(--fg-faint);
-  padding-top: 0.2rem;
-  /* No nowrap: as a flex item its min-content width would be the whole
-     sentence, which crushes the textarea on a narrow viewport (the 1ch-wide
-     composer seen on phones). Cap it instead so it wraps to a short column. */
-  max-width: 12em;
 }
 
 /* Send sits inside the input box, bottom-right — the mock has no send

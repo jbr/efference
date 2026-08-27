@@ -117,11 +117,6 @@ export function Composer({
               }
               rows={3}
             />
-            {running && (
-              <span className="ride-along">
-                {narrow ? "rides along" : "rides along with the pending result"}
-              </span>
-            )}
             {narrow && (
               <button
                 type="button"

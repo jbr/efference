@@ -111,7 +111,7 @@ What narrow changes:
 - **The composer stops advertising the keyboard**: placeholder drops the
   enter/shift-enter advice, Enter inserts a newline instead of sending (a phone
   has no shift-enter, so intercepting Enter would make multi-line drafts
-  impossible), and the send button sends. The ride-along hint shortens.
+  impossible), and the send button sends.
 - Chrome rows tighten: the status bar wraps instead of clipping the dials off
   the right edge, the usage meter narrows, the upstream chip ellipsizes, and
   the gate's decision rows wrap so `allow prefix` stays on screen (verified
@@ -134,13 +134,10 @@ Escape, tapping the inspected call again) converges without touching history
 itself. Forward navigation onto a consumed overlay entry is re-consumed:
 which overlay it stood for is deliberately not recorded.
 
-Two WebKit findings the composer carries, fixed for all widths because they only
+One WebKit finding the composer carries, fixed for all widths because it only
 *manifested* narrow: the textarea's flex basis is `100%` rather than `flex: 1`'s
 `0%` (WebKit's `field-sizing: content` shrink-wraps the inline axis when the
-basis is indefinite, which collapsed the field to ~1ch); and the ride-along hint
-must be allowed to wrap (`max-width` instead of `nowrap` — as a flex item its
-nowrap min-content width was the whole sentence, which crushed the textarea
-whenever the loop ran).
+basis is indefinite, which collapsed the field to ~1ch).
 
 **The jump-to-latest chip** (`ui/JumpToLatest.tsx`, both form factors): a fixed
 chip above the dock, shown only while the viewport is away from the tail,
@@ -532,11 +529,13 @@ at the window edge; reversed on use, 2026-08-20). The turn state is a
 breathing accent dot beside "your turn" in the serif when the loop is idle,
 a dim `running…` while it moves; the span between state and dials is
 reserved for the key-hint strip (binds are deferred to interactive
-suggestions; [backlog/web/README.md](../backlog/web/README.md)). While the
-loop runs, the input carries a "rides along with the pending result" hint:
-the mid-trajectory injection semantics
-([control-channel.md](control-channel.md)), stated at the point where the
-text is being typed.
+suggestions; [backlog/web/README.md](../backlog/web/README.md)). The input
+carries no hint about mid-trajectory injection
+([control-channel.md](control-channel.md)): the turn-state indicator beside
+it already says whose turn it is, and riding along is what sending out of
+turn does, so naming the mechanism cost prime UI space without adding
+anything the operator acts on (a hint shipped here and was removed
+2026-08-26).
 
 The input is inset into the dock rather than floating on it: the composer
 band shares the dock's surface color, and the box is near-square (2px) in
