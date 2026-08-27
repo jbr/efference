@@ -389,9 +389,26 @@ impl Toolbox {
     /// `head`/`grep` (docs/redaction-fork.md, docs/tools.md). `scratch` is the
     /// session scratch dir bash exports as `$TMPDIR` (docs/tools.md); `None` for
     /// contexts that never execute (the `wire` dev view).
+    /// Apply the config's foreground-lifetime limits to the mounted `bash` provider
+    /// (docs/supervisor.md). Separate from construction because only a served session
+    /// has a config — the dev views (`wire`, `spotter`, `peek`) build a toolbox to read
+    /// tool *definitions* and never run a command, so they keep the defaults.
+    pub fn with_bash_limits(mut self, limits: crate::config::BashLimits) -> Self {
+        for provider in &mut self.providers {
+            if let Provider::Bash(bash) = provider {
+                bash.background_after = limits.background_after;
+                bash.background_after_max = limits.background_after_max;
+            }
+        }
+        self
+    }
+
     pub fn bash_and_mcps(cwd: PathBuf, scratch: Option<PathBuf>) -> anyhow::Result<Self> {
         Ok(Self::new(vec![
-            Provider::Bash(Bash { tmpdir: scratch }),
+            Provider::Bash(Bash {
+                tmpdir: scratch,
+                ..Bash::default()
+            }),
             Provider::ReadImage(ReadImage { cwd: cwd.clone() }),
             // fs-mcp curated down to the tools whose structured, fork-friendly
             // output genuinely beats the shell. `set_working_directory` is managed

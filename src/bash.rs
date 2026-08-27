@@ -24,6 +24,7 @@ use tokio::process::Command;
 
 use crate::frontend::Interrupt;
 use crate::log::RawResult;
+use std::time::Duration;
 
 /// What a tool run resolved to. Every path still pairs the `tool_use` with
 /// exactly one `tool_result` — a detach just isn't the *tool's* result to
@@ -57,6 +58,11 @@ pub struct DetachedBash {
     pub stdout: tokio::process::ChildStdout,
     pub stderr: tokio::process::ChildStderr,
     pub seed: Vec<u8>,
+    /// `Some(deadline)` when the *timer* detached this call rather than the
+    /// operator — the loop words the handoff differently, because an
+    /// auto-detach is the only one the agent did not ask for and is the moment
+    /// `background_after` becomes worth knowing about (docs/supervisor.md).
+    pub auto_after: Option<Duration>,
 }
 
 /// The tool name the model calls; `tool_use` / `tool_result` ids pair on it.
@@ -73,14 +79,42 @@ can abort a running command with Ctrl-C.";
 /// respects `$TMPDIR` (`mktemp`, `std::env::temp_dir()`, Python `tempfile`), so
 /// incidental *and* deliberate temp files land in the sanctioned, granted,
 /// session-cleaned dir with no agent awareness required.
-#[derive(Default)]
 pub struct Bash {
     pub tmpdir: Option<std::path::PathBuf>,
+    /// Applies when a call names no `background_after` of its own.
+    pub background_after: Duration,
+    /// The clamp on a call-supplied `background_after`. This is the loop-safety
+    /// property — no foreground call may park the turn indefinitely — so it is
+    /// deliberately not something a call can raise (docs/supervisor.md).
+    pub background_after_max: Duration,
+}
+
+/// The shipped defaults, used when no `[bash]` config section says otherwise.
+/// 300s clears a real `cargo build --release` while firing on under 1% of the
+/// observed corpus; the ceiling is high enough for a genuinely slow build and
+/// still finite. The asymmetry is what sets them: a premature detach costs one
+/// `read_process` and loses nothing, an absent one costs the session.
+pub const DEFAULT_BACKGROUND_AFTER: Duration = Duration::from_secs(300);
+pub const DEFAULT_BACKGROUND_AFTER_MAX: Duration = Duration::from_secs(1800);
+
+impl Default for Bash {
+    fn default() -> Self {
+        Self {
+            tmpdir: None,
+            background_after: DEFAULT_BACKGROUND_AFTER,
+            background_after_max: DEFAULT_BACKGROUND_AFTER_MAX,
+        }
+    }
 }
 
 #[derive(Deserialize)]
 struct Input {
     command: String,
+    /// The caller's own expectation of how long this should take, in seconds.
+    /// An expectation, not a promise: exceeding it detaches, and that is a
+    /// signal the caller asked for rather than a failure.
+    #[serde(default)]
+    background_after: Option<u64>,
 }
 
 /// Whether a call is a `bash` invocation asking to be backgrounded
@@ -123,7 +157,11 @@ impl Bash {
                     },
                     "background": {
                         "type": "boolean",
-                        "description": "Run asynchronously: return immediately with a p#n handle, surface the process's recent output in your inbox at each step, and notify you when it exits. Use for long-running or watch processes (servers, `cargo watch`, test runners) so you can keep working. Omit or false to run to completion and get the output now."
+                        "description": "Run asynchronously: return immediately with a p#n handle, surface the process's recent output in your inbox at each step, and notify you when it exits. Use for long-running or watch processes (servers, `cargo watch`, test runners) so you can keep working. Omit or false to run to completion and get the output now. Note that backgrounding inside the command with a shell `&` does NOT do this — the command will not return, because the process it starts keeps the call's output open."
+                    },
+                    "background_after": {
+                        "type": "integer",
+                        "description": "Seconds after which this call stops blocking and moves to the background on its own, as if you had set `background: true` from the start. Nothing is killed and no output is lost — you get a p#n handle and can read_process it. This is an upper bound you expect NOT to hit: set it when you know a command is legitimately slow (a big build), and leave it out otherwise to take the default. Exceeding it is a signal that something is wrong, not a failure."
                     }
                 },
                 "required": ["command"]
@@ -157,8 +195,17 @@ impl Bash {
         on_spawn: impl FnOnce(Option<u32>),
         mut on_output: impl FnMut(&[u8]),
     ) -> Outcome {
-        let command = match Input::deserialize(input) {
-            Ok(input) => input.command,
+        let (command, background_after) = match Input::deserialize(input) {
+            // A call-supplied bound is clamped, never trusted: the ceiling is the
+            // property that has to hold at exactly the moment the caller's estimate
+            // turns out wrong (docs/supervisor.md).
+            Ok(input) => (
+                input.command,
+                input
+                    .background_after
+                    .map_or(self.background_after, Duration::from_secs)
+                    .min(self.background_after_max),
+            ),
             Err(e) => return error(format!("invalid bash input: {e}")).into(),
         };
 
@@ -196,11 +243,28 @@ impl Bash {
         // interrupts. The canonical bytes are decoded once, whole, in [`render`];
         // per-chunk decoding is the sink's concern.
         let mut combined: Vec<u8> = Vec::new();
-        let interrupted = drain_pipes(&mut stdout, &mut stderr, abort, |chunk| {
+        // The deadline rides the same cancel slot as the operator's interrupt, so a
+        // timer detach and an operator detach are the *same* path — `Interrupt::Detach`
+        // surrenders the live child, and everything downstream is unchanged. Whichever
+        // fires first wins; `auto` records which it was, for the handoff wording.
+        let auto = std::cell::Cell::new(false);
+        let deadline = async {
+            tokio::time::sleep(background_after).await;
+            auto.set(true);
+            Interrupt::Detach
+        };
+        let cancel = async {
+            tokio::select! {
+                intent = abort => intent,
+                intent = deadline => intent,
+            }
+        };
+        let interrupted = drain_pipes(&mut stdout, &mut stderr, cancel, |chunk| {
             on_output(chunk);
             combined.extend_from_slice(chunk);
         })
         .await;
+        let auto_after = auto.get().then_some(background_after);
         match interrupted {
             Some(Interrupt::Kill) => {
                 if let Some(pgid) = pgid {
@@ -225,6 +289,7 @@ impl Bash {
                 stdout,
                 stderr,
                 seed: combined,
+                auto_after,
             })),
             // Both pipes at EOF: the child has finished writing; reap its status.
             None => match child.wait().await {

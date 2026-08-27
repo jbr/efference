@@ -121,6 +121,41 @@ request with no tool mid-run is a no-op: the wake reaches only a
 currently-awaited race, and a stashed note is dropped when the next foreground
 bash starts, so it can't mislabel a later handoff.
 
+## The deadline — a foreground call may not block forever
+
+A foreground call also detaches **on its own** once it outruns a deadline. The
+timer resolves the same `Interrupt::Detach` into the same cancel slot as the
+operator's, so a timer detach and an operator detach are one path; only the
+handoff wording differs (`DetachedBash::auto_after` carries which it was).
+Nothing is killed and no output is lost — the seam property above is what makes
+that true.
+
+The deadline exists because a foreground call waits for its **output** to close,
+not for its direct child to exit. A command that starts a server with a shell
+`&` leaves a grandchild holding the pipes open, so the call never reaches EOF,
+and both recovery levers are operator-side over the control channel — an
+unattended autonomous session has no way back. One such command used to end a
+session.
+
+Two numbers, `[bash]` in the config (`config::BashLimits`), because one value
+cannot be both:
+
+- `background-after` — the default, applied when a call names nothing (300s).
+- `background-after-max` — the clamp on a call's own value (1800s). This is the
+  safety property, which is why a call cannot raise itself past it.
+
+The `bash` tool takes an optional `background_after` in seconds, clamped to the
+max. It is an **expectation, not a promise**: a caller states what it believes an
+upper bound to be, and exceeding it is a signal the caller asked for rather than
+a failure. It is emphatically not a timeout — a model that reads it as a
+kill-deadline pads it defensively and erodes the ceiling, so both the field name
+and its description say what actually happens.
+
+An auto-detach handoff names the way out — `background_after`, `background:
+true`, and `read_process <handle>` — because the failure it replaces was
+*silence*, which taught nothing: three sessions across two models hit the hang
+and none of them discovered `background: true`.
+
 ## Why the running tail is not a notification
 
 The [inbox](inbox.md) / notification model is built on immutable bodies: an

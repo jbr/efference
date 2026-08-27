@@ -307,17 +307,39 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                             .unwrap()
                             .take()
                             .expect("a detach only reaches a spawned (registered) command");
+                        let auto_after = detached.auto_after;
                         let handle = shared.adopt_background(*detached, id);
                         handoff = shared.take_detach_note();
-                        RawResult {
-                            images: Vec::new(),
-                            content: format!(
+                        // The two detaches read differently to the agent. An operator
+                        // detach is something that happened *to* the call; an auto-detach
+                        // is the deadline the call itself ran past, and is the one moment
+                        // `background_after` is worth knowing about — three sessions hit
+                        // the pre-timer hang and none learned anything, because the
+                        // failure was silence (docs/supervisor.md).
+                        let content = match auto_after {
+                            Some(after) => format!(
+                                "this command was still running after {}s, so it moved to \
+                                 the background on its own as {handle}. nothing was killed \
+                                 and no output was lost. if you expected it to run this \
+                                 long, pass `background_after` (seconds) on calls like it, \
+                                 or `background: true` to skip blocking altogether; if you \
+                                 expected it to finish, read_process {handle} to see what \
+                                 it is doing. note that starting a process with a shell \
+                                 `&` inside the command keeps this call's output open, so \
+                                 the call cannot return on its own.",
+                                after.as_secs()
+                            ),
+                            None => format!(
                                 "the user moved this command to the background as {handle}. \
                                  it is still running: its recent output will surface in your \
                                  inbox at each step, you'll get a notification when it exits, \
                                  and you can read_process/kill_process it like any background \
                                  process."
                             ),
+                        };
+                        RawResult {
+                            images: Vec::new(),
+                            content,
                             is_error: false,
                         }
                     }

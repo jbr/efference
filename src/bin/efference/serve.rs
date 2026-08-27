@@ -245,7 +245,8 @@ pub(crate) async fn serve(
     // of what the session must know. A server that answers `401` is authorized
     // here, which is the one point in the boot that waits for a human
     // (docs/mcp-auth.md).
-    let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))?;
+    let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))?
+        .with_bash_limits(loaded.role.bash);
     // Credentials live in the base dir, not the session dir: an authorization
     // belongs to the operator and the server, not to one session.
     let store = efference::mcp::auth::store::FileStore::new(Path::new(BASE_DIR));

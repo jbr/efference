@@ -32,6 +32,24 @@ pub(super) struct RawConfig {
     /// `[mcp]` table — connected-provider declarations ([`Config::mcp_servers`]).
     #[serde(default)]
     mcp: RawMcp,
+    /// `[bash]` table — the foreground-lifetime knobs ([`Config::bash`]).
+    #[serde(default)]
+    bash: RawBash,
+}
+
+/// The `[bash]` table: how long a foreground command may block the turn before
+/// it is moved to the background (docs/supervisor.md). Two numbers, because one
+/// value cannot be both the default and the clamp — `background_after` is what a
+/// call gets when it names nothing, and `background_after_max` is the ceiling a
+/// call's own `background_after` is clamped to. The ceiling is the loop-safety
+/// property, which is why it is operator-set and not call-set.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawBash {
+    #[serde(rename = "background-after", default)]
+    background_after: Option<u64>,
+    #[serde(rename = "background-after-max", default)]
+    background_after_max: Option<u64>,
 }
 
 /// The `[mcp]` table. Only `servers` today; a table (rather than hoisting
@@ -265,6 +283,16 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
         extends: raw.extends,
         context,
         mcp_servers,
+        bash: crate::config::BashLimits {
+            background_after: raw
+                .bash
+                .background_after
+                .map_or(crate::bash::DEFAULT_BACKGROUND_AFTER, Duration::from_secs),
+            background_after_max: raw.bash.background_after_max.map_or(
+                crate::bash::DEFAULT_BACKGROUND_AFTER_MAX,
+                Duration::from_secs,
+            ),
+        },
     })
 }
 

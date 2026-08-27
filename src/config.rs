@@ -70,9 +70,34 @@ use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 use serde::Deserialize;
+use std::time::Duration;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value, value};
 
 use crate::log::ConfigChange;
+
+/// How long a foreground `bash` command may block the turn (docs/supervisor.md).
+///
+/// Two numbers rather than one, because they answer different questions.
+/// `background_after` is a *default* — what a call gets when it names no
+/// expectation of its own. `background_after_max` is a *clamp* on the value a
+/// call may name, and is the loop-safety property: no foreground call may park
+/// the turn indefinitely. A single value could not be both, since clamping a
+/// call to the default would only ever let it ask for less, and the point of the
+/// call-supplied value is to let a genuinely slow build ask for more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BashLimits {
+    pub background_after: Duration,
+    pub background_after_max: Duration,
+}
+
+impl Default for BashLimits {
+    fn default() -> Self {
+        Self {
+            background_after: crate::bash::DEFAULT_BACKGROUND_AFTER,
+            background_after_max: crate::bash::DEFAULT_BACKGROUND_AFTER_MAX,
+        }
+    }
+}
 
 /// The materialized policy table (docs/permissions.md). Built from the TOML
 /// file by [`validate`]-ing a [`RawConfig`]; every field is optional/empty so a minimal — or
@@ -126,6 +151,8 @@ pub struct Config {
     /// what any entry "is" — see [`ContextEntry`].
     pub context: Vec<ContextEntry>,
 
+    /// Foreground-lifetime limits for the `bash` tool (docs/supervisor.md).
+    pub bash: BashLimits,
     /// User-declared MCP servers to mount as connected providers (docs/tools.md).
     /// A `BTreeMap` so mount order — and therefore the wire `tools[]` order — is
     /// deterministic (docs/log-and-projection.md). Declaring a server here is the
