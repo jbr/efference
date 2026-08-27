@@ -139,6 +139,19 @@ One WebKit finding the composer carries, fixed for all widths because it only
 `0%` (WebKit's `field-sizing: content` shrink-wraps the inline axis when the
 basis is indefinite, which collapsed the field to ~1ch).
 
+**Nothing in the transcript may set a minimum width wider than the column.** Two
+failures of this shape were found together at narrow widths and fixed the same
+way. A call head is a wrapping flex row whose target holds a `min-width` floor,
+because without one, shrink took a multi-path `read` target down to a
+one-character-per-line column beside squeezed basename links — 2673px of height
+for one head. A distiller note and markdown prose break inside long tokens
+(`overflow-wrap: break-word`), and the note additionally sets `min-width: 0`:
+as a flex item its default `auto` floor is the longest identifier it contains,
+so a note full of them — which is what a note about code is — grew its box past
+the row and had every line-end cut at the screen edge. Both halves are needed
+there; `min-width` alone lets the box shrink while the unbreakable token still
+paints past it.
+
 **The jump-to-latest chip** (`ui/JumpToLatest.tsx`, both form factors): a fixed
 chip above the dock, shown only while the viewport is away from the tail,
 tapping it an instant jump — the gate float's constraint (never smooth-scroll

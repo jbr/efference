@@ -315,8 +315,14 @@ input[type="checkbox"] {
   background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
+/* The head's parts — prompt, tool, separator, target, open links — are a row
+   until they no longer fit, then continuation lines. Without the wrap they had
+   to share one row at any width, and flex shrink took the target down to a
+   one-character-per-line column beside squeezed columns of basename links: a
+   full screen of height for one call head, seen on a phone. */
 .call-head {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.55rem;
   align-items: baseline;
 }
@@ -336,7 +342,14 @@ input[type="checkbox"] {
 
 .call-target {
   color: var(--code-path);
-  overflow-wrap: anywhere;
+  /* A path is only scannable while it holds a readable minimum width, so shrink
+     stops here and the head wraps instead. `break-word` rather than `anywhere`
+     now that a minimum exists: a multi-path target breaks between paths and
+     only ever mid-path when one path alone is wider than the line — which is
+     still better than overflowing it. */
+  flex: 1 1 auto;
+  min-width: min(20ch, 100%);
+  overflow-wrap: break-word;
 }
 
 /* A call's parts belong to it, so they sit tighter than session-level
@@ -394,6 +407,15 @@ input[type="checkbox"] {
   font-size: 1.05em;
   font-weight: 300;
   color: var(--fg-muted);
+  /* A note is the distiller's account of the output, so it is full of
+     identifiers — `transcript_tool_io(Screenplay)`, `tool_result(id,content)`.
+     As a flex item its default `min-width: auto` is the longest of those, so on
+     a narrow viewport the box grew past the row and the overhang was cut at the
+     screen edge, losing every line's end. Both halves are needed: `min-width`
+     lets the box shrink to the row, `break-word` keeps the ink inside it — with
+     only the first, the unbreakable token still paints past the edge. */
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 /* The consolidation mark: a rule naming the extent the wire folded behind,
@@ -814,6 +836,12 @@ pre {
   font-family: var(--font-prose);
   font-size: 1.125em;
   line-height: 1.55;
+  /* Prose here routinely carries paths and identifiers, which have no break
+     opportunity: on a narrow viewport a paragraph naming a file overflowed its
+     column and was cut at the screen edge — the same shape as the note above,
+     found beside it. `break-word` breaks only the token that cannot fit, so
+     ordinary sentences are unaffected. */
+  overflow-wrap: break-word;
 }
 
 .prose code,
@@ -1388,6 +1416,7 @@ select {
    call's hover, like the rest of the call's affordance surface. */
 .open-file-links {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
   margin-left: 0.4rem;
 }
@@ -1395,6 +1424,10 @@ select {
 .open-file-links .open-file {
   font-size: 0.8em;
   color: var(--fg-faint);
+  /* A basename plus its ⤢ is short; letting it break internally is what turned
+     four links into four one-character columns. It wraps between links now, not
+     inside one. */
+  white-space: nowrap;
 }
 
 .call.clickable:hover .open-file-links .open-file,
