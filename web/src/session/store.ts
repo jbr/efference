@@ -39,6 +39,9 @@ export interface Streaming {
   /** Live tool output by call id, cleared when the result commits. */
   toolOutput: Record<CallId, string>;
   processOutput: Record<number, string>;
+  /** Bytes the supervisor dropped at its retention cap before the seed read,
+   * per process — reported rather than silently skipped (docs/supervisor.md). */
+  processLost: Record<number, number>;
   /** True from an `Assistant` commit until the next log entry: `log` has strict
    * priority over `output` in `Tail::next_frame` (src/daemon/stream.rs), so the
    * committing entry can overtake deltas still queued that describe it. Those
@@ -80,6 +83,7 @@ export const emptyStreaming: Streaming = {
   blocks: [],
   toolOutput: {},
   processOutput: {},
+  processLost: {},
   draining: false,
 };
 
@@ -295,6 +299,38 @@ function applyOutput(
 }
 
 /** A subscribable holder for the fold — the seam useSyncExternalStore binds to. */
+/**
+ * Fold a process's retained output under the deltas already buffered for it.
+ * The read is a snapshot taken when the request went out, and the caller marks
+ * the id seeded *before* issuing it, so every delta in the buffer is strictly
+ * later than the seed — prepending is what puts them back in order. A second
+ * seed for an id is therefore never wanted, and this is a no-op if the read
+ * came back empty.
+ */
+export function seedProcessOutput(
+  session: Session,
+  id: number,
+  output: string,
+  lost: number,
+): Session {
+  if (output === "" && lost === 0) return session;
+  const streaming = session.streaming;
+  return {
+    ...session,
+    streaming: {
+      ...streaming,
+      processOutput: {
+        ...streaming.processOutput,
+        [id]: cap(output + (streaming.processOutput[id] ?? "")),
+      },
+      processLost:
+        lost === 0
+          ? streaming.processLost
+          : { ...streaming.processLost, [id]: lost },
+    },
+  };
+}
+
 export class Store {
   private session: Session = emptySession;
   private listeners = new Set<() => void>();

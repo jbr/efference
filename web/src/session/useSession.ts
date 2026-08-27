@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type { CallId, Decision } from "../api/types.ts";
 import { resolveGate, submitTurn } from "./actions.ts";
 import { connect, type Connector } from "./connect.ts";
+import { ProcessSeeder } from "./processSeed.ts";
 import { Store, type Session } from "./store.ts";
 
 export interface SessionActions {
@@ -79,5 +80,15 @@ export function useSession(): {
     [store],
   );
   const session = useSyncExternalStore(store.subscribe, store.snapshot);
+  // The tasks pane's tail is built from `output` deltas, which have no replay,
+  // so each process needs one read of its retained output to start from. The
+  // `processes` topic is the trigger: a row appearing is the first moment there
+  // is an id to seed, and it covers a foreground command flipping to background
+  // mid-run as well as a client opening onto an already-running one.
+  const seeder = useMemo(() => new ProcessSeeder(store), [store]);
+  const processes = session.topics.processes;
+  useEffect(() => {
+    if (processes) seeder.sync(processes);
+  }, [seeder, processes]);
   return { session, connector, actions };
 }

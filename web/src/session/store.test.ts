@@ -5,6 +5,7 @@ import {
   emptySession,
   pushPendingTurn,
   seed,
+  seedProcessOutput,
   type Session,
 } from "./store.ts";
 
@@ -186,6 +187,30 @@ describe("the output tail", () => {
     expect(committed.streaming.blocks).toEqual([]);
   });
 
+  // `output` has no replay, so a process already running at connect renders an
+  // empty tail until its next chunk — and a backgrounded process is frequently
+  // quiet, which is usually why it was backgrounded.
+  it("puts a seed read in front of the deltas that arrived after it", () => {
+    const s = fold(emptySession, [
+      {
+        class: "output",
+        kind: "process_output",
+        data: { id: 3, chunk: "new" },
+      },
+    ]);
+    const seeded = seedProcessOutput(s, 3, "old", 0);
+    expect(seeded.streaming.processOutput).toEqual({ 3: "oldnew" });
+    expect(seeded.streaming.processLost).toEqual({});
+  });
+
+  it("records dropped bytes from the seed read", () => {
+    const seeded = seedProcessOutput(emptySession, 3, "tail", 4096);
+    expect(seeded.streaming.processLost).toEqual({ 3: 4096 });
+  });
+
+  it("leaves the session identical when a seed read is empty", () => {
+    expect(seedProcessOutput(emptySession, 3, "", 0)).toBe(emptySession);
+  });
 
   // The orphan: `log` has strict priority over `output` in the daemon's
   // `Tail::next_frame`, so the committing `Assistant` entry can overtake deltas

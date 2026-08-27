@@ -66,10 +66,12 @@ function Tail({ text }: { text: string }) {
 function Tasks({
   processes,
   output,
+  lost,
   act,
 }: {
   processes: Process[];
   output: Record<number, string>;
+  lost: Record<number, number>;
   act: (call: Promise<unknown>) => void;
 }) {
   const [picked, setPicked] = useState<number | null>(null);
@@ -138,6 +140,14 @@ function Tasks({
           </button>
           <button onClick={() => act(killProcess(shown.id))}>kill</button>
         </div>
+        {/* Bytes the supervisor dropped at its retention cap before the seed
+            read. Saying so is the point: a tail that silently starts partway
+            through reads as the whole of it. */}
+        {(lost[shown.id] ?? 0) > 0 && (
+          <div className="tail-lost dim">
+            ⋯ {lost[shown.id]} earlier bytes dropped at the retention cap
+          </div>
+        )}
         <Tail text={output[shown.id] ?? ""} />
       </div>
     </div>
@@ -276,6 +286,7 @@ export function Panel({
   role,
   proposals,
   processOutput,
+  processLost,
   quiet,
 }: {
   processes: Process[];
@@ -283,6 +294,7 @@ export function Panel({
   role: Role | null;
   proposals: Proposal[];
   processOutput: Record<number, string>;
+  processLost: Record<number, number>;
   /** Narrow-viewport chrome quieting (docs/web-client.md "The phone
    * breakpoint"): while true and nothing demands the strip — no open pane,
    * no counts — the tab row hides entirely; the status row's ⋯ reveals it. */
@@ -335,7 +347,12 @@ export function Panel({
       <div className="col">
         {error && <div className="error">{error}</div>}
         {open === "tasks" && (
-          <Tasks processes={processes} output={processOutput} act={act} />
+          <Tasks
+            processes={processes}
+            output={processOutput}
+            lost={processLost}
+            act={act}
+          />
         )}
         {open === "inbox" && <Inbox notifications={notifications} act={act} />}
         {open === "policy" && (

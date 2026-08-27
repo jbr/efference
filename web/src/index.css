@@ -641,6 +641,15 @@ pre {
   line-height: 1.6;
 }
 
+/* The retention-cap notice above a seeded tail: a rule-like line so the tail
+   below it reads as beginning partway through. */
+.tail-lost {
+  flex: none;
+  padding: 0.35rem 0.9rem 0;
+  font-size: 0.75em;
+  border-top: 1px solid var(--border-subtle);
+}
+
 .panel-body.inbox,
 .panel-body.policy {
   overflow-y: auto;

@@ -566,6 +566,17 @@ persisted like the theme, counts riding the tabs.
   streaming topic that previously folded into the store and rendered
   nowhere. The mock's "foreground" verb is deliberately absent: the wire has
   a background handoff, not a foregrounding.
+
+  The tail is **seeded, not only streamed**: `output` is ephemeral with no
+  replay, so a process already running when the client connects has no deltas
+  to build a tail from, and a backgrounded process is frequently quiet — which
+  is usually why it was backgrounded. `session/processSeed.ts` reads
+  `GET /v1/processes/:id/output` once per process as the `processes` topic
+  first names it, and folds the result *under* whatever deltas have arrived
+  since. An id with output already buffered is skipped: the retained read is a
+  snapshot containing those same bytes, so seeding a warm buffer would
+  duplicate them. Bytes the supervisor dropped at its retention cap are stated
+  above the tail rather than silently skipped.
 - **inbox** — pending notifications with dismiss
   (`DELETE /v1/notifications/:id`); on an idle loop the inbox delivers
   immediately, so rows only exist while a tool is mid-run.

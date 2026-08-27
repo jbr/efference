@@ -103,6 +103,22 @@ export const patchProcess = (
 ) => patch<Process | null>(`/v1/processes/${id}`, body);
 export const killProcess = (id: number) =>
   del<{ status: string }>(`/v1/processes/${id}`);
+// The cold seed for a process's tail. `output` is lossy with no replay
+// (docs/control-api.md), so a process already running when the client connects
+// has no deltas to build a tail from; with no cursor this returns everything
+// retained. `lost` counts bytes dropped at the retention cap — reported rather
+// than silently skipped.
+export interface ProcessOutputRead {
+  id: number;
+  output: string;
+  cursor: number;
+  lost: number;
+  running: boolean;
+}
+export const fetchProcessOutput = (id: number, since?: number) =>
+  get<ProcessOutputRead>(
+    `/v1/processes/${id}/output${since === undefined ? "" : `?since=${since}`}`,
+  );
 // Remove a pending notification before it reaches a triage gate (docs/inbox.md).
 export const dismissNotification = (id: number) =>
   del<{ status: string }>(`/v1/notifications/${id}`);

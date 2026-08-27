@@ -165,6 +165,7 @@ export function App() {
           role={session.topics.role ?? null}
           proposals={session.topics.proposals ?? []}
           processOutput={session.streaming.processOutput}
+          processLost={session.streaming.processLost}
           quiet={quiet}
         />
         <Composer
