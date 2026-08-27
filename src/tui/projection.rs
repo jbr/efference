@@ -378,15 +378,23 @@ fn result_entry(
         WireState::Distilled { keep, .. } if !show_raw => {
             let distillate = crate::project::distillate(&raw.content, keep);
             let kept = distillate.numbered_lines();
-            // Verb first, so which number is which is unambiguous — `3 of 412` alone
-            // could be read either way round.
             let total = distillate.shown.len() + distillate.dropped;
-            let size = format!(
-                "kept {} of {total} line{}",
-                kept.len(),
-                if total == 1 { "" } else { "s" }
-            );
             let body = distilled_body(call.name.as_str(), raw, &kept);
+            // When triage kept everything, "kept n of n lines" says only that
+            // triage ran — an implementation detail (a third of real results).
+            // The view is everything the model saw, so the header presents it
+            // like any whole result: the size of what follows and nothing else.
+            let size = if kept.len() == total {
+                line_count(&body)
+            } else {
+                // Verb first, so which number is which is unambiguous — `3 of
+                // 412` alone could be read either way round.
+                format!(
+                    "kept {} of {total} line{}",
+                    kept.len(),
+                    if total == 1 { "" } else { "s" }
+                )
+            };
             (body, size)
         }
         _ => {
@@ -512,6 +520,7 @@ fn line_count(body: &[DocumentNode<'static>]) -> String {
         .map(|node| match node {
             DocumentNode::CodeBlock { code, .. } => code.lines().count().max(1),
             DocumentNode::Diff { lines } => lines.len().max(1),
+            DocumentNode::NumberedCode { lines, .. } => lines.len().max(1),
             _ => 1,
         })
         .sum();

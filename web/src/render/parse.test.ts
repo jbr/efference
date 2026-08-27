@@ -57,7 +57,7 @@ test("a raw diff-tool result renders as a diff; errors stay plain", () => {
     kind: "diff",
     lines: [{ kind: "added", text: "+added line" }],
   });
-  expect(diff.rawDiffers).toBe(true);
+  expect(diff.stateWord).toBe("raw");
 
   const err = resultRender("edit", { content, is_error: true }, "Raw");
   expect(err.body.kind).toBe("text");
@@ -83,7 +83,18 @@ test("distilled: the parse runs whole, the kept filter applies to its rows", () 
     lines: [{ kind: "added", text: "+new" }],
   });
   expect(view.sizeLabel).toBe("kept 1 of 7 lines");
+  expect(view.stateWord).toBe("distilled");
   expect(view.note).toBe("kept the addition");
+});
+
+test("a distillate that kept everything presents like any whole result", () => {
+  const content = "one\ntwo\nthree";
+  const view = resultRender("bash", ok(content), {
+    Distilled: { keep: "All", note: null },
+  });
+  expect(view.sizeLabel).toBeNull();
+  expect(view.stateWord).toBeNull();
+  expect(view.body.kind).toBe("numbered");
 });
 
 test("distilled non-diff results fall back to numbered kept lines", () => {
@@ -136,6 +147,10 @@ test("call views summarize known tools and envelope the rest", () => {
     summary: "a.rs · overwrite",
     body: { lang: "rust", text: "fn x() {}" },
   });
+  expect(callView("read_image", { path: "mock.png" }).summary).toBe("mock.png");
+  expect(
+    callView("read_image", { path: "m.png", long_edge: 2576 }).summary,
+  ).toBe("m.png · long_edge 2576");
   expect(
     callView("edit", { file_path: "a.rs", operation: "replace" }).summary,
   ).toBe("a.rs · replace");

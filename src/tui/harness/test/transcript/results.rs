@@ -125,6 +125,54 @@ fn transcript_write_call() {
     );
 }
 
+/// A `read_image` call shows what it asked for and at what resolution: the path
+/// inline, `long_edge` beside it when present — image tokens scale with area
+/// (docs/tools.md), so the requested size is part of what the call did. It used to
+/// fall through to the JSON envelope while the image below it rendered fine.
+#[test]
+fn transcript_read_image_call() {
+    let mut play = Screenplay::new(80, 22);
+    play.user("Look at the mock, then zoom into the header.");
+    play.assistant(
+        "Reading both.",
+        vec![
+            tool_call("read_image", "toolu_i1", json!({ "path": "mock.png" })),
+            tool_call(
+                "read_image",
+                "toolu_i2",
+                json!({ "path": "mock-header.png", "long_edge": 2576 }),
+            ),
+        ],
+    );
+    play.tool_result(
+        "toolu_i1",
+        "1200×1140 image/png, 1763 visual tokens",
+        false,
+        WireState::Raw,
+    );
+    play.tool_result(
+        "toolu_i2",
+        "2576×2449 image/png, 8092 visual tokens",
+        false,
+        WireState::Raw,
+    );
+
+    let frame = play.render();
+    play.snapshot("transcript_read_image_call");
+    assert!(
+        !frame.contains("\"path\""),
+        "the call renders as a one-line header, not a JSON envelope:\n{frame}"
+    );
+    assert!(
+        frame.contains("· mock.png") && frame.contains("· mock-header.png"),
+        "each path inline on its call header:\n{frame}"
+    );
+    assert!(
+        frame.contains("· long_edge 2576"),
+        "requested resolution beside the path when present:\n{frame}"
+    );
+}
+
 /// A distilled tool result — the `WireState::Distilled` path, where the
 /// transcript shows the curated summary in place of the raw output.
 #[test]
@@ -152,6 +200,44 @@ fn transcript_distilled_result() {
         },
     );
     play.snapshot("transcript_distilled_result");
+}
+
+/// When triage kept every line, the header presents the result like any whole
+/// one — `N lines`, no `kept n of n` framing. "Kept everything" says only that
+/// triage ran; nothing on screen may imply the operator is seeing less than
+/// the model did, and here they are not.
+#[test]
+fn transcript_complete_distillate_shows_a_plain_size() {
+    let mut play = Screenplay::new(80, 22);
+    play.user("Tail the log.");
+    play.assistant(
+        "",
+        vec![tool_call(
+            "bash",
+            "toolu_k1",
+            json!({ "command": "tail -n 3 e.log" }),
+        )],
+    );
+    play.tool_result(
+        "toolu_k1",
+        "line one\nline two\nline three",
+        false,
+        WireState::Distilled {
+            keep: Keep::All,
+            note: None,
+        },
+    );
+
+    let frame = play.render();
+    play.snapshot("transcript_complete_distillate_shows_a_plain_size");
+    assert!(
+        frame.contains("✓ 3 lines"),
+        "a kept-everything result sizes like any whole one:\n{frame}"
+    );
+    assert!(
+        !frame.contains("of 3"),
+        "no kept-n-of-n noise when nothing was dropped:\n{frame}"
+    );
 }
 
 /// A distilled result shows the **triaged** lines, for every tool — the default

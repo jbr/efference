@@ -1,4 +1,4 @@
-// ⚠ CORDON — a literal port of the TUI's per-tool parsing and dispatch
+// ! CORDON — a literal port of the TUI's per-tool parsing and dispatch
 // (`src/tui/projection/tools.rs`, plus the distilled-header composition in
 // `src/tui/projection.rs`; docs/web-client.md "The cordon"). Same deletion
 // covenant as distill.ts: structured tool output deletes this directory
@@ -143,13 +143,18 @@ export type ResultView =
 
 export interface ResultRender {
   body: ResultView;
-  /** The TUI's size half-label — "kept N of M lines" — distilled only. */
+  /** The wire state's word on a result head ("raw", "distilled", "elided").
+   * Null when the state is not worth naming: triage kept every line, so the
+   * head presents like any whole result and nothing may imply the operator
+   * sees less than the model did. The inspector's wire row keeps the
+   * unconditional `wireLabel` — there it is metadata, not noise. */
+  stateWord: string | null;
+  /** The TUI's size half-label — "kept N of M lines" — distilled only, and
+   * null alongside a null `stateWord` when nothing was dropped. */
   sizeLabel: string | null;
   /** The distiller's note; true of the output whichever form is shown. */
   note: string | null;
   isError: boolean;
-  /** The body is not verbatim raw — offer the raw audit expander. */
-  rawDiffers: boolean;
 }
 
 /** Mirrors `result_body`'s raw-state dispatch: a diff tool's `===DIFF===`
@@ -212,38 +217,44 @@ export function resultRender(
     const body = richRaw(tool, raw);
     return {
       body,
+      stateWord: "raw",
       sizeLabel: null,
       note: null,
       isError: raw.is_error,
-      rawDiffers: body.kind !== "text",
     };
   }
   if (wire === "Elided") {
     return {
       body: { kind: "text", text: "[elided]" },
+      stateWord: "elided",
       sizeLabel: null,
       note: null,
       isError: false,
-      rawDiffers: true,
     };
   }
   if ("Distilled" in wire) {
     const { keep, note } = wire.Distilled;
     const { kept, total } = distillateKept(raw.content, keep);
+    // When triage kept everything, "distilled · kept n of n lines" says only
+    // that triage ran — a third of real results. The view is everything the
+    // model saw, so the head presents like any whole result.
+    const complete = kept.length === total;
     return {
       body: distilledBody(tool, raw, kept),
-      sizeLabel: `kept ${kept.length} of ${total} line${total === 1 ? "" : "s"}`,
+      stateWord: complete ? null : "distilled",
+      sizeLabel: complete
+        ? null
+        : `kept ${kept.length} of ${total} line${total === 1 ? "" : "s"}`,
       note,
       isError: raw.is_error,
-      rawDiffers: true,
     };
   }
   return {
     body: { kind: "text", text: renderTriageFailure(wire.TriageFailed.why) },
+    stateWord: `triage failed: ${wire.TriageFailed.why}`,
     sizeLabel: null,
     note: null,
     isError: true,
-    rawDiffers: true,
   };
 }
 
@@ -297,6 +308,19 @@ export function callView(name: string, input: unknown): CallView {
   if (name === "list") {
     const path = str("path");
     if (path !== null) return view(path, null);
+  }
+  if (name === "read_image") {
+    // `long_edge` changes what the call *costs* — image tokens scale with area
+    // (docs/tools.md) — so the requested resolution belongs beside the path
+    // rather than in a dropped envelope. Mirrors the TUI's `call_args`.
+    const path = str("path");
+    if (path !== null) {
+      const longEdge = typeof obj.long_edge === "number" ? obj.long_edge : null;
+      return view(
+        longEdge === null ? path : `${path} · long_edge ${longEdge}`,
+        null,
+      );
+    }
   }
   if (name === "write") {
     const path = str("path");

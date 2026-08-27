@@ -55,6 +55,22 @@ pub(in crate::tui) fn call_args(
                 return (Some(vec![inline_code(path.to_string())]), vec![]);
             }
         }
+        "read_image" => {
+            if let Some(path) = input("path") {
+                let mut spans = vec![inline_code(path.to_string())];
+                // `long_edge` changes what the call *costs* — image tokens scale
+                // with area (docs/tools.md) — so the requested resolution belongs
+                // beside the path rather than in a dropped envelope.
+                if let Some(long_edge) = call_input.get("long_edge").and_then(|v| v.as_u64()) {
+                    spans.push(Span {
+                        text: format!(" · long_edge {long_edge}").into(),
+                        style: SpanStyle::Comment,
+                        action: None,
+                    });
+                }
+                return (Some(spans), vec![]);
+            }
+        }
         "write" => {
             // The file being written *is* the call, so show it as the file: the path
             // inline, the contents as a code block highlighted by its extension. The

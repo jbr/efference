@@ -10,7 +10,7 @@ expression: self.render()
  2 │   Editing.                                                                     │
  3 │                                                                                │
  4 │   ❯ edit · CHANGELOG.md · insert_after                                         │
- 5 │   ✓ kept 7 of 7 lines                                                          │
+ 5 │   ✓ 4 lines                                                                    │
  6 │   @@ -12,3 +12,4 @@                                                            │
  7 │    - In-process MCP tools (fs-mcp, semantic-edit-mcp).                         │
  8 │   +- `read` tool line-range support in `fs-mcp`.                               │

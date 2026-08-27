@@ -13,12 +13,7 @@ import {
   partialInput,
   streamingLang,
 } from "../render/partial.ts";
-import {
-  callView,
-  resultRender,
-  wireLabel,
-  type ResultView,
-} from "../render/parse.ts";
+import { callView, resultRender, type ResultView } from "../render/parse.ts";
 import { openablePaths } from "../session/touchedFiles.ts";
 import { useNarrow } from "./useNarrow.ts";
 
@@ -283,14 +278,22 @@ export function ResultBlock({
     () => truncateBody(view.body, tool, narrow),
     [view, tool, narrow],
   );
-  const label = [wireLabel(wire), view.sizeLabel, view.isError ? "error" : null]
-    .filter((part) => part !== null)
-    .join(", ");
+  // The head names the state and the size — except when triage kept every
+  // line, where both go quiet (`stateWord` null) and the head is bare: the
+  // result is the tool's result, whole, and nothing implies otherwise.
+  const parts = [
+    view.stateWord,
+    view.sizeLabel,
+    view.isError ? "error" : null,
+  ].filter((part) => part !== null);
+  const label = parts.join(", ");
   return (
     <div className="block">
       {/* No inspect link: the whole call is the inspection affordance, and
           the call's hover state is the discovery surface (Transcript.tsx). */}
-      <div className="kind result-head">result ({label})</div>
+      <div className="kind result-head">
+        {parts.length > 0 ? `result (${label})` : "result"}
+      </div>
       <ResultBody body={body} />
       {(raw.images ?? []).map((image, idx) => (
         // The view carries only the reference (docs/control-api.md); the

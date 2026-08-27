@@ -1,6 +1,5 @@
 ---
 source: src/tui/harness.rs
-assertion_line: 414
 expression: self.render()
 ---
     0         1         2         3         4         5         6         7         
@@ -44,8 +43,8 @@ expression: self.render()
 35 │─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─┃│
 36 │                                                                               ┃│
 37 │   A link closes it out.                                                       ┃│
-38 │                                                                               ╹│
-39 │   ❯ bash · grep -rn 'fn project' src/ | sort                                   │
+38 │                                                                               ┃│
+39 │   ❯ bash · grep -rn 'fn project' src/ | sort                                  ╹│
 40 │   ✓ 1 line                                                                     │
 41 │ ╭─────────────────────────────────────────────────────────────────────────╮    │
 42 │ │ src/project.rs:12:pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> { │    │

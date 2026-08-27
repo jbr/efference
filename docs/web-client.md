@@ -159,7 +159,9 @@ Two residents:
   call summaries with the `intent` leading the entry, and the distilled
   composition — the parse runs over the whole raw, the verdict's kept line
   numbers filter the rows it produced, so a triaged view keeps its tool's
-  rendering (`kept N of M lines` in the header).
+  rendering (`kept N of M lines` in the header). When nothing was dropped
+  both header words go quiet (`stateWord` and `sizeLabel` null) and the head
+  is a bare `result` — the inspector's wire row still names the state.
 
 `ui/ToolBlocks.tsx` is the display half: colored diff lines (line-level
 only), numbered gutters whose jumps show what triage dropped, `data-lang` on

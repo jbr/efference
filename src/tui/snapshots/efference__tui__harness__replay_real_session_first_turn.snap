@@ -9,7 +9,7 @@ expression: self.render()
  1 │ ┃ many entries there are.                                                     ┃│
  2 │                                                                               ┃│
  3 │   ❯ bash · ls                                                                 ┃│
- 4 │   ✓ kept 13 of 13 lines                                                       ┃│
+ 4 │   ✓ 13 lines                                                                  ┃│
  5 │ ╭───────────────────╮                                                         ┃│
  6 │ │  1 assets         │                                                         ┃│
  7 │ │  2 backlog        │                                                         ┃│
