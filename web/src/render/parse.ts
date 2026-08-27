@@ -355,6 +355,74 @@ export function callView(name: string, input: unknown): CallView {
   return view(null, { lang: "json", text: pretty(input) });
 }
 
+/** One argument as the inspector's args tab shows it: a scalar renders inline,
+ * a multi-line string as a code block. */
+export interface ArgField {
+  key: string;
+  /** Set when the value fits on one line — a path, a flag, a number. */
+  scalar: string | null;
+  /** Set when the value is multi-line: source, a heredoc, a nested envelope. */
+  code: { lang: string | null; text: string } | null;
+}
+
+/**
+ * Every argument of a call, for the inspector's args tab (backlog/web/…).
+ *
+ * Separate from [`callView`] on purpose. `callView.body` answers "what does the
+ * transcript header need beyond its summary", and for the edit family the
+ * answer is nothing — the diff below is the representation, so dumping the
+ * (verbose) input there would show the change twice. The args tab asks a
+ * different question: what was asked. Serving both from one value is what made
+ * the tab claim "no body — the header says it all" while dropping `anchor` and
+ * `content`, the substance of the call.
+ *
+ * Multi-line strings come back as code rather than escaped JSON scalars. A
+ * pretty-print puts a source blob on one line with literal `\n`s and no
+ * highlighting, which is the least readable form of the one thing worth
+ * reading. The language is the call's own `language` when it names one, else
+ * the file extension it is operating on.
+ */
+export function callArgs(name: string, input: unknown): ArgField[] {
+  if (typeof input !== "object" || input === null) {
+    return input === undefined
+      ? []
+      : [{ key: "input", scalar: String(input), code: null }];
+  }
+  const obj = input as Record<string, unknown>;
+  const str = (key: string) =>
+    typeof obj[key] === "string" ? (obj[key] as string) : null;
+  // `intent` is already the call's leading line; repeating it here showed the
+  // same sentence twice.
+  const declared = str("language");
+  const path = str("file_path") ?? str("path");
+  const blobLang =
+    declared ?? (path === null ? null : langForPath(path)) ?? null;
+  return (
+    Object.entries(obj)
+      .filter(([key]) => key !== "intent")
+      .map(([key, value]): ArgField => {
+        if (typeof value === "string") {
+          if (!value.includes("\n")) return { key, scalar: value, code: null };
+          // A bash command is shell whatever file it touches.
+          const lang = name === "bash" && key === "command" ? "bash" : blobLang;
+          return { key, scalar: null, code: { lang, text: value } };
+        }
+        if (value === null || typeof value !== "object") {
+          return { key, scalar: String(value), code: null };
+        }
+        const text = pretty(value);
+        return text.includes("\n")
+          ? { key, scalar: null, code: { lang: "json", text } }
+          : { key, scalar: text, code: null };
+      })
+      // Scalars first, whatever order the input serialized in: they are the
+      // call's identity — which file, which operation — and a blob above them
+      // pushes the answer to "what did this touch" off the top of the tab.
+      // Stable within each group, so the input's own order still shows.
+      .sort((a, b) => Number(a.code !== null) - Number(b.code !== null))
+  );
+}
+
 function pretty(input: unknown): string {
   try {
     return JSON.stringify(input, null, 2) ?? String(input);

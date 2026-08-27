@@ -9,7 +9,13 @@ import type { Keep, RawResult, WireState } from "../api/types.ts";
 import type { CallNode } from "../session/tree.ts";
 import { Code } from "./Code.tsx";
 import { ResultBody } from "./ToolBlocks.tsx";
-import { callView, resultRender, wireLabel } from "../render/parse.ts";
+import {
+  callArgs,
+  callView,
+  resultRender,
+  wireLabel,
+  type ArgField,
+} from "../render/parse.ts";
 import { openablePaths } from "../session/touchedFiles.ts";
 
 /** Drag-to-resize, persisted. The drawer floats over the content (the
@@ -43,6 +49,46 @@ function useDrawerWidth() {
     },
   };
   return { width, grip };
+}
+
+/** Lines a code-valued argument shows before it asks. Past this the tab stops
+ * being a list of arguments and becomes one long scroll of the biggest one —
+ * edit `content` runs to 16kB at the top of the corpus. */
+const ARG_FOLD_LINES = 14;
+
+/** One argument. A scalar is inline beside its key; a multi-line value is a
+ * code block under it, folded to a readable head when it is long. */
+function ArgRow({ field }: { field: ArgField }) {
+  const [open, setOpen] = useState(false);
+  if (field.code === null) {
+    return (
+      <div className="arg-row">
+        <dt className="arg-key">{field.key}</dt>
+        <dd className="arg-scalar">{field.scalar}</dd>
+      </div>
+    );
+  }
+  const lines = field.code.text.split("\n");
+  const folded = !open && lines.length > ARG_FOLD_LINES;
+  const shown = folded
+    ? lines.slice(0, ARG_FOLD_LINES).join("\n")
+    : field.code.text;
+  return (
+    <div className="arg-row block">
+      <dt className="arg-key">
+        {field.key}
+        <span className="dim"> · {lines.length} lines</span>
+        {lines.length > ARG_FOLD_LINES && (
+          <button className="linkish" onClick={() => setOpen(!open)}>
+            {open ? "fold" : "show all"}
+          </button>
+        )}
+      </dt>
+      <dd>
+        <Code text={shown} lang={field.code.lang} />
+      </dd>
+    </div>
+  );
 }
 
 // No `file` tab: the drawer is call-scoped, so a tab here reads as "the file
@@ -131,6 +177,13 @@ export function Inspector({
     () => (call !== null ? callView(call.name, call.input) : null),
     [call],
   );
+  // The tab's own view of the input, not the header's: `callView.body` is null
+  // for the edit family by design, which is why this tab used to claim the
+  // header said everything while `anchor` and `content` went unshown.
+  const args = useMemo(
+    () => (call !== null ? callArgs(call.name, call.input) : []),
+    [call],
+  );
   const result =
     node.result !== null && "ToolResult" in node.result.payload
       ? node.result.payload.ToolResult
@@ -196,10 +249,14 @@ export function Inspector({
             {view.intent !== null && (
               <div className="intent">{view.intent}</div>
             )}
-            {view.body !== null ? (
-              <Code text={view.body.text} lang={view.body.lang} />
+            {args.length > 0 ? (
+              <dl className="arg-list">
+                {args.map((field) => (
+                  <ArgRow key={field.key} field={field} />
+                ))}
+              </dl>
             ) : (
-              <div className="dim">no body — the header says it all</div>
+              <div className="dim">this call took no arguments</div>
             )}
           </>
         )}

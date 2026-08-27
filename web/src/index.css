@@ -1197,6 +1197,52 @@ select {
   font-size: 0.85em;
 }
 
+/* The args tab: one row per argument, the key labelling either an inline
+   scalar or the code block under it. `dl` because that is what this is — a
+   name/value list — and a grid on the scalar rows so the values line up. */
+.arg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.arg-row {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, auto) 1fr;
+  gap: 0 0.6rem;
+  align-items: baseline;
+}
+
+/* A code-valued row stacks: the block wants the drawer's full width, and a
+   key column beside it would squeeze source into a gutter. */
+.arg-row.block {
+  display: block;
+}
+
+.arg-key {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--fg-muted);
+}
+
+.arg-row.block .arg-key {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.arg-scalar {
+  margin: 0;
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.arg-row dd {
+  margin: 0;
+}
+
 .inspector-spot {
   display: flex;
   flex-direction: column;

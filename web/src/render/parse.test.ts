@@ -7,6 +7,7 @@ import {
   callView,
   diffRows,
   isDiffTool,
+  callArgs,
   langForPath,
   readMarker,
   readRows,
@@ -167,4 +168,83 @@ test("diff-tool set and language map mirror the Rust", () => {
   expect(isDiffTool("write")).toBe(false);
   expect(langForPath("x/y/z.toml")).toBe("toml");
   expect(langForPath("noext")).toBeNull();
+});
+
+// The args tab's own view of the input. `callView.body` is null for the edit
+// family by design (the diff below the header is the representation), which is
+// why the tab used to say "no body — the header says it all" while dropping
+// `anchor` and `content` — most of what the call actually asked for.
+test("callArgs shows an edit's anchor and content, which the header omits", () => {
+  const input = {
+    intent: "rename the field",
+    file_path: "src/log.rs",
+    operation: "replace",
+    language: "rust",
+    anchor: "fn a() {\n  b();\n}",
+    content: "fn a() {\n  c();\n}",
+  };
+  expect(callView("edit", input).body).toBeNull();
+  const fields = callArgs("edit", input);
+  // Scalars first — the call's identity — then the blobs, stable within each.
+  expect(fields.map((f) => f.key)).toEqual([
+    "file_path",
+    "operation",
+    "language",
+    "anchor",
+    "content",
+  ]);
+  expect(fields[0]).toEqual({
+    key: "file_path",
+    scalar: "src/log.rs",
+    code: null,
+  });
+  // Multi-line strings are code blocks, not escaped JSON scalars: a
+  // pretty-print puts source on one line with literal \n and no
+  // highlighting.
+  expect(fields[3].code).toEqual({
+    lang: "rust",
+    text: "fn a() {\n  b();\n}",
+  });
+});
+
+test("callArgs drops intent, which renders as the call's leading line", () => {
+  expect(
+    callArgs("read", { intent: "look", paths: ["a"] }).map((f) => f.key),
+  ).toEqual(["paths"]);
+});
+
+test("callArgs falls back to the path's extension when no language is declared", () => {
+  const [field] = callArgs("write", {
+    path: "x/y.toml",
+    contents: "a = 1\nb = 2",
+  }).filter((f) => f.key === "contents");
+  expect(field.code?.lang).toBe("toml");
+});
+
+test("callArgs keeps a multi-line bash command shell, whatever file it names", () => {
+  const [field] = callArgs("bash", {
+    command: "cd x\nls",
+    path: "a.rs",
+  }).filter((f) => f.key === "command");
+  expect(field.code?.lang).toBe("bash");
+});
+
+test("callArgs renders a nested envelope as json and a flat one inline", () => {
+  // Declared blob-first; the scalar sorts ahead of it.
+  const fields = callArgs("x", { deep: { a: 1, b: 2 }, flat: [] });
+  expect(fields[0]).toEqual({ key: "flat", scalar: "[]", code: null });
+  expect(fields[1].code?.lang).toBe("json");
+});
+
+test("callArgs puts a write's path ahead of its contents, however serialized", () => {
+  const fields = callArgs("write", {
+    contents: "a\nb",
+    create_directories: false,
+    path: "web/x.ts",
+  });
+  expect(fields.map((f) => f.key)).toEqual([
+    "create_directories",
+    "path",
+    "contents",
+  ]);
 });

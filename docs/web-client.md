@@ -607,7 +607,26 @@ cannot unmount the drawer early.
 
 Tabs — `result` / `args` / `raw` / `spot`, all views over data the client
 already holds, rendered through the cordon's existing renderers rather than
-a second implementation. There is deliberately **no `file` tab**: the drawer
+a second implementation.
+
+The **args tab renders the call's whole input**, unconditionally — a separate
+computation (`render/parse.ts`'s `callArgs`) from the header's
+`callView.body`. Serving both surfaces from one value is what made the tab
+say "no body — the header says it all" on every edit, which was false: the
+header shows `file_path · operation`, while `anchor` and `content` — the
+substance, a median 752 bytes of input across the corpus — went unshown.
+`callView.body` stays null for the diff family because the diff below the
+header *is* the representation there; the args tab asks a different question,
+which is what was asked for. Multi-line values render as highlighted code
+blocks — by the call's own `language` when it names one, else the extension
+of the path it operates on — because a pretty-printed JSON scalar puts source
+on one line with literal `\n`s and no highlighting, the least readable form
+of the one thing worth reading (the same failure the TUI diagnosed once in
+`write`). Long blocks fold to a readable head with a line count and a
+`show all`. Scalars sort ahead of blobs whatever order the input serialized
+in: they are the call's identity, and a blob above them pushes "what did this
+touch" off the top of the tab. `intent` continues to render above the body
+rather than inside it — it is already the call's leading line. There is deliberately **no `file` tab**: the drawer
 is call-scoped, so a tab here would read as "the file at the time of this
 call", while a file read from disk is the file *now*, and serving the
 historical reading would mean snapshotting every file at every edit. The
