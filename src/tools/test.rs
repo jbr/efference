@@ -283,6 +283,91 @@ fn fs_read_and_list_roundtrip() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A refused write reaches the model as an **error** result carrying the refusal
+/// verbatim (docs/tools.md). The two halves are separable and both matter: the flag
+/// says a write did not happen — a success-shaped refusal read as a success, and
+/// distillation keeping only the first line sharpened that — and the body still
+/// carries the retry token, which is the only way to confirm the same bytes without
+/// re-sending them.
+#[test]
+fn a_refused_write_is_an_error_result_with_its_body_intact() {
+    let dir = std::env::temp_dir().join(format!("eff-refuse-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("taken.txt"), "already here").unwrap();
+
+    let server = fs_server(dir.clone());
+    let refused = server.run_call(
+        "write",
+        &json!({ "path": "taken.txt", "contents": "new body" }),
+    );
+    assert!(refused.is_error, "got {:?}", refused.content);
+    assert!(
+        refused.content.contains("already exists"),
+        "got {:?}",
+        refused.content
+    );
+    assert!(
+        refused.content.contains("preserved under `"),
+        "the retry token survives the flip: {:?}",
+        refused.content
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("taken.txt")).unwrap(),
+        "already here"
+    );
+
+    // The zero-match case is the other side of the line: a search that found
+    // nothing answered the question it was asked, so it stays a success.
+    let empty = server.run_call("search", &json!({ "pattern": "no-such-string-here" }));
+    assert!(!empty.is_error, "got {:?}", empty.content);
+    assert!(
+        empty.content.contains("No matches found"),
+        "got {:?}",
+        empty.content
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A rejected edit is an error result too, and the rejection report — the diff and
+/// the syntax errors that explain what blocked it — is the error's body
+/// (docs/tools.md).
+#[test]
+fn a_rejected_edit_is_an_error_result_with_its_report_intact() {
+    let dir = std::env::temp_dir().join(format!("eff-reject-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = "fn main() {\n    println!(\"hi\");\n}\n";
+    std::fs::write(dir.join("main.rs"), source).unwrap();
+
+    let server: McpServer<SemanticEditTools, semantic_edit_mcp::Tools> = McpServer::from_state(
+        SemanticEditTools::embedded(dir.clone()).unwrap(),
+        &["set_working_directory"],
+    );
+    let rejected = server.run_call(
+        "edit",
+        &json!({
+            "file_path": "main.rs",
+            "operation": "replace",
+            "anchor": "nothing in this file matches this anchor",
+            "content": "fn other() {}",
+        }),
+    );
+    assert!(rejected.is_error, "got {:?}", rejected.content);
+    assert!(
+        !rejected.content.is_empty() && !rejected.content.contains("Applied"),
+        "got {:?}",
+        rejected.content
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("main.rs")).unwrap(),
+        source
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// semantic-edit-mcp wires up through the same generic `McpServer`: its
 /// schemas translate, an embedded instance (in-memory stores + tree-sitter
 /// language registry) advertises the edit tools, and bad input is a clean

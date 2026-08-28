@@ -161,6 +161,23 @@ one. Any failure
 (bad input or tool error) becomes an `is_error` result so the `tool_use` always
 gets exactly one paired `tool_result` — the API rejects orphans.
 
+#### Which outcomes are errors
+
+The first-party tools return a **refused or rejected** outcome as an error — a
+`write` that would clobber an existing file, a flag conflict, an `edit` whose
+placement did not validate, a failed `retarget_edit`. The refusal text is the
+error's body, unchanged: fs-mcp's write-retry token still rides in it, and an
+edit rejection still carries its diff and syntax errors. What changes is only the
+flag, and the flag is what a reader sees first — a refusal shaped like a success
+was read as a success, and the triage fork keeping the first line or two of the
+body sharpened that (see `redaction-fork.md`).
+
+An outcome is a success when it answers the call on its own terms even though it
+changed nothing: a `search` with zero matches, a `find_anchor` that matched
+nowhere, an `edit` whose exact change the file already contains, a
+`retarget_edit` already aimed where it was asked to aim. The line is whether the
+state the call asked for holds afterward — not whether the tool wrote anything.
+
 ### Schema translation
 
 `McpServer::from_state` translates `mcplease`'s `ToolSchema` (MCP
