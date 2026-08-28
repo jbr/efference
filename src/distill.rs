@@ -41,7 +41,7 @@ use crate::log::{
     Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall, WireState,
 };
 use crate::project::{
-    ApiBlock, ApiMessage, ImagePlacement, PEEK_LINE_CAP, Role, block_to_api,
+    ApiBlock, ApiMessage, BreakpointPlacement, ImagePlacement, PEEK_LINE_CAP, Role, block_to_api,
     place_trailing_cache_breakpoint, project_with,
 };
 use crate::supervisor::BgView;
@@ -287,6 +287,11 @@ pub struct ForkPeek {
     /// peek pays a cold prefix instead of a cache read (docs/redaction-fork.md,
     /// docs/log-and-projection.md).
     pub image_placement: ImagePlacement,
+    /// The session's provider-derived cache-breakpoint placement — same reason as
+    /// `image_placement`: the fork's request must place its breakpoint exactly
+    /// where the agent turn placed its, or the peek writes a second cache entry
+    /// instead of reading the live one (docs/log-and-projection.md).
+    pub breakpoint_placement: BreakpointPlacement,
 }
 
 /// Run one peek to a usable verdict, with bounded in-fork retries
@@ -649,6 +654,7 @@ fn peek_messages(
     background: &[BgView],
     roster: &[Item],
     placement: ImagePlacement,
+    breakpoint: BreakpointPlacement,
 ) -> Vec<ApiMessage> {
     let mut sections = String::new();
     append_inbox_and_background(&mut sections, inbox, background);
@@ -673,7 +679,7 @@ fn peek_messages(
     // The prefix hits cache; only the raws and the instruction are fresh, and they are
     // discarded — the canonical lineage never sees raw (docs/redaction-fork.md).
     let mut messages = project_with(prefix, placement);
-    place_trailing_cache_breakpoint(&mut messages);
+    place_trailing_cache_breakpoint(&mut messages, breakpoint);
     // Every call is answered — a `tool_use` left unpaired makes the request invalid —
     // but a bypassed result answers with a stand-in rather than its output: the harness
     // already decided it (docs/redaction-fork.md), and the ask above does not offer it.
@@ -755,9 +761,12 @@ pub fn peek_request(
     inbox: &[ShownNotification],
     background: &[BgView],
     placement: ImagePlacement,
+    breakpoint: BreakpointPlacement,
 ) -> Vec<ApiMessage> {
     let roster = surfaceable_roster(prefix);
-    peek_messages(prefix, pending, inbox, background, &roster, placement)
+    peek_messages(
+        prefix, pending, inbox, background, &roster, placement, breakpoint,
+    )
 }
 
 /// One fork-peek round trip against a recorded gate, with **no retries**
@@ -778,7 +787,14 @@ pub async fn peek_attempt(
         .filter(|p| bypassed(p).is_none())
         .map(|p| (p.call.id.0.clone(), shown_line_count(p.raw)))
         .collect();
-    let messages = peek_request(prefix, pending, inbox, background, client.image_placement());
+    let messages = peek_request(
+        prefix,
+        pending,
+        inbox,
+        background,
+        client.image_placement(),
+        client.breakpoint_placement(),
+    );
     let completion = client
         .complete(&messages, tools, ToolChoice::auto(), |_| {})
         .await
@@ -883,6 +899,7 @@ impl ForkPeek {
             background,
             &roster,
             self.image_placement,
+            self.breakpoint_placement,
         );
 
         let mut record = PeekRecord::default();
@@ -1010,7 +1027,7 @@ impl ForkPeek {
         view.push_str(TRIAGE_INSTRUCTION);
 
         let mut messages = project_with(prefix, self.image_placement);
-        place_trailing_cache_breakpoint(&mut messages);
+        place_trailing_cache_breakpoint(&mut messages, self.breakpoint_placement);
         messages.push(ApiMessage {
             role: Role::User,
             content: vec![ApiBlock::Text {

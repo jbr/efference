@@ -216,6 +216,12 @@ impl Masker {
                 self.mask_in_place(&mut spot.reason);
                 self.mask_opt(&mut spot.probed_prefix);
             }
+            // Per-call telemetry (docs/tools.md) carries no free text a secret
+            // could ride in: a tool name, a duration, byte counts, an outcome
+            // token, and the call's own `operation` argument — every one of them
+            // a value the tool table or the harness produced, not a value from
+            // the environment. Nothing to mask (docs/env.md).
+            Payload::ToolTelemetry(_) => {}
             Payload::ConfigEdit(edit) => {
                 self.mask_in_place(&mut edit.note);
                 match &mut edit.change {

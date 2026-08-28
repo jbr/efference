@@ -22,6 +22,9 @@ pub async fn serve<S: Spotter>(
     bind: Option<tcp::TcpBind>,
     env_policy: crate::env_table::EnvPolicy,
 ) -> Result<(), Error> {
+    // The keepalive interval, read off the config before it moves into `Shared`
+    // (docs/transport.md).
+    let ping_at = role.role.transport.keepalive_interval;
     let (shared, turns) = Shared::full(
         log,
         role,
@@ -35,6 +38,9 @@ pub async fn serve<S: Spotter>(
     // Set before the loop spawns: the gate reads it on the loop's thread (backlog/permissions/
     // session-dir-and-config-as-reviewed-file.md — the autonomous flip).
     shared.set_autonomous(autonomous);
+    // Whether this model has a prompt cache to keep warm at all
+    // (docs/transport.md) — read before the capabilities move into `Shared`.
+    let cacheable = capabilities.supports_prompt_caching;
     // The boot-fetched model capabilities (docs/transport.md) — the caller already
     // treated a failed lookup as fatal, so by here the value always exists.
     shared.set_capabilities(capabilities);
@@ -117,11 +123,27 @@ pub async fn serve<S: Spotter>(
     // The cache keepalive runs alongside the loop (docs/log-and-projection.md) — a transport-side
     // timer that never touches the log, so it composes with the loop without
     // sharing anything but the read-only client and the telemetry clocks.
-    tokio::spawn(keepalive_loop(
-        Arc::clone(&client),
-        Arc::clone(&shared),
-        tools,
-    ));
+    //
+    // Two gates, either of which keeps it from spawning. **No prompt cache**: the
+    // boot capability lookup found no upstream behind this model that caches
+    // prompts, so a `max_tokens: 0` ping would refresh nothing and re-bill the
+    // whole prefix at the input rate every interval — the ping is only free where
+    // there is an entry to read. **Interval zero**: the operator turned it off.
+    // The runtime tripwire inside the loop stays as well; it catches the endpoint
+    // that claims a cache and reasons on the ping anyway (docs/transport.md).
+    if cacheable && !ping_at.is_zero() {
+        tokio::spawn(keepalive_loop(
+            Arc::clone(&client),
+            Arc::clone(&shared),
+            tools,
+            ping_at,
+        ));
+    } else if !cacheable {
+        eprintln!(
+            "[keepalive off: {} reports no prompt cache behind this model]",
+            client.endpoint().provider.name()
+        );
+    }
 
     // The fs-watch initiator (docs/permissions.md): if the config resolved
     // from a file, watch it so external edits take effect live as committed `ConfigEdit`s. The

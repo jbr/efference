@@ -709,3 +709,28 @@ fn parses_the_transport_stream_ceiling() {
         crate::api::DEFAULT_STREAM_CEILING
     );
 }
+
+/// `[transport] keepalive-interval` is the second transport knob: how long the
+/// cached prefix may go untouched at idle before the ping (docs/transport.md).
+/// **Zero is the off switch** — the honest spelling, rather than a separate
+/// boolean that could disagree with the interval beside it.
+#[test]
+fn parses_the_transport_keepalive_interval() {
+    let role = parse_str(
+        r#"
+            [transport]
+            keepalive-interval = 45
+            "#,
+    );
+    assert_eq!(role.transport.keepalive_interval, Duration::from_secs(45));
+    assert_eq!(
+        parse_str("").transport.keepalive_interval,
+        crate::daemon::DEFAULT_KEEPALIVE_INTERVAL
+    );
+    assert!(
+        parse_str("[transport]\nkeepalive-interval = 0\n")
+            .transport
+            .keepalive_interval
+            .is_zero()
+    );
+}

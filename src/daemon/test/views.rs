@@ -228,6 +228,8 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
         context_length: 200_000,
         max_output_tokens: Some(64_000),
         supports_reasoning: false,
+        supports_image_input: true,
+        supports_prompt_caching: true,
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["context"]["limit"], 200_000);
@@ -266,6 +268,8 @@ fn context_occupancy_ignores_side_channel_requests() {
         context_length: 200_000,
         max_output_tokens: Some(64_000),
         supports_reasoning: false,
+        supports_image_input: true,
+        supports_prompt_caching: true,
     });
     let usage = |input, read| RequestUsage {
         id: None,

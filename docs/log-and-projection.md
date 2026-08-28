@@ -232,20 +232,33 @@ the expected-bytes pin deliberately.
 
 ---
 
-## Breakpoint placement — the last text block
+## Breakpoint placement — provider-conditional
 
-`place_trailing_cache_breakpoint` (`src/project/wire.rs`) marks one block per
-request, walking back from the wire tail to the last **text** block; trailing
-`tool_use`/`tool_result` blocks stay unmarked, and a wire with no text block at all
-gets no marker. Anthropic accepts `cache_control` on any block type, but OpenAI's
-explicit prompt caching — which OpenRouter converts Anthropic-format markers into on
-OpenAI-fronted endpoints — attaches breakpoints only to text blocks: a marker
-converted onto any other block type bills the full 1.25× write on **every** request
-and never produces a readable entry (measured; this was most of an audited session's
-bill). Text-only placement is required there and a bounded cost on Anthropic: the
-unmarked suffix re-bills at the input rate each request until a text block (a user
-turn, a pinned notification, a surfaced-context reminder) reappears. Making
-placement provider-conditional awaits the provider-awareness work in the backlog.
+`place_trailing_cache_breakpoint` (`src/project/wire.rs`) marks exactly one block
+per request, walking back from the wire tail. **Which** block it may mark is
+`BreakpointPlacement`, derived once at boot from the declared provider
+(`Provider::breakpoint_placement`) and fixed for the session:
+
+- `TrailingBlock` (**Anthropic**) — the last block, whatever its type.
+  `cache_control` is legal on any block on the native API, so the marker sits at
+  the true tail and nothing is left behind it.
+- `LastTextBlock` (**OpenRouter**) — the last **text** block; trailing
+  `tool_use`/`tool_result` blocks stay unmarked, and a wire with no text block at
+  all gets no marker. OpenAI's explicit prompt caching — which OpenRouter
+  converts Anthropic-format markers into on OpenAI-fronted endpoints — attaches
+  breakpoints only to text blocks: a marker converted onto any other block type
+  bills the full 1.25× write on **every** request and never produces a readable
+  entry (measured; this was most of an audited session's bill). The cost of the
+  portable placement is that the unmarked suffix re-bills at the input rate each
+  request until a text block (a user turn, a pinned notification, a
+  surfaced-context reminder) reappears.
+
+The two placements are the same seam `ImagePlacement` uses, and for the same
+reason: a projection-shaping choice that varies by provider has to be *fixed at
+boot* rather than re-derived, or a session's cached prefix could move under it.
+The consequence for the byte pins is that the pinned bytes are pinned **per
+placement** — `project/test/cache.rs` covers both arms and asserts the marker
+count stays one either way.
 
 One request shape rides this marker everywhere: agent turns, fork peeks, and
 keepalive pings send the same `tools[]`, `tool_choice: auto`, and thinking policy

@@ -360,6 +360,28 @@ pub(crate) fn kill_group(pgid: u32) {
     }
 }
 
+/// The marker [`render`] appends on a non-zero exit. Named so the writer below
+/// and [`reported_exit_status`] cannot drift.
+const EXITED_WITH: &str = "[exited with status ";
+
+/// The exit status a rendered bash result reports, or `None` when it reports
+/// none — which, for a completed foreground command, means it exited zero
+/// (docs/tools.md, "Per-call telemetry").
+///
+/// A string rather than an integer because the marker carries `signal` for a
+/// command killed by one, and a number that had to invent a value for that case
+/// would be less true than the token. Read back out of the result text on
+/// purpose: the exit status never left this module in structured form, and
+/// widening `Outcome` to carry it would touch every backend that returns one for
+/// a field only telemetry reads. Parser and writer sit together so the format is
+/// one thing.
+pub(crate) fn reported_exit_status(content: &str) -> Option<&str> {
+    content
+        .rsplit_once(EXITED_WITH)
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(status, _)| status)
+}
+
 /// Decode the accumulated (arrival-interleaved) output and mark `is_error` on a
 /// non-zero exit, annotating the status (a code, or `signal` when killed by one).
 fn render(combined: Vec<u8>, status: ExitStatus) -> RawResult {
@@ -371,7 +393,7 @@ fn render(combined: Vec<u8>, status: ExitStatus) -> RawResult {
             .code()
             .map_or_else(|| "signal".to_string(), |c| c.to_string());
         push_line_break(&mut content);
-        content.push_str(&format!("[exited with status {status}]"));
+        content.push_str(&format!("{EXITED_WITH}{status}]"));
     }
     if content.is_empty() {
         content.push_str("(no output)");

@@ -132,7 +132,11 @@ background-after-max = 600   # ceiling on what one call may ask for
 
 [transport]
 stream-ceiling = 300         # seconds one response's stream may stay open
+keepalive-interval = 240     # seconds the prompt cache may go untouched at idle; 0 = no ping
 ```
+
+The keepalive only runs at all if the model's provider metadata reports a prompt
+cache behind it; the interval says how often to touch it, and `0` turns it off.
 
 ## `[mcp.servers.<name>]` — connected providers
 

@@ -61,14 +61,16 @@ pub(super) struct RawBash {
     background_after_max: Option<u64>,
 }
 
-/// The `[transport]` table: how long one response's SSE stream may stay open
-/// before the read loop stops waiting on it (docs/transport.md). Seconds, like
-/// `[bash]`'s knobs. Absent → [`crate::api::DEFAULT_STREAM_CEILING`].
+/// The `[transport]` table (docs/transport.md). Seconds, like `[bash]`'s knobs.
+/// Absent → [`crate::api::DEFAULT_STREAM_CEILING`] and
+/// [`crate::daemon::DEFAULT_KEEPALIVE_INTERVAL`].
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawTransport {
     #[serde(rename = "stream-ceiling", default)]
     stream_ceiling: Option<u64>,
+    #[serde(rename = "keepalive-interval", default)]
+    keepalive_interval: Option<u64>,
 }
 
 /// The `[mcp]` table. Only `servers` today; a table (rather than hoisting
@@ -373,6 +375,10 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
                 .transport
                 .stream_ceiling
                 .map_or(crate::api::DEFAULT_STREAM_CEILING, Duration::from_secs),
+            keepalive_interval: raw.transport.keepalive_interval.map_or(
+                crate::daemon::DEFAULT_KEEPALIVE_INTERVAL,
+                Duration::from_secs,
+            ),
         },
     })
 }

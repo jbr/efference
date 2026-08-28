@@ -145,11 +145,16 @@ pub(crate) async fn peek(
     // grammar the other reader verbs take.
     let (path, label) = resolve_session_log(&path.to_string_lossy())?;
     let entries = efference::persist::load(&path)?;
-    // Replays use the env-declared provider's image placement, matching what a live
-    // session against that provider projects; a keyless dry run falls back to the
-    // default (docs/log-and-projection.md).
-    let placement = efference::api::Endpoint::from_env()
-        .map(|e| e.provider.image_placement())
+    // Replays use the env-declared provider's projection-shaping choices — image
+    // placement and cache-breakpoint placement — matching what a live session against
+    // that provider projects; a keyless dry run falls back to the defaults
+    // (docs/log-and-projection.md).
+    let provider = efference::api::Endpoint::from_env()
+        .map(|e| e.provider)
+        .ok();
+    let placement = provider.map(|p| p.image_placement()).unwrap_or_default();
+    let breakpoint = provider
+        .map(|p| p.breakpoint_placement())
         .unwrap_or_default();
     let all = gates(&entries);
     let mut selected: Vec<&Gate> = match seq {
@@ -205,6 +210,7 @@ pub(crate) async fn peek(
                     &[],
                     &[],
                     placement,
+                    breakpoint,
                 ))
             })
             .sum();
@@ -224,7 +230,14 @@ pub(crate) async fn peek(
             .zip(&g.raws)
             .map(|(call, raw)| Pending { call, raw })
             .collect();
-        let messages = peek_request(&entries[..g.prefix_end], &pending, &[], &[], placement);
+        let messages = peek_request(
+            &entries[..g.prefix_end],
+            &pending,
+            &[],
+            &[],
+            placement,
+            breakpoint,
+        );
         eprintln!("note: gate at seq {} · {} result(s)", g.seq, pending.len());
         println!(
             "{}",
@@ -266,6 +279,7 @@ pub(crate) async fn peek(
             &[],
             &[],
             placement,
+            breakpoint,
         )) as u64;
         let mut passes = 0usize;
         for draw in 1..=repeat {

@@ -234,6 +234,81 @@ query malformed is. Overwriting without the documented overwrite flag is tool
 misuse (or unexamined disk state — either way the wielding, not the world), so it
 errors. A well-formed search that finds nothing is an empty success.
 
+### The image gate
+
+Whether a session's model accepts images is `ModelCapabilities::supports_image_input`
+([transport.md](transport.md)), fetched at boot and handed to the toolbox
+(`Toolbox::with_image_input`). It is applied at `Toolbox::run` — the one seam
+every call passes through — rather than inside the image-producing tools,
+because two unrelated backends produce images (`read_image`, and any MCP server
+whose result carries an image block) and the gate must answer alike for both.
+
+The two halves read differently on purpose:
+
+- **`read_image` refuses before the read.** The tool exists only to produce an
+  image, so it has no useful degraded form, and decoding a file to throw the
+  pixels away spends the work to arrive at the same answer. The refusal is an
+  error and names what would work instead — the sentence a model reads after a
+  refusal is what decides whether it retries the same call.
+- **A result that merely *carries* images keeps its text.** An MCP tool call is
+  not *about* its image the way `read_image` is — a screenshot tool's text half
+  is often the useful part — so the call still succeeds, `is_error` stays false,
+  and only the bytes are dropped, with a line saying how many and why. What this
+  buys is that the log and the wire stop carrying bytes nothing will look at, and
+  the model is told rather than left to infer it from silence.
+
+Without the gate, an image tool against a text-only model spends the upload on
+either a 400 or on content the model cannot read, while its own success message
+says it worked.
+
+### Per-call telemetry
+
+Every completed tool call appends a `Payload::ToolTelemetry` entry beside its
+result (`src/agent/telemetry.rs`, derived at the dispatch seam in
+`src/agent/step.rs`). It **projects to nothing** — log metadata in the same sense
+timestamps are — which is what lets it be written unconditionally; the pin that
+says so is `project::test::tool_telemetry_projects_to_identical_bytes`, the same
+shape as the `Triage.thinking` pin.
+
+It is a separate entry rather than a field on `ToolResult`, following the shape
+`Spot` already uses for per-call audit: the pairing is by `call_id`, the payload
+is written by a different concern than the result, and `ToolResult` is
+constructed at dozens of sites — many of them a harness stand-in with no run to
+measure — that would each have to name a telemetry value they do not have.
+
+What it records:
+
+- **Common, every call**: tool name, `call_id`, duration (the permission cascade
+  excluded — a call that waited an hour at a human gate did not *run* for an
+  hour), outcome class, result bytes **before** distillation, and realized image
+  count.
+- **Outcome class** is derived generically rather than per tool. Since built-in
+  negative outcomes became `is_error: true` (above), `is_error` *is* the
+  applied/rejected split; the third class, `harness_error`, is set only by the
+  two sites that construct a harness-authored failure, never inferred from the
+  text — inferring it would put the classification back where it started.
+- **Bash**: the exit status the result reports (`"1"`, or `"signal"`; absent
+  means the result reported none, which for a completed foreground command is
+  zero) and whether the call asked to be backgrounded. The status is read back
+  out of the result text by `bash::reported_exit_status`, which sits beside the
+  writer that emits the marker — it never left that module in structured form,
+  and widening `Outcome` to carry it would touch every backend for a field only
+  telemetry reads.
+- **Edit-shaped**: `operation`, anchor bytes, and content bytes, read off the
+  call's own `input` under any of the spellings the mounted editing tools use.
+
+The point is that these questions were previously answered by grepping result
+*prose*: "did that edit apply or get refused" was recovered from
+`startswith("Applied")`, and anchor discipline was inferred from argument lengths
+plus a count of `===TIP===` markers that turned out to be a throttle cap rather
+than a measure. Prose written for a model is not a measurement surface.
+
+**Not recorded in this cut**, because the data is not at the dispatch seam and
+getting it means plumbing it out of the tool crates: the edit *rejection kind*
+(anchor-not-found / syntax-guard / stale), and the shorter-anchor-sufficed
+predicate behind the throttled tip. Both would be a change to what
+`semantic-edit-mcp` returns, not to this layer.
+
 ### Schema translation
 
 `McpServer::from_state` translates `mcplease`'s `ToolSchema` (MCP

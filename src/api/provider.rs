@@ -54,6 +54,21 @@ impl Provider {
         }
     }
 
+    /// Which block this provider's cache breakpoint attaches to
+    /// (docs/log-and-projection.md). Anthropic accepts `cache_control` on any
+    /// block, so the marker sits at the true wire tail; OpenRouter translates the
+    /// marker for the upstream serving the slug, and a non-text carrier is the
+    /// shape that translation does not survive on OpenAI-ish endpoints.
+    ///
+    /// Fixed at boot from the provider, exactly like [`Self::image_placement`],
+    /// so projection-plus-placement is deterministic within a session.
+    pub fn breakpoint_placement(&self) -> crate::project::BreakpointPlacement {
+        match self {
+            Self::Anthropic => crate::project::BreakpointPlacement::TrailingBlock,
+            Self::OpenRouter => crate::project::BreakpointPlacement::LastTextBlock,
+        }
+    }
+
     /// The lowercase name, as `EFFERENCE_PROVIDER` spells it — for error
     /// messages and boot output.
     pub fn name(&self) -> &'static str {
@@ -107,6 +122,20 @@ impl Provider {
         }
     }
 
+    /// Whether this provider reads the OpenAI-style `prompt_cache_key` **body**
+    /// field (docs/transport.md). OpenRouter does — it is the last fallback in
+    /// its sticky-routing precedence, behind body `session_id` and the
+    /// `x-session-id` header, and upstreams that speak the OpenAI dialect key
+    /// their own prompt cache on it. Anthropic's Messages API has no such field,
+    /// and an unrecognized top-level key is a 400 there, so gating is not
+    /// optional here the way it is for a header.
+    pub(super) fn prompt_cache_key_field(&self) -> bool {
+        match self {
+            Self::Anthropic => false,
+            Self::OpenRouter => true,
+        }
+    }
+
     /// The literal prepended to the secret to form the auth header value.
     /// Split off the secret so the secret stays a *whole* value (an `op://…`
     /// reference `op run` can substitute — docs/transport.md).
@@ -141,17 +170,40 @@ impl Provider {
     /// Parse this provider's metadata response into [`ModelCapabilities`]. A
     /// response missing the fields we need is an error (the boot step is
     /// required — docs/transport.md), never a silent default.
-    pub(super) fn parse_capabilities(&self, body: &str) -> Result<ModelCapabilities, Error> {
+    ///
+    /// `upstream` is the session's `--upstream` order (empty when unpinned). It
+    /// narrows the endpoint set the OpenRouter aggregations run over: a pinned
+    /// session routes to exactly those endpoints, so aggregating across the ones
+    /// it will never reach reports someone else's ceiling. Anthropic ignores it —
+    /// there is one upstream.
+    pub(super) fn parse_capabilities(
+        &self,
+        body: &str,
+        upstream: &[String],
+    ) -> Result<ModelCapabilities, Error> {
         match self {
             Self::Anthropic => {
                 // `GET /v1/models/{id}`: `max_input_tokens` is the context
                 // window, `max_tokens` the output cap (both carried since
-                // 2026-03). Unknown fields (`capabilities`, …) are ignored
-                // until a consumer needs them.
+                // 2026-03). Unknown fields are ignored until a consumer needs
+                // them; `capabilities.image_input.supported` is the one that
+                // has one.
                 #[derive(Deserialize)]
                 struct Model {
                     max_input_tokens: Option<u64>,
                     max_tokens: Option<u64>,
+                    #[serde(default)]
+                    capabilities: Option<Capabilities>,
+                }
+                #[derive(Deserialize)]
+                struct Capabilities {
+                    #[serde(default)]
+                    image_input: Option<Supported>,
+                }
+                #[derive(Deserialize)]
+                struct Supported {
+                    #[serde(default)]
+                    supported: Option<bool>,
                 }
                 let model: Model = serde_json::from_str(body)?;
                 let context_length = model.max_input_tokens.ok_or_else(|| -> Error {
@@ -164,6 +216,20 @@ impl Provider {
                     // (`api::thinking`), not this bit — `supports_reasoning`
                     // describes OpenRouter's normalized `reasoning` parameter.
                     supports_reasoning: false,
+                    // Absent defaults to **true**, unlike the ceilings above,
+                    // which error on absence. The ceilings have no safe default
+                    // (a guessed number is silently wrong); this one does — the
+                    // Messages API has accepted image blocks on every Claude
+                    // model since it shipped, so a metadata response that stops
+                    // carrying the field must not disable a working tool.
+                    supports_image_input: model
+                        .capabilities
+                        .and_then(|c| c.image_input)
+                        .and_then(|i| i.supported)
+                        .unwrap_or(true),
+                    // Anthropic's explicit `cache_control` breakpoints — the
+                    // cache the keepalive exists to refresh (docs/transport.md).
+                    supports_prompt_caching: true,
                 })
             }
             Self::OpenRouter => {
@@ -172,8 +238,9 @@ impl Provider {
                 // `context_length` / `max_completion_tokens`. The two are
                 // aggregated in opposite directions because they are used in
                 // opposite ways — see the field docs on `ModelCapabilities`.
-                // Model-level fields (`architecture.input_modalities`,
-                // per-endpoint pricing) are ignored until a consumer needs them.
+                // `architecture.input_modalities` is model-level (one modality
+                // set per slug, not per upstream); per-endpoint pricing is read
+                // for the caching signal below.
                 #[derive(Deserialize)]
                 struct Body {
                     data: Data,
@@ -181,6 +248,13 @@ impl Provider {
                 #[derive(Deserialize)]
                 struct Data {
                     endpoints: Vec<ModelEndpoint>,
+                    #[serde(default)]
+                    architecture: Architecture,
+                }
+                #[derive(Deserialize, Default)]
+                struct Architecture {
+                    #[serde(default)]
+                    input_modalities: Vec<String>,
                 }
                 #[derive(Deserialize)]
                 struct ModelEndpoint {
@@ -188,17 +262,55 @@ impl Provider {
                     max_completion_tokens: Option<u64>,
                     #[serde(default)]
                     supported_parameters: Vec<String>,
+                    /// The endpoint slug `--upstream` names (`google-ai-studio`,
+                    /// `google-vertex/global`) — OpenRouter calls it `tag` here
+                    /// and reads it back as `provider.order` on a request.
+                    #[serde(default)]
+                    tag: Option<String>,
+                    /// Whether this upstream caches prompts on its own, with no
+                    /// marker in the request (Gemini, DeepSeek).
+                    #[serde(default)]
+                    supports_implicit_caching: bool,
+                    #[serde(default)]
+                    pricing: Pricing,
+                }
+                #[derive(Deserialize, Default)]
+                struct Pricing {
+                    /// Present (as a display string like `"$0.1/M tokens"`) when
+                    /// the upstream prices cache reads separately — i.e. when it
+                    /// has an explicit prompt cache at all.
+                    #[serde(default)]
+                    input_cache_read: Option<String>,
                 }
                 let body: Body = serde_json::from_str(body)?;
+                let data = body.data;
+                // The `--upstream` pin narrows the set before anything
+                // aggregates over it (docs/transport.md). A pin naming no
+                // endpoint in the listing leaves the set alone rather than
+                // emptying it: the request would fail loudly on its own, and an
+                // empty set here would fail boot with a message about
+                // `context_length` that names the wrong problem.
+                let pinned: Vec<&ModelEndpoint> = data
+                    .endpoints
+                    .iter()
+                    .filter(|e| {
+                        e.tag
+                            .as_deref()
+                            .is_some_and(|tag| upstream.iter().any(|slug| slug == tag))
+                    })
+                    .collect();
+                let endpoints: Vec<&ModelEndpoint> = if pinned.is_empty() {
+                    data.endpoints.iter().collect()
+                } else {
+                    pinned
+                };
                 // Descriptive ceiling: **max**. OpenRouter routes only to
                 // endpoints that fit the request, so a prompt larger than the
                 // smallest endpoint is not an error — it just narrows the
                 // routable set. A min here under-reports by the width of the
                 // narrowest endpoint (z-ai/glm-5.3-flash, 2026-08-26: seven
                 // endpoints at 1M+, one at 256k, min reported 256k).
-                let context_length = body
-                    .data
-                    .endpoints
+                let context_length = endpoints
                     .iter()
                     .filter_map(|e| e.context_length)
                     .max()
@@ -212,9 +324,7 @@ impl Provider {
                 // support a response that long. So **min** — a max would pin
                 // routing to the single widest endpoint, changing price and
                 // availability as a side effect of a display value.
-                let max_output_tokens = body
-                    .data
-                    .endpoints
+                let max_output_tokens = endpoints
                     .iter()
                     .filter_map(|e| e.max_completion_tokens)
                     .min();
@@ -222,15 +332,38 @@ impl Provider {
                 // reason: routing is unpinned and a `thinking` block is not a
                 // routing filter, so it is sent only if *every* endpoint
                 // currently serving the model lists `reasoning`.
-                let supports_reasoning = body
-                    .data
-                    .endpoints
+                let supports_reasoning = endpoints
                     .iter()
                     .all(|e| e.supported_parameters.iter().any(|p| p == "reasoning"));
+                // Does a prompt cache exist behind this slug at all — the
+                // question the keepalive is gated on (docs/transport.md). Two
+                // signals, either sufficient: an upstream that caches on its own
+                // (`supports_implicit_caching`), or one that prices cache reads
+                // separately (`pricing.input_cache_read`), which is how the
+                // explicit-`cache_control` upstreams — every Anthropic-compatible
+                // one — report having a cache. **Any**, not all: sticky routing
+                // pins a session to one upstream, so the question is whether a
+                // reachable endpoint caches, and the runtime tripwire
+                // (`daemon/keepalive.rs`) is what stops a ping that turns out to
+                // cost something.
+                let supports_prompt_caching = endpoints
+                    .iter()
+                    .any(|e| e.supports_implicit_caching || e.pricing.input_cache_read.is_some());
                 Ok(ModelCapabilities {
                     context_length,
                     max_output_tokens,
                     supports_reasoning,
+                    // Model-level, not per-endpoint: one slug has one modality
+                    // set whichever upstream serves it. An empty list (a
+                    // response with no `architecture`) reads as text-only, which
+                    // is the fail-closed direction for a field whose whole job is
+                    // to stop bytes a model cannot read.
+                    supports_image_input: data
+                        .architecture
+                        .input_modalities
+                        .iter()
+                        .any(|m| m == "image"),
+                    supports_prompt_caching,
                 })
             }
         }
@@ -264,6 +397,25 @@ pub struct ModelCapabilities {
     /// from the Anthropic provider, whose thinking is governed by the Claude tier
     /// allowlist instead.
     pub supports_reasoning: bool,
+    /// Whether the model accepts image blocks. Anthropic:
+    /// `capabilities.image_input.supported`, defaulting to `true` when the field
+    /// is absent (every Claude model on Messages takes images). OpenRouter:
+    /// `architecture.input_modalities` contains `image`, defaulting to `false`
+    /// when the listing carries no modalities.
+    ///
+    /// The consumer is the tool layer (docs/tools.md): `read_image` refuses
+    /// before it decodes anything, and an MCP result's image blocks are replaced
+    /// by a placeholder naming why. Sending image bytes to a model that reports
+    /// no image input spends the upload on a 400 or on content the model cannot
+    /// read, and the tool's own success message says it worked.
+    pub supports_image_input: bool,
+    /// Whether a prompt cache exists behind this model — what the keepalive is
+    /// for (docs/transport.md). Anthropic: always true (explicit
+    /// `cache_control`). OpenRouter: some serving endpoint either caches
+    /// implicitly or prices cache reads. False turns the keepalive off for the
+    /// session: a `max_tokens: 0` ping against an uncached model refreshes
+    /// nothing and bills the whole prefix at the input rate every four minutes.
+    pub supports_prompt_caching: bool,
 }
 
 impl Endpoint {
@@ -273,11 +425,19 @@ impl Endpoint {
     /// messages POSTs (Anthropic's Models API requires the key; OpenRouter
     /// tolerates it). Any failure — network, non-2xx, missing fields — is an
     /// error the caller treats as fatal to startup.
-    pub async fn fetch_capabilities(&self, model: &str) -> Result<ModelCapabilities, Error> {
+    ///
+    /// `upstream` is the session's `--upstream` order (empty when unpinned): a
+    /// pinned session's ceilings come from the endpoints it will actually reach,
+    /// not from every endpoint serving the slug (docs/transport.md).
+    pub async fn fetch_capabilities(
+        &self,
+        model: &str,
+        upstream: &[String],
+    ) -> Result<ModelCapabilities, Error> {
         let url = self.provider.capabilities_url(model)?;
         let body = self.authed_get(&url).await?;
         self.provider
-            .parse_capabilities(&body)
+            .parse_capabilities(&body, upstream)
             .map_err(|e| -> Error {
                 format!("could not parse model metadata from {url}: {e}").into()
             })

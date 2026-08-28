@@ -245,6 +245,10 @@ pub(crate) fn entry_nodes(
             // A grant (docs/permissions.md) — audit-only on the transcript
             // for now; surfacing scope changes to the human lands with the construction sites.
             Payload::ConfigEdit(_) => {}
+            // Per-call telemetry (docs/tools.md) is a measurement of the call
+            // beside it, for offline analysis — it says nothing the transcript
+            // reader does not already see, so it draws nothing.
+            Payload::ToolTelemetry(_) => {}
             // The boot preamble snapshot (docs/context.md) — session boot record,
             // not conversation; the human inspects it via `efference wire`, not the transcript.
             Payload::Preamble { .. } => {}

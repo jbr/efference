@@ -409,6 +409,17 @@ pub struct Toolbox {
     /// server (docs/env.md). Held here as well as on the bash provider so a
     /// server mounted *after* the toolbox was built still gets it.
     child_env: crate::env_table::ChildEnv,
+    /// Whether the session's model accepts image blocks
+    /// (`ModelCapabilities::supports_image_input`, docs/transport.md). `true`
+    /// unless a boot lookup said otherwise, which is what the dev views (`wire`,
+    /// `spotter`, `peek`) get — they never run a tool.
+    ///
+    /// Held on the toolbox rather than on the image-producing tools because two
+    /// unrelated backends produce images (`read_image`, and any MCP server whose
+    /// result carries an image block), and the gate has to answer the same way
+    /// for both. Applied at [`Toolbox::run`], the one seam every call passes
+    /// through (docs/tools.md).
+    image_input: bool,
 }
 
 impl Toolbox {
@@ -416,7 +427,17 @@ impl Toolbox {
         Self {
             providers,
             child_env: crate::env_table::ChildEnv::default(),
+            image_input: true,
         }
+    }
+
+    /// Record whether this session's model accepts images
+    /// (`ModelCapabilities::supports_image_input`). Separate from construction
+    /// for the same reason as [`Self::with_bash_limits`]: only a served session
+    /// has run the boot capability lookup.
+    pub fn with_image_input(mut self, image_input: bool) -> Self {
+        self.image_input = image_input;
+        self
     }
 
     /// Just bash — the Phase 0 default.
@@ -564,7 +585,20 @@ impl Toolbox {
         on_spawn: impl FnOnce(Option<u32>),
         on_output: impl FnMut(&[u8]),
     ) -> Outcome {
-        match self.providers.iter().find(|p| p.handles(&call.name)) {
+        // A model that reports no image input is told so *before* the read
+        // (docs/tools.md): `read_image` exists only to produce an image, so it
+        // has no useful degraded form, and decoding a file to throw the pixels
+        // away spends the work to arrive at the same answer.
+        if !self.image_input && call.name == read_image::NAME {
+            return RawResult {
+                images: Vec::new(),
+                content: NO_IMAGE_INPUT_REFUSAL.to_string(),
+                is_error: true,
+                content_elided: None,
+            }
+            .into();
+        }
+        let outcome = match self.providers.iter().find(|p| p.handles(&call.name)) {
             Some(provider) => {
                 let call = provider.without_intent(call);
                 provider.run(&call, abort, on_spawn, on_output).await
@@ -576,8 +610,41 @@ impl Toolbox {
                 content_elided: None,
             }
             .into(),
-        }
+        };
+        strip_unreadable_images(outcome, self.image_input)
     }
+}
+
+/// What a call that would have produced an image gets back when the session's
+/// model reports no image input (docs/tools.md). Addressed to the model, and
+/// says what *would* work — the sentence a model reads after a refusal decides
+/// whether it retries the same call.
+const NO_IMAGE_INPUT_REFUSAL: &str = "this session's model reports no image input, so an image \
+     cannot be added to the transcript. read the file's text some other way, or ask the operator \
+     to serve a model that takes images.";
+
+/// Drop realized images from a result the model cannot read, replacing the bytes
+/// with a line saying why (docs/tools.md). An MCP tool call is not *about* its
+/// image the way `read_image` is — a screenshot tool's text half is often the
+/// useful part — so the call still succeeds and `is_error` stays false; what
+/// changes is that the log and the wire no longer carry bytes nothing will look
+/// at, and the model is told rather than left to infer from silence.
+fn strip_unreadable_images(outcome: Outcome, image_input: bool) -> Outcome {
+    if image_input {
+        return outcome;
+    }
+    let Outcome::Done(mut result) = outcome else {
+        return outcome;
+    };
+    if result.images.is_empty() {
+        return Outcome::Done(result);
+    }
+    let dropped = result.images.len();
+    result.images.clear();
+    result.content.push_str(&format!(
+        "\n\n[{dropped} image block(s) withheld: this session's model reports no image input]"
+    ));
+    Outcome::Done(result)
 }
 
 #[cfg(test)]

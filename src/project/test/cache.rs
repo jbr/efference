@@ -2,10 +2,11 @@
 
 use super::*;
 
-/// The breakpoint walks back to the last **text** block and marks exactly it —
-/// the cached prefix bytes are untouched, trailing tool blocks stay unmarked
-/// (docs/log-and-projection.md): a marker converted onto a non-text block bills
-/// an unreadable cache write on OpenAI-style explicit caching.
+/// Under `LastTextBlock` the breakpoint walks back to the last **text** block
+/// and marks exactly it — the cached prefix bytes are untouched, trailing tool
+/// blocks stay unmarked (docs/log-and-projection.md): a marker converted onto a
+/// non-text block bills an unreadable cache write on OpenAI-style explicit
+/// caching.
 #[test]
 fn trailing_cache_breakpoint_marks_only_the_last_text_block() {
     let mut messages = project(&sample_log());
@@ -16,7 +17,7 @@ fn trailing_cache_breakpoint_marks_only_the_last_text_block() {
         "pure projection carries no breakpoint"
     );
 
-    place_trailing_cache_breakpoint(&mut messages);
+    place_trailing_cache_breakpoint(&mut messages, BreakpointPlacement::LastTextBlock);
     let wire = serde_json::to_string(&messages).unwrap();
     assert_eq!(
         wire.matches("cache_control").count(),
@@ -53,17 +54,18 @@ fn trailing_cache_breakpoint_marks_only_the_last_text_block() {
 #[test]
 fn trailing_cache_breakpoint_is_idempotent() {
     let mut once = project(&sample_log());
-    place_trailing_cache_breakpoint(&mut once);
+    place_trailing_cache_breakpoint(&mut once, BreakpointPlacement::LastTextBlock);
     let mut twice = once.clone();
-    place_trailing_cache_breakpoint(&mut twice);
+    place_trailing_cache_breakpoint(&mut twice, BreakpointPlacement::LastTextBlock);
     assert_eq!(
         serde_json::to_string(&once).unwrap(),
         serde_json::to_string(&twice).unwrap()
     );
 }
 
-/// A wire with no text block anywhere gets no marker at all — honest, rather than
-/// paying a write that can never be read back (docs/log-and-projection.md).
+/// A wire with no text block anywhere gets no marker at all under
+/// `LastTextBlock` — honest, rather than paying a write that can never be read
+/// back (docs/log-and-projection.md).
 #[test]
 fn no_text_block_means_no_breakpoint() {
     let mut messages = vec![
@@ -86,11 +88,77 @@ fn no_text_block_means_no_breakpoint() {
             }],
         },
     ];
-    place_trailing_cache_breakpoint(&mut messages);
+    place_trailing_cache_breakpoint(&mut messages, BreakpointPlacement::LastTextBlock);
     assert!(
         !serde_json::to_string(&messages)
             .unwrap()
             .contains("cache_control")
+    );
+    // The same wire under Anthropic's placement takes the marker on its true
+    // tail — a `tool_result` — because `cache_control` is legal on any block
+    // there, so nothing is left unmarked behind it.
+    place_trailing_cache_breakpoint(&mut messages, BreakpointPlacement::TrailingBlock);
+    let marked: Vec<&ApiBlock> = messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .filter(|b| serde_json::to_string(b).unwrap().contains("cache_control"))
+        .collect();
+    assert!(
+        matches!(marked.as_slice(), [ApiBlock::ToolResult { .. }]),
+        "the marker sits on the last block, whatever its type: {marked:?}"
+    );
+}
+
+/// The two placements differ exactly where the wire ends in a tool loop
+/// (docs/log-and-projection.md), and the difference is one block: `sample_log`
+/// ends assistant(text, tool_use) → user(tool_result), so Anthropic marks the
+/// `tool_result` and the portable placement walks back past both to the text.
+/// One breakpoint either way — the count is what must never grow.
+#[test]
+fn placement_moves_the_marker_without_adding_one() {
+    let marked = |placement| {
+        let mut messages = project(&sample_log());
+        place_trailing_cache_breakpoint(&mut messages, placement);
+        let wire = serde_json::to_string(&messages).unwrap();
+        assert_eq!(wire.matches("cache_control").count(), 1, "{wire}");
+        messages
+            .iter()
+            .flat_map(|m| m.content.clone())
+            .find(|b| serde_json::to_string(b).unwrap().contains("cache_control"))
+            .expect("a marked block")
+    };
+    assert!(matches!(
+        marked(BreakpointPlacement::TrailingBlock),
+        ApiBlock::ToolResult { .. }
+    ));
+    assert!(matches!(
+        marked(BreakpointPlacement::LastTextBlock),
+        ApiBlock::Text { .. }
+    ));
+}
+
+/// Every provider-conditional shaping choice is fixed at boot from the declared
+/// provider and never re-derived mid-session (docs/transport.md) — the property
+/// that keeps a session's prefix from moving under it. Anthropic takes its
+/// native shapes; OpenRouter takes the portable ones.
+#[test]
+fn placements_are_derived_from_the_declared_provider() {
+    use crate::api::Provider;
+    assert_eq!(
+        Provider::Anthropic.breakpoint_placement(),
+        BreakpointPlacement::TrailingBlock
+    );
+    assert_eq!(
+        Provider::OpenRouter.breakpoint_placement(),
+        BreakpointPlacement::LastTextBlock
+    );
+    assert_eq!(
+        Provider::Anthropic.image_placement(),
+        ImagePlacement::InToolResult
+    );
+    assert_eq!(
+        Provider::OpenRouter.image_placement(),
+        ImagePlacement::FollowingUserBlock
     );
 }
 
@@ -98,6 +166,7 @@ fn no_text_block_means_no_breakpoint() {
 #[test]
 fn trailing_cache_breakpoint_on_empty_is_a_noop() {
     let mut empty: Vec<ApiMessage> = Vec::new();
-    place_trailing_cache_breakpoint(&mut empty);
+    place_trailing_cache_breakpoint(&mut empty, BreakpointPlacement::TrailingBlock);
+    place_trailing_cache_breakpoint(&mut empty, BreakpointPlacement::LastTextBlock);
     assert!(empty.is_empty());
 }

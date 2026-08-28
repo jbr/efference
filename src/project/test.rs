@@ -424,6 +424,52 @@ fn config_edit_projects_to_nothing() {
     }
 }
 
+/// Per-call tool telemetry (docs/tools.md) is log metadata in the same sense
+/// timestamps are: a log carrying one entry per tool call projects
+/// **byte-identically** to the same log without them. This is the pin that lets
+/// the record be written unconditionally on every call — the moment it could
+/// move a byte, it would be moving the cached prefix of every session that runs
+/// a tool (docs/log-and-projection.md). Same shape as the `Triage.thinking` pin.
+#[test]
+fn tool_telemetry_projects_to_identical_bytes() {
+    use crate::log::{BashTelemetry, EditTelemetry, ToolOutcome, ToolTelemetry};
+    let without = serde_json::to_string(&project(&sample_log())).unwrap();
+    // Interleaved as the loop appends it (after the result), and again at the
+    // tail — position must not matter either.
+    for at in [2, 3] {
+        let mut with = sample_log();
+        with.insert(
+            at,
+            entry(
+                99,
+                1,
+                Payload::ToolTelemetry(ToolTelemetry {
+                    call_id: CallId("toolu_1".into()),
+                    tool: "bash".into(),
+                    duration_ms: 1234,
+                    outcome: ToolOutcome::Rejected,
+                    result_bytes: 8192,
+                    images: 2,
+                    bash: Some(BashTelemetry {
+                        exit_status: Some("1".into()),
+                        background: false,
+                    }),
+                    edit: Some(EditTelemetry {
+                        operation: Some("replace".into()),
+                        anchor_bytes: Some(40),
+                        content_bytes: Some(900),
+                    }),
+                }),
+            ),
+        );
+        assert_eq!(
+            without,
+            serde_json::to_string(&project(&with)).unwrap(),
+            "telemetry appended at index {at} must not perturb the projected wire"
+        );
+    }
+}
+
 /// The boot preamble snapshot is replay/audit only: appending one anywhere in the log
 /// must not change a single projected byte — the system prompt is carried by the
 /// request's `system` field, never the `messages` array (docs/context.md).

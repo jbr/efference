@@ -314,7 +314,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             // sending — projection stays pure; the breakpoint walks the tail each
             // request (docs/log-and-projection.md).
             let mut messages = shared.project_messages();
-            place_trailing_cache_breakpoint(&mut messages);
+            place_trailing_cache_breakpoint(&mut messages, client.breakpoint_placement());
             // One tool call per turn (docs/README.md) — the agent picks its next single
             // action; the fork's `retain` is the only forced call. Every live signal is
             // published to the control stream's `output` class as it arrives — prose, thinking, and the opening
@@ -569,9 +569,14 @@ pub async fn run<F: Frontend, S: Spotter>(
                     }
                 };
                 match run_call(frontend, &shared, &spotter, &toolbox, turn, running).await? {
-                    Decision::Ran { result, handoff } => steps.push(Step::Ran {
+                    Decision::Ran {
+                        result,
+                        telemetry,
+                        handoff,
+                    } => steps.push(Step::Ran {
                         call: call.clone(),
                         result,
+                        telemetry,
                         handoff,
                     }),
                     Decision::Direct(payloads) => steps.push(Step::Direct(payloads)),
@@ -716,6 +721,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                     Step::Ran {
                         call,
                         result,
+                        telemetry,
                         handoff,
                     } => {
                         let Some(verdict) = verdicts.next() else {
@@ -754,6 +760,11 @@ pub async fn run<F: Frontend, S: Spotter>(
                                 },
                             }),
                         )?;
+                        // The call's telemetry, after the verdict that describes
+                        // the same result (docs/tools.md). It projects to nothing,
+                        // so appending it cannot move the wire — which is what
+                        // lets it be written unconditionally.
+                        shared.append(turn, Payload::ToolTelemetry(*telemetry))?;
                         if let Some(note) = handoff {
                             handoffs.push(note);
                         }
@@ -797,6 +808,7 @@ mod test;
 mod config_edit;
 mod results;
 mod step;
+mod telemetry;
 mod triage;
 
 use config_edit::*;

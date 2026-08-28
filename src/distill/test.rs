@@ -631,7 +631,15 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
         .map(|(call, raw)| Pending { call, raw })
         .collect();
 
-    let messages = peek_messages(&prefix, &pending, &[], &[], &[], ImagePlacement::default());
+    let messages = peek_messages(
+        &prefix,
+        &pending,
+        &[],
+        &[],
+        &[],
+        ImagePlacement::default(),
+        BreakpointPlacement::default(),
+    );
     let tail = messages.last().expect("a tail message");
     assert_eq!(tail.role, Role::User);
 
@@ -1104,7 +1112,15 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
     );
     assert_eq!(offered_ids(&pending), vec!["read_2".to_string()]);
 
-    let messages = peek_messages(&prefix, &pending, &[], &[], &[], ImagePlacement::default());
+    let messages = peek_messages(
+        &prefix,
+        &pending,
+        &[],
+        &[],
+        &[],
+        ImagePlacement::default(),
+        BreakpointPlacement::default(),
+    );
     let tail = messages.last().expect("a tail message");
     let blocks: Vec<(&str, &str)> = tail
         .content

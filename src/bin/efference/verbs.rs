@@ -18,7 +18,10 @@ pub(crate) async fn wire(
 ) -> CliResult {
     let entries = efference::persist::load(&path)?;
     let mut messages = efference::project::project(&entries);
-    efference::project::place_trailing_cache_breakpoint(&mut messages);
+    efference::project::place_trailing_cache_breakpoint(
+        &mut messages,
+        efference::project::BreakpointPlacement::default(),
+    );
 
     // `--messages` prints just the projected array and returns before touching
     // config/system/tools at all — a lean, config-independent view of what the

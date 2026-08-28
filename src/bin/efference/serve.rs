@@ -202,7 +202,10 @@ pub(crate) async fn serve(
     // The required model-metadata lookup (docs/transport.md): capability conditionals
     // (the context ceiling now; more as they land) must not run on guesses, so a failed
     // lookup fails serve rather than starting blind.
-    let capabilities = match endpoint.fetch_capabilities(model).await {
+    // The `--upstream` pin narrows which endpoints answer the question: a pinned
+    // session's ceilings are the pinned endpoints', not the aggregate across every
+    // upstream serving the slug (docs/transport.md).
+    let capabilities = match endpoint.fetch_capabilities(model, &upstream).await {
         Ok(caps) => caps,
         Err(e) => {
             return Err(format!(
@@ -369,7 +372,11 @@ pub(crate) async fn serve(
     // (docs/mcp-auth.md).
     let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))?
         .with_bash_limits(loaded.role.bash)
-        .with_child_env(env_policy.child_env());
+        .with_child_env(env_policy.child_env())
+        // The image gate (docs/tools.md): what the boot capability lookup said
+        // about this model's image input, so an image-producing tool refuses
+        // clearly instead of attaching bytes the model cannot read.
+        .with_image_input(capabilities.supports_image_input);
     // Credentials live in the base dir, not the session dir: an authorization
     // belongs to the operator and the server, not to one session.
     let store = efference::mcp::auth::store::FileStore::new(Path::new(BASE_DIR));
@@ -473,10 +480,14 @@ pub(crate) async fn serve(
         );
     }
     let image_placement = client.image_placement();
+    let breakpoint_placement = client.breakpoint_placement();
     let result = daemon::serve(
         client,
         toolbox,
-        ForkPeek { image_placement },
+        ForkPeek {
+            image_placement,
+            breakpoint_placement,
+        },
         spotter,
         log,
         socket,

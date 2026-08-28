@@ -123,6 +123,24 @@ struct Request<'a> {
     /// stays out of the cached prefix's way.
     #[serde(rename = "provider", skip_serializing_if = "Option::is_none")]
     upstream: Option<&'a Upstream>,
+    /// The OpenAI-style sticky-cache key, carrying this session's sticky-routing
+    /// id — the same value that rides the `x-session-id` header
+    /// (docs/transport.md). Sent only where the provider reads it
+    /// ([`Provider::prompt_cache_key_field`]); `None` skips serialization
+    /// entirely, so an Anthropic session's bytes are unmoved by this field's
+    /// existence.
+    ///
+    /// Redundant with the header **by design**, and third in OpenRouter's own
+    /// precedence order (body `session_id`, then `x-session-id`, then this —
+    /// verified against their prompt-caching docs, 2026-08-28). It is in the
+    /// body because the header is the part of the request an intermediary may
+    /// drop, and because upstreams that read the OpenAI field directly pin their
+    /// own cache on it rather than on OpenRouter's routing key.
+    ///
+    /// A per-session constant like `model` and `upstream`, so it never toggles
+    /// in flight and stays out of the cached prefix's way.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt_cache_key: Option<&'a str>,
     messages: &'a [ApiMessage],
     /// Always `true` — we consume the response as SSE (docs/transport.md). Set once and
     /// never varied; a delivery flag, not part of the cached prefix (docs/log-and-projection.md),

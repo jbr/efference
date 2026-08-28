@@ -152,6 +152,12 @@ impl Client {
         self.endpoint.provider.image_placement()
     }
 
+    /// The provider-derived cache-breakpoint placement this session must use
+    /// (docs/log-and-projection.md).
+    pub fn breakpoint_placement(&self) -> crate::project::BreakpointPlacement {
+        self.endpoint.provider.breakpoint_placement()
+    }
+
     pub fn new(
         endpoint: Endpoint,
         model: impl Into<String>,
@@ -241,6 +247,18 @@ impl Client {
         }
     }
 
+    /// This session's sticky key as the request body's `prompt_cache_key`, when
+    /// there is one *and* the provider reads the field (docs/transport.md). Same
+    /// two-sided gate as [`Self::with_session_id`], and the same value — the body
+    /// copy of what the header already carries.
+    fn prompt_cache_key(&self) -> Option<&str> {
+        self.endpoint
+            .provider
+            .prompt_cache_key_field()
+            .then_some(self.endpoint.session_id.as_deref())
+            .flatten()
+    }
+
     /// Record the capability lookup's reasoning answer
     /// (`ModelCapabilities::supports_reasoning`) — an input to the thinking matrix.
     /// Pin which upstream serves this session (docs/transport.md). Applies to
@@ -303,6 +321,7 @@ impl Client {
                 .temperature
                 .map(|t| self.endpoint.provider.map_temperature(t)),
             upstream: self.upstream.as_ref(),
+            prompt_cache_key: self.prompt_cache_key(),
             messages,
             stream: true,
         };
@@ -445,6 +464,7 @@ impl Client {
                 .temperature
                 .map(|t| self.endpoint.provider.map_temperature(t)),
             upstream: self.upstream.as_ref(),
+            prompt_cache_key: self.prompt_cache_key(),
             messages,
             stream: false,
         };

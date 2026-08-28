@@ -100,24 +100,33 @@ impl Default for BashLimits {
     }
 }
 
-/// Transport-layer limits an operator can set (docs/transport.md). One knob so
-/// far: how long a single response's SSE stream may stay open before the read
-/// loop stops waiting on it. It is operator-set because the right value is
-/// workload-dependent — a long think and a hung gateway look identical from
-/// outside until one of them ends, so only someone who knows the workload can
-/// say where the line is.
+/// Transport-layer limits an operator can set (docs/transport.md). Both knobs
+/// are operator-set because the right value is workload-dependent — a long think
+/// and a hung gateway look identical from outside until one of them ends, and
+/// how long a provider's prompt cache lives is a provider fact the harness does
+/// not read anywhere.
 ///
 /// Transport-only: nothing here reaches the request body, so no value of it can
 /// move the cached prefix (docs/log-and-projection.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransportLimits {
+    /// How long a single response's SSE stream may stay open before the read
+    /// loop stops waiting on it.
     pub stream_ceiling: Duration,
+    /// How long the cached prefix may go untouched at idle before the keepalive
+    /// pings it (docs/transport.md). The default sits under Anthropic's
+    /// five-minute ephemeral TTL; a provider with a shorter one needs a shorter
+    /// interval, and one with a longer one is being pinged more often than it
+    /// needs. **Zero turns the keepalive off** — the honest spelling for "do not
+    /// ping", rather than a separate boolean that could disagree with it.
+    pub keepalive_interval: Duration,
 }
 
 impl Default for TransportLimits {
     fn default() -> Self {
         Self {
             stream_ceiling: crate::api::DEFAULT_STREAM_CEILING,
+            keepalive_interval: crate::daemon::DEFAULT_KEEPALIVE_INTERVAL,
         }
     }
 }

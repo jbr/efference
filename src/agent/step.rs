@@ -9,11 +9,18 @@
 
 use super::*;
 
+use crate::log::ToolTelemetry;
+
 /// What running one call produced, before triage.
 pub(super) enum Decision {
     /// A real result to triage at the gate.
     Ran {
         result: RawResult,
+        /// What the call cost and how it came out (docs/tools.md) — measured
+        /// here, appended by the caller beside the result it describes. Boxed
+        /// because it is carried through two enums whose other variants are
+        /// small, and an unboxed field would size every one of them to it.
+        telemetry: Box<ToolTelemetry>,
         /// The operator's note from a foreground→background handoff, delivered as a
         /// user turn after the step's results (docs/supervisor.md).
         handoff: Option<String>,
@@ -38,6 +45,7 @@ pub(super) enum Step {
     Ran {
         call: ToolCall,
         result: RawResult,
+        telemetry: Box<ToolTelemetry>,
         handoff: Option<String>,
     },
 }
@@ -265,6 +273,13 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             // (kills the process group). Tool output streams to the control stream's `output` class
             // chunk-by-chunk as it runs (bash; the MCP tools resolve whole), tagged by call id.
             let mut handoff = None;
+            // The telemetry clock starts here, after the cascade: a call that
+            // waited at a human gate did not *run* for that long (docs/tools.md).
+            let started = std::time::Instant::now();
+            // Set by the arms that construct a harness-authored failure, so the
+            // outcome class can tell "the harness could not run this" from "the
+            // tool ran and declined" (`telemetry::observe`).
+            let mut harness_error = false;
             let result = if bash::is_background_call(call) {
                 match background_command(call) {
                     // The spawning `tool_use` id rides along, so the process and the
@@ -281,20 +296,26 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                                 is_error: false,
                                 content_elided: None,
                             },
-                            Err(e) => RawResult {
-                                images: Vec::new(),
-                                content: format!("failed to background: {e}"),
-                                is_error: true,
-                                content_elided: None,
-                            },
+                            Err(e) => {
+                                harness_error = true;
+                                RawResult {
+                                    images: Vec::new(),
+                                    content: format!("failed to background: {e}"),
+                                    is_error: true,
+                                    content_elided: None,
+                                }
+                            }
                         }
                     }
-                    None => RawResult {
-                        images: Vec::new(),
-                        content: "background bash requires a `command`".into(),
-                        is_error: true,
-                        content_elided: None,
-                    },
+                    None => {
+                        harness_error = true;
+                        RawResult {
+                            images: Vec::new(),
+                            content: "background bash requires a `command`".into(),
+                            is_error: true,
+                            content_elided: None,
+                        }
+                    }
                 }
             } else if let Some(r) = crate::guide::read_documents(call) {
                 // The guide overlay (docs/context.md): a `read` of the virtual mount is
@@ -409,6 +430,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                     }
                 }
             };
+            let elapsed = started.elapsed();
             // Bound the result before it touches anything (defense in depth): the fork
             // peek, the wire, and the logged `raw`. An over-cap result becomes a hard error
             // so the model narrows the call.
@@ -426,11 +448,19 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             } else {
                 result
             };
+            // Measured after the cap and the config-write re-read, so
+            // `result_bytes` and the outcome class describe the result that is
+            // actually logged rather than an intermediate one.
+            let telemetry = Box::new(telemetry::observe(call, &result, elapsed, harness_error));
             // The interrupt's *after* juncture (docs/control-channel.md).
             if shared.take_interrupt() {
                 return Ok(Decision::Withheld(withheld(call, result)));
             }
-            Ok(Decision::Ran { result, handoff })
+            Ok(Decision::Ran {
+                result,
+                telemetry,
+                handoff,
+            })
         }
         Approval::Abort => Ok(Decision::Abort(aborted(call))),
         // Reject this call but keep the turn alive: the human's message becomes the next

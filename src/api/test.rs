@@ -83,7 +83,7 @@ fn anthropic_capabilities_parse_models_api_shape() {
         "max_tokens": 64000,
         "capabilities": {"image_input": {"supported": true}}
     }"#;
-    let caps = Provider::Anthropic.parse_capabilities(body).unwrap();
+    let caps = Provider::Anthropic.parse_capabilities(body, &[]).unwrap();
     assert_eq!(caps.context_length, 200000);
     assert_eq!(caps.max_output_tokens, Some(64000));
 }
@@ -93,7 +93,7 @@ fn anthropic_capabilities_parse_models_api_shape() {
 #[test]
 fn anthropic_capabilities_missing_context_is_an_error() {
     let err = Provider::Anthropic
-        .parse_capabilities(r#"{"id": "m", "display_name": "M"}"#)
+        .parse_capabilities(r#"{"id": "m", "display_name": "M"}"#, &[])
         .unwrap_err()
         .to_string();
     assert!(err.contains("max_input_tokens"), "{err}");
@@ -121,7 +121,7 @@ fn openrouter_capabilities_aggregate_ceilings_in_opposite_directions() {
             ]
         }
     }"#;
-    let caps = Provider::OpenRouter.parse_capabilities(body).unwrap();
+    let caps = Provider::OpenRouter.parse_capabilities(body, &[]).unwrap();
     assert_eq!(caps.context_length, 200000);
     assert_eq!(caps.max_output_tokens, Some(32000));
     // No endpoint above lists `supported_parameters` at all → not granted.
@@ -139,7 +139,7 @@ fn openrouter_reasoning_capability_requires_every_endpoint() {
     ]}}"#;
     assert!(
         Provider::OpenRouter
-            .parse_capabilities(all)
+            .parse_capabilities(all, &[])
             .unwrap()
             .supports_reasoning
     );
@@ -149,7 +149,7 @@ fn openrouter_reasoning_capability_requires_every_endpoint() {
     ]}}"#;
     assert!(
         !Provider::OpenRouter
-            .parse_capabilities(mixed)
+            .parse_capabilities(mixed, &[])
             .unwrap()
             .supports_reasoning
     );
@@ -223,7 +223,7 @@ fn omitted_thinking_is_absent_from_the_request_body() {
 #[test]
 fn openrouter_capabilities_no_endpoints_is_an_error() {
     let err = Provider::OpenRouter
-        .parse_capabilities(r#"{"data": {"endpoints": []}}"#)
+        .parse_capabilities(r#"{"data": {"endpoints": []}}"#, &[])
         .unwrap_err()
         .to_string();
     assert!(err.contains("context_length"), "{err}");
@@ -1117,6 +1117,7 @@ fn request_omits_temperature_when_none() {
         thinking: Thinking::Disabled,
         temperature: None,
         upstream: None,
+        prompt_cache_key: None,
         messages: &[],
         stream: false,
     };
@@ -1141,6 +1142,7 @@ fn request_includes_temperature_when_set() {
         thinking: Thinking::Disabled,
         temperature: Some(0.7),
         upstream: None,
+        prompt_cache_key: None,
         messages: &[],
         stream: false,
     };
@@ -1191,6 +1193,7 @@ fn request_envelope_matches_expected_wire_bytes() {
         thinking: Thinking::Disabled,
         temperature: Some(0.7),
         upstream: None,
+        prompt_cache_key: None,
         messages: &messages,
         stream: true,
     };
@@ -1203,6 +1206,176 @@ fn request_envelope_matches_expected_wire_bytes() {
         r#""stream":true}"#,
     );
     assert_eq!(serde_json::to_string(&request).unwrap(), expected);
+}
+
+/// The pinned envelope above is what an **Anthropic** session sends, and adding
+/// `prompt_cache_key` did not move a byte of it — the field is `None` there and
+/// skips serialization entirely. This pins the other half: an OpenRouter session
+/// carries the key, and it sits between `provider` and `messages`, so the two
+/// provider-conditional fields are adjacent rather than straddling the long
+/// `messages` block. Both are per-session constants, so neither can toggle
+/// mid-session and move a live cached prefix (docs/transport.md).
+#[test]
+fn openrouter_envelope_carries_the_prompt_cache_key() {
+    let pin = Upstream::pinned(vec!["google-ai-studio".into()]).expect("a non-empty order");
+    let request = Request {
+        model: "google/gemini-3.7-flash",
+        max_tokens: 1,
+        system: "",
+        tools: &[],
+        tool_choice: ToolChoice::auto(),
+        thinking: Thinking::Omit,
+        temperature: None,
+        upstream: Some(&pin),
+        prompt_cache_key: Some("work-0123456789abcdef"),
+        messages: &[],
+        stream: true,
+    };
+    let expected = concat!(
+        r#"{"model":"google/gemini-3.7-flash","max_tokens":1,"tools":[],"#,
+        r#""tool_choice":{"type":"auto","disable_parallel_tool_use":true},"#,
+        r#""provider":{"order":["google-ai-studio"],"allow_fallbacks":false},"#,
+        r#""prompt_cache_key":"work-0123456789abcdef","#,
+        r#""messages":[],"stream":true}"#,
+    );
+    assert_eq!(serde_json::to_string(&request).unwrap(), expected);
+}
+
+/// Which providers read the body field, and which read the header. OpenRouter
+/// takes both (the header wins its own precedence order; the body copy is what an
+/// OpenAI-dialect upstream reads for its own cache). Anthropic takes neither —
+/// there is one upstream to route to, and an unrecognized top-level key is a 400
+/// there, so this cannot be sent unconditionally (docs/transport.md).
+#[test]
+fn only_openrouter_carries_the_sticky_key() {
+    assert!(!Provider::Anthropic.prompt_cache_key_field());
+    assert!(Provider::OpenRouter.prompt_cache_key_field());
+    assert_eq!(Provider::Anthropic.session_header(), None);
+    assert_eq!(Provider::OpenRouter.session_header(), Some("x-session-id"));
+}
+
+/// The `--upstream` pin narrows which endpoints the ceilings aggregate over
+/// (docs/transport.md). Unpinned, `context_length` is the max across every
+/// serving endpoint; pinned, it is the max across the pinned ones — the session
+/// will never reach the others, so their numbers are someone else's. A pin naming
+/// no listed endpoint falls back to the whole set rather than emptying it, so the
+/// failure surfaces as the request OpenRouter rejects rather than as a boot error
+/// about a missing `context_length`.
+#[test]
+fn upstream_pin_narrows_the_capability_aggregation() {
+    let body = r#"{
+        "data": {
+            "architecture": {"input_modalities": ["text", "image"]},
+            "endpoints": [
+                {"tag": "google-ai-studio", "context_length": 200000,
+                 "max_completion_tokens": 64000,
+                 "pricing": {"input_cache_read": "$0.1/M tokens"}},
+                {"tag": "google-vertex/global", "context_length": 1000000,
+                 "max_completion_tokens": 8000, "pricing": {}}
+            ]
+        }
+    }"#;
+    let caps = |upstream: &[String]| {
+        Provider::OpenRouter
+            .parse_capabilities(body, upstream)
+            .unwrap()
+    };
+    let unpinned = caps(&[]);
+    assert_eq!(unpinned.context_length, 1_000_000);
+    assert_eq!(unpinned.max_output_tokens, Some(8_000));
+
+    let pinned = caps(&["google-ai-studio".to_string()]);
+    assert_eq!(pinned.context_length, 200_000);
+    assert_eq!(pinned.max_output_tokens, Some(64_000));
+
+    let unknown = caps(&["not-an-endpoint".to_string()]);
+    assert_eq!(unknown.context_length, 1_000_000);
+}
+
+/// The keepalive gate (docs/transport.md): a `max_tokens: 0` ping is only free
+/// where there is a cache entry to read, so it is armed off the metadata. Two
+/// sufficient signals — an upstream that caches implicitly, or one that prices
+/// cache reads (how the explicit-`cache_control` upstreams report having a
+/// cache). Neither, and the keepalive stays off rather than re-billing the whole
+/// prefix at the input rate every interval.
+#[test]
+fn prompt_caching_is_read_off_the_endpoint_metadata() {
+    let caps = |endpoints: &str| {
+        Provider::OpenRouter
+            .parse_capabilities(&format!(r#"{{"data": {{"endpoints": {endpoints}}}}}"#), &[])
+            .unwrap()
+    };
+    assert!(
+        caps(r#"[{"context_length": 1, "pricing": {"input_cache_read": "$0.1/M tokens"}}]"#)
+            .supports_prompt_caching,
+        "priced cache reads mean an explicit cache exists"
+    );
+    assert!(
+        caps(r#"[{"context_length": 1, "supports_implicit_caching": true}]"#)
+            .supports_prompt_caching,
+        "implicit caching needs no marker in the request"
+    );
+    assert!(
+        !caps(r#"[{"context_length": 1, "pricing": {"prompt": "$1/M tokens"}}]"#)
+            .supports_prompt_caching,
+        "an endpoint that prices no cache read has no cache to keep warm"
+    );
+    // Anthropic's own API is the explicit-cache case and never has to be asked.
+    assert!(
+        Provider::Anthropic
+            .parse_capabilities(r#"{"max_input_tokens": 200000}"#, &[])
+            .unwrap()
+            .supports_prompt_caching
+    );
+}
+
+/// Image input, per provider (docs/tools.md). OpenRouter states it in
+/// `architecture.input_modalities`, and its absence is read as text-only — the
+/// fail-closed direction for a field whose job is to stop bytes a model cannot
+/// read. Anthropic states it in `capabilities.image_input.supported`, and its
+/// **absence** is read as supported: the Messages API has taken image blocks on
+/// every Claude model since it shipped, so a metadata response that stops
+/// carrying the field must not disable a working tool.
+#[test]
+fn image_input_is_read_per_provider_with_opposite_defaults() {
+    let openrouter = |modalities: &str| {
+        Provider::OpenRouter
+            .parse_capabilities(
+                &format!(
+                    r#"{{"data": {{"architecture": {{"input_modalities": {modalities}}},
+                       "endpoints": [{{"context_length": 1}}]}}}}"#
+                ),
+                &[],
+            )
+            .unwrap()
+            .supports_image_input
+    };
+    assert!(openrouter(r#"["text", "image"]"#));
+    assert!(!openrouter(r#"["text"]"#));
+    assert!(
+        !Provider::OpenRouter
+            .parse_capabilities(r#"{"data": {"endpoints": [{"context_length": 1}]}}"#, &[])
+            .unwrap()
+            .supports_image_input,
+        "no architecture at all reads as text-only"
+    );
+
+    let anthropic = |body: &str| {
+        Provider::Anthropic
+            .parse_capabilities(body, &[])
+            .unwrap()
+            .supports_image_input
+    };
+    assert!(anthropic(
+        r#"{"max_input_tokens": 1, "capabilities": {"image_input": {"supported": true}}}"#
+    ));
+    assert!(!anthropic(
+        r#"{"max_input_tokens": 1, "capabilities": {"image_input": {"supported": false}}}"#
+    ));
+    assert!(
+        anthropic(r#"{"max_input_tokens": 1}"#),
+        "an absent field must not disable a capability that works"
+    );
 }
 
 /// The envelope's two omit-when-unset fields drop out **entirely** rather than
@@ -1220,6 +1393,7 @@ fn request_envelope_omits_unset_fields_entirely() {
         thinking: Thinking::Omit,
         temperature: None,
         upstream: None,
+        prompt_cache_key: None,
         messages: &[],
         stream: true,
     };
@@ -1335,6 +1509,7 @@ fn a_pinned_upstream_renders_as_the_provider_object() {
             thinking: Thinking::Omit,
             temperature: None,
             upstream,
+            prompt_cache_key: None,
             messages: &messages,
             stream: true,
         })

@@ -369,6 +369,19 @@ an unrecognized header is free; gating on the declared provider means that
 assumption never has to hold. Offline verbs (the `spotter` probe, `wire`) derive
 no key at all — a one-shot probe has no conversation to pin.
 
+The same value also rides the **request body** as `prompt_cache_key`, on the
+providers that read it (`Provider::prompt_cache_key_field` — OpenRouter only;
+Anthropic's Messages API has no such field and 400s an unrecognized top-level
+key, so this cannot be sent unconditionally the way a header could). It is
+deliberately redundant with the header, and third in OpenRouter's own precedence
+order — body `session_id`, then `x-session-id`, then `prompt_cache_key`
+(verified against their prompt-caching docs, 2026-08-28). It is in the body
+because a header is the part of a request an intermediary may drop, and because
+an upstream that speaks the OpenAI dialect keys *its own* prompt cache on this
+field rather than on OpenRouter's routing key. Like `model` and the upstream pin
+it is a per-session constant, so it cannot toggle mid-session; unset, it skips
+serialization entirely, so adding it moved no Anthropic session's bytes.
+
 The spotter takes a **distinct** key (`Endpoint::for_spotter`, a `-spot` suffix).
 It has its own system prompt and shares no prefix with the agent turn, so the two
 are separate conversations over one endpoint; message-hash derivation separated
@@ -419,8 +432,17 @@ regress (serve already requires the live messages endpoint). Per provider:
   endpoints, while `top_provider` describes one designated endpoint (not the
   originating lab, and not necessarily the cheapest), and the two disagree.
 
+When `--upstream` pins the routing (below), the pin **narrows the endpoint set
+before anything aggregates over it**: a pinned session routes to exactly those
+endpoints, so a ceiling taken across the ones it will never reach is someone
+else's. A pin naming no endpoint in the listing falls back to the whole set
+rather than emptying it — that request fails loudly on its own, and an empty set
+here would abort boot with a message about `context_length` that names the wrong
+problem.
+
 The parsed `ModelCapabilities` (`context_length`, `max_output_tokens`,
-`supports_reasoning`; grown one field per consumer) is transport-only — held
+`supports_reasoning`, `supports_image_input`, `supports_prompt_caching`; grown
+one field per consumer) is transport-only — held
 in `Shared`, never logged or projected. `max_output_tokens` sets the
 per-turn output budget (`Client::with_max_output`): a reasoning model's
 thinking bills against `max_tokens`, and the pre-reasoning 4096 default —
@@ -472,9 +494,13 @@ caching** (OpenAI, Gemini's implicit caching, DeepSeek). The byte-deterministic,
 append-only-prefix discipline the projection enforces is exactly what those
 automatic caches reward — foreign providers simply ignore the `cache_control`
 blocks (or translate them, as OpenRouter does for OpenAI). What's lost off the
-Anthropic path is control over breakpoint *placement* and the `1h` TTL; the short
-foreign TTLs keep the keepalive relevant, though whether a `max_tokens: 0` ping
-refreshes a non-Anthropic cache is unverified.
+Anthropic path is control over breakpoint *placement*
+([log-and-projection.md](log-and-projection.md) — the placement is
+provider-conditional and the portable one leaves a trailing tool suffix unmarked)
+and the `1h` TTL; the short foreign TTLs keep the keepalive relevant, though
+whether a `max_tokens: 0` ping refreshes a non-Anthropic cache is unverified —
+which is why the keepalive is gated on the model reporting a cache at all and
+capped by the runtime tripwire.
 
 **Thinking.** A foreign model's `auto`-turn adaptive is granted by the
 capability lookup: `ModelCapabilities::supports_reasoning` — conservative like
@@ -587,6 +613,38 @@ was previously invisible and died at the 5-minute TTL on any idle. This layer
 makes it legible and keeps it warm, entirely within transport and daemon — no
 log appends, no projection changes, fully reversible.
 
+### Whether it runs at all
+
+The keepalive is armed off the boot capability lookup and one config knob.
+
+`ModelCapabilities::supports_prompt_caching` answers "is there a prompt cache
+behind this model at all". Anthropic is always true (explicit `cache_control`).
+On OpenRouter it is read off the endpoint listing, from either of two sufficient
+signals: an endpoint that reports `supports_implicit_caching`, or one whose
+`pricing` carries an `input_cache_read` — which is how the
+explicit-`cache_control` upstreams report having a cache (every Anthropic
+endpoint on OpenRouter reports `supports_implicit_caching: false`, because their
+caching is explicit; pricing is what distinguishes them from an uncached one).
+**Any** rather than all: sticky routing pins a session to one upstream, so the
+question is whether a reachable endpoint caches. False, and the loop never
+spawns — a `max_tokens: 0` ping against an uncached model refreshes nothing and
+re-bills the whole prefix at the input rate every interval, which is the one way
+this mechanism can cost more than it saves.
+
+`[transport] keepalive-interval` (seconds, `config::TransportLimits`) is how long
+the cached prefix may go untouched before the ping. The default is **240** — a
+margin under Anthropic's five-minute ephemeral TTL — and it is a default rather
+than a constant because the TTL is a provider fact the harness reads nowhere: a
+provider with a shorter window needs a shorter interval to stay warm, and one
+with a longer window is paying for pings it does not need. **Zero turns the
+keepalive off**, which is the honest spelling for that intent — a separate
+boolean could disagree with the interval sitting beside it. The poll period
+follows the interval (a quarter of it, capped at 20s) so the ping lands near the
+interval rather than up to a full check-period late.
+
+The runtime tripwire below stays regardless: the gate is what the metadata says,
+and the tripwire is what the endpoint actually does.
+
 ### max_tokens: 0 as the keepalive primitive
 
 A `max_tokens: 0` request reads (and thus refreshes) the cached prefix.
@@ -642,8 +700,8 @@ A keepalive refreshes the TTL (`record_keepalive` stamps the touch clock) but
 does not reset the give-up deadline (the real-turn clock is untouched). This
 prevents a keepalive loop from keeping itself alive forever.
 
-The loop pings when the touch clock exceeds `PING_AT` (240 seconds — a margin
-under the 5-minute TTL) and stops once the real-turn clock exceeds `CAP` (30
+The loop pings when the touch clock exceeds the configured interval
+(`[transport] keepalive-interval`, above) and stops once the real-turn clock exceeds `CAP` (30
 minutes of genuine idle). Past that threshold, one cold cache read on resume
 is cheaper than indefinite pinging. During active work, real turns keep the
 touch clock reset and the keepalive never fires.

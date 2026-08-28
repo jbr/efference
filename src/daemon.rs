@@ -902,6 +902,7 @@ use stream::{Include, control_stream};
 use topics::{StateUpdate, watch_topics};
 
 use http::{LogSelect, router};
+pub use keepalive::DEFAULT_KEEPALIVE_INTERVAL;
 use keepalive::keepalive_loop;
 use watch::config_watch_loop;
 

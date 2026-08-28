@@ -146,7 +146,7 @@ Read top-down; open the subsystem doc you need.
 | --- | --- | --- |
 | The log, the projection, the caching constraint | [log-and-projection.md](log-and-projection.md) | `src/log.rs`, `src/project.rs`, `src/persist.rs` |
 | Per-result triage — how every tool result is distilled | [redaction-fork.md](redaction-fork.md) | `src/distill.rs`, `src/project.rs` |
-| Tools (in-process `Tool` trait; in-process MCP) | [tools.md](tools.md) | `src/tools.rs`, `src/bash.rs` |
+| Tools (in-process `Tool` trait; in-process MCP; per-call telemetry) | [tools.md](tools.md) | `src/tools.rs`, `src/bash.rs`, `src/agent/telemetry.rs` |
 | Trajectory consolidation (compaction as a fold over a span) | [consolidate.md](consolidate.md) | `src/consolidate.rs`, `src/agent.rs` |
 | Ambient notifications — the inbox (enqueue then triage) | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon/notifications.rs` |
 | Background processes — the supervisor | [supervisor.md](supervisor.md) | `src/supervisor.rs`, `src/bash.rs`, `src/daemon/background.rs` |

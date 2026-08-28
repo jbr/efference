@@ -232,6 +232,12 @@ pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessa
             // A spotter verdict (docs/permissions.md) is audit-only — the permission
             // decision lives in the log, never on the canonical wire.
             Payload::Spot(_) => {}
+            // Per-call tool telemetry (docs/tools.md) is log metadata in the same
+            // sense timestamps are: it measures a call the wire already carries,
+            // and adds nothing the model reads. It projects to nothing, which is
+            // what lets it be appended on every call without moving the cached
+            // prefix (docs/log-and-projection.md).
+            Payload::ToolTelemetry(_) => {}
             // A grant (docs/permissions.md) is audit-only too — its
             // *effect* reaches the model through the classifier (the policy fold), never
             // the transcript. So it projects to nothing, and appending one cannot perturb
@@ -429,6 +435,6 @@ mod wire;
 pub use render::{Distillate, distillate, render_distilled, render_triage_failure};
 pub use retention::Retention;
 pub use wire::{
-    ApiBlock, ApiMessage, CacheControl, ImageSource, ResultBlock, Role, ToolResultContent,
-    place_trailing_cache_breakpoint,
+    ApiBlock, ApiMessage, BreakpointPlacement, CacheControl, ImageSource, ResultBlock, Role,
+    ToolResultContent, place_trailing_cache_breakpoint,
 };

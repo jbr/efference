@@ -137,6 +137,23 @@ pub enum Payload {
     /// only, never on the canonical wire. Fast-path clears are deliberately *not*
     /// logged; the spotter is the first permission rung that earns an entry.
     Spot(Spot),
+    /// Per-call tool telemetry (docs/tools.md) — how long one call took, how it
+    /// came out, and how big its result was, appended right after the
+    /// [`ToolResult`] it describes. Projects to nothing: it is log metadata in
+    /// the same sense timestamps are, so it can be added, grown, or read back
+    /// without touching the wire or the cached prefix
+    /// (docs/log-and-projection.md).
+    ///
+    /// A separate entry rather than a field on [`ToolResult`], which is the
+    /// shape [`Spot`] already uses for per-call audit: the pairing is by
+    /// `call_id`, the payload is written by a different concern than the result,
+    /// and [`ToolResult`] is constructed at dozens of sites (many of them a
+    /// harness stand-in with no run to measure) that would each have to name a
+    /// telemetry value they do not have.
+    ///
+    /// [`ToolResult`]: Payload::ToolResult
+    /// [`Spot`]: Payload::Spot
+    ToolTelemetry(ToolTelemetry),
     /// A config edit — the durable record of one change to the policy table
     /// (docs/permissions.md). The config-edit loop turns a deny into
     /// negotiation: an orchestrator (human or coordinating session) edits the session's
@@ -485,6 +502,106 @@ pub enum ConfigChange {
     /// live scope edit reaches the session as a notification, not a preamble rewrite
     /// (docs/permissions.md).
     Scope { text: String },
+}
+
+/// What one tool call cost and how it came out (docs/tools.md), recorded per
+/// call as a [`Payload::ToolTelemetry`] entry.
+///
+/// It exists because the questions it answers were previously answered by
+/// grepping result *prose*: "did that edit apply or get refused" was recovered
+/// from `startswith("Applied")`, and anchor discipline was inferred from
+/// argument lengths plus a count of `===TIP===` markers that turned out to be a
+/// throttle cap rather than a measure. Prose written for a model is not a
+/// measurement surface; this is.
+///
+/// Additive by construction: because it projects to nothing, growing this struct
+/// cannot perturb the byte-stability pin (docs/log-and-projection.md) — the same
+/// property [`Mark`] has.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ToolTelemetry {
+    /// The `tool_use` id — the join back to the call and its [`Payload::ToolResult`].
+    pub call_id: CallId,
+    /// The wire tool name, namespaced as the call carried it.
+    pub tool: String,
+    /// Wall-clock milliseconds the dispatch took: the permission cascade is
+    /// *excluded* (a call that waited an hour at a human gate did not run for an
+    /// hour), and a backgrounded spawn is the spawn alone.
+    pub duration_ms: u64,
+    pub outcome: ToolOutcome,
+    /// Bytes of result text as the tool produced it — **before** the fork peek
+    /// distills it (docs/redaction-fork.md). The pair (this, the distillate's
+    /// size) is what says how much a gate actually saved.
+    pub result_bytes: usize,
+    /// Realized image blocks the result carried. Zero for every text tool;
+    /// defaulted and skipped so those entries stay small.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub images: usize,
+    /// Bash-specific fields, when the call was one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bash: Option<BashTelemetry>,
+    /// Edit-shaped fields, when the call carried the arguments they read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edit: Option<EditTelemetry>,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
+/// How one tool call came out (docs/tools.md). Derived generically at the
+/// dispatch seam from `is_error`, which since 2026-08-27 means *refusal* for
+/// built-in negative outcomes — so the three classes are readable off every
+/// tool without per-tool knowledge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolOutcome {
+    /// The call did what it was asked to do.
+    Applied,
+    /// The tool ran and declined: an anchor that matched nothing, a command that
+    /// exited non-zero, a path outside a grant. The model's next move is the
+    /// interesting one — this is the class whose recovery-on-next-attempt rate
+    /// says whether a cheap model spirals on the errors the `is_error` flip made
+    /// visible.
+    Rejected,
+    /// The harness could not run the call at all: no mounted tool owns the name,
+    /// a spawn failed, an argument would not deserialize. Distinct from
+    /// [`Rejected`] because it is a defect signal about the harness, not a datum
+    /// about the model's judgment.
+    ///
+    /// [`Rejected`]: ToolOutcome::HarnessError
+    HarnessError,
+}
+
+/// Bash-call fields (docs/tools.md).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BashTelemetry {
+    /// The status the result reported — `"1"`, or `"signal"` for a command a
+    /// signal killed. `None` means the result reported none, which for a
+    /// completed foreground command is exit zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_status: Option<String>,
+    /// Whether the call asked to be backgrounded, in which case `duration_ms`
+    /// measures the spawn and `result_bytes` the handle message — not the
+    /// command.
+    pub background: bool,
+}
+
+/// Fields read off an edit-shaped call's own arguments (docs/tools.md). Every
+/// value here comes from the `input` the model wrote, so it is available for any
+/// tool that spells its arguments this way and costs nothing to collect; nothing
+/// is plumbed out of the editing crates.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EditTelemetry {
+    /// The call's `operation` argument, where it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<String>,
+    /// Byte length of the anchor the call matched on — the number the
+    /// anchor-discipline question is asked about.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_bytes: Option<usize>,
+    /// Byte length of the replacement content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_bytes: Option<usize>,
 }
 
 /// What the agent chose to do with one notification at a triage gate (docs/inbox.md).

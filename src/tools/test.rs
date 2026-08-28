@@ -433,3 +433,82 @@ fn mounted_toolbox_advertises_unique_tool_names() {
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A model that reports no image input gets a refusal *before* the read
+/// (docs/tools.md): `read_image` exists only to produce an image, so there is no
+/// degraded form worth decoding a file to arrive at. The message names what would
+/// work instead, because the sentence after a refusal is what decides whether the
+/// model retries the same call.
+#[tokio::test]
+async fn read_image_refuses_when_the_model_takes_no_images() {
+    let dir = std::env::temp_dir().join("efference-test-image-gate");
+    std::fs::create_dir_all(&dir).unwrap();
+    let box_ = Toolbox::new(vec![Provider::ReadImage(read_image::ReadImage {
+        cwd: dir.clone(),
+    })])
+    .with_image_input(false);
+    let result = done(
+        box_.run(
+            // A path that does not exist: reaching the filesystem at all would be
+            // the failure this test is about.
+            &call(read_image::NAME, json!({"path": "nope.png"})),
+            pending(),
+            |_| {},
+            |_| {},
+        )
+        .await,
+    );
+    assert!(result.is_error);
+    assert!(result.images.is_empty());
+    assert!(
+        result.content.contains("no image input"),
+        "got {:?}",
+        result.content
+    );
+    assert!(
+        !result.content.contains("nope.png"),
+        "the file was never read: {:?}",
+        result.content
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// The same gate applied to a result that merely *carries* images: an MCP tool
+/// call is not about its image the way `read_image` is, so the call still
+/// succeeds and the text half survives — what changes is that the bytes are
+/// dropped instead of riding a wire nothing will look at, and the model is told
+/// rather than left to infer it from silence (docs/tools.md).
+#[test]
+fn a_result_that_carries_images_keeps_its_text_and_sheds_the_bytes() {
+    let carrying = || {
+        Outcome::Done(RawResult {
+            content: "the page rendered".into(),
+            is_error: false,
+            images: vec![crate::log::ResultImage {
+                media_type: "image/webp".into(),
+                data: "UklGRg==".into(),
+                width: 10,
+                height: 10,
+            }],
+            content_elided: None,
+        })
+    };
+    let done_result = |o: Outcome| match o {
+        Outcome::Done(r) => r,
+        _ => panic!("a synchronous result"),
+    };
+
+    let kept = done_result(strip_unreadable_images(carrying(), true));
+    assert_eq!(kept.images.len(), 1);
+    assert_eq!(kept.content, "the page rendered");
+
+    let stripped = done_result(strip_unreadable_images(carrying(), false));
+    assert!(stripped.images.is_empty());
+    assert!(!stripped.is_error, "the call still succeeded");
+    assert!(stripped.content.starts_with("the page rendered"));
+    assert!(
+        stripped.content.contains("1 image block(s) withheld"),
+        "got {:?}",
+        stripped.content
+    );
+}

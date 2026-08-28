@@ -183,27 +183,53 @@ pub enum ImageSource {
     Base64 { media_type: String, data: String },
 }
 
+/// Which block the single trailing cache breakpoint attaches to
+/// (docs/log-and-projection.md). Chosen once at boot from the provider and fixed
+/// for the session, exactly like [`ImagePlacement`] — so projection plus
+/// breakpoint placement stays deterministic per session, and the pinned wire
+/// bytes are pinned *per placement*.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BreakpointPlacement {
+    /// The very last block of the wire, whatever its type. Anthropic's native
+    /// shape: `cache_control` is legal on any block, so the marker sits at the
+    /// true tail and nothing after it is re-billed at the input rate.
+    #[default]
+    TrailingBlock,
+    /// The last **text** block; a trailing `tool_use`/`tool_result` suffix goes
+    /// unmarked. The portable shape: OpenAI's explicit prompt caching attaches
+    /// breakpoints only to text blocks, and a marker translated onto any other
+    /// block type bills the full cache write on every request without ever
+    /// creating a readable entry. The cost is that the unmarked suffix is
+    /// re-billed at the input rate until a text block reappears — bounded, and
+    /// cheaper than a cache that never reads.
+    LastTextBlock,
+}
+
 /// Place the single trailing cache breakpoint (docs/log-and-projection.md): walk back
-/// from the wire tail and mark the last **text** block `ephemeral`; blocks after it (a
-/// trailing tool loop's `tool_use`/`tool_result` suffix) simply go unmarked, and a wire
-/// with no text block at all gets no marker. Text-only because that is where a marker
-/// is portable: OpenAI's explicit prompt caching attaches breakpoints only to text
-/// blocks, and a marker converted onto any other block type bills the full cache write
-/// on every request without ever creating a readable entry
-/// (docs/log-and-projection.md). On Anthropic the unmarked suffix is re-billed at the
-/// input rate until a text block reappears — a bounded cost accepted deliberately;
-/// provider-conditional placement belongs to the provider-awareness layer.
+/// from the wire tail and mark one block `ephemeral`. Which block is the
+/// provider's call ([`BreakpointPlacement`]); a wire with no eligible block gets
+/// no marker.
 ///
 /// Kept out of [`project`] so projection stays a pure, byte-stable function (the
 /// breakpoint moves every request; the prefix it caches does not). Idempotent
 /// re-placement on an identical wire is byte-identical.
-pub fn place_trailing_cache_breakpoint(messages: &mut [ApiMessage]) {
+pub fn place_trailing_cache_breakpoint(
+    messages: &mut [ApiMessage],
+    placement: BreakpointPlacement,
+) {
     for message in messages.iter_mut().rev() {
         for block in message.content.iter_mut().rev() {
-            if let ApiBlock::Text { cache_control, .. } = block {
-                *cache_control = Some(CacheControl::Ephemeral);
-                return;
-            }
+            let cache_control = match (block, placement) {
+                (ApiBlock::Text { cache_control, .. }, _) => cache_control,
+                (_, BreakpointPlacement::LastTextBlock) => continue,
+                (ApiBlock::Thinking { cache_control, .. }, _)
+                | (ApiBlock::RedactedThinking { cache_control, .. }, _)
+                | (ApiBlock::ToolUse { cache_control, .. }, _)
+                | (ApiBlock::Image { cache_control, .. }, _)
+                | (ApiBlock::ToolResult { cache_control, .. }, _) => cache_control,
+            };
+            *cache_control = Some(CacheControl::Ephemeral);
+            return;
         }
     }
 }
