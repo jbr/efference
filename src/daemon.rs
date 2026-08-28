@@ -362,7 +362,7 @@ impl Shared {
         let effective = Arc::new(crate::policy::effective_config(&role.role, log.entries()));
         // Fold the probe ledger from a resumed log (no-op for a fresh one), then maintain it
         // incrementally as the loop assesses moves (docs/permissions.md).
-        let probes = crate::policy::probe_ledger(log.entries());
+        let probes = crate::policy::probe_ledger(&effective, log.entries());
         // Seed the process-id mint past every `p#<n>` a resumed log mentions, so a restarted
         // daemon never re-mints an ordinal the durable record already refers to
         // (docs/supervisor.md). Scanned over the serialized entry because

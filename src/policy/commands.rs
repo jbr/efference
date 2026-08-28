@@ -3,9 +3,11 @@
 use super::*;
 
 /// Stage 1 + stage 2 for a bash command string. `Clear` only if it is structurally
-/// simple *and* its program/args match an allowlist entry.
-pub(super) fn classify_bash(role: &Config, command: &str) -> Verdict {
-    let Some(tokens) = simple_command_tokens(command) else {
+/// simple *and* its program/args match an allowlist entry. Stage 1 runs through
+/// [`bash_tokens_in`], so a leading `cd <granted dir> &&` is admitted and the remainder is what
+/// stage 2 matches.
+pub(super) fn classify_bash(role: &Config, command: &str, cwd: &Path) -> Verdict {
+    let Some(tokens) = bash_tokens_in(role, command, cwd) else {
         return Verdict::Gate; // stage 1 rejected (complex, expanded, or unparseable)
     };
     // Stage 2: token-wise prefix match against the command-prefix set. Each key is re-lexed with
@@ -76,15 +78,68 @@ pub(super) fn is_safe_fd_dup(redir: &yash_syntax::syntax::Redir) -> bool {
     }
 }
 
+/// **Stage 1 — structural simplicity, for a bash *tool call*.** [`simple_command_tokens`], plus
+/// the one tolerated operator: a single leading `cd <dir> &&`, whose remainder becomes the token
+/// vector stage 2 matches and prefix-promotion probes (docs/permissions.md).
+///
+/// The admitted shape is narrow, and everything outside it gates exactly as before:
+///
+/// - the `cd` segment is exactly two words, `cd` and a **literal** target — the same word-unit
+///   inspection stage 1 already performs ([`literal_word`]), so an expansion, a glob, or a tilde in
+///   the target gates;
+/// - the target, resolved against `cwd` the way every other grant check resolves a path
+///   ([`path_granted`]), must sit under a `[paths]` grant carrying **read** — `cd` mutates nothing,
+///   so read is the permission the move actually needs, and a write grant satisfies it too;
+/// - the operator is `&&` only (`;`, `||`, `|` gate), there is exactly **one** of it, and the
+///   remainder is itself a simple command that is not a second `cd`.
+///
+/// The reason for the tolerance is the same as the pure-fd-dup one above: a habitual prefix that
+/// models emit on nearly every call knocks a blanket `[commands]` grant off the fast path, and
+/// every such call pays a spotter round-trip. Recording the **remainder** (not the whole string) is
+/// what makes the promotion generalize across run directories.
+pub(crate) fn bash_tokens_in(role: &Config, command: &str, cwd: &Path) -> Option<Vec<String>> {
+    use yash_syntax::syntax::{AndOr, List};
+
+    let list: List = command.parse().ok()?;
+    // Exactly one item (no `;`-separated list), not backgrounded (`&`).
+    let [item] = list.0.as_slice() else {
+        return None;
+    };
+    if item.async_flag.is_some() {
+        return None;
+    }
+    let and_or = &item.and_or;
+    match and_or.rest.as_slice() {
+        [] => pipeline_tokens(&and_or.first),
+        [(AndOr::AndThen, remainder)] => {
+            // A leading `cd <literal dir>` into a read-granted directory, and nothing else.
+            let head = pipeline_tokens(&and_or.first)?;
+            let [program, target] = head.as_slice() else {
+                return None;
+            };
+            if program != "cd" || !path_granted(role, target, Perm::Read, cwd) {
+                return None;
+            }
+            let tokens = pipeline_tokens(remainder)?;
+            if tokens.first().is_none_or(|t| t == "cd") {
+                return None; // one leading `cd` only, and never an empty remainder
+            }
+            Some(tokens)
+        }
+        _ => None, // `||`, or more than one operator
+    }
+}
+
 /// **Stage 1 — structural simplicity.** Parse `command` and return its literal token
 /// vector (`[program, args…]`) iff it is exactly one simple command with no operators,
 /// redirections, assignments, or expansions, and whose every word is wholly literal.
 /// `None` for anything else (including a parse error) — the caller gates it.
 ///
 /// `pub(crate)` because config-load reuses it to validate `[commands]` keys (the soundness
-/// requirement that a key lexes to the same token vector the command is checked against).
+/// requirement that a key lexes to the same token vector the command is checked against). That
+/// use is why this stays strict about operators: a `[commands]` key is never a `cd …` compound.
 pub(crate) fn simple_command_tokens(command: &str) -> Option<Vec<String>> {
-    use yash_syntax::syntax::{Command, List};
+    use yash_syntax::syntax::List;
 
     let list: List = command.parse().ok()?;
     // Exactly one item (no `;`-separated list), not backgrounded (`&`).
@@ -98,7 +153,15 @@ pub(crate) fn simple_command_tokens(command: &str) -> Option<Vec<String>> {
     if !and_or.rest.is_empty() {
         return None; // no `&&` / `||`
     }
-    let pipeline = &and_or.first;
+    pipeline_tokens(&and_or.first)
+}
+
+/// The single-simple-command core of stage 1: one pipeline reduced to its literal token vector, or
+/// `None` if it is negated, piped, compound, assignment-prefixed, file-redirected, or holds a word
+/// bash would expand.
+fn pipeline_tokens(pipeline: &yash_syntax::syntax::Pipeline) -> Option<Vec<String>> {
+    use yash_syntax::syntax::Command;
+
     if pipeline.negation {
         return None; // no leading `!`
     }

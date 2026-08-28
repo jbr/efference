@@ -104,7 +104,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                     call.input
                         .get("command")
                         .and_then(Value::as_str)
-                        .and_then(policy::simple_command_tokens)
+                        .and_then(|command| policy::bash_tokens(&role, command))
                         .and_then(|tokens| shared.observe_and_pick_probe(&role, &tokens))
                 } else {
                     None

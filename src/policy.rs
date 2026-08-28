@@ -27,7 +27,10 @@
 //!   no env-assignment prefix, no unquoted glob/brace. The one redirection it tolerates is a
 //!   pure file-descriptor duplication/closure (`2>&1`, `>&2`, `2>&-`) — it rewires the process's
 //!   own fds and touches no filesystem, so it's sound and lets the habitual `cmd 2>&1` stay on the
-//!   fast path ([`is_safe_fd_dup`]). yash is POSIX-strict, which only
+//!   fast path ([`is_safe_fd_dup`]). The one operator it tolerates is a single leading
+//!   `cd <dir> &&` whose literal target is read-granted by `[paths]`; the remainder is what
+//!   stage 2 matches and what prefix-promotion probes ([`commands::bash_tokens_in`]).
+//!   yash is POSIX-strict, which only
 //!   costs *coverage* (a few bash-only forms gate to the spotter), never *soundness* —
 //!   bash's dangerous operators are POSIX too, so they parse as operators and gate;
 //!   bash-only syntax either fails to parse (→ gate) or surfaces as inert literal words
@@ -160,6 +163,16 @@ pub fn classify(role: &Config, call: &ToolCall) -> Verdict {
     classify_in(role, call, &cwd)
 }
 
+/// Stage 1's token vector for a bash command — the **bare** command, with a tolerated leading
+/// `cd <granted dir> &&` stripped (docs/permissions.md). `None` if stage 1 rejects the command.
+/// This is what prefix-promotion observes and probes, so a promoted prefix is the command itself
+/// and generalizes across run directories rather than pinning one `cd` target. Resolves the `cd`
+/// target against the process cwd, like [`classify`].
+pub fn bash_tokens(role: &Config, command: &str) -> Option<Vec<String>> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    bash_tokens_in(role, command, &cwd)
+}
+
 /// Whether `call` is a write whose target resolves (lexically, against the process cwd) to
 /// `protected` — the session's own config file. A write to the policy file is a **proposal** that
 /// must always reach the operator, so the loop forces the human gate on it, **bypassing both the
@@ -193,11 +206,12 @@ fn is_config_write_in(call: &ToolCall, protected: &Path, cwd: &Path) -> bool {
     lexical_normalize(&absolutize(target, cwd)) == lexical_normalize(&absolutize(protected, cwd))
 }
 
-/// The cwd-injected core, for deterministic tests. `bash` ignores `cwd`.
+/// The cwd-injected core, for deterministic tests. `bash` uses `cwd` to resolve the target of a
+/// tolerated leading `cd` against the `[paths]` grants ([`commands::bash_tokens_in`]).
 fn classify_in(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
     if call.name == bash::NAME {
         match call.input.get("command").and_then(Value::as_str) {
-            Some(command) => classify_bash(role, command),
+            Some(command) => classify_bash(role, command, cwd),
             // A bash call without a string `command` is malformed — let the gate see it.
             None => Verdict::Gate,
         }
@@ -261,7 +275,7 @@ mod paths;
 mod probe;
 
 pub use commands::promotable_command;
-pub(crate) use commands::simple_command_tokens;
+pub(crate) use commands::{bash_tokens_in, simple_command_tokens};
 pub use effective::{apply_config_change, effective_config};
 pub(crate) use paths::{absolutize, lexical_normalize, path_spec};
 pub use probe::{ProbeLedger, probe_ledger};

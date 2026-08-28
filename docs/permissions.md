@@ -146,6 +146,18 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
   not a pipe. yash *parses* without *expanding*, so we inspect word units ourselves for
   the expansion metacharacters bash would act on at runtime (`* ? [ {` anywhere; a leading
   `~`) — which is why `git diff HEAD~1` clears but `~/x` and `cp {a,b}` gate.
+  The one operator it tolerates is a single leading **`cd <dir> &&`**, whose remainder becomes
+  the command stage 2 matches. The `cd` segment must be exactly two words with a *literal*
+  target (the same word-unit inspection), and that target — resolved against the cwd by the
+  same lexical rule the `[paths]` check uses — must sit under a `[paths]` grant carrying
+  **read**: `cd` mutates nothing, so read is the permission the move needs, and a write grant
+  satisfies it. Anything else fails closed: an ungranted or expanded target, a second `cd`, a
+  different operator (`;`, `||`, `|`), more than one operator, or a remainder that is not
+  itself a simple command. Same reason as the fd-dup tolerance — models emit `cd <abs> &&` on
+  nearly every bash call (45.6% of a 742-call local corpus), and without this each one pays a
+  spotter round-trip whatever `[commands]` granted. The tolerance is in the bash-call lexer
+  only; the `[commands]`-key lexer stays single-simple-command, so a `cd …` compound can never
+  be stored as a grant.
 - **Stage 2** matches the lexed `[program, args…]` against the `[commands]` set: each key
   is **re-lexed with the same lexer** and compared token-wise (so `"git diff"` matches as
   `["git", "diff"]`, not by string), an empty-args key (`cargo`) blanket-trusting the
@@ -491,7 +503,9 @@ saturates. The cognitive load on the spotter stays a single extra yes/no, and th
 deterministic, exact, and auditable — a vote ledger, not a fuzzy model.
 
 When a bash move reaches the spotter, the loop runs a **descent** (`policy::ProbeLedger`): it bumps a
-`seen_count` for each of the command's token-prefixes, then picks the **shortest** prefix that is
+`seen_count` for each of the command's token-prefixes — of the **bare** command, with any tolerated
+leading `cd <dir> &&` stripped, so a promoted prefix generalizes across run directories rather than
+pinning one target — then picks the **shortest** prefix that is
 uncovered, seen at least `MIN_SIGHTINGS_TO_PROBE` times, and not yet resolved. That prefix rides the
 *same* spot call — the move prompt names it, and the answer **is the stance**: `clear_always` =
 clear the move *and* vote the prefix blanket-safe; any other stance is a not-safe vote. Folding the

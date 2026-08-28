@@ -91,6 +91,111 @@ fn fd_dup_carve_out_does_not_leak_to_file_redirections() {
     }
 }
 
+/// [`sample_role`]'s allowlist plus `[paths]` grants — cwd read+write, `/refs` read-only — so the
+/// `cd` tolerance can be exercised against both a writable and a read-only granted directory.
+fn cd_role() -> Config {
+    Config {
+        paths: [
+            (
+                ".".to_string(),
+                Perms {
+                    read: true,
+                    write: true,
+                },
+            ),
+            (
+                "/refs".to_string(),
+                Perms {
+                    read: true,
+                    write: false,
+                },
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        ..sample_role()
+    }
+}
+
+fn cd_verdict(command: &str) -> Verdict {
+    classify_in(&cd_role(), &bash_call(command), Path::new(CWD))
+}
+
+fn cd_tokens(command: &str) -> Option<Vec<String>> {
+    bash_tokens_in(&cd_role(), command, Path::new(CWD))
+}
+
+/// The one tolerated operator (docs/permissions.md): a leading `cd <literal dir> &&` into a
+/// directory a `[paths]` grant covers is admitted by stage 1, and the **remainder** is what stage 2
+/// matches — so a blanket `cargo = true` clears the shape a model emits on every call. A read grant
+/// is the bar; `cd` mutates nothing, so the read-only `/refs` clears too.
+#[test]
+fn leading_cd_into_a_granted_dir_reaches_the_prefix_match() {
+    assert_eq!(cd_verdict("cd /work/src && cargo build"), Verdict::Clear);
+    assert_eq!(
+        cd_verdict("cd src && cargo test --workspace"),
+        Verdict::Clear
+    ); // relative → cwd
+    assert_eq!(cd_verdict("cd /refs && rg needle"), Verdict::Clear); // read-only grant suffices
+    // Stage 2 still decides: the `cd` buys admission, not clearance.
+    assert_eq!(cd_verdict("cd /work && git push"), Verdict::Gate);
+    assert_eq!(cd_verdict("cd /work && npm install"), Verdict::Gate);
+}
+
+/// Prefix-promotion probes the **bare** command: the `cd` segment is stripped from the token
+/// vector, so a promoted prefix generalizes across run directories instead of pinning one target.
+#[test]
+fn cd_prefix_is_stripped_from_the_probed_tokens() {
+    assert_eq!(
+        cd_tokens("cd /work/src && cargo build --release"),
+        Some(vec!["cargo".into(), "build".into(), "--release".into()])
+    );
+    // The fd-dup tolerance composes with it, on either half.
+    assert_eq!(
+        cd_tokens("cd /work && cargo test 2>&1"),
+        Some(vec!["cargo".into(), "test".into()])
+    );
+    // A command with no `cd` is unchanged.
+    assert_eq!(
+        cd_tokens("cargo build"),
+        Some(vec!["cargo".into(), "build".into()])
+    );
+}
+
+/// Everything outside the admitted shape fails closed to the spotter exactly as before: an
+/// ungranted target, a target bash would expand, a second `cd`, a different operator, or a
+/// remainder that is not itself a simple command.
+#[test]
+fn cd_tolerance_fails_closed_outside_the_admitted_shape() {
+    for gates in [
+        "cd /elsewhere && cargo build", // target outside every `[paths]` grant
+        "cd /work/../etc && cargo build", // resolves out of the grant (lexically)
+        "cd $HOME && cargo build",      // parameter expansion in the target
+        "cd ~/work && cargo build",     // tilde expansion in the target
+        "cd src/*/ && cargo build",     // glob in the target
+        "cd /work && cd src && cargo build", // more than one `cd`
+        "cd /work && cd src",           // …including as the whole remainder
+        "cd /work; cargo build",        // `;` is not the tolerated operator
+        "cd /work || cargo build",      // nor is `||`
+        "cd /work",                     // `cd` without `&&` is just an unlisted program
+        "cd /work extra && cargo build", // the `cd` segment is exactly two words
+        "cargo build && cd /work",      // the tolerance is *leading* only
+        "cd /work && cargo build && rm -rf /", // one operator only
+        "cd /work && cargo build > out.log", // remainder must still be structurally simple
+        "cd /work && cargo build | sh",
+    ] {
+        assert_eq!(cd_verdict(gates), Verdict::Gate, "{gates:?} must gate");
+    }
+}
+
+/// The `[commands]`-key lexer is unchanged by the tolerance: a key is always a single simple
+/// command, so a `cd …` compound can never be stored as a grant (config-load rejects the file).
+#[test]
+fn the_cd_tolerance_does_not_reach_the_allowlist_key_lexer() {
+    assert_eq!(simple_command_tokens("cd /work && cargo build"), None);
+    assert_eq!(promotable_command(&cd_role(), "cd /work && npm"), None);
+}
+
 #[test]
 fn promotable_command_accepts_a_lexable_novel_prefix() {
     let role = sample_role(); // cargo, rg, git diff, git status

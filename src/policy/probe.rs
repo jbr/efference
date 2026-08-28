@@ -76,7 +76,11 @@ impl ProbeLedger {
 /// [`effective_config`]. Seen-counts come from each `Spot`'s bash command (recovered by `call_id`);
 /// votes from each `Spot` that probed a prefix, counted only when the verdict was the model's — a
 /// fail-closed `Fallback` didn't actually judge, so it casts no vote.
-pub fn probe_ledger(log: &[LogEntry]) -> ProbeLedger {
+///
+/// Commands are tokenized with [`crate::policy::bash_tokens`], the same lexer the live loop
+/// observes with, so a replayed `cd <dir> && cargo test` counts the bare command exactly as it did
+/// when it ran. `role` is the effective config the grant check for the `cd` target reads.
+pub fn probe_ledger(role: &Config, log: &[LogEntry]) -> ProbeLedger {
     // call_id → the bash command it ran, so a `Spot` can recover the command it judged.
     let mut command_of: HashMap<&crate::log::CallId, &str> = HashMap::new();
     for entry in log {
@@ -96,7 +100,7 @@ pub fn probe_ledger(log: &[LogEntry]) -> ProbeLedger {
             continue;
         };
         if let Some(cmd) = command_of.get(&spot.call_id)
-            && let Some(tokens) = simple_command_tokens(cmd)
+            && let Some(tokens) = crate::policy::bash_tokens(role, cmd)
         {
             ledger.observe(&tokens);
         }
