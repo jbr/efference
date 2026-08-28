@@ -318,6 +318,38 @@ to sorted order, so the resulting definitions are byte-deterministic for the
 session and safe for the tools cache tier (see `transport.md` on caching).
 Definitions are computed once at mount time and reused as the wire `tools[]`.
 
+### Argument validation is the tool's, not the harness's
+
+Nothing validates a call's arguments against the tool's schema before dispatch.
+The in-process servers get strict checking for free — `run_call` deserializes the
+`{name, arguments}` envelope into the generated tool enum, and a mismatch becomes
+an `is_error` result naming it (`invalid input for read: invalid type: string
+…, expected a sequence`). A connected server's arguments are passed through as
+written and the server decides.
+
+That asymmetry is deliberate rather than pending. Three checks already stand
+between a model's call and a server: the provider constrains decoding to the
+schema on the wire, the server validates its own input, and the in-process path
+deserializes strictly. A fourth check in the harness would duplicate them and
+carry a risk the others do not — a server that accepts undeclared extras, or
+coerces a scalar, works today, and validating against a schema its author may not
+treat as binding would turn those working calls into failures. The server's own
+error is also written by the tool's author, so it is usually more specific than a
+generic validator's.
+
+The cost of passing a malformed call through is one wasted permission cascade:
+the spotter rung runs before dispatch, so a call that was going to fail on its
+arguments may pay for a verdict first. Observed rate across the recorded run
+corpus is one malformed call in 319 tool results — and that one reached the
+harness despite provider-side constrained decoding, so that mechanism is a
+strong filter rather than a guarantee. `ToolTelemetry`'s outcome class makes the
+rate readable per model, which is what a decision to add validation would rest
+on.
+
+Deferred tool discovery is the case where the reasoning inverts, because a
+deferred call is not on the wire and so is never constrained-decoded; validating
+against the fetched schema is part of that design (`backlog/deferred-tool-discovery.md`).
+
 ### Shared-store side effect: resolved with `embedded`
 
 The crates' default `new` persists to a shared on-disk store

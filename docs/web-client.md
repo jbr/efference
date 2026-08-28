@@ -297,13 +297,22 @@ session
    └─ call                  one call, whole
       ├─ intent, args
       ├─ spot               the spotter's stance + reason
+      ├─ telemetry          duration, outcome, raw result size
       └─ result             carries its own keep + note
 ```
 
 Two containers, `batch` and `call`; everything else is a leaf sibling at session
-level. A result and a verdict are attached to the call they name rather than
-emitted where they fall in the log — that attachment is the point, and it is
-what makes a result *belong to* its call instead of merely following it.
+level. A result, a verdict, and a call's telemetry are attached to the call they
+name rather than emitted where they fall in the log — that attachment is the
+point, and it is what makes a result *belong to* its call instead of merely
+following it.
+
+`ToolTelemetry` ([tools.md](tools.md)) joins by `call_id` exactly as `Spot` does,
+and for the same reason: it is a fact *about* a call, not an entry to read. The
+default for a payload the tree does not recognise is a leaf rendered as `unknown
+entry`, which is the right default — a new variant is visible rather than
+silently dropped — but it means every additive log variant needs a decision here.
+`ToolTelemetry` shipped without one and put a raw JSON block after every call.
 
 A result's images render below its body as plain `<img>` elements pointed at
 `GET /v1/log/{seq}/images/{idx}` ([control-api.md](control-api.md)): the entry
@@ -350,6 +359,14 @@ label-free user turn, and may reverse back after use). Non-voice entries keep
 their labels, because those genuinely need naming. The earlier failure mode —
 a noun *above* every block making every entry look alike — is what the gutter
 avoids: labels sit beside content, not between entries.
+
+`ToolTelemetry` is not rendered as an entry either, but unlike `Triage` it is
+*kept*: the inspector's "what the call cost" panel states outcome, dispatch
+duration, and raw result bytes, with the bash and edit sub-structs appended when
+the call carried them. It sits above "what the fork returned" because the two
+read as a pair — the raw size the call produced, then what the fork did to it.
+Dispatch duration excludes the permission cascade, so a call that waited at a
+gate does not read as a slow call.
 
 `Triage` is not rendered. Its one visible fact — how much of the output survived
 — the result header already states as `kept N of M lines`, so a `keep: all` line
