@@ -90,6 +90,11 @@ async fn the_web_client_is_anonymous_and_the_api_is_not() {
     server.get("/tree").await.assert_status(200);
     server.get("/nonexistent").await.assert_status(404);
     server.get("/tree/deeper").await.assert_status(404);
+    // The session-prefixed spellings of those routes are the host's (docs/host.md):
+    // this bind serves the client at its own root, so the client's base is empty
+    // here and a `/sessions/…` path names nothing.
+    server.get("/sessions/work").await.assert_status(404);
+    server.get("/sessions/work/tree").await.assert_status(404);
 
     // A non-GET outside `/v1` fails closed at the gate.
     server

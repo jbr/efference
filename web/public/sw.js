@@ -16,8 +16,21 @@
 
 const CACHE = "efference-shell-v2";
 
-/** Client routes the index answers — mirrors `SPA_ROUTES` (src/daemon/tcp.rs). */
+/** Client routes the index answers, relative to the client's base — mirrors
+ * `SPA_ROUTES` (src/daemon/tcp.rs). */
 const SHELL_ROUTES = ["/", "/tree"];
+
+/** A session prefix, which is the client's base when a host served the page
+ * (api/base.ts, docs/host.md): every route above is also a route under it, and
+ * every control path under it must reach the network. The id character set
+ * mirrors `plain_id` (src/host.rs). */
+const SESSION_PREFIX = /^\/sessions\/[A-Za-z0-9._-]+(?=\/|$)/;
+
+/** A pathname with any session prefix removed, so one rule covers both
+ * bindings: `/sessions/work/v1/state` -> `/v1/state`, `/sessions/work` -> `/`. */
+const unprefixed = (pathname) => pathname.replace(SESSION_PREFIX, "") || "/";
+
+const isShellRoute = (pathname) => SHELL_ROUTES.includes(unprefixed(pathname));
 
 /** Public assets whose names the build does not hash, so they can be named
  * here. Everything else cacheable is a hashed `/assets/…` file, which is
@@ -34,10 +47,12 @@ const SHELL_ASSETS = [
 /** Prefixes that must always reach the daemon. */
 const LIVE = ["/v1", "/files", "/auth"];
 
-const isLive = (pathname) =>
-  LIVE.some(
-    (prefix) => pathname === prefix || pathname.startsWith(prefix + "/"),
+const isLive = (pathname) => {
+  const path = unprefixed(pathname);
+  return LIVE.some(
+    (prefix) => path === prefix || path.startsWith(prefix + "/"),
   );
+};
 
 const isCacheable = (pathname) =>
   pathname.startsWith("/assets/") ||
@@ -76,10 +91,12 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (isLive(url.pathname)) return;
 
-  // A navigation is answered from the network when there is one, and from the
-  // cached shell when there is not — so a cold launch offline paints the app,
-  // which then says it cannot reach the session rather than showing nothing.
-  if (request.mode === "navigate") {
+  // A navigation to a shell route is answered from the network when there is
+  // one, and from the cached shell when there is not — so a cold launch offline
+  // paints the app, which then says it cannot reach the session rather than
+  // showing nothing. A session-prefixed route falls back to the same shell:
+  // only its own path is precached, and the shell is the same bytes either way.
+  if (request.mode === "navigate" && isShellRoute(url.pathname)) {
     event.respondWith(
       fetch(request)
         .then((response) => {

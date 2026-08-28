@@ -176,6 +176,41 @@ input[type="checkbox"] {
   flex: 1;
 }
 
+/* Back to the host's session list — present only when a host served this page
+   (docs/host.md). Sized to the wordmark it sits beside, not to the body text. */
+.to-list {
+  color: var(--fg-dim);
+  text-decoration: none;
+  font-size: 1.2em;
+}
+
+.to-list:hover {
+  color: var(--fg);
+}
+
+/* The host's root: one row per live session, each a link into its own view.
+   Nothing per row but the id — the listing carries nothing else. */
+.session-list ul {
+  list-style: none;
+  margin: 1.5rem 0;
+  padding: 0;
+}
+
+.session-list li {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.session-list a {
+  display: block;
+  padding: 0.7rem 0.2rem;
+  color: var(--fg-bright);
+  text-decoration: none;
+}
+
+.session-list a:hover {
+  background: var(--bg-raised);
+}
+
 .wordmark {
   font-family: var(--font-prose);
   font-size: 1.6em;

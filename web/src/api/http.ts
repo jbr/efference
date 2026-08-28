@@ -1,9 +1,11 @@
 // The one fetch wrapper (docs/control-api.md). The control endpoint is an
-// opaque base the client joins paths onto — same-origin here, so the base is
-// "" and the session cookie rides automatically. Every non-2xx carries the
-// standard error envelope; it surfaces as a thrown ApiError so callers branch
-// on `code`, not status prose.
+// opaque base the client joins paths onto (api/base.ts): `""` at a session
+// daemon's root, `/sessions/<id>` when the host serves this page under a session
+// prefix. Same-origin either way, so the session cookie rides automatically.
+// Every non-2xx carries the standard error envelope; it surfaces as a thrown
+// ApiError so callers branch on `code`, not status prose.
 
+import { join } from "./base.ts";
 import type {
   CallId,
   Decision,
@@ -28,12 +30,14 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
+/** A request to a URL as given — the listener's own surfaces, which sit at its
+ * root under either binding. */
+async function requestAt<T>(
   method: string,
-  path: string,
+  url: string,
   body?: unknown,
 ): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(url, {
     method,
     // The gate requires application/json on body-bearing methods; harmless on
     // the rest.
@@ -51,6 +55,10 @@ async function request<T>(
   }
   return (await response.json()) as T;
 }
+
+/** A request to a control path, joined onto this client's base. */
+const request = <T>(method: string, path: string, body?: unknown) =>
+  requestAt<T>(method, join(path), body);
 
 export const get = <T>(path: string) => request<T>("GET", path);
 export const post = <T>(path: string, body: unknown) =>
@@ -142,7 +150,22 @@ export const resolveProposal = (
   state: "committed" | "cancelled",
 ) => patch<{ state: string }>(`/v1/proposals/${seq}`, { state });
 
-// Trade a TOTP code for the session cookie (docs/web-bind.md). Outside /v1:
-// auth is the bind's surface, not the session's.
+// Trade a TOTP code for the session cookie (docs/web-bind.md). Outside /v1 and
+// outside the base: auth is the *listener's* surface, so it is at the root under
+// either binding, and one credential covers every session behind a host.
 export const mintSession = (code: string) =>
-  post<{ status: string }>("/auth/session", { code });
+  requestAt<{ status: string }>("POST", "/auth/session", { code });
+
+/** One entry of the host's live-session listing (docs/host.md). The id is the
+ * path segment a client joins its control base onto, and the listing carries
+ * nothing else: a session's own state is read through its own API. */
+export interface SessionEntry {
+  id: string;
+}
+
+// The host's one endpoint of its own (docs/host.md), at its root rather than
+// under the base — a client asking "which sessions are there" is asking the
+// listener, not a session. A session daemon serves no such route, which is how
+// the client tells the two bindings apart (session/entry.ts).
+export const fetchSessions = () =>
+  requestAt<SessionEntry[]>("GET", "/sessions");

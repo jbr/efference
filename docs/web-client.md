@@ -33,7 +33,7 @@ the wire:
 
 | layer | job | React? |
 | --- | --- | --- |
-| `web/src/api/` | mirrored `/v1` types (`types.ts`), the fetch wrapper + error envelope (`http.ts`), the SSE reader (`stream.ts`) | no |
+| `web/src/api/` | mirrored `/v1` types (`types.ts`), the control base (`base.ts`), the fetch wrapper + error envelope (`http.ts`), the SSE reader (`stream.ts`) | no |
 | `web/src/session/` | the fold: frames → an immutable `Session` snapshot (`store.ts`), the connect lifecycle (`connect.ts`), session verbs whose error recovery folds into the store (`actions.ts`), one `useSyncExternalStore` binding (`useSession.ts`) | binding only |
 | `web/src/ui/` | display — transcript, login, composer; the churn zone | yes |
 
@@ -120,6 +120,50 @@ is still re-parsed whole on each of those frames, and a fenced block inside
 still-streaming prose is re-tokenized whole (`Code`, not `StreamingCode`).
 Memoizing the parsed prefix and deferring highlight for streaming content are the
 remaining reductions.
+
+## Which session this page is, and where its API lives
+
+The client treats its control endpoint as an opaque base URL and joins every path
+onto it ([control-api.md](control-api.md)). `api/base.ts` derives that base from
+the page's own location, because the page was served *from* its base: a path under
+`/sessions/<id>/` yields `/sessions/<id>`, anything else yields `""`. A session
+daemon at a socket root and a host at a prefix ([host.md](host.md)) are then the
+same client code, and nothing above `api/` names a binding. `/auth/…` and
+`/sessions` are deliberately *not* joined: they are the listener's own surfaces,
+at its root under either binding — one credential covers every session behind a
+host.
+
+The id set the derivation accepts mirrors the host's (`plain_id`, `src/host.rs`):
+a path whose second segment is not a plain segment is not a prefix, and addresses
+the root instead.
+
+**What the root shows is a probe, not a configuration.** With an empty base the
+binding is genuinely ambiguous — the shell is byte-identical — so `session/entry.ts`
+asks: the host answers `GET /sessions` with the listing, a session daemon serves no
+such route and answers `404`, and a host with no credential yet answers `401`
+(which is the login view, after which the probe re-runs). Anything else — offline, a
+daemon that went away — reads as a session, which is what a root has always been;
+the session view's own connection banner reports the network state, where a second
+failure screen would only restate it.
+
+**The list is the ids and nothing else** (`ui/SessionList.tsx`), because the listing
+is the ids and nothing else. Model, stall, and gate chips per row would be one
+`GET /sessions/<id>/v1/state` per session on every load — acceptable at three
+sessions, and the wrong shape at thirty; the cross-session summary the list actually
+wants is a host-level resource that is not built ([host.md](host.md)).
+
+**Entering a session is a navigation, not client-side state.** A row is an `<a href>`
+to `/sessions/<id>/`, and the back affordance in the top bar is a link to `/`, shown
+only when the base is non-empty. The base changes with the URL, so a client-side
+transition would have to rebuild every fetch, the stream, and the fold against a
+different endpoint — which is a page load with extra steps. The one client route
+besides `/` is `/tree`, and it is `/sessions/<id>/tree` under a host: the same route
+with the base in front of it, which is why the route is read with the base removed.
+
+`ui/App.tsx` is only this choice — list, login, or session. The session view is
+`ui/SessionView.tsx`, which is the component the rest of this document means when it
+says App holds a piece of state (the inspector selection, the open file request, the
+overlay count).
 
 ## The phone breakpoint
 
@@ -943,7 +987,9 @@ chrome takes it.
 The service worker does two things and no third: make the app installable, and
 let the shell paint from cache on a cold start or a lost network. **Nothing
 session-shaped is cached** — `/v1`, `/files` and `/auth` always reach the
-daemon. A transcript or a file's bytes served from cache would be a stale claim
+daemon, matched with any session prefix removed so the rule covers both
+bindings; the shell routes are matched the same way, so a session-prefixed
+navigation falls back to the same cached shell. A transcript or a file's bytes served from cache would be a stale claim
 about what the agent did, and saying what the agent did is what this page is
 for. What is cached is the build's own hashed assets (cache-first, because the
 hash is the version) and the shell routes. Registration is production-only
@@ -1070,8 +1116,11 @@ credential — the same posture as the inline bootstrap page the app replaced �
 `/v1` stays behind cookie-or-bearer. The login view (`web/src/ui/Login.tsx`) carries
 the bootstrap dance: read `#token=` from the URL fragment, trade it at
 `POST /auth/session`, scrub the fragment; render the six-digit field on a bare visit
-or a failed trade. The SPA index answers `/` only — no client-side routes exist yet,
-and a broader index fallback would answer scanner probes `200`.
+or a failed trade. The SPA index answers the client's named routes and nothing else
+(`SPA_ROUTES`, `src/daemon/tcp.rs`) — a broader index fallback would answer scanner
+probes `200`. On the host those routes are also answered under a session prefix,
+which is the one place the anonymous shell sits inside a guarded prefix
+([host.md](host.md)).
 
 ## Development
 

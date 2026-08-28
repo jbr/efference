@@ -6,6 +6,7 @@
 // verbatim raw. `data-lang` on code bodies is the future highlighter's hook.
 
 import { useMemo } from "react";
+import { join } from "../api/base.ts";
 import type { CallId, RawResult, ToolCall, WireState } from "../api/types.ts";
 import { Code, NumberedCode, StreamingCode } from "./Code.tsx";
 import {
@@ -327,7 +328,7 @@ export function ResultBlock({
         <img
           key={idx}
           className="result-image"
-          src={`/v1/log/${seq}/images/${idx}`}
+          src={join(`/v1/log/${seq}/images/${idx}`)}
           width={image.width}
           height={image.height}
           alt={`${image.media_type} ${image.width}×${image.height}`}

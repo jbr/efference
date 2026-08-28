@@ -86,7 +86,10 @@ offline verbs; what this endpoint answers is which sessions can be talked to now
 A client showing a *list* also wants to know which sessions have a pending gate without
 opening a stream per session. That is the cross-session summary stream, and it is not
 built; `backlog/host-process.md` records why it is a coarser host-level resource rather
-than a merge of the per-session streams.
+than a merge of the per-session streams. Until it exists the web client's list shows
+the id and nothing else ([web-client.md](web-client.md)): the alternative is one
+`GET /sessions/<id>/v1/state` per session on every load, which is the shape the summary
+resource exists to replace.
 
 ## `/sessions/<id>/…` — the session's own API, forwarded
 
@@ -125,14 +128,27 @@ id they are the same condition, and the recovery is the same re-read of `GET /se
 ## The web client at the root
 
 The same embedded build the session bind serves ([web-client.md](web-client.md)),
-mounted last so it answers exactly the GETs the routes do not claim. Two things follow
-from the client's current shape:
+mounted last so it answers exactly the GETs the routes do not claim. The client joins
+every control path onto a base it reads off its own location — `""` at a session
+daemon's root, `/sessions/<id>` here — so the host's root shows the session list and
+`/sessions/<id>/` shows that session, from one build with no configuration.
 
-- Its API paths are root-relative (`/v1/state`, `/files/…`) rather than joined onto a
-  configured base, so the page served at the host's root reaches the host's own routes,
-  not a session's. The client-side half — a session list, and a base per session — is
-  `backlog/web/session-list.md`; new client routing is added to `SPA_ROUTES` in
-  `src/daemon/tcp.rs` and to the service worker's navigation fallback together.
-- `/files` is mounted on a session daemon's *TCP* listener only, so a proxied
-  `/sessions/<id>/files/…` reaches the session's Unix socket, which does not serve it.
-  The operator's file view is therefore not reachable through the host today.
+**The client's own routes exist under a session prefix too.** The single-session view
+loads *from* its base, so the shell has to answer there: `/sessions/<id>`,
+`/sessions/<id>/`, and `/sessions/<id>/tree` are named in the host's router — claimed
+from the proxy, which would otherwise forward them to a session whose router serves
+the control API and not the client — and passed through to the frontend handler, which
+answers them with the same index `/` and `/tree` get. Three predicates state the same
+set and must move together: `Surface::spa_route` (`src/daemon/tcp.rs`, which is also
+what makes the shell anonymous inside the otherwise-guarded `/sessions` prefix), these
+routes, and the service worker's navigation fallback (`web/public/sw.js`). A path
+under the prefix that names no client route is still the session's to answer.
+
+The shell is served for any id the proxy would accept, live or not: whether a session
+answers is `/sessions/<id>/v1/state`'s answer, and a client holding a stale id learns
+the same way it learns anything else.
+
+`/files` is mounted on a session daemon's *TCP* listener only, so a proxied
+`/sessions/<id>/files/…` reaches the session's Unix socket, which does not serve it.
+The file viewer and tree therefore refuse through the host today — as a refusal the
+viewer renders, not a blank pane.

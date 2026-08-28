@@ -308,6 +308,21 @@ enum Zone {
 }
 
 impl Surface {
+    /// Whether `path` is one of the web client's own routes here — what the SPA
+    /// index answers, and nothing else (docs/web-client.md).
+    ///
+    /// A session bind serves the client at its root, so its routes are exactly
+    /// [`SPA_ROUTES`]. The host serves the same client at its root *and* the
+    /// single-session view under `/sessions/<id>/`, which is the base that client
+    /// joins its control paths onto (docs/host.md), so every route is answered
+    /// there too. The enumeration stays exact either way: `/sessions/<id>/anything`
+    /// that is not a named route is still a `404`.
+    fn spa_route(self, path: &str) -> bool {
+        SPA_ROUTES.contains(&path)
+            || (matches!(self, Surface::Host)
+                && session_scoped(path).is_some_and(|route| SPA_ROUTES.contains(&route)))
+    }
+
     /// The guarded prefixes, and which credential each takes. A non-GET outside them
     /// fails closed at [`Zone::Credential`] rather than 404ing.
     fn zone(self, method: Method, path: &str) -> Zone {
@@ -322,6 +337,12 @@ impl Surface {
             Surface::Session => under("/v1"),
             Surface::Host => under("/sessions"),
         };
+        // The web client's shell is anonymous wherever it is served (docs/web-client.md).
+        // On the host, the single-session view's own route sits *inside* `/sessions`,
+        // so the exception is stated here rather than implied by the prefix: the
+        // shell carries no session content, and the page's first act is to
+        // authenticate.
+        let guarded = guarded && !self.spa_route(path);
         match method {
             // `trillium_head::head()` runs ahead of the gate, so a HEAD arrives here
             // already rewritten to GET. Anonymous surface: every GET outside the
@@ -450,7 +471,7 @@ pub(crate) fn stack_with_files(
         files,
         // Last: any GET neither router nor `/files` claimed is the web client's surface
         // (docs/web-client.md) — an asset, or the SPA index.
-        frontend(),
+        frontend(Surface::Session),
     )
 }
 
@@ -495,8 +516,12 @@ impl trillium::Handler for SecurityHeaders {
     }
 }
 
-/// Every path the SPA index answers — the whole of the client's routing, in one
-/// place. Anything not named here 404s, deliberately: answering every unmatched
+/// Every path the SPA index answers, **relative to the client's base** — the whole
+/// of the client's routing, in one place. The base is empty on a session bind and
+/// `/sessions/<id>` on the host, so each route is also a client route under that
+/// prefix; [`Surface::spa_route`] is where the two spellings meet.
+///
+/// Anything not named here 404s, deliberately: answering every unmatched
 /// path with the index would hand scanner probes a `200`, and this bind is
 /// reachable from a tailnet.
 ///
@@ -504,28 +529,54 @@ impl trillium::Handler for SecurityHeaders {
 /// it: this predicate, and the service worker's navigation fallback
 /// (`web/public/sw.js`), which serves the cached shell for exactly these paths
 /// when offline. A route added to one and not the other is a route that works
-/// online and 404s from the home screen, or the reverse. New client routing —
-/// the session list's, when the host lands
-/// (backlog/web/session-list.md) — is added here, not by loosening the
-/// predicate.
+/// online and 404s from the home screen, or the reverse. New client routing is
+/// added here, not by loosening the predicate.
 ///
-/// - `/` — the session view, and the installed app's `start_url`.
+/// - `/` — the session view, and the installed app's `start_url`. At a host's root
+///   it is the session list instead; the client tells the two bindings apart by
+///   probing `GET /sessions` (docs/web-client.md).
 /// - `/tree` — the file tree and finder, reachable without a call having named
 ///   a file (docs/web-client.md "Navigating the working directory").
 const SPA_ROUTES: [&str; 2] = ["/", "/tree"];
+
+/// The client route inside a `/sessions/<id>` prefix, if the path carries one:
+/// `/sessions/work/tree` → `/tree`, and both `/sessions/work` and `/sessions/work/`
+/// → `/`. `None` when the path is not session-prefixed, or when the id is not a
+/// single plain segment — the same rule the host resolves ids by, so the shell is
+/// offered for exactly the ids the proxy would accept.
+fn session_spa_route(conn: &Conn) -> bool {
+    Surface::Session.spa_route(conn.path())
+}
+
+fn host_spa_route(conn: &Conn) -> bool {
+    Surface::Host.spa_route(conn.path())
+}
+
+fn session_scoped(path: &str) -> Option<&str> {
+    let after = path.strip_prefix("/sessions/")?;
+    let (id, rest) = after.split_at(after.find('/').unwrap_or(after.len()));
+    crate::host::plain_id(id).then_some(if rest.is_empty() { "/" } else { rest })
+}
 
 /// The web client (docs/web-client.md): `web/` built and embedded at compile time,
 /// or — under the `dev-proxy` feature — proxied to a spawned Vite dev server with
 /// HMR. Mounted after both routers on the TCP spawn, so it answers exactly the GETs
 /// they don't claim; the gate has already let those through anonymously. The host
-/// mounts the same build at its own root (docs/host.md).
-pub(crate) fn frontend() -> impl trillium::Handler {
+/// mounts the same build at its own root (docs/host.md), which is why the index
+/// predicate is surface-dependent: the host also answers the client's routes under
+/// a session prefix, and the session bind does not.
+pub(crate) fn frontend(surface: Surface) -> impl trillium::Handler {
     trillium_frontend::frontend!("./web")
         .with_client(trillium_client::Client::new(
             trillium_tokio::ClientConfig::default(),
         ))
         .with_index_file("index.html")
-        .with_index_predicate(|conn| SPA_ROUTES.contains(&conn.path()))
+        // `trillium_frontend` takes a bare fn pointer, so the surface is chosen
+        // between two fn items rather than captured in a closure.
+        .with_index_predicate(match surface {
+            Surface::Session => session_spa_route,
+            Surface::Host => host_spa_route,
+        })
 }
 
 /// The browser-facing anonymous surface, mounted only on the TCP spawn: the

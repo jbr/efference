@@ -90,8 +90,9 @@ pub(crate) fn stack(auth: Arc<TcpAuth>, base: PathBuf) -> impl trillium::Handler
         public_router(auth),
         router(Sessions::new(base)),
         // Last: any GET the routes didn't claim is the web client's surface — an
-        // asset, or the SPA index.
-        frontend(),
+        // asset, the SPA index at the root, or the same index under a session
+        // prefix, which is the single-session view's base.
+        frontend(Surface::Host),
     )
 }
 
@@ -109,10 +110,28 @@ pub(crate) fn router(sessions: Sessions) -> Router {
                 conn.with_status(200).with_body(body).halt()
             }
         })
+        // The web client's own routes under a session prefix — the single-session
+        // view and its file tree, at the base that client joins control paths onto.
+        // Named here for two reasons: the proxy must not forward them to a session
+        // (whose router serves the control API, not the client), and `frontend`
+        // below must be the one to answer them. These handlers therefore claim the
+        // path from the proxy and pass the conn through unhalted. The set matches
+        // `Surface::spa_route`'s (src/daemon/tcp.rs) and the service worker's
+        // (web/public/sw.js); a route in one and not the others is a route that
+        // works in one binding and 404s in another.
+        .get("/sessions/:id", client_shell)
+        .get("/sessions/:id/", client_shell)
+        .get("/sessions/:id/tree", client_shell)
         // `all` covers the five methods the control API uses. The trailing wildcard
         // is what the proxy forwards: the router pushes the remainder onto the conn's
         // path, so `/sessions/x/v1/state` reaches the session as `/v1/state`.
         .all("/sessions/:id/*", proxy::SessionProxy::new(sessions))
+}
+
+/// A client route under a session prefix: matched so the proxy does not claim it,
+/// answered by [`frontend`] with the same SPA shell `/` and `/tree` get.
+async fn client_shell(conn: Conn) -> Conn {
+    conn
 }
 
 /// The session directory layout as the host reads it: `<base>/<id>/control.sock`
@@ -132,6 +151,21 @@ pub struct SessionEntry {
     pub id: String,
 }
 
+/// Whether `id` is a single plain path segment — ASCII alphanumerics, `-`, `_`, `.`,
+/// and neither `.` nor `..` (docs/host.md). Anything else names no session: the id
+/// arrives from a URL and is joined onto a filesystem path, so it is validated
+/// before the join rather than trusted. The client-route predicate
+/// (`Surface::spa_route`, src/daemon/tcp.rs) asks the same question, so the shell is
+/// served for exactly the ids the proxy would accept.
+pub(crate) fn plain_id(id: &str) -> bool {
+    !id.is_empty()
+        && id != "."
+        && id != ".."
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
 impl Sessions {
     pub(crate) fn new(base: PathBuf) -> Self {
         Self {
@@ -144,13 +178,7 @@ impl Sessions {
     /// joined onto a filesystem path, so anything that could name a directory other
     /// than one session's is refused before the join.
     pub(crate) fn socket(&self, id: &str) -> Option<PathBuf> {
-        let plain = !id.is_empty()
-            && id != "."
-            && id != ".."
-            && id
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
-        plain.then(|| self.base.join(id).join(SOCKET_NAME))
+        plain_id(id).then(|| self.base.join(id).join(SOCKET_NAME))
     }
 
     /// The live sessions, sorted by id. **Liveness, not existence** — the same scan

@@ -34,7 +34,11 @@ one `Arc<Shared>`:
   index answers a **named list** of client routes (`SPA_ROUTES`: `/` and
   `/tree`) rather than every unmatched path, which would hand scanner probes a
   `200`; the service worker's offline navigation fallback mirrors that list, and
-  new client routing is added there rather than by loosening the predicate.
+  new client routing is added there rather than by loosening the predicate. The
+  list is relative to the client's base, so on the host the same routes are also
+  answered under a `/sessions/<id>` prefix ([host.md](host.md)) and the predicate
+  is a function of the listener's `Surface`; on this bind the base is empty and a
+  `/sessions/…` path names nothing.
 
 `head` is `trillium_head::head()`, mounted ahead of everything: HEAD requests are
 rewritten to GET on the way in (so the gate and routers only ever see GET) and the
@@ -135,7 +139,11 @@ Runs before every TCP route, in order:
    anonymous surface is every GET outside the guarded prefixes — the web client's
    shell and hashed assets ([web-client.md](web-client.md)), which reveal nothing
    session-specific — plus `POST /auth/session` (the mint). The guarded prefixes are
-   `/v1` and `/files`; a non-GET outside them fails closed rather than 404ing.
+   `/v1` and `/files`; a non-GET outside them fails closed rather than 404ing. A
+   client route is anonymous wherever it is served, which on the host means the
+   single-session view's own route is the one anonymous GET inside a guarded prefix
+   ([host.md](host.md)) — the shell carries no session content, and the page's first
+   act is to authenticate.
    `/files` is guarded more narrowly still: it takes the **cookie only**, and a
    valid bearer gets `403 forbidden` there rather than `401`, because the credential
    is fine and presenting it again would not help.

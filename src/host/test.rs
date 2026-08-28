@@ -305,6 +305,54 @@ async fn the_session_surface_is_guarded_and_the_client_is_not() {
     server.get("/nonexistent").await.assert_status(404);
 }
 
+/// The client's own routes under a session prefix serve the SPA shell: that prefix
+/// is the base the single-session view joins its control paths onto (docs/host.md),
+/// so the page has to load from it. They are anonymous, like the shell at the root,
+/// and they take nothing away from the proxy — a control path beside them is still
+/// guarded and still forwarded, and a path under the prefix that names no client
+/// route is still the session's answer rather than a shell `200`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_session_prefixed_client_route_serves_the_shell() {
+    let base = scratch_base();
+    spawn_stub_session(&base, "work");
+    let auth = armed("host-spa");
+    let server = host_server(&auth, base).await;
+
+    for path in ["/sessions/work", "/sessions/work/", "/sessions/work/tree"] {
+        server
+            .get(path)
+            .await
+            .assert_status(200)
+            .assert_header_with(KnownHeaderName::ContentType, |ct| {
+                assert!(ct.as_str().is_some_and(|ct| ct.starts_with("text/html")))
+            });
+    }
+
+    // The shell is served for an id shape the proxy would accept, whether or not a
+    // session answers to it — the client reads `/sessions/<id>/v1/state` and learns.
+    server.get("/sessions/absent/tree").await.assert_status(200);
+    // Not an id, so not a client route: the path stays inside the guarded prefix
+    // rather than falling out to the anonymous shell.
+    server.get("/sessions/").await.assert_status(401);
+
+    // The control surface under the same prefix is unchanged: guarded, and proxied.
+    server
+        .get("/sessions/work/v1/state")
+        .await
+        .assert_status(401);
+    server
+        .get("/sessions/work/v1/state")
+        .with_request_header(KnownHeaderName::Authorization, bearer(&auth))
+        .await
+        .assert_status(200);
+    // An unnamed path under the prefix reaches the session, which does not serve it.
+    server
+        .get("/sessions/work/tree/deeper")
+        .with_request_header(KnownHeaderName::Authorization, bearer(&auth))
+        .await
+        .assert_status(404);
+}
+
 /// Ids are validated before they are joined onto a path: only a plain segment names
 /// a session dir.
 #[test]

@@ -11,10 +11,15 @@
 // the request states which side it wants rather than leaning on the
 // negotiation's default.
 
+import { join as joinBase } from "./base.ts";
 import type { ErrorEnvelope } from "./types.ts";
 
+// Joined onto the client's base like every other control path (api/base.ts).
+// `/files` is mounted on a session daemon's own TCP listener only, so under a
+// host these URLs reach the session's socket, which does not serve them — the
+// viewer renders that refusal like any other (docs/host.md).
 const fileUrl = (path: string): string =>
-  "/files/" + path.split("/").map(encodeURIComponent).join("/");
+  joinBase("/files/" + path.split("/").map(encodeURIComponent).join("/"));
 
 /** The change-poke stream for one file — EventSource sends
  * `Accept: text/event-stream`, which is the negotiation. Same-origin, so the
@@ -29,7 +34,7 @@ export const dirStream = (path: string): EventSource =>
   new EventSource(dirUrl(path));
 
 const dirUrl = (path: string): string =>
-  path === "" ? "/files/" : fileUrl(path) + "/";
+  path === "" ? joinBase("/files/") : fileUrl(path) + "/";
 
 /** One entry of a listing. In a recursive listing `name` is the path relative
  * to the directory listed; in a flat one it is a bare name. */

@@ -95,6 +95,7 @@ function SessionLabel({ identity }: { identity: SessionIdentity }) {
 }
 
 export function TopBar({
+  listHref,
   running,
   connection,
   identity,
@@ -102,6 +103,9 @@ export function TopBar({
   upstreamFailure,
   upstreamRetry,
 }: {
+  /** The session list to go back to, when this page is served by a host —
+   * `null` at a session daemon's root, where there is no list. */
+  listHref: string | null;
   running: boolean;
   connection: Connection;
   identity: SessionIdentity | null;
@@ -113,6 +117,13 @@ export function TopBar({
   return (
     <header className="top-bar">
       <div className="top-bar-inner">
+        {/* A plain link, because leaving a session is a navigation: the
+            control base changes with it (api/base.ts). */}
+        {listHref !== null && (
+          <a className="to-list" href={listHref} title="all sessions">
+            ↩
+          </a>
+        )}
         <span className="wordmark">efference</span>
         <span
           className={running ? "dot breathing" : "dot"}

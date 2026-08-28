@@ -11,6 +11,7 @@
 // and `id:` SSE fields redundant for this parser: only `data:` lines matter,
 // and `:` heartbeat comments fall out of the grammar for free.
 
+import { join } from "./base.ts";
 import type { Frame, Seq } from "./types.ts";
 
 export interface StreamHandle {
@@ -42,7 +43,7 @@ export function openStream(
     while (!closed) {
       controller = new AbortController();
       try {
-        const response = await fetch(`/v1/events?since=${cursor}`, {
+        const response = await fetch(join(`/v1/events?since=${cursor}`), {
           headers: { accept: "text/event-stream" },
           signal: controller.signal,
         });
