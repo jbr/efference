@@ -147,6 +147,12 @@ impl<'a> InteractiveState<'a> {
                 self.upstream_failure = failure;
                 self.dirty = true;
             }
+            TuiEvent::UpstreamRetry(retry) => {
+                // Same class as the failure diagnostic: status-bar chrome, no
+                // reprojection. `None` is the all-clear and removes the indicator.
+                self.upstream_retry = retry;
+                self.dirty = true;
+            }
 
             TuiEvent::Policy(policy) => {
                 // Ephemeral chrome (the sidebar POLICY section), not transcript content —

@@ -223,6 +223,19 @@ pub(super) fn parse_upstream_failure(failure: &serde_json::Value) -> Option<Upst
     })
 }
 
+/// Parse the `upstream_retry` topic — the retry in flight, or `None` for the
+/// all-clear (docs/transport.md). `next_attempt_at` and `detail` are read past:
+/// see [`UpstreamRetryView`].
+pub(super) fn parse_upstream_retry(retry: &serde_json::Value) -> Option<UpstreamRetryView> {
+    if retry.is_null() {
+        return None;
+    }
+    Some(UpstreamRetryView {
+        surface: retry.get("surface")?.as_str()?.to_string(),
+        message: retry.get("message")?.as_str()?.to_string(),
+    })
+}
+
 /// Parse the `usage` topic's object into a [`UsageStats`]. `null` — no requests yet —
 /// is no stats.
 pub(super) fn parse_usage(usage: &serde_json::Value) -> Option<UsageStats> {

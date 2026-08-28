@@ -188,11 +188,29 @@ export type ReviewLevel = "autonomous" | "spotter_human" | "human_only";
 
 // The last non-success upstream response, with consecutive occurrences of that
 // status. Ephemeral transport diagnostics: never log content (docs/transport.md).
-// It is not cleared by a later success — the daemon keeps it as the last
-// observed transport failure.
+// The daemon clears it on the next 2xx, so a set value names a failure that is
+// current rather than one already survived.
 export interface UpstreamFailure {
   status: number;
   count: number;
+}
+
+// A retry in flight (docs/transport.md). Level-triggered: `null` is the
+// all-clear — the attempt that finalized, or exhaustion.
+export interface UpstreamRetry {
+  // Which loop is retrying. An exhausted peek withholds a verdict; an exhausted
+  // turn ends the trajectory.
+  surface: "turn" | "peek";
+  // The attempt that just failed, 1-based, of the budget the loop will spend.
+  attempt: number;
+  budget: number;
+  // Absolute Unix millis at which the next attempt fires; the client subtracts,
+  // so the daemon never re-emits a ticking field.
+  next_attempt_at: number;
+  // Leads with what is happening — "stream aborted, retrying (2 of 12)". The
+  // status code and the upstream's words are `detail`, not the headline.
+  message: string;
+  detail: string;
 }
 
 // One optional field per state topic, each named by its topic; `null` is a
@@ -208,6 +226,7 @@ export interface StateTopics {
   review_level?: ReviewLevel | null;
   running?: boolean | null;
   upstream_failure?: UpstreamFailure | null;
+  upstream_retry?: UpstreamRetry | null;
 }
 
 export interface StateSnapshot extends StateTopics {

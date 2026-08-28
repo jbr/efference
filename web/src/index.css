@@ -184,8 +184,9 @@ input[type="checkbox"] {
 }
 
 /* The upstream diagnostic: a warn-tinted chip left of the usage meter. Tinted
-   rather than filled — the banner owns the loud treatment, and this one stays
-   on screen after a success (docs/web-client.md "The top bar"). */
+   rather than filled — the banner owns the loud treatment. Both topics behind it
+   clear on recovery, so the chip's absence is the all-clear
+   (docs/web-client.md "The top bar"). */
 .upstream-failure {
   color: var(--warn);
   border: 1px solid var(--warn);
@@ -1551,11 +1552,16 @@ select {
     flex: 1 1 8rem;
   }
 
-  /* The last-observed transport failure can carry a long status; the chip
-     ellipsizes rather than pushing the usage meter off the bar. */
+  /* The chip can carry a long status, and a retry's lead line is longer still;
+     it ellipsizes rather than pushing the usage meter off the bar. The retry
+     form gets more room because its first words are the ones that matter. */
   .upstream-failure {
     max-width: 7rem;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .upstream-failure.retrying {
+    max-width: 14rem;
   }
 }

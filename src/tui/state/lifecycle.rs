@@ -112,6 +112,7 @@ impl<'a> InteractiveState<'a> {
             processes: Vec::new(),
             usage: None,
             upstream_failure: None,
+            upstream_retry: None,
             policy: None,
 
             dirty: false,

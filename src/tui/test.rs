@@ -1,4 +1,6 @@
-use crate::tui::parse::{parse_pending_gate, parse_upstream_failure};
+use crate::tui::UpstreamRetryView;
+use crate::tui::parse::{parse_pending_gate, parse_upstream_failure, parse_upstream_retry};
+use crate::tui::state::upstream_retry_indicator;
 
 use crate::tui::run::{DEFAULT_THEME, resolve_theme};
 
@@ -51,4 +53,43 @@ fn parses_upstream_failure() {
 #[test]
 fn null_upstream_failure_is_absent() {
     assert!(parse_upstream_failure(&serde_json::Value::Null).is_none());
+}
+
+#[test]
+fn parses_upstream_retry() {
+    let topic = serde_json::json!({
+        "surface": "peek",
+        "attempt": 2,
+        "budget": 12,
+        "next_attempt_at": 1754300002000u64,
+        "message": "stream aborted, retrying (2 of 12)",
+        "detail": "upstream SSE stream failed mid-stream: connection reset",
+    });
+    let retry = parse_upstream_retry(&topic).expect("upstream retry");
+    assert_eq!(retry.surface, "peek");
+    assert_eq!(retry.message, "stream aborted, retrying (2 of 12)");
+}
+
+#[test]
+fn null_upstream_retry_is_the_all_clear() {
+    assert!(parse_upstream_retry(&serde_json::Value::Null).is_none());
+}
+
+/// The indicator leads with the daemon's own sentence, never the status code, and
+/// marks a fork peek's retry apart from a turn's (docs/transport.md).
+#[test]
+fn retry_indicator_names_the_surface() {
+    let view = |surface: &str| UpstreamRetryView {
+        surface: surface.into(),
+        message: "stream aborted, retrying (2 of 12)".into(),
+    };
+    assert_eq!(
+        upstream_retry_indicator(Some(&view("turn"))).unwrap(),
+        "↻ stream aborted, retrying (2 of 12)"
+    );
+    assert_eq!(
+        upstream_retry_indicator(Some(&view("peek"))).unwrap(),
+        "↻ peek: stream aborted, retrying (2 of 12)"
+    );
+    assert!(upstream_retry_indicator(None).is_none());
 }

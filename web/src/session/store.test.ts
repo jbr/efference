@@ -73,6 +73,36 @@ describe("the state fold", () => {
       fold(emptySession, [pace, running]).topics,
     );
   });
+
+  // Both transport diagnostics are level-triggered: recovery arrives as a `null`
+  // frame on each, and the chip surface reads the folded value (docs/transport.md).
+  it("folds a retry in flight and honours its all-clear", () => {
+    const retry = {
+      surface: "turn",
+      attempt: 2,
+      budget: 12,
+      next_attempt_at: 1754300002000,
+      message: "stream aborted, retrying (2 of 12)",
+      detail: "upstream SSE stream failed mid-stream: connection reset",
+    };
+    const failing = fold(emptySession, [
+      {
+        class: "state",
+        kind: "upstream_failure",
+        data: { status: 529, count: 2 },
+      },
+      { class: "state", kind: "upstream_retry", data: retry },
+    ]);
+    expect(failing.topics.upstream_retry).toEqual(retry);
+    expect(failing.topics.upstream_failure).toEqual({ status: 529, count: 2 });
+
+    const recovered = fold(failing, [
+      { class: "state", kind: "upstream_retry", data: null },
+      { class: "state", kind: "upstream_failure", data: null },
+    ]);
+    expect(recovered.topics.upstream_retry).toBeNull();
+    expect(recovered.topics.upstream_failure).toBeNull();
+  });
 });
 
 describe("the output tail", () => {

@@ -513,13 +513,20 @@ against the column edge.
 
 `ui/TopBar.tsx`: sticky interface chrome — the serif wordmark, the session
 status dot (breathing while the loop runs), and the usage meter: context
-occupancy as numbers and a thin bar, plus the session cost. It also carries
-the `upstream_failure` topic when one is set: `upstream 429 ×3` in a
-warn-tinted chip left of the meter, the count covering consecutive matching
-statuses and elided at one. The daemon does not clear the value after a
-success (docs/transport.md), so the chip reads as the *last observed*
-transport failure — its title says so — and it is what makes a stalling
-loop's cause visible. Deliberately minimal otherwise — the mock's bar is a
+occupancy as numbers and a thin bar, plus the session cost. It also carries one
+warn-tinted chip left of the meter, fed by the two transport topics through
+`ui/upstream.ts` (a pure function of the pair, so the component holds no
+endpoint or clock logic). While `upstream_retry` is set the chip names the
+retry — `↻ stream aborted, retrying (2 of 12)`, with a `peek:` prefix for a
+fork peek's retry, and the upstream's `detail` text as the title; otherwise
+`upstream_failure` names the last non-success status, `upstream 429 ×3`, the
+count covering consecutive matching statuses and elided at one. Both topics
+are level-triggered and both clear on recovery (docs/transport.md), so the
+chip's absence is the all-clear rather than "nothing observed yet", and a
+stalling loop's cause is visible while it stalls. The chip renders no
+countdown — `next_attempt_at` is an absolute instant, and a remaining-wait
+readout would mean either a clock read in the render path or an interval
+driving a ticking value. Deliberately minimal otherwise — the mock's bar is a
 dumping ground of imagined status items, and additions happen one argued
 element at a time. Loop state is not restated here: the dot breathes, and
 the banner, the gate cue, and the composer's turn-state carry the rest.

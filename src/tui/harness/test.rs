@@ -63,6 +63,7 @@ mod navigation;
 mod pace;
 mod render_cost;
 mod replay;
+mod retry;
 mod robustness;
 mod sidebar;
 mod transcript;

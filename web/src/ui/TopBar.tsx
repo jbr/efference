@@ -5,8 +5,9 @@
 // breathes while running, and the banner, gate cue, and composer turn-state
 // carry the rest.
 
-import type { UpstreamFailure, Usage } from "../api/types.ts";
+import type { UpstreamFailure, UpstreamRetry, Usage } from "../api/types.ts";
 import type { Connection } from "../session/store.ts";
+import { upstreamChip } from "./upstream.ts";
 
 const tokens = (n: number) =>
   n >= 1000 ? `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k` : `${n}`;
@@ -50,18 +51,23 @@ function UsageMeter({ usage }: { usage: Usage }) {
   );
 }
 
-/** The last non-success upstream response. It stays after a success — the
- * daemon defines no all-clear boundary — so it reads as "last observed",
- * not "currently failing"; the title says so. A stalling loop with no
- * visible cause is what it is here for. */
-function UpstreamFailureChip({ failure }: { failure: UpstreamFailure }) {
+/** The transport chip: a retry in flight while one is, otherwise the last
+ * non-success status. Both topics clear on recovery, so the chip's absence is
+ * the all-clear rather than "nothing observed yet". A stalling loop with no
+ * visible cause is what it is here for. Shape lives in `ui/upstream.ts`. */
+function UpstreamChip({
+  chip,
+}: {
+  chip: NonNullable<ReturnType<typeof upstreamChip>>;
+}) {
   return (
     <span
-      className="upstream-failure"
-      title="last non-success upstream response (not cleared by a later success)"
+      className={
+        chip.retrying ? "upstream-failure retrying" : "upstream-failure"
+      }
+      title={chip.title}
     >
-      upstream {failure.status}
-      {failure.count > 1 && ` ×${failure.count}`}
+      {chip.text}
     </span>
   );
 }
@@ -71,12 +77,15 @@ export function TopBar({
   connection,
   usage,
   upstreamFailure,
+  upstreamRetry,
 }: {
   running: boolean;
   connection: Connection;
   usage: Usage | null;
   upstreamFailure: UpstreamFailure | null;
+  upstreamRetry: UpstreamRetry | null;
 }) {
+  const chip = upstreamChip(upstreamFailure, upstreamRetry);
   return (
     <header className="top-bar">
       <div className="top-bar-inner">
@@ -86,9 +95,7 @@ export function TopBar({
           title={`${connection}${running ? " · running" : ""}`}
         />
         <span className="spacer" />
-        {upstreamFailure !== null && (
-          <UpstreamFailureChip failure={upstreamFailure} />
-        )}
+        {chip !== null && <UpstreamChip chip={chip} />}
         {usage !== null && <UsageMeter usage={usage} />}
       </div>
     </header>

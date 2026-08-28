@@ -23,7 +23,7 @@ use crate::tui::projection::{self, LiveTail, Phase};
 use crate::tui::render_context::{RenderContext, ThemeError};
 use crate::tui::{
     BgProc, PaceCmd, PaceView, PendingGate, SidebarCmd, SidebarReturn, SidebarRow, TuiEvent,
-    UpstreamFailureView, UsageStats,
+    UpstreamFailureView, UpstreamRetryView, UsageStats,
 };
 
 use crossbeam_channel::Receiver;
@@ -93,11 +93,25 @@ pub(super) fn pace_indicator(pace: Option<PaceView>) -> Option<String> {
     }
 }
 
-/// The status-bar upstream diagnostic. It records the last non-success response;
-/// a later successful request intentionally does not remove it (docs/transport.md).
+/// The status-bar upstream diagnostic. It records the last non-success response,
+/// and the daemon clears it on the next 2xx, so it names a failure that is
+/// current rather than one already survived (docs/transport.md).
 pub(super) fn upstream_failure_indicator(failure: Option<UpstreamFailureView>) -> Option<String> {
     let failure = failure?;
     Some(format!("upstream {} ×{}", failure.status, failure.count))
+}
+
+/// The status-bar retry indicator (docs/transport.md). The daemon's `message`
+/// already reads as a sentence — *stream aborted, retrying (2 of 12)* — so it is
+/// shown verbatim and leads; the status code is never the headline. A fork peek's
+/// retry takes a `peek:` prefix, because an exhausted peek withholds a verdict
+/// where an exhausted turn ends the trajectory.
+pub(super) fn upstream_retry_indicator(retry: Option<&UpstreamRetryView>) -> Option<String> {
+    let retry = retry?;
+    Some(match retry.surface.as_str() {
+        "turn" => format!("↻ {}", retry.message),
+        surface => format!("↻ {surface}: {}", retry.message),
+    })
 }
 
 /// UI mode — the modal structure of the interface. ferritin's `DevLog` and
@@ -518,9 +532,12 @@ pub(super) struct InteractiveState<'a> {
     /// The cumulative usage statistics (polled from `GET /state`). Rendered in the
     /// status bar. Ephemeral chrome — reflects API telemetry from the daemon.
     pub usage: Option<UsageStats>,
-    /// The last non-success upstream response, polled from `GET /state`. It remains
-    /// visible after recovery as a transport diagnostic; never transcript content.
+    /// The last non-success upstream response, polled from `GET /state`. The daemon
+    /// clears it on recovery; never transcript content.
     pub upstream_failure: Option<UpstreamFailureView>,
+    /// The retry in flight, polled from `GET /state`'s `upstream_retry`. Level-triggered:
+    /// `None` while nothing is being retried. Status-bar chrome, never transcript content.
+    pub upstream_retry: Option<UpstreamRetryView>,
 
     /// The effective policy + pending proposals (polled from `GET /state`). Drives the
     /// sidebar's POLICY section (docs/permissions.md). Ephemeral chrome.

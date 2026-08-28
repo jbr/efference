@@ -135,6 +135,11 @@ fn decode_frame(
             "upstream_failure" => Some(send(TuiEvent::UpstreamFailure(
                 parse::parse_upstream_failure(data),
             ))),
+            // Level-triggered: a `null` frame is the all-clear, so it is forwarded
+            // as `None` rather than skipped (docs/transport.md).
+            "upstream_retry" => Some(send(TuiEvent::UpstreamRetry(parse::parse_upstream_retry(
+                data,
+            )))),
             "pace" => parse::parse_pace(data).map(|pace| send(TuiEvent::Pace(pace))),
             "running" => data.as_bool().map(|r| send(TuiEvent::Running(r))),
             // The three policy-shaped topics update the held copy, then re-emit the

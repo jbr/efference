@@ -103,6 +103,10 @@ pub(crate) enum TuiEvent {
     /// The last non-success upstream response changed (the `upstream_failure` topic).
     /// Ephemeral transport diagnostic, rendered in the status bar.
     UpstreamFailure(Option<UpstreamFailureView>),
+    /// A retry in flight changed (the `upstream_retry` topic, docs/transport.md).
+    /// Level-triggered: `None` is the all-clear. Ephemeral transport diagnostic,
+    /// rendered in the status bar.
+    UpstreamRetry(Option<UpstreamRetryView>),
 
     /// The effective policy + its pending proposals changed (the `role`, `proposals`,
     /// and `review_level` topics, merged by the bridge). Drives the sidebar's POLICY
@@ -261,11 +265,30 @@ pub(crate) struct UsageStats {
     pub withheld_results: u64,
 }
 
-/// The last non-success upstream response, as surfaced by `GET /state`.
+/// The last non-success upstream response, as surfaced by `GET /state`. Cleared
+/// by the next 2xx, so it names a failure that is current (docs/transport.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct UpstreamFailureView {
     pub status: u16,
     pub count: u32,
+}
+
+/// A retry in flight, as surfaced by `GET /state`'s `upstream_retry`
+/// (docs/transport.md).
+///
+/// The topic also carries `next_attempt_at` (absolute Unix millis) and the
+/// upstream's `detail` text; neither is kept here. The status bar renders one
+/// line and does not tick, so a countdown would either be stale or force a
+/// wall-clock read into the render path, and the error text belongs in the log
+/// rather than in a single status row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UpstreamRetryView {
+    /// `"turn"` or `"peek"` — an exhausted peek withholds a verdict where an
+    /// exhausted turn ends the trajectory, so the surface is rendered, not folded away.
+    pub surface: String,
+    /// The daemon's lead line, e.g. *stream aborted, retrying (2 of 12)*. It already
+    /// names the attempt and budget, so the status bar shows it verbatim.
+    pub message: String,
 }
 
 /// One line in the sidebar's POLICY section: a committed grant, or a *proposed* one
