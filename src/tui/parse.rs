@@ -236,6 +236,43 @@ pub(super) fn parse_upstream_retry(retry: &serde_json::Value) -> Option<Upstream
     })
 }
 
+/// Parse the `session_identity` topic into a [`SessionIdentityView`]
+/// (docs/control-api.md). `null` — a daemon that never set it — is no view, and the
+/// sidebar's SESSION section simply doesn't render.
+///
+/// The cwd is shortened against `$HOME` here rather than at render time, so the
+/// renderer stays a pure function of state and the snapshot harness stays
+/// deterministic (the same reason the usage stats derive their elapsed at parse
+/// time).
+pub(super) fn parse_session_identity(value: &serde_json::Value) -> Option<SessionIdentityView> {
+    if value.is_null() {
+        return None;
+    }
+    Some(SessionIdentityView {
+        model: value.get("model")?.as_str()?.to_string(),
+        cwd: home_relative(value.get("cwd")?.as_str()?),
+    })
+}
+
+/// `/Users/jbr/code/efference` → `~/code/efference`, when `$HOME` is a prefix of a
+/// whole path component. Anything else — no home, a different tree, a partial
+/// component match — is returned verbatim.
+fn home_relative(cwd: &str) -> String {
+    let Some(home) = std::env::home_dir() else {
+        return cwd.to_string();
+    };
+    let home = home.to_string_lossy();
+    let home = home.trim_end_matches('/');
+    if home.is_empty() {
+        return cwd.to_string();
+    }
+    match cwd.strip_prefix(home) {
+        Some("") => "~".to_string(),
+        Some(rest) if rest.starts_with('/') => format!("~{rest}"),
+        _ => cwd.to_string(),
+    }
+}
+
 /// Parse the `usage` topic's object into a [`UsageStats`]. `null` — no requests yet —
 /// is no stats.
 pub(super) fn parse_usage(usage: &serde_json::Value) -> Option<UsageStats> {

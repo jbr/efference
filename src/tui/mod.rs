@@ -107,6 +107,10 @@ pub(crate) enum TuiEvent {
     /// Level-triggered: `None` is the all-clear. Ephemeral transport diagnostic,
     /// rendered in the status bar.
     UpstreamRetry(Option<UpstreamRetryView>),
+    /// What this session is — the configured model and its working directory (the
+    /// `session_identity` topic, docs/control-api.md). Static per session today;
+    /// it arrives on the connect snapshot and drives the sidebar's SESSION section.
+    SessionIdentity(Option<SessionIdentityView>),
 
     /// The effective policy + its pending proposals changed (the `role`, `proposals`,
     /// and `review_level` topics, merged by the bridge). Drives the sidebar's POLICY
@@ -289,6 +293,19 @@ pub(crate) struct UpstreamRetryView {
     /// The daemon's lead line, e.g. *stream aborted, retrying (2 of 12)*. It already
     /// names the attempt and budget, so the status bar shows it verbatim.
     pub message: String,
+}
+
+/// What the session is, as surfaced by `GET /state`'s `session_identity`
+/// (docs/control-api.md): the model it was configured with and the directory it
+/// runs in. Rendered in the sidebar's SESSION section — which model is answering
+/// is not derivable from the transcript, and a log that mixes models across
+/// sessions needs the current one named.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionIdentityView {
+    pub model: String,
+    /// The working directory, already shortened against `$HOME` at parse time —
+    /// derivation stays out of the render path, as with the usage stats.
+    pub cwd: String,
 }
 
 /// One line in the sidebar's POLICY section: a committed grant, or a *proposed* one

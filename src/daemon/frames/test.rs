@@ -158,6 +158,7 @@ fn topic_wire_names_are_pinned() {
         Topic::Running,
         Topic::UpstreamFailure,
         Topic::UpstreamRetry,
+        Topic::SessionIdentity,
     ]
     .iter()
     .map(|t| t.as_str())
@@ -176,6 +177,7 @@ fn topic_wire_names_are_pinned() {
             "running",
             "upstream_failure",
             "upstream_retry",
+            "session_identity",
         ]
     );
 }

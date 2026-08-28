@@ -111,6 +111,7 @@ export function App() {
       <TopBar
         running={session.topics.running ?? false}
         connection={session.connection}
+        identity={session.topics.session_identity ?? null}
         usage={session.topics.usage ?? null}
         upstreamFailure={session.topics.upstream_failure ?? null}
         upstreamRetry={session.topics.upstream_retry ?? null}

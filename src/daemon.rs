@@ -101,6 +101,23 @@ pub enum StreamDelta {
     ProcessOutput { id: u64, chunk: String },
 }
 
+/// What a session is, for a client that has to name it on screen: the model it
+/// was configured with and the directory it runs in (docs/control-api.md).
+///
+/// Both are fixed at boot today. They are carried as a state topic rather than a
+/// one-shot read so a client learns them from the connect snapshot along with
+/// everything else, and so either moving later reaches clients through the
+/// mechanism that already delivers whole-topic replacements.
+#[derive(Clone, Debug, Serialize)]
+pub struct SessionIdentity {
+    /// The model id `serve` resolved — the same string the system prompt's
+    /// identity line states (docs/context.md).
+    pub model: String,
+    /// The session's working directory, as the daemon knows it: what the tool
+    /// layer was built with, rendered as a path string.
+    pub cwd: String,
+}
+
 /// Daemon state shared between the loop task and the HTTP handlers. Held as
 /// `Arc<Shared>` in both the loop and trillium's server-global `shared_state`
 /// (read in handlers via `conn.shared_state::<Arc<Shared>>()`). Per-conn state is
@@ -219,6 +236,11 @@ pub struct Shared {
     /// per-request cost surface (OpenRouter today); otherwise `GET /state`
     /// reports `cost: null`. Transport-only: never logged or projected.
     cost: Arc<Mutex<CostCell>>,
+    /// What this session is — the configured model and its working directory
+    /// (docs/control-api.md), set once by `serve` and read by the
+    /// `session_identity` topic. `None` in tests and offline verbs that never
+    /// booted a session, which the topic reports as `null`.
+    identity: Mutex<Option<SessionIdentity>>,
 
     /// The ephemeral inbox of pending ambient notifications (docs/inbox.md): out-of-band
     /// events awaiting their first triage gate. Control state, *not* a log payload —
@@ -427,6 +449,7 @@ impl Shared {
             retention: Mutex::new((0, Retention::default())),
             capabilities: Mutex::new(None),
             cost: Arc::new(Mutex::new(CostCell::default())),
+            identity: Mutex::new(None),
             inbox: Mutex::new(Inbox::default()),
 
             proposals: Mutex::new(Vec::new()),
@@ -454,6 +477,14 @@ impl Shared {
     /// thereafter and read by `GET /state`'s context readout.
     pub fn set_capabilities(&self, capabilities: crate::api::ModelCapabilities) {
         *self.capabilities.lock().unwrap() = Some(capabilities);
+    }
+
+    /// Store what this session is — the model it was configured with and the
+    /// directory it runs in (docs/control-api.md). Called once by `serve` before
+    /// the loop starts; the `session_identity` topic reads it back.
+    pub fn set_identity(&self, identity: SessionIdentity) {
+        *self.identity.lock().unwrap() = Some(identity);
+        self.touch_state();
     }
 
     /// Cumulative triage retention over the whole session (docs/redaction-fork.md),

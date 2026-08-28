@@ -1,5 +1,7 @@
 use crate::tui::UpstreamRetryView;
-use crate::tui::parse::{parse_pending_gate, parse_upstream_failure, parse_upstream_retry};
+use crate::tui::parse::{
+    parse_pending_gate, parse_session_identity, parse_upstream_failure, parse_upstream_retry,
+};
 use crate::tui::state::upstream_retry_indicator;
 
 use crate::tui::run::{DEFAULT_THEME, resolve_theme};
@@ -92,4 +94,35 @@ fn retry_indicator_names_the_surface() {
         "↻ peek: stream aborted, retrying (2 of 12)"
     );
     assert!(upstream_retry_indicator(None).is_none());
+}
+
+/// The `session_identity` topic names the model and the working directory
+/// (docs/control-api.md). The cwd is shortened against `$HOME` at parse time, so
+/// the renderer never reads the environment.
+#[test]
+fn parses_session_identity_with_a_home_relative_cwd() {
+    let home = std::env::home_dir().expect("a home directory");
+    let cwd = home.join("code/efference");
+    let topic = serde_json::json!({
+        "model": "anthropic/claude-opus-4",
+        "cwd": cwd.to_string_lossy(),
+    });
+    let identity = parse_session_identity(&topic).expect("session identity");
+    assert_eq!(identity.model, "anthropic/claude-opus-4");
+    assert_eq!(identity.cwd, "~/code/efference");
+
+    // A path outside home keeps its absolute form — a partial component match
+    // ("/home/jbrx") must not be rewritten either.
+    let elsewhere = serde_json::json!({ "model": "m", "cwd": "/srv/build" });
+    assert_eq!(
+        parse_session_identity(&elsewhere).unwrap().cwd,
+        "/srv/build"
+    );
+}
+
+/// A daemon that never set the topic reports `null`, which is no view at all —
+/// the sidebar's SESSION section then simply doesn't render.
+#[test]
+fn null_session_identity_is_no_view() {
+    assert!(parse_session_identity(&serde_json::Value::Null).is_none());
 }

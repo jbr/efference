@@ -75,6 +75,31 @@ fn state_reports_the_retry_in_flight() {
     );
 }
 
+/// `GET /state` names what the session is — the configured model and its working
+/// directory (docs/control-api.md) — as a topic, so a client reads it off the
+/// connect snapshot. `null` before `serve` sets it, which is what a test or an
+/// offline verb sees.
+#[test]
+fn state_reports_the_session_identity() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert!(v["session_identity"].is_null());
+
+    shared.set_identity(SessionIdentity {
+        model: "anthropic/claude-opus-4".into(),
+        cwd: "/Users/jbr/code/efference".into(),
+    });
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(
+        v["session_identity"],
+        serde_json::json!({
+            "model": "anthropic/claude-opus-4",
+            "cwd": "/Users/jbr/code/efference",
+        })
+    );
+}
+
 /// `GET /state` reports cache telemetry: the latest `usage`, running totals,
 /// and a seconds-since stamp. Drives the cache gate signature through it (docs/README.md) —
 /// a cold first request (all creation) then a hot one (reads climb, creation

@@ -92,6 +92,11 @@ pub(crate) enum Topic {
     /// A retry in flight — which surface, which attempt, of what budget
     /// (docs/transport.md). `null` when nothing is being retried.
     UpstreamRetry,
+    /// What this session *is* — the configured model and its working directory
+    /// (docs/control-api.md). Static for the session today; carried as a topic so a
+    /// client reads it from the connect snapshot like everything else, and so a
+    /// value that ever moves reaches clients without a new mechanism.
+    SessionIdentity,
 }
 
 impl Topic {
@@ -100,7 +105,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 11] = [
+    pub(crate) const ALL: [Topic; 12] = [
         Self::Gate,
         Self::Processes,
         Self::Usage,
@@ -112,6 +117,7 @@ impl Topic {
         Self::Running,
         Self::UpstreamFailure,
         Self::UpstreamRetry,
+        Self::SessionIdentity,
     ];
 
     /// The topic named by a `?include=state:<topic>` token, or `None` if there is no such
@@ -135,6 +141,7 @@ impl Topic {
             Self::Running => "running",
             Self::UpstreamFailure => "upstream_failure",
             Self::UpstreamRetry => "upstream_retry",
+            Self::SessionIdentity => "session_identity",
         }
     }
 }

@@ -305,9 +305,22 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
                                    //   so the daemon never re-emits a ticking field
     "message": "stream aborted, retrying (2 of 12)",  // leads with what is happening
     "detail": "upstream SSE stream failed mid-stream: connection reset"
+  },
+  "session_identity": {           // null until `serve` sets it (tests, offline verbs)
+    "model": "anthropic/claude-opus-4",  // the model id serve resolved, verbatim
+    "cwd": "/Users/jbr/code/efference"   // absolute; shortening it is presentation
   }
 }
 ```
+
+**`session_identity` names what the session is** — the model it was configured
+with (the same string the system prompt's identity line states,
+[context.md](context.md)) and the directory it runs in. Both are fixed at boot
+today, so the topic is delivered on the connect snapshot and then stays put; it
+is a topic rather than a one-shot read so a client learns it the way it learns
+everything else, and so a value that ever moves reaches clients without a new
+mechanism. Nothing else on `/v1` carries either, so without it a client cannot
+say which session is on screen.
 
 #### `GET /log`
 JSON array of `LogEntry`. The catch-up read. Unbounded by default — the whole

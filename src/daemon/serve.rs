@@ -18,6 +18,7 @@ pub async fn serve<D: Distiller, S: Spotter>(
     role: LoadedConfig,
     autonomous: bool,
     capabilities: crate::api::ModelCapabilities,
+    identity: SessionIdentity,
     bind: Option<tcp::TcpBind>,
 ) -> Result<(), Error> {
     let (shared, turns) = Shared::full(
@@ -35,6 +36,10 @@ pub async fn serve<D: Distiller, S: Spotter>(
     // The boot-fetched model capabilities (docs/transport.md) — the caller already
     // treated a failed lookup as fatal, so by here the value always exists.
     shared.set_capabilities(capabilities);
+    // What this session is, for a client that has to name it on screen
+    // (docs/control-api.md): the resolved model and the working directory, both
+    // fixed by the time the caller gets here.
+    shared.set_identity(identity);
     // Session cost telemetry (docs/transport.md): armed only where the provider
     // has a per-request accounting surface (OpenRouter's generation endpoint).
     // Direct Anthropic has none, so the readout stays absent rather than modeled.

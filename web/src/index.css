@@ -183,6 +183,30 @@ input[type="checkbox"] {
   letter-spacing: -0.01em;
 }
 
+/* What the session is (docs/web-client.md "The top bar"): the model answering,
+   then its working directory. Mono, because both are identifiers. Each shrinks
+   with an ellipsis rather than pushing the meter off the bar; the cwd yields
+   first, since the model name is the element the mixed-model case needs. */
+.session-id {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.session-model {
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-cwd {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* The upstream diagnostic: a warn-tinted chip left of the usage meter. Tinted
    rather than filled — the banner owns the loud treatment. Both topics behind it
    clear on recovery, so the chip's absence is the all-clear
@@ -1506,6 +1530,12 @@ select {
 
   .top-bar .usage {
     white-space: nowrap;
+  }
+
+  /* Narrow: the model name stays, the directory goes — one identifier's worth
+     of bar is all there is beside the dot and the meter. */
+  .session-cwd {
+    display: none;
   }
 
   .meter {

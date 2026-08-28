@@ -530,9 +530,17 @@ driving a ticking value. Deliberately minimal otherwise — the mock's bar is a
 dumping ground of imagined status items, and additions happen one argued
 element at a time. Loop state is not restated here: the dot breathes, and
 the banner, the gate cue, and the composer's turn-state carry the rest.
-Two elements wait on the wire: the model name and the working directory,
-which no `/v1` topic carries yet
-([backlog/session-identity-topic.md](../backlog/session-identity-topic.md)).
+Beside the dot it names **what the session is** — the model and the working
+directory, from the `session_identity` topic
+([control-api.md](control-api.md)). Which model is answering is not derivable
+from the transcript, and it is what a reader needs when cheap and flagship
+models mix across sessions. The wire carries the cwd absolute; `ui/identity.ts`
+shortens it to `~/code/efference` by recognizing `/Users/<name>` and
+`/home/<name>` as whole components — a browser cannot read `$HOME`, and a
+wrongly shortened path would name a directory that does not exist, so anything
+unrecognized shows verbatim (the full path is the element's title either way).
+Both shrink with an ellipsis rather than pushing the meter off the bar, and on
+the phone breakpoint the directory drops while the model name stays.
 
 ## The composer area
 
@@ -720,10 +728,9 @@ call-scoped history and the file on disk is now. Which files a call names is
 `read`'s `paths`. **Within-cwd only, categorically** — an absolute or
 `..`-leading path yields no affordance and is never followed; the call's own
 log diff is its surface. That is a scope position (no arbitrary reads from
-elsewhere on the system), not a resolution gap, and it also sidesteps the
-client not knowing the cwd (the identity topic,
-[../backlog/session-identity-topic.md](../backlog/session-identity-topic.md),
-would be the mapping if the scope ever widens).
+elsewhere on the system), not a resolution gap. The `session_identity` topic
+([control-api.md](control-api.md)) now names the cwd, so it is the mapping
+available if the scope ever widens.
 
 **Highlights come from diffing successive fetches, never from the tool
 call.** `session/lineDiff.ts` is the one diff engine: hand-rolled Myers over

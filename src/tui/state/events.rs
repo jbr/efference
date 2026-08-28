@@ -154,6 +154,13 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
             }
 
+            TuiEvent::SessionIdentity(identity) => {
+                // Sidebar chrome (the SESSION section), not transcript content —
+                // update and repaint, no reproject.
+                self.session_identity = identity;
+                self.dirty = true;
+            }
+
             TuiEvent::Policy(policy) => {
                 // Ephemeral chrome (the sidebar POLICY section), not transcript content —
                 // update and repaint, no reproject.

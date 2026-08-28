@@ -213,6 +213,17 @@ export interface UpstreamRetry {
   detail: string;
 }
 
+// What this session is: the model it was configured with and the directory it
+// runs in (docs/control-api.md). Static per session today — it arrives on the
+// connect snapshot — but a topic, so a value that ever moves arrives the same way.
+export interface SessionIdentity {
+  // The model id `serve` resolved, verbatim; the provider's own spelling.
+  model: string;
+  // The session's working directory, absolute. Shortening it against a home
+  // directory is presentation (`ui/identity.ts`), not wire.
+  cwd: string;
+}
+
 // One optional field per state topic, each named by its topic; `null` is a
 // cleared topic, absence an unsubscribed one.
 export interface StateTopics {
@@ -227,6 +238,7 @@ export interface StateTopics {
   running?: boolean | null;
   upstream_failure?: UpstreamFailure | null;
   upstream_retry?: UpstreamRetry | null;
+  session_identity?: SessionIdentity | null;
 }
 
 export interface StateSnapshot extends StateTopics {

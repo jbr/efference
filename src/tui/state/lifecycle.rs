@@ -113,6 +113,7 @@ impl<'a> InteractiveState<'a> {
             usage: None,
             upstream_failure: None,
             upstream_retry: None,
+            session_identity: None,
             policy: None,
 
             dirty: false,

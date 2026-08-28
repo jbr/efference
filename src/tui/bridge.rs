@@ -140,6 +140,12 @@ fn decode_frame(
             "upstream_retry" => Some(send(TuiEvent::UpstreamRetry(parse::parse_upstream_retry(
                 data,
             )))),
+            // Static per session today, so this arrives once on the connect
+            // snapshot; forwarded through the same path as anything else that
+            // could move (docs/control-api.md).
+            "session_identity" => Some(send(TuiEvent::SessionIdentity(
+                parse::parse_session_identity(data),
+            ))),
             "pace" => parse::parse_pace(data).map(|pace| send(TuiEvent::Pace(pace))),
             "running" => data.as_bool().map(|r| send(TuiEvent::Running(r))),
             // The three policy-shaped topics update the held copy, then re-emit the

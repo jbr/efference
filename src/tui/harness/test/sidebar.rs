@@ -83,6 +83,30 @@ fn sidebar_retention_before_any_triage_and_after_a_failed_gate() {
     );
 }
 
+/// The SESSION section names the model and the working directory, from the
+/// `session_identity` topic (docs/control-api.md). Nothing in the transcript says
+/// which model is answering, and cheap and flagship models mix across sessions.
+#[test]
+fn sidebar_names_the_model_and_working_directory() {
+    use crate::tui::{SessionIdentityView, TuiEvent};
+    let mut play = Screenplay::new(110, 16);
+    play.user("go");
+    let before = play.sidebar_grid();
+    assert!(
+        !before.contains("SESSION"),
+        "no section before the topic arrives:\n{before}"
+    );
+
+    play.event(TuiEvent::SessionIdentity(Some(SessionIdentityView {
+        model: "anthropic/claude-opus-4".into(),
+        cwd: "~/code/efference".into(),
+    })));
+    let after = play.sidebar_grid();
+    assert!(after.contains("SESSION"), "{after}");
+    assert!(after.contains("anthropic/claude-opus-4"), "{after}");
+    assert!(after.contains("~/code/efference"), "{after}");
+}
+
 /// The sidebar-only screenshot slice (`Alt-S`) frames just the sidebar columns:
 /// narrow, and excluding the transcript — so a wide-terminal capture isn't verbose.
 #[test]

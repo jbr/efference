@@ -1,6 +1,8 @@
 //! The right-docked sidebar (docs/tui.md): glanceable ambient widgets that used to
 //! be crammed elsewhere — `PROCESSES` (the bottom strip), `STATS` (the status bar),
-//! and `POLICY` (the live perimeter + its pending proposals). It is chrome, not
+//! and `POLICY` (the live perimeter + its pending proposals) — led by `SESSION`,
+//! the model and working directory the `session_identity` topic carries
+//! (docs/control-api.md). It is chrome, not
 //! transcript: rendered directly into its `Rect` at absolute coordinates, fed by the
 //! `/state` poll. A 1-column `│` divides it from the transcript on its left edge.
 //!
@@ -61,6 +63,40 @@ impl<'a> InteractiveState<'a> {
         // `&mut self`, which cannot run while the view structs are borrowed.
         let processes = self.processes.clone();
         let policy = self.policy.clone();
+
+        // SESSION — which model is answering and where it is working, from the
+        // `session_identity` topic (docs/control-api.md). It leads the column: it is
+        // the only section that says what this session *is*, and nothing in the
+        // transcript names the model. Absent until the connect snapshot lands.
+        if let Some(identity) = self.session_identity.clone()
+            && y < bottom
+        {
+            put(buf, x0, y, max_w, "▾ SESSION", header);
+            y += 1;
+            if y < bottom {
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &identity.model,
+                    text,
+                );
+                y += 1;
+            }
+            if y < bottom {
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &identity.cwd,
+                    muted,
+                );
+                y += 1;
+            }
+            y += 1; // section gap
+        }
 
         // PROCESSES — one running process per two lines (handle/command, then timing).
         if y < bottom {

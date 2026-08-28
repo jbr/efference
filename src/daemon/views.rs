@@ -28,6 +28,7 @@ impl Shared {
             Topic::Running => self.running_json(),
             Topic::UpstreamFailure => self.upstream_failure_json(),
             Topic::UpstreamRetry => self.upstream_retry_json(),
+            Topic::SessionIdentity => self.session_identity_json(),
         }
     }
 
@@ -196,6 +197,13 @@ impl Shared {
     /// budget is exhausted.
     fn upstream_retry_json(&self) -> Value {
         serde_json::to_value(self.upstream_retry.get()).unwrap_or(Value::Null)
+    }
+
+    /// What this session is (docs/control-api.md): the configured model id and the
+    /// working directory. Set once at boot, so this value does not move during a
+    /// session; `null` where no session booted (tests, offline verbs).
+    fn session_identity_json(&self) -> Value {
+        serde_json::to_value(self.identity.lock().unwrap().clone()).unwrap_or(Value::Null)
     }
 
     /// The **effective** policy report — the base config plus every committed config edit folded

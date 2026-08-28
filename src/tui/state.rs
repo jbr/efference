@@ -22,8 +22,8 @@ use crate::tui::document::{Document, DocumentNode, NodePath, TuiAction};
 use crate::tui::projection::{self, LiveTail, Phase};
 use crate::tui::render_context::{RenderContext, ThemeError};
 use crate::tui::{
-    BgProc, PaceCmd, PaceView, PendingGate, SidebarCmd, SidebarReturn, SidebarRow, TuiEvent,
-    UpstreamFailureView, UpstreamRetryView, UsageStats,
+    BgProc, PaceCmd, PaceView, PendingGate, SessionIdentityView, SidebarCmd, SidebarReturn,
+    SidebarRow, TuiEvent, UpstreamFailureView, UpstreamRetryView, UsageStats,
 };
 
 use crossbeam_channel::Receiver;
@@ -538,6 +538,10 @@ pub(super) struct InteractiveState<'a> {
     /// The retry in flight, polled from `GET /state`'s `upstream_retry`. Level-triggered:
     /// `None` while nothing is being retried. Status-bar chrome, never transcript content.
     pub upstream_retry: Option<UpstreamRetryView>,
+    /// What this session is — the model and the working directory, from the
+    /// `session_identity` topic (docs/control-api.md). `None` until the connect
+    /// snapshot lands, and in views that never connect. Sidebar chrome.
+    pub session_identity: Option<SessionIdentityView>,
 
     /// The effective policy + pending proposals (polled from `GET /state`). Drives the
     /// sidebar's POLICY section (docs/permissions.md). Ephemeral chrome.

@@ -1,12 +1,19 @@
 // The top bar (docs/web-client.md): sticky interface chrome — the wordmark,
-// the session status dot, and the usage meter. Deliberately minimal: the
+// the session status dot, what the session is (model and working directory),
+// and the usage meter. Deliberately minimal: the
 // mock's bar is a dumping ground of status items, and additions happen
 // one argued element at a time. Loop state is not restated here — the dot
 // breathes while running, and the banner, gate cue, and composer turn-state
 // carry the rest.
 
-import type { UpstreamFailure, UpstreamRetry, Usage } from "../api/types.ts";
+import type {
+  SessionIdentity,
+  UpstreamFailure,
+  UpstreamRetry,
+  Usage,
+} from "../api/types.ts";
 import type { Connection } from "../session/store.ts";
+import { homeRelative } from "./identity.ts";
 import { upstreamChip } from "./upstream.ts";
 
 const tokens = (n: number) =>
@@ -72,15 +79,32 @@ function UpstreamChip({
   );
 }
 
+/** What this session is: the model answering and where it is working. Which
+ * model is running is not derivable from the transcript, and it matters most
+ * when cheap and flagship models mix across sessions. The cwd's shortening is
+ * `ui/identity.ts`'s, so nothing about paths lives here. */
+function SessionLabel({ identity }: { identity: SessionIdentity }) {
+  return (
+    <span className="session-id">
+      <span className="session-model">{identity.model}</span>
+      <span className="session-cwd dim" title={identity.cwd}>
+        {homeRelative(identity.cwd)}
+      </span>
+    </span>
+  );
+}
+
 export function TopBar({
   running,
   connection,
+  identity,
   usage,
   upstreamFailure,
   upstreamRetry,
 }: {
   running: boolean;
   connection: Connection;
+  identity: SessionIdentity | null;
   usage: Usage | null;
   upstreamFailure: UpstreamFailure | null;
   upstreamRetry: UpstreamRetry | null;
@@ -94,6 +118,7 @@ export function TopBar({
           className={running ? "dot breathing" : "dot"}
           title={`${connection}${running ? " · running" : ""}`}
         />
+        {identity !== null && <SessionLabel identity={identity} />}
         <span className="spacer" />
         {chip !== null && <UpstreamChip chip={chip} />}
         {usage !== null && <UsageMeter usage={usage} />}
