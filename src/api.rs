@@ -169,6 +169,16 @@ impl Usage {
     /// per-response *totals*, not increments — neither can legitimately report
     /// less than the other for the same field, so a placeholder or zero from
     /// either side is harmless.
+    /// Whether every count is zero — the shape of a stream that produced nothing
+    /// billable. What separates an aborted attempt with nothing to price from one
+    /// that finalized with real usage and then failed to parse (docs/transport.md).
+    pub fn is_zero(&self) -> bool {
+        self.input_tokens == 0
+            && self.output_tokens == 0
+            && self.cache_creation_input_tokens == 0
+            && self.cache_read_input_tokens == 0
+    }
+
     pub(crate) fn merge_max(&mut self, other: &Usage) {
         self.input_tokens = self.input_tokens.max(other.input_tokens);
         self.output_tokens = self.output_tokens.max(other.output_tokens);

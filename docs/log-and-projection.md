@@ -311,13 +311,14 @@ rather than a reconstruction from the canonical log.
 predates — an old reader must still parse a new file's lines instead of
 dropping them.
 
-`aborted_attempt` tags a retried attempt whose stream aborted before finalizing
-— all-zero usage by construction, one line per attempt, recorded before the
-loop retries (docs/transport.md). It is real telemetry (the record-only partial
-it accompanies in the log needed exactly this kind of durable per-attempt
-trail) but it is not a priced request and not cache evidence: `spawn_cost_fetch`
-skips it (nothing to price at zero tokens, and fetching it would only run the
-lookup to exhaustion and mark it `unpriced`), and `ColdStreak` excludes it from
+`aborted_attempt` tags a retried attempt — one line per attempt, recorded
+before the loop retries (docs/transport.md). An unfinalized stream records
+all-zero usage; a stream that finalized unparseable records the real counts it
+billed. It is real telemetry (the record-only partial it accompanies in the log
+needed exactly this kind of durable per-attempt trail) but it is never cache
+evidence, and only its non-zero usage is priced: `spawn_cost_fetch` skips the
+all-zero case (nothing to price, and fetching it would only run the lookup to
+exhaustion and mark it `unpriced`), and `ColdStreak` excludes it from
 the streak while still treating it as a touch on the prefix (below).
 
 ### The cache-read oracle
@@ -334,10 +335,10 @@ signal is the **run**. `ColdStreak` (`src/daemon/metrics.rs`) folds each recorde
 request into a consecutive-unexplained-cold counter: only `turn` requests move it
 (the side channels carry their own prefixes at their own lineages), `peek`,
 `keepalive`, and `aborted_attempt` stamp the touch clock the idle test reads
-without counting, and any warm read clears it. An aborted attempt's usage is
-zero by construction, so its zero `cache_read` is not evidence the prefix moved
-— counting it drove a false streak observed live 2026-08-28 (two aborted
-attempts on one turn moved the streak to 2). `COLD_STREAK_WARN` is 4, set
+without counting, and any warm read clears it. An aborted attempt's zero
+`cache_read` is not evidence the prefix moved — counting it drove a false
+streak observed live 2026-08-28 (two aborted attempts on one turn moved the
+streak to 2). `COLD_STREAK_WARN` is 4, set
 against this repo's own corpus:
 across 1371 recorded turns, unexplained cold reads formed 28 runs — 24 of length
 1, two of length 3, and two of length 28 and 43, each a whole session that never

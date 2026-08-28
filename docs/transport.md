@@ -59,7 +59,14 @@ carries `upstream_failure: Some(why)`: a **record-only partial**
 preserved (it is often the only copy anywhere; a cut tool input is kept as its
 raw string rather than erroring the whole partial away), but the provider has
 no record of the generation and doesn't stand behind it, so the entry never
-projects. The dividing line from the max-tokens case is deliberate: a
+projects. A **finalized** stream is marked the same way in one further case: when
+its accumulated `input_json_delta` fragments do not parse as JSON. Such a call
+cannot be dispatched however the stream ended (observed 2026-08-28: a foreign
+model sent `message_stop` after fragments cut mid-string), so it becomes the same
+record-only partial, keeping the raw fragment as a string, and the caller's
+abort-retry budget decides what happens next. Returning a parse error instead
+spent none of that budget and put a serde message where the model could read it.
+The dividing line from the max-tokens case is deliberate: a
 cap-terminated response is *finalized* — it carries a `stop_reason` and usage
 and the loop rightly commits it — where an unfinalized stream carries neither.
 Finalized → commit; unfinalized → record-but-retry. A failure observed *after*
@@ -155,35 +162,46 @@ is not lost either: the partial assembles as a record-only completion
 (finalized-or-marked, above), and the **agent loop retries the whole request**.
 The loop makes up to `STREAM_ABORT_ATTEMPTS` (12) attempts per model call with a
 doubling pause capped at 30s — about three and a half minutes of waiting in all;
-each aborted attempt's partial is appended to the log first, and its all-zero
-usage is recorded to `usage.jsonl` under its own `aborted_attempt` origin
-(docs/log-and-projection.md) rather than `turn` — it is not a priced request and
-not evidence about the cache prefix, and tagging it separately is what keeps
-both `daemon::metrics` and `efference cache` from reading it as either. The budget is sized
+each aborted attempt's partial is appended to the log first, and its usage
+(all-zero for an unfinalized stream; the real billed counts for one that
+finalized unparseable) is recorded to `usage.jsonl` under its own
+`aborted_attempt` origin (docs/log-and-projection.md) rather than `turn` — it
+is never evidence about the cache prefix, and tagging it separately is what
+keeps `daemon::metrics` and `efference cache` from reading it as a main-loop
+request. The budget is sized
 to **wait the failure out**, because a mid-stream abort is an ephemeral upstream
 condition and the alternative on exhaustion is worse than waiting: idling with
 "send a turn to retry" needs an operator, and an autonomous run has none. The cap
 is what lets the count be large without the tail becoming a hang — uncapped
 doubling over twelve attempts would sleep for over an hour. Because a marked entry projects to nothing, every retry re-sends
 byte-identical messages and rides the still-warm cached prefix. On exhaustion
-the loop posts a notification naming the failure (the same pattern as the
-output-token-cap notification) and returns to idle — the operator's view and
-the agent's next triage gate both see that the turn was not completed, rather
-than a silence indistinguishable from the model producing nothing.
+the loop returns to idle, leaving the failure in two places: the record-only log
+entries (durable) and the `stall` state topic (below), which carries the attempt
+count and the upstream's own words.
+
+**Who is told what.** The model is never told about an upstream failure. If the
+harness is in a position to describe the failure to it, the harness has already
+recovered from it — and the description is not neutral: a serde parse error
+delivered to the inbox is something the model then reasons about mid-task
+(observed 2026-08-28). So the audiences are the **log** (a record-only entry per
+failed attempt, for audit), **stderr** (live operator text), and the **operator's
+state topics** (`upstream_retry` while a retry is in flight, `stall` once a
+budget is spent). Nothing on these paths posts to the inbox.
 
 That idle is **legible as a stall**, not only as an idle. The daemon stays up on
 this path deliberately — the socket is alive and one turn recovers the session —
 but the return to idle otherwise looks exactly like a finished run to a client:
-`running: false`, no gate, and an inbox that a triage peek may already have
-cleared (observed 2026-08-28, where the peek dismissed the recovery notice and
-left a clean idle). So the loop also sets the **`stall` state topic**
+`running: false` and no gate. So the loop sets the **`stall` state topic**
 (control-api.md): the reason, the attempts spent, the instant it gave up, a lead
 line naming what recovers it, and the upstream's words as `detail`. It is
 cleared at the top of the next trajectory rather than on a successful
-completion, so it reports the condition now. The notification is addressed to
-the agent's next triage gate; the topic is the copy addressed to whatever is
-supervising the daemon from outside, which is the rung that can actually send
-the recovering turn. Both clients render it where turn state already shows — the
+completion, so it reports the condition now. The topic is addressed to whatever
+is supervising the daemon from outside, which is the rung that can actually send
+the recovering turn — an inbox copy would be addressed to the model, which is
+neither told about upstream failures nor able to act on one. Before the topic
+existed, an earlier inbox notice was the only signal and a triage peek could
+dismiss it, leaving a clean idle (observed 2026-08-28). Both clients render the
+topic where turn state already shows — the
 TUI's status bar, the web composer's turn-state readout.
 
 The **fork peek** takes the same treatment on the same budget: an aborted peek
@@ -299,9 +317,9 @@ An exhausted *open* failure (a non-2xx after the retry handler gives up) still
 fails the current trajectory rather than the daemon, but no longer only to
 stderr: the loop appends an empty record-only assistant entry carrying the
 error body — Anthropic's 4xx bodies name exactly what was malformed, and the
-log is the durable file where stderr is not — and posts the same
-turn-not-completed notification, and sets `stall` with `reason:
-"request_failed"`, before returning to idle. The projection
+log is the durable file where stderr is not — and sets `stall` with `reason:
+"request_failed"` carrying that body as `detail`, before returning to idle. The
+model is told nothing here either. The projection
 remains unchanged either way. Classifying *which* open failures deserve further
 loop-level retries beyond the transport's own remains deferred. Keepalive
 failures are transport-only and leave the log unchanged.
@@ -524,10 +542,11 @@ surface, every recorded request (turn, peek, spot, triage, keepalive — plus
 keepalive pings funnel through the same two record methods) spawns a
 best-effort fetch of its **billed** cost, folded into a running total that
 `GET /state` reports as `usage.cost = {usd, unpriced}` and the sidebar renders
-as `cost $0.0421`. `aborted_attempt` is the one origin excluded: its usage is
-zero by construction, so there is nothing to price, and fetching it would only
-run the lookup to exhaustion and mark it `unpriced` — an undercount signal for
-a total that was never wrong. Cost is fetched, never modeled from a rate card —
+as `cost $0.0421`. The one exclusion is an `aborted_attempt` line with all-zero
+usage: nothing to price, and fetching it would only run the lookup to
+exhaustion and mark it `unpriced` — an undercount signal for a total that was
+never wrong. An aborted attempt that finalized unparseable billed real tokens
+and is priced like any other request. Cost is fetched, never modeled from a rate card —
 cache read/write/TTL multipliers and per-endpoint price variance make modeling
 brittle. OpenRouter is the one provider with such a surface today:
 `GET /api/v1/generation?id=…` returns `total_cost`, keyed by the generation id

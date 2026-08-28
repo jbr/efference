@@ -74,10 +74,11 @@ pub enum RequestOrigin {
     Spot,
     /// A cache keepalive ping (docs/log-and-projection.md).
     Keepalive,
-    /// A retried attempt whose stream aborted before finalizing — record-only,
-    /// all-zero usage (docs/transport.md). Persisted as its own origin so it is not
-    /// read as a real main-loop request: it must not be priced
-    /// ([`Shared::spawn_cost_fetch`]) and must not count as prefix evidence
+    /// A retried attempt the loop recorded and re-sent — an unfinalized stream
+    /// (all-zero usage) or one that finalized unparseable (real usage;
+    /// docs/transport.md). Persisted as its own origin so it is not read as a
+    /// real main-loop request: only its non-zero usage is priced
+    /// ([`Shared::spawn_cost_fetch`]) and it never counts as prefix evidence
     /// ([`ColdStreak::observe`]).
     AbortedAttempt,
     /// An origin this build does not recognize — a forward-compat catch-all so a
@@ -143,9 +144,9 @@ pub enum CacheRead {
 /// prefixes at their own lineages. `Peek`, `Keepalive`, and `AbortedAttempt` ride
 /// the main-loop prefix without being main-loop *evidence* — they stamp the touch
 /// clock (an idle gap is measured from the last thing that could have refreshed
-/// the prefix) but never count as cold. An aborted attempt in particular carries
-/// all-zero usage by construction (docs/transport.md), so a zero `cache_read`
-/// there says nothing about whether the prefix moved.
+/// the prefix) but never count as cold. An aborted attempt in particular often
+/// carries all-zero usage (docs/transport.md), so a zero `cache_read` there says
+/// nothing about whether the prefix moved.
 #[derive(Default)]
 pub struct ColdStreak {
     streak: u32,
@@ -302,10 +303,12 @@ impl Shared {
     pub fn record_request(&self, origin: RequestOrigin, request: RequestUsage) {
         let at_ms = wall_millis();
         self.persist_usage(origin, at_ms, &request);
-        // An aborted attempt is all-zero usage by construction (docs/transport.md):
-        // nothing to price, and fetching it would only run the generation lookup
-        // to exhaustion and misreport it as `unpriced`.
-        if origin != RequestOrigin::AbortedAttempt {
+        // A zero-usage aborted attempt has nothing to price, and fetching it would
+        // only run the generation lookup to exhaustion and misreport it as
+        // `unpriced`. An aborted attempt with real usage — a stream that finalized
+        // and then failed to parse (docs/transport.md) — was billed, so it is
+        // priced like any other request.
+        if origin != RequestOrigin::AbortedAttempt || !request.usage.is_zero() {
             self.spawn_cost_fetch(&request);
         }
         let mut m = self.metrics.lock().unwrap();

@@ -437,23 +437,15 @@ pub async fn run<F: Frontend, S: Spotter>(
                                 "[stream unusable, {aborted_attempts} attempts \
                                  exhausted: {why}]"
                             );
-                            shared.notify(
-                                "turn".to_string(),
-                                format!(
-                                    "The last model turn was not completed: \
-                                     {STREAM_ABORT_ATTEMPTS} attempts in a row aborted \
-                                     upstream (last failure: {why}). Any partial \
-                                     output is recorded in the log but is not part of \
-                                     the conversation. Send a turn to retry."
-                                ),
-                                Some("stream-abort".to_string()),
-                                None,
-                            );
-                            // The notification is addressed to whoever reads the
-                            // inbox, and a triage peek may dismiss it; the topic is
-                            // the copy addressed to a supervising *client*, which
-                            // otherwise sees an idle daemon indistinguishable from
-                            // a finished run (docs/transport.md).
+                            // An upstream failure is told to the operator and the log,
+                            // never to the model (docs/transport.md): if we are in a
+                            // position to describe the failure to it, we have already
+                            // recovered from it, and the description only becomes
+                            // something it reasons about mid-task. The topic is
+                            // addressed to a supervising *client*, which otherwise sees
+                            // an idle daemon indistinguishable from a finished run; it
+                            // carries the attempt count and the upstream's own words, so
+                            // nothing an inbox notice used to say is lost.
                             shared.set_stall(stalled(
                                 StallReason::RetriesExhausted,
                                 Some(aborted_attempts),
@@ -501,15 +493,8 @@ pub async fn run<F: Frontend, S: Spotter>(
                                 upstream_failure: Some(error.to_string().into()),
                             },
                         )?;
-                        shared.notify(
-                            "turn".to_string(),
-                            format!(
-                                "The last model turn was not completed — the upstream \
-                                 request failed: {error}. Send a turn to retry."
-                            ),
-                            Some("stream-abort".to_string()),
-                            None,
-                        );
+                        // Operator and log, not the model (docs/transport.md): the error
+                        // body rides the stall's `detail` and the record-only entry.
                         shared.set_stall(stalled(
                             StallReason::RequestFailed,
                             None,
@@ -523,7 +508,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 }
             };
             // The all-clear, on every exit from the loop: the attempt that finalized,
-            // the exhausted budget (its own visible outcome, via the notification and
+            // the exhausted budget (its own visible outcome, via the stall topic and
             // the record-only entries), or a failed request (docs/transport.md).
             client.upstream_retry().clear(RetrySurface::Turn);
             let Some(completion) = completion else {

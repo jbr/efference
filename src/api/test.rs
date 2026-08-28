@@ -1541,6 +1541,49 @@ fn a_stream_that_finalizes_empty_is_marked_retryable() {
     assert!(why.contains("no content"), "{why}");
 }
 
+/// A stream that finalizes carrying a tool input the fragments do not spell as
+/// valid JSON is marked retryable too (docs/transport.md), not returned as an
+/// error. Observed 2026-08-28: a foreign model sent `message_stop` after
+/// `input_json_delta` fragments that ended mid-string. As an error it left the
+/// abort-retry budget unspent and put the serde message where the model could
+/// read it; marked, it is a record-only partial the loop retries, and the raw
+/// fragment survives as a string — the entry is never projected or dispatched,
+/// and may be the only copy of it.
+#[test]
+fn a_finalized_stream_with_unparseable_tool_input_is_marked_retryable() {
+    let completion = feed(&[
+        (
+            "message_start",
+            r#"{"message":{"model":"z-ai/glm-5.3","usage":{"input_tokens":9,"output_tokens":1}}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"tool_use","id":"toolu_9","name":"bash"}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\": \"echo cut"}}"#,
+        ),
+        ("content_block_stop", r#"{"index":0}"#),
+        (
+            "message_delta",
+            r#"{"delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":7}}"#,
+        ),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+    ])
+    .expect("a malformed tool input is a marked completion, not an error");
+    let why = completion.upstream_failure().expect("must be marked");
+    assert!(why.contains("unparseable tool input"), "{why}");
+    match &completion.assistant {
+        Payload::Assistant { calls, .. } => assert_eq!(
+            calls[0].input,
+            serde_json::Value::String(r#"{"command": "echo cut"#.to_string()),
+            "the raw fragment is kept verbatim"
+        ),
+        other => panic!("expected Payload::Assistant, got {other:?}"),
+    }
+}
+
 /// The empty stream is the one path that keeps evidence (docs/transport.md).
 /// Nothing else survives it — the generation id it allocates 404s at OpenRouter
 /// on both `GET /generation` and `GET /generation/content` — so the record-only

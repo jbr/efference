@@ -334,9 +334,10 @@ impl Assembler {
     /// appends for audit and retries, never a clean turn (docs/transport.md). A
     /// failure recorded *after* finalization (a transport error while draining the
     /// already-closed stream) does not unmake the completion: the provider stood
-    /// behind it with a `stop_reason` and usage.
+    /// behind it with a `stop_reason` and usage — unless a tool input it carries
+    /// does not parse, which marks the completion here rather than erroring.
     pub(super) fn finish(mut self) -> Result<Completion, Error> {
-        let upstream_failure: Option<UpstreamFailureRecord> = if self.finalized {
+        let mut upstream_failure: Option<UpstreamFailureRecord> = if self.finalized {
             if let Some(why) = &self.failure {
                 log::warn!("stream error after finalization (completion kept): {why}");
             }
@@ -373,15 +374,34 @@ impl Assembler {
                     } else {
                         match serde_json::from_str(&partial_json) {
                             Ok(input) => input,
-                            // An aborted stream can cut a tool input mid-fragment. The
-                            // entry is record-only (never projected or dispatched), so
-                            // preserve the raw bytes rather than erroring the whole
-                            // partial away — it may be the only copy of anything.
-                            Err(e) if upstream_failure.is_some() => {
+                            // A tool input that does not parse is not a dispatchable
+                            // call, however the stream ended. An aborted stream cuts one
+                            // mid-fragment; a *finalized* stream can deliver one too
+                            // (observed 2026-08-28, GLM through OpenRouter: `message_stop`
+                            // arrived after fragments that ended mid-string). Both become
+                            // the same record-only partial, marked here for the same
+                            // reason the empty-finalized stream below is: the mark *is*
+                            // the retryable signal, so the turn loop and the fork peek
+                            // each retry it on the budget they already have. Erroring
+                            // instead sent the raw serde message out through the
+                            // request-failed path, which retries nothing.
+                            //
+                            // The raw bytes are kept either way: the entry is never
+                            // projected or dispatched, and may be the only copy of what
+                            // the model produced.
+                            Err(e) => {
                                 log::warn!("partial tool input kept unparsed: {e}");
+                                if upstream_failure.is_none() {
+                                    upstream_failure = Some(
+                                        format!(
+                                            "stream finalized with unparseable tool \
+                                             input: {e}"
+                                        )
+                                        .into(),
+                                    );
+                                }
                                 Value::String(partial_json)
                             }
-                            Err(e) => return Err(e.into()),
                         }
                     };
                     calls.push(ToolCall {
