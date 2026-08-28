@@ -201,11 +201,24 @@ function Policy({
     <div className="panel-body policy">
       {rows.map((row, i) => {
         const head = i === 0 || rows[i - 1].section !== row.section;
+        // A `clear` stance reads as a grant, the way a bare row always has;
+        // `watch`/`gate`/`deny` are carve-outs and must not be mistakable
+        // for one, so they get the warn color plus their own word.
+        const carveOut = row.stance !== null && row.stance !== "clear";
         return (
           <div className="policy-row" key={i}>
             <span className="policy-section">{head ? row.section : ""}</span>
-            <span className={row.proposal !== null ? "dim" : undefined}>
+            <span
+              className={
+                carveOut
+                  ? "policy-carve-out"
+                  : row.proposal !== null
+                    ? "dim"
+                    : undefined
+              }
+            >
               {row.text}
+              {carveOut && ` [${row.stance}]`}
               {row.proposal !== null && " ⊕"}
             </span>
             {row.proposal !== null && (

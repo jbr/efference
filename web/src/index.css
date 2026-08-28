@@ -728,6 +728,12 @@ pre {
   color: var(--fg-faint);
 }
 
+/* A `watch`/`gate`/`deny` command carve-out: warn-tinted so it never reads
+   as a grant the way a bare `clear` row does. */
+.policy-carve-out {
+  color: var(--warn);
+}
+
 .policy-verbs {
   display: flex;
   gap: 0.4rem;

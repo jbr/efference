@@ -134,12 +134,25 @@ export interface Gate {
   reason?: string;
 }
 
+// The bash prefix policy's value vocabulary (docs/permissions.md `[commands]`):
+// `clear` auto-approves, `watch`/`gate` send the move to the gate rung, `deny`
+// refuses without a spotter round-trip. `true`/`false` config sugar is already
+// resolved to these words by the time `/state` reports them. Distinct from
+// [`Stance`] above (the spotter's verdict) — different vocabulary, `deny` has
+// no spotter-verdict counterpart (docs/permissions.md: "Deny is reachable
+// only from a `[commands]` stance").
+export type CommandStance = "clear" | "watch" | "gate" | "deny";
+
 export interface Role {
   source: string | null;
   scope: string;
   watch_for: string[];
-  commands: string[];
-  tools: Record<string, unknown>;
+  // Key -> stance, not a list of keys: a `[commands]` entry can carry a
+  // carve-out (`watch`/`gate`/`deny`) as well as a grant (`clear`).
+  commands: Record<string, CommandStance>;
+  // Wire tool names (possibly a namespace glob like `ferritin__*`); render
+  // through the dotted display mapping, not raw (docs/permissions.md).
+  tools: string[];
   paths: Record<string, { read: boolean; write: boolean }>;
 }
 
