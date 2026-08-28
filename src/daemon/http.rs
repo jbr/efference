@@ -708,6 +708,36 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 None => fail(conn, ErrorCode::NotFound, "no tool call with that id"),
             }
         })
+        // One tool's full definition, for any name the turn's `tools[]` can
+        // carry — mounted providers and the harness's own loop-owned family
+        // (`consolidate`, the supervisor/inbox tools, the two peek tools)
+        // alike (docs/control-api.md): the description, input_schema,
+        // annotations, title, and which server mounted it (`null` for a
+        // loop-owned tool). A lazy per-tool fetch, not a table pushed at
+        // session start. `:name` accepts the dotted operator spelling
+        // (`ferritin.get`) as well as the wire form (`ferritin__get`);
+        // `wire_tool_name` is a no-op on an already-wire name. Session-constant
+        // like every other single-entry read, so it's immutably cacheable.
+        .get("/v1/tools/:name", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return missing_state(conn);
+            };
+            let Some(raw_name) = conn.param("name").map(str::to_string) else {
+                return fail(conn, ErrorCode::BadRequest, "missing tool name");
+            };
+            let wire_name = crate::config::wire_tool_name(raw_name);
+            match shared
+                .tool_entry(&wire_name)
+                .and_then(|entry| serde_json::to_string(&entry).ok())
+            {
+                Some(body) => immutable(conn).with_status(200).with_body(body).halt(),
+                None => fail(
+                    conn,
+                    ErrorCode::NotFound,
+                    "no tool with that name in tools[]",
+                ),
+            }
+        })
         // Live tail of the append-only log (docs/README.md — the log *is* the event
         // store). `?since=<seq>` replays from there then follows; default 0 streams
         // the whole session and then live. Each event carries `id: <seq>`, so a

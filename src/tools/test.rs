@@ -18,6 +18,40 @@ fn bash_only_advertises_exactly_the_bash_tool() {
     assert_eq!(defs[0]["name"], json!(bash::NAME));
 }
 
+/// `tool_entry` has no hole for `Bash`, unlike `brief`: its description and
+/// `intent`-injected `input_schema` are present even though the spotter's
+/// brief skips it.
+#[test]
+fn tool_entry_answers_for_bash_even_though_brief_does_not() {
+    let box_ = Toolbox::bash_only();
+    assert!(box_.brief(bash::NAME).is_none(), "brief still has the hole");
+    let entry = box_.tool_entry(bash::NAME).expect("bash has a definition");
+    assert_eq!(entry.name, bash::NAME);
+    assert!(entry.server.is_none(), "a built-in has no mounting server");
+    assert!(entry.description.is_some());
+    assert_eq!(
+        entry.input_schema["properties"]["intent"]["type"],
+        json!("string"),
+        "the schema served is what the model was sent, intent included"
+    );
+    assert!(
+        entry.input_schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "intent")
+    );
+}
+
+/// An unmounted name has no entry — the `404` case `GET /v1/tools/:name` maps
+/// onto.
+#[test]
+fn tool_entry_is_none_for_an_unmounted_name() {
+    let box_ = Toolbox::bash_only();
+    assert!(box_.tool_entry("nope").is_none());
+    assert!(box_.tool_entry(read_image::NAME).is_none());
+}
+
 fn done(outcome: Outcome) -> RawResult {
     match outcome {
         Outcome::Done(result) => result,

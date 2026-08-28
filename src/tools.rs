@@ -199,6 +199,42 @@ impl Provider {
         Cow::Owned(stripped)
     }
 
+    /// This backend's full definition for `name`, for `GET /v1/tools/:name`
+    /// (docs/control-api.md) — the entry [`Toolbox::tool_entry`] serves.
+    /// Unlike [`Self::brief`], `Bash` and `ReadImage` answer: their wire
+    /// `Value` carries a `description` and `input_schema`, just not the
+    /// `annotations`/`title` the Anthropic tool shape has no slot for.
+    fn tool_entry(&self, name: &str) -> Option<ToolEntry> {
+        // Every provider here is mounted through `Toolbox`, so its wire entry
+        // went through `with_intent` in `Toolbox::definitions` — the served
+        // schema does too (`inject_intent: true`).
+        match self {
+            Provider::Bash(_) if name == bash::NAME => {
+                Some(ToolEntry::from_raw(name, &Bash::definition(), None, true))
+            }
+            Provider::Bash(_) => None,
+            Provider::ReadImage(_) if name == read_image::NAME => Some(ToolEntry::from_raw(
+                name,
+                &ReadImage::definition(),
+                None,
+                true,
+            )),
+            Provider::ReadImage(_) => None,
+            Provider::Fs(s) => Some(ToolEntry::from_definition(s.schema(name)?, None, true)),
+            Provider::SemanticEdit(s) => {
+                Some(ToolEntry::from_definition(s.schema(name)?, None, true))
+            }
+            Provider::Connected(c) => {
+                let brief = c.brief(name)?;
+                Some(ToolEntry::from_definition(
+                    brief.definition,
+                    brief.server.map(str::to_string),
+                    true,
+                ))
+            }
+        }
+    }
+
     /// Run a call this backend handles. `abort` is the loop's interrupt future,
     /// resolving with the operator's intent (kill or detach); backends that
     /// can't be interrupted ignore it. `on_spawn` fires with the child's pid when
@@ -346,6 +382,111 @@ pub struct ToolBrief<'a> {
     pub server: Option<&'a str>,
     /// The mounted entry, namespaced — `name` is the wire name.
     pub definition: &'a ToolDefinition,
+}
+
+/// One tool's full definition, addressed by wire name — the payload for
+/// `GET /v1/tools/:name` (docs/control-api.md). A consumer fetches these
+/// lazily, one at a time, rather than holding a table pushed at session
+/// start: an MCP server may mount dozens of tools with long descriptions.
+///
+/// `description` and `annotations`/`title` are third-party prose for a
+/// mounted server (`server.is_some()`): a consumer renders them as plain
+/// text, never markdown, and attributes them to `server`
+/// (`src/supervisor.rs` draws the same untrusted-server line for the
+/// built-ins' own annotations).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ToolEntry {
+    /// The wire name this entry was looked up by (`<server>__<tool>` or an
+    /// unprefixed embedded name) — echoed back so a caller that resolved a
+    /// dotted operator spelling can confirm what it landed on.
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Sent exactly as the model saw it this session, [`INTENT`] included
+    /// (docs/tools.md) — so a consumer comparing a call's arguments against
+    /// `required` sees the schema the call was actually made against, not a
+    /// pre-injection one that would flag `intent` as undeclared on every call.
+    pub input_schema: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<mcplease::types::ToolAnnotations>,
+    /// The server that mounted this tool, or `None` for one of the harness's
+    /// own embedded tools (`bash`, `read_image`, the fs/semantic-edit MCP
+    /// servers) — the line [`ToolBrief::server`] already draws.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
+}
+
+impl ToolEntry {
+    /// From a mounted [`ToolDefinition`] (an embedded or connected server's
+    /// snapshotted schema). `inject_intent` mirrors whatever the wire
+    /// actually did with this schema: `true` for a `Toolbox`-mounted tool
+    /// (`with_intent` runs over every entry in [`Toolbox::definitions`]),
+    /// `false` for the harness's own loop-owned tools (`agent::tool_catalog`
+    /// — `consolidate`, the supervisor/inbox family — which
+    /// [`agent::tool_definitions`](crate::agent::tool_definitions) advertises
+    /// *without* running them through [`with_intent`]).
+    pub(crate) fn from_definition(
+        definition: &ToolDefinition,
+        server: Option<String>,
+        inject_intent: bool,
+    ) -> Self {
+        let input_schema = definition.input_schema.clone();
+        Self {
+            name: definition.name.clone(),
+            title: definition.title.clone(),
+            description: definition.description.clone(),
+            input_schema: if inject_intent {
+                with_intent_schema(input_schema)
+            } else {
+                input_schema
+            },
+            annotations: definition.annotations.clone(),
+            server,
+        }
+    }
+
+    /// From a raw wire `Value` (`Bash::definition()`, `ReadImage::definition()`,
+    /// or one of the peek tools' static schemas) — no [`ToolDefinition`] backs
+    /// any of these, so `title`/`annotations` are unavailable rather than
+    /// absent-by-choice. `inject_intent` — see [`Self::from_definition`].
+    pub(crate) fn from_raw(
+        name: &str,
+        raw: &Value,
+        server: Option<String>,
+        inject_intent: bool,
+    ) -> Self {
+        let input_schema = raw
+            .get("input_schema")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        Self {
+            name: name.to_string(),
+            title: None,
+            description: raw
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            input_schema: if inject_intent {
+                with_intent_schema(input_schema)
+            } else {
+                input_schema
+            },
+            annotations: None,
+            server,
+        }
+    }
+}
+
+/// [`with_intent`] applied to a bare `input_schema`, unwrapped back out —
+/// reused so [`ToolEntry`] carries exactly the schema the model was sent,
+/// without duplicating the injection rule.
+fn with_intent_schema(schema: Value) -> Value {
+    with_intent(json!({ "input_schema": schema }))
+        .get("input_schema")
+        .cloned()
+        .unwrap_or_else(|| json!({}))
 }
 
 /// Translate an MCP tool definition (`inputSchema`, camelCase) into the
@@ -573,6 +714,30 @@ impl Toolbox {
     /// owns.
     pub fn brief(&self, name: &str) -> Option<ToolBrief<'_>> {
         self.providers.iter().find_map(|p| p.brief(name))
+    }
+
+    /// One mounted tool's full definition, addressed by its wire name — the
+    /// answer `GET /v1/tools/:name` serves (docs/control-api.md). Unlike
+    /// [`Toolbox::brief`], this has no holes: `Bash` and `ReadImage` answer
+    /// here even though the spotter's brief skips them for reasons that are
+    /// about the spotter, not about the definition existing. `None` when no
+    /// mounted provider owns `name`.
+    pub fn tool_entry(&self, name: &str) -> Option<ToolEntry> {
+        self.providers.iter().find_map(|p| p.tool_entry(name))
+    }
+
+    /// Every mounted tool's full definition, keyed by wire name — what the
+    /// daemon snapshots into `Shared` before the toolbox moves into the loop
+    /// (docs/control-api.md), since the mounted set is fixed for the session
+    /// and there is nothing to reconcile later (docs/log-and-projection.md).
+    pub fn tool_catalog(&self) -> std::collections::HashMap<String, ToolEntry> {
+        self.names()
+            .into_iter()
+            .filter_map(|name| {
+                let entry = self.tool_entry(&name)?;
+                Some((name, entry))
+            })
+            .collect()
     }
 
     /// Route a call to the backend that handles its name. An unknown name comes

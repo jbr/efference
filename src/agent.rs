@@ -83,6 +83,65 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
         .or_else(|| supervisor::brief(name))
 }
 
+/// The full definition behind every wire name a turn's `tools[]` can carry —
+/// the `GET /v1/tools/:name` mirror of [`tool_definitions`], the way [`brief`]
+/// already mirrors it for the spotter. Built once, before the loop starts (the
+/// toolbox's mounted set and this harness's own tool family are both fixed for
+/// the session, docs/log-and-projection.md), and snapshotted into `Shared`
+/// ([`crate::daemon::Shared::set_tool_catalog`]).
+///
+/// A catalog built from `toolbox.tool_catalog()` alone once missed this whole
+/// family — `check_inbox`, `list_processes`, `consolidate`, the two peek
+/// tools — the same shape of gap [`brief`]'s doc comment records for the
+/// spotter (`check_inbox`/`list_processes` once judged as bare names because
+/// the lookup consulted only the providers). Composed from the same brief
+/// sources `brief` reads, plus the two peek tools, which `brief` excludes
+/// (they never reach a gate) but this route does not: `retain`/`triage` still
+/// ride every turn's `tools[]`, so a reader destructuring the fork peek's own
+/// call wants their schema too.
+///
+/// None of these five sources inject [`crate::tools::INTENT`] the way a
+/// `Toolbox`-mounted tool's wire entry does — [`tool_definitions`] pushes
+/// `consolidate::definition()`, `supervisor::tool_definitions()`, and the peek
+/// tools onto `toolbox.definitions()` *after* `with_intent` has already run
+/// over the toolbox half — so each is served with `inject_intent: false`,
+/// matching the schema the model was actually sent.
+pub fn tool_catalog(
+    toolbox: &Toolbox,
+) -> std::collections::HashMap<String, crate::tools::ToolEntry> {
+    let mut catalog = toolbox.tool_catalog();
+
+    if let Some(brief) = consolidate::brief(consolidate::NAME) {
+        catalog.insert(
+            consolidate::NAME.to_string(),
+            crate::tools::ToolEntry::from_definition(brief.definition, None, false),
+        );
+    }
+    for name in [
+        supervisor::LIST,
+        supervisor::READ,
+        supervisor::KILL,
+        supervisor::WATCH,
+        supervisor::CHECK_INBOX,
+    ] {
+        if let Some(brief) = supervisor::brief(name) {
+            catalog.insert(
+                name.to_string(),
+                crate::tools::ToolEntry::from_definition(brief.definition, None, false),
+            );
+        }
+    }
+    for raw in [crate::distill::retain_tool(), crate::distill::triage_tool()] {
+        if let Some(name) = raw.get("name").and_then(Value::as_str) {
+            catalog.insert(
+                name.to_string(),
+                crate::tools::ToolEntry::from_raw(name, &raw, None, false),
+            );
+        }
+    }
+    catalog
+}
+
 /// Hard cap on a single tool result's bytes (defense in depth). The fork peek caps
 /// *line count* (`PEEK_LINE_CAP`), but not a pathological single huge line; an
 /// over-cap result is almost always a mistake — e.g. grepping the gitignored session

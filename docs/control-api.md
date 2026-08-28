@@ -586,6 +586,64 @@ and a cut orphans **at most one result, at the boundary itself**.
 JSON array of pending proposals — the same array `/state` carries, for a client
 that wants to poll only this.
 
+#### `GET /tools/:name`
+One tool's full definition, for **any** name the turn's `tools[]` can carry —
+description, `input_schema` (with per-property descriptions and `required`),
+`annotations`, `title`, and `server` (the mounting server's name, `null` for
+one of the harness's own tools: `bash`, `read_image`, the fs/semantic-edit MCP
+servers, `consolidate`, the supervisor/inbox family, the two peek tools).
+Lazily fetched, one at a time, rather than a table pushed at session start: an
+MCP server may mount dozens of tools with long descriptions, and a consumer
+usually wants exactly the one behind a call it's showing.
+
+`:name` accepts either spelling — the dotted operator form (`ferritin.get`)
+or the wire form (`ferritin__get`) — through the same `wire_tool_name`
+normalization the config layer applies to a `[tools]` grant
+([permissions.md](permissions.md)); an already-wire name (no `.`) passes
+through unchanged.
+
+`input_schema` is served exactly as the model was sent it, not a
+pre-injection schema, so a consumer comparing a call's arguments against
+`required` sees the schema the call was actually judged against. That
+distinction cuts one way: a `Toolbox`-mounted tool's schema carries the
+injected [`intent`] property ([tools.md](tools.md) "The `intent` property"),
+because `with_intent` runs over every entry `Toolbox::definitions` advertises
+— but the harness's own loop-owned family (`consolidate`, the supervisor/inbox
+tools, the two peek tools) is pushed onto the wire array *after* that, with no
+injection, so their served schemas carry no `intent` property either.
+
+This covers everything a session's `tools[]` can name — not just the
+`Toolbox`'s mounted providers. A catalog built from the toolbox alone once
+missed this whole loop-owned family (`check_inbox`, `list_processes`,
+`consolidate`, `retain`, `triage` — dispatched structurally by the loop,
+outside `Toolbox`), the same coverage gap the spotter once had over the same
+family (`agent::brief`'s doc comment, [permissions.md](permissions.md)): a
+lookup that consults only the providers reads a name in `tools[]` as absent.
+The two peek tools (`retain`, `triage`) answer here even though they never
+reach a gate and are never the subject of an ordinary logged call — they ride
+every turn's `tools[]` regardless, so a reader inspecting the fork peek's own
+exchange can still ask what shape it was answering.
+
+Unlike the spotter's brief ([permissions.md](permissions.md)), this route has
+no holes: `Provider::brief` returns `None` for `Bash` and `ReadImage` for
+reasons specific to the spotter, but both have a definition, and both answer
+here.
+
+The mounted set is fixed for the session — `tools[]` sits in the cached
+prefix ([log-and-projection.md](log-and-projection.md)) — so there is nothing
+to reconcile: the daemon snapshots the full catalog once, before the turn loop
+starts, and this route serves exactly that snapshot for the life of the
+session. `404 not_found` for any name not in it, including *every* name in a
+session read with no daemon behind it at all (a recorded session opened
+offline) — that is the one case with no catalog to snapshot, and a client
+falls back to showing only what a call sent, not an error state.
+
+**A mounted server's description, annotations, and title are third-party
+prose** — written by whoever wrote the server, not by efference
+(`src/supervisor.rs` draws the same line for the built-ins' own annotations).
+A client renders them as plain text, never markdown, and attributes them to
+`server`.
+
 ### Reads (streamed, SSE)
 
 #### `GET /events?include=<spec>&since=<seq>`
@@ -765,7 +823,7 @@ returning the same code cannot disagree about the status:
 |---|---|---|
 | `bad_request` | 400 | malformed body, unparseable path parameter, out-of-range value |
 | `invalid_decision` | 400 | a well-formed decision verb the daemon doesn't implement — the client is version-skewed, not buggy |
-| `not_found` | 404 | no such notification id, proposal `seq`, or process id |
+| `not_found` | 404 | no such notification id, proposal `seq`, process id, or mounted tool name |
 | `gate_moved` | 409 | `PUT /approvals/:call_id` whose id is not the pending gate; `detail` carries the current gate |
 | `not_continuable` | 409 | `POST /loop/continue` at a moment with no continue in it — running, gated, or a wire tail that means nothing to re-prompt |
 | `too_large` | 413 | `/files` was asked for a file past the view limit ([web-bind.md](web-bind.md)) |

@@ -1,6 +1,62 @@
 use super::*;
 use crate::log::CallId;
 
+/// `tool_catalog` covers every name `tool_definitions` advertises — the gap
+/// review found: a catalog built from `Toolbox::tool_catalog` alone answered
+/// only the mounted providers, so `GET /v1/tools/check_inbox` 404'd for a
+/// tool the session's own `tools[]` carried.
+#[test]
+fn tool_catalog_covers_every_advertised_name() {
+    let toolbox = Toolbox::bash_only();
+    let advertised: std::collections::HashSet<String> = tool_definitions(&toolbox)
+        .iter()
+        .filter_map(|d| d.get("name")?.as_str().map(str::to_string))
+        .collect();
+    let catalog = tool_catalog(&toolbox);
+    let cataloged: std::collections::HashSet<String> = catalog.keys().cloned().collect();
+    assert_eq!(
+        advertised, cataloged,
+        "every wire name in tools[] has a catalog entry, and vice versa"
+    );
+}
+
+/// A `Toolbox`-mounted tool's served schema carries the `intent` `with_intent`
+/// injected on the real wire; a loop-owned tool's does not — `tool_definitions`
+/// pushes `consolidate`/the supervisor family/the peek tools onto the array
+/// *after* `with_intent` already ran over the toolbox half, so the model never
+/// saw `intent` declared on any of them.
+#[test]
+fn only_the_toolbox_half_of_the_catalog_carries_injected_intent() {
+    let toolbox = Toolbox::bash_only();
+    let catalog = tool_catalog(&toolbox);
+
+    let bash = &catalog[bash::NAME];
+    assert!(
+        bash.input_schema["properties"]["intent"].is_object(),
+        "a toolbox-mounted tool's served schema matches the wire, intent included"
+    );
+
+    for name in [
+        consolidate::NAME,
+        supervisor::CHECK_INBOX,
+        crate::distill::retain_tool()["name"].as_str().unwrap(),
+        crate::distill::triage_tool()["name"].as_str().unwrap(),
+    ] {
+        let entry = &catalog[name];
+        assert!(
+            entry.server.is_none(),
+            "{name} is the harness's own, not a mounted server's"
+        );
+        assert!(
+            entry
+                .input_schema
+                .get("properties")
+                .is_none_or(|p| p.get("intent").is_none()),
+            "{name} was never sent an injected intent on the wire: {entry:?}"
+        );
+    }
+}
+
 pub(super) fn call(name: &str) -> ToolCall {
     ToolCall {
         id: CallId("toolu_x".into()),

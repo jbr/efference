@@ -68,6 +68,11 @@ pub async fn serve<S: Spotter>(
     // (`agent::tool_definitions`) so the keepalive ping warms the *same* cache prefix
     // a real turn reads; any drift here silently breaks idle cache-warming (docs/log-and-projection.md).
     let tools = agent::tool_definitions(&toolbox);
+    // Snapshot the mounted tool catalog for `GET /v1/tools/:name`
+    // (docs/control-api.md), before `toolbox` moves into `agent::run` below —
+    // the same reason `set_capabilities`/`set_identity` run here rather than
+    // in `Shared::full`.
+    shared.set_tool_catalog(&toolbox);
     let mut frontend = RemoteFrontend {
         shared: Arc::clone(&shared),
         turns,

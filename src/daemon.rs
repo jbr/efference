@@ -417,6 +417,18 @@ pub struct Shared {
     /// ([`crate::expand`]): `{TMPDIR: scratch}` when a scratch dir exists, else
     /// empty — every `$NAME` then errors, which is the fail-closed default.
     expander: crate::expand::Expander,
+    /// The session's full tool catalog, keyed by wire name — every name the
+    /// turn's `tools[]` can carry, the toolbox's mounted providers *and* the
+    /// harness's own loop-owned family (`consolidate`, the supervisor/inbox
+    /// tools, the two peek tools). Snapshotted by [`Shared::set_tool_catalog`]
+    /// (`agent::tool_catalog`) before the toolbox moves into the loop, and
+    /// read back by `GET /v1/tools/:name` (docs/control-api.md). The mounted
+    /// set is fixed for the session (docs/log-and-projection.md), so this is
+    /// written once and never reconciled. Empty in tests and offline verbs
+    /// that never built a toolbox — the route answers `404` for every name
+    /// there, which is the correct "no daemon behind this session" fallback
+    /// rather than a distinct error state.
+    tools: Mutex<HashMap<String, crate::tools::ToolEntry>>,
 }
 
 impl Shared {
@@ -586,8 +598,29 @@ impl Shared {
                     .collect(),
             ),
             scratch,
+            tools: Mutex::new(HashMap::new()),
         });
         (shared, turns_rx)
+    }
+
+    /// Snapshot the full session tool catalog for `GET /v1/tools/:name`
+    /// (docs/control-api.md) — `agent::tool_catalog`, which mirrors
+    /// `agent::tool_definitions`: the toolbox's mounted tools *and* the
+    /// harness's own loop-owned family (`consolidate`, the supervisor/inbox
+    /// tools, the two peek tools), the same union `tools[]` advertises.
+    /// Called once by `serve`, before `toolbox` moves into the loop — the
+    /// same "only a served session has this" reason as
+    /// [`Self::set_capabilities`]/[`Self::set_identity`], which it sits beside.
+    pub fn set_tool_catalog(&self, toolbox: &crate::tools::Toolbox) {
+        *self.tools.lock().unwrap() = crate::agent::tool_catalog(toolbox);
+    }
+
+    /// One tool's full definition, addressed by its wire name — the answer to
+    /// `GET /v1/tools/:name` (docs/control-api.md). `None` when no tool by
+    /// that name was advertised this session, including every name in a
+    /// session read with no daemon behind it (the catalog was never set).
+    pub fn tool_entry(&self, wire_name: &str) -> Option<crate::tools::ToolEntry> {
+        self.tools.lock().unwrap().get(wire_name).cloned()
     }
 
     /// Store the boot-fetched model capabilities (docs/transport.md). Called once

@@ -175,6 +175,40 @@ async fn mount_discovers_paginates_namespaces_and_sorts() {
     );
 }
 
+/// `GET /v1/tools/:name` (docs/control-api.md) attributes a mounted tool to
+/// the server that advertised it — `ToolEntry::server`, read off `Toolbox`
+/// over a real (loopback) mount rather than a hand-built fixture.
+#[tokio::test]
+async fn a_mounted_tools_entry_names_its_server() {
+    let (transport, _) = loopback(scripted_server());
+    let provider = ConnectedProvider::mount_transport("fake", transport)
+        .await
+        .unwrap();
+    let toolbox =
+        crate::tools::Toolbox::new(vec![crate::tools::Provider::Connected(Box::new(provider))]);
+
+    let entry = toolbox.tool_entry("fake__zeta").expect("mounted");
+    assert_eq!(entry.server.as_deref(), Some("fake"));
+    assert_eq!(entry.description.as_deref(), Some("tool zeta"));
+    assert_eq!(
+        entry.input_schema["properties"]["x"]["type"],
+        json!("string")
+    );
+
+    // `GET /v1/tools/:name` resolves the dotted operator spelling
+    // (docs/control-api.md) through the same `wire_tool_name` normalization
+    // the config layer applies to a `[tools]` grant.
+    let dotted_wire = crate::config::wire_tool_name("fake.zeta".to_string());
+    assert_eq!(dotted_wire, "fake__zeta");
+    let via_dotted = toolbox.tool_entry(&dotted_wire).expect("resolved");
+    assert_eq!(via_dotted.server.as_deref(), Some("fake"));
+
+    assert!(
+        toolbox.tool_entry("fake__missing").is_none(),
+        "an unmounted name under a real server is still a clean absence"
+    );
+}
+
 #[tokio::test]
 async fn mount_confirms_the_handshake_with_initialized() {
     let (transport, inbox) = loopback(scripted_server());
