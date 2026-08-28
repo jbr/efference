@@ -99,6 +99,11 @@ decomposes into three things landing in three places. The design principle:
 
 **The spawn** — the `bash` tool result that says "backgrounded as p#3" — is a
 normal `ToolResult` payload, already logged, already projected. No new type.
+Its text also states the async pattern (register a `watch_process`, end the
+turn, react to the inbox match next turn): stated here, where the shape gets
+chosen, because the `watch_process` result's own copy is read only after a
+compressed start→watch→kill turn has been attempted, and a short process can
+exit before the follow-up calls composed in the same turn reach it.
 
 **The running tail** — the last N lines of output plus timing — is a *live,
 re-sampled* view held in an ephemeral `Supervisor` registry inside `Shared` (a

@@ -291,10 +291,19 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                     Some(command) => {
                         match shared.spawn_background(command, Some(call.id.0.clone())) {
                             Ok(handle) => {
+                                // The async pattern is stated here, where the shape gets
+                                // chosen — the watch_process result says it too, but that
+                                // is read only after a compressed start→watch→kill turn
+                                // has already been attempted, and a short process can exit
+                                // before the turn composing follow-up calls reaches it
+                                // (docs/supervisor.md).
                                 let content = format!(
                                     "backgrounded as {handle}. its recent output will surface in \
                                      your inbox at each step, and you'll get a notification when \
-                                     it exits."
+                                     it exits. to react to specific output, register a \
+                                     watch_process and end your turn — the match arrives in your \
+                                     inbox, and a short process can exit before further calls \
+                                     composed this turn reach it."
                                 );
                                 process_handle = Some(handle);
                                 RawResult {
