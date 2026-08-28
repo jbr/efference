@@ -153,6 +153,12 @@ test("call views summarize known tools and envelope the rest", () => {
     callView("read_image", { path: "m.png", long_edge: 2576 }).summary,
   ).toBe("m.png · long_edge 2576");
   expect(
+    callView("read_image", {
+      path: "m.png",
+      region: { x: 100, y: 200, w: 1200, h: 900 },
+    }).summary,
+  ).toBe("m.png · region 1200×900 at 100,200");
+  expect(
     callView("edit", { file_path: "a.rs", operation: "replace" }).summary,
   ).toBe("a.rs · replace");
   expect(callView("mystery", { x: 1 }).body?.lang).toBe("json");

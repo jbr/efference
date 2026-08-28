@@ -316,10 +316,21 @@ export function callView(name: string, input: unknown): CallView {
     const path = str("path");
     if (path !== null) {
       const longEdge = typeof obj.long_edge === "number" ? obj.long_edge : null;
-      return view(
-        longEdge === null ? path : `${path} · long_edge ${longEdge}`,
-        null,
-      );
+      let summary = longEdge === null ? path : `${path} · long_edge ${longEdge}`;
+      // A `region` says the call read part of the frame, which is the
+      // difference between two reads of the same path.
+      const region = obj.region;
+      if (region !== null && typeof region === "object") {
+        const r = region as Record<string, unknown>;
+        const nums = ["x", "y", "w", "h"].map((k) =>
+          typeof r[k] === "number" ? (r[k] as number) : null,
+        );
+        if (nums.every((n) => n !== null)) {
+          const [x, y, w, h] = nums as number[];
+          summary += ` · region ${w}×${h} at ${x},${y}`;
+        }
+      }
+      return view(summary, null);
     }
   }
   if (name === "write") {

@@ -103,14 +103,47 @@ pulls an on-disk image into context as a `tool_result` image block
 ([log-and-projection.md](log-and-projection.md)) — the pull half of the
 attachments design: an image enters the transcript only when the model asks,
 at the resolution it asks for. The tool reads a `path` (resolved against the
-session cwd, gated by the same read-path grants as `read`), decodes, sizes to
-the provider's own rule (`vision::resized_size`, a token-budget bound — not
-merely a long edge), encodes, and returns a text header
-(`{w}×{h} {media_type}, {n} visual tokens`, plus the source dimensions when
-downscaled) followed by the image. `long_edge` defaults to 1568 with 2576 as
-the ceiling; the header's cost report and the "re-read larger" note are the
-calibration loop. Encoding policy: fitting API-native bytes pass through
-verbatim; a resize or transcode re-encodes — JPEG stays JPEG (quality 85),
+session cwd, gated by the same read-path grants as `read`), decodes, optionally
+crops to a requested `region`, sizes to the provider's own rule
+(`vision::resized_size`), encodes, and returns a text header
+(`{w}×{h} {media_type}, {n} visual tokens`, plus a parenthetical describing what
+was read) followed by the image.
+
+**Two limits bound the realized size**, and the header names which one bound,
+because only one of them leaves a re-read worth trying. `long_edge` (default
+1568, ceiling 2576) is the request's own cap; the visual-token budget (4784
+patches on the high-resolution tier) is the provider's, and it binds first on
+any frame past roughly 1930×1930 — a 2400×2400 source asked for at 2576
+realizes 1932×1932 no matter what edge was requested. `read_image` derives which
+by re-running `resized_size` with one limit relaxed at a time: if the size at
+the maximum `long_edge` differs from the realized size, the request's
+`long_edge` bound (advise a larger one); if it does not, dropping the token cap
+tells the budget apart from the 2576-px edge ceiling. Naming the budget matters
+because the alternative — advising a larger `long_edge` at the ceiling — costs a
+read to learn that no such value exists (observed live 2026-08-23, from both
+sides of the glass).
+
+**The region read is the escalation once a ceiling limit binds.** `region`
+(`x`, `y`, `w`, `h`, in source pixels — the header reports the source frame's
+dimensions to address into) crops **before** the sizing pass, so `long_edge` and
+the budget bound the crop rather than the frame: a region small enough to fit is
+encoded at 1:1 source resolution, sharper than any whole-frame downscale and
+usually cheaper. The header echoes the realized rectangle and its origin
+(`region 1200×900 at 100,200 of 4608×2592`) so coordinates inside the crop can
+be offset back to the full frame.
+
+Region validation splits on whether the request has a cogent reading. A shape
+failure (non-object, a missing or non-integer field, a negative coordinate) and
+a zero-area or wholly-outside-the-frame rectangle are `is_error` results — the
+request was malformed. A rectangle that *overlaps* the frame but runs off its
+far edge is **clamped**, and the header appends `clamped to the frame`: the
+model is addressing from coordinates it remembers against a frame that may have
+changed size, so the overlap is the answer to the question it asked, and the
+echoed rectangle tells it exactly what it got. Erroring there would spend a
+round trip to deliver information the header already carries.
+
+Encoding policy: fitting API-native bytes pass through
+verbatim; a crop, resize, or transcode re-encodes — JPEG stays JPEG (quality 85),
 everything else becomes lossless WebP (the pure-Rust WebP encoder is
 lossless-only). The tier limits are hardcoded to the high-resolution tier
 until provider awareness supplies the session model's own; a standard-tier

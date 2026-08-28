@@ -68,6 +68,22 @@ pub(in crate::tui) fn call_args(
                         action: None,
                     });
                 }
+                // A `region` says the call read part of the frame, which is the
+                // difference between two reads of the same path.
+                if let Some(region) = call_input.get("region")
+                    && let (Some(x), Some(y), Some(w), Some(h)) = (
+                        region.get("x").and_then(|v| v.as_i64()),
+                        region.get("y").and_then(|v| v.as_i64()),
+                        region.get("w").and_then(|v| v.as_i64()),
+                        region.get("h").and_then(|v| v.as_i64()),
+                    )
+                {
+                    spans.push(Span {
+                        text: format!(" · region {w}×{h} at {x},{y}").into(),
+                        style: SpanStyle::Comment,
+                        action: None,
+                    });
+                }
                 return (Some(spans), vec![]);
             }
         }

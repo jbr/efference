@@ -69,6 +69,35 @@ pub fn resized_size(width: u32, height: u32, max_edge: u32, max_tokens: u32) -> 
     (lo, short(lo))
 }
 
+/// A source-pixel rectangle to read instead of the whole frame
+/// (docs/tools.md). The crop runs **before** [`resized_size`], so `max_edge`
+/// and the token budget bound the crop rather than the frame — a region small
+/// enough to fit the budget is read at 1:1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Crop {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Crop {
+    /// The part of this rectangle that lies inside a `frame_width × frame_height`
+    /// image, or `None` when the overlap is empty (an origin at or past either
+    /// far edge). A request whose extent runs off the frame is clamped rather
+    /// than refused: the caller addresses from coordinates it remembers, and
+    /// the realized rectangle is reported back in the result header.
+    pub fn clamped_to(self, frame_width: u32, frame_height: u32) -> Option<Crop> {
+        let width = self.width.min(frame_width.checked_sub(self.x)?);
+        let height = self.height.min(frame_height.checked_sub(self.y)?);
+        (width > 0 && height > 0).then_some(Crop {
+            width,
+            height,
+            ..self
+        })
+    }
+}
+
 /// A prepared image: bytes ready for a wire `image` block, at their final
 /// dimensions.
 #[derive(Debug)]
@@ -79,15 +108,29 @@ pub struct Prepared {
     pub media_type: &'static str,
     pub width: u32,
     pub height: u32,
-    /// The dimensions as decoded, before any downscale — what a result header
-    /// cites so the model knows more detail exists to re-request.
+    /// The dimensions of the whole decoded frame, before any crop or downscale
+    /// — what a result header cites so the model knows what it addressed into
+    /// and that more detail exists to re-request.
     pub source_width: u32,
     pub source_height: u32,
+    /// The rectangle actually read, when a region was requested — already
+    /// clamped to the frame, so it may be smaller than what was asked for.
+    pub crop: Option<Crop>,
 }
 
 impl Prepared {
     pub fn visual_tokens(&self) -> u32 {
         visual_tokens(self.width, self.height)
+    }
+
+    /// The dimensions handed to [`resized_size`]: the crop's when a region was
+    /// read, the frame's otherwise. The scale factor a header reports is
+    /// relative to this, not to the frame.
+    pub fn pre_scale_size(&self) -> (u32, u32) {
+        match self.crop {
+            Some(crop) => (crop.width, crop.height),
+            None => (self.source_width, self.source_height),
+        }
     }
 }
 
@@ -99,6 +142,8 @@ pub enum Error {
     Decode(image::ImageError),
     #[error("encoding failed: {0}")]
     Encode(image::ImageError),
+    #[error("region does not overlap the {0}×{1} image")]
+    RegionOutsideFrame(u32, u32),
 }
 
 /// Original bytes above this size are re-encoded even when the dimensions
@@ -127,12 +172,45 @@ fn api_native(format: ImageFormat) -> Option<&'static str> {
 ///   becomes lossless WebP (screenshots and UI compress well losslessly, and
 ///   the pure-Rust WebP encoder is lossless-only by design).
 pub fn prepare(bytes: &[u8], max_edge: u32, max_tokens: u32) -> Result<Prepared, Error> {
+    prepare_region(bytes, None, max_edge, max_tokens)
+}
+
+/// [`prepare`], reading only `region` of the decoded frame when one is given.
+///
+/// The crop precedes the sizing pass, so `max_edge` and `max_tokens` bound the
+/// region: a region that already fits is encoded at 1:1 source resolution,
+/// which is the escalation path once the token budget bounds the whole frame
+/// (docs/tools.md). A region running off the frame is clamped; one that does
+/// not overlap the frame at all is [`Error::RegionOutsideFrame`].
+pub fn prepare_region(
+    bytes: &[u8],
+    region: Option<Crop>,
+    max_edge: u32,
+    max_tokens: u32,
+) -> Result<Prepared, Error> {
     let format = image::guess_format(bytes).map_err(|_| Error::Unrecognized)?;
     let decoded = image::load_from_memory(bytes).map_err(Error::Decode)?;
+    let (frame_width, frame_height) = (decoded.width(), decoded.height());
+
+    let crop = match region {
+        None => None,
+        Some(requested) => Some(
+            requested
+                .clamped_to(frame_width, frame_height)
+                .ok_or(Error::RegionOutsideFrame(frame_width, frame_height))?,
+        ),
+    };
+    let decoded = match crop {
+        None => decoded,
+        Some(crop) => decoded.crop_imm(crop.x, crop.y, crop.width, crop.height),
+    };
     let (width, height) = (decoded.width(), decoded.height());
     let (target_w, target_h) = resized_size(width, height, max_edge, max_tokens);
 
-    if (target_w, target_h) == (width, height)
+    // A cropped read never passes through: the stored bytes are the region, not
+    // the file.
+    if crop.is_none()
+        && (target_w, target_h) == (width, height)
         && bytes.len() <= PASSTHROUGH_BYTE_CAP
         && let Some(media_type) = api_native(format)
     {
@@ -143,6 +221,7 @@ pub fn prepare(bytes: &[u8], max_edge: u32, max_tokens: u32) -> Result<Prepared,
             height,
             source_width: width,
             source_height: height,
+            crop: None,
         });
     }
 
@@ -175,8 +254,9 @@ pub fn prepare(bytes: &[u8], max_edge: u32, max_tokens: u32) -> Result<Prepared,
         media_type,
         width: target_w,
         height: target_h,
-        source_width: width,
-        source_height: height,
+        source_width: frame_width,
+        source_height: frame_height,
+        crop,
     })
 }
 

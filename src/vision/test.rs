@@ -114,6 +114,63 @@ fn alpha_survives_reencode() {
     );
 }
 
+/// A region is cropped from the frame before sizing, so the limits bound the
+/// crop; `Prepared` reports the frame it came from and the rectangle read.
+#[test]
+fn a_region_is_cropped_before_sizing() {
+    let png = png_bytes(200, 200);
+    let region = Crop {
+        x: 10,
+        y: 20,
+        width: 50,
+        height: 40,
+    };
+    let prepared = prepare_region(&png, Some(region), 56, 1568).unwrap();
+    // The whole frame at max_edge 56 would be 56×56; the region fits as-is.
+    assert_eq!((prepared.width, prepared.height), (50, 40));
+    assert_eq!((prepared.source_width, prepared.source_height), (200, 200));
+    assert_eq!(prepared.crop, Some(region));
+    assert_eq!(prepared.pre_scale_size(), (50, 40));
+    // A cropped read never passes through: the bytes are the region.
+    assert_eq!(prepared.media_type, "image/webp");
+}
+
+/// A region overhanging the frame is clamped to the overlap; one with no
+/// overlap is an error.
+#[test]
+fn region_clamping_and_the_empty_case() {
+    let region = Crop {
+        x: 80,
+        y: 40,
+        width: 50,
+        height: 50,
+    };
+    assert_eq!(
+        region.clamped_to(100, 60),
+        Some(Crop {
+            x: 80,
+            y: 40,
+            width: 20,
+            height: 20
+        })
+    );
+    assert_eq!(region.clamped_to(80, 60), None);
+    assert_eq!(region.clamped_to(200, 200), Some(region));
+
+    let png = png_bytes(100, 60);
+    assert!(prepare_region(&png, Some(region), 1568, 1568).is_ok());
+    let outside = Crop {
+        x: 100,
+        y: 0,
+        width: 10,
+        height: 10,
+    };
+    assert!(matches!(
+        prepare_region(&png, Some(outside), 1568, 1568),
+        Err(Error::RegionOutsideFrame(100, 60))
+    ));
+}
+
 /// A non-image is a hard error, never a silent empty result.
 #[test]
 fn garbage_is_unrecognized() {
