@@ -186,13 +186,20 @@ is no freeform parsing. The verdict is one of three forms:
 `retain(none)` is not silent: the note stays on the canonical wire so the agent
 doesn't re-run what it just disowned — inline dead-end shedding at the source.
 
-On a transport error, or when the in-fork retries are exhausted without a usable
+An aborted peek stream is retried first, on the main loop's budget and schedule
+([transport.md](transport.md)) — the fork's tail is throwaway, so the retry re-sends
+the same bytes over the warm prefix. When those attempts are exhausted, when the
+request itself fails, or when the in-fork retries are exhausted without a usable
 verdict, the gate **withholds the output as a hard error** — there is no keep-all
 fallback. Each result's wire form becomes `WireState::TriageFailed`: an error
 `tool_result` (`is_error` forced true) saying the output was withheld and why, and
 that the call itself ran to completion — so the agent treats it exactly like a failed
 call, deciding whether to re-issue it with side effects in mind, and the operator sees
-the same error in the transcript. The full untriaged raw is never the fallback:
+the same error in the transcript. The message attributes the failure to the harness
+rather than to the call, and makes the re-issue advice conditional on re-running being
+safe: agents have read an unattributed triage failure as their own tool failing and
+adapted a tool-use strategy that was never the problem, and a blind re-issue of a
+stateful command has turned a passing result into a failing one. The full untriaged raw is never the fallback:
 `WireState` is fixed once, so an uncurated result would sit in the cached prefix for
 the rest of the session with every later turn paying for it. `raw` stays in the log
 (the TUI can flip the result to raw), and the `Triage` records the same **breadcrumb**

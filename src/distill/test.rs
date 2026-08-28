@@ -939,3 +939,20 @@ fn the_roster_gives_each_item_a_path_but_not_its_summary() {
     );
     assert!(!view.contains("[ferritin]"), "not the bare name: {view}");
 }
+
+/// The fork peek retries a stream that dies before finalizing on the **same budget and
+/// schedule** as the main loop's own aborted turns (docs/transport.md) — one policy for
+/// one failure, whichever surface it lands on. Before this, an aborted peek withheld on
+/// the first abort while an aborted turn got four attempts; a controlled run caught the
+/// asymmetry costing nine turns and a spurious conformance failure
+/// (docs/transport.md).
+#[test]
+fn an_aborted_peek_stream_backs_off_on_the_main_loops_budget() {
+    use std::time::Duration;
+    assert_eq!(abort_backoff(1), Some(Duration::from_secs(1)));
+    assert_eq!(abort_backoff(2), Some(Duration::from_secs(2)));
+    assert_eq!(abort_backoff(3), Some(Duration::from_secs(4)));
+    // The fourth abort exhausts the budget: no pause, withhold.
+    assert_eq!(abort_backoff(STREAM_ABORT_ATTEMPTS), None);
+    assert_eq!(abort_backoff(STREAM_ABORT_ATTEMPTS + 1), None);
+}

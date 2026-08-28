@@ -162,6 +162,18 @@ output-token-cap notification) and returns to idle — the operator's view and
 the agent's next triage gate both see that the turn was not completed, rather
 than a silence indistinguishable from the model producing nothing.
 
+The **fork peek** now takes the same treatment on the same budget: an aborted
+peek stream is retried up to `STREAM_ABORT_ATTEMPTS` times with the same
+doubling pause, re-sending byte-identical messages over the warm prefix (its
+tail is throwaway, so nothing has to be committed to arrange the replay). Only
+on exhaustion does the gate withhold. The surfaces used to disagree — an
+aborted turn got four attempts while an aborted peek withheld on the first —
+and the asymmetry was expensive in a way the turn path is not: a withheld
+result asks the agent to re-issue a call whose side effects already stand. In a
+controlled run a withheld conformance `PASS` was re-earned by re-running the
+suite against a still-live server whose counters the invisible first run had
+moved, turning the pass into a spurious failure.
+
 An exhausted *open* failure (a non-2xx after the retry handler gives up) still
 fails the current trajectory rather than the daemon, but no longer only to
 stderr: the loop appends an empty record-only assistant entry carrying the

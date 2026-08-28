@@ -33,6 +33,7 @@ use std::collections::HashSet;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::agent::STREAM_ABORT_ATTEMPTS;
 use crate::api::{Client, Completion, RequestUsage, ToolChoice};
 use crate::context::Item;
 use crate::inbox::ShownNotification;
@@ -135,10 +136,12 @@ pub struct GateOutcome {
     /// request reads the shared canonical prefix (sliding its cache TTL), and the loop
     /// folds them all into the cache telemetry (docs/log-and-projection.md).
     pub usage: Vec<RequestUsage>,
-    /// One attempt-stamped breadcrumb per non-compliant peek attempt — recorded even
-    /// when a retry recovered (docs/redaction-fork.md). The loop lands these on the
-    /// gate's `Triage` (`retries`), the durable compliance record; a runtime triage
-    /// failure is never accepted silently.
+    /// One attempt-stamped breadcrumb per peek attempt that had to be retried —
+    /// recorded even when a retry recovered (docs/redaction-fork.md). Two families,
+    /// distinguishable by wording: a non-compliant verdict (wrong tool, no tool,
+    /// malformed input), and a stream that died before finalizing. The loop lands
+    /// these on the gate's `Triage` (`retries`), the durable record; a runtime triage
+    /// failure is never accepted silently, recovered or not.
     pub retries: Vec<String>,
 }
 
@@ -261,9 +264,11 @@ pub struct ForkPeek {
 /// is renewed. That keeps the fork API-valid and the retry a warm prefix-extension
 /// rather than a new request shape.
 ///
-/// Transport errors are deliberately *not* retried here — a failed request is the
-/// transport's problem, and retrying transient statuses belongs on the `Client`
-/// (docs/transport.md).
+/// A *stream that dies before finalizing* is retried too, by [`peek_completion`], on the
+/// same budget the main loop gives its own turns — separate from the compliance budget
+/// above, because an aborted stream produced no verdict to be non-compliant with. A
+/// failed request (nothing streamed) is still not retried here: the `Client` has
+/// already exhausted the transient family for it (docs/transport.md).
 async fn peek_with_retries<T>(
     client: &Client,
     mut messages: Vec<ApiMessage>,
@@ -274,24 +279,7 @@ async fn peek_with_retries<T>(
     retries: &mut Vec<String>,
 ) -> Result<T, String> {
     for attempt in 1..=PEEK_ATTEMPTS {
-        // No-op sink: the fork peek's triage tokens are internal and must never surface
-        // on the control stream — only the main thread's prose streams.
-        let completion = match client
-            .complete(&messages, tools, ToolChoice::auto(), |_| {})
-            .await
-        {
-            Ok(completion) => completion,
-            Err(e) => return Err(format!("peek request failed: {e}")),
-        };
-        usage.push(completion.request_usage());
-        // An unfinalized peek stream (docs/transport.md) is a transport failure, not a
-        // verdict: whatever partial arrived is untrusted and un-replayable (the in-fork
-        // retry replays the assistant turn, which the API rejects without its thinking
-        // signature intact). Fail the gate — the fallback posture is
-        // distill-failure-fallback.md's open question, decided there, not here.
-        if let Some(why) = completion.upstream_failure() {
-            return Err(format!("peek stream aborted upstream: {why}"));
-        }
+        let completion = peek_completion(client, &messages, tools, usage, retries).await?;
         let parsed = parse(&completion);
         match parsed {
             Ok(verdict) => return Ok(verdict),
@@ -310,6 +298,78 @@ async fn peek_with_retries<T>(
         }
     }
     unreachable!("the loop returns on the final attempt")
+}
+
+/// One peek round-trip, retried while its **stream dies before finalizing**
+/// (docs/transport.md) — the same treatment, on the same budget
+/// ([`STREAM_ABORT_ATTEMPTS`]) and the same doubling pause (1s/2s/4s), that the main
+/// loop gives an aborted turn.
+///
+/// The partial is discarded rather than replayed: whatever arrived is untrusted, and
+/// the in-fork compliance retry's trick of replaying the assistant turn does not apply
+/// (the API rejects a replayed turn without its thinking signature intact). Nothing
+/// needs replaying, because the fork's tail is throwaway — the retry re-sends the
+/// byte-identical `messages` over the still-warm prefix, exactly as the main loop's
+/// record-only partial arranges for its own replay.
+///
+/// Why retry at all, when withholding is a defined outcome: withholding hands the
+/// agent a call it must decide whether to re-run, and re-running is not free or always
+/// safe. In a controlled run a withheld conformance `PASS` was re-earned by re-running
+/// the suite against a still-live server, whose counters the invisible first run had
+/// already moved — turning a pass into a spurious failure and costing nine turns
+/// (docs/transport.md). Exhaustion still withholds; it now takes several attempts to
+/// reach.
+///
+/// Every attempt's [`RequestUsage`] is pushed — the request happened and slid the
+/// prefix's TTL whether or not it finalized — and every abort leaves an
+/// attempt-stamped breadcrumb in `retries`, so a recovered abort is still visible in
+/// the corpus rather than silently absorbed.
+async fn peek_completion(
+    client: &Client,
+    messages: &[ApiMessage],
+    tools: &[Value],
+    usage: &mut Vec<RequestUsage>,
+    retries: &mut Vec<String>,
+) -> Result<Completion, String> {
+    let mut aborted: u32 = 0;
+    loop {
+        // No-op sink: the fork peek's triage tokens are internal and must never surface
+        // on the control stream — only the main thread's prose streams.
+        let completion = match client
+            .complete(messages, tools, ToolChoice::auto(), |_| {})
+            .await
+        {
+            Ok(completion) => completion,
+            Err(e) => return Err(format!("peek request failed: {e}")),
+        };
+        usage.push(completion.request_usage());
+        let Some(why) = completion.upstream_failure().map(str::to_string) else {
+            return Ok(completion);
+        };
+        aborted += 1;
+        retries.push(format!(
+            "stream aborted upstream (attempt {aborted} of {STREAM_ABORT_ATTEMPTS}): {why}"
+        ));
+        let Some(pause) = abort_backoff(aborted) else {
+            return Err(format!(
+                "peek stream aborted upstream, {aborted} attempts exhausted: {why}"
+            ));
+        };
+        log::warn!(
+            "fork peek stream aborted (attempt {aborted} of \
+             {STREAM_ABORT_ATTEMPTS}): {why}; retrying"
+        );
+        tokio::time::sleep(pause).await;
+    }
+}
+
+/// The policy half of [`peek_completion`]'s abort loop, split out so it can be
+/// asserted without a live upstream: given how many attempts have now aborted, the
+/// pause before the next one, or `None` when the budget ([`STREAM_ABORT_ATTEMPTS`]) is
+/// spent and the gate must withhold. Doubling from one second — the same schedule the
+/// main loop uses for its own aborted turns.
+fn abort_backoff(aborted: u32) -> Option<std::time::Duration> {
+    (aborted < STREAM_ABORT_ATTEMPTS).then(|| std::time::Duration::from_secs(1 << (aborted - 1)))
 }
 
 /// Extend the fork's throwaway tail past a non-compliant response, keeping the

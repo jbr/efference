@@ -9,12 +9,24 @@ use super::*;
 /// projection and the TUI projection share this one renderer; like
 /// [`render_distilled`] it is deterministic, a pure function of its input.
 ///
+/// Two wording constraints, both from observed misreadings. It said "its output was
+/// not recorded", which is false — the raw sits in `log.jsonl` and only the
+/// agent-facing projection lost it; and it left the failure unattributed, so an agent
+/// reading a peek's rate limit blamed its own tool and re-issued `ls` in shrinking
+/// forms (harness-eval r1, `inclusionai/ling-3.0-flash`). It now names the harness as
+/// the thing that failed. The re-issue advice is conditional because re-running is not
+/// always safe: a withheld conformance-suite `PASS` was re-run against a still-live
+/// server whose counters the first run had already moved, turning a pass into a
+/// spurious failure (harness-eval sealed r1, `google/gemini-3.7-flash`).
+///
 /// [`WireState::TriageFailed`]: crate::log::WireState::TriageFailed
 pub fn render_triage_failure(why: &str) -> String {
     format!(
-        "result withheld — triage failed ({why}). The call ran to completion and its \
-         side effects stand, but its output was not recorded. Re-issue the call if the \
-         output is still needed."
+        "result withheld — triage failed ({why}). This is a harness failure, not a \
+         failure of your call: the call ran to completion and its side effects stand, \
+         and its raw output is in the session log — only the step that curates it for \
+         you did not complete. Re-issue the call if its output is still needed and \
+         running it again is safe."
     )
 }
 

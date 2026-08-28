@@ -87,8 +87,10 @@ const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 /// the still-warm prefix), then the request goes again after a doubling pause
 /// (1s/2s/4s). Sized to match the transport's own transient family
 /// (`RETRY_MAX_ATTEMPTS`); observed live 2026-08-21, three consecutive aborts
-/// with a success interleaved — provider flakiness, not a hard fault.
-const STREAM_ABORT_ATTEMPTS: u32 = 4;
+/// with a success interleaved — provider flakiness, not a hard fault. The fork
+/// peek reaches for this same constant (`distill.rs`): one stated policy for a
+/// stream that dies before finalizing, whichever surface it lands on.
+pub(crate) const STREAM_ABORT_ATTEMPTS: u32 = 4;
 
 /// Drive the loop until input ends. The log lives in [`Shared`]; the loop appends
 /// through it.
