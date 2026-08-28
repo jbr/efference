@@ -125,6 +125,25 @@ to `["git", "push"]`), so the same check that admits a sub-verb grant admits a s
 The value vocabulary is closed — the four stance words plus the `bool` sugar — so a misspelled
 stance is a parse error rather than a silently-ignored entry.
 
+## Ahead of the cascade: the call has to name something (`src/agent/step.rs`)
+
+Two calls never enter the cascade at all, because neither poses a permission question.
+A peek tool (`retain`/`triage`) called when nothing was asked of it is paired with the
+nudge result ([redaction-fork.md](redaction-fork.md)). And a call naming **no tool this
+turn advertised** is answered with `tools::unknown_tool_message` — the mounted names, plus
+a pointer at `bash` for a name that is a program — as a `Direct` payload, so the correction
+reaches the wire verbatim rather than through the triage gate.
+
+The membership test reads the names off `agent::tool_definitions` itself, minus the peek
+tools, so what the check accepts and what the request advertised cannot drift.
+
+The check is ahead of the rungs rather than inside one because the call cannot run whatever
+any rung answers. Asked anyway, the spotter answered: it returned `clear` for a call naming
+a nonexistent tool, with a rationale invented for the call it imagined ("reversible query
+that doesn't modify state or escape the repo"), and `spotter-log` counted that as a clean
+clear. A rung that judges intent against `scope` and `watch-for` has nothing in its inputs
+that says the target does not exist.
+
 ## The fast-path (`src/policy.rs`)
 
 `classify(&Config, &ToolCall) -> Verdict` is a **pure function** — no I/O, no model —

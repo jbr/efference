@@ -129,6 +129,18 @@ pub(super) fn unasked(call: &ToolCall) -> Payload {
     }
 }
 
+/// A `tool_result` for a call naming no tool the turn advertised (docs/tools.md).
+/// Built ahead of the permission cascade — a call that cannot run needs no
+/// permission decision — and carried as a `Direct` payload, so the corrective text
+/// reaches the wire unsummarized. `is_error`, because the call was not cogent.
+pub(super) fn unknown_tool(call: &ToolCall, callable: &[String]) -> Payload {
+    Payload::ToolResult {
+        call_id: call.id.clone(),
+        raw: err(crate::tools::unknown_tool_message(&call.name, callable)),
+        wire: WireState::Raw,
+    }
+}
+
 /// A `tool_result` standing in for a call that didn't run (aborted). Every
 /// assistant `tool_use` needs exactly one paired result or projection orphans it
 /// and the API rejects the request (docs/README.md).

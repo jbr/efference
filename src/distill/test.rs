@@ -773,6 +773,35 @@ fn every_retain_ask_excludes_the_transcript_behind_it() {
     }
 }
 
+/// The verdict's two halves are asked to agree with each other, not merely with the raw.
+/// Observed in session `1784345627488`: a `search` for `^}` returned 19 matches, the
+/// verdict kept one line, and the `note` stated a fact about a *different* match that the
+/// kept line did not show. The claim was true of the raw and unsupported by anything that
+/// survived onto the wire, so the session re-verified with `wc -l` and `tail` before
+/// trusting either half — the cost of an unauditable summary is paid on every later
+/// result too (docs/redaction-fork.md).
+#[test]
+fn the_ask_grounds_the_note_in_the_kept_lines_and_flags_a_partial_enumeration() {
+    for offered in [
+        vec!["only".to_string()],
+        vec!["a".to_string(), "b".to_string()],
+    ] {
+        let instruction = retain_instruction(&offered, &[]);
+        assert!(
+            instruction.contains("Ground it in\n              the lines you kept"),
+            "the note must be answerable from what survives: {instruction}"
+        );
+        assert!(
+            instruction.contains("that line belongs in `keep`"),
+            "a claim about a line requires keeping that line: {instruction}"
+        );
+        assert!(
+            instruction.contains("keep\n              the enumeration whole"),
+            "a partial keep of an enumeration must be said, not implied: {instruction}"
+        );
+    }
+}
+
 /// A lone keyed entry whose `call_id` doesn't match is re-keyed on a single-result gate:
 /// with one target there is nothing to mis-attribute *to*, so withholding output the
 /// model plainly triaged over a mistyped id buys nothing. With several offered the same

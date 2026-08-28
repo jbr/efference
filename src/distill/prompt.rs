@@ -21,15 +21,28 @@ pub(super) const ASK_BANNER: &str = "═══ triage · answer, don't act ═�
 /// (journal/2026-08-07-session-key-review.md). Dropping the wrong lines is the failure this
 /// gate is designed against; asserting past the output is worse, because nothing
 /// downstream can detect it.
+///
+/// Two clauses answer a second observed shape of the same failure, where the note was
+/// true of the *raw* and unsupported by the *kept lines*. A `search` for `^}` returned
+/// 19 matches; the verdict kept one line — the second-to-last match — and the note
+/// stated a fact about the last one. Both halves reached the wire, disagreeing, and the
+/// session re-verified with `wc -l`/`tail` before it would use either. So `note` is
+/// asked to be grounded in what survives rather than in what was shown, and `keep` is
+/// told that a partial keep of an enumeration reads afterwards as the whole set — the
+/// case where a lean verdict silently changes the answer rather than shortening it.
 // NB: each row's first line sits on the opening-quote line. A `"\` continuation would eat
 // the newline *and* the leading indent behind it, silently de-indenting the first row only.
 const KEEP_FIELDS: &str =
     "  keep        \"all\", \"none\", or comma-separated 1-based inclusive line ranges like
               \"40-52,310-318\". Whatever you drop is gone from the working context, so keep
               anything that might matter for the rest of the task, while staying as lean
-              as you can.
+              as you can. Where the output enumerates — matches, a listing, a set of
+              candidates — the lines you keep read afterwards as the whole set, so keep
+              the enumeration whole or say in the `note` how many of how many survived.
   note        One line, saying what this output showed — only what it showed. Do not
-              generalize past it or explain what it means for the task. Where the
+              generalize past it or explain what it means for the task. Ground it in
+              the lines you kept, not the ones you dropped: if the note turns on a
+              particular line, that line belongs in `keep`. Where the
               result header carries an `intent`, answer it from what is shown; \"it
               didn't\" is an answer, and often the one worth keeping.";
 

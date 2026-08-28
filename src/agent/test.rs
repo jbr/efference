@@ -428,3 +428,96 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
         "every tool_use is answered exactly once, in order"
     );
 }
+
+/// A frontend that must not be reached. A call naming no tool cannot run, so nothing
+/// on the permission path — human gate included — should be asked about it.
+struct NeverGates;
+
+impl Frontend for NeverGates {
+    async fn read_user_turn(&mut self) -> Option<crate::frontend::SubmittedTurn> {
+        unreachable!("the loop is not running")
+    }
+    async fn approve(&mut self, call: &ToolCall) -> Approval {
+        panic!(
+            "a call naming no tool reached the human gate: {}",
+            call.name
+        )
+    }
+    async fn interrupted(&mut self) -> crate::frontend::Interrupt {
+        unreachable!("no tool runs")
+    }
+}
+
+/// The spotter rung, which must not be consulted either. Asked anyway on the observed
+/// incident, it returned `clear` for a nonexistent tool with a rationale invented for
+/// the call it imagined (journal/2026-08-07-session-key-review.md).
+struct NeverAsked;
+
+impl Spotter for NeverAsked {
+    async fn assess(
+        &self,
+        _role: &crate::config::Config,
+        call: &ToolCall,
+        _brief: Option<&crate::tools::ToolBrief<'_>>,
+        _probe: Option<&str>,
+    ) -> crate::spotter::Spotting {
+        panic!("a call naming no tool reached the spotter: {}", call.name)
+    }
+}
+
+/// The existence check sits ahead of the whole permission cascade: a call naming no
+/// advertised tool is answered with the corrective result text without any rung being
+/// asked a question it has no way to answer (docs/permissions.md, docs/tools.md).
+#[tokio::test]
+async fn a_call_naming_no_tool_is_answered_ahead_of_the_cascade() {
+    let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
+    let toolbox = Toolbox::bash_only();
+    let call = call("ferritin");
+    let decision = run_call(&mut NeverGates, &shared, &NeverAsked, &toolbox, 1, &call)
+        .await
+        .expect("the check answers rather than erroring");
+    let Decision::Direct(payloads) = decision else {
+        panic!("an unrunnable call is answered directly, never run or gated");
+    };
+    let [Payload::ToolResult { call_id, raw, wire }] = &payloads[..] else {
+        panic!("exactly one paired tool_result, or projection orphans the tool_use");
+    };
+    assert_eq!(call_id, &call.id);
+    assert!(raw.is_error, "the call was not cogent");
+    // `Direct` payloads never enter the triage gate, so the correction reaches the wire
+    // verbatim — no summary stands between it and the model (docs/redaction-fork.md).
+    assert!(matches!(wire, WireState::Raw));
+    for expected in ["unknown tool: ferritin", "Mounted tools: bash", "`bash`"] {
+        assert!(
+            raw.content.contains(expected),
+            "{expected:?} in {:?}",
+            raw.content
+        );
+    }
+}
+
+/// The callable set is read off the turn's own `tools[]`, minus the peek tools — which
+/// stand in every array for cache-lineage reasons but are never asked for on an agent
+/// turn (docs/redaction-fork.md). Reading the same array is what keeps the check from
+/// rejecting a tool the model was just shown.
+#[test]
+pub(super) fn callable_names_are_the_advertised_ones_minus_the_peek_tools() {
+    let toolbox = Toolbox::bash_only();
+    let callable = super::callable_names(&toolbox);
+    for advertised in [crate::bash::NAME, crate::consolidate::NAME] {
+        assert!(
+            callable.iter().any(|n| n == advertised),
+            "{advertised} is advertised, so a call may name it: {callable:?}"
+        );
+    }
+    for peek in tool_definitions(&toolbox)
+        .iter()
+        .filter_map(|d| d.get("name")?.as_str())
+        .filter(|n| is_peek_tool(n))
+    {
+        assert!(
+            !callable.iter().any(|n| n == peek),
+            "{peek} is advertised but never asked for on an agent turn"
+        );
+    }
+}

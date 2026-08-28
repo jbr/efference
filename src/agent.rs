@@ -20,7 +20,7 @@ use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
 use crate::daemon::{RequestOrigin, Shared, Stall, StallReason, StreamDelta};
-use crate::distill::{BgVerdict, Distiller, Pending, is_peek_tool};
+use crate::distill::{BgVerdict, ForkPeek, Pending, is_peek_tool};
 use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
@@ -51,6 +51,21 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     tools.push(crate::distill::retain_tool());
     tools.push(crate::distill::triage_tool());
     tools
+}
+
+/// The names a turn's `tools[]` carries that a call may actually name — read off
+/// [`tool_definitions`] itself, so the advertised array and this list cannot drift.
+///
+/// The peek tools are excluded: `retain`/`triage` stand in every array for
+/// cache-lineage reasons but nothing is ever asked of them on an agent turn, and an
+/// un-asked call is short-circuited before this is consulted
+/// (docs/redaction-fork.md). What is left is what a call can name and have run.
+pub fn callable_names(toolbox: &Toolbox) -> Vec<String> {
+    tool_definitions(toolbox)
+        .iter()
+        .filter_map(|d| d.get("name")?.as_str().map(str::to_string))
+        .filter(|name| !crate::distill::is_peek_tool(name))
+        .collect()
 }
 
 /// The spotter's brief for any tool a turn advertises — the lookup mirror of
@@ -188,11 +203,11 @@ fn record_absorbed_attempts(
 
 /// Drive the loop until input ends. The log lives in [`Shared`]; the loop appends
 /// through it.
-pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
+pub async fn run<F: Frontend, S: Spotter>(
     client: &Client,
     frontend: &mut F,
     shared: Arc<Shared>,
-    distiller: D,
+    distiller: ForkPeek,
     spotter: S,
     toolbox: Toolbox,
 ) -> Result<(), Error> {

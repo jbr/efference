@@ -27,9 +27,12 @@ cache-prefix invariant). The real cost to watch is discoverability failure: a
 capability that never fires because its hint did not trigger — hints deserve
 the same iteration as the tools themselves.
 
-The redaction policy — deterministic rule vs. fork vs. eventual small
-distiller — is kept pluggable behind a trait. It is the most-iterated
-knob; see `redaction-fork.md`.
+The redaction policy is the most-iterated knob; see `redaction-fork.md`. It is
+one concrete type (`ForkPeek`), not a trait: the single-implementation
+`Distiller` bound it was built behind was threaded through three signatures for
+a polymorphism nothing exercised, and the swap the backlog names — a smaller
+model behind the same peek — is a field and a different client, not a second
+implementation.
 
 ## The `intent` property
 
@@ -193,6 +196,19 @@ that grows a structured or multimodal result reads the same way as a remote
 one. Any failure
 (bad input or tool error) becomes an `is_error` result so the `tool_use` always
 gets exactly one paired `tool_result` — the API rejects orphans.
+
+#### A name no tool owns
+
+`tools::unknown_tool_message` is what a call naming no tool gets back: the names
+that do exist, and — since `bash` is always mounted — a pointer at it for a name
+that is a program rather than a tool. `unknown tool: <name>` alone says what
+failed, not what would work; in the incident behind this, the name was an allowed
+bash prefix the session had met as a listed skill, and the peek then wrote a false
+lesson the raw never claimed ("not available in this environment") onto the
+canonical wire. A correction the result text states outright is one a summary can
+compress but not invent past. The loop applies it ahead of the permission cascade
+over the whole advertised set ([permissions.md](permissions.md)); the `Toolbox`
+keeps its own copy for a name that reaches dispatch under no provider.
 
 #### Which outcomes are errors
 

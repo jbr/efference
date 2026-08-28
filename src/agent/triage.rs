@@ -32,11 +32,11 @@ impl IdleWake {
 /// **true** iff it pinned something — the escalation contract: a pin grows the wire, so
 /// the caller runs a real turn to act on it; nothing pinned leaves the projection
 /// byte-identical (audit-only), so the agent returns to idle with its cache still hot.
-pub(super) async fn run_idle_triage<D: Distiller>(
+pub(super) async fn run_idle_triage(
     client: &Client,
     tools: &[Value],
     shared: &Arc<Shared>,
-    distiller: &D,
+    distiller: &ForkPeek,
     turn: &mut Turn,
 ) -> Result<bool, Error> {
     // Let a burst settle so several events triage together, not one peek each.

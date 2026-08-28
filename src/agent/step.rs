@@ -65,6 +65,20 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     if is_peek_tool(&call.name) {
         return Ok(Decision::Direct(vec![unasked(call)]));
     }
+    // A call naming no tool this turn advertised is answered here, ahead of the
+    // permission cascade (docs/permissions.md). There is nothing to decide: the call
+    // cannot run whatever the answer, so no policy question arises and no rung should
+    // be asked one. The spotter, asked anyway, returned `clear` for a nonexistent tool
+    // with a rationale it invented for the call it imagined
+    // (journal/2026-08-07-session-key-review.md) — a confabulated verdict that
+    // `spotter-log` then counted as a clean clear. The corrective result text
+    // (`tools::unknown_tool_message`) is the whole answer, and it reaches the wire
+    // verbatim: a `Direct` payload never enters the gate, so no summary stands between
+    // the correction and the model.
+    let callable = super::callable_names(toolbox);
+    if !callable.contains(&call.name) {
+        return Ok(Decision::Direct(vec![unknown_tool(call, &callable)]));
+    }
     // The permission cascade (docs/permissions.md). First the deterministic fast-path: a
     // `Clear` verdict auto-approves with zero model cost. What it can't clear falls to
     // the independent spotter — a fresh-context model rung that re-decides on the

@@ -43,7 +43,6 @@ use crate::api::{
 };
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
-use crate::distill::Distiller;
 use crate::frontend::{Approval, Frontend, Interrupt, SubmittedTurn};
 use crate::log::{CallId, EditState, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;

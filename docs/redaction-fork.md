@@ -186,6 +186,19 @@ is discarded, the invented claim was the only thing that reached the canonical w
 Dropping the wrong lines is the failure this gate is built against; asserting past the
 output is worse, because nothing downstream can detect it.
 
+Two further clauses answer the same failure in its second observed shape, where the note
+was true of the *raw* and unsupported by the *kept lines*. A `search` for `^}` returned 19
+matches; the verdict kept one line — the second-to-last match — and the note stated a fact
+about the last one. Both halves reached the wire disagreeing, and the session re-verified
+with `wc -l`/`tail` before it would use either, which is the cost: an unauditable summary
+is re-checked on every later result too. So `note` is asked to be grounded in what
+*survives* rather than in what was shown ("if the note turns on a particular line, that
+line belongs in `keep`"), and `keep` is told that a partial keep of an enumeration — a
+match list, a listing, a candidate set — reads afterwards as the whole set, so either the
+enumeration is kept whole or the note says how many of how many survived. That is the case
+where a lean verdict changes the answer rather than shortening it. Both clauses are pinned
+in `src/distill/test.rs`.
+
 - **One result** — top-level `keep`/`note`, **no call id**. Naming the one call whose
   output is right there is transcription with no decision in it, and it is the single
   most failure-prone token in the response.

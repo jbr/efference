@@ -13,8 +13,8 @@
 //! The same throwaway peek also triages the **inbox** (docs/inbox.md): the pending
 //! ambient notifications are shown under the output, and the `retain` verdict's
 //! `inbox` field pins / dismisses them by `[seq]`. The dispositions ride back on the
-//! [`Distillation`] and land on the logged [`Triage`](crate::log::Triage). The
-//! distiller sits behind a trait with one implementation:
+//! [`Distillation`] and land on the logged [`Triage`](crate::log::Triage). One type
+//! does the distilling:
 //!
 //! - [`ForkPeek`] — the universal triage gate (docs/redaction-fork.md): fork a
 //!   throwaway branch off the cached prefix, show the model the line-numbered raw
@@ -270,53 +270,17 @@ pub struct InboxTriage {
     pub thinking: Vec<String>,
 }
 
-/// Decide the wire form of the results a completion produced, and triage the inbox +
-/// live background processes (docs/redaction-fork.md, docs/inbox.md, docs/supervisor.md).
-/// `tools` is the turn's full `tools[]` — the fork sends the *same* array as the agent
-/// turn so both shapes share one cache lineage (docs/redaction-fork.md); `prefix` is the
-/// log through the assistant turn that made the calls (the fork's cached head);
-/// `pending` is every result that turn produced, in call order; `inbox` is the pending
-/// notifications and `background` the running processes' fresh tails to show.
-///
-/// Taking `pending` as a slice rather than one result is what makes the peek valid for a
-/// multi-call completion: the trailing assistant message carries N `tool_use` blocks, so
-/// the peek's tail must answer all N (docs/redaction-fork.md). One gate, N verdicts.
-#[allow(async_fn_in_trait)] // single-threaded loop; no Send bound needed.
-pub trait Distiller {
-    async fn distill(
-        &self,
-        client: &Client,
-        tools: &[Value],
-        prefix: &[LogEntry],
-        pending: &[Pending<'_>],
-        inbox: &[ShownNotification],
-        background: &[BgView],
-    ) -> GateOutcome;
-
-    /// Triage the inbox + background with **no tool result to ride** — the
-    /// idle-triggered standalone peek (docs/supervisor.md). The loop calls this when a
-    /// notification wakes an idle agent; it escalates to a real turn iff this pins
-    /// something. Default: no-op (the stub distiller never escalates).
-    async fn triage(
-        &self,
-        _client: &Client,
-        _tools: &[Value],
-        _prefix: &[LogEntry],
-        _inbox: &[ShownNotification],
-        _background: &[BgView],
-    ) -> InboxTriage {
-        InboxTriage {
-            inbox: Vec::new(),
-            background: Vec::new(),
-            origin: Origin::Fallback,
-            usage: Vec::new(),
-            retries: Vec::new(),
-            thinking: Vec::new(),
-        }
-    }
-}
-
 /// The model peek — the universal triage gate (docs/redaction-fork.md) realized.
+///
+/// The gate is a concrete type, not a trait object. It was built behind a
+/// single-method `Distiller` trait threaded as a generic bound through
+/// `agent::run`, `daemon::serve`, and `run_idle_triage`; the second implementation
+/// that bound existed for never arrived, and the one that briefly did (a model-free
+/// `HeadTail` stub) had no call sites, tests included. Swapping the *model* behind
+/// the peek — the measured experiment — is a field on this struct and a different
+/// `Client`, not another implementation; a materially different peek *shape* (a
+/// compacted second projection, a different transcript budget) is what would earn
+/// the indirection back.
 pub struct ForkPeek {
     /// The session's provider-derived image placement — the fork's `project` of
     /// the canonical prefix must be byte-identical to the agent turn's, or the
@@ -873,8 +837,19 @@ pub async fn peek_attempt(
     })
 }
 
-impl Distiller for ForkPeek {
-    async fn distill(
+impl ForkPeek {
+    /// Decide the wire form of the results a completion produced, and triage the inbox +
+    /// live background processes (docs/redaction-fork.md, docs/inbox.md, docs/supervisor.md).
+    /// `tools` is the turn's full `tools[]` — the fork sends the *same* array as the agent
+    /// turn so both shapes share one cache lineage (docs/redaction-fork.md); `prefix` is the
+    /// log through the assistant turn that made the calls (the fork's cached head);
+    /// `pending` is every result that turn produced, in call order; `inbox` is the pending
+    /// notifications and `background` the running processes' fresh tails to show.
+    ///
+    /// Taking `pending` as a slice rather than one result is what makes the peek valid for a
+    /// multi-call completion: the trailing assistant message carries N `tool_use` blocks, so
+    /// the peek's tail must answer all N (docs/redaction-fork.md). One gate, N verdicts.
+    pub async fn distill(
         &self,
         client: &Client,
         tools: &[Value],
@@ -1021,7 +996,7 @@ impl Distiller for ForkPeek {
     /// output). The caller wakes this when an event arrives while idle and escalates to
     /// a real turn iff it pins something. On any failure it pins/dismisses nothing —
     /// the agent simply goes back to idle, losing no data.
-    async fn triage(
+    pub async fn triage(
         &self,
         client: &Client,
         tools: &[Value],

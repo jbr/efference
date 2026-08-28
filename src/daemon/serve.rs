@@ -8,10 +8,10 @@ use super::*;
 /// arrives, so an idle daemon simply waits — retiring argv-seeding and the
 /// "backgrounded run can't get its opening prompt" problem (docs/README.md).
 #[allow(clippy::too_many_arguments)] // the daemon's full boot surface; one caller
-pub async fn serve<D: Distiller, S: Spotter>(
+pub async fn serve<S: Spotter>(
     client: Client,
     toolbox: Toolbox,
-    distiller: D,
+    distiller: crate::distill::ForkPeek,
     spotter: S,
     log: Log,
     socket: PathBuf,
