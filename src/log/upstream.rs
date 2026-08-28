@@ -122,10 +122,10 @@ pub struct StreamDiagnostics {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, String>,
     /// The `message_start` event's `data` payload as received, when one arrived.
-    /// Kept whole rather than reduced to parsed fields: OpenRouter's Chat
-    /// Completions chunks carry a `provider` naming the serving leg, and whether
-    /// the Messages skin does is unverified — keeping the body means the answer
-    /// survives without a schema change either way.
+    /// Kept whole rather than reduced to parsed fields: OpenRouter's Messages
+    /// skin carries a top-level `provider` in the `message` object naming the
+    /// serving leg (docs/transport.md), and keeping the body whole means any
+    /// other unmodeled field survives without a schema change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_start: Option<String>,
     /// The stream re-rendered from its decoded events, one `event:` / `data:`

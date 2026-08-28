@@ -268,9 +268,11 @@ from, and this one path keeps evidence with the mark. The mark itself is
   than whatever the edge attached, and the values still pass the `[env]` masker
   at append like every other stored string ([env.md](env.md)).
 - **the `message_start` body as received**, kept whole rather than reduced to
-  the fields the assembler models. OpenRouter's Chat Completions chunks carry a
-  `provider` naming the serving leg; whether the Messages skin does is
-  unverified, and keeping the body means the answer survives either way.
+  the fields the assembler models. OpenRouter's Messages skin carries a
+  top-level `provider` in the `message` object naming the serving leg
+  (verified live 2026-08-28: `"provider":"Google"`), so the captured body
+  identifies the leg directly; keeping it whole means any other unmodeled
+  field survives too.
 - **the frames**, re-rendered from the decoded events in arrival order. Not the
   socket's bytes — the SSE decoder hands over decoded events, so comments and
   line folding are already gone by then.
