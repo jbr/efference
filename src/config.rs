@@ -50,8 +50,8 @@
 //!   resolved longest-prefix-wins. Consumed by that rung.
 //! - [`Config::tools`] — structured tools the fast-path clears by name (also a set).
 //! - [`Config::paths`] — filesystem subtree grants, the one genuine value-bearing map.
-//! - [`Config::trust_threshold`] — where the watch-window/gate cutoffs sit. Consumed by
-//!   the watch-window rung (not built yet).
+//! - [`Config::trust_threshold`] — where the watch-window/gate cutoffs sit. The
+//!   watch-window rung is its only reader; the field lands ahead of it, per below.
 //!
 //! Per the convention in CLAUDE.md, the schema fields land *before* the rungs that
 //! read them — types land ahead of the feature that constructs them.
@@ -236,7 +236,7 @@ pub struct Config {
 
     /// Foreground-lifetime limits for the `bash` tool (docs/supervisor.md).
     pub bash: BashLimits,
-    /// Transport limits — today, the SSE stream duration ceiling
+    /// Transport limits — the SSE stream duration ceiling
     /// (docs/transport.md). TOML `[transport]` table.
     pub transport: TransportLimits,
     /// User-declared MCP servers to mount as connected providers (docs/tools.md).

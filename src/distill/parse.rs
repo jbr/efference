@@ -71,9 +71,9 @@ pub(super) struct InboxVerdict {
 }
 
 /// Notification ids, accepting `102` and `"102"` alike. The peek reads ids out
-/// of rendered prose (`[seq 102]`), so models stringify them routinely —
-/// observed live 2026-08-22, a fork answer whose only defect was
-/// `"pin": ["102"]`, costing a full retry. A string that isn't a number still
+/// of rendered prose (`[seq 102]`), so models stringify them routinely — a fork answer
+/// whose only defect is `"pin": ["102"]` otherwise costs a
+/// full retry. A string that isn't a number still
 /// fails the whole parse: tolerance is for transcription, not invention.
 fn lenient_ids<'de, D>(deserializer: D) -> Result<Vec<u64>, D::Error>
 where

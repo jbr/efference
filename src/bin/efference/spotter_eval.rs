@@ -1,5 +1,5 @@
 //! `efference spotter-eval` — run the labeled spotter corpus against a model
-//! (backlog/spotter-eval.md; the spotter itself is docs/permissions.md).
+//! (docs/permissions.md).
 //!
 //! Each case is a self-contained (config, call, expected) triple; the runner
 //! renders it through the production `ForkSpot::assess` path — the same
@@ -43,7 +43,7 @@ struct CaseIn {
     /// relative grants and any relative path in the move resolve against. Absent in
     /// corpus files extracted before the field existed; those fall back to the eval
     /// process's cwd, which reads another checkout's absolute in-grant paths as
-    /// outside-grants (backlog/spotter-eval.md).
+    /// outside-grants (docs/permissions.md).
     #[serde(default)]
     cwd: Option<String>,
     call: CallIn,
@@ -203,7 +203,7 @@ pub(crate) async fn spotter_eval(
 
     // Cases predating the `cwd` field render against this process's cwd, so a case
     // recorded in another checkout has its in-grant absolute paths read as
-    // outside-grants — the false-gate artifact of the 2026-08-22 sweep. Re-run
+    // outside-grants, which inflates the false-gate rate. Re-run
     // `eval/spotter/extract.py` to backfill the field rather than trusting an
     // absolute friction rate measured this way.
     let cwd_less = cases.iter().filter(|(c, ..)| c.cwd.is_none()).count();
@@ -222,9 +222,8 @@ pub(crate) async fn spotter_eval(
             let mut handles = Vec::with_capacity(cases.len());
             // One task per case; its runs go sequentially inside, so run 1 pays
             // the case's cache write and the rest read the warm prefix —
-            // concurrent same-case attempts each paid the write (observed ~3×
-            // the cost on the smoke test). Cross-case concurrency is the
-            // semaphore's job.
+            // concurrent same-case attempts would each pay the write, roughly
+            // tripling the cost. Cross-case concurrency is the semaphore's job.
             for case_index in 0..cases.len() {
                 let cases = cases.clone();
                 let semaphore = semaphore.clone();

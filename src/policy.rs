@@ -1,69 +1,26 @@
 //! The permission fast-path — the deterministic, zero-model-cost rung of the cascade
-//! (docs/permissions.md, docs/permissions.md).
+//! (docs/permissions.md).
 //!
 //! [`classify`] is a **pure function** of `(role, tool call)` returning a [`Verdict`]:
 //! `Clear` (auto-approve, no human, no model) or `Gate` (fall through to the spotter
 //! rung, then the human gate). The classifier is the *mechanism*; the role config is the
-//! *policy* — there are no special-cased program names or directories in here.
+//! *policy* — there are no special-cased program names or directories in here. It errs
+//! toward `Gate`: any doubt — a parse failure, an operator, an expansion, an unmatched
+//! prefix — gates, so being incomplete costs coverage and never soundness.
 //!
-//! ## Why this rung is sound despite being incomplete
+//! Bash runs the two stages of docs/permissions.md in the order that doc fixes: stage 1
+//! (structural simplicity, [`yash_syntax`]) *before* stage 2 (prefix match,
+//! [`commands::command_stance`]), so a trusted `git diff` prefix can never clear
+//! `git diff > /etc/hosts`. The narrow shapes that survive a stage-1 rejection are
+//! [`is_safe_fd_dup`], the leading `cd <dir> &&` ([`commands::bash_tokens_in`]), and the
+//! redirection carve-out ([`commands::classify_redirect_write`]).
 //!
-//! The threat model is **error, not deception** (docs/permissions.md): a
-//! well-intentioned session reaching for the wrong tool, not an adversary obfuscating
-//! bash. So the fast-path only needs to *accept what it is certain about* and pass
-//! everything else down. It classifies **structural simplicity** (decidable) rather than
-//! **behavior** (not), and it errs toward `Gate`: any doubt — a parse failure, an
-//! operator, an expansion, an unmatched prefix — gates.
-//!
-//! ## Bash: the two-stage check (the order matters)
-//!
-//! Stage 1 (structural simplicity) runs *before* stage 2 (prefix match), so a trusted
-//! `git diff` prefix can never clear `git diff > /etc/hosts` or `git diff $(rm x)` —
-//! those die in stage 1, before any prefix is consulted.
-//!
-//! - **Stage 1** parses the command with [`yash_syntax`] (a real POSIX parser, not a
-//!   regex) and accepts only a *single simple command* — no operators (`| & ; && ||`),
-//!   no *file* redirection, no command/arithmetic substitution, no parameter/tilde expansion,
-//!   no env-assignment prefix, no unquoted glob/brace. The one redirection it tolerates is a
-//!   pure file-descriptor duplication/closure (`2>&1`, `>&2`, `2>&-`) — it rewires the process's
-//!   own fds and touches no filesystem, so it's sound and lets the habitual `cmd 2>&1` stay on the
-//!   fast path ([`is_safe_fd_dup`]). The one operator it tolerates is a single leading
-//!   `cd <dir> &&` whose literal target is read-granted by `[paths]`; the remainder is what
-//!   stage 2 matches and what prefix-promotion probes ([`commands::bash_tokens_in`]).
-//!   A rejection here is not always final: one narrow shape — a redirection or here-doc
-//!   **write to a single literal path** — is re-read as the `write` it is and governed by
-//!   the `[paths]` write grants ([`commands::classify_redirect_write`]). Both authorities
-//!   apply and the more restrictive wins: the command must still clear stage 2, and the
-//!   target must still be write-granted. Everything else about a file redirection gates as
-//!   before.
-//!   yash is POSIX-strict, which only
-//!   costs *coverage* (a few bash-only forms gate to the spotter), never *soundness* —
-//!   bash's dangerous operators are POSIX too, so they parse as operators and gate;
-//!   bash-only syntax either fails to parse (→ gate) or surfaces as inert literal words
-//!   we still filter. yash parses (does not expand), so `git diff HEAD~1` is fine — we
-//!   do the expansion-metacharacter filtering ourselves.
-//! - **Stage 2** matches the lexed `[program, args…]` against the role's `[commands]` keys
-//!   (token-wise prefix; a bare program key is blanket) and reads the stance of the
-//!   **longest** matching key, so a carve-out (`git = "clear"`, `"git push" = "deny"`) governs
-//!   its own subtree ([`commands::command_stance`]).
-//!
-//! ## Structured tools
-//!
-//! A structured tool clears only if its name is in the role's `tool` grants **and**, for
-//! the path-bearing ones, its target resolves under a `path` grant carrying the needed
-//! permission (reads need `read`, writes need `write`; `write` implies `read`). Nothing
-//! clears unless the config says so — an empty role gates everything, exactly as before.
-//! The name match is exact, with one glob: `ferritin.*` grants a whole namespace, including
-//! tools the server adds later ([`tool_granted`]).
-//!
-//! Mapping a tool to "which input field holds the path, and is it a read or a write"
-//! requires reaching into each built-in's JSON input by known key ([`path_check`]). That
-//! is a deliberate wart: there is no way around it until an MCP-superset can carry
+//! Structured tools clear on a name grant ([`tool_granted`]) plus, where the tool names a
+//! path, a `[paths]` grant carrying the needed permission. Mapping a tool to "which input
+//! field holds the path, and is it a read or a write" means reaching into each built-in's
+//! JSON input by known key — a wart with no way around it until an MCP superset can carry
 //! permission metadata alongside the tool schema. The string literals are centralized in
-//! [`path_check`] so the coupling is in one place. One subtlety it encodes: `undo_edit`
-//! writes to disk but carries *no* path (the target was named by an earlier
-//! `edit`), so write permission is enforced at `edit` — the only
-//! edit-pipeline call that names the file — and `undo_edit` clears on the name grant.
+//! [`path_check`] so the coupling is in one place.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Component, Path, PathBuf};

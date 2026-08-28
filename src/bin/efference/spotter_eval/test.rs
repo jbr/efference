@@ -7,7 +7,7 @@ const EXTRACTED: &str = r#"{"id":"1787377108597/40","source":"../trillium/.effer
 
 /// The session cwd rides the case, so the runner can render a case recorded in
 /// another checkout against *that* checkout instead of its own working directory
-/// (backlog/spotter-eval.md).
+/// (docs/permissions.md).
 #[test]
 fn a_case_carries_its_session_cwd() {
     let case: CaseIn = serde_json::from_str(EXTRACTED).unwrap();

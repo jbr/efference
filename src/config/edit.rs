@@ -27,7 +27,7 @@ pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {
     // because [`ConfigChange::Command`] can only say "clear" and applying it would invert the
     // author's meaning. So a carve-out added by file edit takes effect on the next boot (which
     // reloads the file as the base), exactly like a deleted key — the same honest frontier of
-    // the additive fold, now reached by a tightening that is written rather than removed.
+    // the additive fold, reached by a tightening that is written rather than removed.
     for (command, stance) in &to.commands {
         if *stance == crate::config::CommandStance::Clear
             && from.commands.get(command) != Some(stance)

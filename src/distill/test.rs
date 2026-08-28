@@ -110,7 +110,7 @@ fn parse_retain_reads_inbox_dispositions() {
 
 /// Notification ids arrive stringified: the peek reads them out of rendered
 /// prose, and a live fork answer whose only defect was `"pin": ["102"]` cost
-/// a full retry (observed 2026-08-22). `"102"` and `102` parse alike; a
+/// a full retry. `"102"` and `102` parse alike; a
 /// non-numeric string still fails the whole input.
 #[test]
 fn parse_retain_accepts_stringified_notification_ids() {
@@ -316,9 +316,9 @@ fn an_incomplete_verdict_is_rejected_naming_the_missing_ids() {
 }
 
 /// Bounds are part of verdict validity (docs/redaction-fork.md): a `keep` range wholly
-/// beyond the shown line count is a coordinate mistake — the observed shape was a peek
-/// adopting `grep -n`'s embedded file line numbers (25–401) over a 17-line rendering —
-/// and render-time normalization would drop it silently. The rejection names the bound
+/// beyond the shown line count is a coordinate mistake — the shape it catches is a peek
+/// adopting `grep -n`'s embedded file line numbers over the rendering's own — and
+/// render-time normalization would drop it silently. The rejection names the bound
 /// so the retry can re-index against the rendering.
 #[test]
 fn a_wholly_out_of_range_keep_is_rejected_naming_the_bound() {
@@ -575,13 +575,10 @@ fn roster_is_empty_without_a_preamble() {
 /// completion carries several calls, the peek's request must answer **every** one of
 /// them.
 ///
-/// This is the regression guard for the observed failure. Peeking between calls built a
-/// request whose trailing assistant message still carried unanswered `tool_use` blocks;
-/// the API rejected it, `ForkPeek` fell back to keep-all (the fallback of the time —
-/// today the same failure would withhold the results as hard errors), and — because
-/// `WireState` is fixed once — the uncurated result stayed in the cached prefix for the
-/// rest of the session. In the corpus that accounted for the first N−1 peeks of every
-/// multi-call turn.
+/// Peeking between calls builds a request whose trailing assistant message still carries
+/// unanswered `tool_use` blocks, which the API rejects. The whole gate then fails, and
+/// because `WireState` is fixed once, whatever the failure path leaves behind stays in the
+/// cached prefix for the rest of the session — one mis-timed peek is not recoverable later.
 #[test]
 fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
     let calls = vec![
@@ -782,12 +779,11 @@ fn every_retain_ask_excludes_the_transcript_behind_it() {
 }
 
 /// The verdict's two halves are asked to agree with each other, not merely with the raw.
-/// Observed in session `1784345627488`: a `search` for `^}` returned 19 matches, the
-/// verdict kept one line, and the `note` stated a fact about a *different* match that the
-/// kept line did not show. The claim was true of the raw and unsupported by anything that
-/// survived onto the wire, so the session re-verified with `wc -l` and `tail` before
-/// trusting either half — the cost of an unauditable summary is paid on every later
-/// result too (docs/redaction-fork.md).
+/// A `note` can state a fact that is true of the raw and unsupported by anything that
+/// survives onto the wire — a multi-match search kept down to one line, with the note
+/// describing a different match. A reader who catches that once re-verifies by hand from
+/// then on, so the cost of an unauditable summary is paid on every later result too
+/// (docs/redaction-fork.md).
 #[test]
 fn the_ask_grounds_the_note_in_the_kept_lines_and_flags_a_partial_enumeration() {
     for offered in [
@@ -830,7 +826,7 @@ fn a_lone_mis_keyed_verdict_is_re_keyed_only_for_a_single_result_gate() {
     assert_eq!(p.results[0].keep, Keep::Ranges(vec![(1, 4)]));
     assert!(require_coverage(p, &one).is_ok());
 
-    // Two entries is no longer unambiguous, even on a single gate.
+    // Two entries are ambiguous even on a single gate, where one is not.
     let p = parse_retain(
         &retain_completion(
             RETAIN,

@@ -115,7 +115,7 @@ fn a_response_without_a_token_type_defaults_to_bearer() {
     assert_eq!(tokens.authorization_header(), "Bearer at-1");
 }
 
-/// Observed against Sentry's MCP server: it answers the token request with
+/// Sentry's MCP server answers the token request with
 /// `"token_type": "bearer"` and then rejects `Authorization: bearer <token>`
 /// with `invalid_token`, accepting only the literal `Bearer`. Echoing the
 /// server's own field back is the obvious-looking thing to do and it 401s.

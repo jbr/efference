@@ -516,14 +516,6 @@ pub(crate) enum Command {
         #[arg(long)]
         frame_cost: bool,
     },
-    /// Dev tool (not part of the shippable product, like `gallery`): point it at a
-    /// session JSONL log and print the wire request — the deterministic projection
-    /// the assistant actually sees. Reconstructs the full envelope (`system` +
-    /// `tools` + `messages`) exactly as a real turn POSTs it: `project(log)` with
-    /// the trailing cache breakpoint placed and `tool_choice: auto`. The `system`
-    /// block and `tools[]` aren't stored in the log, so they're rebuilt from the
-    /// current code and cwd — flagged on stderr, since the recorded session may
-    /// have run elsewhere.
     /// Dev tool (like `wire`/`spotter`): replay a recorded session's fork-gate peeks
     /// (docs/redaction-fork.md) and report **first-attempt** compliance — did the peek
     /// answer with a verdict, or reach for a work tool? The live gate retries, so a
@@ -559,6 +551,14 @@ pub(crate) enum Command {
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
     },
+    /// Dev tool (not part of the shippable product, like `gallery`): point it at a
+    /// session JSONL log and print the wire request — the deterministic projection
+    /// the assistant actually sees. Reconstructs the full envelope (`system` +
+    /// `tools` + `messages`) exactly as a real turn POSTs it: `project(log)` with
+    /// the trailing cache breakpoint placed and `tool_choice: auto`. The `system`
+    /// block and `tools[]` aren't stored in the log, so they're rebuilt from the
+    /// current code and cwd — flagged on stderr, since the recorded session may
+    /// have run elsewhere.
     Wire {
         /// Path to a session JSONL log (e.g. `.efference/session-<millis>.jsonl`).
         path: PathBuf,
@@ -697,7 +697,7 @@ pub(crate) enum Command {
         no_fallback: bool,
     },
     /// Dev tool: run the labeled spotter corpus against a model
-    /// (backlog/spotter-eval.md). Each case's config + call renders through the
+    /// (docs/permissions.md). Each case's config + call renders through the
     /// production `assess` path; verdicts score against the case's `expected`
     /// on the binary the system acts on (approve vs route-to-human). Reports
     /// per-class rates (human-miss = safety, false-gate = friction), the flip

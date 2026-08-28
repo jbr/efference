@@ -278,11 +278,10 @@ async fn detach_surrenders_a_live_child_with_its_output_so_far() {
 /// prefix in production, silently (CLAUDE.md, docs/log-and-projection.md). The
 /// envelope pin in `api/test.rs` fixes where `tools` sits and how it encodes,
 /// but it does so against a *synthetic* one-tool array — so it does not see the
-/// real definitions, and a schema edit here used to pass every test.
+/// real definitions, so without this pin a schema edit here passes every test.
 ///
 /// If this fails, the change moves the production cache prefix. That may be
-/// entirely intended (it was, when `background_after` was added) — update the
-/// expectation deliberately, don't reflexively.
+/// entirely intended — update the expectation deliberately, don't reflexively.
 #[test]
 fn definition_matches_expected_wire_bytes() {
     let expected = concat!(
@@ -420,13 +419,12 @@ async fn an_operator_detach_is_not_labelled_automatic() {
 
 /// The shape that started this: a command that backgrounds a server with a shell
 /// `&` leaves a grandchild holding the call's stdout open, so the call never
-/// reaches EOF. Observed three times across two models. It must now detach
-/// rather than hang forever.
+/// reaches EOF. It must detach rather than hang forever.
 #[tokio::test]
 async fn a_shell_backgrounded_grandchild_no_longer_hangs_the_call() {
     // The deadline is generous because the seed assertion below needs the shell
-    // to have been scheduled and printed before it fires: at 150ms this failed
-    // under full-suite load with the output legitimately not yet produced.
+    // to have been scheduled and printed before it fires. A tight deadline fails
+    // under full-suite load with the output legitimately still unproduced.
     let outcome = impatient(Duration::from_millis(1000), Duration::from_secs(60))
         .run(
             &json!({ "command": "sleep 30 & echo started; wait" }),

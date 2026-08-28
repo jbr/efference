@@ -23,15 +23,13 @@ pub(super) fn autonomous_gate_message(config_path: Option<&Path>, reason: &str) 
 /// name the grants it lacked (docs/permissions.md).
 ///
 /// The generic message above says the call was gated; it does not say *why the tool did not
-/// run*, and a model reading a `write`/`edit` come back with nothing to show for it has been
-/// observed to conclude the tool is broken — session `1784334112726` decided "persist_edit
-/// without parameters doesn't work in autonomous mode" and started rewriting files through
-/// `cat > file <<EOF` instead, which replaces a reviewable diff with an un-reviewable
-/// whole-file rewrite. A model that believes the tool is broken has no reason to fix its
-/// config; one that reads which grant is missing does. So this variant leads with the
-/// diagnosis, names the missing grant in the vocabulary the config uses, and — for a write —
-/// says outright that the bash route lands on the same grant, which it now does
-/// ([`crate::policy`]'s redirection carve-out).
+/// run*. A model reading a `write`/`edit` come back with nothing to show for it concludes
+/// the tool is broken and starts rewriting files through `cat > file <<EOF` instead, which
+/// replaces a reviewable diff with an un-reviewable whole-file rewrite. A model that
+/// believes the tool is broken has no reason to fix its config; one that reads which grant
+/// is missing does. So this variant leads with the diagnosis, names the missing grant in the
+/// vocabulary the config uses, and — for a write — says outright that the bash route lands
+/// on the same grant ([`crate::policy`]'s redirection carve-out).
 pub(super) fn missing_grant_message(
     config_path: Option<&Path>,
     reason: &str,

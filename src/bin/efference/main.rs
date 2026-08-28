@@ -3,8 +3,8 @@
 //! `efference serve` opens a JSONL session log, binds the control socket, and runs
 //! the agent loop with the HTTP-fed [`RemoteFrontend`] (docs/README.md, docs/control-channel.md):
 //! the socket is the singular authoritative input source — the first user turn
-//! arrives via `POST /turns`, not argv. Runs against Haiku to keep the blast radius
-//! cheap; docs/transport.md locks `claude-opus-4-8` as the real default.
+//! arrives via `POST /turns`, not argv. `--model` defaults to the Haiku band, which keeps
+//! the blast radius of an unconfigured run cheap; an operator names the band they want.
 //!
 //! [`RemoteFrontend`]: efference::daemon::RemoteFrontend
 

@@ -113,9 +113,9 @@ async fn unknown_tool_is_an_error_result_not_a_panic() {
     );
 }
 
-/// The observed incident: `ferritin` was an allowed bash *prefix* advertised as
-/// a skill, and the model built a structured tool call out of the name. The
-/// result text now carries the route back — bash — instead of a bare denial.
+/// A name can be an allowed bash *prefix* advertised as a skill (`ferritin`), which a
+/// model then builds a structured tool call out of. The result text carries the route
+/// back — bash — instead of a bare denial.
 #[tokio::test]
 async fn an_unknown_name_is_pointed_at_bash() {
     let toolbox = Toolbox::bash_only();

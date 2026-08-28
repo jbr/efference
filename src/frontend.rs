@@ -9,8 +9,8 @@
 //!
 //! ## Three interaction points
 //!
-//! - [`Frontend::read_user_turn`] — the next user turn (the first one too, now
-//!   that turns arrive over the socket rather than argv). `None` ends the loop.
+//! - [`Frontend::read_user_turn`] — the next user turn, and the first one too, since
+//!   turns arrive over the socket rather than argv. `None` ends the loop.
 //! - [`Frontend::approve`] — a gate on a pending tool call. Approve runs it; a
 //!   redirect rejects it and steers the model with the supplied text; abort
 //!   unwinds the turn.

@@ -214,7 +214,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                         if shared.autonomous() {
                             // A structured call whose missing grants the fast path can name
                             // gets the diagnosis, not just the verdict (docs/permissions.md):
-                            // the observed failure is a model reading a gated `edit` as a
+                            // the failure it answers is a model reading a gated `edit` as a
                             // broken tool and rewriting the file through bash instead.
                             Approval::Redirect(match policy::missing_grants(&role, call) {
                                 Some(missing) => {

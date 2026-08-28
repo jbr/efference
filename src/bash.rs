@@ -1,8 +1,8 @@
-//! The bash tool — Phase 0's only tool (docs/tools.md, docs/supervisor.md).
+//! The bash tool (docs/tools.md, docs/supervisor.md).
 //!
 //! Two concerns meet here. The *capability* is trivial: run a shell command,
-//! return its combined output. The critical part is *ownership* (docs/supervisor.md,
-//! seeded now): the child is spawned with `process_group(0)` so it leads a fresh
+//! return its combined output. The critical part is *ownership*
+//! (docs/supervisor.md): the child is spawned with `process_group(0)` so it leads a fresh
 //! process group (child pid == pgid), and [`Bash::run`] races completion against
 //! an injected `abort` future — on abort it `killpg`s the whole group with
 //! `SIGKILL`, taking down any grandchildren the command spawned.
@@ -12,7 +12,7 @@
 //! agent loop passes `ctrl_c()`. This is the C-c guardrail from the settled
 //! interaction model (docs/README.md): see the command, abort before it finishes.
 //!
-//! Unix-only: `process_group` / `killpg` are POSIX. Phase 0 targets darwin.
+//! Unix-only: `process_group` / `killpg` are POSIX.
 
 use std::future::Future;
 use std::process::{ExitStatus, Stdio};
@@ -95,8 +95,8 @@ pub struct Bash {
 }
 
 /// The shipped defaults, used when no `[bash]` config section says otherwise.
-/// 300s clears a real `cargo build --release` while firing on under 1% of the
-/// observed corpus; the ceiling is high enough for a genuinely slow build and
+/// 300s clears a real `cargo build --release` while firing on under 1% of this
+/// repo's corpus; the ceiling is high enough for a genuinely slow build and
 /// still finite. The asymmetry is what sets them: a premature detach costs one
 /// `read_process` and loses nothing, an absent one costs the session.
 pub const DEFAULT_BACKGROUND_AFTER: Duration = Duration::from_secs(300);

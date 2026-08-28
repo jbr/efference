@@ -23,8 +23,8 @@ fn result(content: &str, is_error: bool) -> RawResult {
 const INSTANT: std::time::Duration = std::time::Duration::from_millis(12);
 
 /// The three outcome classes are readable off every tool without per-tool
-/// knowledge (docs/tools.md): `is_error` carries refusal since the 2026-08-27
-/// flip, and the caller's `harness_error` is the only thing that distinguishes
+/// knowledge (docs/tools.md): `is_error` carries refusal, and the
+/// caller's `harness_error` is the only thing that distinguishes
 /// "the harness could not run this" from "the tool ran and declined".
 #[test]
 fn outcome_classes_derive_generically() {

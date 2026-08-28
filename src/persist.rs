@@ -9,9 +9,9 @@
 //! the disk is touched once per append and once per session load.
 //!
 //! This is the durable persistence *mechanism*; `log.rs` holds the log
-//! *types*. Phase 0 always constructs `wire: Raw`, so persisting the entry whole
-//! is faithful; when Phase 1 introduces wire flips, those become their own
-//! appended events that replay folds in (not a rewrite of the line).
+//! *types*. An entry is persisted whole at append and its line is never
+//! rewritten: a later curation decision is its own appended event that replay
+//! folds in (docs/log-and-projection.md).
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
@@ -85,8 +85,8 @@ impl Log {
     /// Append a payload: assign the next `seq` (gap-free — append-only, so
     /// `seq == index`), stamp the wall clock, **durably write the JSONL line**,
     /// then keep it in memory. The line is flushed before returning so a crash
-    /// can't lose an acknowledged entry (we stop short of `fsync` per line in
-    /// Phase 0 — a deliberate durability/throughput tradeoff to revisit).
+    /// can't lose an acknowledged entry. It stops short of `fsync` per line — a
+    /// deliberate durability/throughput tradeoff.
     pub fn append(&mut self, turn: Turn, payload: Payload) -> io::Result<Seq> {
         self.append_submission(turn, payload, None)
     }

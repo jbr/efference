@@ -162,10 +162,10 @@ fn cd_prefix_is_stripped_from_the_probed_tokens() {
     );
 }
 
-/// Everything outside the admitted shape fails closed to the spotter exactly as before: an
-/// ungranted target, a target bash would expand, a second `cd`, a different operator, or a
-/// remainder that is not itself a simple command. (A remainder carrying a *redirection* is
-/// the one case that is no longer here: it is decided by the redirection carve-out below.)
+/// Everything outside the admitted shape fails closed to the spotter: an ungranted target,
+/// a target bash would expand, a second `cd`, a different operator, or a remainder that is
+/// not itself a simple command. (A remainder carrying a *redirection* is not in this list —
+/// it is decided by the redirection carve-out below.)
 #[test]
 fn cd_tolerance_fails_closed_outside_the_admitted_shape() {
     for gates in [

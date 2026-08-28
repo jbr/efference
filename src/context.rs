@@ -84,7 +84,7 @@ impl Resolved {
     /// heading, used **verbatim**: spaces and leading digits and all, since nothing parses it); a
     /// group wraps its members in `<Heading>…</Heading>`. Inlined bodies ride verbatim inside their
     /// tag, so a body's own markdown can't blur the boundary. Sections join with a blank line, in
-    /// document order (backlog/preamble-format-experiment.md records why this format is provisional).
+    /// document order. The format is provisional (docs/context.md).
     pub fn render(&self) -> Option<String> {
         if self.sections.is_empty() {
             return None;
@@ -117,9 +117,8 @@ impl Resolved {
 ///
 /// The fork peek's surfacing roster (docs/redaction-fork.md) renders through here too, so
 /// an item the model meets mid-session is spelled exactly as it was in the boot preamble.
-/// A roster that showed the bare name instead invited reading it as a *capability* rather
-/// than a file to open — a session did precisely that, building a tool call out of a
-/// listed skill's name (journal/2026-08-07-session-key-review.md).
+/// A bare name reads as a *capability* rather than a file to open, and gets built into a
+/// tool call (journal/2026-08-07-session-key-review.md).
 pub(crate) fn render_item(item: &Item) -> String {
     match item {
         Item::Inline { name, body, .. } | Item::Exec { name, body, .. } => {

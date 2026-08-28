@@ -367,11 +367,9 @@ async fn peek_with_retries<T>(
 ///
 /// Why retry at all, when withholding is a defined outcome: withholding hands the
 /// agent a call it must decide whether to re-run, and re-running is not free or always
-/// safe. In a controlled run a withheld conformance `PASS` was re-earned by re-running
-/// the suite against a still-live server, whose counters the invisible first run had
-/// already moved — turning a pass into a spurious failure and costing nine turns
-/// (docs/transport.md). Exhaustion still withholds; it now takes several attempts to
-/// reach.
+/// safe — a suite re-run against a still-live server whose counters the invisible first
+/// run already moved turns a pass into a spurious failure (docs/transport.md). Exhaustion
+/// still withholds; the budget is what makes it rare.
 ///
 /// Every attempt's [`RequestUsage`] is pushed — the request happened and slid the
 /// prefix's TTL whether or not it finalized — and every abort leaves an
@@ -491,14 +489,13 @@ fn extend_with_retry(
 }
 
 /// Verdict validity includes **coverage** (docs/redaction-fork.md): every offered call
-/// id must be answered, or the verdict is rejected and retried in-fork — a result
-/// silently left untriaged is exactly the fallback this gate no longer has.
+/// id must be answered, or the verdict is rejected and retried in-fork. This gate has no
+/// keep-all fallback, so a result silently left untriaged has nowhere to land.
 ///
 /// The rejection names what the verdict *did* answer, not only what it missed. Without
 /// that, "answered nothing" and "answered twenty-six results that were never offered"
 /// are the same line in the log, and the second is a prompt-scoping defect the first
-/// gives no hint of — which is how a session's worth of gates failed this way before
-/// anyone could read the cause off the record (docs/redaction-fork.md on the breadcrumb).
+/// gives no hint of.
 fn require_coverage(verdict: ParsedRetain, offered: &[String]) -> Result<ParsedRetain, String> {
     let unanswered: Vec<&str> = offered
         .iter()
@@ -534,9 +531,9 @@ fn shown_line_count(raw: &RawResult) -> usize {
 }
 
 /// Verdict validity also includes **bounds** (docs/redaction-fork.md): a `keep` range
-/// lying wholly outside the shown line numbers is a coordinate mistake, not a decision —
-/// observed live when a peek adopted the file line numbers embedded in `grep -n` output
-/// as its retain coordinates — and render-time normalization would drop it, turning
+/// lying wholly outside the shown line numbers is a coordinate mistake, not a decision
+/// (a peek adopting the file line numbers embedded in `grep -n` output as its retain
+/// coordinates) — and render-time normalization would drop it, turning
 /// "keep these lines" into silent total loss with no signal on either side. Rejected
 /// here instead, the mistake becomes an in-fork retry whose nudge names the actual
 /// bound. One out-of-range range fails the whole verdict: a partial drop is the same
@@ -752,7 +749,7 @@ impl PeekAttempt {
 }
 
 /// Rebuild the exact request a recorded gate's peek sent — the same `peek_messages` the
-/// live gate calls, so a replay can't drift from production (backlog/peek-dev-tools.md).
+/// live gate calls, so a replay can't drift from production (docs/redaction-fork.md).
 /// Split out for the `peek` dev tool's dry run, which reviews an ask without spending a
 /// request on it.
 pub fn peek_request(
@@ -770,7 +767,7 @@ pub fn peek_request(
 }
 
 /// One fork-peek round trip against a recorded gate, with **no retries**
-/// (backlog/peek-dev-tools.md). Same request, same validity rule (`parse_retain` plus
+/// (docs/redaction-fork.md). Same request, same validity rule (`parse_retain` plus
 /// [`require_coverage`] and [`require_in_bounds`]) as the live gate — only the retry
 /// loop is absent, because the first attempt is the measurement.
 pub async fn peek_attempt(

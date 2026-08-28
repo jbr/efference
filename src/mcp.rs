@@ -73,7 +73,7 @@ pub const NAMESPACE_SEPARATOR: &str = "__";
 /// so this is the name that stands in for the missing `<server>` half when a
 /// grant is resolved: `efference.*` is the whole-namespace grant over the
 /// built-ins, and `efference.read` is an accepted spelling of `read`. A declared
-/// server named `efference` would share the namespace; nothing rejects that today.
+/// server named `efference` would share the namespace, and nothing rejects that.
 pub const BUILTIN_NAMESPACE: &str = "efference";
 
 /// A namespaced wire name rendered for a human: `ferritin__get` → `ferritin.get`.

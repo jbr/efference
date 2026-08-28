@@ -22,14 +22,12 @@ pub(super) const ASK_BANNER: &str = "═══ triage · answer, don't act ═�
 /// gate is designed against; asserting past the output is worse, because nothing
 /// downstream can detect it.
 ///
-/// Two clauses answer a second observed shape of the same failure, where the note was
-/// true of the *raw* and unsupported by the *kept lines*. A `search` for `^}` returned
-/// 19 matches; the verdict kept one line — the second-to-last match — and the note
-/// stated a fact about the last one. Both halves reached the wire, disagreeing, and the
-/// session re-verified with `wc -l`/`tail` before it would use either. So `note` is
-/// asked to be grounded in what survives rather than in what was shown, and `keep` is
-/// told that a partial keep of an enumeration reads afterwards as the whole set — the
-/// case where a lean verdict silently changes the answer rather than shortening it.
+/// Two clauses answer a second shape of the same failure, where the note is true of the
+/// *raw* and unsupported by the *kept lines* — both halves reach the wire disagreeing, and
+/// a reader has to re-verify by hand before using either. So `note` is asked to be grounded
+/// in what survives rather than in what was shown, and `keep` is told that a partial keep
+/// of an enumeration reads afterwards as the whole set — the case where a lean verdict
+/// silently changes the answer rather than shortening it.
 // NB: each row's first line sits on the opening-quote line. A `"\` continuation would eat
 // the newline *and* the leading indent behind it, silently de-indenting the first row only.
 const KEEP_FIELDS: &str =
@@ -49,8 +47,7 @@ const KEEP_FIELDS: &str =
 /// The `retain` ask, scoped to the results **this gate** is deciding
 /// (docs/redaction-fork.md).
 ///
-/// Two things the earlier static text got wrong, both observed against a live model on a
-/// long transcript:
+/// Two properties the text must hold, each answering a live failure on a long transcript:
 ///
 /// - **The ask must be bounded.** "Every [call id] above" reads as the whole
 ///   conversation, and every prior `tool_result` on the canonical wire already carries a
@@ -67,15 +64,13 @@ const KEEP_FIELDS: &str =
 ///   away, so nothing here is cache-keyed (docs/log-and-projection.md), unlike the
 ///   static schema it drives.
 ///
-/// A third thing, from a session that answered 29% of its gates with a work tool instead
-/// of a verdict — usually the tool it went on to call on the next canonical turn, at a rate
-/// that climbed with session depth (journal/2026-08-07-session-key-review.md). The ask had
-/// no structural weight against that: one unbroken paragraph, assembled from four
-/// separately-authored fragments, opening on a description and closing on a tangent about
-/// `surfaced`, while every other section of the view carried a banner and `tools[]` carried
-/// the whole world toolset under `tool_choice: auto`. So the ask now leads with the
+/// A third property: the ask carries **structural weight** against being answered with a
+/// work tool. `tools[]` offers the whole world toolset under `tool_choice: auto`, and every
+/// other section of the view carries a banner, so an ask that read as an unbannered
+/// trailing paragraph drew work calls instead of verdicts at a rate that climbed with
+/// session depth (journal/2026-08-07-session-key-review.md). So it leads with the
 /// imperative, states plainly that this turn is not the task, carries the per-field asks as
-/// a scannable block instead of appended prose, and repeats the imperative last.
+/// a scannable block rather than appended prose, and repeats the imperative last.
 ///
 /// The "no other tool will run" sentence is a **fact**, not a discouragement: a
 /// non-`retain` call is answered with an error `tool_result` and the ask is renewed
@@ -109,10 +104,8 @@ entries, one per call id listed here and no others: [{ids}]. Copy each `call_id`
 }
 
 /// How much of a roster item the peek view spells out — the cost axis
-/// (backlog/ask-ablations.md). The roster is re-sent on **every** gate and lives in the
-/// fork's uncached tail, so its size is paid per tool result for the whole session; in the
-/// session these were measured against it was 28 items on all 55 gates and `Triage.surfaced`
-/// came back empty every time.
+/// (docs/redaction-fork.md). The roster is re-sent on **every** gate and lives in the
+/// fork's uncached tail, so its size is paid per tool result for the whole session.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RosterStyle {
     /// `<name path="…">summary</name>` — what the boot preamble spells in full.
@@ -165,9 +158,9 @@ fn first_sentence(s: &str) -> &str {
 }
 
 /// Which features of the ask are on — the ablation axis the `peek` rig varies
-/// (docs/redaction-fork.md, backlog/ask-ablations.md).
+/// (docs/redaction-fork.md).
 ///
-/// **Temporary experiment scaffolding**, and its own backlog unit to delete. It lives here
+/// Experiment scaffolding. It lives here
 /// rather than in the dev tool because the shape (single vs multi result) and the rider
 /// rows must stay exactly what production sends — a variant assembled anywhere else would
 /// drift from `retain_instruction`, which is the one divergence the replay rig exists to
@@ -180,7 +173,7 @@ struct AskVariant {
     lede: bool,
     /// "This is a triage turn, not a work turn" plus the closed-toolbox fact.
     stance: bool,
-    /// Per-field asks as a scannable block; off means appended prose, as before.
+    /// Per-field asks as a scannable block; off renders them as appended prose.
     block: bool,
     /// The verdict is the call's arguments; prose is not read. Ships on — measured
     /// against the all-features-off base, where there was headroom to see it: 14% → 5%,
@@ -395,15 +388,6 @@ pub(super) fn roster_name(item: &Item) -> &str {
     }
 }
 
-/// Render the surfacing roster section of a peek view (docs/redaction-fork.md): the
-/// available-but-unloaded context items, each spelled exactly as the boot preamble spelled
-/// it — `<name path="…">summary</name>`, through the preamble's own renderer so the two
-/// can't drift. Only in the tool-result gate — the idle triage rides no work in flight.
-///
-/// The name alone was what shipped first, and it under-describes what the item *is*: a
-/// session met a listed skill as a bare `[ferritin]` and built a tool call out of the name
-/// rather than reading the file (journal/2026-08-07-session-key-review.md). Repeating the
-/// summary and the path costs a line each and answers the question the name provokes.
 /// Whether this gate actually shows a roster section — and so whether the ask should offer
 /// a `surfaced` field at all. Not the same as "the roster is non-empty": a style that
 /// renders nothing must also drop the field, or the ask names a section that isn't there.
@@ -411,6 +395,14 @@ pub(super) fn roster_shown(roster: &[Item]) -> bool {
     !roster.is_empty() && AskVariant::from_env().roster != RosterStyle::Off
 }
 
+/// Render the surfacing roster section of a peek view (docs/redaction-fork.md): the
+/// available-but-unloaded context items, each spelled exactly as the boot preamble spelled
+/// it, through the preamble's own renderer so the two can't drift. Only in the tool-result
+/// gate — the idle triage rides no work in flight.
+///
+/// The path rides alongside the name because a name alone under-describes what the item
+/// *is*: a session met a listed skill as a bare `[ferritin]` and built a tool call out of
+/// the name rather than reading the file (journal/2026-08-07-session-key-review.md).
 pub(super) fn append_roster(view: &mut String, roster: &[Item]) {
     if !roster_shown(roster) {
         return;

@@ -306,9 +306,8 @@ pub(super) fn autonomous_gate_message_without_a_config_file_still_redirects() {
 }
 
 /// A gated **structured** call gets the diagnosis, not just the verdict
-/// (docs/permissions.md). The observed failure it replaces: a model read a gated
-/// `edit`/`persist_edit` as a malfunction ("persist_edit without parameters doesn't work in
-/// autonomous mode", session `1784334112726`) and started rewriting files through
+/// (docs/permissions.md). The failure it answers: a model reads a gated
+/// `edit`/`persist_edit` as a malfunction and starts rewriting files through
 /// `cat > file <<EOF`. So the copy has to say the call never ran, name the missing grant in
 /// the config's own vocabulary, point at the config-edit remedy, and close the bash detour.
 #[test]
@@ -467,7 +466,7 @@ pub(super) fn cap_turns_oversized_results_into_a_hard_error_with_a_head() {
     let huge = "x".repeat(MAX_TOOL_RESULT_BYTES + 1);
     let capped = cap_tool_result(&call("search"), ok(huge));
     assert!(capped.is_error, "over-cap result must be a hard error");
-    // The result no longer carries the megabytes; it carries the explanation + head.
+    // The result carries the explanation + head, not the megabytes.
     assert!(
         capped.content.len() < 4096,
         "the error is small, not the raw payload"
@@ -596,9 +595,9 @@ impl Frontend for NeverGates {
     }
 }
 
-/// The spotter rung, which must not be consulted either. Asked anyway on the observed
-/// incident, it returned `clear` for a nonexistent tool with a rationale invented for
-/// the call it imagined (journal/2026-08-07-session-key-review.md).
+/// The spotter rung, which must not be consulted either: asked about a nonexistent tool it
+/// returns `clear`, with a rationale invented for the call it imagined
+/// (journal/2026-08-07-session-key-review.md).
 struct NeverAsked;
 
 impl Spotter for NeverAsked {

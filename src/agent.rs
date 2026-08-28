@@ -168,12 +168,10 @@ const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 /// turn to retry" — is not clearly better than waiting another few minutes, and
 /// is strictly worse when nobody is at the keyboard to read it — exhaustion is
 /// legible to a supervising client through the `stall` topic, but a turn still
-/// has to come from somewhere (docs/transport.md). It was 4, from a corpus in which
-/// every abort recovered on the first retry; a single run on 2026-08-28 then
-/// produced two streaks reaching attempt 3 and one exhausting all four, against
-/// an endpoint whose p99 latency sat near the client's timeout. Twelve attempts
-/// on the capped schedule spends about three and a half minutes before giving
-/// up.
+/// has to come from somewhere (docs/transport.md). Sized against an endpoint whose p99
+/// latency sits near the client's timeout, where abort streaks run several deep rather
+/// than recovering on the first retry. Twelve attempts on the capped schedule spends
+/// about three and a half minutes before giving up.
 pub(crate) const STREAM_ABORT_ATTEMPTS: u32 = 12;
 
 /// The pause before the next attempt after `aborted` of them have died, or
@@ -237,7 +235,7 @@ pub(crate) fn stalled(
 ///
 /// The retry handler sits below the loop and cannot append, so the bodies arrive
 /// through the client's queue and land here — including the ones a later attempt
-/// recovered from, which previously left nothing behind but a status and a count.
+/// recovered from, which otherwise leave behind only a status and a count.
 /// Each entry carries `upstream_failure`, so it projects to nothing and the next
 /// request re-sends byte-identical messages (docs/log-and-projection.md).
 fn record_absorbed_attempts(
@@ -391,9 +389,9 @@ pub async fn run<F: Frontend, S: Spotter>(
             // (docs/transport.md). Each aborted attempt commits its partial as a
             // record-only entry — the only copy of that content anywhere — which
             // projects to nothing, so the next attempt re-sends the same bytes.
-            // Before this existed, an aborted stream committed as a clean turn:
-            // empty or thinking-only, `upstream_failure` null, indistinguishable
-            // from the agent choosing silence (observed live 2026-08-21).
+            // Without the record-only entry an aborted stream commits as a clean
+            // turn — empty or thinking-only, `upstream_failure` null —
+            // indistinguishable from the agent choosing silence.
             let mut aborted_attempts: u32 = 0;
             let completion = loop {
                 let outcome = client
@@ -547,9 +545,8 @@ pub async fn run<F: Frontend, S: Spotter>(
             // A cap-terminated turn is legible, not silent: whatever arrived
             // before the cap — on a long-reasoning model, often thinking alone —
             // is committed above, and this names why the model went quiet
-            // (docs/transport.md). Observed live before this existed: a
-            // multi-minute think ended at the cap and the session just sat
-            // idle, reading as a hang.
+            // (docs/transport.md). Unannounced, a multi-minute think ending at
+            // the cap leaves the session sitting idle, reading as a hang.
             if hit_cap {
                 eprintln!("[turn ended at the output-token cap]");
                 shared.notify(

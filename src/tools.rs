@@ -581,23 +581,11 @@ impl Toolbox {
         self
     }
 
-    /// Just bash — the Phase 0 default.
+    /// Just bash — no MCP mounts, for tests and the dev views.
     pub fn bash_only() -> Self {
         Self::new(vec![Provider::Bash(Bash::default())])
     }
 
-    /// Bash plus the in-process MCP servers — fs-mcp (read / search / write /
-    /// list) and semantic-edit-mcp (preview / retarget / persist tree-sitter
-    /// edits) — each with its session cwd seeded to `cwd` and an in-memory session
-    /// store (no shared `~/.ai-tools` writes). The agent gets real file +
-    /// structured-edit tools that lean on the fork instead of piping to
-    /// `head`/`grep` (docs/redaction-fork.md, docs/tools.md). `scratch` is the
-    /// session scratch dir bash exports as `$TMPDIR` (docs/tools.md); `None` for
-    /// contexts that never execute (the `wire` dev view).
-    /// Apply the config's foreground-lifetime limits to the mounted `bash` provider
-    /// (docs/supervisor.md). Separate from construction because only a served session
-    /// has a config — the dev views (`wire`, `spotter`, `peek`) build a toolbox to read
-    /// tool *definitions* and never run a command, so they keep the defaults.
     /// Apply the `[env]` table's spawn policy to the mounted `bash` provider
     /// (docs/env.md). Separate from construction for the same reason as
     /// [`with_bash_limits`](Self::with_bash_limits): only a served session has a
@@ -612,6 +600,10 @@ impl Toolbox {
         self
     }
 
+    /// Apply the config's foreground-lifetime limits to the mounted `bash` provider
+    /// (docs/supervisor.md). Separate from construction because only a served session
+    /// has a config — the dev views (`wire`, `spotter`, `peek`) build a toolbox to read
+    /// tool *definitions* and never run a command, so they keep the defaults.
     pub fn with_bash_limits(mut self, limits: crate::config::BashLimits) -> Self {
         for provider in &mut self.providers {
             if let Provider::Bash(bash) = provider {
@@ -622,6 +614,14 @@ impl Toolbox {
         self
     }
 
+    /// Bash plus the in-process MCP servers — fs-mcp (read / search / write /
+    /// list) and semantic-edit-mcp (preview / retarget / persist tree-sitter
+    /// edits) — each with its session cwd seeded to `cwd` and an in-memory session
+    /// store (no shared `~/.ai-tools` writes). The agent gets real file +
+    /// structured-edit tools that lean on the fork instead of piping to
+    /// `head`/`grep` (docs/redaction-fork.md, docs/tools.md). `scratch` is the
+    /// session scratch dir bash exports as `$TMPDIR` (docs/tools.md); `None` for
+    /// contexts that never execute (the `wire` dev view).
     pub fn bash_and_mcps(cwd: PathBuf, scratch: Option<PathBuf>) -> anyhow::Result<Self> {
         Ok(Self::new(vec![
             Provider::Bash(Bash {
@@ -792,8 +792,8 @@ const NO_IMAGE_INPUT_REFUSAL: &str = "this session's model reports no image inpu
 /// with a line saying why (docs/tools.md). An MCP tool call is not *about* its
 /// image the way `read_image` is — a screenshot tool's text half is often the
 /// useful part — so the call still succeeds and `is_error` stays false; what
-/// changes is that the log and the wire no longer carry bytes nothing will look
-/// at, and the model is told rather than left to infer from silence.
+/// changes is that the log and the wire carry no bytes nothing will look at, and
+/// the model is told rather than left to infer from silence.
 fn strip_unreadable_images(outcome: Outcome, image_input: bool) -> Outcome {
     if image_input {
         return outcome;

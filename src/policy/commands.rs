@@ -18,7 +18,7 @@ pub(super) fn classify_bash(role: &Config, command: &str, cwd: &Path) -> Verdict
         Some(CommandStance::Clear) => Verdict::Clear,
         // `deny` refuses without a spotter call; `watch`/`gate` spend one to re-decide. Both
         // route to whoever gates in the end, which is why they are distinguishable here and
-        // not yet distinguishable in outcome (docs/permissions.md).
+        // not distinguishable in outcome (docs/permissions.md).
         Some(CommandStance::Deny) => Verdict::Deny,
         Some(CommandStance::Watch | CommandStance::Gate) | None => Verdict::Gate,
     }
@@ -272,7 +272,7 @@ pub(super) fn is_safe_fd_dup(redir: &yash_syntax::syntax::Redir) -> bool {
 /// the one tolerated operator: a single leading `cd <dir> &&`, whose remainder becomes the token
 /// vector stage 2 matches and prefix-promotion probes (docs/permissions.md).
 ///
-/// The admitted shape is narrow, and everything outside it gates exactly as before:
+/// The admitted shape is narrow, and everything outside it gates:
 ///
 /// - the `cd` segment is exactly two words, `cd` and a **literal** target — the same word-unit
 ///   inspection stage 1 already performs ([`literal_word`]), so an expansion, a glob, or a tilde in

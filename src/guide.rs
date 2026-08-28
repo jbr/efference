@@ -25,7 +25,7 @@ use crate::log::{RawResult, ToolCall};
 /// only ever checks the front of a path against this string.
 pub const SCHEME: &str = "efference://";
 
-/// The one mount under [`SCHEME`] today. `[context]` names it as `{ builtin = "guide" }`;
+/// A mount under [`SCHEME`]. `[context]` names it as `{ builtin = "guide" }`;
 /// [`BUILTIN`] is that config value and this is the path segment it serves at.
 pub const MOUNT: &str = "efference://guide/";
 

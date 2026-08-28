@@ -9,11 +9,11 @@ use super::*;
 /// log (kin to `project(log)`, docs/log-and-projection.md). The base config is the table's initial state;
 /// each change is a `set key = value` the replay applies in order.
 ///
-/// Each change is **replace-at-key** (last-write-wins). Today's changes happen to be additive
-/// (membership in a set, a perm on a path), so the fold is also idempotent — replaying a change
-/// already persisted to the file *and* still in the log lands the same value. But order now
-/// matters in general (the table is materialized by replaying in sequence), where the previous
-/// list-append fold was order-independent. This batch form rebuilds from the whole log (used at
+/// Each change is **replace-at-key** (last-write-wins). The changes the system emits happen to
+/// be additive (membership in a set, a perm on a path), so the fold is also idempotent —
+/// replaying a change already persisted to the file *and* still in the log lands the same
+/// value. Order matters in general, though: the table is materialized by replaying in
+/// sequence. This batch form rebuilds from the whole log (used at
 /// startup to fold a resumed log, and in tests); the daemon then maintains its effective config
 /// **incrementally** via [`apply_config_change`], so a gate never re-scans the log.
 pub fn effective_config(base: &Config, log: &[LogEntry]) -> Config {

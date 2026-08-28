@@ -1,39 +1,20 @@
-//! The spotter — the independent permission rung (docs/permissions.md,
-//! backlog/permissions/spotter.md).
+//! The spotter — the independent permission rung (docs/permissions.md).
 //!
-//! When the deterministic fast-path ([`crate::policy`]) can't `Clear` a tool call,
-//! it `Gate`s — and the spotter looks at the residual before the human does. It is a
-//! one-shot, **fresh-context** model call (Haiku) that reads the mission and the
-//! proposed move and returns a graded [`Stance`]: `Clear` (auto-approve), `Watch`
-//! (uncertain / one-way — a human beat), or `Gate` (out of scope or
-//! unsanctioned-irreversible — stop and ask). Today `Watch` resolves to the human
-//! gate alongside `Gate`; the watch-window that gives it its own latency is a later
-//! unit.
+//! When the deterministic fast-path ([`crate::policy`]) can't `Clear` a tool call, it
+//! `Gate`s, and the spotter looks at the residual before the human does: a one-shot,
+//! **fresh-context** model call returning a graded [`Stance`].
 //!
-//! ## Independent, not a fork
-//!
-//! The independence *is* the product. The acting session can't check its own folly
-//! because it shares its own trajectory; the spotter can, precisely because it does
-//! not. So its request is **not** `project(log)` — it is built from scratch:
+//! The independence is what the rung buys. The acting session can't check its own folly
+//! because it shares its own trajectory, so the spotter's request is **not**
+//! `project(log)` — it is built from scratch:
 //!
 //! ```text
 //! [ persona (system, cached) | scope + watch-for (cached) | the move (fresh) ]
 //! ```
 //!
-//! The persona lives in `assets/prompts/spotter.md` (`include_str!`d as the client's
-//! byte-stable system prompt) and is sized to clear Haiku's cache floor on its own,
-//! so even a minimal role caches. The per-role context (the config's path grants +
-//! cwd, the scope prose, the spotter-only watch-for) rides one cached block;
-//! only the move is fresh each call. The persona is universal, so when a fleet shares
-//! a process the same cached segment serves every role (docs/permissions.md).
-//!
-//! ## Fail closed
-//!
-//! Any failure — transport error, no `spot` call — yields `Stance::Gate` with
-//! [`Origin::Fallback`]. Uncertainty routes to the human; the spotter never
-//! auto-clears on a failure. The distiller fails the same direction with a different
-//! artifact: a failed gate withholds the output as a hard error on the wire
-//! (docs/redaction-fork.md), never silently keeps or silently clears.
+//! The persona lives in `assets/prompts/spotter.md` and is `include_str!`d as the
+//! client's byte-stable system prompt, so it sits in the cached prefix. Any failure
+//! fails closed to [`Origin::Fallback`] + [`Stance::Gate`].
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -132,7 +113,7 @@ pub struct ForkSpot {
     /// not always the spotter process's: the offline eval replays cases recorded
     /// in other checkouts, and resolving those against the eval process's cwd
     /// reads their in-grant absolute paths as outside-grants
-    /// (backlog/spotter-eval.md). `None` falls back to the process cwd.
+    /// (docs/permissions.md). `None` falls back to the process cwd.
     cwd: Option<std::path::PathBuf>,
 }
 
@@ -144,8 +125,8 @@ impl ForkSpot {
         Self::with_persona(endpoint, model, PERSONA)
     }
 
-    /// The same spotter over a replacement persona — the eval's ablation knob
-    /// (backlog/spotter-eval.md): a persona edit measured against the labeled
+    /// The same spotter over a replacement persona — the offline eval's ablation knob
+    /// (docs/permissions.md): a persona edit measured against the labeled
     /// corpus instead of by ad-hoc replays. Production always boots [`Self::new`];
     /// nothing routes a substitute persona into a live session.
     pub fn with_persona(
@@ -269,25 +250,15 @@ impl Spotter for StaticSpotter {
     }
 }
 
-/// Render the per-config context block: the mission (scope), the boundaries (cwd + the
-/// config's path grants — so the spotter judges "outside scope" without the scope prose
-/// having to restate them), the `$TMPDIR` scratch alias when a scratch dir exists
-/// (docs/tools.md), and the spotter-only watch-for list. Stable
-/// for the whole session, so it caches.
+/// Render the per-config context block — the scope block of docs/permissions.md's request
+/// layout. Stable for the whole session, so it caches.
 ///
-/// Grants render **resolved to their absolute form** (the same lexical rule the
-/// deterministic rung applies, `src/policy/paths.rs`), with the configured spelling
-/// kept as an annotation, and the block states how a relative path in a move resolves.
-/// A spotter once compared spellings instead of resolving — `scratch/…` "does not
-/// start with `.`" — and gated a plain in-cwd write; leading with the absolute path
-/// makes containment string-visible against the working-directory line above, so no
-/// resolution of the *grant* side is asked of the model.
-///
-/// `cwd` is the *judged session's* working directory, passed in rather than read from
-/// the process: the offline eval (backlog/spotter-eval.md) replays cases recorded in
-/// other checkouts, and resolving those against its own cwd turns their in-grant
-/// absolute paths into apparent outside-grants. `None` renders the directory as
-/// unknown and leaves relative grants in their configured spelling.
+/// Grants render **resolved to their absolute form** by the same lexical rule the
+/// deterministic rung applies (`src/policy/paths.rs`): containment is then string-visible
+/// against the working-directory line, so the model is never asked to resolve the grant
+/// side. `cwd` is the *judged session's* working directory rather than the process's;
+/// `None` renders the directory as unknown and leaves relative grants in their configured
+/// spelling.
 fn render_context(
     role: &Config,
     cwd: Option<&std::path::Path>,
@@ -397,22 +368,13 @@ fn render_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>, probe: Option<&st
             ),
         }
     } else {
-        // The harness-injected `intent` (docs/tools.md) is withheld from the spotter,
-        // for now, and the reason is not that it would be useless — it is context for
-        // an underdetermined call, which is exactly what a bare structured call lacks.
-        //
-        // It is withheld because the agent authoring it is the party being judged, and
-        // it knows the criteria. Any weight the spotter puts on it is a channel for
-        // talking past the gate on assertion alone ("this path is scratch" is not
-        // evidence that it is). And a gate that reads the field changes the field:
-        // once the session learns the spotter sees it, `intent` stops being a cheap
-        // honest note about why and becomes partly a plea, which spends the honesty
-        // the condensed-transcript use depends on.
-        //
-        // Both effects are measurable and neither is measured yet
-        // (docs/permissions.md); the red team — commands the spotter blocks, intents
-        // written to get them through, the flip rate — comes before turning this on.
-        // Withheld is the reversible default.
+        // The harness-injected `intent` (docs/tools.md) is withheld from the spotter:
+        // the agent authoring it is the party being judged and knows the criteria, so any
+        // weight the spotter puts on it is a channel for talking past the gate on
+        // assertion alone. Reading the field would also change the field — an `intent`
+        // the gate sees becomes partly a plea, spending the honesty the
+        // condensed-transcript use depends on. Withheld is the reversible default
+        // (docs/permissions.md).
         let mut shown = call.input.clone();
         if let Some(object) = shown.as_object_mut() {
             object.remove(crate::tools::INTENT);
