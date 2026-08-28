@@ -133,8 +133,8 @@ fn openrouter_capabilities_aggregate_ceilings_in_opposite_directions() {
 }
 
 /// `supports_reasoning` is min-style like the ceilings: granted only when every
-/// endpoint currently serving the model lists `reasoning` — routing is unpinned,
-/// so a `thinking` block must be safe on whichever endpoint the request lands on.
+/// endpoint serving the model lists `reasoning` — routing is unpinned, so a
+/// `thinking` block must be safe on whichever endpoint the request lands on.
 #[test]
 fn openrouter_reasoning_capability_requires_every_endpoint() {
     let all = r#"{"data": {"endpoints": [
@@ -163,9 +163,8 @@ fn openrouter_reasoning_capability_requires_every_endpoint() {
 /// (adaptive on `auto` for recognized tiers, explicit `disabled` on forced choice
 /// and Haiku); foreign models never see `disabled` — adaptive on `auto` when the
 /// capability lookup grants `reasoning`, the field omitted otherwise, forced
-/// choice included. Probed live (`stealth/ox-alpha`, 2026-08-21): a
-/// mandatory-reasoning endpoint 400s on an explicit disable but thinks and then
-/// honors a forced call with the field omitted.
+/// choice included. A mandatory-reasoning endpoint 400s on an explicit disable
+/// but thinks and then honors a forced call with the field omitted.
 #[test]
 fn thinking_matrix_never_disables_foreign_models() {
     use super::thinking::Thinking;
@@ -222,8 +221,8 @@ fn omitted_thinking_is_absent_from_the_request_body() {
     assert!(claude.contains("adaptive"), "{claude}");
 }
 
-/// A model no endpoint currently serves (or that reports no context length at
-/// all) fails the boot lookup with a legible message.
+/// A model no endpoint serves (or that reports no context length at all) fails
+/// the boot lookup with a legible message.
 #[test]
 fn openrouter_capabilities_no_endpoints_is_an_error() {
     let err = Provider::OpenRouter
@@ -320,11 +319,10 @@ fn live(events: &[(&str, &str)]) -> Vec<Streamed> {
 }
 
 /// **Every generation phase reaches the live sink**, not just prose
-/// (docs/transport.md). The sink used to carry a bare text fragment, so a turn
-/// that thought and then emitted a tool call published *nothing* until prose arrived — and a
-/// turn with no prose at all published nothing, full stop, which is indistinguishable from a
-/// hung harness. The tool call is named at `content_block_start`, before its arguments,
-/// because a large input can take seconds to stream.
+/// (docs/transport.md). A sink carrying only text fragments publishes nothing on
+/// a turn that thinks and then emits a tool call, which is indistinguishable
+/// from a hung harness. The tool call is named at `content_block_start`, before
+/// its arguments, because a large input can take seconds to stream.
 #[test]
 fn every_phase_reaches_the_live_sink_not_just_prose() {
     let seen = live(&[
@@ -866,11 +864,11 @@ fn in_stream_error_surfaces_body() {
     }
 }
 
-/// A stream that closes without `message_stop` / `[DONE]` — the observed upstream
-/// abort (2026-08-21): three consecutive completions died mid-stream, committed as
-/// clean turns, and the daemon settled idle indistinguishable from the agent
-/// choosing silence. Now the completion is marked, its partial (here: thinking
-/// alone, the shape that projected as a dangling thinking block) preserved.
+/// A stream that closes without `message_stop` / `[DONE]` is the upstream-abort
+/// case: unmarked, such a completion commits as a clean turn and the daemon
+/// settles idle, indistinguishable from the agent choosing silence. Marked, the
+/// partial is preserved — here thinking alone, the shape that would otherwise
+/// project as a dangling thinking block.
 #[test]
 fn aborted_stream_assembles_as_record_only_partial() {
     let completion = feed(&[
@@ -1057,9 +1055,9 @@ fn session_key_truncates_a_multibyte_name_without_panicking() {
 }
 
 /// The spotter's key is distinct from the agent's. Its prefix shares nothing with the
-/// agent turn, and an explicit key overrides the message hashing that used to separate
-/// them for free — so pointing both clients at one model would otherwise pin two
-/// unrelated prefixes to one route.
+/// agent turn, and an explicit key overrides the message hashing that would
+/// otherwise separate them for free — so pointing both clients at one model would
+/// pin two unrelated prefixes to one route.
 #[test]
 fn spotter_endpoint_takes_a_distinct_key_that_still_fits_the_cap() {
     let mut e = Endpoint::resolve(None, None, Some("sk-ant-xyz".into())).unwrap();
@@ -1524,10 +1522,9 @@ fn a_pinned_upstream_renders_as_the_provider_object() {
 }
 
 /// A stream that **finalizes with nothing** is marked retryable, the complement
-/// of one that dies before finalizing (docs/transport.md). Observed twice —
-/// 2026-08-22 (stealth/ox-alpha) and 2026-08-28 (google/gemini-3.7-flash,
-/// mid-task in a controlled run): proper termination, zero content blocks, zero
-/// usage. Unmarked it commits as the model choosing silence, so the loop has
+/// of one that dies before finalizing (docs/transport.md): proper termination,
+/// zero content blocks, zero usage. Unmarked it commits as the model choosing
+/// silence, so the loop has
 /// nothing to dispatch and idles with the task unfinished. Marked, the turn loop
 /// and the fork peek each retry it on the budget they already have.
 #[test]
@@ -1743,9 +1740,9 @@ async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
 
 /// End to end over a socket: the diagnostics come off the *response*, so the
 /// hook is in `complete` — the status handler cannot serve this path, an empty
-/// stream being a 200 it early-returns on. The server here answers exactly as the
-/// gateway did on 2026-08-28: 200, an `x-generation-id`, a `message_start` with
-/// all-zero usage, `[DONE]`, nothing else.
+/// stream being a 200 it early-returns on. The server here answers exactly as a
+/// gateway fronting a slow upstream does: 200, an `x-generation-id`, a
+/// `message_start` with all-zero usage, `[DONE]`, nothing else.
 #[tokio::test]
 async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
     use std::io::{Read, Write};

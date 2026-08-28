@@ -15,8 +15,8 @@ fn entry(seq: u64, turn: u32, payload: Payload) -> LogEntry {
     }
 }
 
-/// A small log exercising all three Phase 0 payloads: a user turn, an
-/// assistant turn with prose + a tool call, and that call's raw result.
+/// A small log exercising the three core payloads: a user turn, an assistant
+/// turn with prose + a tool call, and that call's raw result.
 fn sample_log() -> Vec<LogEntry> {
     vec![
         entry(
@@ -150,15 +150,15 @@ fn distilled_log(keep: Keep, note: Option<&str>) -> Vec<LogEntry> {
     log
 }
 
-/// Pins the exact wire bytes of a **distilled** tool result — the shape most results
-/// actually take (42 of 44 in one measured session), and which no other pin covered:
-/// the fixture's only result is `WireState::Raw`, so a render change to the dominant
-/// shape used to pass every byte pin.
+/// Pins the exact wire bytes of a **distilled** tool result — the shape most
+/// results take once their gate has run, and the one the other pins miss: the
+/// shared fixture's only result is `WireState::Raw`, so a render change to the
+/// distilled shape would otherwise pass every byte pin.
 ///
 /// Three properties are fixed here. A partial verdict carries `@@ lines a-b @@` per
 /// span. A verdict spanning the whole result carries **no header** — the marker exists
 /// to show where curation cut, and one that spans everything states only "all of it"
-/// (backlog/distilled-render-overhead.md). A note renders as a trailing `⟢` breadcrumb.
+/// (docs/redaction-fork.md). A note renders as a trailing `⟢` breadcrumb.
 ///
 /// Distilled results sit in `messages`, ahead of the cache breakpoint, so a change here
 /// moves the production prefix silently. It must break this test first.
@@ -276,7 +276,7 @@ fn imageless_raw_result_serialization_is_unchanged() {
 /// leaves the wire byte-identical to the log without it. Both properties this unit
 /// rests on live here — the retry that follows an aborted stream re-sends the same
 /// bytes (riding the cached prefix), and a thinking-only partial cannot project as a
-/// dangling thinking block (the observed failure, 2026-08-21).
+/// dangling thinking block.
 #[test]
 fn record_only_partial_projects_to_nothing() {
     let clean = serde_json::to_string(&project(&sample_log())).unwrap();

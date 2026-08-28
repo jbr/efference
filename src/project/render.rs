@@ -9,15 +9,14 @@ use super::*;
 /// projection and the TUI projection share this one renderer; like
 /// [`render_distilled`] it is deterministic, a pure function of its input.
 ///
-/// Two wording constraints, both from observed misreadings. It said "its output was
-/// not recorded", which is false — the raw sits in `log.jsonl` and only the
-/// agent-facing projection lost it; and it left the failure unattributed, so an agent
-/// reading a peek's rate limit blamed its own tool and re-issued `ls` in shrinking
-/// forms (harness-eval r1, `inclusionai/ling-3.0-flash`). It now names the harness as
-/// the thing that failed. The re-issue advice is conditional because re-running is not
-/// always safe: a withheld conformance-suite `PASS` was re-run against a still-live
-/// server whose counters the first run had already moved, turning a pass into a
-/// spurious failure (harness-eval sealed r1, `google/gemini-3.7-flash`).
+/// Three wording constraints, each one an agent misreading the text can produce.
+/// It must not say the output was *not recorded* — the raw sits in `log.jsonl`,
+/// and only the agent-facing projection lost it. It must attribute the failure to
+/// the harness, or an agent reading a peek's rate limit blames its own tool and
+/// re-issues the call in shrinking forms. And the re-issue advice stays
+/// conditional, because re-running is not always safe: a withheld verdict on a
+/// call whose side effects already stand can turn a real pass into a spurious
+/// failure when the call is repeated.
 ///
 /// [`WireState::TriageFailed`]: crate::log::WireState::TriageFailed
 pub fn render_triage_failure(why: &str) -> String {
@@ -109,10 +108,10 @@ pub(super) fn render_hunks(
 ) -> String {
     let ranges = normalize(ranges, lines.len());
     // A header marks *where* curation cut. One range spanning everything cut nothing,
-    // so its header states only "all of it" — noise on every fully-retained result, and
-    // on a one-line result it outweighs the line it labels (backlog measured 82 such
-    // headers and 97 results rendering larger than their raw content). Truncation is
-    // reported separately by the caller, so suppressing this hides nothing.
+    // so its header states only "all of it" — noise on every fully-retained result,
+    // and on a one-line result it is longer than the line it labels. Truncation is
+    // reported separately by the caller, so suppressing this hides nothing
+    // (docs/redaction-fork.md).
     let spans_everything = matches!(ranges.as_slice(), [(1, end)] if *end == lines.len());
     let mut parts: Vec<String> = Vec::new();
     for &(start, end) in &ranges {

@@ -37,11 +37,11 @@ pub enum ApiBlock {
         #[serde(skip_serializing_if = "Option::is_none")]
         cache_control: Option<CacheControl>,
     },
-    /// An extended-thinking block replayed verbatim (docs/transport.md,
-    /// docs/transport.md). `signature` is the opaque token the API minted and
-    /// requires echoed unchanged; both fields are stored strings projected verbatim, so the
-    /// block stays byte-deterministic. Thinking blocks lead the assistant turn, before text
-    /// and `tool_use`.
+    /// An extended-thinking block replayed verbatim (docs/transport.md).
+    /// `signature` is the opaque token the API minted and requires echoed
+    /// unchanged; both fields are stored strings projected verbatim, so the block
+    /// stays byte-deterministic. Thinking blocks lead the assistant turn, before
+    /// text and `tool_use`.
     Thinking {
         thinking: String,
         signature: String,
@@ -82,11 +82,9 @@ pub enum ApiBlock {
 }
 
 /// A `tool_result`'s `content`: the API accepts a bare string or an array of
-/// `text`/`image` blocks. `Text` serializes as the bare string — byte-identical
-/// to when the field was `String`, so a text-only result (every result before
-/// images existed) leaves the pinned wire bytes unmoved; only a result that
-/// actually carries an image takes the array form
-/// (docs/log-and-projection.md).
+/// `text`/`image` blocks. `Text` serializes as the bare string, so a text-only
+/// result emits exactly the bytes the wire pin fixes; only a result carrying an
+/// image takes the array form (docs/log-and-projection.md).
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum ToolResultContent {

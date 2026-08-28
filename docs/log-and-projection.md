@@ -89,6 +89,7 @@ enum WireState {
     Raw,                                              // project the full `raw`
     Distilled { keep: Keep, note: Option<String> },  // the verdict, re-rendered by project
     Elided,                                           // project a placeholder
+    TriageFailed { why: String },                     // project a hard error (is_error forced), never the untriaged raw
 }
 enum Keep { All, None, Ranges(Vec<(usize, usize)>) }
 ```

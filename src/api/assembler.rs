@@ -9,9 +9,10 @@ use crate::log::{FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord};
 /// One content block being reassembled from the stream, keyed by its `index`.
 pub(super) enum BlockAccum {
     Text(String),
-    /// An extended-thinking block (docs/transport.md, docs/transport.md): `text`
-    /// accumulates `thinking_delta` chunks, `signature` arrives whole in a `signature_delta`
-    /// near the block's end. The signature must be preserved verbatim for replay.
+    /// An extended-thinking block (docs/transport.md): `text` accumulates
+    /// `thinking_delta` chunks, `signature` arrives whole in a `signature_delta`
+    /// near the block's end. The signature must be preserved verbatim, because the
+    /// API rejects a modified block on replay.
     Thinking {
         text: String,
         signature: String,
@@ -33,22 +34,9 @@ pub(super) enum BlockAccum {
 /// Reassembles a streamed SSE event sequence into a single [`Completion`].
 ///
 /// Pure over the event sequence: [`Assembler::apply`] takes one event's `event:`
-/// type and `data:` payload, so it is unit-testable without a live stream —
-/// exactly as the old non-streaming `Response::into_completion` was. Invariants
-/// carried over from that path:
-///
-/// - **Loud on unknown.** An unrecognized event, block, or delta type is a hard
-///   error, never silently dropped (mirrors the old enum's deliberate parse
-///   failure on unmodelled block types).
-/// - **Usage merge.** Both usage-bearing events fold into one [`Usage`] by
-///   per-field max ([`Usage::merge_max`]). Anthropic reports `input_tokens` +
-///   `cache_*` in `message_start` and the final `output_tokens` in
-///   `message_delta`; OpenRouter's skin zeroes/nulls the whole object in
-///   `message_start` and reports every field in `message_delta`. Reading either
-///   event alone loses half the picture for one of the two providers — see
-///   docs/log-and-projection.md.
-/// - **Thinking assembled** into leading `ContentBlock::Thinking` / `RedactedThinking`
-///   (docs/transport.md, docs/transport.md), signatures preserved for replay.
+/// type and `data:` payload, so it is unit-testable without a live stream. The
+/// three invariants it holds — loud-on-unknown, finalized-or-marked, and the
+/// usage merge — are in docs/transport.md.
 pub(super) struct Assembler {
     /// Indexed by content-block `index`; pushed in order as blocks open.
     blocks: Vec<BlockAccum>,
@@ -329,8 +317,8 @@ impl Assembler {
             // Keepalive.
             Some("ping") => {}
             // An in-stream error (e.g. `overloaded_error` after a 200) carries a
-            // full JSON body — surface it verbatim (the lossy path is only the
-            // pre-stream non-2xx in `complete`, see the trillium backlog note).
+            // full JSON body — surface it verbatim, so it reaches the completion's
+            // `upstream_failure` and thus the log (docs/transport.md).
             Some("error") => return Err(format!("upstream stream error: {data}").into()),
             other => return Err(format!("unknown SSE event {other:?}: {data}").into()),
         }
@@ -405,20 +393,7 @@ impl Assembler {
             }
         }
         // A stream that finalizes with **nothing** is the complement of one that
-        // dies before finalizing (docs/transport.md): proper termination, zero
-        // content blocks, zero usage — a gateway answering for a slow upstream
-        // with a well-formed empty stream rather than an error. It does carry a
-        // generation id, because a `message_start` frame arrives and sets it —
-        // and on OpenRouter that id 404s permanently on both `GET /generation`
-        // and `GET /generation/content`, so nothing is recoverable from it after
-        // the fact. That is why this path, alone, attaches `StreamDiagnostics`:
-        // the response status and headers (the edge's own `x-generation-id`),
-        // the `message_start` body as received, and the frames that arrived. The
-        // log is the only place the next investigation can read them.
-        // Committed as-is it reads as the model choosing silence, so the loop has
-        // nothing to dispatch and goes idle mid-task, which is what it did on
-        // 2026-08-22 and again on 2026-08-28.
-        //
+        // dies before finalizing (docs/transport.md), and is marked the same way.
         // Marking it here rather than in the loop is what makes both surfaces
         // handle it: the mark *is* the record-only/retryable signal, so the turn
         // loop and the fork peek each retry it on the budget they already have.
@@ -427,6 +402,11 @@ impl Assembler {
         // legitimately answers with no blocks — but was billed for the thinking
         // that got it there — is not mistaken for this and retried into
         // exhaustion.
+        //
+        // This is the one path that attaches `StreamDiagnostics`, because it is
+        // the one where nothing else survives: the generation id such a stream
+        // carries 404s permanently, so the log is the only place a later
+        // investigation can read from.
         let upstream_failure = upstream_failure.or_else(|| {
             let empty = thinking.is_empty() && text.is_empty() && calls.is_empty();
             (empty && self.usage.output_tokens == 0).then(|| {

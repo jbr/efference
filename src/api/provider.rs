@@ -184,10 +184,9 @@ impl Provider {
         match self {
             Self::Anthropic => {
                 // `GET /v1/models/{id}`: `max_input_tokens` is the context
-                // window, `max_tokens` the output cap (both carried since
-                // 2026-03). Unknown fields are ignored until a consumer needs
-                // them; `capabilities.image_input.supported` is the one that
-                // has one.
+                // window, `max_tokens` the output cap. Unknown fields are
+                // ignored until a consumer needs them;
+                // `capabilities.image_input.supported` is the one that has one.
                 #[derive(Deserialize)]
                 struct Model {
                     max_input_tokens: Option<u64>,
@@ -308,8 +307,8 @@ impl Provider {
                 // endpoints that fit the request, so a prompt larger than the
                 // smallest endpoint is not an error — it just narrows the
                 // routable set. A min here under-reports by the width of the
-                // narrowest endpoint (z-ai/glm-5.3-flash, 2026-08-26: seven
-                // endpoints at 1M+, one at 256k, min reported 256k).
+                // narrowest outlier, which for a 1M-token model with one 256k
+                // endpoint means reporting 256k (docs/transport.md).
                 let context_length = endpoints
                     .iter()
                     .filter_map(|e| e.context_length)
@@ -414,7 +413,8 @@ pub struct ModelCapabilities {
     /// `cache_control`). OpenRouter: some serving endpoint either caches
     /// implicitly or prices cache reads. False turns the keepalive off for the
     /// session: a `max_tokens: 0` ping against an uncached model refreshes
-    /// nothing and bills the whole prefix at the input rate every four minutes.
+    /// nothing and re-bills the whole prefix at the input rate every interval,
+    /// which is the one way the keepalive can cost more than it saves.
     pub supports_prompt_caching: bool,
 }
 

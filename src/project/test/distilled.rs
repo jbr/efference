@@ -59,9 +59,8 @@ fn render_distilled_truncates_past_the_cap() {
 }
 
 /// A hunk header marks *where* curation cut, so a single range spanning the whole
-/// result carries none: it would state only "all of it". Measured at 82 such headers
-/// across six harness-eval runs, and on a one-line result the header outweighs the line
-/// (backlog/distilled-render-overhead.md).
+/// result carries none: it would state only "all of it", and on a one-line result
+/// the header is longer than the line it labels (docs/redaction-fork.md).
 #[test]
 fn a_range_spanning_everything_gets_no_header() {
     let ls = lines("alpha\nbeta\ngamma");

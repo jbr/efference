@@ -2,14 +2,13 @@
 
 use super::*;
 
-/// The `thinking` field (docs/transport.md, docs/transport.md). `Adaptive` lets the
-/// model decide when/how much to think and interleaves it across turns; `display: "summarized"`
-/// captures a readable model-authored summary into the log (same token cost as omitted). The
-/// serde tag renders `{"type":"adaptive","display":"summarized"}` / `{"type":"disabled"}`
-/// exactly. `Omit` leaves the field off the request entirely (the `Request` field's
-/// `skip_serializing_if`), letting the endpoint apply its own default — the only safe
-/// spelling for foreign models, where an explicit `disabled` is rejected outright by
-/// mandatory-reasoning endpoints (probed live on `stealth/ox-alpha`, 2026-08-21).
+/// The `thinking` field (docs/transport.md). `Adaptive` lets the model decide
+/// when and how much to think; `display: "summarized"` captures a readable
+/// model-authored summary into the log at the same token cost as omitting it.
+/// `Omit` is distinct from `Disabled`: it leaves the field off the request
+/// entirely (via the `Request` field's `skip_serializing_if`), which is the only
+/// safe spelling for foreign models, where an explicit `disabled` is rejected
+/// outright by mandatory-reasoning endpoints.
 #[derive(Serialize, Clone, Copy)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(super) enum Thinking {
@@ -27,19 +26,12 @@ impl Thinking {
         matches!(self, Self::Omit)
     }
 
-    /// Thinking rides on `tool_choice`, the model, and the capability lookup
-    /// (docs/transport.md):
-    ///
-    /// - **Claude models** keep the Anthropic matrix: adaptive on `auto` for the
-    ///   recognized tiers (not Haiku), explicit `disabled` otherwise — forced choice ⟺
-    ///   no thinking there (the API rejects the combination, and the fork forces its
-    ///   distiller).
-    /// - **Foreign models** (reached via OpenRouter) never get `disabled`: adaptive on
-    ///   `auto` when the boot-time metadata says the model takes OpenRouter's normalized
-    ///   `reasoning` (`model_reasoning`, from `supported_parameters`) — the compat layer
-    ///   translates the block — and the field omitted otherwise, including on forced
-    ///   choice: probed live, a mandatory-reasoning endpoint thinks and then honors the
-    ///   forced call, while an explicit `disabled` 400s (2026-08-21).
+    /// The thinking matrix over `tool_choice`, the model family, and the boot
+    /// capability lookup (docs/transport.md). The one asymmetry to hold onto
+    /// while reading the `match`: Claude falls through to explicit `disabled`,
+    /// foreign models fall through to `Omit` — a mandatory-reasoning endpoint
+    /// rejects an explicit disable outright, so the two non-adaptive answers are
+    /// not interchangeable.
     ///
     /// An explicit `EFFERENCE_THINKING` overrides the `auto`-turn decision either way.
     pub(super) fn for_request(
@@ -56,10 +48,9 @@ impl Thinking {
         }
     }
 
-    /// The keepalive's thinking (docs/transport.md): explicit `disabled` on Claude
-    /// (`max_tokens: 0` rejects `enabled`; adaptive there is untested), the field
-    /// omitted for foreign models — the same "never `disabled` off-family" rule as
-    /// [`Self::for_request`].
+    /// The keepalive's thinking (docs/transport.md): explicit `disabled` on Claude,
+    /// since `max_tokens: 0` rejects thinking-on, and the field omitted for foreign
+    /// models — the same "never `disabled` off-family" rule as [`Self::for_request`].
     pub(super) fn for_keepalive(model: &str) -> Self {
         if is_claude_family(model) {
             THINKING_DISABLED
@@ -82,24 +73,23 @@ pub(super) fn is_claude_family(model: &str) -> bool {
 /// (`openai/…`, `google/…`, …) fall outside it and are governed by the capability
 /// lookup instead.
 ///
-/// Adaptive thinking (`{type:"adaptive"}`) is a Claude **4.6+** feature; pre-4.6
-/// tiers (Opus 4.5/4.1, Sonnet 4.5/4, …) speak the older `{type:"enabled",
-/// budget_tokens}` API and **400 on adaptive**. This substring rule doesn't encode
-/// that version floor — parsing a version out of both `claude-opus-4-8` and
-/// `anthropic/claude-opus-4.1` is its own fragile problem — so it assumes the
-/// current Claude generation, which is what efference actually serves (default
-/// `claude-opus-4-8`). efference can't express budgeted thinking anyway (the
-/// [`Thinking`] enum is Adaptive/Disabled only), so a pre-4.6 Claude wants
-/// thinking off: set `EFFERENCE_THINKING=off` for that non-target case.
+/// Adaptive thinking (`{type:"adaptive"}`) is a Claude **4.6+** feature; earlier
+/// tiers speak the older `{type:"enabled", budget_tokens}` API and **400 on
+/// adaptive**. This substring rule deliberately does not encode that version floor
+/// — parsing a version out of both `claude-opus-4-8` and `anthropic/claude-opus-4.1`
+/// is its own fragile problem — so it assumes the Claude generation efference
+/// serves. [`Thinking`] cannot express budgeted thinking at all, so an older Claude
+/// wants thinking off: `EFFERENCE_THINKING=off` covers that case.
 pub(super) fn is_recognized_adaptive_claude(model: &str) -> bool {
     (model.contains("claude") || model.contains("anthropic")) && !model.contains("haiku")
 }
 
-/// The `tool_choice` field. Phase 1+ always sets `disable_parallel_tool_use` so
-/// the model emits **at most one** `tool_use` per turn (docs/README.md) — set once and
-/// never varied, so it never invalidates the cache. `auto()` lets the model
-/// decide whether to call a tool; `force(name)` makes it call exactly that one
-/// (the fork's `retain`, docs/redaction-fork.md).
+/// The `tool_choice` field. `disable_parallel_tool_use` is always set, so the
+/// model emits **at most one** `tool_use` per turn (docs/README.md) — never
+/// varied, so it never invalidates the cache. `auto()` lets the model decide
+/// whether to call a tool; `force(name)` makes it call exactly that one, which
+/// only the spotter's `spot` does (docs/permissions.md) — forcing moves the
+/// prefix relative to the shared envelope every other call type sends.
 #[derive(Serialize, Clone, Copy)]
 pub struct ToolChoice {
     #[serde(rename = "type")]

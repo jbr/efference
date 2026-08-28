@@ -240,11 +240,11 @@ fn boundary_mark_at_tail_injects_summary() {
     );
 }
 
-/// Slice 0 test updated: a `Mark` with `upto` covering the assistant and its
-/// first result *folds* them; the second result — whose `tool_use` is now gone
-/// — still projects (it's outside the fold) but is effectively orphaned in
-/// this contrived scenario. In practice `consolidate` only runs at clean task
-/// boundaries so this edge never occurs.
+/// A `Mark` with `upto` covering the assistant and its first result *folds*
+/// them; the second result — whose `tool_use` is then gone — still projects
+/// (it is outside the fold) but is effectively orphaned in this contrived
+/// scenario. `consolidate` only runs at clean task boundaries, so this edge
+/// does not arise in practice.
 #[test]
 fn mark_folds_named_span_and_injects_summary() {
     // A mark with upto=1 folds seqs 0 and 1 (assistant + first result), then

@@ -25,15 +25,14 @@ use crate::project::ApiMessage;
 /// regardless of which `Endpoint` is targeted (docs/transport.md).
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
-/// Response-token ceiling per request. 1024 truncated real final answers in a
-/// live run (the model's synthesis was cut mid-sentence); 4096 gives the agent
-/// room to conclude while staying bounded. A `Client` field can replace this when
-/// per-call control is needed.
+/// Default response-token ceiling, standing only where the boot capability
+/// lookup reports no cap of its own ([`Client::with_max_output`]). A 1024
+/// ceiling cuts a real final answer mid-sentence; 4096 leaves room to conclude
+/// while staying bounded.
 const MAX_TOKENS: u32 = 4096;
 
-/// Boxed error for the Phase 0 transport. A typed error enum can replace this
-/// once error handling needs structure; for now non-2xx responses carry
-/// the raw body in the message so failures are legible.
+/// Boxed transport error. Non-2xx responses carry the raw body in the message,
+/// so a failure is legible without a typed enum.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Which **upstream** serves the model, for an OpenRouter session: an ordered
@@ -57,7 +56,7 @@ pub struct Upstream {
 }
 
 impl Upstream {
-    /// `None` for an empty order, so "no `--provider` flag" and "an empty list"
+    /// `None` for an empty order, so "no `--upstream` flag" and "an empty list"
     /// are the same request bytes rather than an empty object on the wire.
     pub fn pinned(order: Vec<String>) -> Option<Self> {
         (!order.is_empty()).then_some(Self {
@@ -73,28 +72,17 @@ struct Request<'a> {
     max_tokens: u32,
     #[serde(skip_serializing_if = "str::is_empty")]
     system: &'a str,
-    /// Tool definitions. Always sent (Phase 0 always has bash), so the request
-    /// never toggles the tools-cache tier (docs/log-and-projection.md). Their *content* must be
+    /// Tool definitions. Always sent, so the request never toggles the
+    /// tools-cache tier (docs/log-and-projection.md). Their *content* must be
     /// byte-stable — `Bash::definition()` builds them from a [`Value`], whose
     /// keys serialize sorted, so it is.
     tools: &'a [Value],
     tool_choice: ToolChoice,
-    /// Extended thinking (docs/transport.md, docs/transport.md). Rides on
-    /// `tool_choice`, the model, and the capability lookup — the matrix is
-    /// [`Thinking::for_request`]: adaptive on the main agent turn when the model takes
-    /// it (recognized Claude tiers, or a foreign model whose metadata lists
-    /// `reasoning`), explicit `disabled` only ever on Claude (forced `tool_choice` is
-    /// incompatible with thinking there — 400 — and the **spotter** forces its `spot`
-    /// tool; the fork does not force, because flipping `tool_choice` between forced and
-    /// `auto` moved the request prefix and invalidated the cache every peek —
-    /// docs/redaction-fork.md), and
-    /// the field **omitted** for every other foreign case — an explicit `disabled` is
-    /// rejected outright by mandatory-reasoning endpoints. Keepalive is handled
-    /// independently (`max_tokens: 0` rejects `enabled`; adaptive there is untested).
-    /// Set once per call-type and never flipped turn-to-turn, so it stays out of the
-    /// cached prefix's way (toggling thinking keeps the tools+system tier valid;
-    /// docs/log-and-projection.md). (`disabled` also 400s on Fable 5, which can't
-    /// disable thinking — not a serve target yet.)
+    /// Extended thinking (docs/transport.md). The matrix over `tool_choice`, the
+    /// model family, and the capability lookup is [`Thinking::for_request`]; the
+    /// three-way adaptive/disabled/omitted split is why this is not a `bool`. Set
+    /// once per call-type and never flipped turn-to-turn, so it stays out of the
+    /// cached prefix's way.
     #[serde(skip_serializing_if = "Thinking::is_omit")]
     thinking: Thinking,
     /// Sampling temperature, in the provider's native float range. Omits when
@@ -104,48 +92,24 @@ struct Request<'a> {
     /// cached prefix's way.
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
-    /// Which upstream serves the model (docs/transport.md) — omitted entirely
-    /// for Anthropic, which has no such choice, and for OpenRouter sessions that
-    /// did not ask for one. When set, it pins the endpoint instead of letting
-    /// OpenRouter choose by price. Serialized as `provider`, OpenRouter's name
-    /// for the field; see [`Upstream`] for why the type is not called that.
-    ///
-    /// Exists because endpoint choice is a *measurable* variable, not a
-    /// preference: the endpoints behind one OpenRouter model slug differ in
-    /// uptime and latency tail, and on 2026-08-28 an eval run against
-    /// `google/gemini-3.7-flash` took eight consecutive mid-stream aborts on a
-    /// Vertex endpoint whose p99 latency sat near the client timeout, while an
-    /// equally-priced Google AI Studio endpoint was at 99.95%. A run that cannot
-    /// say which endpoint served it cannot be compared to another
-    /// (eval/harness/README.md).
-    ///
-    /// A per-session constant like `model`, so it never toggles in flight and
-    /// stays out of the cached prefix's way.
+    /// Which upstream serves the model (docs/transport.md). Serialized as
+    /// `provider`, OpenRouter's name for the field; see [`Upstream`] for why the
+    /// type is not called that. A per-session constant like `model`, and `None`
+    /// skips serialization entirely, so it never moves a cached prefix.
     #[serde(rename = "provider", skip_serializing_if = "Option::is_none")]
     upstream: Option<&'a Upstream>,
-    /// The OpenAI-style sticky-cache key, carrying this session's sticky-routing
-    /// id — the same value that rides the `x-session-id` header
-    /// (docs/transport.md). Sent only where the provider reads it
-    /// ([`Provider::prompt_cache_key_field`]); `None` skips serialization
-    /// entirely, so an Anthropic session's bytes are unmoved by this field's
-    /// existence.
-    ///
-    /// Redundant with the header **by design**, and third in OpenRouter's own
-    /// precedence order (body `session_id`, then `x-session-id`, then this —
-    /// verified against their prompt-caching docs, 2026-08-28). It is in the
-    /// body because the header is the part of the request an intermediary may
-    /// drop, and because upstreams that read the OpenAI field directly pin their
-    /// own cache on it rather than on OpenRouter's routing key.
-    ///
-    /// A per-session constant like `model` and `upstream`, so it never toggles
-    /// in flight and stays out of the cached prefix's way.
+    /// The OpenAI-style sticky-cache key, carrying the same session id the
+    /// `x-session-id` header does (docs/transport.md). Sent only where the
+    /// provider reads it ([`Provider::prompt_cache_key_field`]); a per-session
+    /// constant, and `None` skips serialization entirely, so it never moves a
+    /// cached prefix.
     #[serde(skip_serializing_if = "Option::is_none")]
     prompt_cache_key: Option<&'a str>,
     messages: &'a [ApiMessage],
-    /// Always `true` — we consume the response as SSE (docs/transport.md). Set once and
-    /// never varied; a delivery flag, not part of the cached prefix (docs/log-and-projection.md),
-    /// so it never invalidates the cache and isn't covered by the wire-bytes pin
-    /// (which guards `project()` output, not this request envelope).
+    /// Always `true` — the response is consumed as SSE (docs/transport.md). A
+    /// delivery flag rather than a cache-relevant one, though its position in
+    /// this struct is pinned along with the rest of the envelope by
+    /// `request_envelope_matches_expected_wire_bytes`.
     stream: bool,
 }
 
@@ -178,18 +142,14 @@ static THINKING_OVERRIDE: std::sync::LazyLock<Option<bool>> = std::sync::LazyLoc
     }
 });
 
-/// The Anthropic `usage` object. The two `cache_*` fields are the Phase 0 gate
-/// metrics; defaulted because they're absent unless caching is in play. `Default`
-/// seeds the [`Assembler`] before `message_start` arrives.
+/// The Anthropic `usage` object (docs/transport.md). `Default` seeds the
+/// [`Assembler`] before `message_start` arrives.
 ///
-/// Every field is null-tolerant (docs/transport.md: providers). Anthropic
-/// *omits* a token count it has nothing to say about; OpenRouter's skin (and the
-/// upstreams behind it — e.g. Together) instead sends the field **present with an
-/// explicit `null`** (`cache_creation_input_tokens: null` in every `message_start`).
-/// `#[serde(default)]` covers only an *absent* field — a present `null` still hits
-/// the `u64` and fails (`invalid type: null, expected u64`), which crashed the very
-/// first OpenRouter turn. [`null_or_missing`] folds both absent and null to 0, so a
-/// token count no provider reports is simply zero telemetry rather than a hard error.
+/// Every field needs both `#[serde(default)]` and [`null_or_missing`], because
+/// providers report a count they have nothing to say about in two different
+/// ways: Anthropic omits the field, while OpenRouter-fronted upstreams send it
+/// present with an explicit `null`. `default` alone covers only the absent case;
+/// a present `null` still hits the `u64` and errors the whole response away.
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct Usage {
     #[serde(default, deserialize_with = "null_or_missing")]
@@ -204,14 +164,11 @@ pub struct Usage {
 
 impl Usage {
     /// Fold another `usage` object from the same response into this one, keeping
-    /// the larger count per field. Used by the [`Assembler`] to merge the
-    /// `message_start` and `message_delta` usages without either event's
-    /// placeholder clobbering the other's real number: Anthropic's
-    /// `message_start` carries the input/cache counts and `output_tokens: 1`,
-    /// while OpenRouter's carries all-zero/null and puts every real count in
-    /// `message_delta`. Max rather than "last non-zero wins" because these are
-    /// per-response totals, not increments — neither event can legitimately
-    /// report *less* than the other for the same field.
+    /// the larger count per field (docs/transport.md: the usage merge). Max
+    /// rather than "last event wins" because both usage-bearing events report
+    /// per-response *totals*, not increments — neither can legitimately report
+    /// less than the other for the same field, so a placeholder or zero from
+    /// either side is harmless.
     pub(crate) fn merge_max(&mut self, other: &Usage) {
         self.input_tokens = self.input_tokens.max(other.input_tokens);
         self.output_tokens = self.output_tokens.max(other.output_tokens);
@@ -225,9 +182,9 @@ impl Usage {
 }
 
 /// Deserialize a `u64` that a provider may send as an explicit JSON `null` (or omit
-/// entirely, when paired with `#[serde(default)]`), folding both to 0. Anthropic
-/// omits; OpenRouter-fronted upstreams null it out — see [`Usage`]. Not part of any
-/// wire-byte pin: `Usage` is response/telemetry only, never projected (docs/log-and-projection.md).
+/// entirely, when paired with `#[serde(default)]`), folding both to 0 — see
+/// [`Usage`]. Not part of any wire-byte pin: `Usage` is response telemetry, never
+/// projected (docs/log-and-projection.md).
 fn null_or_missing<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -291,26 +248,19 @@ impl Completion {
 }
 
 /// What a single SSE event contributed to the *live* view, if anything
-/// (docs/transport.md — the invisible-generation-phase defect). The assembler folds
-/// every event into the [`Completion`] regardless; this is the parallel, transport-only channel
-/// that lets a client show what the model is doing **while** it does it.
+/// (docs/transport.md). The assembler folds every event into the [`Completion`]
+/// regardless; this is the parallel, transport-only channel that lets a client show
+/// what the model is doing **while** it does it. One variant per phase a turn can be
+/// in, so a turn spent thinking or emitting a large tool-call input is expressible
+/// rather than reading as a hung harness.
 ///
-/// Before this existed the sink carried a bare prose fragment, so only `text_delta` could reach it
-/// — a turn spent thinking or emitting a large tool-call input produced no output at all and read
-/// as a hung harness. Typing the channel is what makes the other phases expressible; each variant
-/// is one phase a turn can be in.
 /// **Every variant carries the `index` of the content block it belongs to**, because a
-/// streamed fragment is partial delivery *of a specific item* and a client has to know which.
-/// Without it a client can only hold one slot per kind, and a response with two tool calls
-/// overwrites the first the moment the second opens — the arriving input a client had been
-/// showing simply disappears. That is the same single-slot failure thinking already hit once
-/// (docs/tui.md); the slot is the defect, not the field it happened to be in.
-///
-/// The provider scopes its own stream this way — the assembler already keys blocks by `index`
-/// and reads a `tool_use` block's `id` — so this preserves that scoping rather than inventing
-/// one. `index` is per-response, and the loop runs one request at a time, so "the block at
-/// `index` of the response now in flight" is unambiguous; the committed `LogEntry` supersedes
-/// the whole live set.
+/// streamed fragment is partial delivery *of a specific item* and a client has to know
+/// which. Without it a client can only hold one slot per kind, and a response with two
+/// tool calls overwrites the first the moment the second opens. `index` is
+/// per-response and the loop runs one request at a time, so "the block at `index` of
+/// the response now in flight" is unambiguous; the committed `LogEntry` supersedes the
+/// whole live set.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Streamed {
     /// A fragment of assistant prose.

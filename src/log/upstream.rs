@@ -2,13 +2,10 @@
 //! not produce a usable turn, and the transport evidence captured with it
 //! (docs/transport.md).
 //!
-//! The mark is one string in the ordinary case — a mid-stream death, a status
-//! the retry handler absorbed. One case carries more: a stream that *finalizes*
-//! with no content and no usage leaves nothing else behind anywhere. The
-//! generation id it allocates 404s at OpenRouter, so an investigation run later
-//! has only what the log kept. [`StreamDiagnostics`] is what the log keeps on
-//! that path: the response status, an allowlist of diagnostic response headers,
-//! the `message_start` body as received, and the stream's frames.
+//! The mark is one string in the ordinary case. One case carries
+//! [`StreamDiagnostics`] as well — a stream that *finalizes* with no content and
+//! no usage, whose generation id 404s afterward, so the log is the only place a
+//! later investigation can read from.
 //!
 //! None of this reaches the wire: an entry with an `upstream_failure` projects
 //! to nothing (docs/log-and-projection.md), so the shape here cannot move the

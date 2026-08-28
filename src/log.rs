@@ -1,9 +1,9 @@
 //! The append-only annotated log — the source of truth (docs/README.md, docs/log-and-projection.md).
 //!
-//! Phase 0 minimal slice: only the `User` / `Assistant` / `ToolResult` payloads
-//! and the [`WireState`] types needed to drive the bash-only loop. `Mark`,
-//! `Ambient`, and `Commit` payloads (and the model-driven distiller) arrive with
-//! the phases that exercise them — see docs/README.md.
+//! [`Payload`] is the whole vocabulary of what may be recorded; [`WireState`] is
+//! the whole vocabulary of what a recorded tool result may show the model.
+//! Everything downstream reads these two types, so a new kind of fact about a
+//! session is a variant here before it is anything else.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -120,14 +120,12 @@ pub enum Payload {
         raw: RawResult,
         wire: WireState,
     },
-    /// A salience annotation written at the moment it's known (docs/README.md,
-    /// docs/log-and-projection.md): a decision, a dead end, a relevance note, or a
-    /// consolidation boundary. The Phase-3 foundation for intent-aware compaction —
-    /// *kept* through a fold while the deliberation around it is elided.
-    /// [`MarkKind::Boundary`] folds its named span (`seq <= upto`) to a summary
-    /// user message on the wire (Slice 1, docs/README.md).
-    ///
-    /// [`project`]: crate::project::project
+    /// A salience annotation written when it is known (docs/log-and-projection.md):
+    /// a decision, a dead end, a relevance note, or a consolidation boundary. The
+    /// foundation for intent-aware compaction — a mark is *kept* through a fold
+    /// while the deliberation around it is elided. [`MarkKind::Boundary`] is the
+    /// one kind `project` acts on, folding its named span (`seq <= upto`) to a
+    /// summary user message on the wire.
     Mark(Mark),
     /// A fork verdict (docs/redaction-fork.md) — the durable record of a throwaway
     /// peek's decision. The fork's *transcript* stays throwaway; its *decision* is
@@ -201,7 +199,7 @@ pub enum Payload {
     /// The boot preamble snapshot (docs/context.md): the full rendered `system`
     /// string, exactly as this session's requests carry it, appended **once at boot**. The
     /// preamble folds in `[context]` file contents that drift on disk between boots, so it is
-    /// no longer reconstructable from `config + current files` — this entry makes the log the
+    /// not reconstructable from `config + current files` — this entry makes the log the
     /// complete record of the wire (docs/log-and-projection.md). Audit/replay only: it projects to
     /// nothing (the system prompt rides the request's `system` field, never the `messages`
     /// array); the `wire` dev view reads it back instead of re-resolving files from disk.
@@ -219,11 +217,12 @@ pub enum Payload {
     },
 }
 
-/// A content block authored by the model or user. `Thinking` / `RedactedThinking` carry the
-/// extended-thinking payload (docs/transport.md, docs/transport.md): `signature` is
-/// the opaque per-block token the API mints and requires echoed **verbatim** on replay (it
-/// rejects a modified block); `redacted_thinking` carries opaque `data` instead of text.
-/// Richer blocks (images, …) come later.
+/// A content block authored by the model or user. `Thinking` / `RedactedThinking`
+/// carry the extended-thinking payload (docs/transport.md): `signature` is the
+/// opaque per-block token the API mints and requires echoed **verbatim** on replay
+/// (it rejects a modified block); `redacted_thinking` carries opaque `data` instead
+/// of text. Images are not blocks here — a tool result's images live on
+/// [`RawResult`], where the bytes are stored as they go on the wire.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentBlock {
     Text(String),
@@ -320,10 +319,9 @@ pub struct ResultImage {
 
 /// The content of a [`Payload::Mark`] — a breadcrumb left in the record. `note` is
 /// the one-line decision / dead-end / relevance / consolidation-summary text.
-/// Richer structure (a `kind` discriminator, the span a consolidation boundary
-/// covers) lands with Slice 1, when projection starts folding behind it. Additive
-/// by design: because a mark projects to nothing today, growing this struct cannot
-/// perturb the byte-stability pin (docs/log-and-projection.md).
+/// Additive by design: a mark projects to nothing except through
+/// [`MarkKind::Boundary`], so growing this struct cannot perturb the
+/// byte-stability pin (docs/log-and-projection.md).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Mark {
     pub kind: MarkKind,
@@ -331,10 +329,10 @@ pub struct Mark {
 }
 
 /// What a [`Mark`] does to the projection. `Boundary` is the consolidation
-/// variant (Slice 1 — active in `project`): folds every entry with `seq <=
-/// upto` to a summary user message. The salience-annotation kinds defined in
-/// docs/README.md and docs/log-and-projection.md (decision / dead-end / relevance) land
-/// when they get a construction site.
+/// variant `project` acts on: it folds every entry with `seq <= upto` to a
+/// summary user message. The salience-annotation kinds named in
+/// docs/log-and-projection.md (decision / dead-end / relevance) land when they
+/// get a construction site.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MarkKind {
     Boundary { upto: Seq },
@@ -361,7 +359,7 @@ pub struct Triage {
     /// The model's exact `keep` string, pre-parse (empty for a model-free distiller).
     pub raw_keep: String,
     /// Per-notification dispositions chosen in this peek, by the notification's
-    /// arrival `seq` (docs/inbox.md). Always empty until Slice C wires the inbox.
+    /// arrival `seq` (docs/inbox.md). Empty on a gate that was shown nothing.
     pub inbox: Vec<(Seq, Disposition)>,
     /// Context items this peek chose to **surface** — names from the boot `Preamble`'s
     /// structured listing (stub files with a `path`) the model judged relevant to the
@@ -428,9 +426,9 @@ pub struct Spot {
 }
 
 /// The spotter's graded disposition for one move (docs/permissions.md). It splits
-/// the fast-path's binary `Gate` into `Clear` (auto-approve, no human), `Watch` (the
-/// middle setting the unbuilt watch-window will map to an intervention latency — for now
-/// it resolves to the human gate alongside `Gate`), and `Gate`. [`Stance::ClearAlways`]
+/// the fast-path's binary `Gate` into `Clear` (auto-approve, no human), `Watch` (a
+/// middle stance that resolves to the human gate alongside `Gate` until a
+/// watch-window maps it to an intervention latency), and `Gate`. [`Stance::ClearAlways`]
 /// is a *refinement of `Clear`* the prefix-promotion probe adds: it clears the move **and**
 /// votes the probed prefix blanket-safe (docs/permissions.md). Folding the
 /// promotion answer into the stance — rather than a separate flag — makes the contradictory
@@ -535,12 +533,10 @@ pub enum ConfigChange {
 /// What one tool call cost and how it came out (docs/tools.md), recorded per
 /// call as a [`Payload::ToolTelemetry`] entry.
 ///
-/// It exists because the questions it answers were previously answered by
-/// grepping result *prose*: "did that edit apply or get refused" was recovered
-/// from `startswith("Applied")`, and anchor discipline was inferred from
-/// argument lengths plus a count of `===TIP===` markers that turned out to be a
-/// throttle cap rather than a measure. Prose written for a model is not a
-/// measurement surface; this is.
+/// It exists so that "did that edit apply or get refused" is a field rather than
+/// a grep over result prose. Prose written for a model is not a measurement
+/// surface — its wording is free to change for the model's sake, and a count
+/// taken off it can measure a throttle rather than the thing it names.
 ///
 /// Additive by construction: because it projects to nothing, growing this struct
 /// cannot perturb the byte-stability pin (docs/log-and-projection.md) — the same
@@ -577,9 +573,9 @@ fn is_zero(n: &usize) -> bool {
 }
 
 /// How one tool call came out (docs/tools.md). Derived generically at the
-/// dispatch seam from `is_error`, which since 2026-08-27 means *refusal* for
-/// built-in negative outcomes — so the three classes are readable off every
-/// tool without per-tool knowledge.
+/// dispatch seam from `is_error`, which means *refusal* for built-in negative
+/// outcomes — so the three classes are readable off every tool without per-tool
+/// knowledge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolOutcome {
@@ -670,9 +666,9 @@ pub struct Notification {
 /// touching `raw`) is the one redaction primitive — every projection experiment
 /// is a change to how [`project`] reads these (docs/README.md, docs/log-and-projection.md).
 ///
-/// The variants were wired into [`project`] ahead of their construction sites, so
-/// each site landed as a behavior change rather than a type change that would
-/// invalidate the byte-stability test. `Distilled` is built by the redaction fork
+/// Each variant is wired into [`project`] before it has a construction site, so a
+/// new site lands as a behavior change rather than a type change that would move
+/// the byte-stability pin. `Distilled` is built by the redaction fork
 /// (docs/redaction-fork.md); `Elided` by the interrupt (docs/control-channel.md).
 ///
 /// [`project`]: crate::project::project

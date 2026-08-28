@@ -1,12 +1,12 @@
 //! `project(log) -> Vec<ApiMessage>` — the deterministic view sent to the API
 //! (docs/README.md, docs/log-and-projection.md).
 //!
-//! The whole thesis rides on this being **byte-stable**: identical input must
-//! serialize to identical bytes every time, or prompt caching breaks silently.
-//! The hazards (docs/log-and-projection.md) are non-deterministic map ordering (avoided by
-//! using [`serde_json::Value`], which serializes object keys in sorted order) and
-//! any accidental change to field order / naming on the wire (pinned by the
-//! expected-bytes test below).
+//! This must be **byte-stable**: identical input serializes to identical bytes
+//! every time, or prompt caching breaks silently. The two hazards
+//! (docs/log-and-projection.md) are non-deterministic map ordering — avoided by
+//! using [`serde_json::Value`], which serializes object keys in sorted order —
+//! and any change to field order or naming on the wire, which the
+//! expected-bytes test in `test.rs` pins.
 
 use serde::Serialize;
 use serde_json::Value;
@@ -75,10 +75,9 @@ pub enum ImagePlacement {
     InToolResult,
     /// The `tool_result` stays text-only; each image follows it as a top-level
     /// `image` block in the same user message. The portable shape for bridged
-    /// providers whose translation drops `tool_result` images (OpenRouter's
-    /// Anthropic skin documents images as user content only; its Gemini bridge
-    /// 400s on `tool_result` images — the finding is recorded with the
-    /// provider-awareness work).
+    /// providers whose translation drops `tool_result` images: OpenRouter's
+    /// Anthropic skin documents images as user content only, and its Gemini
+    /// bridge 400s on `tool_result` images (docs/transport.md).
     FollowingUserBlock,
 }
 
@@ -185,10 +184,10 @@ pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessa
             }
             // A record-only partial (docs/transport.md): the stream that produced this
             // entry died before finalizing, so the provider has no record of it and the
-            // content must not enter the trajectory — the observed failure was a
-            // thinking-only partial projecting as a dangling thinking block. Skipped
-            // entirely, like `Ambient`: the retry that follows re-projects to the same
-            // bytes, which is what lets it ride the cached prefix.
+            // content must not enter the trajectory — a thinking-only partial projects
+            // as a dangling thinking block. Skipped entirely, like `Ambient`: the retry
+            // that follows re-projects to the same bytes, which is what lets it ride
+            // the cached prefix.
             Payload::Assistant {
                 upstream_failure: Some(_),
                 ..
@@ -359,10 +358,8 @@ fn tool_result_blocks(
         ),
         // Project a placeholder rather than nothing: dropping the block entirely
         // would orphan the assistant `tool_use` it answers, which the API
-        // rejects. Constructed by the interrupt (`withheld` in `src/agent.rs`,
-        // docs/control-channel.md), which is also the answer to the question
-        // flagged here before it had one — elision keeps the pair; the placeholder
-        // exists precisely so the `tool_use` stays answered.
+        // rejects. So elision sheds the content but keeps the pair. Constructed
+        // by the interrupt (`withheld` in `src/agent.rs`, docs/control-channel.md).
         WireState::Elided => ("[elided]".to_string(), false),
         // A gate that couldn't elicit a verdict projects a hard error, never the
         // untriaged raw (docs/redaction-fork.md). `is_error` is forced true so the

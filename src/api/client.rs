@@ -24,14 +24,11 @@ const RETRY_MAX_ELAPSED: Duration = Duration::from_secs(30);
 /// *success taking forever* — a stream that neither finalizes nor dies has no
 /// other bound, and blocks its turn with nothing on `GET /state` to read.
 ///
-/// One hour. The widest model call in this repo's corpus (2026-08-28: 2281
-/// assistant entries across every `.efference/*/log.jsonl`) took 363 seconds, and
-/// the 99.9th percentile 253 — so an hour is roughly ten times the longest turn
-/// anyone here has actually waited out. It is set that far above the observed
-/// spread deliberately: hours-scale thinking is a thing models are moving toward,
-/// and a ceiling that fires on a *slow* stream throws away real work, where one
-/// that fires late only delays the diagnosis of a hang. Operators whose workload
-/// says otherwise set `[transport] stream-ceiling` (`config::TransportLimits`).
+/// One hour — roughly ten times the widest model call this repo's own corpus has
+/// recorded, and set that far out deliberately: a ceiling that fires on a merely
+/// *slow* stream discards real work, where one that fires late only delays the
+/// diagnosis of a hang. Operators whose workload says otherwise set
+/// `[transport] stream-ceiling` (`config::TransportLimits`).
 pub const DEFAULT_STREAM_CEILING: Duration = Duration::from_secs(3600);
 
 /// Record one non-success upstream status. Matching statuses increment the
@@ -131,11 +128,11 @@ pub(super) fn response_meta(conn: &Conn) -> ResponseMeta {
     }
 }
 
-/// A thin Anthropic Messages client
-/// auth), the model, and the stable system prompt. The system is byte-stable across
-/// the session, so it stays in the cached prefix (docs/log-and-projection.md); the fork
-/// (docs/redaction-fork.md) shares the same endpoint and system, so its prefix matches
-/// and hits cache.
+/// A thin Anthropic Messages client, holding the resolved endpoint, the model,
+/// and the session's system prompt. The system is byte-stable across the
+/// session, so it stays in the cached prefix (docs/log-and-projection.md); the
+/// fork (docs/redaction-fork.md) shares the same endpoint and system, so its
+/// prefix matches and hits cache.
 pub struct Client {
     http: HttpClient,
     endpoint: Endpoint,
@@ -150,9 +147,8 @@ pub struct Client {
     /// The per-turn output budget. Defaults to the pre-reasoning-era 4096;
     /// [`Self::with_max_output`] raises it to the model's reported cap — a
     /// reasoning model's thinking bills against this budget, and a long think
-    /// against 4096 terminates at the cap before any text or call arrives
-    /// (observed live, 2026-08-21). Session-constant, so it never perturbs the
-    /// cached prefix.
+    /// against 4096 terminates at the cap before any text or call arrives.
+    /// Session-constant, so it never perturbs the cached prefix.
     max_tokens: u32,
     /// How long one response's SSE stream may stay open (docs/transport.md).
     /// Session-constant and transport-only — it never reaches the request body,
@@ -209,8 +205,9 @@ impl Client {
             .with_max_elapsed(RETRY_MAX_ELAPSED)
             .with_max_retry_after(RETRY_MAX_ELAPSED);
         Self {
-            // TLS over the tokio TCP connector; ALPN negotiates HTTP/2 (no h3
-            // advertised by Anthropic/Cloudflare as of 2026-06). See main.rs.
+            // TLS over the tokio TCP connector; ALPN negotiates HTTP/2 —
+            // Anthropic's Cloudflare front advertises no `alt-svc: h3`, so HTTP/3
+            // is not a live option (docs/transport.md). See main.rs.
             // Retry remains outermost: reverse response handling records a failed
             // attempt before retry schedules the next one (docs/transport.md).
             http: HttpClient::new(RustlsConfig::<ClientConfig>::default()).with_handler((
@@ -285,8 +282,6 @@ impl Client {
             .flatten()
     }
 
-    /// Record the capability lookup's reasoning answer
-    /// (`ModelCapabilities::supports_reasoning`) — an input to the thinking matrix.
     /// Pin which upstream serves this session (docs/transport.md). Applies to
     /// every request the client makes, so a session's spotter and fork peeks
     /// route the same way its turns do.
@@ -295,6 +290,9 @@ impl Client {
         self
     }
 
+    /// Record the capability lookup's reasoning answer
+    /// (`ModelCapabilities::supports_reasoning`) — an input to the thinking matrix
+    /// ([`Thinking::for_request`]).
     pub fn with_model_reasoning(mut self, model_reasoning: bool) -> Self {
         self.model_reasoning = model_reasoning;
         self
@@ -317,9 +315,11 @@ impl Client {
     }
 
     /// One streaming round-trip: serialize `messages`, POST with `stream: true`,
-    /// and fold the SSE event stream back into a [`Completion`]. Each live signal — prose,
-    /// thinking, a tool call opening, its arguments arriving — is handed to `on_delta` as a
-    /// [`Streamed`] the moment it arrives: the transport-only live sink (the daemon publishes it to    /// the control stream's `output` class). Pass a no-op `|_| {}` when nothing is listening (e.g. the fork peek, whose
+    /// and fold the SSE event stream back into a [`Completion`]. Each live signal
+    /// — prose, thinking, a tool call opening, its arguments arriving — is handed
+    /// to `on_delta` as a [`Streamed`] the moment it arrives: the transport-only
+    /// live sink the daemon publishes to the control stream's `output` class.
+    /// Pass a no-op `|_| {}` when nothing is listening (the fork peek, whose
     /// triage tokens must never surface).
     ///
     /// `into_sse` *is* the execution — the conn must not be awaited first (that
@@ -440,13 +440,10 @@ impl Client {
     /// responses carry a JSON `error.message` that names the actual problem. Logged at
     /// `error` so the daemon's log preserves it even though the error also propagates.
     ///
-    /// Note: this still *propagates* — the agent loop treats an open failure as
-    /// terminal for the trajectory, though it now records the message durably (an
-    /// empty record-only assistant entry, docs/transport.md) rather than leaving it
-    /// on stderr alone. Classifying transient statuses (429 / 529 overload, 5xx) as
-    /// worth further loop-level retries beyond the RetryHandler's own remains a
-    /// separate, deferred change. Mid-stream deaths are different: they assemble as
-    /// record-only partials and the loop retries them (docs/transport.md).
+    /// This *propagates*: the agent loop treats an open failure as terminal for
+    /// the trajectory, recording the message durably as an empty record-only
+    /// assistant entry. Mid-stream deaths are the different case — they assemble
+    /// as record-only partials and the loop retries them (docs/transport.md).
     async fn sse_open_error(e: SseError) -> Error {
         // `Status` is `Copy`, so binding it doesn't move `e.kind` — `e` stays whole and
         // convertible into its `Conn`.
@@ -470,17 +467,16 @@ impl Client {
         message.into()
     }
 
-    /// A cache-keepalive ping (docs/transport.md): a **non-streaming** `max_tokens: 0`
-    /// round-trip over the same prefix a real turn would send. It READS the cached
-    /// prefix — refreshing its (sliding) TTL — and generates nothing, so the
-    /// (empty) assistant turn is discarded and the log is never touched. Returns
-    /// only the `usage`, which the daemon folds into the cache telemetry (docs/log-and-projection.md).
+    /// A cache-keepalive ping (docs/transport.md): a **non-streaming**
+    /// `max_tokens: 0` round-trip over the same prefix a real turn would send.
+    /// Returns only the `usage`; the log is never touched.
     ///
-    /// Non-streaming on purpose: `max_tokens: 0` is rejected with `stream: true`
-    /// (verified live). The prefix bytes must match a real request's **exactly**
-    /// or the ping writes a *new* entry instead of refreshing the live one — so it
-    /// takes the same `messages` / `tools` / `tool_choice` and reuses the client's
-    /// `system`. (Set `tool_choice` to whatever the loop uses — `auto()`.)
+    /// Non-streaming because `max_tokens: 0` is rejected with `stream: true`. The
+    /// prefix bytes must match a real request's **exactly** or the ping writes a
+    /// *new* cache entry instead of refreshing the live one — which is why it
+    /// takes the caller's `messages` / `tools` / `tool_choice` (the loop's
+    /// `auto()`) and reuses the client's own `system`, rather than reconstructing
+    /// any of them.
     pub async fn keepalive(
         &self,
         messages: &[ApiMessage],

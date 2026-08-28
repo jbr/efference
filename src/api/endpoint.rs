@@ -2,21 +2,17 @@
 
 use super::*;
 
-/// The provider endpoint (docs/transport.md). The request *body* is always the
-/// Anthropic Messages wire — `project(log)` output — because that shape is what
-/// every supported provider serves (Anthropic directly; OpenRouter via its
-/// `/api/v1/messages` skin). Which provider fronts it is **declared** via
-/// `EFFERENCE_PROVIDER` and everything else — the URL, the auth header name,
-/// the scheme prefix — is derived from that identity by [`Provider`], so
-/// switching providers is one word plus the matching key. Resolved once from
-/// the environment at boot and shared by the agent [`Client`] and the fork's
-/// spotter client, so both hit the same endpoint over the same cached prefix.
+/// The provider endpoint (docs/transport.md): the URL, auth header name, and
+/// scheme prefix all derived from the declared [`Provider`] rather than
+/// configured separately. Resolved once at boot and shared by the agent
+/// [`Client`] and the fork's spotter client, so both hit the same endpoint over
+/// the same cached prefix.
 ///
-/// The `session_id` field is attached after resolution by the daemon's `serve`
-/// (docs/transport.md). Absent in offline verbs (spotter probes, wire view)
-/// that have no conversation to pin. Whether it actually rides a request is the
-/// *provider's* call ([`Provider::session_header`]) — the field carries this
-/// session's key regardless, so the derivation stays in one place.
+/// `session_id` is attached after resolution, by the daemon's `serve`, and is
+/// absent in offline verbs that have no conversation to pin. Whether it actually
+/// rides a request is the *provider's* call ([`Provider::session_header`]) — the
+/// field carries this session's key regardless, so the derivation stays in one
+/// place.
 #[derive(Clone, Debug)]
 pub struct Endpoint {
     /// The declared API family — also the source of the model-metadata query
@@ -56,12 +52,6 @@ const SPOTTER_SUFFIX: &str = "-spot";
 
 /// This session's sticky-routing key: `<session id>-<hash of the session dir's
 /// absolute path>` (docs/transport.md).
-///
-/// Both halves earn their place. Session ids are unique per `.efference/` dir, not
-/// per account, so two repos both served `--name work` would otherwise produce the
-/// same key and pin each other's routing; the hash separates them. Hashing alone
-/// would do that and make the value unreadable in OpenRouter's Sessions view, which
-/// is the other thing the key buys, so the human-chosen name stays in front.
 ///
 /// The path is canonicalized through the *parent*, not the dir itself: on the first
 /// turn the session dir does not exist yet, and taking the same branch either way is
@@ -223,12 +213,9 @@ impl Endpoint {
     /// The same endpoint under a **distinct** sticky key, for the spotter's client
     /// (docs/permissions.md, docs/transport.md).
     ///
-    /// The spotter has its own system prompt and shares no prefix with the agent
-    /// turn, so the two are separate conversations that happen to run over one
-    /// endpoint. Nothing stops an operator pointing both at the same model, and a
-    /// shared key would then pin two unrelated prefixes to one sticky route and
-    /// trade cache hits on both. An explicit key overrides message-hash derivation,
-    /// so the separation the derived key gave for free has to be re-stated here.
+    /// An explicit key overrides the message-hash derivation that would otherwise
+    /// have separated the spotter's conversation from the agent's for free, so the
+    /// separation has to be re-stated here.
     pub fn for_spotter(&self) -> Self {
         Self {
             session_id: self
