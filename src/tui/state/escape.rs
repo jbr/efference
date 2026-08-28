@@ -64,7 +64,7 @@ impl<'a> InteractiveState<'a> {
                 // steady state is the strip — the only surface still carrying verbs.
                 if let Some(label) = &self.viewing {
                     self.composing = false;
-                    self.strip_focus = Some(0);
+                    self.strip_focus = self.leading_strip_verb();
                     self.ui.debug_message = super::view_status(label).into();
                 } else {
                     self.composing = true;

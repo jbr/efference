@@ -52,6 +52,11 @@ pub(super) struct InteractiveTheme {
     pub strip_hint_focused_style: Style,
     /// Control strip — the omnipresent tail (dimmer than the context verbs)
     pub strip_tail_style: Style,
+    /// Control strip — a pinned item whose verb the state no longer ranks
+    /// (docs/tui.md). It keeps the button surface, because the *position* is what
+    /// the freeze holds, and drops to the muted foreground plus `DIM` so it reads
+    /// as inert rather than as a tail verb.
+    pub strip_item_disabled_style: Style,
     /// Sidebar (docs/tui.md) — the focused row's left-edge `▌` bar, the same
     /// glyph-and-column treatment as a focused transcript unit
     pub sidebar_focus_bar_style: Style,
@@ -156,6 +161,10 @@ impl InteractiveTheme {
             strip_tail_style: Style::default()
                 .bg(to_ratatui(surface))
                 .fg(to_ratatui(muted_fg)),
+            strip_item_disabled_style: Style::default()
+                .bg(to_ratatui(surface))
+                .fg(to_ratatui(muted_fg))
+                .add_modifier(Modifier::DIM),
             sidebar_focus_bar_style: Style::default().fg(to_ratatui(accent_fg)),
         }
     }

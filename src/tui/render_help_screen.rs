@@ -38,7 +38,7 @@ impl<'a> InteractiveState<'a> {
             ("  ← , →", "Choose among the block's verbs", key_style),
             (
                 "  Enter, Space",
-                "Fire it — expand / collapse, or raw / distilled",
+                "Fire it — raw / distilled, or full / peek",
                 key_style,
             ),
             ("", "", bg_style),
@@ -83,7 +83,11 @@ impl<'a> InteractiveState<'a> {
             ("", "", bg_style),
             ("Mouse:", "", title_style),
             ("  m", "Toggle mouse mode (for text selection)", key_style),
-            ("  Click", "Expand a collapsed block", key_style),
+            (
+                "  Click",
+                "Focus a block, or fire one of its verbs",
+                key_style,
+            ),
             ("  Scroll", "Scroll content", key_style),
             ("", "", bg_style),
             ("Help:", "", title_style),

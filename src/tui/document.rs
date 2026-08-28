@@ -261,6 +261,12 @@ pub enum EntryKind {
     ToolCall,
     /// What a call returned.
     ToolResult,
+    /// What a call is returning — a still-running tool's output, which is
+    /// unbounded and untriaged and so is the one entry the transcript may show a
+    /// peek of (docs/tui.md). Distinct from [`ToolResult`](Self::ToolResult)
+    /// because the two carry different verbs: a committed result forks
+    /// distilled-vs-raw, a running one forks peek-vs-full.
+    RunningTool,
     /// Something the *harness* says about a call — a spotter verdict, the approval
     /// affordance. Not agent-generated, so it is never a focus stop and never a
     /// child of the call it annotates (docs/tui.md).
@@ -279,7 +285,10 @@ impl EntryKind {
     /// A result and an annotation are continuations of the call they belong to, so
     /// the call, what the harness made of it, and what came back read as one unit.
     pub fn starts_group(self) -> bool {
-        !matches!(self, EntryKind::ToolResult | EntryKind::Annotation)
+        !matches!(
+            self,
+            EntryKind::ToolResult | EntryKind::RunningTool | EntryKind::Annotation
+        )
     }
 }
 

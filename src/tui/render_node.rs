@@ -398,7 +398,7 @@ impl<'a> InteractiveState<'a> {
                         let items = super::block_menu::menu_items(
                             *kind,
                             key,
-                            key.is_some_and(|k| self.view.is_raw(k)),
+                            self.view.is_flipped(*kind, key),
                         );
                         let col = self.layout.pos.x + 2;
                         self.render_block_menu(buf, &items, header_row, col, self.layout.area);

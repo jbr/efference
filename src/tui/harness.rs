@@ -267,6 +267,34 @@ impl Screenplay<'_> {
         self.pace_rx.try_recv().ok()
     }
 
+    /// Move the pointer to screen cell `(x, y)` through the real mouse path — the
+    /// `Moved` event a terminal sends, which is what sets hover state (the
+    /// scrollbar's, and the control strip's engagement — docs/tui.md).
+    pub(crate) fn hover(&mut self, x: u16, y: u16) -> &mut Self {
+        use crossterm::event::{MouseEvent, MouseEventKind};
+        let _ = self.draw();
+        let terminal = Terminal::new(TestBackend::new(self.width, self.height)).unwrap();
+        self.state.handle_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Moved,
+                column: x,
+                row: y,
+                modifiers: KeyModifiers::NONE,
+            },
+            &terminal,
+        );
+        self
+    }
+
+    /// The screen row the control strip occupies — where a hover or a click has to
+    /// land to reach it. Derived the way the mouse handler derives it, so a
+    /// scenario cannot aim at a row the production code would not accept.
+    pub(crate) fn strip_row(&mut self) -> u16 {
+        let _ = self.draw();
+        self.height
+            .saturating_sub(2 + self.state.viewport.input_height)
+    }
+
     /// Click screen cell `(x, y)` through the real mouse path — the press that
     /// records a target, then the deferred `handle_click` the UI loop runs.
     pub(crate) fn click(&mut self, x: u16, y: u16) -> &mut Self {

@@ -148,7 +148,7 @@ impl Transcript {
         // The tail is small and changes on nearly every event, so it is rebuilt
         // rather than tracked. It goes back on the end, where it was taken from.
         let at = doc.document.nodes.len();
-        doc.splice_nodes(at..at, tail_nodes(live, pending_turns));
+        doc.splice_nodes(at..at, tail_nodes(live, view, pending_turns));
     }
 }
 

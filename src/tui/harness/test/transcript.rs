@@ -197,7 +197,7 @@ fn transcript_redirected_gate() {
 }
 
 /// **Thinking stays in the transcript after the turn commits, in full.** Reasoning streams
-/// past far too fast to read at generation speed, so the live phase is only a "something is
+/// past far too fast to read at generation speed, so the live copy is only a "something is
 /// happening" signal — this is the copy a human actually reads, afterwards, at their own
 /// pace, which it can only be if all of it is here (docs/positions.md).
 #[test]

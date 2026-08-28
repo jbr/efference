@@ -48,6 +48,14 @@ impl<'a> super::InteractiveState<'a> {
                 self.viewport.scrollbar_hovered =
                     row < content_height && column == content_width && self.scrollbar_visible();
 
+                // The control-strip row sits directly above the composer
+                // (docs/tui.md). A pointer resting on it is an *engagement*: it pins
+                // the item list, so nothing re-ranks under the cursor between the
+                // operator aiming and clicking. Level, not edge — any move off the
+                // row clears it, and the pin releases with it.
+                self.viewport.strip_hovered =
+                    row == terminal_height.saturating_sub(2 + self.viewport.input_height);
+
                 if row < content_height {
                     // Mouse in main content area
                     self.viewport.cursor_pos =
@@ -116,15 +124,19 @@ impl<'a> super::InteractiveState<'a> {
                     self.viewport.clicked_position =
                         Some(Position::new(column, row + self.viewport.scroll_offset));
                 } else if row == strip_row
-                    && let Some(idx) = self
+                    && let Some(verb) = self
                         .strip_hits
                         .iter()
                         .find(|(x0, x1, _)| column >= *x0 && column < *x1)
-                        .map(|(_, _, i)| *i)
+                        .map(|(_, _, verb)| *verb)
                 {
+                    // The click resolves to the *verb* in that column, not to the
+                    // column: a click has no dwell, so an index would fire whatever
+                    // had moved into the position since the frame was painted
+                    // (docs/tui.md).
                     self.composing = false;
-                    self.strip_focus = Some(idx);
-                    self.activate_strip_item(idx);
+                    self.strip_focus = Some(verb);
+                    self.activate_strip_verb(verb);
                 }
             }
 

@@ -340,8 +340,12 @@ fn b_mnemonic_backgrounds_a_foreground_bash_and_noops_elsewhere() {
         "idle → no background item, nothing to detach"
     );
 
-    // A non-bash tool mid-flight: still no handoff to offer.
+    // A non-bash tool mid-flight: still no handoff to offer. The state changes with
+    // the strip unengaged, which is when it re-ranks (docs/tui.md) — engaged, the
+    // list is pinned and the mnemonic follows what is shown.
+    play.route_key(KeyCode::Esc, none); // leave the strip, releasing the pin
     play.running_tool("toolu_r", "read", json!({ "path": "src/log.rs" }));
+    play.route_key(KeyCode::Up, none);
     play.route_key(KeyCode::Char('b'), none);
     assert!(
         !play.took_background(),
@@ -349,8 +353,10 @@ fn b_mnemonic_backgrounds_a_foreground_bash_and_noops_elsewhere() {
     );
 
     // Foreground bash: the strip shows `background b`, so `b` fires the detach.
+    play.route_key(KeyCode::Esc, none);
     play.tool_result("toolu_r", "…", false, WireState::Raw);
     play.running_bash("toolu_b", "cargo test");
+    play.route_key(KeyCode::Up, none);
     play.route_key(KeyCode::Char('b'), none);
     assert!(
         play.took_background(),

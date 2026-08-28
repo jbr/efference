@@ -87,9 +87,13 @@ impl Script {
         }
 
         let call_id = format!("stream-{seq}");
+        // The scripted turn emits one call, so it owns content block 0; the id it
+        // carries is the one its result keys on (docs/control-api.md).
         self.send(
             tx,
             TuiEvent::ToolCallStart {
+                index: 0,
+                call_id: call_id.clone(),
                 name: name.to_string(),
             },
         )
@@ -98,13 +102,14 @@ impl Script {
             self.send(
                 tx,
                 TuiEvent::ToolCallInput {
+                    index: 0,
                     fragment: fragment.to_string(),
                 },
             )
             .await?;
         }
 
-        // The committed assistant turn supersedes the live phase; the result
+        // The committed assistant turn supersedes the live call; the result
         // follows, so the handoff from streaming render to committed render is
         // visible in both directions.
         *seq += 1;

@@ -142,7 +142,7 @@ impl<'a> InteractiveState<'a> {
         // Remember where focus came from so Tab back is exact. The composer is not
         // a source — Tab types there — so the alternatives are strip and transcript.
         self.sidebar_return = Some(match self.strip_focus.take() {
-            Some(i) => SidebarReturn::Strip(i),
+            Some(verb) => SidebarReturn::Strip(verb),
             None => SidebarReturn::Transcript,
         });
         self.sidebar_open = true;
@@ -157,9 +157,9 @@ impl<'a> InteractiveState<'a> {
     /// exact position; the strip restores to its remembered item.
     pub(super) fn leave_sidebar(&mut self) {
         match self.sidebar_return.take() {
-            Some(SidebarReturn::Strip(i)) => {
+            Some(SidebarReturn::Strip(verb)) => {
                 self.close_sidebar();
-                self.strip_focus = Some(i);
+                self.strip_focus = Some(verb);
                 self.ui.debug_message =
                     "controls — ←/→ item · ⏎ act · ↑ navigate · ↓ compose".into();
             }

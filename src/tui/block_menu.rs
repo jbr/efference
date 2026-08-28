@@ -32,6 +32,9 @@ use super::utils::find_node_at_path;
 pub(super) enum BlockVerb {
     /// Flip the focused tool result between its distilled and raw output.
     ToggleRaw,
+    /// Flip a *running* tool's output between the trailing-lines peek and the whole
+    /// output so far (docs/tui.md).
+    TogglePeek,
 }
 
 /// One menu item: the label shown, and the verb `⏎` (or a click) fires. Labels
@@ -43,19 +46,28 @@ pub(super) struct MenuItem {
     pub verb: BlockVerb,
 }
 
-/// The verbs one entry carries. Empty for every kind but a tool result — the only
-/// entry with a per-entry mechanism behind it.
+/// The verbs one entry carries. Empty for every kind but the two tool-output ones
+/// — the only entries with a per-entry mechanism behind them.
 ///
-/// - `kind`: what the entry is. Only a [`ToolResult`](EntryKind::ToolResult) has a
-///   distillate/raw fork (docs/redaction-fork.md).
+/// - `kind`: what the entry is. A [`ToolResult`](EntryKind::ToolResult) has the
+///   distillate/raw fork (docs/redaction-fork.md); a
+///   [`RunningTool`](EntryKind::RunningTool) has the peek/full fork (docs/tui.md).
 /// - `key`: the entry's durable identity — the `call_id` the flip is recorded
-///   against. A result still streaming has none, so it carries no verbs: the toggle
-///   would not survive the next re-projection.
-pub(super) fn menu_items(kind: EntryKind, key: Option<&str>, showing_raw: bool) -> Vec<MenuItem> {
+///   against. An entry with none carries no verbs: the toggle would not survive
+///   the next re-projection. A running tool's peek carries one now (the `call_id`
+///   arrives on `tool_call_start`, docs/control-api.md); it did not, which is why a
+///   live block toggled open re-collapsed on the next streamed fragment.
+/// - `flipped`: whether this entry's toggle is currently on, which is what the
+///   label names — labels name the *destination* state.
+pub(super) fn menu_items(kind: EntryKind, key: Option<&str>, flipped: bool) -> Vec<MenuItem> {
     match (kind, key) {
         (EntryKind::ToolResult, Some(_)) => vec![MenuItem {
-            label: if showing_raw { "distilled" } else { "raw" },
+            label: if flipped { "distilled" } else { "raw" },
             verb: BlockVerb::ToggleRaw,
+        }],
+        (EntryKind::RunningTool, Some(_)) => vec![MenuItem {
+            label: if flipped { "peek" } else { "full" },
+            verb: BlockVerb::TogglePeek,
         }],
         _ => Vec::new(),
     }
@@ -80,7 +92,7 @@ impl InteractiveState<'_> {
             return Vec::new();
         };
         let key = key.as_deref();
-        menu_items(*kind, key, key.is_some_and(|k| self.view.is_raw(k)))
+        menu_items(*kind, key, self.view.is_flipped(*kind, key))
     }
 
     /// The selected item's index, clamped to the current menu (the focused unit
@@ -117,6 +129,7 @@ impl InteractiveState<'_> {
         };
         match item.verb {
             BlockVerb::ToggleRaw => self.toggle_raw_focused(),
+            BlockVerb::TogglePeek => self.toggle_peek_focused(),
         }
         self.dirty = true;
     }

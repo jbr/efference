@@ -26,29 +26,36 @@ pub(in crate::tui) fn pending_turn(text: &str) -> DocumentNode<'static> {
     )
 }
 
-/// The live phase, rendered **in full** — the point is to watch the work happen, so nothing here
-/// truncates. Thinking renders as dimmed prose; a tool call renders as its arguments, with the one
-/// value still arriving shown as content.
+/// One in-flight tool call, rendered **in full** — the point is to watch the work happen, so
+/// nothing here truncates. The call renders as its arguments, with the one value still arriving
+/// shown as content.
+///
+/// One entry per call, keyed by the `call_id` the call's result will key on: that binds the live
+/// block to its call before commit, which is what any per-entry view state (docs/tui.md) needs to
+/// survive the next streamed fragment.
 ///
 /// The input is a partial slice of a JSON document, so the display must not assert structure the
 /// arrived bytes don't support (docs/tui.md). It is parsed as a *prefix*, and what may be claimed
 /// from that is decided positionally — see [`calling_tool_blocks`] and `projection/partial.rs`.
 /// Before any pair has arrived there is nothing to claim and the raw characters are shown, which
 /// claim nothing.
-pub(in crate::tui) fn phase_blocks(phase: &Phase) -> Vec<DocumentNode<'static>> {
-    let Phase::CallingTool { name, input } = phase;
-    if let Some(blocks) = calling_tool_blocks(name, input) {
-        return blocks;
-    }
-    // Nothing structural has arrived yet (`{"pa`). Dimmed lines, not a `code_block`:
-    // raw characters claim nothing, which is what makes showing them safe, and a box
-    // would claim this is a finished thing to read rather than bytes still arriving.
-    let mut lines = vec![dim_span(&format!(
-        "❯ calling {}…",
-        crate::mcp::display_name(name)
-    ))];
-    lines.extend(input.lines().map(|line| dim_span(&format!("  {line}"))));
-    vec![DocumentNode::styled_lines(lines)]
+pub(in crate::tui) fn live_call_entry(call: &LiveCall) -> DocumentNode<'static> {
+    let blocks = calling_tool_blocks(&call.name, &call.input).unwrap_or_else(|| {
+        // Nothing structural has arrived yet (`{"pa`). Dimmed lines, not a `code_block`:
+        // raw characters claim nothing, which is what makes showing them safe, and a box
+        // would claim this is a finished thing to read rather than bytes still arriving.
+        let mut lines = vec![dim_span(&format!(
+            "❯ calling {}…",
+            crate::mcp::display_name(&call.name)
+        ))];
+        lines.extend(
+            call.input
+                .lines()
+                .map(|line| dim_span(&format!("  {line}"))),
+        );
+        vec![DocumentNode::styled_lines(lines)]
+    });
+    DocumentNode::entry(EntryKind::AssistantMessage, blocks).keyed(call.call_id.clone())
 }
 
 /// A tool call rendered from the part of its input that has arrived (docs/tui.md):
@@ -146,13 +153,13 @@ pub(in crate::tui) fn dim_line(text: &str) -> DocumentNode<'static> {
 /// (docs/tui.md). `None` when the turn did no thinking.
 ///
 /// **Shown in full.** Thinking streams past far too fast to read at generation
-/// speed, so the live phase is only a "something is happening" signal and this is
+/// speed, so the streamed copy is only a "something is happening" signal and this is
 /// the copy a human actually reads, at their own pace, afterwards — which it can
 /// only be if all of it is here. Whether some of it is reliably worth hiding is a
 /// question to answer from reading real sessions, not to assume up front
 /// (docs/positions.md).
 ///
-/// Rendered in the dimmed register, like the live phase it succeeds: thinking is not
+/// Rendered in the dimmed register, like the live tail it succeeds: thinking is not
 /// the assistant's answer and must never be mistaken for it.
 pub(in crate::tui) fn thinking_entry(thinking: &[ContentBlock]) -> Option<DocumentNode<'static>> {
     if thinking.is_empty() {
@@ -348,14 +355,28 @@ pub(in crate::tui) fn status_span(is_error: bool) -> Span<'static> {
     }
 }
 
-/// A running tool's output so far — a **peek**, not a view of the output: the last
-/// [`PEEK_LINES`] lines, dimmed, so the operator can see the process is alive and
-/// roughly where it is. Unlike a committed result (which renders whole), live output
-/// is unbounded and untriaged, and the entry is replaced by the real result the
-/// moment the call lands.
-pub(in crate::tui) fn running_tool_peek(output: &str) -> DocumentNode<'static> {
+/// A running tool's output so far — by default a **peek**, not a view of the output:
+/// the last [`PEEK_LINES`] lines, dimmed, so the operator can see the process is
+/// alive and roughly where it is. Unlike a committed result (which renders whole),
+/// live output is unbounded and untriaged, and the entry is replaced by the real
+/// result the moment the call lands.
+///
+/// `expanded` is the operator's per-call choice to read the whole output instead
+/// (the block menu's `full` verb). It is held in [`ViewState`] by `call_id`, which
+/// is also this entry's durable `key` — the entry is rebuilt on every arriving
+/// fragment, so a flag stored anywhere in the document would be discarded by the
+/// next one.
+pub(in crate::tui) fn running_tool_peek(
+    call_id: &str,
+    output: &str,
+    expanded: bool,
+) -> DocumentNode<'static> {
     let lines: Vec<&str> = output.lines().collect();
-    let shown = lines.len().min(PEEK_LINES);
+    let shown = if expanded {
+        lines.len()
+    } else {
+        lines.len().min(PEEK_LINES)
+    };
     let header = vec![Span {
         text: match lines.len() {
             n if n > shown => format!("running · {n} lines, last {shown}").into(),
@@ -371,7 +392,7 @@ pub(in crate::tui) fn running_tool_peek(output: &str) -> DocumentNode<'static> {
             .map(|line| dim_span(&format!("  {line}"))),
     )];
     DocumentNode::headed_entry(
-        EntryKind::ToolResult,
+        EntryKind::RunningTool,
         Some(Span {
             text: "⋯ ".into(),
             style: SpanStyle::Comment,
@@ -380,6 +401,7 @@ pub(in crate::tui) fn running_tool_peek(output: &str) -> DocumentNode<'static> {
         header,
         body,
     )
+    .keyed(call_id.to_string())
 }
 
 /// How many trailing lines of a *running* tool's output the peek shows. Small on

@@ -22,17 +22,33 @@
 //! cell with `▸` (a space when unfocused), so focus movement never shifts text
 //! and stays visible in the colorless snapshot grid; the surface-color change is
 //! asserted via `cell()`, not the grid.
+//!
+//! **Focus is a [`StripVerb`], never an index** (docs/tui.md). The list is rebuilt
+//! per frame and the context verbs are *prepended* to the tail, so every position
+//! shifts when the state flips: an index-held focus silently becomes a different
+//! verb, and an operator reaching for `pace` at index 0 interrupted a running
+//! command instead. The index is re-derived from the verb each frame, and a
+//! focused verb that stops applying resolves visibly rather than by substitution.
+//!
+//! **Engaging the strip pins the list.** While it holds keyboard focus or the
+//! mouse is over its row, the item *order* is frozen: verbs that stop applying
+//! grey in place instead of being removed, so nothing moves under the operator's
+//! hands or their cursor. Labels still track the live state (a held loop's
+//! `pause` reads `resume` in the same slot), because a frozen label would be the
+//! stale information the freeze exists to prevent. The list re-ranks when focus
+//! and hover both leave.
 
 use ratatui::{buffer::Buffer, layout::Rect};
 
 use super::{InteractiveState, UiMode};
 use crate::bash;
 
-/// A verb the strip can carry. Dispatch happens in
-/// [`activate_strip_item`](InteractiveState::activate_strip_item), always onto
+/// A verb the strip can carry — and the thing strip focus, a click target, and a
+/// sidebar return all hold, in place of a position (docs/tui.md). Dispatch happens
+/// in [`activate_strip_verb`](InteractiveState::activate_strip_verb), always onto
 /// mechanisms that also exist without the strip (pace, interrupt, gate approval).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum StripVerb {
+pub(crate) enum StripVerb {
     /// Toggle the pace hold (pause/resume).
     PauseToggle,
     /// Enter the inline pace stepper (the widget class, docs/tui.md).
@@ -61,7 +77,7 @@ pub(super) enum StripVerb {
 /// none). A bare-letter hint is also the item's **scoped mnemonic** — it fires the
 /// verb while the strip is focused, and only where the item is shown (docs/tui.md).
 #[derive(Debug, Clone, Copy)]
-pub(super) struct StripItem {
+pub(crate) struct StripItem {
     pub label: &'static str,
     pub hint: &'static str,
     pub verb: StripVerb,
@@ -93,14 +109,34 @@ const VIEW_TAIL: [StripItem; 3] = [
 ];
 
 impl InteractiveState<'_> {
-    /// The ranked item list for the current state. Re-evaluated per frame;
-    /// contents only change when the underlying state does, so re-ranking happens
-    /// at state transitions and never while the strip sits stable.
-    ///
-    /// Two transient sub-states own the row outright and so carry no tail — their
-    /// `⏎`/`⎋` belong to the sub-state, and a clickable tail beside them would
-    /// invite acting out from under it.
+    /// The item list as drawn: the state's ranking, or the pinned order while the
+    /// strip is engaged. Re-evaluated per frame; unengaged, it changes only when the
+    /// underlying state does, and engaged it does not change at all
+    /// ([`sync_strip_engagement`](Self::sync_strip_engagement)).
     pub(super) fn strip_items(&self) -> Vec<StripItem> {
+        let live = self.strip_live_items();
+        let Some(pinned) = &self.strip_pinned else {
+            return live;
+        };
+        // Frozen while engaged: the pinned *order* is what the operator's hands and
+        // eyes are aimed at, so it holds. Each slot's label is re-read from the live
+        // list, because a slot whose verb still applies must say what it currently
+        // does; a slot whose verb has gone keeps its last label and greys (below).
+        pinned
+            .iter()
+            .map(|held| {
+                live.iter()
+                    .find(|item| item.verb == held.verb)
+                    .copied()
+                    .unwrap_or(*held)
+            })
+            .collect()
+    }
+
+    /// The list the current state ranks, before any freeze. This is what
+    /// applicability is read from: an item on the row is dispatchable exactly when
+    /// its verb appears here.
+    pub(super) fn strip_live_items(&self) -> Vec<StripItem> {
         if self.read_only() {
             // No daemon behind the transcript: every loop verb would be an
             // affordance that does nothing, and the two sub-states below are
@@ -119,6 +155,64 @@ impl InteractiveState<'_> {
         let mut items = self.strip_context_verbs();
         items.extend(TAIL);
         items
+    }
+
+    /// Whether `verb` is dispatchable right now — i.e. the state still ranks it.
+    /// A pinned slot whose verb fails this renders greyed and fires nothing.
+    pub(super) fn strip_verb_applies(&self, verb: StripVerb) -> bool {
+        self.strip_live_items().iter().any(|item| item.verb == verb)
+    }
+
+    /// The verb `↑` from the composer lands on: the leftmost, most relevant item.
+    pub(super) fn leading_strip_verb(&self) -> Option<StripVerb> {
+        self.strip_items().first().map(|item| item.verb)
+    }
+
+    /// Where the focused verb currently sits, for the `←`/`→` walk. Re-derived
+    /// each time rather than stored: the stored form is the verb.
+    fn strip_focus_index(&self) -> Option<usize> {
+        let focused = self.strip_focus?;
+        self.strip_items()
+            .iter()
+            .position(|item| item.verb == focused)
+    }
+
+    /// Move the strip selection one item, clamped at both ends. Identity in,
+    /// identity out — the index exists only for the duration of the step.
+    pub(super) fn move_strip_focus(&mut self, forward: bool) {
+        let items = self.strip_items();
+        if items.is_empty() {
+            return;
+        }
+        let idx = self.strip_focus_index().unwrap_or(0);
+        let next = if forward {
+            (idx + 1).min(items.len() - 1)
+        } else {
+            idx.saturating_sub(1)
+        };
+        self.strip_focus = items.get(next).map(|item| item.verb);
+    }
+
+    /// Whether the operator is *on* the strip — keyboard focus, or the mouse over
+    /// its row. Either engagement pins the list; it re-ranks when both are gone.
+    fn strip_engaged(&self) -> bool {
+        self.strip_focus.is_some() || self.viewport.strip_hovered
+    }
+
+    /// Pin the item list on engagement, release it when engagement ends. Called
+    /// once per frame from the renderer, so every path that moves focus or the
+    /// mouse — key, click, Esc, sidebar, a daemon-side state change — is covered
+    /// by one rule rather than by a set-and-clear at each site.
+    ///
+    /// The two sub-states that own the row outright (the pace stepper, staging)
+    /// never freeze: their row is a single widget, not a ranked list, and holding a
+    /// pre-widget list under it would render items the sub-state has taken away.
+    fn sync_strip_engagement(&mut self) {
+        if self.pace_widget.is_some() || self.staging.is_some() || !self.strip_engaged() {
+            self.strip_pinned = None;
+        } else if self.strip_pinned.is_none() {
+            self.strip_pinned = Some(self.strip_live_items());
+        }
     }
 
     /// The state's context verbs, most relevant first — everything left of the
@@ -167,14 +261,14 @@ impl InteractiveState<'_> {
     /// (docs/tui.md) — focus lands on the leftmost (most relevant) item.
     pub(super) fn focus_strip_from_composer(&mut self) {
         self.composing = false;
-        self.strip_focus = Some(0);
+        self.strip_focus = self.leading_strip_verb();
         self.ui.debug_message = "controls — ←/→ choose · ⏎ act · ↑ transcript · esc compose".into();
     }
 
     /// Land on the strip from transcript navigation's `↓` past the last unit —
     /// the symmetric stop on the way back down to the composer.
     pub(super) fn focus_strip_from_transcript(&mut self) {
-        self.strip_focus = Some(0);
+        self.strip_focus = self.leading_strip_verb();
         // In a read-only view the strip is the bottom of the axis — nothing to
         // fall into below it, so the hint offers only the way back up.
         self.ui.debug_message = if self.read_only() {
@@ -184,15 +278,21 @@ impl InteractiveState<'_> {
         };
     }
 
-    /// Fire the verb of item `idx`. Verbs dispatch onto the same mechanisms the
-    /// keybindings use; `Detach` raises [`quit_requested`](super::state::UiState)
-    /// for the caller (key handler or UI loop) to act on.
-    pub(super) fn activate_strip_item(&mut self, idx: usize) {
-        let items = self.strip_items();
-        let Some(entry) = items.get(idx) else {
+    /// Fire `verb`. Verbs dispatch onto the same mechanisms the keybindings use;
+    /// `Detach` raises [`quit_requested`](super::state::UiState) for the caller
+    /// (key handler or UI loop) to act on.
+    ///
+    /// A verb the current state no longer ranks fires **nothing** and says so. That
+    /// is the explicit resolution the identity model buys: under an index, the
+    /// press landed on whatever verb had moved into the slot — which is how a reach
+    /// for `pace` interrupted a running command.
+    pub(super) fn activate_strip_verb(&mut self, verb: StripVerb) {
+        if !self.strip_verb_applies(verb) {
+            self.ui.debug_message = "that verb no longer applies here".into();
+            self.dirty = true;
             return;
-        };
-        match entry.verb {
+        }
+        match verb {
             StripVerb::PauseToggle => self.toggle_pace_hold(),
             StripVerb::PaceWidget => self.enter_pace_widget(),
             StripVerb::Interrupt => self.esc_interrupt(),
@@ -232,6 +332,7 @@ impl InteractiveState<'_> {
         });
         self.composer.set_text(&prefill);
         self.strip_focus = None;
+        self.strip_pinned = None;
         self.composing = true;
         self.ui.debug_message = "allow — edit the grant · ⏎ commit · ⎋ cancel".into();
         self.dirty = true;
@@ -282,7 +383,9 @@ impl InteractiveState<'_> {
         self.pace_widget = Some(super::state::PaceWidget {
             entry_speed_ms: self.pace.map(|p| p.speed_ms).unwrap_or(0),
         });
-        self.strip_focus = Some(0);
+        // The stepper owns the row, so nothing pinned survives it.
+        self.strip_pinned = None;
+        self.strip_focus = Some(StripVerb::PaceWidget);
         self.composing = false;
         self.ui.debug_message = "pace — ↑/↓ adjust · ⏎ set · ⎋ revert".into();
         self.dirty = true;
@@ -347,12 +450,17 @@ impl InteractiveState<'_> {
     /// [`strip_hits`](InteractiveState::strip_hits), the column-range → item map
     /// mouse clicks resolve against.
     pub(super) fn render_control_strip(&mut self, buf: &mut Buffer, area: Rect) {
+        // One place decides whether the list is pinned, and it runs before the list
+        // is read — so what is drawn, what a click resolves against, and what a key
+        // dispatches on are the same list.
+        self.sync_strip_engagement();
         let items = self.strip_items();
-        // Clamp focus to the current set (a state transition may have shrunk it).
-        if let Some(i) = self.strip_focus
-            && i >= items.len()
+        // A focused verb the sub-states took away (the pace stepper, staging) has no
+        // slot to grey in; it drops rather than pointing at nothing.
+        if let Some(verb) = self.strip_focus
+            && !items.iter().any(|item| item.verb == verb)
         {
-            self.strip_focus = Some(items.len().saturating_sub(1));
+            self.strip_focus = items.first().map(|item| item.verb);
         }
 
         for x in 0..area.width {
@@ -372,11 +480,11 @@ impl InteractiveState<'_> {
         let budget = area.width.saturating_sub(reserved);
 
         let mut x: u16 = 1;
-        for (i, entry) in items.iter().enumerate() {
+        for entry in &items {
             if x + self.strip_item_width(entry) > budget {
                 break; // fit-to-width: the lowest-ranked items drop first
             }
-            x = self.render_strip_item(buf, area, x, entry, i) + 2;
+            x = self.render_strip_item(buf, area, x, entry) + 2;
         }
 
         if let Some(text) = note {
@@ -391,11 +499,33 @@ impl InteractiveState<'_> {
             Some("↑/↓ adjust · ⏎ set · ⎋ revert")
         } else if self.staging.is_some() {
             Some("draft saved · ⏎ commit · ⎋ cancel")
+        } else if self.strip_list_is_stale() {
+            // Leads the gate's own note deliberately: a pinned row that no longer
+            // matches the state is the one thing the operator must not act on
+            // unknowingly, and a silently frozen strip is the same defect class as
+            // the shifting one it replaced (docs/tui.md).
+            Some("pinned · leave to re-rank")
         } else if self.pending_gate.is_some() {
             Some("type below to redirect")
         } else {
             None
         }
+    }
+
+    /// Whether the pinned row has diverged from what the state now ranks — a verb
+    /// greyed out in place, or one that became relevant and is being held back.
+    /// This is what the frozen row has to *say*, since a freeze nobody can see is
+    /// just stale information.
+    fn strip_list_is_stale(&self) -> bool {
+        let Some(pinned) = &self.strip_pinned else {
+            return false;
+        };
+        let live = self.strip_live_items();
+        live.len() != pinned.len()
+            || live
+                .iter()
+                .zip(pinned)
+                .any(|(live, held)| live.verb != held.verb)
     }
 
     /// One item's cells: `▸ label hint ` — the reserved marker cell (`▸` focused,
@@ -407,10 +537,19 @@ impl InteractiveState<'_> {
         area: Rect,
         x: u16,
         entry: &StripItem,
-        i: usize,
     ) -> u16 {
-        let sel = self.strip_focus == Some(i);
-        let (body, hint) = if sel {
+        let sel = self.strip_focus == Some(entry.verb);
+        // A pinned slot whose verb the state stopped ranking greys **in place** —
+        // the position is what the freeze protects, so removing it would be the
+        // shift the freeze exists to prevent. Greying is also the tell: it takes
+        // precedence over the focus surface, because "this fires nothing" is what
+        // the operator needs to read before they press.
+        let (body, hint) = if !self.strip_verb_applies(entry.verb) {
+            (
+                self.theme.strip_item_disabled_style,
+                self.theme.strip_item_disabled_style,
+            )
+        } else if sel {
             (
                 self.theme.strip_item_focused_style,
                 self.theme.strip_hint_focused_style,
@@ -431,7 +570,7 @@ impl InteractiveState<'_> {
             col = put_row(buf, area, col, entry.hint, hint);
         }
         col = put_row(buf, area, col, " ", body);
-        self.strip_hits.push((x, col, i));
+        self.strip_hits.push((x, col, entry.verb));
         col
     }
 

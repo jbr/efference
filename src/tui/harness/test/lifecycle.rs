@@ -62,9 +62,7 @@ fn a_prose_less_generation_phase_is_visible() {
     );
 
     // The call is named as soon as it opens, before any argument bytes arrive.
-    play.event(TuiEvent::ToolCallStart {
-        name: "bash".into(),
-    });
+    play.calling(0, "toolu_live", "bash");
     assert!(
         play.find("calling bash").is_some(),
         "the pending call is named before its input streams"
@@ -78,9 +76,7 @@ fn a_prose_less_generation_phase_is_visible() {
 
     // Before a single pair has closed there is no structure to claim, so the raw
     // characters are shown — they claim nothing, which is what makes them safe.
-    play.event(TuiEvent::ToolCallInput {
-        fragment: "{\"comm".into(),
-    });
+    play.call_input(0, "{\"comm");
     assert!(
         play.find(r#"{"comm"#).is_some(),
         "with nothing structural arrived yet, the raw bytes are shown rather than nothing"
@@ -88,9 +84,7 @@ fn a_prose_less_generation_phase_is_visible() {
 
     // Once the pair closes it reads as an argument, through the same renderer a
     // committed call uses — so the header fills in rather than changing shape.
-    play.event(TuiEvent::ToolCallInput {
-        fragment: "and\":\"ls src\"}".into(),
-    });
+    play.call_input(0, "and\":\"ls src\"}");
     assert!(
         play.find("ls src").is_some(),
         "a closed argument renders as an argument"
@@ -100,20 +94,20 @@ fn a_prose_less_generation_phase_is_visible() {
         "…and the JSON envelope it arrived in is no longer what the operator reads"
     );
 
-    // Prose is its own evidence of progress, so it replaces the phase line.
+    // Prose is its own evidence of progress, so it replaces the calling line.
     play.event(TuiEvent::AssistantDelta("Looking now.".into()));
     assert!(
         play.find("calling bash").is_none(),
-        "prose supersedes phase"
+        "prose supersedes the calling line"
     );
     assert!(play.find("Looking now.").is_some());
 }
 
 /// The phase line is *live*, not transcript: once the assistant entry commits, the committed
-/// record is the thing to read and the phase has nothing left to report. (Rendering committed
+/// record is the thing to read and the live tail has nothing left to report. (Rendering committed
 /// thinking in the transcript is a separate unit — docs/transport.md.)
 #[test]
-fn a_committed_turn_clears_the_live_phase() {
+fn a_committed_turn_clears_the_live_tail() {
     let mut play = Screenplay::new(80, 12);
     play.user("Count the modules.");
     play.event(TuiEvent::ThinkingDelta("weighing the options".into()));
@@ -122,7 +116,7 @@ fn a_committed_turn_clears_the_live_phase() {
     play.assistant("Twelve.", vec![]);
     assert!(
         play.find("thinking").is_none(),
-        "the committed turn supersedes the live phase"
+        "the committed turn supersedes the live tail"
     );
     assert!(play.find("Twelve.").is_some());
 }
@@ -136,10 +130,7 @@ fn a_committed_turn_clears_the_live_phase() {
 fn the_live_tail_is_not_double_spaced() {
     let mut play = Screenplay::new(80, 24);
     play.user("Run the tests.");
-    play.event(TuiEvent::ToolOutput {
-        call_id: "call-live".into(),
-        chunk: "one\ntwo\nthree\n".into(),
-    });
+    play.tool_output("call-live", "one\ntwo\nthree\n");
     play.pin_to_bottom();
     play.snapshot("live_tool_output_spacing");
 }
@@ -150,15 +141,13 @@ fn the_live_tail_is_not_double_spaced() {
 fn a_streaming_write_shows_the_file_it_is_writing() {
     let mut play = Screenplay::new(80, 24);
     play.user("Write the renderer.");
-    play.event(TuiEvent::ToolCallStart {
-        name: "write".into(),
-    });
+    play.calling(0, "toolu_write", "write");
     // Emitted the way a model emits it: identifying arguments first, contents last
     // and still open.
-    play.event(TuiEvent::ToolCallInput {
-        fragment: r#"{"intent":"write the renderer","path":"src/render.rs","contents":"fn main() {\n    let x = 1;\n"#
-            .into(),
-    });
+    play.call_input(
+        0,
+        r#"{"intent":"write the renderer","path":"src/render.rs","contents":"fn main() {\n    let x = 1;\n"#,
+    );
     play.pin_to_bottom();
     play.snapshot("streaming_write_call");
 }
@@ -174,16 +163,10 @@ fn a_streaming_write_shows_the_file_it_is_writing() {
 fn scrolling_down_mid_stream_does_not_snap_to_the_end() {
     let mut play = Screenplay::new(80, 20);
     play.user("write it");
-    play.event(TuiEvent::ToolCallStart {
-        name: "write".into(),
-    });
-    play.event(TuiEvent::ToolCallInput {
-        fragment: r#"{"path":"a.rs","contents":""#.into(),
-    });
+    play.calling(0, "toolu_write", "write");
+    play.call_input(0, r#"{"path":"a.rs","contents":""#);
     for _ in 0..40 {
-        play.event(TuiEvent::ToolCallInput {
-            fragment: r#"    let value = compute(state);\n"#.into(),
-        });
+        play.call_input(0, r#"    let value = compute(state);\n"#);
     }
     play.pin_to_bottom();
     let _ = play.draw();
@@ -197,9 +180,7 @@ fn scrolling_down_mid_stream_does_not_snap_to_the_end() {
     // Many more screens arrive. The event loop re-projects before handling input,
     // which is what leaves the layout cache invalid at the moment a scroll lands.
     for _ in 0..200 {
-        play.event(TuiEvent::ToolCallInput {
-            fragment: r#"    let value = compute(state);\n"#.into(),
-        });
+        play.call_input(0, r#"    let value = compute(state);\n"#);
     }
     play.state.flush_reproject();
     assert!(
@@ -233,7 +214,7 @@ fn scrolling_down_mid_stream_does_not_snap_to_the_end() {
 /// **Committed thinking keeps the model's structure.** It is the copy a human
 /// reads afterwards, at their own pace (docs/tui.md), and it is not flowing prose:
 /// it holds lists and indentation, which reflowing to paragraphs destroys. It also
-/// has to match the live phase, which renders the same text the same way —
+/// has to match the live render, which renders the same text the same way —
 /// otherwise the block visibly reshapes at the moment the turn commits.
 ///
 /// Thinking renders as markdown now, so a list is a *list*: the invariant is that
@@ -316,9 +297,7 @@ fn streamed_thinking_persists_and_does_not_reshape_on_commit() {
     let live = transcript_rows(&play.render());
 
     // Acting no longer wipes it.
-    play.event(TuiEvent::ToolCallStart {
-        name: "write".into(),
-    });
+    play.calling(0, "toolu_write", "write");
     assert!(
         play.find("keep the lines").is_some(),
         "a tool call starting wiped the thinking that led to it"
@@ -335,6 +314,102 @@ fn streamed_thinking_persists_and_does_not_reshape_on_commit() {
         "the block changed shape when the turn committed — the transcript visibly \
          rewrites itself at that moment even though both renders are correct"
     );
+}
+
+/// **A live block's toggle survives the next stream event.**
+///
+/// A running tool's output shows a peek by default (docs/tui.md), and the operator
+/// can open it to read the whole thing. That choice used to last exactly one frame:
+/// the peek entry carried no `call_id`, so it had no durable key, so nothing could
+/// be recorded against it — the arriving fragment re-projected the block and it
+/// snapped shut. The `call_id` is on the tail already (`tool_output` is demuxed by
+/// it), and the entry now carries it as its key.
+#[test]
+fn a_streaming_block_opened_full_stays_open_across_stream_events() {
+    let mut play = Screenplay::new(80, 30);
+    play.user("Run the suite.");
+    play.running_bash("toolu_run", "cargo test");
+    for n in 1..=14 {
+        play.tool_output("toolu_run", &format!("line {n}\n"));
+    }
+    play.pin_to_bottom();
+    assert!(
+        play.find("running · 14 lines, last 10").is_some(),
+        "the default is the peek"
+    );
+    assert!(play.find("line 1\n").is_none(), "…so the head is not shown");
+
+    // Focus the peek (the last unit) and fire its one verb.
+    play.route_key(KeyCode::Up, KeyModifiers::NONE); // composer → strip
+    play.route_key(KeyCode::Up, KeyModifiers::NONE); // strip → transcript, last unit
+    assert_eq!(
+        play.state
+            .block_menu_items()
+            .iter()
+            .map(|item| item.label)
+            .collect::<Vec<_>>(),
+        vec!["full"],
+        "a running tool's peek carries the peek/full verb"
+    );
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(
+        play.find("line 1").is_some(),
+        "the verb opened the whole output"
+    );
+
+    // The event that used to close it.
+    play.tool_output("toolu_run", "line 15\n");
+    assert!(
+        play.find("line 1").is_some(),
+        "the next streamed fragment re-collapsed the block the operator opened"
+    );
+    assert!(
+        play.find("line 15").is_some(),
+        "…and the new line landed in the open view"
+    );
+    play.pin_to_bottom();
+    play.snapshot("running_peek_opened_full");
+
+    // The committed result renders whole, so the live-only flag retires with it.
+    play.tool_result("toolu_run", "line 1\nline 2\n", false, WireState::Raw);
+    assert!(
+        !play.state.view.is_expanded("toolu_run"),
+        "the peek/full flag belongs to output still arriving"
+    );
+}
+
+/// **Two calls in one response both render.** The live tail held one slot for the
+/// call in flight, so the second `tool_call_start` replaced the first and the
+/// arguments the operator was watching arrive vanished mid-flight. Every delta names
+/// the content block it belongs to (docs/control-api.md), so each call's fragments
+/// bind to the call that opened that block.
+#[test]
+fn two_calls_in_one_response_each_keep_their_arriving_arguments() {
+    let mut play = Screenplay::new(80, 24);
+    play.user("Read both files.");
+
+    play.calling(0, "toolu_a", "read");
+    play.call_input(0, r#"{"path":"src/log.rs","#);
+    assert!(play.find("src/log.rs").is_some(), "the first call renders");
+
+    play.calling(1, "toolu_b", "bash");
+    play.call_input(1, r#"{"command":"ls src","#);
+    play.pin_to_bottom();
+
+    assert!(
+        play.find("src/log.rs").is_some(),
+        "the second call starting replaced the first, losing what it had shown"
+    );
+    assert!(play.find("ls src").is_some(), "the second call renders too");
+
+    // A fragment names its block, so it extends the call it belongs to rather than
+    // whichever one arrived last.
+    play.call_input(0, r#""intent":"read the log module"}"#);
+    assert!(
+        play.find("read the log module").is_some(),
+        "the fragment landed on block 0's call"
+    );
+    play.snapshot("parallel_live_calls");
 }
 
 /// The transcript half of a rendered frame, without the bottom chrome. The strip and

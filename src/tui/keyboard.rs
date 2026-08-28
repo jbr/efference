@@ -180,8 +180,8 @@ impl<'a> InteractiveState<'a> {
             return false;
         }
 
-        if let Some(idx) = self.strip_focus {
-            return self.handle_strip_key(key, idx, terminal);
+        if let Some(verb) = self.strip_focus {
+            return self.handle_strip_key(key, verb, terminal);
         }
         if self.sidebar_open {
             return self.handle_sidebar_key(key, terminal);
@@ -202,7 +202,7 @@ impl<'a> InteractiveState<'a> {
     fn handle_strip_key(
         &mut self,
         key: KeyEvent,
-        idx: usize,
+        verb: super::control_strip::StripVerb,
         terminal: &mut Terminal<impl Backend + Write>,
     ) -> bool {
         // An active pace widget owns the row (docs/tui.md): only it captures `↑`/`↓`
@@ -255,25 +255,23 @@ impl<'a> InteractiveState<'a> {
                 false
             }
             KeyCode::Left => {
-                self.strip_focus = Some(idx.saturating_sub(1));
+                self.move_strip_focus(false);
                 false
             }
             KeyCode::Char('b') if ctrl => {
-                self.strip_focus = Some(idx.saturating_sub(1));
+                self.move_strip_focus(false);
                 false
             }
             KeyCode::Right => {
-                let last = self.strip_items().len().saturating_sub(1);
-                self.strip_focus = Some((idx + 1).min(last));
+                self.move_strip_focus(true);
                 false
             }
             KeyCode::Char('f') if ctrl => {
-                let last = self.strip_items().len().saturating_sub(1);
-                self.strip_focus = Some((idx + 1).min(last));
+                self.move_strip_focus(true);
                 false
             }
             KeyCode::Enter | KeyCode::Char(' ') => {
-                self.activate_strip_item(idx);
+                self.activate_strip_verb(verb);
                 self.ui.quit_requested
             }
             // Scoped mnemonic: a plain letter that names a shown item fires it,
@@ -284,10 +282,11 @@ impl<'a> InteractiveState<'a> {
                 match self
                     .strip_items()
                     .iter()
-                    .position(|it| it.hint == c.to_string())
+                    .find(|it| it.hint == c.to_string())
+                    .map(|it| it.verb)
                 {
-                    Some(i) => {
-                        self.activate_strip_item(i);
+                    Some(verb) => {
+                        self.activate_strip_verb(verb);
                         self.ui.quit_requested
                     }
                     None => self.handle_command_key(key, terminal),
@@ -449,6 +448,9 @@ impl<'a> InteractiveState<'a> {
                 } else {
                     let _ = execute!(terminal.backend_mut(), DisableMouseCapture);
                     self.viewport.cursor_pos = None;
+                    // No further `Moved` events will arrive to clear it, and a hover
+                    // that cannot be left would pin the strip for good.
+                    self.viewport.strip_hovered = false;
                     self.ui.debug_message = "Mouse disabled (text selection enabled)".into();
                 }
             }

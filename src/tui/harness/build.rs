@@ -102,6 +102,35 @@ impl Screenplay<'_> {
         self.running_tool(call_id, crate::bash::NAME, json!({ "command": command }))
     }
 
+    /// Open an in-flight tool call on the live tail, as `tool_call_start` does: the
+    /// content block `index` its input fragments will name, the `call_id` its result
+    /// will key on, and the tool's name (docs/control-api.md).
+    pub(crate) fn calling(&mut self, index: usize, call_id: &str, name: &str) -> &mut Self {
+        self.event(TuiEvent::ToolCallStart {
+            index,
+            call_id: call_id.into(),
+            name: name.into(),
+        })
+    }
+
+    /// A fragment of the call at content block `index`'s input, as
+    /// `tool_call_input` delivers it.
+    pub(crate) fn call_input(&mut self, index: usize, fragment: &str) -> &mut Self {
+        self.event(TuiEvent::ToolCallInput {
+            index,
+            fragment: fragment.into(),
+        })
+    }
+
+    /// A fragment of a running tool's output, as `tool_output` delivers it —
+    /// demuxed by `call_id`, which is also the peek entry's durable key.
+    pub(crate) fn tool_output(&mut self, call_id: &str, chunk: &str) -> &mut Self {
+        self.event(TuiEvent::ToolOutput {
+            call_id: call_id.into(),
+            chunk: chunk.into(),
+        })
+    }
+
     /// A committed spotter verdict for `call_id` (docs/permissions.md) — the `Spot` audit
     /// entry the spotter logs for *every* judged call, cleared ones included, not only the
     /// gated ones a human ever sees a prompt for.

@@ -12,6 +12,7 @@ use ratatui::layout::{Position, Rect};
 use std::borrow::Cow;
 use std::time::Instant;
 
+use super::control_strip::{StripItem, StripVerb};
 use super::theme::InteractiveTheme;
 use super::utils::{find_node_at_path_mut, supports_cursor_shape};
 use crate::frontend::{Approval, Interrupt};
@@ -19,7 +20,7 @@ use crate::log::{LogEntry, Payload};
 use crate::tui::clipboard::TextClipboard;
 use crate::tui::composer::Composer;
 use crate::tui::document::{Document, DocumentNode, NodePath, TuiAction};
-use crate::tui::projection::{self, LiveTail, Phase};
+use crate::tui::projection::{self, LiveTail};
 use crate::tui::render_context::{RenderContext, ThemeError};
 use crate::tui::{
     BgProc, PaceCmd, PaceView, PendingGate, SessionIdentityView, SidebarCmd, SidebarReturn,
@@ -268,6 +269,12 @@ pub(super) struct ViewportState {
     pub last_document_height: u16,
     /// Last known viewport height for scroll clamping
     pub last_viewport_height: u16,
+    /// Whether the mouse is currently over the control-strip row (docs/tui.md) —
+    /// one of the two engagements that pin the strip's item list. Set from the
+    /// `Moved` mouse events, so it goes false the moment the pointer moves off the
+    /// row; a pointer that leaves the terminal entirely sends no event, and the pin
+    /// then persists until keyboard focus or another move resolves it.
+    pub strip_hovered: bool,
     /// Scrollbar hover/drag state
     pub scrollbar_hovered: bool,
     pub scrollbar_dragging: bool,
@@ -449,11 +456,20 @@ pub(super) struct InteractiveState<'a> {
     /// mode (M1's single-key transcript commands). Esc toggles; a printable key in
     /// command mode returns to composing. Starts focused.
     pub composing: bool,
-    /// Control-strip focus (docs/tui.md): `Some(i)` while the strip's item `i` is
-    /// focused — the middle stop on the transcript → strip → composer axis. Only
-    /// meaningful while `composing` is false; cleared on every return to the
-    /// composer.
-    pub strip_focus: Option<usize>,
+    /// Control-strip focus (docs/tui.md): the focused **verb**, not its position —
+    /// the middle stop on the transcript → strip → composer axis. Only meaningful
+    /// while `composing` is false; cleared on every return to the composer.
+    ///
+    /// Identity rather than an index because the list is rebuilt each frame with
+    /// the context verbs *prepended* to the tail: every position shifts when the
+    /// state flips, so an index-held focus becomes a different verb between the
+    /// focus landing and the `⏎`. The index is re-derived per frame from this.
+    pub strip_focus: Option<StripVerb>,
+    /// The item list pinned while the strip is engaged (docs/tui.md), or `None`
+    /// when it is free to re-rank. Holds the *order*; each slot's label is re-read
+    /// from the live list per frame, and a slot whose verb no longer applies greys
+    /// in place rather than being removed.
+    pub strip_pinned: Option<Vec<StripItem>>,
     /// An in-progress stager activation (docs/tui.md): the composer is editing a
     /// strip verb's argument, with the operator's draft parked for restoration on
     /// commit or cancel. `Some` implies `composing`.
@@ -462,9 +478,11 @@ pub(super) struct InteractiveState<'a> {
     /// stepper captures `↑`/`↓`. Implies strip focus; mutually exclusive with
     /// `staging` (that is composer-focused). Esc reverts it, `⏎` commits.
     pub pace_widget: Option<PaceWidget>,
-    /// The strip items' rendered column ranges (`x_start..x_end`, item index),
-    /// rebuilt each frame — what mouse clicks on the strip row resolve against.
-    pub strip_hits: Vec<(u16, u16, usize)>,
+    /// The strip items' rendered column ranges (`x_start..x_end`, the item's verb),
+    /// rebuilt each frame — what mouse clicks on the strip row resolve against. The
+    /// verb rather than an index for the same reason focus holds one: a click lands
+    /// on whatever occupies that column *at click time*.
+    pub strip_hits: Vec<(u16, u16, StripVerb)>,
     /// Block-menu selection (docs/tui.md): which of the focused transcript unit's
     /// entry verbs `⏎` fires. Reset to the leading verb whenever focus moves to
     /// another unit, and clamped to the current unit's verb list at use.

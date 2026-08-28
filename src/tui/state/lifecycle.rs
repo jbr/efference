@@ -38,6 +38,7 @@ impl<'a> InteractiveState<'a> {
                 clicked_position: None,
                 cached_layout: None,
                 last_viewport_height: 0,
+                strip_hovered: false,
                 scrollbar_hovered: false,
                 scrollbar_dragging: false,
                 keyboard_cursor: KeyboardCursor::VirtualTop,
@@ -90,6 +91,7 @@ impl<'a> InteractiveState<'a> {
             clipboard: TextClipboard::new(),
             composing: true,
             strip_focus: None,
+            strip_pinned: None,
             staging: None,
             pace_widget: None,
             strip_hits: Vec::new(),
@@ -139,7 +141,7 @@ impl<'a> InteractiveState<'a> {
         self.ui.debug_message = view_status(&label).into();
         self.viewing = Some(label);
         self.composing = false;
-        self.strip_focus = Some(0);
+        self.strip_focus = self.leading_strip_verb();
     }
 
     /// Whether this is a read-only view of a recorded log (no daemon behind it):
@@ -216,19 +218,8 @@ impl<'a> InteractiveState<'a> {
     /// editing the document in place. No-op unless a keyed tool-result entry is
     /// focused.
     pub(in crate::tui) fn toggle_raw_focused(&mut self) {
-        let path = match self.viewport.keyboard_cursor {
-            KeyboardCursor::Focused { action_index } => {
-                match self.render_cache.actions.get(action_index) {
-                    Some((_, TuiAction::FocusEntry(p))) => *p,
-                    _ => return,
-                }
-            }
-            _ => return,
-        };
-        let call_id = match find_node_at_path_mut(&mut self.document.document.nodes, path.indices())
-        {
-            Some(DocumentNode::Entry { key: Some(k), .. }) => k.to_string(),
-            _ => return,
+        let Some(call_id) = self.focused_entry_key() else {
+            return;
         };
         let now_raw = self.view.toggle_raw(&call_id);
         self.ui.debug_message = if now_raw {
@@ -237,6 +228,41 @@ impl<'a> InteractiveState<'a> {
             "showing distilled output — r to show raw".into()
         };
         self.reproject();
+    }
+
+    /// Flip the focused *running* tool's output between the trailing-lines peek and
+    /// the whole output so far (docs/tui.md). The flag is recorded in
+    /// [`ViewState`](crate::tui::projection::ViewState) against the call's
+    /// `call_id`, which is the entry's durable key — the block is rebuilt on every
+    /// arriving fragment, so a choice held anywhere else lasts one frame. No-op
+    /// unless a keyed running-tool entry is focused.
+    pub(in crate::tui) fn toggle_peek_focused(&mut self) {
+        let Some(call_id) = self.focused_entry_key() else {
+            return;
+        };
+        let now_full = self.view.toggle_expanded(&call_id);
+        self.ui.debug_message = if now_full {
+            "showing the whole output so far — it keeps growing".into()
+        } else {
+            "showing the last lines".into()
+        };
+        self.reproject();
+    }
+
+    /// The focused transcript entry's durable key (its `call_id`), if it has one.
+    /// Shared by the per-entry verbs so they resolve focus the same way.
+    fn focused_entry_key(&mut self) -> Option<String> {
+        let KeyboardCursor::Focused { action_index } = self.viewport.keyboard_cursor else {
+            return None;
+        };
+        let path = match self.render_cache.actions.get(action_index) {
+            Some((_, TuiAction::FocusEntry(p))) => *p,
+            _ => return None,
+        };
+        match find_node_at_path_mut(&mut self.document.document.nodes, path.indices()) {
+            Some(DocumentNode::Entry { key: Some(k), .. }) => Some(k.to_string()),
+            _ => None,
+        }
     }
 
     pub(in crate::tui) fn set_debug_message(&mut self, message: impl Into<Cow<'static, str>>) {

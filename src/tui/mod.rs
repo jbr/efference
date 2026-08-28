@@ -78,11 +78,20 @@ pub(crate) enum TuiEvent {
     /// assistant's answer.
     ThinkingDelta(String),
     /// The model began emitting a tool call (`tool_call_start`), named before its
-    /// arguments arrive.
-    ToolCallStart { name: String },
-    /// A fragment of a tool call's input arriving (`tool_call_input`), verbatim. Shown
-    /// as text, never parsed — it is a partial slice of a JSON document.
-    ToolCallInput { fragment: String },
+    /// arguments arrive. `index` is the content block the call's input fragments
+    /// will name; `call_id` is the `tool_use` id its result will key on
+    /// (docs/control-api.md) — the identity a live block binds to before commit.
+    ToolCallStart {
+        index: usize,
+        call_id: String,
+        name: String,
+    },
+    /// A fragment of a tool call's input arriving (`tool_call_input`), verbatim, for
+    /// the call at content block `index`. Shown as text, never parsed — it is a
+    /// partial slice of a JSON document. Scoped by `index` because blocks stream
+    /// sequentially: without it, a second call's fragments are indistinguishable
+    /// from the first's continuing.
+    ToolCallInput { index: usize, fragment: String },
     /// A fragment of a running tool's output (`tool_output`).
     ToolOutput { call_id: String, chunk: String },
     /// A fragment of a running background process's output (`process_output`).
@@ -374,7 +383,9 @@ impl SidebarRow {
 /// alternatives are the strip (at its item) and the transcript.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SidebarReturn {
-    Strip(usize),
+    /// The strip, at the verb that held focus — identity, like the focus itself
+    /// (docs/tui.md), so returning cannot land on a different verb.
+    Strip(control_strip::StripVerb),
     Transcript,
 }
 

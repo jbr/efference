@@ -230,28 +230,20 @@ fn a_re_rendered_result_drops_its_cached_layout() {
 fn a_streaming_write_colours_only_the_lines_that_arrived() {
     let mut play = Screenplay::new(120, 40);
     play.user("write it");
-    play.event(TuiEvent::ToolCallStart {
-        name: "write".into(),
-    });
-    play.event(TuiEvent::ToolCallInput {
-        fragment: r#"{"path":"a.rs","contents":""#.into(),
-    });
+    play.calling(0, "toolu_write", "write");
+    play.call_input(0, r#"{"path":"a.rs","contents":""#);
     play.pin_to_bottom();
     let _ = play.draw();
 
     for lines in [50, 100, 200, 400] {
-        while play.state.live.phase_input_lines() < lines {
-            play.event(TuiEvent::ToolCallInput {
-                fragment: r#"    let value = compute(state);\n"#.into(),
-            });
+        while play.state.live.call_input_lines() < lines {
+            play.call_input(0, r#"    let value = compute(state);\n"#);
         }
         let _ = play.draw();
         // A steady-state *streaming* frame: one more fragment, then a paint. (Two
         // paints with no fragment between them hit the memo outright — the text did
         // not change. What a stream does is change it every frame.)
-        play.event(TuiEvent::ToolCallInput {
-            fragment: r#"    let value = compute(state);\n"#.into(),
-        });
+        play.call_input(0, r#"    let value = compute(state);\n"#);
         let _ = play.draw();
         let highlighted = play.state.document.highlighted;
         assert!(

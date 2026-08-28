@@ -16,6 +16,12 @@ impl<'a> InteractiveState<'a> {
             TuiEvent::Entry(entry) => {
                 // A committed entry supersedes whatever was streamed live for it.
                 self.live.commit(&entry);
+                // The peek-vs-full fork belongs to output still arriving; the
+                // committed result renders whole, so the flag has nothing left to
+                // apply to (docs/tui.md).
+                if let Payload::ToolResult { call_id, .. } = &entry.payload {
+                    self.view.forget_live(&call_id.0);
+                }
                 self.resolve_result_images(&entry);
                 // A committed user turn resolves its optimistic pending echo
                 // (docs/tui.md): the entry *is* on the wire now
@@ -39,8 +45,12 @@ impl<'a> InteractiveState<'a> {
             }
             TuiEvent::AssistantDelta(text) => {
                 self.live.assistant.push_str(&text);
-                // Prose arriving *is* the progress signal, so it supersedes any phase line.
-                self.live.phase = None;
+                // Prose arriving *is* the progress signal, so it supersedes the
+                // calling lines. (Prose leads a response's tool calls on the wire,
+                // so this clears nothing a turn is still emitting; a response that
+                // genuinely interleaves the two is the open ordering question in
+                // docs/tui.md, not this line.)
+                self.live.clear_calls();
                 self.loading.pending_request = true;
                 self.mark_reproject();
             }
@@ -51,18 +61,20 @@ impl<'a> InteractiveState<'a> {
                 self.loading.pending_request = true;
                 self.mark_reproject();
             }
-            TuiEvent::ToolCallStart { name } => {
-                // Replaces a thinking phase: the model has moved on to acting.
-                self.live.phase = Some(Phase::CallingTool {
-                    name,
-                    input: String::new(),
-                });
+            TuiEvent::ToolCallStart {
+                index,
+                call_id,
+                name,
+            } => {
+                // Joins the calls already in flight rather than replacing them: a
+                // response may open more than one, and the first call's arriving
+                // arguments are what a single slot dropped (docs/tui.md).
+                self.live.start_call(index, &call_id, &name);
                 self.loading.pending_request = true;
                 self.mark_reproject();
             }
-            TuiEvent::ToolCallInput { fragment } => {
-                if let Some(Phase::CallingTool { input, .. }) = &mut self.live.phase {
-                    input.push_str(&fragment);
+            TuiEvent::ToolCallInput { index, fragment } => {
+                if self.live.push_call_input(index, &fragment) {
                     self.mark_reproject();
                 }
             }

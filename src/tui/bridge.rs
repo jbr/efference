@@ -197,18 +197,35 @@ fn decode_delta(
             tx.send(TuiEvent::ThinkingDelta(text.to_string()))
                 .map_err(Box::new)
         }),
-        "tool_call_start" => value["name"].as_str().map(|name| {
-            tx.send(TuiEvent::ToolCallStart {
-                name: name.to_string(),
-            })
-            .map_err(Box::new)
-        }),
-        "tool_call_input" => value["fragment"].as_str().map(|fragment| {
-            tx.send(TuiEvent::ToolCallInput {
-                fragment: fragment.to_string(),
-            })
-            .map_err(Box::new)
-        }),
+        // `index` and `call_id` are what scope a delta to the block it extends
+        // (docs/control-api.md); a frame missing either is dropped rather than
+        // guessed at, since attributing a fragment to the wrong call is the defect
+        // the scoping exists to prevent.
+        "tool_call_start" => match (
+            value["index"].as_u64(),
+            value["call_id"].as_str(),
+            value["name"].as_str(),
+        ) {
+            (Some(index), Some(call_id), Some(name)) => Some(
+                tx.send(TuiEvent::ToolCallStart {
+                    index: index as usize,
+                    call_id: call_id.to_string(),
+                    name: name.to_string(),
+                })
+                .map_err(Box::new),
+            ),
+            _ => None,
+        },
+        "tool_call_input" => match (value["index"].as_u64(), value["fragment"].as_str()) {
+            (Some(index), Some(fragment)) => Some(
+                tx.send(TuiEvent::ToolCallInput {
+                    index: index as usize,
+                    fragment: fragment.to_string(),
+                })
+                .map_err(Box::new),
+            ),
+            _ => None,
+        },
         "tool_output" => match (value["call_id"].as_str(), value["chunk"].as_str()) {
             (Some(call_id), Some(chunk)) => Some(
                 tx.send(TuiEvent::ToolOutput {

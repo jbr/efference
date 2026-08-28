@@ -1,3 +1,4 @@
+use super::StripVerb;
 use crate::tui::TuiEvent;
 use crate::tui::harness::Screenplay;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -182,7 +183,11 @@ fn strip_focus_marker_moves_without_shifting_text() {
     let pause_before = play.find("pause").expect("pause on screen");
 
     play.route_key(KeyCode::Up, NONE);
-    assert_eq!(play.state.strip_focus, Some(0), "↑ lands on the first item");
+    assert_eq!(
+        play.state.strip_focus,
+        Some(StripVerb::Background),
+        "↑ lands on the first item"
+    );
     let m1 = play.find("▸").expect("the focused item shows the marker");
     assert!(m1.0 < play.find("background").unwrap().0);
 
@@ -197,7 +202,11 @@ fn strip_focus_marker_moves_without_shifting_text() {
 
     play.route_key(KeyCode::Left, NONE);
     play.route_key(KeyCode::Left, NONE);
-    assert_eq!(play.state.strip_focus, Some(0), "← clamps at the left end");
+    assert_eq!(
+        play.state.strip_focus,
+        Some(StripVerb::Background),
+        "← clamps at the left end"
+    );
 }
 
 /// `⏎` on the focused item fires its verb through the same mechanism as the
@@ -218,8 +227,8 @@ fn strip_enter_fires_the_focused_verb() {
     );
     assert_eq!(
         play.state.strip_focus,
-        Some(1),
-        "focus stays on its slot, whose verb is now resume"
+        Some(StripVerb::PauseToggle),
+        "focus stays on the verb it was on — the hold, now reading resume"
     );
 }
 
@@ -452,6 +461,159 @@ fn staging_renders_the_chip_and_prefill() {
     play.route_key(KeyCode::Right, NONE);
     play.route_key(KeyCode::Enter, NONE); // stage
     play.snapshot("gate_allow_staging");
+}
+
+/// **Focus is a verb, and the state moving under it does not re-aim it.**
+///
+/// Observed live 2026-07-27: the operator moved to activate `pace` while idle, the
+/// loop started, and `⏎` interrupted a running command — index 0 had become
+/// `interrupt`. Focus holds the `StripVerb` now, so the same sequence still fires
+/// the verb the operator aimed at.
+#[test]
+fn strip_focus_holds_the_verb_the_state_change_used_to_swap() {
+    let mut play = Screenplay::new(80, 12);
+    play.user("go");
+    play.route_key(KeyCode::Up, NONE); // idle: pace · theme · help · detach
+    assert_eq!(play.state.strip_focus, Some(StripVerb::PaceWidget));
+
+    // The loop starts between the focus landing and the ⏎. Under an index this put
+    // `interrupt` at position 0.
+    play.event(TuiEvent::Running(true));
+    assert_eq!(
+        play.state.strip_focus,
+        Some(StripVerb::PaceWidget),
+        "focus still names the verb it landed on"
+    );
+    play.route_key(KeyCode::Enter, NONE);
+    assert!(
+        !play.took_interrupt(),
+        "⏎ fired the verb under the cursor, not the one that moved into the slot"
+    );
+    assert!(
+        play.state.pace_widget.is_some(),
+        "…which is the pace stepper the operator was reaching for"
+    );
+}
+
+/// **Engaging the strip pins the list, and the pin is visible.** While focus (or
+/// hover) is on the strip nothing re-ranks: a verb that stops applying greys in
+/// place rather than being removed, so no position moves under the operator's
+/// hands, and the row says it is pinned so a frozen strip is never mistaken for a
+/// current one. Leaving re-ranks.
+#[test]
+fn strip_freezes_while_engaged_and_greys_what_stops_applying() {
+    // Wide enough that the sidebar, the whole item list, and the pinned note all
+    // fit — the fit-to-width cut is a separate rule (above) and would otherwise
+    // take the items this asserts on.
+    let mut play = Screenplay::new(150, 14);
+    play.user("go");
+    play.running_bash("toolu_b", "cargo test");
+    play.route_key(KeyCode::Up, NONE); // → strip, on `background`
+    assert_eq!(
+        labels(&play),
+        vec![
+            "background",
+            "kill",
+            "pause",
+            "pace",
+            "theme",
+            "help",
+            "detach"
+        ]
+    );
+    let kill_at = play.find("kill").expect("kill on the row");
+    assert!(
+        play.find("pinned · leave to re-rank").is_none(),
+        "a pinned row that still matches the state has nothing stale to announce"
+    );
+
+    // The command finishes. The verbs that only applied while it ran stop applying.
+    play.tool_result("toolu_b", "ok", false, crate::log::WireState::Raw);
+    play.event(TuiEvent::Running(false));
+    assert_eq!(
+        labels(&play),
+        vec![
+            "background",
+            "kill",
+            "pause",
+            "pace",
+            "theme",
+            "help",
+            "detach"
+        ],
+        "the pinned order holds — nothing moved under the operator"
+    );
+    assert_eq!(
+        play.find("kill"),
+        Some(kill_at),
+        "…so every label is still in the same columns"
+    );
+    assert!(
+        play.find("pinned · leave to re-rank").is_some(),
+        "the freeze announces itself once the row stops matching the state"
+    );
+
+    // Greyed in place: the dead verb reads differently from a live one, and firing
+    // it does nothing rather than doing something else.
+    let dead = play.cell(kill_at.0, kill_at.1);
+    assert!(
+        dead.has(ratatui::style::Modifier::DIM),
+        "a verb that stopped applying reads as inert: {dead:?}"
+    );
+    let (lx, ly) = play.find("theme").expect("a still-applicable verb");
+    assert!(
+        !play.cell(lx, ly).has(ratatui::style::Modifier::DIM),
+        "…and a verb that still applies does not"
+    );
+    play.route_key(KeyCode::Right, NONE); // → kill, still on the row
+    play.route_key(KeyCode::Enter, NONE);
+    assert!(
+        !play.took_interrupt(),
+        "a greyed verb dispatches nothing at all"
+    );
+    play.snapshot("strip_frozen_while_engaged");
+
+    // Leaving releases the pin; the next engagement sees the current ranking.
+    play.route_key(KeyCode::Esc, NONE);
+    play.route_key(KeyCode::Up, NONE);
+    assert_eq!(
+        labels(&play),
+        vec!["pace", "theme", "help", "detach"],
+        "the list re-ranked once focus left"
+    );
+}
+
+/// Hover is the other engagement: a pointer resting on the row pins it exactly as
+/// keyboard focus does, and moving off releases it. Mouse-down engages through the
+/// same path, since a click sets focus.
+#[test]
+fn hovering_the_strip_pins_it_and_leaving_releases_it() {
+    let mut play = Screenplay::new(150, 14);
+    play.user("go");
+    play.running_bash("toolu_b", "cargo test");
+    let row = play.strip_row();
+    play.hover(4, row);
+    assert!(
+        play.state.viewport.strip_hovered,
+        "the pointer is on the row"
+    );
+    play.render();
+
+    play.tool_result("toolu_b", "ok", false, crate::log::WireState::Raw);
+    play.event(TuiEvent::Running(false));
+    assert!(
+        labels(&play).contains(&"kill"),
+        "the row is pinned under the cursor even with no keyboard focus"
+    );
+
+    play.hover(4, 1); // back into the transcript
+    assert!(!play.state.viewport.strip_hovered);
+    play.render();
+    assert_eq!(
+        labels(&play),
+        vec!["pace", "theme", "help", "detach"],
+        "leaving the row re-ranks it"
+    );
 }
 
 /// Rendering records the items' column ranges for mouse hit-testing.

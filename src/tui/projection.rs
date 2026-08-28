@@ -52,7 +52,7 @@ pub(crate) fn project(
     for idx in 0..log.len() {
         nodes.extend(entry_nodes(log, idx, &index, view, gate));
     }
-    nodes.extend(tail_nodes(live, pending_turns));
+    nodes.extend(tail_nodes(live, view, pending_turns));
     Document::with_nodes(nodes)
 }
 
@@ -257,7 +257,11 @@ pub(crate) fn entry_nodes(
 /// optimistic echoes of just-submitted turns. It depends on nothing committed, and
 /// it changes on nearly every event — so the incremental projection ([`Transcript`])
 /// rebuilds exactly this and reuses everything before it.
-pub(crate) fn tail_nodes(live: &LiveTail, pending_turns: &[String]) -> Vec<DocumentNode<'static>> {
+pub(crate) fn tail_nodes(
+    live: &LiveTail,
+    view: &ViewState,
+    pending_turns: &[String],
+) -> Vec<DocumentNode<'static>> {
     let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
 
     // The live tail renders after everything committed: in-flight assistant prose
@@ -274,17 +278,17 @@ pub(crate) fn tail_nodes(live: &LiveTail, pending_turns: &[String]) -> Vec<Docum
             markdown(&live.assistant),
         ));
     }
-    // A generation phase that produces no prose (thinking, or a tool call's input still
-    // arriving). Without this the window between "turn submitted" and "first prose" is silent,
-    // and silence is indistinguishable from a hung harness (docs/tui.md).
-    if let Some(phase) = &live.phase {
-        nodes.push(DocumentNode::entry(
-            EntryKind::AssistantMessage,
-            phase_blocks(phase),
-        ));
+    // Each tool call whose input is still arriving — one entry per call, in the order
+    // the model opened them. Without these the window between "turn submitted" and
+    // "first prose" is silent, and silence is indistinguishable from a hung harness
+    // (docs/tui.md). One slot instead of a collection showed only the last call, and
+    // dropped what the operator was watching arrive for the first (docs/control-api.md
+    // scopes every delta by content block, which is what makes the collection possible).
+    for call in live.calls() {
+        nodes.push(live_call_entry(call));
     }
-    for (_, buf) in &live.tools {
-        nodes.push(running_tool_peek(buf));
+    for (call_id, buf) in &live.tools {
+        nodes.push(running_tool_peek(call_id, buf, view.is_expanded(call_id)));
     }
 
     // Optimistic echoes of just-submitted turns, last of all (docs/tui.md).
@@ -541,7 +545,7 @@ mod tools;
 
 pub(crate) use incremental::Transcript;
 pub(crate) use nodes::join_text;
-pub(crate) use tail::{LiveTail, Phase, ViewState};
+pub(crate) use tail::{LiveCall, LiveTail, ViewState};
 
 use nodes::*;
 use tools::*;

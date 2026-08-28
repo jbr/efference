@@ -597,7 +597,11 @@ fn tab_returns_to_where_focus_entered_from() {
     play.route_key(KeyCode::Right, KeyModifiers::NONE); // → item 1
     play.route_key(KeyCode::Tab, KeyModifiers::NONE); // → sidebar
     play.route_key(KeyCode::Tab, KeyModifiers::NONE); // → back
-    assert_eq!(play.state.strip_focus, Some(1), "strip item restored");
+    assert_eq!(
+        play.state.strip_focus,
+        Some(crate::tui::control_strip::StripVerb::Theme),
+        "the strip verb focus was restored, not a position"
+    );
     assert_eq!(play.state.sidebar_focus, None);
 
     // From the transcript: Tab in and back keeps transcript navigation.
@@ -686,7 +690,10 @@ fn tab_leaves_an_open_unselected_sidebar() {
     // Tab still leaves (back to the strip it came from); a second Tab re-enters.
     play.route_key(KeyCode::Tab, KeyModifiers::NONE);
     assert!(!play.state.sidebar_open, "Tab left the open column");
-    assert_eq!(play.state.strip_focus, Some(0));
+    assert_eq!(
+        play.state.strip_focus,
+        Some(crate::tui::control_strip::StripVerb::PaceWidget)
+    );
     play.route_key(KeyCode::Tab, KeyModifiers::NONE);
     assert!(play.state.sidebar_open, "Tab re-entered");
 }
