@@ -28,6 +28,15 @@ export type Payload =
         thinking: ContentBlock[];
         text: ContentBlock[];
         calls: ToolCall[];
+        /** Set on a **record-only** entry: the stream never stood behind it —
+         * an aborted partial, an absorbed HTTP failure, an empty finalized
+         * stream — so `project` skips it and nothing here is in the model's
+         * context (src/log.rs, docs/transport.md). Absent on a finalized turn,
+         * which is what every older log carries too. The bare string is the
+         * older shape; the object's `why` is the same prose and its `stream`
+         * is the empty-stream evidence, which the transcript has no reason to
+         * show. */
+        upstream_failure?: UpstreamFailureRecord;
       };
     }
   | { ToolResult: { call_id: CallId; raw: RawResult; wire: WireState } }
@@ -39,6 +48,11 @@ export type Payload =
   | { ToolTelemetry: ToolTelemetry }
   | { ProcessEvent: ProcessEvent }
   | { Preamble: { system: string; context: unknown } };
+
+/** Why an assistant entry is record-only. Two serializations of the same fact
+ * (src/log.rs): a bare string, and the object an entry with stream diagnostics
+ * carries. */
+export type UpstreamFailureRecord = string | { why: string; stream?: unknown };
 
 export type ContentBlock =
   | { Text: string }

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { LogEntry, RawResult } from "../api/types.ts";
-import { buildTree, type BatchNode, type CallNode } from "./tree.ts";
+import {
+  buildTree,
+  upstreamFailureWhy,
+  type BatchNode,
+  type CallNode,
+} from "./tree.ts";
 
 const entry = (seq: number, payload: LogEntry["payload"]): LogEntry => ({
   seq,
@@ -32,6 +37,49 @@ const batches = (nodes: ReturnType<typeof buildTree>): BatchNode[] =>
 
 const onlyCall = (nodes: ReturnType<typeof buildTree>): CallNode =>
   batches(nodes)[0].calls[0];
+
+describe("record-only entries", () => {
+  // An entry the stream never stood behind is not in the model's context, and
+  // must not read like a turn that is (docs/transport.md).
+  it("leads with a marker node, above content that still renders", () => {
+    const nodes = buildTree([
+      entry(1, {
+        Assistant: {
+          thinking: [],
+          text: [{ Text: "half a sentence" }],
+          calls: [],
+          upstream_failure: "stream aborted after 2 blocks",
+        },
+      }),
+    ]);
+    expect(nodes.map((n) => n.key)).toEqual(["1:aborted", "1:text"]);
+  });
+
+  it("is visible even when the entry is empty — the empty-stream case", () => {
+    const nodes = buildTree([
+      entry(1, {
+        Assistant: {
+          thinking: [],
+          text: [],
+          calls: [],
+          upstream_failure: { why: "empty finalized stream", stream: {} },
+        },
+      }),
+    ]);
+    expect(nodes.map((n) => n.key)).toEqual(["1:aborted"]);
+  });
+
+  it("reads the why out of either serialization", () => {
+    expect(upstreamFailureWhy("aborted")).toBe("aborted");
+    expect(upstreamFailureWhy({ why: "aborted", stream: {} })).toBe("aborted");
+  });
+
+  it("leaves a finalized turn unmarked", () => {
+    expect(buildTree([assistant(1, { text: true })]).map((n) => n.key)).toEqual(
+      ["1:text"],
+    );
+  });
+});
 
 describe("the transcript tree", () => {
   it("keeps prose and calls as siblings, not nested", () => {

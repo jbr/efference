@@ -1,6 +1,7 @@
 // Tool call and result blocks (docs/web-client.md): the display half over
-// the cordon's parse (`render/parse.ts`). A call leads with its intent and
-// summarizes its identifying argument; a result renders its tool-specific
+// the cordon's parse (`render/parse.ts`). A call renders as a pseudocode
+// signature (`CallHead.tsx`) with its intent below it and any argument too
+// big for the signature as a block; a result renders its tool-specific
 // view — colored diff lines, framing-stripped file content, numbered kept
 // lines — with the raw content one tap away whenever the body isn't
 // verbatim raw. `data-lang` on code bodies is the future highlighter's hook.
@@ -21,38 +22,10 @@ import {
   type ResultView,
 } from "../render/parse.ts";
 import { openablePaths } from "../session/touchedFiles.ts";
+import { CallHead } from "./CallHead.tsx";
+import { truncateBody, truncateText } from "./truncate.ts";
 import { useNarrow } from "./useNarrow.ts";
 import { useWholeResult } from "./wholeResult.ts";
-
-/** The call's header row: the accent prompt, the tool, its identifying
- * argument. One shape for committed and streaming calls, so a call does not
- * change appearance at commit. */
-function CallHead({
-  name,
-  summary,
-  arriving,
-  trailing,
-}: {
-  name: string;
-  summary: string | null;
-  arriving?: boolean;
-  trailing?: React.ReactNode;
-}) {
-  return (
-    <div className="call-head">
-      <span className="prompt">›</span>
-      <span className="call-tool">{name}</span>
-      {summary !== null && (
-        <>
-          <span className="call-sep">·</span>
-          <span className="call-target">{summary}</span>
-        </>
-      )}
-      {arriving === true && <span className="dim">…</span>}
-      {trailing}
-    </div>
-  );
-}
 
 /** The `open ⤢` links a call carries: one per viewable file it names —
  * within-cwd only (session/touchedFiles.ts) — opening the *current* file
@@ -100,25 +73,21 @@ export function CallBlock({
       onOpenFile === undefined ? [] : openablePaths(call.name, call.input),
     [call, onOpenFile],
   );
-  // The call's body (a write's file contents, an edit's anchor and
-  // replacement) truncates on narrow like a result does — the args tab of
-  // the tap-to-inspect sheet holds the whole thing.
-  const body = useMemo(() => {
-    if (view.body === null) return null;
-    if (!narrow) return { text: view.body.text, hidden: 0 };
-    const lines = view.body.text.split("\n");
-    if (lines.length <= NARROW_TRUNCATE_AT + 2)
-      return { text: view.body.text, hidden: 0 };
-    return {
-      text: lines.slice(0, NARROW_TRUNCATE_AT).join("\n"),
-      hidden: lines.length - NARROW_TRUNCATE_AT,
-    };
-  }, [view, narrow]);
+  // A call's elided argument (a write's contents, a nested envelope) truncates
+  // on the same budget a result does, at both widths — the signature already
+  // states its shape, and the inspector's args tab holds the whole thing.
+  const bodies = useMemo(
+    () =>
+      view.bodies.map((body) => ({
+        ...body,
+        ...truncateText(body.text, narrow),
+      })),
+    [view, narrow],
+  );
   return (
     <div className="block">
       <CallHead
-        name={call.name}
-        summary={view.summary}
+        view={view}
         trailing={
           onOpenFile !== undefined && (
             <OpenFileLinks
@@ -130,10 +99,13 @@ export function CallBlock({
         }
       />
       {view.intent !== null && <div className="intent">{view.intent}</div>}
-      {body !== null && (
-        <Code text={body.text} lang={view.body?.lang ?? null} />
-      )}
-      {body !== null && body.hidden > 0 && <MoreLines hidden={body.hidden} />}
+      {bodies.map((body, i) => (
+        <div key={body.key ?? i} className="call-body">
+          {body.key !== null && <div className="call-body-key">{body.key}</div>}
+          <Code text={body.text} lang={body.lang} />
+          {body.hidden > 0 && <MoreLines hidden={body.hidden} />}
+        </div>
+      ))}
     </div>
   );
 }
@@ -172,7 +144,12 @@ export function LiveCallBlock({
   if (parsed === null || !hasStructure(parsed)) {
     return (
       <div className="block">
-        <CallHead name={name} summary={null} arriving />
+        {/* `args: null` renders the bare name: nothing structural has
+            arrived, and `write()` would claim there are no arguments. */}
+        <CallHead
+          view={{ ...callView(name, undefined), args: null }}
+          arriving
+        />
         <pre className="dim">{input}</pre>
       </div>
     );
@@ -181,11 +158,14 @@ export function LiveCallBlock({
   const { arriving } = parsed;
   return (
     <div className="block">
-      <CallHead name={name} summary={view.summary} arriving />
+      <CallHead view={view} arriving />
       {view.intent !== null && <div className="intent">{view.intent}</div>}
-      {view.body !== null && (
-        <Code text={view.body.text} lang={view.body.lang} />
-      )}
+      {view.bodies.map((body, i) => (
+        <div key={body.key ?? i} className="call-body">
+          {body.key !== null && <div className="call-body-key">{body.key}</div>}
+          <Code text={body.text} lang={body.lang} />
+        </div>
+      ))}
       {arriving !== null &&
         (arriving.text.includes("\n") ? (
           // A string with newlines is the case worth rendering as a block —
@@ -203,51 +183,6 @@ export function LiveCallBlock({
         ))}
     </div>
   );
-}
-
-/** How much of a file body the transcript shows; the inspector holds the
- * whole thing. Slack of 2 so the indicator never stands in for fewer lines
- * than it occupies. */
-const TRUNCATE_AT = 12;
-
-/** The phone's tighter budget, and it applies to every tool: at ~400pt a
- * long result is minutes of scrolling, so the transcript shows a glance —
- * header, a few lines, the kept count, the note — and the tap-to-inspect
- * sheet holds the body (the drill-down posture, docs/web-client.md). */
-const NARROW_TRUNCATE_AT = 4;
-
-/** Truncate a result's body for the transcript view — read/write at desktop
- * width, every tool at phone width. Render-whole survives this: a gate
- * decides a call, never a result, so no pending decision rests on a
- * truncated body — and the full body is one click away
- * (docs/web-client.md). */
-function truncateBody(
-  body: ResultView,
-  tool: string | null,
-  narrow: boolean,
-): { body: ResultView; hidden: number } {
-  if (!narrow && tool !== "read" && tool !== "write")
-    return { body, hidden: 0 };
-  const limit = narrow ? NARROW_TRUNCATE_AT : TRUNCATE_AT;
-  if (
-    (body.kind === "numbered" || body.kind === "diff") &&
-    body.lines.length > limit + 2
-  ) {
-    return {
-      body: { ...body, lines: body.lines.slice(0, limit) } as ResultView,
-      hidden: body.lines.length - limit,
-    };
-  }
-  if (body.kind === "code" || body.kind === "text") {
-    const lines = body.text.split("\n");
-    if (lines.length > limit + 2) {
-      return {
-        body: { ...body, text: lines.slice(0, limit).join("\n") },
-        hidden: lines.length - limit,
-      };
-    }
-  }
-  return { body, hidden: 0 };
 }
 
 export function ResultBody({ body }: { body: ResultView }) {

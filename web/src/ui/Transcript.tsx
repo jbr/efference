@@ -13,6 +13,7 @@ import type {
   LeafNode,
   TranscriptNode,
 } from "../session/tree.ts";
+import { upstreamFailureWhy } from "../session/tree.ts";
 import type { CallId } from "../api/types.ts";
 import { Markdown } from "./Markdown.tsx";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
@@ -148,7 +149,19 @@ function Leaf({ node }: { node: LeafNode }) {
   }
   if ("Assistant" in p) {
     // Which half of the step this leaf stands for is in its key: the
-    // projection emits thinking and prose as separate nodes.
+    // projection emits the record-only marker, thinking, and prose as
+    // separate nodes.
+    if (node.key.endsWith(":aborted")) {
+      const record = p.Assistant.upstream_failure;
+      return (
+        <Entry label={null}>
+          <div className="record-only">
+            ⚠ stream aborted — recorded, not in context
+            {record !== undefined && ` · ${upstreamFailureWhy(record)}`}
+          </div>
+        </Entry>
+      );
+    }
     return node.key.endsWith(":thinking") ? (
       <Entry label="thinking" as="thinking">
         <Markdown>{text(p.Assistant.thinking)}</Markdown>

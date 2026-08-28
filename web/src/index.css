@@ -375,16 +375,29 @@ input[type="checkbox"] {
   background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
-/* The head's parts — prompt, tool, separator, target, open links — are a row
-   until they no longer fit, then continuation lines. Without the wrap they had
-   to share one row at any width, and flex shrink took the target down to a
-   one-character-per-line column beside squeezed columns of basename links: a
-   full screen of height for one call head, seen on a phone. */
+/* The head is two flex items — the signature and the trailing slot (the open
+   links) — so the trailing affordance stays placed at the end and drops to a
+   continuation line only when it no longer fits. Everything read as one
+   sentence lives inside `.call-sig`, because flex items are blockified by the
+   CSS Display spec: as siblings, a long target wrapped as a whole box onto its
+   own line instead of flowing after the tool name. */
 .call-head {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
   align-items: baseline;
+}
+
+/* The one flex item the signature occupies. Its children are ordinary inline
+   spans, so the name and its arguments flow and wrap as text at every width.
+   A signature is only scannable while it holds a readable minimum width, so
+   shrink stops here and the head wraps instead. `break-word` rather than
+   `anywhere`: a multi-path argument breaks between paths and only ever
+   mid-token when one token alone is wider than the line. */
+.call-sig {
+  flex: 1 1 auto;
+  min-width: min(20ch, 100%);
+  overflow-wrap: break-word;
 }
 
 .prompt {
@@ -396,20 +409,43 @@ input[type="checkbox"] {
   color: var(--code-tool);
 }
 
+/* The server segment of a mounted tool's name. Dimmed rather than sized:
+   built-in versus mounted-server is the `open_world_hint` distinction — whether
+   the call could reach outside the session — which is worth a standing visual
+   without being louder than the tool's own name. */
+.call-server {
+  color: var(--fg-faint);
+}
+
 .call-sep {
   color: var(--fg-faint);
 }
 
+.call-arg-key {
+  color: var(--fg-muted);
+}
+
+.call-arg-value {
+  color: var(--code-path);
+}
+
+/* A shape standing in for a value shown below (`505 lines`) — a description of
+   the argument, not the argument. */
+.call-arg-shape {
+  color: var(--fg-faint);
+  font-style: italic;
+}
+
 .call-target {
   color: var(--code-path);
-  /* A path is only scannable while it holds a readable minimum width, so shrink
-     stops here and the head wraps instead. `break-word` rather than `anywhere`
-     now that a minimum exists: a multi-path target breaks between paths and
-     only ever mid-path when one path alone is wider than the line — which is
-     still better than overflowing it. */
-  flex: 1 1 auto;
-  min-width: min(20ch, 100%);
-  overflow-wrap: break-word;
+  /* bash's command, verbatim: its own spacing is part of what was run. */
+  white-space: pre-wrap;
+}
+
+/* An elided argument's block, labelled with the key the signature named. */
+.call-body-key {
+  color: var(--fg-faint);
+  margin: 0.35rem 0 0.2rem;
 }
 
 /* A call's parts belong to it, so they sit tighter than session-level
@@ -475,6 +511,18 @@ input[type="checkbox"] {
      lets the box shrink to the row, `break-word` keeps the ink inside it — with
      only the first, the unbreakable token still paints past the edge. */
   min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/* A record-only assistant entry (docs/transport.md): the stream never stood
+   behind it, so nothing below it is in the model's context. Styled as an
+   annotation — warn-toned, bordered, mono — because it is the harness's
+   statement *about* the entry, not part of what the model produced, which
+   still renders underneath it. */
+.record-only {
+  color: var(--warn);
+  border-left: 2px solid var(--warn);
+  padding-left: 0.6rem;
   overflow-wrap: break-word;
 }
 

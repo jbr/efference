@@ -14,6 +14,7 @@ import type {
   WireState,
 } from "../api/types.ts";
 import type { CallNode } from "../session/tree.ts";
+import { CallSignature } from "./CallHead.tsx";
 import { Code } from "./Code.tsx";
 import { ResultBody } from "./ToolBlocks.tsx";
 import {
@@ -406,13 +407,7 @@ export function Inspector({
       <div className="inspector-head">
         <span className="inspector-title">inspecting</span>
         <span className="call-head">
-          <span className="call-tool">{node.name}</span>
-          {view?.summary != null && (
-            <>
-              <span className="call-sep">·</span>
-              <span className="call-target">{view.summary}</span>
-            </>
-          )}
+          {view !== null && <CallSignature view={view} />}
         </span>
         <span className="spacer" />
         <button className="linkish" onClick={onClose}>

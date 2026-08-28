@@ -280,113 +280,201 @@ export function resultRender(
   };
 }
 
+/** Mirrors `mcp::display_name`/`mcp::namespace_of` (src/mcp.rs): the namespace
+ * boundary is the *first* `__`, so a server's own `__`-bearing tool name keeps
+ * it. A bare built-in name has no server half — it is not given an `efference.`
+ * prefix on either client. Display only: the dotted form is not a name anything
+ * can be looked up by. */
+export function splitToolName(wireName: string): {
+  server: string | null;
+  tool: string;
+} {
+  const i = wireName.indexOf("__");
+  return i === -1
+    ? { server: null, tool: wireName }
+    : { server: wireName.slice(0, i), tool: wireName.slice(i + 2) };
+}
+
+/** How wide a rendered value may be and still sit inside the signature. Past
+ * it the argument is elided to its shape and rendered as a block below, which
+ * is what keeps the signature the call's identity rather than its payload. */
+const INLINE_BUDGET = 48;
+
+/** One argument as it reads inside the signature. */
+export interface SigArg {
+  key: string;
+  /** The value: `"serde"`, `4`, `true` — or, when it did not fit, the shape
+   * standing in for it (`505 lines`, `{3 keys}`). */
+  text: string;
+  /** True when `text` is a shape rather than the value. */
+  elided: boolean;
+}
+
+/** A value too big for the signature, rendered below it. */
+export interface CallBody {
+  /** The argument this is the value of; null for bash's bare command. */
+  key: string | null;
+  lang: string | null;
+  text: string;
+}
+
 export interface CallView {
   /** The call's `intent` — leads the call entry, as in the TUI. */
   intent: string | null;
-  /** Inline summary spans for the `tool: name · …` header line. */
-  summary: string | null;
-  /** A body block — a multi-line command, file contents, or the JSON
-   * envelope fallback for an unrecognized tool. */
-  body: { lang: string | null; text: string } | null;
+  /** The `<server>` half of a namespaced name, shown dimmed ahead of the dot;
+   * null for a built-in. Built-in versus mounted-server is the
+   * `open_world_hint` distinction — whether the call could reach outside the
+   * session — so it carries a standing visual rather than a hover. */
+  server: string | null;
+  /** The `<tool>` half, which for a built-in is the whole name. */
+  tool: string;
+  /** The signature's arguments, in input order with the elided ones last.
+   * Empty renders `check_inbox()`; null means the call renders bare. */
+  args: SigArg[] | null;
+  /** bash's single-line command, rendered after the name unquoted. Set only
+   * when `args` is null. */
+  target: string | null;
+  bodies: CallBody[];
 }
 
-/** Mirrors `call_args`: known tools summarize their identifying argument
- * inline and show the substantial one as a block; unknown tools keep the
- * pretty-printed JSON envelope. `intent` rides beside every shape. */
+/** The signature as one line of text, for surfaces with no room for spans (the
+ * gate cue). The rendered head is the same shape in markup. */
+export function callSignature(view: CallView): string {
+  const name = view.server === null ? view.tool : `${view.server}.${view.tool}`;
+  if (view.args === null)
+    return view.target === null ? name : `${name} · ${view.target}`;
+  return `${name}(${view.args.map((a) => `${a.key}: ${a.text}`).join(", ")})`;
+}
+
+/**
+ * Every call as a pseudocode signature — total, schema-free, and therefore
+ * correct for a tool this client has never heard of, which matters because MCP
+ * servers are user-mountable and their argument shapes are arbitrary.
+ *
+ * One rule decides inline versus body for every tool: an argument sits in the
+ * signature when it is scalar, single-line, and inside [`INLINE_BUDGET`];
+ * otherwise it is elided to its shape there and rendered as a block below.
+ * "Which argument is the body" is decided by what did not fit, not by a per-tool
+ * table — so a third-party tool shaped like a file write needs no special
+ * knowledge. A tool with no arguments renders `check_inbox()`, with no block.
+ *
+ * Two cases stay special, and only two. `bash` renders its command bare: a
+ * shell command quoted into `bash(command: "…")` reads worse than the command.
+ * The edit family keeps its arguments in the signature but emits no body — the
+ * diff rendered below the head is the representation there (docs/web-client.md),
+ * and a body would show the change twice; the inspector's args tab
+ * ([`callArgs`]) is where the whole input is asked for.
+ */
 export function callView(name: string, input: unknown): CallView {
-  const obj =
-    typeof input === "object" && input !== null
-      ? (input as Record<string, unknown>)
-      : {};
+  const base = { intent: null as string | null, ...splitToolName(name) };
+  if (typeof input !== "object" || input === null) {
+    // Not an object at all: nothing to name, so the value itself is the body.
+    return {
+      ...base,
+      args: [],
+      target: null,
+      bodies:
+        input === undefined
+          ? []
+          : [{ key: null, lang: "json", text: pretty(input) }],
+    };
+  }
+  const obj = input as Record<string, unknown>;
   const str = (key: string) =>
     typeof obj[key] === "string" ? (obj[key] as string) : null;
-  const intent = str("intent");
-  const view = (summary: string | null, body: CallView["body"]): CallView => ({
-    intent,
-    summary,
-    body,
-  });
+  base.intent = str("intent");
+
   if (name === "bash") {
     const command = str("command");
     if (command !== null) {
       return command.includes("\n")
-        ? view(null, { lang: "bash", text: command })
-        : view(command, null);
+        ? {
+            ...base,
+            args: null,
+            target: null,
+            bodies: [{ key: null, lang: "bash", text: command }],
+          }
+        : { ...base, args: null, target: command, bodies: [] };
     }
   }
-  if (name === "read" && Array.isArray(obj.paths)) {
-    return view(
-      obj.paths.filter((p) => typeof p === "string").join(", "),
-      null,
+
+  const lang = blobLang(name, obj);
+  const suppressBodies = isDiffTool(name);
+  const args: SigArg[] = [];
+  const bodies: CallBody[] = [];
+  for (const [key, value] of Object.entries(obj)) {
+    // `intent` is already the call's leading line; repeating it in the
+    // signature showed the same sentence twice.
+    if (key === "intent") continue;
+    const inline = inlineValue(value);
+    if (inline !== null) {
+      args.push({ key, text: inline, elided: false });
+      continue;
+    }
+    args.push({ key, text: shapeOf(value), elided: true });
+    if (suppressBodies) continue;
+    bodies.push(
+      typeof value === "string"
+        ? { key, lang, text: value }
+        : { key, lang: "json", text: pretty(value) },
     );
   }
-  if (name === "search") {
-    const pattern = str("pattern");
-    if (pattern !== null) {
-      const path = str("path");
-      return view(path === null ? pattern : `${pattern}  in  ${path}`, null);
-    }
+  // Inline arguments first — they are the call's identity, and a shape between
+  // two of them pushes "what did this touch" out of the first line. Stable, so
+  // the input's own order still shows within each group.
+  args.sort((a, b) => Number(a.elided) - Number(b.elided));
+  return { ...base, args, target: null, bodies };
+}
+
+/** The value as it reads inside the signature, or null when it does not fit:
+ * strings quoted, every other scalar bare, a collection as compact JSON while
+ * that stays inside the budget. */
+function inlineValue(value: unknown): string | null {
+  if (typeof value === "string")
+    return value.includes("\n") || value.length > INLINE_BUDGET
+      ? null
+      : JSON.stringify(value);
+  if (value === null || typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  let compact: string;
+  try {
+    compact = JSON.stringify(value) ?? "";
+  } catch {
+    return null;
   }
-  if (name === "list") {
-    const path = str("path");
-    if (path !== null) return view(path, null);
+  return compact.length > 0 &&
+    compact.length <= INLINE_BUDGET &&
+    !compact.includes("\n")
+    ? compact
+    : null;
+}
+
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+/** What stands in for an elided value: what a reader needs to know is how much
+ * of it there is, and of what. */
+function shapeOf(value: unknown): string {
+  if (typeof value === "string") {
+    const lines = rustLines(value).length;
+    return lines > 1 ? plural(lines, "line") : plural(value.length, "char");
   }
-  if (name === "read_image") {
-    // `long_edge` changes what the call *costs* — image tokens scale with area
-    // (docs/tools.md) — so the requested resolution belongs beside the path
-    // rather than in a dropped envelope. Mirrors the TUI's `call_args`.
-    const path = str("path");
-    if (path !== null) {
-      const longEdge = typeof obj.long_edge === "number" ? obj.long_edge : null;
-      let summary =
-        longEdge === null ? path : `${path} · long_edge ${longEdge}`;
-      // A `region` says the call read part of the frame, which is the
-      // difference between two reads of the same path.
-      const region = obj.region;
-      if (region !== null && typeof region === "object") {
-        const r = region as Record<string, unknown>;
-        const nums = ["x", "y", "w", "h"].map((k) =>
-          typeof r[k] === "number" ? (r[k] as number) : null,
-        );
-        if (nums.every((n) => n !== null)) {
-          const [x, y, w, h] = nums as number[];
-          summary += ` · region ${w}×${h} at ${x},${y}`;
-        }
-      }
-      return view(summary, null);
-    }
-  }
-  if (name === "write") {
-    const path = str("path");
-    if (path !== null) {
-      let summary = path;
-      for (const [key, label] of [
-        ["append", " · append"],
-        ["overwrite", " · overwrite"],
-      ] as const) {
-        if (obj[key] === true) summary += label;
-      }
-      const contents = str("contents");
-      return view(
-        summary,
-        contents === null ? null : { lang: langForPath(path), text: contents },
-      );
-    }
-  }
-  if (isDiffTool(name)) {
-    const path = str("file_path");
-    const operation = str("operation");
-    const summary = [path, operation].filter((s) => s !== null).join(" · ");
-    return view(summary === "" ? null : summary, null);
-  }
-  // The envelope drops `intent`: it already renders as the call's leading
-  // line, and repeating it inside the JSON showed the same sentence twice.
-  if (intent !== null) {
-    const rest = { ...obj };
-    delete rest.intent;
-    return view(null, { lang: "json", text: pretty(rest) });
-  }
-  return view(null, { lang: "json", text: pretty(input) });
+  if (Array.isArray(value)) return `[${plural(value.length, "item")}]`;
+  if (value !== null && typeof value === "object")
+    return `{${plural(Object.keys(value).length, "key")}}`;
+  return "…";
+}
+
+/** The language a call's string blobs are in: what it declared, else the
+ * extension of the path it operates on. Shared by the signature's bodies and
+ * the inspector's args tab. */
+function blobLang(name: string, obj: Record<string, unknown>): string | null {
+  // A bash command is shell whatever file it touches.
+  if (name === "bash") return "bash";
+  const str = (key: string) =>
+    typeof obj[key] === "string" ? (obj[key] as string) : null;
+  const declared = str("language");
+  const path = str("file_path") ?? str("path");
+  return declared ?? (path === null ? null : langForPath(path));
 }
 
 /** One argument as the inspector's args tab shows it: a scalar renders inline,
@@ -423,22 +511,15 @@ export function callArgs(name: string, input: unknown): ArgField[] {
       : [{ key: "input", scalar: String(input), code: null }];
   }
   const obj = input as Record<string, unknown>;
-  const str = (key: string) =>
-    typeof obj[key] === "string" ? (obj[key] as string) : null;
   // `intent` is already the call's leading line; repeating it here showed the
   // same sentence twice.
-  const declared = str("language");
-  const path = str("file_path") ?? str("path");
-  const blobLang =
-    declared ?? (path === null ? null : langForPath(path)) ?? null;
+  const lang = blobLang(name, obj);
   return (
     Object.entries(obj)
       .filter(([key]) => key !== "intent")
       .map(([key, value]): ArgField => {
         if (typeof value === "string") {
           if (!value.includes("\n")) return { key, scalar: value, code: null };
-          // A bash command is shell whatever file it touches.
-          const lang = name === "bash" && key === "command" ? "bash" : blobLang;
           return { key, scalar: null, code: { lang, text: value } };
         }
         if (value === null || typeof value !== "object") {

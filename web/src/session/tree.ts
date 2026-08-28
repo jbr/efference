@@ -27,7 +27,13 @@ import type {
   Seq,
   Spot,
   ToolTelemetry,
+  UpstreamFailureRecord,
 } from "../api/types.ts";
+
+/** The prose half of a record-only mark, whichever shape the log wrote
+ * (src/log.rs): the bare string older logs carry, or the object's `why`. */
+export const upstreamFailureWhy = (record: UpstreamFailureRecord): string =>
+  typeof record === "string" ? record : record.why;
 
 /** A leaf: one log entry rendered on its own, at session level. */
 export interface LeafNode {
@@ -115,7 +121,14 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     }
 
     if ("Assistant" in p) {
-      const { thinking, text, calls } = p.Assistant;
+      const { thinking, text, calls, upstream_failure } = p.Assistant;
+      // A record-only entry leads with the marker, above content that still
+      // renders — it is often the only copy of what the model produced. The
+      // node exists even when the entry is empty, which is exactly the
+      // empty-finalized-stream case: otherwise it renders as nothing at all.
+      if (upstream_failure !== undefined) {
+        nodes.push({ kind: "leaf", key: `${entry.seq}:aborted`, entry });
+      }
       if (thinking.length > 0) {
         nodes.push({ kind: "leaf", key: `${entry.seq}:thinking`, entry });
       }

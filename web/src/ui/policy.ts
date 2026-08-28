@@ -12,6 +12,7 @@ import type {
   Seq,
   CommandStance,
 } from "../api/types.ts";
+import { splitToolName } from "../render/parse.ts";
 
 export type PolicySection = "scope" | "commands" | "paths" | "tools";
 
@@ -36,10 +37,8 @@ const rw = (p: { read: boolean; write: boolean }) =>
  * A bare built-in name (no `__`) passes through unchanged — it is not given
  * an `efference.` prefix on either client. */
 export function toolDisplayName(wireName: string): string {
-  const i = wireName.indexOf("__");
-  return i === -1
-    ? wireName
-    : `${wireName.slice(0, i)}.${wireName.slice(i + 2)}`;
+  const { server, tool } = splitToolName(wireName);
+  return server === null ? tool : `${server}.${tool}`;
 }
 
 function changeRow(change: ConfigChange): {

@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Decision, Gate, Spot } from "../api/types.ts";
-import { callView } from "../render/parse.ts";
+import { callSignature, callView } from "../render/parse.ts";
 import { jumpToTail, useDockOffset } from "./float.ts";
 import { CallBlock } from "./ToolBlocks.tsx";
 import { SpotLine } from "./Transcript.tsx";
@@ -196,7 +196,7 @@ export function GateSurface({
     </>
   );
 
-  const { summary } = callView(gate.name, gate.input);
+  const signature = callSignature(callView(gate.name, gate.input));
   return (
     <>
       {(away || covered) &&
@@ -236,8 +236,7 @@ export function GateSurface({
             style={{ bottom }}
             onClick={() => setFloatOpen(true)}
           >
-            ⏸ {gate.name}
-            {summary !== null && ` · ${summary}`} — awaiting approval
+            ⏸ {signature} — awaiting approval
           </button>
         ))}
       <div className="block gate" ref={surface}>

@@ -182,10 +182,11 @@ What narrow changes:
 - **Every tool's result truncates to a glance** — 4 lines, the `⋯ N more lines`
   marker, the note — because at 32ch a long result is minutes of scrolling. The
   tap-to-inspect sheet holds the body; this is the drill-down posture arriving
-  empirically. Desktop keeps read/write-only truncation at 12. Call bodies (a
-  write's contents, an edit's replacement) truncate on the same budget — the
-  sheet's args tab holds the whole — and the marker appends `· tap to inspect`
-  on narrow, because touch has no hover to discover the affordance with.
+  empirically. Desktop keeps read/write-only truncation at 12. A call's elided
+  argument (a write's contents) truncates on the width's budget at *both*
+  widths — the inspector's args tab holds the whole — and the marker appends
+  `· tap to inspect` on narrow, because touch has no hover to discover the
+  affordance with.
 - **The inspector is a full-width sheet** (`100vw` overriding the persisted
   inline width; the resize grip hides — it has no touch meaning).
 - **The composer band collapses when unfocused** to reclaim the dock's third of
@@ -227,8 +228,8 @@ basis is indefinite, which collapsed the field to ~1ch).
 
 **Nothing in the transcript may set a minimum width wider than the column.** Two
 failures of this shape were found together at narrow widths and fixed the same
-way. A call head is a wrapping flex row whose target holds a `min-width` floor,
-because without one, shrink took a multi-path `read` target down to a
+way. A call head is a wrapping flex row whose signature holds a `min-width`
+floor, because without one, shrink took a multi-path `read` target down to a
 one-character-per-line column beside squeezed basename links — 2673px of height
 for one head. A distiller note and markdown prose break inside long tokens
 (`overflow-wrap: break-word`), and the note additionally sets `min-width: 0`:
@@ -265,8 +266,8 @@ Two residents:
 - `parse.ts` — a literal port of the TUI's per-tool parsing and dispatch
   (`src/tui/projection/tools.rs` + the per-wire-state match in
   `src/tui/projection.rs`): the `===DIFF===` classification for the edit
-  tools, `read`'s sentinel stripping and extension→language map, per-tool
-  call summaries with the `intent` leading the entry, and the distilled
+  tools, `read`'s sentinel stripping and extension→language map, the call
+  signature below with the `intent` leading the entry, and the distilled
   composition — the parse runs over the whole raw, the verdict's kept line
   numbers filter the rows it produced, so a triaged view keeps its tool's
   rendering (`kept N of M lines` in the header). When nothing was dropped
@@ -383,6 +384,92 @@ The pre-commit tail renders flat rather than inside a batch: nothing there has
 committed, so its calls have no results to contain and no verdicts to carry, and
 the committed entry supersedes the whole set at once.
 
+## A call reads as a signature
+
+Every call renders as pseudocode — `render/parse.ts`'s `callView` computes it,
+`ui/CallHead.tsx` renders it:
+
+```
+ferritin.search(crate: "serde", query: "Deserialize")
+check_inbox()
+write(path: "src/main.rs", overwrite: true, contents: 505 lines)
+```
+
+The form is **total and schema-free**, which is the point: MCP servers are
+user-mountable and their argument shapes are arbitrary, so a tool this client
+has never heard of must render as well as a built-in. Three rules carry it, and
+they replaced a per-tool table plus a pretty-printed JSON envelope for
+everything not in it — which is how `check_inbox` came to render as a code block
+containing `{}`.
+
+- **The name is the dotted one.** `<server>.<tool>`, never the wire's
+  `<server>__<tool>`: the dotted form is the only spelling an operator ever
+  writes (an eval config's `tools = ["ferritin.get"]`), so showing the wire form
+  showed a name that appears nowhere else in the product. `splitToolName`
+  mirrors `mcp::display_name` (the boundary is the *first* `__`) and is what
+  `ui/policy.ts` dots the policy tab's grants with too. The server segment is a
+  dimmed span of its own rather than a smaller one — built-in versus
+  mounted-server is the `open_world_hint` distinction, i.e. whether the call
+  could have reached outside the session, which is worth a standing visual.
+- **Inline versus body is one rule for all tools.** An argument sits in the
+  signature when it is scalar, single-line, and inside a 48-character budget —
+  strings quoted, every other scalar bare, a collection as compact JSON while
+  that fits. Otherwise it is elided *to its shape* there (`505 lines`,
+  `640 chars`, `[3 items]`, `{2 keys}`) and rendered as a block below, labelled
+  with its key. So "which argument is the body" is decided by what did not fit,
+  not by a per-tool table, and a third-party tool shaped like a file write needs
+  no special knowledge. Inline arguments sort ahead of elided ones (stable
+  within each group): they are the call's identity, and a 505-line shape between
+  two of them buries it.
+- **Empty is empty.** A no-argument call is `check_inbox()` — no block, no `{}`.
+
+Call bodies truncate on the same budget results do, at both widths
+(`ui/truncate.ts`: 12 lines at desktop, 4 on the phone) — which is what stopped
+a `write` from printing the whole file into the transcript.
+
+Two tools stay special, and only two. **`bash` renders its command bare** —
+quoting a shell line into `bash(command: "…")` reads worse than the line, and
+only a command containing a newline becomes a block. **The edit family signs its
+arguments but emits no body**: the diff rendered below the head is the
+representation there, so a body would show the change twice; the inspector's
+args tab (`callArgs`, a separate computation) is where the whole input is asked
+for. The cases the signature *replaced* — `read`, `search`, `list`,
+`read_image`, `write` — were each an inline gloss the generic rule now produces.
+
+Tool **descriptions** stay out of the transcript. They are static per tool, so
+in a run with 55 `ferritin.*` calls the same sentence would render 55 times,
+while the call's own model-authored `intent` — already a sibling line — says
+what *this* call was for. The inspector is where a description is paid for once.
+
+The head's markup carries the wrapping rule. `.call-head` is a flex row so the
+trailing slot (the `open ⤢` links) stays placed at the end, and flex items are
+blockified by the CSS Display spec — so a signature built of sibling spans
+wrapped as *whole boxes* onto their own lines, which is why a long single-line
+`bash` command used to read as a block. Everything read as one sentence
+therefore sits inside one flex item, `.call-sig`, whose children are ordinary
+inline spans and wrap as text at every width. The `min-width` floor and
+`overflow-wrap` live on that item.
+
+`ui/CallHead.tsx` is kept apart from `ToolBlocks.tsx` so it imports nothing but
+React and the cordon: the markup is what the wrapping test asserts on, and it
+renders with no highlighter and no media query.
+
+## A record-only entry is marked
+
+An assistant entry carrying `upstream_failure` is one the stream never stood
+behind — an aborted partial, an absorbed HTTP failure, an empty finalized
+stream — so `project` skips it and nothing in it is in the model's context
+([transport.md](transport.md)). `session/tree.ts` emits a leading `:aborted`
+leaf for it, above the content, which still renders because it is often the only
+copy of what the model produced; the marker is warn-toned and rule-bordered, an
+annotation rather than content. The node exists even when the entry is empty,
+which is exactly the empty-stream case — otherwise that entry renders as
+nothing at all. `upstreamFailureWhy` reads the prose out of either
+serialization: the bare string every older log carries, or the object whose
+`stream` field is the empty-stream evidence (which the transcript has no reason
+to show and the inspector might). The words are the TUI's, deliberately:
+*⚠ stream aborted — recorded, not in context*.
+
 ## A call's input, while it arrives
 
 While a call's input streams, the accumulated buffer is a *prefix* of a JSON
@@ -390,13 +477,16 @@ document. `render/partial.ts` (mirroring the TUI's `projection/partial.rs`,
 [tui.md](tui.md)) splits it positionally: within an object only the last key can
 be incomplete, because the bytes for the earlier ones arrived and closed. The
 settled pairs go through the same `callView` a committed call renders with — so
-the header fills in (`calling write · src/api.rs…`) as bytes land and the block
-keeps its shape when the entry commits — while the pair still arriving renders
+the signature fills in (`write(path: "src/api.rs")…`) as bytes land and the
+block keeps its shape when the entry commits — while the pair still arriving
+renders
 only as content: a multi-line string as a code block in the language of whatever
 *settled* path names it, a single-line one as a dim `key: value…` line. A
 half-arrived value never backs an identity claim (`write src/api.r` is
 well-formed, plausible, and false), and before anything structural arrives the
-raw characters show, which claim nothing.
+head shows the bare name and the raw characters, which claim nothing — the empty
+argument list is withheld there too, since `write()` would claim the call has no
+arguments.
 
 The split is read off the parser rather than guessed: a `partial-json` parse at
 `Allow.COLLECTION` drops an incomplete trailing string along with its key, one

@@ -4,7 +4,9 @@
 
 import { expect, test } from "vitest";
 import {
+  callSignature,
   callView,
+  splitToolName,
   diffRows,
   isDiffTool,
   callArgs,
@@ -127,48 +129,123 @@ test("distilled non-diff results fall back to numbered kept lines", () => {
   expect(view.sizeLabel).toBe("kept 3 of 40 lines");
 });
 
-test("call views summarize known tools and envelope the rest", () => {
-  expect(callView("bash", { command: "ls -la", intent: "peek" })).toEqual({
+const sig = (name: string, input: unknown) =>
+  callSignature(callView(name, input));
+
+test("a mounted server's call is dotted, with the server its own segment", () => {
+  const view = callView("ferritin__search", {
+    crate: "serde",
+    query: "Deserialize",
+  });
+  // The wire's `__` never shows: the dotted form is the only spelling an
+  // operator ever writes.
+  expect(view.server).toBe("ferritin");
+  expect(view.tool).toBe("search");
+  expect(callSignature(view)).toBe(
+    'ferritin.search(crate: "serde", query: "Deserialize")',
+  );
+  // A built-in has no server half — it is not given an `efference.` prefix.
+  expect(callView("read", {}).server).toBeNull();
+  // The boundary is the first `__`; a server's own `__` keeps it.
+  expect(splitToolName("srv__a__b")).toEqual({ server: "srv", tool: "a__b" });
+});
+
+test("a call with no arguments is empty, not an envelope of `{}`", () => {
+  const view = callView("check_inbox", {});
+  expect(view.args).toEqual([]);
+  expect(view.bodies).toEqual([]);
+  expect(callSignature(view)).toBe("check_inbox()");
+  // Nor does an intent-only call have arguments: the intent is its own line.
+  expect(sig("list", { intent: "look around" })).toBe("list()");
+});
+
+test("an argument is inline when it is scalar and fits, elided otherwise", () => {
+  // Unfamiliar tool, arbitrary shape — no per-tool knowledge involved.
+  const view = callView("watch_process", {
+    handle: "p#4",
+    pattern: "Listening on port",
+    lines: 40,
+    all: true,
+    region: { x: 1, y: 2 },
+  });
+  expect(callSignature(view)).toBe(
+    'watch_process(handle: "p#4", pattern: "Listening on port", ' +
+      'lines: 40, all: true, region: {"x":1,"y":2})',
+  );
+  expect(view.bodies).toEqual([]);
+  // A value past the budget is elided to its shape and rendered below.
+  const long = "x".repeat(200);
+  const wide = callView("mystery", {
+    note: long,
+    deep: { a: [1, 2, 3], because: long },
+  });
+  expect(wide.args).toEqual([
+    { key: "note", text: "200 chars", elided: true },
+    { key: "deep", text: "{2 keys}", elided: true },
+  ]);
+  expect(wide.bodies[0]).toEqual({ key: "note", lang: null, text: long });
+  expect(wide.bodies[1].lang).toBe("json");
+});
+
+test("write's contents are a shape in the signature and a block below", () => {
+  const contents = Array.from({ length: 505 }, (_, i) => `line ${i}`).join(
+    "\n",
+  );
+  const view = callView("write", {
+    intent: "lay it down",
+    contents,
+    path: "src/main.rs",
+    overwrite: true,
+  });
+  // Inline arguments lead whatever order the input serialized in — they are
+  // the call's identity, and a 505-line shape between them buries it.
+  expect(callSignature(view)).toBe(
+    'write(path: "src/main.rs", overwrite: true, contents: 505 lines)',
+  );
+  expect(view.intent).toBe("lay it down");
+  expect(view.bodies).toEqual([
+    { key: "contents", lang: "rust", text: contents },
+  ]);
+});
+
+test("bash keeps its command bare — a shell line, not a quoted argument", () => {
+  const view = callView("bash", { command: "ls -la", intent: "peek" });
+  expect(view).toEqual({
     intent: "peek",
-    summary: "ls -la",
-    body: null,
+    server: null,
+    tool: "bash",
+    args: null,
+    target: "ls -la",
+    bodies: [],
   });
-  expect(callView("bash", { command: "a\nb" }).body).toEqual({
-    lang: "bash",
-    text: "a\nb",
+  // Only a newline makes it a block.
+  expect(callView("bash", { command: "a\nb" }).bodies).toEqual([
+    { key: null, lang: "bash", text: "a\nb" },
+  ]);
+});
+
+test("the edit family signs its arguments but emits no body — the diff is below", () => {
+  const view = callView("edit", {
+    file_path: "a.rs",
+    operation: "replace",
+    anchor: "fn a() {\n  b();\n}",
   });
-  expect(callView("read", { paths: ["a.rs", "b.rs"] }).summary).toBe(
-    "a.rs, b.rs",
+  expect(callSignature(view)).toBe(
+    'edit(file_path: "a.rs", operation: "replace", anchor: 3 lines)',
   );
-  expect(callView("search", { pattern: "foo", path: "src" }).summary).toBe(
-    "foo  in  src",
+  expect(view.bodies).toEqual([]);
+});
+
+test("read, search and list need no special case any more", () => {
+  expect(sig("read", { paths: ["a.rs", "b.rs"] })).toBe(
+    'read(paths: ["a.rs","b.rs"])',
   );
-  expect(
-    callView("write", { path: "a.rs", contents: "fn x() {}", overwrite: true }),
-  ).toEqual({
-    intent: null,
-    summary: "a.rs · overwrite",
-    body: { lang: "rust", text: "fn x() {}" },
-  });
-  expect(callView("read_image", { path: "mock.png" }).summary).toBe("mock.png");
-  expect(
-    callView("read_image", { path: "m.png", long_edge: 2576 }).summary,
-  ).toBe("m.png · long_edge 2576");
-  expect(
-    callView("read_image", {
-      path: "m.png",
-      region: { x: 100, y: 200, w: 1200, h: 900 },
-    }).summary,
-  ).toBe("m.png · region 1200×900 at 100,200");
-  expect(
-    callView("edit", { file_path: "a.rs", operation: "replace" }).summary,
-  ).toBe("a.rs · replace");
-  expect(callView("mystery", { x: 1 }).body?.lang).toBe("json");
-  // The envelope drops `intent` — it already renders as the leading line.
-  const enveloped = callView("mystery", { intent: "why", x: 1 });
-  expect(enveloped.intent).toBe("why");
-  expect(enveloped.body?.text).not.toContain("why");
-  expect(enveloped.body?.text).toContain("x");
+  expect(sig("search", { pattern: "foo", path: "src" })).toBe(
+    'search(pattern: "foo", path: "src")',
+  );
+  expect(sig("read_image", { path: "m.png", long_edge: 2576 })).toBe(
+    'read_image(path: "m.png", long_edge: 2576)',
+  );
 });
 
 test("diff-tool set and language map mirror the Rust", () => {
@@ -191,7 +268,7 @@ test("callArgs shows an edit's anchor and content, which the header omits", () =
     anchor: "fn a() {\n  b();\n}",
     content: "fn a() {\n  c();\n}",
   };
-  expect(callView("edit", input).body).toBeNull();
+  expect(callView("edit", input).bodies).toEqual([]);
   const fields = callArgs("edit", input);
   // Scalars first — the call's identity — then the blobs, stable within each.
   expect(fields.map((f) => f.key)).toEqual([
