@@ -28,6 +28,7 @@ pub fn render_request_pretty(
         tool_choice,
         thinking: Thinking::for_request(model, &tool_choice, false),
         temperature: None,
+        upstream: None,
         messages,
         stream: true,
     };
@@ -106,6 +107,7 @@ pub(super) fn request_value(
         tool_choice,
         thinking: Thinking::for_request(model, &tool_choice, false),
         temperature: None,
+        upstream: None,
         messages,
         stream: true,
     };

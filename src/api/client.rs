@@ -70,6 +70,8 @@ pub struct Client {
     /// (observed live, 2026-08-21). Session-constant, so it never perturbs the
     /// cached prefix.
     max_tokens: u32,
+    /// Which upstream serves this session, when pinned (docs/transport.md).
+    upstream: Option<Upstream>,
     upstream_failure: UpstreamFailureState,
 }
 
@@ -120,6 +122,7 @@ impl Client {
             temperature,
             model_reasoning: false,
             max_tokens: MAX_TOKENS,
+            upstream: None,
             upstream_failure,
         }
     }
@@ -152,6 +155,14 @@ impl Client {
 
     /// Record the capability lookup's reasoning answer
     /// (`ModelCapabilities::supports_reasoning`) — an input to the thinking matrix.
+    /// Pin which upstream serves this session (docs/transport.md). Applies to
+    /// every request the client makes, so a session's spotter and fork peeks
+    /// route the same way its turns do.
+    pub fn with_upstream(mut self, upstream: Option<Upstream>) -> Self {
+        self.upstream = upstream;
+        self
+    }
+
     pub fn with_model_reasoning(mut self, model_reasoning: bool) -> Self {
         self.model_reasoning = model_reasoning;
         self
@@ -194,6 +205,7 @@ impl Client {
             temperature: self
                 .temperature
                 .map(|t| self.endpoint.provider.map_temperature(t)),
+            upstream: self.upstream.as_ref(),
             messages,
             stream: true,
         };
@@ -309,6 +321,7 @@ impl Client {
             temperature: self
                 .temperature
                 .map(|t| self.endpoint.provider.map_temperature(t)),
+            upstream: self.upstream.as_ref(),
             messages,
             stream: false,
         };

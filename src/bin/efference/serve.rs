@@ -84,6 +84,7 @@ pub(crate) async fn serve(
     spotter_model: &str,
     config: Option<PathBuf>,
     temperature: Option<u8>,
+    upstream: Vec<String>,
     autonomous: bool,
     reauth: Vec<String>,
     keep_scratch: bool,
@@ -290,7 +291,17 @@ pub(crate) async fn serve(
         },
     )?;
 
+    // The upstream pin rides the agent client, which the fork peek shares — so
+    // turns and gates route alike. It deliberately does **not** reach the spotter:
+    // endpoint slugs are per-model, the spotter runs a different (Haiku-band)
+    // model, and an order naming endpoints that do not serve it would fail
+    // outright with fallbacks disabled.
+    let upstream = efference::api::Upstream::pinned(upstream);
+    if let Some(pin) = &upstream {
+        eprintln!("upstream: {} (fallbacks disabled)", pin.order.join(", "));
+    }
     let mut client = Client::new(endpoint.clone(), model, system, temperature)
+        .with_upstream(upstream.clone())
         .with_model_reasoning(capabilities.supports_reasoning);
     // The output budget follows the model's reported cap (a reasoning model's
     // thinking bills against it; the 4096 default starves a long think). No

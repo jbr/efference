@@ -392,6 +392,38 @@ presumably), not as wrong at the time.
 
 ---
 
+### Which upstream serves the model
+
+`Provider` above is the *dialect* choice — Anthropic or OpenRouter, where the
+POST goes and how it authenticates. A separate question sits one level below it
+on OpenRouter: which **upstream** actually serves a given model slug. One slug
+(`google/gemini-3.7-flash`) is fronted by several endpoints (`google-ai-studio`,
+`google-vertex/global`, each with flex and priority variants), and OpenRouter
+picks among them by price unless told otherwise.
+
+`--upstream <slug>` (repeatable) sets `api::Upstream`, which rides the agent
+client and serializes as OpenRouter's `provider` object — an order plus
+`allow_fallbacks: false`, because a pin that silently reroutes is not a pin. The
+type is not called `Provider` because that name is taken by the dialect enum;
+the wire rename is the only place the two meanings meet.
+
+Three properties worth knowing:
+
+- **Unpinned is byte-identical to before the field existed.** `None` skips
+  serialization entirely rather than emitting `null`, so adding this did not move
+  any session's cached prefix. Pinned, it is a per-session constant like `model`,
+  so it never toggles in flight.
+- **It does not reach the spotter.** Endpoint slugs are per-model and the spotter
+  runs a different (Haiku-band) model; an order naming endpoints that do not
+  serve it would fail outright with fallbacks disabled.
+- **Endpoint choice is measurable, not cosmetic.** The endpoints behind one slug
+  differ in uptime and latency tail. On 2026-08-28 an eval run against
+  `google/gemini-3.7-flash` took twelve consecutive mid-stream aborts — the whole
+  retry budget, ~3.5 minutes — on a Vertex endpoint whose p99 latency sat near
+  the client's timeout, while an equally-priced Google AI Studio endpoint was at
+  99.95% uptime. Controlled runs should pin and record it
+  (eval/harness/README.md).
+
 ## Token-level deltas — the `output` class
 
 Assistant prose and tool stdout are the same thing: ephemeral, pre-commit

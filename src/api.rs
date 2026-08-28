@@ -54,6 +54,37 @@ pub fn upstream_failure_state() -> UpstreamFailureState {
     std::sync::Arc::new(std::sync::Mutex::new(None))
 }
 
+/// Which **upstream** serves the model, for an OpenRouter session: an ordered
+/// list of endpoint slugs (`google-ai-studio`, `google-vertex/global`, …) and
+/// whether OpenRouter may fall back past them.
+///
+/// Named for the far side of the request, as `upstream_failure` and the
+/// stream-abort messages already are, and deliberately *not* "provider" —
+/// [`Provider`] is this codebase's anthropic-vs-openrouter choice, a different
+/// question one level up. The wire field is `provider` because that is
+/// OpenRouter's name for it; the rename is the only place the two meanings
+/// touch.
+///
+/// `allow_fallbacks` is false whenever an order is given — a pin that silently
+/// reroutes is not a pin, and the point is being able to say which endpoint
+/// served.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Upstream {
+    pub order: Vec<String>,
+    pub allow_fallbacks: bool,
+}
+
+impl Upstream {
+    /// `None` for an empty order, so "no `--provider` flag" and "an empty list"
+    /// are the same request bytes rather than an empty object on the wire.
+    pub fn pinned(order: Vec<String>) -> Option<Self> {
+        (!order.is_empty()).then_some(Self {
+            order,
+            allow_fallbacks: false,
+        })
+    }
+}
+
 #[derive(Serialize)]
 struct Request<'a> {
     model: &'a str,
@@ -91,6 +122,25 @@ struct Request<'a> {
     /// cached prefix's way.
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
+    /// Which upstream serves the model (docs/transport.md) — omitted entirely
+    /// for Anthropic, which has no such choice, and for OpenRouter sessions that
+    /// did not ask for one. When set, it pins the endpoint instead of letting
+    /// OpenRouter choose by price. Serialized as `provider`, OpenRouter's name
+    /// for the field; see [`Upstream`] for why the type is not called that.
+    ///
+    /// Exists because endpoint choice is a *measurable* variable, not a
+    /// preference: the endpoints behind one OpenRouter model slug differ in
+    /// uptime and latency tail, and on 2026-08-28 an eval run against
+    /// `google/gemini-3.7-flash` took eight consecutive mid-stream aborts on a
+    /// Vertex endpoint whose p99 latency sat near the client timeout, while an
+    /// equally-priced Google AI Studio endpoint was at 99.95%. A run that cannot
+    /// say which endpoint served it cannot be compared to another
+    /// (eval/harness/README.md).
+    ///
+    /// A per-session constant like `model`, so it never toggles in flight and
+    /// stays out of the cached prefix's way.
+    #[serde(rename = "provider", skip_serializing_if = "Option::is_none")]
+    upstream: Option<&'a Upstream>,
     messages: &'a [ApiMessage],
     /// Always `true` — we consume the response as SSE (docs/transport.md). Set once and
     /// never varied; a delivery flag, not part of the cached prefix (docs/log-and-projection.md),

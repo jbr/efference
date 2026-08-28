@@ -959,6 +959,7 @@ fn request_omits_temperature_when_none() {
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Disabled,
         temperature: None,
+        upstream: None,
         messages: &[],
         stream: false,
     };
@@ -982,6 +983,7 @@ fn request_includes_temperature_when_set() {
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Disabled,
         temperature: Some(0.7),
+        upstream: None,
         messages: &[],
         stream: false,
     };
@@ -1031,6 +1033,7 @@ fn request_envelope_matches_expected_wire_bytes() {
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Disabled,
         temperature: Some(0.7),
+        upstream: None,
         messages: &messages,
         stream: true,
     };
@@ -1059,6 +1062,7 @@ fn request_envelope_omits_unset_fields_entirely() {
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Omit,
         temperature: None,
+        upstream: None,
         messages: &[],
         stream: true,
     };
@@ -1135,4 +1139,50 @@ fn parallel_tool_calls_are_scoped_to_their_blocks() {
         ],
         "each call's fragments must name the block they belong to"
     );
+}
+
+/// A pinned upstream serializes as OpenRouter's `provider` object, and an
+/// unpinned one leaves the wire **byte-identical** to before the field existed.
+/// The second half is the cache-safety claim: adding a request field that
+/// serializes unconditionally would move every session's prefix
+/// (docs/log-and-projection.md), so `None` must skip entirely rather than emit
+/// `null`. The rename is pinned too — the type is `Upstream` because `Provider`
+/// already means anthropic-vs-openrouter, and only the wire says `provider`.
+#[test]
+fn a_pinned_upstream_renders_as_the_provider_object() {
+    let pin = Upstream::pinned(vec!["google-ai-studio".into()]).expect("non-empty order");
+    let json = serde_json::to_string(&pin).expect("serializes");
+    assert_eq!(
+        json,
+        r#"{"order":["google-ai-studio"],"allow_fallbacks":false}"#
+    );
+
+    // An empty order is not an empty object on the wire — it is no pin at all.
+    assert_eq!(Upstream::pinned(Vec::new()), None);
+
+    let tools: [Value; 0] = [];
+    let messages = [ApiMessage {
+        role: crate::project::Role::User,
+        content: vec![crate::project::ApiBlock::Text {
+            text: "hi".into(),
+            cache_control: None,
+        }],
+    }];
+    let render = |upstream| {
+        serde_json::to_string(&Request {
+            model: "m",
+            max_tokens: 1,
+            system: "",
+            tools: &tools,
+            tool_choice: ToolChoice::auto(),
+            thinking: Thinking::Omit,
+            temperature: None,
+            upstream,
+            messages: &messages,
+            stream: true,
+        })
+        .expect("serializes")
+    };
+    assert!(!render(None).contains("provider"));
+    assert!(render(Some(&pin)).contains(r#""provider":{"order":["google-ai-studio""#));
 }

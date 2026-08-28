@@ -208,6 +208,22 @@ pub(crate) enum Command {
         /// of the wire entirely, and the API uses its own default (1.0).
         #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
         temperature: Option<u8>,
+        /// Pin which **upstream** serves the model, for an OpenRouter session:
+        /// an endpoint slug such as `google-ai-studio` or `google-vertex/global`
+        /// (OpenRouter's model page lists them). Repeatable — the
+        /// order is the preference order, and fallbacks past it are disabled, so
+        /// a pinned session either gets one of these or fails rather than
+        /// silently rerouting.
+        ///
+        /// Distinct from the anthropic-vs-openrouter choice, which is the
+        /// `EFFERENCE_PROVIDER` env var. Ignored on Anthropic, which has no such
+        /// choice. Applies to the agent's own requests (turns and fork peeks),
+        /// not the spotter: slugs are per-model and the spotter runs a different
+        /// one. Endpoints behind one model slug differ in uptime and latency
+        /// tail, so a controlled run should pin one and record it
+        /// (eval/harness/README.md).
+        #[arg(long, value_name = "SLUG")]
+        upstream: Vec<String>,
         /// Run **autonomous** (no synchronous human at the gate): a spotter `Watch`/`Gate`
         /// becomes a redirect that hands the call back to the model, pointing it at its config
         /// file to request access, instead of blocking on an absent human. A config-file write
