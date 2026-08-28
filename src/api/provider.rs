@@ -302,9 +302,14 @@ impl Endpoint {
     }
 
     /// One authenticated GET against a provider metadata/accounting URL,
-    /// returning the body on 2xx and a status+body error otherwise.
+    /// returning the body on 2xx and a status+body error otherwise. Shares
+    /// [`authed_get_client`]'s process-wide pooled client rather than dialing a
+    /// fresh connection per call — `fetch_generation_cost` alone can run
+    /// thousands of these in a spotter-eval cost pass, and a fresh
+    /// `HttpClient::new` per call holds a socket per lookup for the life of the
+    /// process (docs/transport.md).
     async fn authed_get(&self, url: &str) -> Result<String, Error> {
-        let http = HttpClient::new(RustlsConfig::<ClientConfig>::default());
+        let http = authed_get_client();
         let mut conn = http
             .get(url)
             .with_request_header(self.auth_header.clone(), self.auth_value.clone())
@@ -319,6 +324,17 @@ impl Endpoint {
         }
         Ok(body)
     }
+}
+
+/// The process-wide pooled client behind [`Endpoint::authed_get`]. `HttpClient`
+/// clones share their connection pool (it's `Arc`-backed), so one instance
+/// built on first use and cloned out per call reuses live connections instead
+/// of opening one per GET.
+fn authed_get_client() -> HttpClient {
+    static CLIENT: std::sync::OnceLock<HttpClient> = std::sync::OnceLock::new();
+    CLIENT
+        .get_or_init(|| HttpClient::new(RustlsConfig::<ClientConfig>::default()))
+        .clone()
 }
 
 /// Parse OpenRouter's `GET /api/v1/generation` response down to `total_cost` —

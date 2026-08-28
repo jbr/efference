@@ -298,23 +298,55 @@ pub(crate) async fn spotter_eval(
         .await;
 
     // Provider-billed cost, keyed by generation id (docs/transport.md). Records
-    // can lag a beat behind the response, so one delayed retry per id.
+    // can lag a beat behind the response, so one delayed retry per id. Runs
+    // concurrently under the same `--concurrency` the attempts phase used;
+    // `Endpoint::fetch_generation_cost` shares a pooled client, so the
+    // semaphore bounds in-flight lookups, not sockets.
     if !no_cost && matches!(endpoint.provider, efference::api::Provider::OpenRouter) {
+        let mut unpriced = attempts
+            .iter()
+            .filter(|a| a.generation_id.is_none())
+            .count();
+        let lookups: Vec<(usize, String)> = attempts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, a)| a.generation_id.clone().map(|id| (i, id)))
+            .collect();
+        let total = lookups.len();
+        eprintln!("cost: fetching {total} generation id(s) (--concurrency {concurrency})");
+        let semaphore = Rc::new(tokio::sync::Semaphore::new(concurrency.max(1)));
+        let results: Vec<(usize, Result<f64, efference::api::Error>)> = local
+            .run_until(async {
+                let mut handles = Vec::with_capacity(total);
+                for (index, id) in lookups {
+                    let semaphore = semaphore.clone();
+                    let endpoint = endpoint.clone();
+                    handles.push(tokio::task::spawn_local(async move {
+                        let _permit = semaphore.acquire().await.expect("semaphore never closes");
+                        let mut cost = endpoint.fetch_generation_cost(&id).await;
+                        if cost.is_err() {
+                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                            cost = endpoint.fetch_generation_cost(&id).await;
+                        }
+                        (index, cost)
+                    }));
+                }
+                let mut results = Vec::with_capacity(total);
+                for handle in handles {
+                    results.push(handle.await.expect("cost task never panics"));
+                    let done = results.len();
+                    if done / 50 != done.saturating_sub(1) / 50 || done == total {
+                        eprintln!("… cost {done}/{total} lookups");
+                    }
+                }
+                results
+            })
+            .await;
         let mut priced = 0usize;
-        let mut unpriced = 0usize;
-        for attempt in attempts.iter_mut() {
-            let Some(id) = &attempt.generation_id else {
-                unpriced += 1;
-                continue;
-            };
-            let mut cost = endpoint.fetch_generation_cost(id).await;
-            if cost.is_err() {
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                cost = endpoint.fetch_generation_cost(id).await;
-            }
+        for (index, cost) in results {
             match cost {
                 Ok(usd) => {
-                    attempt.cost = Some(usd);
+                    attempts[index].cost = Some(usd);
                     priced += 1;
                 }
                 Err(_) => unpriced += 1,
