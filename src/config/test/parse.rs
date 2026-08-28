@@ -573,6 +573,45 @@ fn a_dotted_tool_grant_normalizes_to_the_wire_name() {
     assert!(!config.tools.contains("ferritin.get"));
 }
 
+/// A whole-namespace grant takes the same dotted→wire route an exact grant takes, so the set
+/// holds one spelling per grant (docs/permissions.md). `efference.*` is the built-ins'
+/// namespace, spelled like any other even though no built-in's wire name carries a prefix.
+#[test]
+fn a_namespace_glob_normalizes_like_any_other_grant() {
+    let config = super::parse(
+        Path::new("ok.toml"),
+        "tools = [\"ferritin.*\", \"efference.*\", \"github.create_issue\"]\n",
+    )
+    .unwrap();
+    assert!(config.tools.contains("ferritin__*"));
+    assert!(config.tools.contains("efference__*"));
+    assert!(config.tools.contains("github__create_issue"));
+    // The dotted spelling is an alias, not a second key — same as for an exact grant.
+    assert!(!config.tools.contains("ferritin.*"));
+    // And it renders back to what the operator wrote, for `/state` and the write-back.
+    assert_eq!(crate::mcp::display_name("ferritin__*"), "ferritin.*");
+}
+
+/// The glob is star-only in the terminal `.*` position. Anything fancier fails the whole file:
+/// the matcher is a set lookup, so a pattern it cannot honour must not parse into a grant that
+/// silently matches nothing.
+#[test]
+fn a_star_outside_the_terminal_position_fails_validation() {
+    for entry in ["ferritin.ge*", "*", "*.get", "fer*.*", "ferritin.admin.*"] {
+        let err =
+            super::parse(Path::new("bad.toml"), &format!("tools = [\"{entry}\"]\n")).unwrap_err();
+        assert!(
+            matches!(err, LoadError::Validate(_, ValidationError::ToolGlob(_))),
+            "{entry}: {err}"
+        );
+        assert!(
+            err.to_string()
+                .contains("outside the terminal `.*` position"),
+            "{entry}: {err}"
+        );
+    }
+}
+
 /// The `[env]` table parses only the inline-table form (docs/env.md). Omission is
 /// inherit, not "false", which is what lets a user entry compose with a built-in
 /// default instead of replacing it wholesale.

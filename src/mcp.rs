@@ -68,6 +68,14 @@ mod test;
 /// can never collide with an embedded one.
 pub const NAMESPACE_SEPARATOR: &str = "__";
 
+/// The namespace the harness's own embedded tools sit in for grant purposes
+/// (docs/permissions.md). Their wire names carry no prefix — `read` is `read` —
+/// so this is the name that stands in for the missing `<server>` half when a
+/// grant is resolved: `efference.*` is the whole-namespace grant over the
+/// built-ins, and `efference.read` is an accepted spelling of `read`. A declared
+/// server named `efference` would share the namespace; nothing rejects that today.
+pub const BUILTIN_NAMESPACE: &str = "efference";
+
 /// A namespaced wire name rendered for a human: `ferritin__get` → `ferritin.get`.
 ///
 /// The wire alphabet (`[a-zA-Z0-9_-]`) has no separator that reads as one, so
@@ -81,6 +89,42 @@ pub const NAMESPACE_SEPARATOR: &str = "__";
 /// through here — the dotted form is not a name anything can be found by.
 pub fn display_name(wire_name: &str) -> String {
     wire_name.replacen(NAMESPACE_SEPARATOR, ".", 1)
+}
+
+/// The namespace a wire tool name belongs to: the `<server>` half of
+/// `<server>__<tool>`, or [`BUILTIN_NAMESPACE`] for an unprefixed embedded name.
+/// The boundary is the **first** `__`, the same rule [`display_name`] applies —
+/// server names may not contain one.
+pub fn namespace_of(wire_name: &str) -> &str {
+    match wire_name.split_once(NAMESPACE_SEPARATOR) {
+        Some((server, _)) => server,
+        None => BUILTIN_NAMESPACE,
+    }
+}
+
+/// The stored form of a whole-namespace tool grant (docs/permissions.md): the
+/// operator writes `ferritin.*`, `wire_tool_name` normalizes it to `ferritin__*`
+/// exactly as it normalizes `ferritin.get`, and [`display_name`] renders it back.
+/// So the glob lives in the same one-name-per-grant set every exact entry does,
+/// and `*` — absent from the API's tool-name alphabet — can never collide with a
+/// real advertised name.
+pub fn namespace_glob(namespace: &str) -> String {
+    format!("{namespace}{NAMESPACE_SEPARATOR}*")
+}
+
+/// Whether a stored `tools` entry is a whole-namespace glob — `<namespace>__*`
+/// with a non-empty namespace that is itself star-free. This is the *only* shape
+/// carrying a `*` that validation admits ([`crate::config::ValidationError`]),
+/// which is what keeps the matcher a pair of set lookups rather than a pattern
+/// engine.
+pub fn is_namespace_glob(entry: &str) -> bool {
+    entry
+        .strip_suffix(&namespace_glob(""))
+        .is_some_and(|namespace| {
+            !namespace.is_empty()
+                && !namespace.contains('*')
+                && !namespace.contains(NAMESPACE_SEPARATOR)
+        })
 }
 
 /// A declared server that did not mount, and why (docs/tools.md).

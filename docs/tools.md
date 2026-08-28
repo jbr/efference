@@ -347,9 +347,11 @@ The wire and the log keep the underscores — the dot is applied at each display
 boundary and undone on the way back in, so exactly one name is ever stored or
 matched.
 
-Server-wide clearance (`tools = ["ferritin"]` clearing every tool that server
-advertises) is not built:
-[`backlog/permissions/tool-grant-granularity.md`](../backlog/permissions/tool-grant-granularity.md).
+Server-wide clearance is the terminal-`.*` glob — `tools = ["ferritin.*"]` clears
+every tool that server advertises, and `"efference.*"` the built-ins, whose
+unprefixed wire names sit in the `efference` namespace
+([permissions.md](permissions.md)). A bare `tools = ["ferritin"]` still clears
+nothing: the namespace has to be named as one.
 
 One known gap: the offline `wire` dev view does not mount connected providers
 (mounting spawns processes), so a session with `[mcp.servers.*]` sends more

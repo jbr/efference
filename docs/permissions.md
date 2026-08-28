@@ -252,16 +252,49 @@ needed permission — reads (`read`/`list`/`search`/`find_anchor`) need `read`, 
 (`write`/`edit`) need `write` (`write` implies `read`). Nothing clears in code; an
 empty config gates every tool, exactly as before.
 
-The name match is **exact**, unlike `[commands]`'s token-prefix match. A connected
-provider's tools reach the wire namespaced (`<server>__<tool>`, docs/tools.md), so
-clearing a whole server means listing each of its tools; `tools = ["ferritin"]` clears
-nothing. A server-wide grant is planned as an explicit glob (`"ferritin.*"`), which is why
-`tools` keeps exact-match semantics in the meantime —
-[`backlog/permissions/tool-grant-granularity.md`](../backlog/permissions/tool-grant-granularity.md).
-An entry is written and displayed in the dotted form (`"ferritin.get"`) — the file the
-write-back produces, the sidebar's labels, and the transcript all agree — and is resolved
+The name match is **exact**, unlike `[commands]`'s token-prefix match — with one glob, below.
+A connected provider's tools reach the wire namespaced (`<server>__<tool>`, docs/tools.md), so
+clearing a whole server by exact entries means listing each of its tools; `tools = ["ferritin"]`
+clears nothing. An entry is written and displayed in the dotted form (`"ferritin.get"`) — the file
+the write-back produces, the sidebar's labels, and the transcript all agree — and is resolved
 to the wire name at validate, so the set the fast-path reads holds one name per grant
 however the operator spelled it.
+
+#### `"<namespace>.*"`: a whole-namespace grant, and what it claims
+
+```toml
+tools = ["efference.*", "ferritin.*", "github.create_issue"]
+```
+
+A terminal `.*` grants a **namespace**: every tool that server advertises, cleared on the
+fast path with no spotter on the way through. The namespace is the `<server>` half of the
+wire name, resolved at the **first** `__` (server names may not contain one, so the boundary
+is unambiguous in every direction); the harness's own embedded tools have no prefix, so they
+sit in the `efference` namespace, and `"efference.*"` is the "every tool this harness ships"
+grant that needs no editing when a built-in is added. The glob takes the same dotted→wire
+route an exact entry takes (`ferritin.*` is stored as `ferritin__*`), so one set holds both
+kinds, and `*` — absent from the API's tool-name alphabet — can never collide with a real
+name. The star is **only** legal in that terminal position: `"ferritin.ge*"`, `"*"`, and
+`"ferritin.admin.*"` fail the whole file at validate rather than parsing into a grant the
+matcher would silently never satisfy.
+
+**What a `.*` grant claims is trust in the *party*, not in an enumerated set.** A blanket
+`cargo = true` is survivable because of stage 1: the structural check runs before any prefix
+match, so a trusted prefix can never clear `cargo … > /etc/hosts`. A structured call has no
+stage 1 — there is nothing between the grant and whatever JSON the server interprets — and the
+granted set is defined by the other party and can grow: a server's table is frozen at mount
+and may differ at the next one. So `"ferritin.*"` means
+"anything you can do with this server is ok — if it adds a new tool, that is allowed too."
+A server not trusted to that degree should not hold a `.*` grant; the harness does not
+constrain the glob to the mount-time table, because a grant that needed that constraint is a
+grant that shouldn't have been written. It is never the default on mount — the glob is an
+explicit config act, and defaulting it would move the perimeter every time a server is added.
+
+**Where the glob sits relative to `[paths]`.** The glob is a *name* grant, so the second
+check is untouched: a path-bearing built-in under `"efference.*"` still clears only inside a
+`[paths]` grant, which is why a whole-namespace grant over the built-ins has a bounded blast
+radius. A connected tool's does not — the fast path knows nothing about what a remote tool
+touches, so `"ferritin.*"` is bounded by the grant alone.
 
 **Multi-path clearance is per-path, unioned across sources.** A tool naming several paths
 (`read`'s `paths` array) clears only when *every* path is granted — but each path may be

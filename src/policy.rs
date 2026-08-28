@@ -47,6 +47,8 @@
 //! the path-bearing ones, its target resolves under a `path` grant carrying the needed
 //! permission (reads need `read`, writes need `write`; `write` implies `read`). Nothing
 //! clears unless the config says so — an empty role gates everything, exactly as before.
+//! The name match is exact, with one glob: `ferritin.*` grants a whole namespace, including
+//! tools the server adds later ([`tool_granted`]).
 //!
 //! Mapping a tool to "which input field holds the path, and is it a read or a write"
 //! requires reaching into each built-in's JSON input by known key ([`path_check`]). That
@@ -240,7 +242,7 @@ fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
     // acknowledged wart in [`path_spec`]). It clears on the name grant, or on any `[context]` write
     // grant, mirroring its clear-on-name rule under `tools`.
     if call.name == "undo_edit" {
-        let cleared = role.tools.contains(&call.name)
+        let cleared = tool_granted(role, &call.name)
             || role
                 .context
                 .iter()
@@ -250,18 +252,46 @@ fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
     let Some((key, perm, default)) = path_spec(&call.name) else {
         // A structured tool with no path target (`kill_process`, `retarget_edit`, `consolidate`,
         // the supervisor/inbox tools): the name grant alone suffices.
-        return verdict(role.tools.contains(&call.name));
+        return verdict(tool_granted(role, &call.name));
     };
     let Some(targets) = input_targets(&call.input, key, default) else {
         return Verdict::Gate; // required path missing/empty/malformed → never auto-clear
     };
     // Per-path union of the two sources. `[context]` clears standalone; `[paths]` clears only when
     // the tool name is also granted (the name grant is a per-call precondition on that source).
-    let name_granted = role.tools.contains(&call.name);
+    let name_granted = tool_granted(role, &call.name);
     let cleared = targets.iter().all(|t| {
         context_granted(role, t, perm, cwd) || (name_granted && path_granted(role, t, perm, cwd))
     });
     verdict(cleared)
+}
+
+/// Whether the config's `tools` set grants this wire tool name (docs/permissions.md).
+///
+/// Three spellings resolve to one decision, all of them set lookups — the grant set never
+/// grows a pattern engine:
+///
+/// - the **wire name** itself (`ferritin__get`, `read`), which is what an exact grant stores
+///   after `config::raw::wire_tool_name` has resolved whatever the operator wrote;
+/// - the **namespace-qualified** name, so `efference.read` grants the built-in whose wire name
+///   is the unprefixed `read` (for a connected tool this is the wire name again);
+/// - the **whole-namespace glob** for the name's namespace ([`crate::mcp::namespace_glob`]).
+///
+/// The glob is a statement of trust in a *party* over a set nobody enumerated: `ferritin.*`
+/// clears every tool that server advertises now and every one it adds later, with no spotter on
+/// the way through, because the tool table is the server's to change. That is a different claim
+/// from a blanket `[commands]` grant — a bash command still passes stage 1's structural check
+/// first, and a structured call has no such pre-filter — which is why the glob is only ever an
+/// explicit config act and never a default on mount.
+pub(crate) fn tool_granted(role: &Config, wire_name: &str) -> bool {
+    let namespace = crate::mcp::namespace_of(wire_name);
+    role.tools.contains(wire_name)
+        || role.tools.contains(&crate::mcp::namespace_glob(namespace))
+        || (namespace == crate::mcp::BUILTIN_NAMESPACE
+            && role.tools.contains(&format!(
+                "{namespace}{}{wire_name}",
+                crate::mcp::NAMESPACE_SEPARATOR
+            )))
 }
 
 /// Tiny helper: fold a boolean clearance decision into a [`Verdict`].

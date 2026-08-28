@@ -206,6 +206,11 @@ pub enum ValidationError {
     /// `args`/`env` on a `url` server — those keys parameterize a spawned subprocess, and an HTTP
     /// server is not spawned.
     McpServerHttpExtras(String),
+    /// A `tools` entry whose `*` is not the whole-namespace glob. The only glob the grant set
+    /// understands is a terminal `.*` naming a namespace (`ferritin.*`, `efference.*`); a star
+    /// anywhere else would read as a pattern the matcher does not implement, so it fails the
+    /// whole file rather than silently matching nothing.
+    ToolGlob(String),
     /// A server name that cannot prefix a wire tool name. Connected tools reach the wire as
     /// `<server>__<tool>`, and the API constrains tool names to `[a-zA-Z0-9_-]`, so the server
     /// name must fit the same alphabet (and stay short enough to leave room for the tool).
@@ -247,6 +252,12 @@ impl std::fmt::Display for ValidationError {
                 "mcp server `{name}` sets `url` together with `args`/`env` — those keys \
                  parameterize a spawned `command`, and an HTTP server is not spawned"
             ),
+            ValidationError::ToolGlob(entry) => write!(
+                f,
+                "tool grant `{entry}` uses `*` outside the terminal `.*` position — the only \
+                 glob is a whole-namespace grant (`ferritin.*` for a server's tools, \
+                 `efference.*` for the built-ins); a partial or mid-name star matches nothing"
+            ),
             ValidationError::McpServerName(name) => write!(
                 f,
                 "mcp server name `{name}` must be 1-32 characters of [a-zA-Z0-9_-] and must not \
@@ -287,6 +298,14 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
     for (key, value) in raw.context {
         context.push(validate_context_entry(key, value)?);
     }
+    let mut tools = BTreeSet::new();
+    for entry in raw.tools {
+        let entry = wire_tool_name(entry);
+        if entry.contains('*') && !crate::mcp::is_namespace_glob(&entry) {
+            return Err(ValidationError::ToolGlob(crate::mcp::display_name(&entry)));
+        }
+        tools.insert(entry);
+    }
     let mut mcp_servers = BTreeMap::new();
     for (name, server) in raw.mcp.servers {
         let entry = validate_mcp_server(&name, server)?;
@@ -297,7 +316,7 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
         watch_for: raw.watch_for,
         trust_threshold: raw.trust_threshold,
         commands,
-        tools: raw.tools.into_iter().map(wire_tool_name).collect(),
+        tools,
         paths,
         extends: raw.extends,
         context,
@@ -326,6 +345,12 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
 /// The dotted form is an **input alias only** — it is resolved here and never stored, so
 /// the config, the log, and the fast-path all still key on one name. An entry with no `.`
 /// (every embedded tool name) passes through untouched.
+///
+/// A whole-namespace glob takes the same route with no special case: `ferritin.*` →
+/// `ferritin__*`, and `efference.*` → `efference__*` — the built-ins' namespace
+/// ([`crate::mcp::BUILTIN_NAMESPACE`]) spelled the way every other namespace is, even
+/// though no built-in's wire name carries the prefix. [`validate`] then rejects any other
+/// use of `*`, and the fast-path resolves the glob against the call's namespace.
 pub fn wire_tool_name(entry: String) -> String {
     match entry.split_once('.') {
         Some((server, tool)) if !server.is_empty() && !tool.is_empty() => {

@@ -256,3 +256,100 @@ fn read_image_clears_like_a_read() {
         Verdict::Gate
     );
 }
+
+// --- the whole-namespace glob (docs/permissions.md) ---
+
+/// Build a role whose `tools` set is spelled the way a validated config stores it (wire names,
+/// globs as `<namespace>__*`).
+fn tool_role(entries: &[&str]) -> Config {
+    Config {
+        tools: entries.iter().map(|s| s.to_string()).collect(),
+        ..Default::default()
+    }
+}
+
+/// `ferritin.*` clears every tool that server advertises — the one the mount table held when the
+/// grant was written *and* one added later. Nothing enumerates the table, so the two cases are the
+/// same lookup: the grant is over the namespace, not over a snapshot of its members.
+#[test]
+fn a_namespace_glob_clears_every_tool_in_that_namespace() {
+    let role = tool_role(&["ferritin__*"]);
+    for tool in ["ferritin__get", "ferritin__search", "ferritin__added_later"] {
+        assert_eq!(
+            structured(&role, &call(tool, serde_json::json!({}))),
+            Verdict::Clear,
+            "{tool}"
+        );
+    }
+}
+
+/// The glob stops at its own namespace in both directions: a server's glob reaches neither
+/// another server's tools nor a built-in, and `efference.*` reaches no connected tool.
+#[test]
+fn a_namespace_glob_does_not_cross_the_namespace_boundary() {
+    let role = tool_role(&["ferritin__*"]);
+    for tool in ["github__create_issue", "read", "list"] {
+        assert_eq!(
+            structured(&role, &call(tool, serde_json::json!({ "paths": ["a"] }))),
+            Verdict::Gate,
+            "{tool}"
+        );
+    }
+    // The built-ins' glob is symmetric: it clears no connected tool.
+    let builtins = tool_role(&["efference__*"]);
+    assert_eq!(
+        structured(&builtins, &call("ferritin__get", serde_json::json!({}))),
+        Verdict::Gate
+    );
+}
+
+/// `efference.*` clears the built-ins, whose wire names carry no `__` prefix at all — the
+/// namespace is supplied by [`crate::mcp::BUILTIN_NAMESPACE`]. The path-bearing ones still need
+/// their `[paths]` grant: the glob is a name grant, and a built-in's blast radius stays bounded
+/// by the second check.
+#[test]
+fn the_builtin_glob_clears_embedded_tools_within_their_path_grants() {
+    let mut role = fs_role();
+    role.tools = ["efference__*"].iter().map(|s| s.to_string()).collect();
+    // A path-less built-in clears on the glob alone.
+    assert_eq!(
+        structured(&role, &call("kill_process", serde_json::json!({}))),
+        Verdict::Clear
+    );
+    // A path-bearing one clears inside a grant…
+    assert_eq!(
+        structured(
+            &role,
+            &call("read", serde_json::json!({ "paths": ["src/main.rs"] }))
+        ),
+        Verdict::Clear
+    );
+    // …and gates outside it, glob or no glob.
+    assert_eq!(
+        structured(
+            &role,
+            &call("read", serde_json::json!({ "paths": ["/etc/passwd"] }))
+        ),
+        Verdict::Gate
+    );
+}
+
+/// Exact entries keep exact-match semantics beside a glob, and a built-in may be granted by its
+/// namespace-qualified spelling (`efference.read` → the wire name `read`).
+#[test]
+fn exact_grants_are_unaffected_by_a_neighbouring_glob() {
+    let role = tool_role(&["ferritin__*", "github__create_issue", "efference__read"]);
+    assert_eq!(
+        structured(&role, &call("github__create_issue", serde_json::json!({}))),
+        Verdict::Clear
+    );
+    // A sibling of the exact entry is not swept in by it.
+    assert_eq!(
+        structured(&role, &call("github__delete_repo", serde_json::json!({}))),
+        Verdict::Gate
+    );
+    // The qualified built-in spelling resolves to the unprefixed wire name (path grant still
+    // required, so this one gates on the path, not the name).
+    assert!(tool_granted(&role, "read"));
+    assert!(!tool_granted(&role, "write"));
+}
