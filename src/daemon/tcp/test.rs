@@ -362,7 +362,7 @@ async fn the_host_routes_answer_only_when_a_bind_is_armed() {
 #[test]
 fn an_h2_authority_satisfies_the_host_check() {
     let auth = armed("h2-authority");
-    let gate = gate(Arc::clone(&auth));
+    let gate = gate(Arc::clone(&auth), Surface::Session);
 
     let mut conn = trillium_testing::TestConn::build(Method::Get, "/", ());
     let inner: &mut trillium_http::Conn<_> = conn.as_mut();

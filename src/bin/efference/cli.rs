@@ -4,9 +4,9 @@ use super::*;
 
 /// The base directory for all session dirs (gitignored). Each session is `.efference/<id>/`,
 /// holding its standard-named socket, log, and config (docs/permissions.md).
-pub(crate) const BASE_DIR: &str = ".efference";
+pub(crate) const BASE_DIR: &str = efference::daemon::SESSION_BASE;
 
-pub(crate) const SOCKET_NAME: &str = "control.sock";
+pub(crate) const SOCKET_NAME: &str = efference::daemon::SOCKET_NAME;
 
 pub(crate) const LOG_NAME: &str = "log.jsonl";
 
@@ -291,6 +291,44 @@ pub(crate) enum Command {
         tls_key: Option<PathBuf>,
         /// Open the operator's browser at the bootstrap link once bound.
         #[arg(long, requires = "bind")]
+        open: bool,
+    },
+    /// Run the host: one authenticated front door for every session on this machine
+    /// (docs/host.md). Serves the live-session listing at `GET /sessions`, each
+    /// session's own control API under `/sessions/<id>/`, and the web client at the
+    /// root. It starts no sessions and adopts whatever `serve` processes are running
+    /// under `.efference/` in this directory; their Unix sockets stay UDS-only.
+    ///
+    /// The bind and auth flags are `serve --bind`'s, with the same env fallbacks and
+    /// the same posture: plaintext only on loopback, TLS wants an explicit public
+    /// name, and EFFERENCE_ROOT_SECRET must be set.
+    Host {
+        /// The address to listen on. Required — a host with no listener is nothing.
+        #[arg(long, value_name = "ADDR:PORT", env = "EFFERENCE_BIND")]
+        bind: Option<String>,
+        /// The public name browsers address the host by — the Host allowlist and the
+        /// hostname in the printed link. Defaults to `localhost` on a loopback bind;
+        /// required with TLS.
+        #[arg(long, value_name = "NAME", env = "EFFERENCE_HOST")]
+        host: Option<String>,
+        /// PEM certificate chain for the bind (the `tailscale cert` output).
+        #[arg(
+            long,
+            value_name = "PEM",
+            requires = "tls_key",
+            env = "EFFERENCE_TLS_CERT"
+        )]
+        tls_cert: Option<PathBuf>,
+        /// PEM private key matching --tls-cert.
+        #[arg(
+            long,
+            value_name = "PEM",
+            requires = "tls_cert",
+            env = "EFFERENCE_TLS_KEY"
+        )]
+        tls_key: Option<PathBuf>,
+        /// Open the operator's browser at the bootstrap link once bound.
+        #[arg(long)]
         open: bool,
     },
     /// Mint a fresh bootstrap link against a running daemon's TCP bind and open it —

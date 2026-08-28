@@ -73,6 +73,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             )
             .await
         }
+        Command::Host {
+            bind,
+            host,
+            tls_cert,
+            tls_key,
+            open,
+        } => {
+            host_serve(serve::BindFlags {
+                bind,
+                host,
+                tls_cert,
+                tls_key,
+                open,
+            })
+            .await
+        }
         Command::Turn { text, wait } => turn(client_socket()?, text.join(" "), wait).await,
         Command::Approve {
             call_id,
@@ -201,6 +217,7 @@ type CliResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
 use attach::attach;
 use cli::*;
+use host::host as host_serve;
 use peek_replay::peek;
 use serve::{serve, spotter_check};
 use spot_report::*;
@@ -209,6 +226,7 @@ use verbs::*;
 
 mod attach;
 mod cli;
+mod host;
 mod mcp_mount;
 mod peek_replay;
 mod serve;

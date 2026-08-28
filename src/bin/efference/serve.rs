@@ -20,7 +20,7 @@ pub(crate) struct BindFlags {
 /// silently unauthenticated.
 ///
 /// [`TcpBind`]: efference::daemon::TcpBind
-fn resolve_bind(
+pub(crate) fn resolve_bind(
     flags: BindFlags,
 ) -> Result<Option<efference::daemon::TcpBind>, Box<dyn std::error::Error + Send + Sync>> {
     // An empty bind is the explicit "UDS-only" spelling: `--bind ""` overrides a

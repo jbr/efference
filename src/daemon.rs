@@ -848,6 +848,16 @@ impl Shared {
 /// the race in practice; this is only the backstop.
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// The directory every session dir lives under, relative to the working directory a
+/// session was started in (docs/control-channel.md). One session is
+/// `<SESSION_BASE>/<id>/`, holding standard-named files.
+pub const SESSION_BASE: &str = ".efference";
+
+/// The control socket's name inside a session dir. The layout is named here rather
+/// than in each reader because three of them share it: `serve`, the CLI's socket
+/// resolution, and the host's liveness scan (docs/host.md).
+pub const SOCKET_NAME: &str = "control.sock";
+
 mod approvals;
 mod background;
 mod config_edits;
@@ -857,7 +867,7 @@ mod continuation;
 // resource-renamed gate.
 #[allow(dead_code)]
 mod entry_view;
-mod errors;
+pub(crate) mod errors;
 // The file viewer's read surface (docs/web-bind.md), mounted on the TCP spawn only.
 mod files;
 // The control-stream frame envelope (docs/control-api.md), defined ahead of its
@@ -872,7 +882,7 @@ mod metrics;
 mod notifications;
 mod pace;
 mod stream;
-mod tcp;
+pub(crate) mod tcp;
 mod topics;
 mod views;
 mod watch;

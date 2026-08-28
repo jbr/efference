@@ -123,6 +123,39 @@ pub(crate) fn arm_with_ledger(bind: TcpBind, ledger: BurnLedger) -> (Arc<TcpAuth
     (auth, Listener { addr, tls, open })
 }
 
+/// Register a [`Listener`]'s address on `config`: plaintext, or TLS paired with a QUIC
+/// listener on the same port. One function because the host adopts the same listener
+/// shape (docs/host.md) and a second copy of the pairing would drift from this one.
+///
+/// Generic over the server type only because `trillium-tokio` does not export the one
+/// it uses; the bounds say what the body needs of it.
+pub(crate) fn bind<S>(
+    listener: &Listener,
+    config: trillium_tokio::ListenerConfig<S>,
+) -> io::Result<trillium_tokio::ListenerConfig<S>>
+where
+    S: trillium_server_common::Server,
+    trillium_rustls::RustlsAcceptor: trillium_server_common::Acceptor<S::Transport>,
+    trillium_quinn::QuicConfig: trillium_server_common::QuicConfig<S>,
+{
+    match &listener.tls {
+        // TLS also serves HTTP/3: a QUIC listener on the same port (UDP), which the
+        // builder auto-pairs with the TLS listener and advertises via `alt-svc:
+        // h3` — browsers upgrade on their next request. The gate is
+        // protocol-agnostic (the authority read handles h2/h3's pseudo-header).
+        Some(pem) => config
+            .bind_tls(
+                listener.addr.as_str(),
+                trillium_rustls::RustlsAcceptor::from_single_cert(&pem.cert, &pem.key),
+            )?
+            .bind_quic(
+                listener.addr.as_str(),
+                trillium_quinn::QuicConfig::from_single_cert(&pem.cert, &pem.key),
+            ),
+        None => config.bind_tcp(listener.addr.as_str()),
+    }
+}
+
 /// Spawn the TCP listener with the gated handler stack, sharing the UDS server's
 /// swansong (one shutdown domain) and its `Shared` state (same `/v1` surface).
 /// `without_signals` because the UDS server already registered the signal handlers.
@@ -138,23 +171,7 @@ pub(crate) fn spawn(
         .with_shared_state(shared)
         .without_signals()
         .listeners();
-    let config = match &listener.tls {
-        // TLS also serves HTTP/3: a QUIC listener on the same port (UDP), which the
-        // builder auto-pairs with the TLS listener and advertises via `alt-svc:
-        // h3` — browsers upgrade on their next request. The gate is
-        // protocol-agnostic (the authority read handles h2/h3's pseudo-header).
-        Some(pem) => config
-            .bind_tls(
-                listener.addr.as_str(),
-                trillium_rustls::RustlsAcceptor::from_single_cert(&pem.cert, &pem.key),
-            )?
-            .bind_quic(
-                listener.addr.as_str(),
-                trillium_quinn::QuicConfig::from_single_cert(&pem.cert, &pem.key),
-            )?,
-        None => config.bind_tcp(listener.addr.as_str())?,
-    };
-    Ok(config.spawn(handler))
+    Ok(bind(&listener, config)?.spawn(handler))
 }
 
 impl TcpAuth {
@@ -265,12 +282,64 @@ enum CodeRejection {
     Ledger,
 }
 
-/// The hardening + auth gate, run before every route on the TCP listener
+/// Which surface a gated listener serves — the one thing that differs between the
+/// two binds that share this gate. A session daemon serves the control API and the
+/// operator's file view; the host serves session discovery and the per-session proxy
+/// (docs/host.md). Everything else about the gate is identical, so the difference
+/// lives here rather than in a second gate.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Surface {
+    /// `efference serve --bind`: `/v1` takes either credential, `/files` the cookie
+    /// only (docs/web-bind.md).
+    Session,
+    /// `efference host`: everything under `/sessions` takes either credential — the
+    /// discovery listing and every proxied per-session path alike (docs/host.md).
+    Host,
+}
+
+/// What a path costs on this surface.
+enum Zone {
+    /// No credential: the web client's shell and hashed assets, plus the mint.
+    Anonymous,
+    /// A cookie or a bearer.
+    Credential,
+    /// The cookie only; a valid bearer is refused with `403` rather than `401`.
+    CookieOnly,
+}
+
+impl Surface {
+    /// The guarded prefixes, and which credential each takes. A non-GET outside them
+    /// fails closed at [`Zone::Credential`] rather than 404ing.
+    fn zone(self, method: Method, path: &str) -> Zone {
+        let under = |prefix: &str| path == prefix || path.starts_with(&format!("{prefix}/"));
+        let guarded = match self {
+            // `/files` is guarded on the same footing as `/v1`, and more narrowly: it
+            // is the operator's read surface over the working directory, so it takes
+            // the cookie only (docs/web-bind.md). A bearer holder reading it would
+            // bypass `[paths]`, including the deny that keeps a session out of other
+            // sessions' logs.
+            Surface::Session if under("/files") => return Zone::CookieOnly,
+            Surface::Session => under("/v1"),
+            Surface::Host => under("/sessions"),
+        };
+        match method {
+            // `trillium_head::head()` runs ahead of the gate, so a HEAD arrives here
+            // already rewritten to GET. Anonymous surface: every GET outside the
+            // guarded prefixes — the web client's shell and hashed assets, same
+            // posture as the inline bootstrap page before it (docs/web-client.md) —
+            // plus the credential mint.
+            Method::Get if !guarded => Zone::Anonymous,
+            Method::Post if path == "/auth/session" => Zone::Anonymous,
+            _ => Zone::Credential,
+        }
+    }
+}
+
+/// The hardening + auth gate, run before every route on a TCP listener
 /// (docs/web-bind.md): Host allowlist (DNS rebinding), Origin + Content-Type checks on
 /// unsafe methods (CSRF — a localhost or LAN bind is not a trust boundary while a
-/// browser is present), then the credential check. The anonymous surface is the web
-/// client's shell (every GET outside `/v1`) and the credential mint itself.
-fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
+/// browser is present), then the credential check against the listener's [`Surface`].
+pub(crate) fn gate(auth: Arc<TcpAuth>, surface: Surface) -> impl trillium::Handler {
     move |conn: Conn| {
         let auth = Arc::clone(&auth);
         async move {
@@ -327,42 +396,24 @@ fn gate(auth: Arc<TcpAuth>) -> impl trillium::Handler {
                     }
                 }
             }
-            // `trillium_head::head()` runs ahead of the gate, so a HEAD arrives
-            // here already rewritten to GET. Anonymous surface: every GET outside
-            // the guarded prefixes — the web client's shell and hashed assets, same
-            // posture as the inline bootstrap page before it (docs/web-client.md) —
-            // plus the credential mint. A non-GET outside them fails closed here
-            // rather than 404ing.
-            let path = conn.path();
-            let v1 = path == "/v1" || path.starts_with("/v1/");
-            // `/files` is guarded on the same footing as `/v1`, and more narrowly:
-            // it is the operator's read surface over the working directory, so it
-            // takes the cookie only (docs/web-bind.md). A bearer holder reading it
-            // would bypass `[paths]`, including the deny that keeps a session out of
-            // other sessions' logs.
-            let files = path == "/files" || path.starts_with("/files/");
-            let anonymous = match method {
-                Method::Get => !v1 && !files,
-                Method::Post => path == "/auth/session",
-                _ => false,
-            };
-            if anonymous {
+            let zone = surface.zone(method, conn.path());
+            if matches!(zone, Zone::Anonymous) {
                 return conn;
             }
-            match auth.credential(&conn) {
-                None => fail(
+            match (auth.credential(&conn), zone) {
+                (None, _) => fail(
                     conn,
                     ErrorCode::Unauthorized,
                     "no valid session cookie or bearer; POST /auth/session with a current code",
                 ),
                 // Not `Unauthorized`: the credential is valid, and re-authenticating
                 // as the same program would not help. This surface is the browser's.
-                Some(Credential::Bearer) if files => fail(
+                (Some(Credential::Bearer), Zone::CookieOnly) => fail(
                     conn,
                     ErrorCode::Forbidden,
                     "/files takes the session cookie, not the bearer",
                 ),
-                Some(_) => conn,
+                (Some(_), _) => conn,
             }
         }
     }
@@ -390,7 +441,7 @@ pub(crate) fn stack_with_files(
         // Parses the request cookie jar (every field line — see `authed`) and
         // serializes the response's. Ahead of the gate, which reads the jar.
         CookiesHandler::new(),
-        gate(Arc::clone(&auth)),
+        gate(Arc::clone(&auth), Surface::Session),
         public_router(auth),
         router(),
         // The operator's read surface over the working directory (docs/web-bind.md),
@@ -431,7 +482,7 @@ const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe
 /// or tool-authored, and the page holds a credential for a channel that runs
 /// commands. `frame-ancestors 'none'` also keeps the session out of an iframe,
 /// which no surface here wants.
-struct SecurityHeaders;
+pub(crate) struct SecurityHeaders;
 
 impl trillium::Handler for SecurityHeaders {
     async fn before_send(&self, conn: trillium::Conn) -> trillium::Conn {
@@ -466,8 +517,9 @@ const SPA_ROUTES: [&str; 2] = ["/", "/tree"];
 /// The web client (docs/web-client.md): `web/` built and embedded at compile time,
 /// or — under the `dev-proxy` feature — proxied to a spawned Vite dev server with
 /// HMR. Mounted after both routers on the TCP spawn, so it answers exactly the GETs
-/// they don't claim; the gate has already let those through anonymously.
-fn frontend() -> impl trillium::Handler {
+/// they don't claim; the gate has already let those through anonymously. The host
+/// mounts the same build at its own root (docs/host.md).
+pub(crate) fn frontend() -> impl trillium::Handler {
     trillium_frontend::frontend!("./web")
         .with_client(trillium_client::Client::new(
             trillium_tokio::ClientConfig::default(),

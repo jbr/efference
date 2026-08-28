@@ -7,6 +7,12 @@ are its trust model) and remains the CLI verbs' channel. Implemented in
 `src/daemon/tcp.rs` (the gate, the routes, the spawn) and `src/auth.rs` (the
 credential arithmetic); the flag resolution is `src/bin/efference/serve.rs`.
 
+This is the **one**-session bind, and it stays that: `efference host`
+([host.md](host.md)) is the multi-session front door, and it reuses everything in this
+document — the flags, the listener shape, the credential layer, and the gate — rather
+than shipping a second one. The gate's only listener-dependent decision is which
+prefixes it guards, carried as a `Surface`.
+
 The bind is configured by CLI flags — each with an env fallback (`EFFERENCE_BIND`,
 `EFFERENCE_HOST`, `EFFERENCE_TLS_CERT`, `EFFERENCE_TLS_KEY`) so a direnv'd shell can
 carry a standing default, and `--bind ""` overrides such a default back to UDS-only —
@@ -298,9 +304,8 @@ would follow usefully.
 
 ## Auth routes live beside `/v1`, not under it
 
-The first surface with no per-session home, previewing the host process's routing
-split ([../backlog/host-process.md](../backlog/host-process.md) adopts the bind and
-the root when it lands).
+The first surface with no per-session home, previewing the host's routing split
+([host.md](host.md), which mounts the same mint at its own listener).
 
 On the TCP listener (anonymous): `POST /auth/session` — `{"code":"123456"}` →
 `Set-Cookie` on success.
