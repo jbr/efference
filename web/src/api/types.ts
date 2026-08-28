@@ -313,6 +313,7 @@ export interface ErrorEnvelope {
     | "invalid_decision"
     | "not_found"
     | "gate_moved"
+    | "not_continuable"
     | "unauthorized"
     | "forbidden"
     | "rate_limited"

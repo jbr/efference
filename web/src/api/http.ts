@@ -94,6 +94,13 @@ export const patchLoop = ({ speedMs, held, reviewLevel }: LoopPatch) =>
 // Signals the running tool; it deletes no state.
 export const interruptLoop = () =>
   post<{ status: string }>("/v1/loop/interrupt", {});
+// Hand control back with no input (docs/control-api.md): the idle loop takes
+// another turn on the wire it already has — nothing is submitted and nothing is
+// appended, so this is not a turn with empty text. A moment with no continue in
+// it answers `409 not_continuable`, which arrives here as an `ApiError` whose
+// `message` names the case.
+export const continueLoop = () =>
+  post<{ status: string }>("/v1/loop/continue", {});
 // `background: true` on the foreground process is the handoff — expect 202,
 // the flip lands at the detach race (docs/control-api.md); `note` rides it as
 // the next user message. `muted` is the dismiss toggle.

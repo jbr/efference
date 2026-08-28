@@ -154,6 +154,20 @@ impl<'a> InteractiveState<'a> {
                 self.submit_composer(text);
                 return false;
             }
+            // Empty composer, operator's turn: `⏎` hands control back with no input
+            // (docs/tui.md) — the zero-token continue, which the composer would
+            // otherwise swallow as a no-op. Gated on the loop being idle, so a stray
+            // `⏎` during a generation stays the silent no-op it has always been; the
+            // daemon re-checks the same preconditions and declines a race.
+            if key.code == KeyCode::Enter
+                && !key.modifiers.contains(KeyModifiers::ALT)
+                && self.composer.is_empty()
+                && !self.read_only()
+                && !self.is_loop_active()
+            {
+                self.continue_trajectory();
+                return false;
+            }
             match self.handle_composer_key(key) {
                 ComposerAction::Submit(text) => self.submit_composer(text),
                 ComposerAction::Consumed => {}

@@ -212,6 +212,7 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
         let next = tokio::select! {
             line = frontend.read_user_turn() => IdleWake::from_turn(line),
             _ = shared.inbox_wake() => IdleWake::Event,
+            _ = shared.continue_wake() => IdleWake::Continue,
         };
         match next {
             IdleWake::Shutdown => break, // daemon tearing down.
@@ -224,6 +225,14 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 }
                 // Escalated: fall into the trajectory with no new user turn — the model
                 // responds to the pinned event at the wire tail.
+            }
+            IdleWake::Continue => {
+                // The zero-token continue (docs/control-api.md): the operator handed
+                // control back with no input, so nothing is appended and nothing on the
+                // wire moves — the trajectory resumes at the tail it already had, and
+                // the next request re-sends a byte-identical prefix. Consuming the
+                // signal here is what keeps one gesture to one extra turn.
+                shared.take_continue();
             }
             IdleWake::Turn(submitted) => {
                 turn += 1;

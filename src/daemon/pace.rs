@@ -138,7 +138,11 @@ impl Shared {
     /// The predicate behind `/settle` and the `?wait` flag (docs/permissions.md).
     pub(super) fn is_settled(&self) -> bool {
         self.pending.lock().unwrap().is_some()
-            || (!self.running.load(Ordering::SeqCst) && self.queued.load(Ordering::SeqCst) == 0)
+            || (!self.running.load(Ordering::SeqCst)
+                && self.queued.load(Ordering::SeqCst) == 0
+                // An accepted `POST /loop/continue` (docs/control-api.md) is a turn
+                // about to run, exactly as a queued submission is.
+                && !self.continue_pending())
     }
 
     /// Block until [`is_settled`]. Uses `Notified::enable` to register the waiter **before** the

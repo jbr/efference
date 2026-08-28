@@ -193,6 +193,12 @@ impl<'a> InteractiveState<'a> {
                 self.images.insert((seq, idx), image);
                 self.dirty = true;
             }
+            TuiEvent::Notice(note) => {
+                // Status-line chrome from a dispatched call that answered after the
+                // keypress (docs/tui.md) — repaint, no reproject.
+                self.ui.debug_message = note.into();
+                self.dirty = true;
+            }
             TuiEvent::Disconnected => return true,
         }
         false

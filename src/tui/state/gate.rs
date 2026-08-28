@@ -61,6 +61,21 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
+    /// Hand control back with no input (docs/tui.md — the empty-composer `⏎`):
+    /// fire `POST /loop/continue`, which re-enters the trajectory with nothing
+    /// appended. Nothing is echoed as a pending turn, because nothing was said —
+    /// the only local effect is the status line and following the tail again.
+    /// A daemon decline arrives later as a [`TuiEvent::Notice`].
+    pub(in crate::tui) fn continue_trajectory(&mut self) {
+        if self.continue_tx.send(()).is_ok() {
+            self.ui.debug_message = "continuing".into();
+            self.viewport.stuck_to_bottom = true;
+        } else {
+            self.ui.debug_message = "could not send (daemon gone?)".into();
+        }
+        self.dirty = true;
+    }
+
     /// Handle a composer submission. When a gate is pending, the text resolves it
     /// with the same three-valued semantics as the `attach` REPL — empty approves,
     /// `.abort` aborts, anything else redirects the model. Otherwise it's a normal

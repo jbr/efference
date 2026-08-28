@@ -53,6 +53,9 @@ pub(crate) struct Screenplay<'a> {
     /// Held un-underscored so a scenario can assert what a submit put on the wire —
     /// or, for a read-only view, that nothing did ([`took_turn`](Screenplay::took_turn)).
     submit_rx: UnboundedReceiver<String>,
+    /// Held un-underscored so a scenario can assert the empty-composer `⏎` fired the
+    /// zero-token continue ([`took_continue`](Screenplay::took_continue)).
+    continue_rx: UnboundedReceiver<()>,
     /// Held un-underscored so a scenario can assert what decision a gate action
     /// sent ([`took_approval`](Screenplay::took_approval)).
     approve_rx: UnboundedReceiver<(String, Approval)>,
@@ -85,6 +88,7 @@ impl Screenplay<'static> {
         let theme = InteractiveTheme::from_render_context(&rc);
         let (event_tx, event_rx) = unbounded();
         let (submit_tx, submit_rx) = unbounded_channel();
+        let (continue_tx, continue_rx) = unbounded_channel();
         let (approve_tx, approve_rx) = unbounded_channel();
         let (pace_tx, pace_rx) = unbounded_channel();
         let (interrupt_tx, interrupt_rx) = unbounded_channel();
@@ -95,6 +99,7 @@ impl Screenplay<'static> {
         let state = InteractiveState::new(
             event_rx,
             submit_tx,
+            continue_tx,
             approve_tx,
             pace_tx,
             interrupt_tx,
@@ -111,6 +116,7 @@ impl Screenplay<'static> {
             sidebar_rx,
             _event_tx: event_tx,
             submit_rx,
+            continue_rx,
             approve_rx,
             pace_rx,
             interrupt_rx,
@@ -239,6 +245,12 @@ impl Screenplay<'_> {
     /// the UI would `POST /turns` over. `None` means nothing was sent.
     pub(crate) fn took_turn(&mut self) -> Option<String> {
         self.submit_rx.try_recv().ok()
+    }
+
+    /// Whether the empty-composer `⏎` fired the zero-token continue since the last
+    /// check — drains the channel the UI would `POST /loop/continue` over.
+    pub(crate) fn took_continue(&mut self) -> bool {
+        self.continue_rx.try_recv().is_ok()
     }
 
     /// The approval decision a gate action sent since the last check (`call_id`,

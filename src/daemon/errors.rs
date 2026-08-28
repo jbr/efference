@@ -35,6 +35,12 @@ pub(crate) enum ErrorCode {
     /// closes the "approved a gate that already moved on" race, which today is an
     /// ambiguous 404.
     GateMoved,
+    /// `POST /loop/continue` was asked for at a moment that has no continue in it:
+    /// the loop is running or gated, or the wire ends where re-prompting it means
+    /// nothing (docs/control-api.md). **409** — a precondition on the current
+    /// state, like [`GateMoved`](Self::GateMoved), and a client acts by showing
+    /// the message rather than by retrying.
+    NotContinuable,
     /// The daemon failed at something it was supposed to be able to do (a log append,
     /// a config write, absent shared state). 500.
     Internal,
@@ -67,7 +73,7 @@ impl ErrorCode {
             Self::Unauthorized => 401,
             Self::Forbidden => 403,
             Self::NotFound => 404,
-            Self::GateMoved => 409,
+            Self::GateMoved | Self::NotContinuable => 409,
             Self::TooLarge => 413,
             Self::UnsupportedContent => 415,
             Self::RateLimited => 429,

@@ -131,6 +131,41 @@ and are byte-identical to — their state topics: `pace` (`{speed_ms, held}`),
 - `400 bad_request` — bad body, or a `review_level` outside
   `autonomous | spotter_human | human_only`.
 
+#### `POST /loop/continue`
+Hand control back with **no input**: the idle loop takes another turn on the
+wire it already has. Nothing is submitted, nothing is appended, and the
+projection does not move — the next request re-sends a byte-identical prefix, so
+this costs no input tokens beyond the turn it triggers. A verb-route on the loop
+resource for the same reason as `/loop/interrupt`: it signals the loop rather
+than creating or editing a resource. No body.
+
+Distinct from a `POST /turns` carrying `""`, which is reserved for **keep
+idling** — a blank submit never lands a `User` entry and never starts a turn.
+
+- `202 {"status":"continuing"}` — the loop will take another turn. Like every
+  other write, the effects arrive on `/events`; the daemon reads as busy from
+  the moment it accepts (`GET /state?wait=settled` will not answer until the
+  resulting turn settles).
+- `409 not_continuable` — the moment has no continue in it. `message` names
+  which case:
+  - the loop is already running, or a turn is queued
+  - an approval gate is pending — resolve it instead
+  - the session has no turns yet (nothing projects)
+  - the last turn completed (the wire ends in a final assistant response)
+  - the last tool call has no result (the wire ends in an unanswered `tool_use`,
+    a shape the API rejects)
+
+The precondition is asked of the **wire**, not of the log: record-only entries
+(an aborted attempt, a failed request, a `ConfigEdit`) project to nothing, so a
+trajectory that gave up mid-stream still ends at the user turn or `tool_result`
+it had before the failure and is continuable — which is the case the verb exists
+for. A user-role tail means the model has not answered the last thing on the
+wire; an assistant-role tail means it has.
+
+Re-prompting a *completed* turn is left to the client to not ask for: whether an
+identical wire produces anything but "I'm done" is an open question, and the
+daemon declines rather than spending a round-trip on it.
+
 #### `POST /loop/interrupt`
 Signal the running tool (the SIGINT equivalent; kills its process group). A
 verb-route on the loop resource because it *is* a verb — it signals, it doesn't
@@ -604,6 +639,7 @@ returning the same code cannot disagree about the status:
 | `invalid_decision` | 400 | a well-formed decision verb the daemon doesn't implement — the client is version-skewed, not buggy |
 | `not_found` | 404 | no such notification id, proposal `seq`, or process id |
 | `gate_moved` | 409 | `PUT /approvals/:call_id` whose id is not the pending gate; `detail` carries the current gate |
+| `not_continuable` | 409 | `POST /loop/continue` at a moment with no continue in it — running, gated, or a wire tail that means nothing to re-prompt |
 | `too_large` | 413 | `/files` was asked for a file past the view limit ([web-bind.md](web-bind.md)) |
 | `unsupported_content` | 415 | `/files` was asked for something it does not serve as text — today, a file that is not valid UTF-8 |
 | `internal` | 500 | a log append or config write failed; absent shared state |

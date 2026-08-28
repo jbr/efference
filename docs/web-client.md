@@ -612,6 +612,13 @@ turn does, so naming the mechanism cost prime UI space without adding
 anything the operator acts on (a hint shipped here and was removed
 2026-08-26).
 
+**Sending an empty composer is the continue gesture.** With no draft, send
+(and Enter, where Enter sends) issues `POST /v1/loop/continue`
+([control-api.md](control-api.md)) — control handed back with no input, no
+turn submitted, nothing appended — instead of the earlier silent no-op. A
+`409 not_continuable` is a normal answer, so the daemon's `message` renders
+in the composer's error slot on its own rather than as a thrown-error string.
+
 The input is inset into the dock rather than floating on it: the composer
 band shares the dock's surface color, and the box is near-square (2px) in
 the chrome's flat language. The field auto-grows with the draft

@@ -16,6 +16,7 @@ pub async fn run(
 
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
     let (submit_tx, mut submit_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (continue_tx, mut continue_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     let (approve_tx, mut approve_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Approval)>();
     let (pace_tx, mut pace_rx) = tokio::sync::mpsc::unbounded_channel::<PaceCmd>();
     let (interrupt_tx, mut interrupt_rx) =
@@ -37,6 +38,26 @@ pub async fn run(
     let sender = tokio::spawn(async move {
         while let Some(text) = submit_rx.recv().await {
             let _ = turn_client.turn(&text).await;
+        }
+    });
+
+    // Continue sender: the empty-composer `⏎` hands control back with no input
+    // (`POST /loop/continue`, docs/control-api.md). Unlike the other dispatchers
+    // this one answers back: a decline is a normal outcome — the moment had no
+    // continue in it — and the operator only learns which case from the daemon's
+    // message, so it rides home as a `Notice` for the status line.
+    let continue_client = client.clone();
+    let continue_events = tx.clone();
+    let continuer = tokio::spawn(async move {
+        while continue_rx.recv().await.is_some() {
+            let note = match continue_client.continue_loop().await {
+                Ok(crate::client::ContinueOutcome::Accepted) => continue,
+                Ok(crate::client::ContinueOutcome::Declined { message }) => message,
+                Err(e) => format!("continue failed: {e}"),
+            };
+            if continue_events.send(TuiEvent::Notice(note)).is_err() {
+                break; // UI thread gone.
+            }
         }
     });
 
@@ -123,6 +144,7 @@ pub async fn run(
     let ui = tokio::task::spawn_blocking(move || {
         let senders = Senders {
             submit: submit_tx,
+            continue_loop: continue_tx,
             approve: approve_tx,
             pace: pace_tx,
             interrupt: interrupt_tx,
@@ -135,6 +157,7 @@ pub async fn run(
     let result = ui.await.context("the TUI thread panicked")?;
     bridge.abort();
     sender.abort();
+    continuer.abort();
     approver.abort();
     pacer.abort();
     interrupter.abort();
@@ -188,6 +211,7 @@ async fn run_offline(
 
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
     let (submit_tx, submit_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (continue_tx, continue_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     let (approve_tx, approve_rx) =
         tokio::sync::mpsc::unbounded_channel::<(String, crate::frontend::Approval)>();
     let (pace_tx, pace_rx) = tokio::sync::mpsc::unbounded_channel::<PaceCmd>();
@@ -214,6 +238,7 @@ async fn run_offline(
     let ui = tokio::task::spawn_blocking(move || {
         let senders = Senders {
             submit: submit_tx,
+            continue_loop: continue_tx,
             approve: approve_tx,
             pace: pace_tx,
             interrupt: interrupt_tx,
@@ -231,6 +256,7 @@ async fn run_offline(
     // Hold the far-ends until the UI exits, so the channels stay open for its life.
     drop(tx);
     drop(submit_rx);
+    drop(continue_rx);
     drop(approve_rx);
     drop(pace_rx);
     drop(interrupt_rx);

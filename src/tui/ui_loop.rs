@@ -6,12 +6,15 @@ use crate::tui::frame_cost::FrameCost;
 use ratatui::prelude::Backend;
 use std::io::Write;
 
-/// The five channels the UI sends the operator's intent over, carried together
-/// because every entry point builds all five at once and hands them straight to the
+/// The channels the UI sends the operator's intent over, carried together
+/// because every entry point builds them all at once and hands them straight to the
 /// state. The tokio side turns each into its control-channel call; an offline run
 /// (the gallery, a read-only view) holds the far-ends so a send can't error.
 pub(super) struct Senders {
     pub submit: tokio::sync::mpsc::UnboundedSender<String>,
+    /// The zero-token continue (docs/control-api.md): payload-free, because the
+    /// verb is.
+    pub continue_loop: tokio::sync::mpsc::UnboundedSender<()>,
     pub approve: tokio::sync::mpsc::UnboundedSender<(String, crate::frontend::Approval)>,
     pub pace: tokio::sync::mpsc::UnboundedSender<PaceCmd>,
     pub interrupt: tokio::sync::mpsc::UnboundedSender<crate::frontend::Interrupt>,
@@ -90,6 +93,7 @@ pub(super) fn ui_loop(
     let mut state = InteractiveState::new(
         events,
         senders.submit,
+        senders.continue_loop,
         senders.approve,
         senders.pace,
         senders.interrupt,

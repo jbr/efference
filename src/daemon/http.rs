@@ -278,6 +278,24 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 .with_body(r#"{"status":"interrupted"}"#)
                 .halt()
         })
+        // Hand control back with no input (docs/control-api.md): the idle loop takes
+        // another turn on the wire it already has — nothing is appended, nothing is
+        // projected differently. A verb-route on the loop resource beside
+        // `/loop/interrupt`, for the same reason: it signals the loop rather than
+        // creating or editing a resource. Declined with `409 not_continuable` when
+        // the moment has no continue in it.
+        .post("/v1/loop/continue", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return missing_state(conn);
+            };
+            match shared.request_continue() {
+                Ok(()) => conn
+                    .with_status(202)
+                    .with_body(r#"{"status":"continuing"}"#)
+                    .halt(),
+                Err(why) => fail(conn, ErrorCode::NotContinuable, why.message()),
+            }
+        })
         // The turn engine's operator dials as one resource (docs/control-channel.md):
         // `pace`, `review_level`, and the read-only `running` — named exactly as their
         // state topics, since they are that resource's fields.

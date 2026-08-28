@@ -139,6 +139,11 @@ pub(crate) enum TuiEvent {
         idx: usize,
         image: Result<::image::DynamicImage, String>,
     },
+    /// A one-line note from a control-channel call the UI thread dispatched and
+    /// could not await — today the continue gesture's decline (docs/tui.md).
+    /// Rendered in the status line and nowhere else: it is operator chrome, never
+    /// transcript content.
+    Notice(String),
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
 }

@@ -11,12 +11,13 @@ fn state_with_gate() -> (
     let theme = InteractiveTheme::from_render_context(&rc);
     let (_etx, erx) = crossbeam_channel::unbounded();
     let (stx, _srx) = tokio::sync::mpsc::unbounded_channel();
+    let (ctx, _crx) = tokio::sync::mpsc::unbounded_channel();
     let (atx, arx) = tokio::sync::mpsc::unbounded_channel();
     let (ptx, _prx) = tokio::sync::mpsc::unbounded_channel();
     let (itx, _irx) = tokio::sync::mpsc::unbounded_channel();
     let (btx, _brx) = tokio::sync::mpsc::unbounded_channel();
     let (imgtx, _imgrx) = tokio::sync::mpsc::unbounded_channel();
-    let mut s = InteractiveState::new(erx, stx, atx, ptx, itx, btx, imgtx, rc, theme);
+    let mut s = InteractiveState::new(erx, stx, ctx, atx, ptx, itx, btx, imgtx, rc, theme);
     s.pending_gate = Some(PendingGate {
         call_id: "toolu_1".into(),
         name: "bash".into(),
@@ -142,12 +143,13 @@ fn submit_without_gate_is_a_normal_turn() {
     let theme = InteractiveTheme::from_render_context(&rc);
     let (_etx, erx) = crossbeam_channel::unbounded();
     let (stx, mut srx) = tokio::sync::mpsc::unbounded_channel();
+    let (ctx, _crx) = tokio::sync::mpsc::unbounded_channel();
     let (atx, mut arx) = tokio::sync::mpsc::unbounded_channel();
     let (ptx, _prx) = tokio::sync::mpsc::unbounded_channel();
     let (itx, _irx) = tokio::sync::mpsc::unbounded_channel();
     let (btx, _brx) = tokio::sync::mpsc::unbounded_channel();
     let (imgtx, _imgrx) = tokio::sync::mpsc::unbounded_channel();
-    let mut s = InteractiveState::new(erx, stx, atx, ptx, itx, btx, imgtx, rc, theme);
+    let mut s = InteractiveState::new(erx, stx, ctx, atx, ptx, itx, btx, imgtx, rc, theme);
     s.submit_composer("hello".into());
     assert_eq!(srx.try_recv().unwrap(), "hello", "went to the turn channel");
     assert!(arx.try_recv().is_err(), "not to the approval channel");

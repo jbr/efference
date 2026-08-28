@@ -393,6 +393,7 @@ fn renders_transcript_to_a_test_backend() {
     let theme = InteractiveTheme::from_render_context(&rc);
     let (_tx, rx) = crossbeam_channel::unbounded();
     let (submit_tx, _submit_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (continue_tx, _continue_rx) = tokio::sync::mpsc::unbounded_channel();
     let (approve_tx, _approve_rx) = tokio::sync::mpsc::unbounded_channel();
     let (pace_tx, _pace_rx) = tokio::sync::mpsc::unbounded_channel();
     let (interrupt_tx, _interrupt_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -401,6 +402,7 @@ fn renders_transcript_to_a_test_backend() {
     let mut state = InteractiveState::new(
         rx,
         submit_tx,
+        continue_tx,
         approve_tx,
         pace_tx,
         interrupt_tx,

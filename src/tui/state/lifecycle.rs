@@ -11,6 +11,7 @@ impl<'a> InteractiveState<'a> {
     pub(in crate::tui) fn new(
         events: Receiver<TuiEvent>,
         submit_tx: UnboundedSender<String>,
+        continue_tx: UnboundedSender<()>,
         approve_tx: UnboundedSender<(String, Approval)>,
         pace_tx: UnboundedSender<PaceCmd>,
         interrupt_tx: UnboundedSender<Interrupt>,
@@ -95,6 +96,7 @@ impl<'a> InteractiveState<'a> {
             block_menu_focus: 0,
             block_menu_hits: Vec::new(),
             submit_tx,
+            continue_tx,
             pending_turns: Vec::new(),
             pending_gate: None,
             approve_tx,

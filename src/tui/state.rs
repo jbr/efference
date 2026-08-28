@@ -475,6 +475,11 @@ pub(super) struct InteractiveState<'a> {
     pub block_menu_hits: Vec<(Rect, usize)>,
     /// Sends a submitted turn to the tokio side, which `POST`s it to the daemon.
     pub submit_tx: UnboundedSender<String>,
+    /// Fires the zero-token continue (`POST /loop/continue`, docs/control-api.md) —
+    /// the empty-composer `⏎` when it is the operator's turn. Carries no payload
+    /// because the verb carries none: nothing is submitted and nothing is appended.
+    /// A decline comes back as a [`TuiEvent::Notice`] for the status line.
+    pub continue_tx: UnboundedSender<()>,
     /// Optimistic echoes of just-submitted user turns, in submission order, not yet
     /// confirmed by a committed `User` log entry (docs/tui.md).
     /// `project` renders them dimmed after the live tail; each is dropped when its

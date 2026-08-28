@@ -7,7 +7,12 @@
 // success, the turn's effects arrive on the stream).
 
 import { useEffect, useRef, useState } from "react";
-import { interruptLoop, patchLoop } from "../api/http.ts";
+import {
+  ApiError,
+  continueLoop,
+  interruptLoop,
+  patchLoop,
+} from "../api/http.ts";
 import type { Pace, ReviewLevel, Stall } from "../api/types.ts";
 import { turnState } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
@@ -66,7 +71,19 @@ export function Composer({
 
   async function submit() {
     const text = draft.trim();
-    if (!text) return;
+    // An empty send hands control back with no input (docs/web-client.md): the
+    // loop takes another turn on the wire it already has. A decline is a normal
+    // answer — the moment had no continue in it — so its message renders on its
+    // own rather than as a thrown-error string.
+    if (!text) {
+      try {
+        await continueLoop();
+        setError(null);
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : `${e}`);
+      }
+      return;
+    }
     try {
       await send(text);
       setDraft("");

@@ -114,6 +114,42 @@ impl Client {
         self.post("/loop/interrupt", String::new()).await.map(drop)
     }
 
+    /// Hand control back with no input (`POST /loop/continue`, docs/control-api.md):
+    /// the idle loop takes another turn on the wire it already has. Nothing is
+    /// submitted and nothing is appended, so this is not a turn with empty text —
+    /// that one keeps the loop idling.
+    ///
+    /// A decline (`409 not_continuable`) is a normal answer, not a transport
+    /// failure: the moment simply had no continue in it, and the daemon's message
+    /// says which case. Errors are reserved for a request that didn't get an
+    /// answer.
+    pub async fn continue_loop(&self) -> Result<ContinueOutcome> {
+        let path = versioned("/loop/continue");
+        let path = path.as_str();
+        let mut conn = self
+            .http
+            .post(path)
+            .await
+            .with_context(|| format!("POST {path} to the control socket"))?;
+        let status = conn.status();
+        let body = conn
+            .response_body()
+            .read_string()
+            .await
+            .with_context(|| format!("reading the response to POST {path}"))?;
+        match status {
+            Some(s) if s.is_success() => Ok(ContinueOutcome::Accepted),
+            Some(trillium_client::Status::Conflict) => Ok(ContinueOutcome::Declined {
+                message: json_field(&body, "message")
+                    .unwrap_or_else(|_| "the daemon declined the continue".into()),
+            }),
+            other => {
+                let code = other.map_or_else(|| "no status".to_string(), |s| s.code().to_string());
+                Err(anyhow!("POST {path} → {code}: {body}"))
+            }
+        }
+    }
+
     /// The running processes (`GET /processes`, docs/supervisor.md) — foreground and
     /// background in one namespace, flagged. Raw JSON array body, the same
     /// representation the `processes` state topic carries.
@@ -440,6 +476,18 @@ impl Client {
             .with_context(|| format!("GET {path} from the control socket"))?;
         read_2xx(conn, "GET", path).await
     }
+}
+
+/// What a `POST /loop/continue` came back with (docs/control-api.md). A decline
+/// is an outcome rather than an error: the caller renders the daemon's message
+/// and leaves everything else as it was.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ContinueOutcome {
+    /// The loop accepted the continue and is taking another turn.
+    Accepted,
+    /// The moment had no continue in it — the loop is running or gated, or the
+    /// wire ends where re-prompting it means nothing.
+    Declined { message: String },
 }
 
 /// Pull one string field out of a JSON body — the `/auth/*` responses are all a

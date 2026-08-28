@@ -450,6 +450,55 @@ fn empty_enter_does_not_submit() {
     ));
 }
 
+/// Routed through the real key path, an empty `⏎` at the operator's turn hands
+/// control back (docs/tui.md): the continue fires and no turn is submitted, so
+/// nothing reaches the wire.
+#[test]
+fn empty_enter_hands_control_back() {
+    use crate::tui::harness::Screenplay;
+    let mut play = Screenplay::new(80, 12);
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(play.took_continue(), "the continue verb fired");
+    assert_eq!(play.took_turn(), None, "no turn was submitted");
+    assert!(play.render().contains("continuing"));
+}
+
+/// While the loop is running, the empty `⏎` stays the no-op it always was —
+/// control is not the operator's to hand back, and the daemon would decline.
+#[test]
+fn empty_enter_is_inert_while_the_loop_runs() {
+    use crate::tui::TuiEvent;
+    use crate::tui::harness::Screenplay;
+    let mut play = Screenplay::new(80, 12);
+    play.event(TuiEvent::Running(true));
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(!play.took_continue(), "nothing fired mid-turn");
+    assert_eq!(play.took_turn(), None);
+}
+
+/// A composer with text is unaffected: `⏎` still submits that text.
+#[test]
+fn a_typed_enter_still_submits() {
+    use crate::tui::harness::Screenplay;
+    let mut play = Screenplay::new(80, 12);
+    play.type_str("hello");
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(play.took_turn().as_deref(), Some("hello"));
+    assert!(!play.took_continue());
+}
+
+/// The daemon's decline reaches the status line rather than the transcript.
+#[test]
+fn a_declined_continue_lands_in_the_status_line() {
+    use crate::tui::TuiEvent;
+    use crate::tui::harness::Screenplay;
+    let mut play = Screenplay::new(80, 12);
+    play.event(TuiEvent::Notice(
+        "nothing to continue: the last turn completed".into(),
+    ));
+    assert!(play.render().contains("nothing to continue"));
+}
+
 #[test]
 fn ctrl_j_inserts_newline_and_text_joins() {
     let mut c = Composer::new();

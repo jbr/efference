@@ -3,11 +3,15 @@
 use super::*;
 
 /// How the idle loop was woken (docs/supervisor.md): a user turn, a blank line (keep idling),
-/// a notification event (run a standalone triage), or shutdown.
+/// a notification event (run a standalone triage), a zero-token continue, or shutdown.
 pub(super) enum IdleWake {
     Turn(SubmittedTurn),
     Blank,
     Event,
+    /// `POST /loop/continue` (docs/control-api.md): control handed back with no
+    /// input. Re-enter the trajectory with nothing appended — the same shape the
+    /// escalated event takes, minus the pinned entry that woke it.
+    Continue,
     Shutdown,
 }
 

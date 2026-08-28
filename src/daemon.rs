@@ -211,6 +211,18 @@ pub struct Shared {
     /// [`register_pending`]: Shared::register_pending
     /// [`parking`]: Shared::parking
     settle_changed: Notify,
+    /// A `POST /loop/continue` awaiting the loop (docs/control-api.md): the operator
+    /// handed control back with no input, so the loop takes another turn on the wire
+    /// it already has. A flag rather than a queued message because a continue carries
+    /// nothing — two presses are one continue — and because it must survive the gap
+    /// between the request and the idle `select!` registering its waiter. Cleared by
+    /// [`Shared::take_continue`] when the loop consumes it; never logged, never
+    /// projected (nothing is appended for it at all).
+    continue_pending: AtomicBool,
+    /// Wakes the idle loop when [`continue_pending`](Self::continue_pending) is set.
+    /// Paired with the flag rather than standing alone: `notify_waiters` stores no
+    /// permit, so the flag is what a wake landing before the loop parks lands on.
+    continue_signal: Notify,
     /// Pinged when a notification is enqueued (docs/inbox.md — `notify`). The agent loop's
     /// idle path awaits this to wake an idle agent for a standalone triage (the
     /// wake-on-notification model that replaced blocking `wait`).
@@ -499,6 +511,8 @@ impl Shared {
             running: AtomicBool::new(false),
             queued: AtomicUsize::new(0),
             settle_changed: Notify::new(),
+            continue_pending: AtomicBool::new(false),
+            continue_signal: Notify::new(),
             notified: Notify::new(),
             stream_tx,
             state_changed: Notify::new(),
@@ -753,6 +767,7 @@ const SETTLE_TIMEOUT: Duration = Duration::from_secs(300);
 mod approvals;
 mod background;
 mod config_edits;
+mod continuation;
 // The typed error envelope (docs/control-api.md) — every non-2xx body the router
 // answers with. `GateMoved` is still unconstructed: it belongs to the
 // resource-renamed gate.
