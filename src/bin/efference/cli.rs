@@ -29,6 +29,10 @@ pub(crate) const CONFIG_SCAFFOLD: &str = "\
 #   [paths]                             # filesystem grants, e.g. \".\" = true or \"/refs\" = { read = true }
 #   [context]                           # knowledge the session boots with (docs/context.md), e.g.
 #                                       #   \"CLAUDE.md\" = true or Label = { exec = \"...\" } (stdout at boot)
+#   [env]                               # per-variable env policy (docs/env.md): strip = keep it out of
+#                                       #   spawned children, mask = never store its value in the log.
+#                                       #   e.g. \"*_KEY\" = { mask = true } or \"CI_*\" = { strip = true }.
+#                                       #   *_KEY/*_SECRET/*_TOKEN/*_PASSWORD/*_CREDENTIALS mask by default.
 
 # Orientation as config: this section's stdout is frozen into the session preamble at boot.
 [context]

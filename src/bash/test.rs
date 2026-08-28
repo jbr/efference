@@ -157,6 +157,36 @@ async fn tmpdir_is_overridden_when_set() {
     assert_eq!(result.content.trim(), "/scratch/efference-test");
 }
 
+/// A variable the `[env]` table marks `strip = true` is absent from the child's
+/// environment, and one it does not is inherited (docs/env.md). The 2×2's spawn
+/// half, checked where it actually happens.
+#[tokio::test]
+async fn stripped_variables_do_not_reach_the_child() {
+    // SAFETY: names unique to this test; the process env is read at spawn.
+    unsafe {
+        std::env::set_var("EFFERENCE_TEST_STRIPPED", "gone");
+        std::env::set_var("EFFERENCE_TEST_KEPT", "here");
+    }
+    let bash = Bash {
+        strip: crate::env_table::StripList::new(vec!["EFFERENCE_TEST_STRIPPED".to_string()]),
+        ..Bash::default()
+    };
+    let result = done(
+        bash.run(
+            &json!({ "command": "echo \"[${EFFERENCE_TEST_STRIPPED-unset}][$EFFERENCE_TEST_KEPT]\"" }),
+            never(),
+            no_spawn(),
+            sink(),
+        )
+        .await,
+    );
+    assert_eq!(result.content.trim(), "[unset][here]");
+    unsafe {
+        std::env::remove_var("EFFERENCE_TEST_STRIPPED");
+        std::env::remove_var("EFFERENCE_TEST_KEPT");
+    }
+}
+
 /// A detach surrenders the live child instead of killing it: the outcome
 /// carries the already-drained bytes as the seed, the child is still
 /// running, and the surrendered pipes keep delivering output produced
@@ -241,6 +271,7 @@ fn definition_matches_expected_wire_bytes() {
 /// A `Bash` whose deadline fires almost immediately, for the timer tests.
 fn impatient(after: Duration, max: Duration) -> Bash {
     Bash {
+        strip: crate::env_table::StripList::default(),
         tmpdir: None,
         background_after: after,
         background_after_max: max,

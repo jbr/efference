@@ -17,6 +17,9 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
+use std::sync::Arc;
+
+use crate::env_table::Masker;
 use crate::log::{LogEntry, Payload, Seq, Timestamp, Turn};
 
 /// The live append-only log: the in-memory entries plus an optional JSONL sink.
@@ -25,6 +28,12 @@ use crate::log::{LogEntry, Payload, Seq, Timestamp, Turn};
 pub struct Log {
     entries: Vec<LogEntry>,
     sink: Option<BufWriter<File>>,
+    /// The `[env]` mask (docs/env.md). Every payload passes through it on the way
+    /// in, which is what makes append the one choke point securing every
+    /// downstream surface — the wire, the jsonl, the TUI, `log`/`attach`. An empty
+    /// masker (the default, and every test that does not install one) is the
+    /// identity.
+    masker: Arc<Masker>,
 }
 
 impl Log {
@@ -35,6 +44,7 @@ impl Log {
         Ok(Self {
             entries: Vec::new(),
             sink: Some(BufWriter::new(file)),
+            masker: Arc::default(),
         })
     }
 
@@ -43,7 +53,15 @@ impl Log {
         Self {
             entries: Vec::new(),
             sink: None,
+            masker: Arc::default(),
         }
+    }
+
+    /// Install the session's `[env]` mask (docs/env.md). Set before the first
+    /// append: masking is irreversible filtering *upstream* of the log, so an
+    /// entry already written was written with whatever masker was in force.
+    pub fn set_masker(&mut self, masker: Arc<Masker>) {
+        self.masker = masker;
     }
 
     /// The entries so far — what [`crate::project::project`] folds into the wire.
@@ -69,6 +87,14 @@ impl Log {
         payload: Payload,
         submission_id: Option<String>,
     ) -> io::Result<Seq> {
+        // The mask choke point (docs/env.md). Both `append` paths funnel here, so
+        // every text-bearing payload — tool results, the boot preamble, ambient
+        // notifications, user paste, harness error text — is filtered exactly
+        // once, before it becomes a durable record. This is deliberately *not* a
+        // `WireState`: there is no reversible verdict, because a raw copy on disk
+        // is half of what masking exists to prevent (docs/log-and-projection.md).
+        let mut payload = payload;
+        self.masker.mask_payload(&mut payload);
         let seq = self.entries.len() as Seq;
         let entry = LogEntry {
             seq,

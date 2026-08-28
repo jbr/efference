@@ -158,13 +158,17 @@ impl ConnectedProvider {
         config: &McpTransport,
         cwd: &Path,
         authorization: Option<&str>,
+        strip: &crate::env_table::StripList,
     ) -> anyhow::Result<Self> {
         let transport = match config {
             McpTransport::Stdio { command, args, env } => {
                 // Stdio servers take credentials from the environment by the
                 // spec's own direction, so an `Authorization` header has no
-                // meaning here even if one was somehow stored.
-                Transport::Stdio(stdio::StdioTransport::spawn(command, args, env, cwd)?)
+                // meaning here even if one was somehow stored. `strip` is the
+                // `[env]` table's spawn-time answer (docs/env.md).
+                Transport::Stdio(stdio::StdioTransport::spawn(
+                    command, args, env, cwd, strip,
+                )?)
             }
             McpTransport::Http { url } => {
                 Transport::Http(http::HttpTransport::new(url)?.with_authorization(authorization))

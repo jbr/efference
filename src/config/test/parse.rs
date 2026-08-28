@@ -534,3 +534,48 @@ fn a_dotted_tool_grant_normalizes_to_the_wire_name() {
     // The dotted form is an alias, not a second key.
     assert!(!config.tools.contains("ferritin.get"));
 }
+
+/// The `[env]` table parses only the inline-table form (docs/env.md). Omission is
+/// inherit, not "false", which is what lets a user entry compose with a built-in
+/// default instead of replacing it wholesale.
+#[test]
+fn the_env_table_parses_the_inline_table_form() {
+    let config = super::parse(
+        Path::new("ok.toml"),
+        "[env]\n\
+         \"*_KEY\" = { mask = true, strip = false }\n\
+         \"EFFERENCE_*\" = { strip = true }\n\
+         RUST_LOG = {}\n",
+    )
+    .unwrap();
+    assert_eq!(
+        config.env["*_KEY"],
+        crate::env_table::EnvEntry {
+            mask: Some(true),
+            strip: Some(false)
+        }
+    );
+    assert_eq!(
+        config.env["EFFERENCE_*"],
+        crate::env_table::EnvEntry {
+            mask: None,
+            strip: Some(true)
+        }
+    );
+    assert_eq!(
+        config.env["RUST_LOG"],
+        crate::env_table::EnvEntry::default()
+    );
+}
+
+/// A bare `= false` shorthand cannot say *which* of the two questions it answers
+/// (docs/env.md), so it is a parse error rather than a guess. Same for a typo'd key.
+#[test]
+fn the_env_table_rejects_the_bare_bool_shorthand_and_unknown_keys() {
+    assert!(super::parse(Path::new("bad.toml"), "[env]\n\"*_KEY\" = false\n").is_err());
+    assert!(super::parse(Path::new("bad.toml"), "[env]\n\"*_KEY\" = true\n").is_err());
+    assert!(
+        super::parse(Path::new("bad.toml"), "[env]\nA_KEY = { msak = true }\n").is_err(),
+        "deny_unknown_fields makes a typo loud"
+    );
+}

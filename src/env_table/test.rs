@@ -1,0 +1,476 @@
+use super::*;
+use crate::log::{ContentBlock, Payload, RawResult, WireState};
+
+fn entry(mask: Option<bool>, strip: Option<bool>) -> EnvEntry {
+    EnvEntry { mask, strip }
+}
+
+fn user(pairs: &[(&str, EnvEntry)]) -> BTreeMap<String, EnvEntry> {
+    pairs.iter().map(|(k, v)| ((*k).to_string(), *v)).collect()
+}
+
+fn env(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+    pairs
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .collect()
+}
+
+// ---------------------------------------------------------------- precedence
+
+#[test]
+fn exact_name_beats_glob() {
+    let table = Table::merge(&user(&[("ANTHROPIC_API_KEY", entry(Some(false), None))]));
+    // The built-in `*_KEY` says mask; the exact entry overrides it.
+    assert_eq!(
+        table.resolve("ANTHROPIC_API_KEY").0,
+        EnvRule {
+            mask: false,
+            strip: false
+        }
+    );
+    // A sibling that only the glob matches keeps the built-in answer.
+    assert!(table.resolve("OTHER_KEY").0.mask);
+}
+
+#[test]
+fn among_globs_more_literal_characters_wins() {
+    let table = Table::merge(&user(&[
+        ("*_KEY", entry(Some(false), None)),
+        ("ACME_*_KEY", entry(Some(true), Some(true))),
+    ]));
+    assert_eq!(
+        table.resolve("ACME_SIGNING_KEY").0,
+        EnvRule {
+            mask: true,
+            strip: true
+        }
+    );
+    // `*_KEY` (4 literals) still governs a name the longer glob misses.
+    assert_eq!(
+        table.resolve("OTHER_KEY").0,
+        EnvRule {
+            mask: false,
+            strip: false
+        }
+    );
+}
+
+#[test]
+fn equal_literal_count_globs_are_an_unresolvable_tie() {
+    let table = Table::merge(&user(&[
+        ("ACME_*", entry(Some(true), None)),
+        ("*_KEYS", entry(None, Some(true))),
+    ]));
+    let (rule, conflict) = table.resolve("ACME_KEYS");
+    let conflict = conflict.expect("two 5-literal globs match, neither is more specific");
+    assert_eq!(conflict.name, "ACME_KEYS");
+    // Sorted, because the table is a `BTreeMap` — the diagnostic reads the same
+    // however the file was written.
+    assert_eq!(conflict.keys, vec!["*_KEYS", "ACME_*"]);
+    // The rule a non-failing caller falls back to is the union: fail closed, never
+    // silently drop the entry.
+    assert_eq!(
+        rule,
+        EnvRule {
+            mask: true,
+            strip: true
+        }
+    );
+}
+
+#[test]
+fn precedence_is_never_file_order() {
+    // Same two entries, opposite declaration order: identical resolution.
+    let a = Table::merge(&user(&[
+        ("ACME_*_KEY", entry(Some(true), None)),
+        ("*_KEY", entry(Some(false), None)),
+    ]));
+    let b = Table::merge(&user(&[
+        ("*_KEY", entry(Some(false), None)),
+        ("ACME_*_KEY", entry(Some(true), None)),
+    ]));
+    assert_eq!(a.resolve("ACME_X_KEY").0, b.resolve("ACME_X_KEY").0);
+    assert!(a.resolve("ACME_X_KEY").0.mask);
+}
+
+#[test]
+fn an_unresolvable_tie_is_a_startup_error() {
+    let report = EnvPolicy::build_from(
+        &user(&[
+            ("ACME_*", entry(Some(true), None)),
+            ("*_KEYS", entry(None, Some(true))),
+        ]),
+        &env(&[("ACME_KEYS", "long-enough-value")]),
+    );
+    assert_eq!(report.conflicts.len(), 1);
+    assert!(report.conflicts[0].to_string().contains("ACME_KEYS"));
+}
+
+// ------------------------------------------------------------------- the 2x2
+
+#[test]
+fn strip_and_mask_are_two_independent_questions() {
+    let report = EnvPolicy::build_from(
+        &user(&[
+            // masked, not stripped: the secret a tool still needs.
+            ("SERVICE_TOKEN", entry(Some(true), Some(false))),
+            // stripped, not masked: env hygiene, and masking it would shred output.
+            ("COLORTERM", entry(Some(false), Some(true))),
+            // both.
+            ("BUILD_SECRET", entry(Some(true), Some(true))),
+            // neither.
+            ("EDITOR", entry(Some(false), Some(false))),
+        ]),
+        &env(&[
+            ("SERVICE_TOKEN", "tok-service-value"),
+            ("COLORTERM", "truecolor"),
+            ("BUILD_SECRET", "bld-secret-value"),
+            ("EDITOR", "hx"),
+        ]),
+    );
+    let policy = report.policy;
+    let stripped = policy.strip();
+    let names: Vec<&str> = stripped.names().iter().map(String::as_str).collect();
+    assert!(names.contains(&"COLORTERM"));
+    assert!(names.contains(&"BUILD_SECRET"));
+    assert!(!names.contains(&"SERVICE_TOKEN"));
+    assert!(!names.contains(&"EDITOR"));
+
+    let masked = policy.mask("tok-service-value truecolor bld-secret-value hx");
+    assert!(!masked.contains("tok-service-value"));
+    assert!(!masked.contains("bld-secret-value"));
+    // The hygiene cell is *not* masked — that is the point of the 2x2.
+    assert!(masked.contains("truecolor"));
+}
+
+#[test]
+fn user_strip_composes_with_an_inherited_mask() {
+    // Naming only `strip` at a built-in's key keeps the built-in's `mask = true`.
+    let table = Table::merge(&user(&[("*_KEY", entry(None, Some(true)))]));
+    assert_eq!(
+        table.resolve("SOME_KEY").0,
+        EnvRule {
+            mask: true,
+            strip: true
+        }
+    );
+}
+
+#[test]
+fn built_in_defaults_mask_the_five_suffixes() {
+    let table = Table::merge(&BTreeMap::new());
+    for name in [
+        "OPENAI_API_KEY",
+        "WEBHOOK_SECRET",
+        "GITHUB_TOKEN",
+        "DB_PASSWORD",
+        "GCP_CREDENTIALS",
+    ] {
+        assert!(table.resolve(name).0.mask, "{name} should mask by default");
+        assert!(!table.resolve(name).0.strip, "{name} should not strip");
+    }
+    assert!(!table.resolve("PATH").0.mask);
+}
+
+#[test]
+fn the_root_secret_strip_is_not_overridable_downward() {
+    let report = EnvPolicy::build_from(
+        &user(&[(crate::auth::ROOT_ENV, entry(Some(false), Some(false)))]),
+        &env(&[(crate::auth::ROOT_ENV, "root-secret-material")]),
+    );
+    assert!(
+        report
+            .policy
+            .strip()
+            .names()
+            .iter()
+            .any(|n| n == crate::auth::ROOT_ENV),
+        "the machine root is stripped at spawn whatever the table says"
+    );
+}
+
+#[test]
+fn the_harness_key_is_masked_with_no_config_and_despite_an_override() {
+    let report = EnvPolicy::build_from(
+        &user(&[("*_KEY", entry(Some(false), None))]),
+        &env(&[("ANTHROPIC_API_KEY", "sk-ant-abcdefgh")]),
+    );
+    assert!(!report.policy.mask("sk-ant-abcdefgh").contains("abcdefgh"));
+}
+
+// ------------------------------------------------------------- marker & floor
+
+#[test]
+fn the_marker_is_deterministic_and_names_the_variable() {
+    let report = EnvPolicy::build_from(
+        &BTreeMap::new(),
+        &env(&[("ANTHROPIC_API_KEY", "sk-ant-secret-value")]),
+    );
+    let policy = report.policy;
+    let expected = "⟦ANTHROPIC_API_KEY: sk-a… elided by harness⟧";
+    assert_eq!(policy.mask("sk-ant-secret-value"), expected);
+    // Same value → same marker, so "is it set?" and "does it match?" still answer.
+    assert_eq!(
+        policy.mask("a sk-ant-secret-value b sk-ant-secret-value"),
+        format!("a {expected} b {expected}")
+    );
+}
+
+#[test]
+fn the_marker_prefix_is_fixed_not_proportional() {
+    let short = EnvPolicy::build_from(&BTreeMap::new(), &env(&[("A_KEY", "abcdefgh")])).policy;
+    let long = EnvPolicy::build_from(
+        &BTreeMap::new(),
+        &env(&[("A_KEY", "abcdefghijklmnopqrstuvwxyz0123456789")]),
+    )
+    .policy;
+    assert_eq!(short.mask("abcdefgh"), "⟦A_KEY: abcd… elided by harness⟧");
+    assert_eq!(
+        long.mask("abcdefghijklmnopqrstuvwxyz0123456789"),
+        "⟦A_KEY: abcd… elided by harness⟧"
+    );
+}
+
+#[test]
+fn a_value_under_the_floor_is_reported_and_not_masked() {
+    let report = EnvPolicy::build_from(&BTreeMap::new(), &env(&[("SESSION_KEY", "dev")]));
+    assert_eq!(report.below_floor, vec!["SESSION_KEY".to_string()]);
+    assert_eq!(
+        report.policy.mask("dev builds are dev"),
+        "dev builds are dev"
+    );
+}
+
+#[test]
+fn a_value_exactly_at_the_floor_is_masked() {
+    let value = "a".repeat(MASKABILITY_FLOOR);
+    let report = EnvPolicy::build_from(&BTreeMap::new(), &env(&[("X_KEY", &value)]));
+    assert!(report.below_floor.is_empty());
+    assert!(!report.policy.mask(&value).contains(&value));
+}
+
+#[test]
+fn longest_needle_wins_when_two_secrets_nest() {
+    let report = EnvPolicy::build_from(
+        &BTreeMap::new(),
+        &env(&[("A_KEY", "abcdefghij"), ("B_KEY", "abcdefghijklmn")]),
+    );
+    let masked = report.policy.mask("abcdefghijklmn");
+    assert_eq!(masked, "⟦B_KEY: abcd… elided by harness⟧");
+}
+
+#[test]
+fn a_marker_is_not_rescanned() {
+    // The marker embeds the value's first four characters; the single left-to-right
+    // pass advances past what it emitted, so no needle can match inside one.
+    let report = EnvPolicy::build_from(&BTreeMap::new(), &env(&[("A_KEY", "elided by harness")]));
+    let once = report.policy.mask("elided by harness");
+    assert_eq!(once.matches("elided by harness").count(), 1);
+}
+
+// ---------------------------------------------------------------- transforms
+
+#[test]
+fn base64_needles_cover_all_three_phase_offsets() {
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
+    let value = "super-secret-token";
+    let policy = EnvPolicy::build_from(&BTreeMap::new(), &env(&[("A_KEY", value)])).policy;
+    for lead in ["", "x", "xy"] {
+        let blob = STANDARD.encode(format!("{lead}{value}").as_bytes());
+        let masked = policy.mask(&blob);
+        assert_ne!(masked, blob, "phase {} was not needled", lead.len());
+    }
+}
+
+#[test]
+fn url_encoded_and_json_escaped_forms_are_needled() {
+    let value = "p@ss/word+with\"quote";
+    let policy = EnvPolicy::build_from(&BTreeMap::new(), &env(&[("A_PASSWORD", value)])).policy;
+    let url = "https://x/?token=p%40ss%2Fword%2Bwith%22quote";
+    assert!(!policy.mask(url).contains("p%40ss"));
+    let json = serde_json::to_string(value).unwrap();
+    assert!(!policy.mask(&json).contains("quote"));
+}
+
+#[test]
+fn a_multiline_value_matches_line_wise() {
+    // The PEM case: read back through `cat -n`, so no line is contiguous with the
+    // next and the whole blob never appears.
+    let pem = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkq\nhkiG9w0BAQEFAASC\n-----END PRIVATE KEY-----";
+    let policy = EnvPolicy::build_from(&BTreeMap::new(), &env(&[("TLS_SECRET", pem)])).policy;
+    let numbered =
+        "     1\t-----BEGIN PRIVATE KEY-----\n     2\tMIIEvQIBADANBgkq\n     3\thkiG9w0BAQEFAASC\n";
+    let masked = policy.mask(numbered);
+    assert!(!masked.contains("MIIEvQIBADANBgkq"));
+    assert!(!masked.contains("hkiG9w0BAQEFAASC"));
+    // The line numbers themselves survive — only the value's lines go.
+    assert!(masked.contains("     2\t"));
+}
+
+// ------------------------------------------------------------- append-only set
+
+#[test]
+fn the_needle_set_is_append_only_across_a_config_edit() {
+    let policy = EnvPolicy::build_from(
+        &BTreeMap::new(),
+        &env(&[("EFFERENCE_TEST_ROTATED_KEY", "rotated-secret-value")]),
+    )
+    .policy;
+    assert!(!policy.mask("rotated-secret-value").contains("rotated"));
+    // An edit that stops masking the variable does not un-needle the value: it is
+    // still a secret, and still in whatever files the session may read.
+    policy.absorb_config(&user(&[(
+        "EFFERENCE_TEST_ROTATED_KEY",
+        entry(Some(false), None),
+    )]));
+    assert!(!policy.mask("rotated-secret-value").contains("rotated"));
+}
+
+#[test]
+fn a_config_edit_adds_needles_for_a_newly_masked_variable() {
+    // SAFETY: single-threaded within this test; the variable name is unique to it.
+    unsafe { std::env::set_var("EFFERENCE_TEST_LATE_VALUE", "late-secret-value") };
+    let policy = EnvPolicy::build_from(&BTreeMap::new(), &[]).policy;
+    assert!(policy.mask("late-secret-value").contains("late-secret"));
+    policy.absorb_config(&user(&[(
+        "EFFERENCE_TEST_LATE_VALUE",
+        entry(Some(true), None),
+    )]));
+    assert!(!policy.mask("late-secret-value").contains("late-secret"));
+    unsafe { std::env::remove_var("EFFERENCE_TEST_LATE_VALUE") };
+}
+
+// ------------------------------------------------------------ payload coverage
+
+#[test]
+fn every_text_bearing_payload_path_is_masked() {
+    let policy =
+        EnvPolicy::build_from(&BTreeMap::new(), &env(&[("A_KEY", "leaked-secret-value")])).policy;
+    let masker = policy.masker();
+    let leak = || "before leaked-secret-value after".to_string();
+
+    let mut user_turn = Payload::User(vec![ContentBlock::Text(leak())]);
+    masker.mask_payload(&mut user_turn);
+    let Payload::User(blocks) = &user_turn else {
+        unreachable!()
+    };
+    let ContentBlock::Text(text) = &blocks[0] else {
+        unreachable!()
+    };
+    assert!(!text.contains("leaked-secret-value"));
+
+    let mut result = Payload::ToolResult {
+        call_id: crate::log::CallId("toolu_1".into()),
+        raw: RawResult {
+            content: leak(),
+            is_error: false,
+            images: Vec::new(),
+        },
+        wire: WireState::Raw,
+    };
+    masker.mask_payload(&mut result);
+    let Payload::ToolResult { raw, .. } = &result else {
+        unreachable!()
+    };
+    assert!(!raw.content.contains("leaked-secret-value"));
+
+    let mut assistant = Payload::Assistant {
+        thinking: vec![ContentBlock::Thinking {
+            text: leak(),
+            signature: "sig".into(),
+        }],
+        text: vec![ContentBlock::Text(leak())],
+        calls: vec![crate::log::ToolCall {
+            id: crate::log::CallId("toolu_2".into()),
+            name: "bash".into(),
+            input: serde_json::json!({ "command": leak() }),
+        }],
+        upstream_failure: Some(leak()),
+    };
+    masker.mask_payload(&mut assistant);
+    let Payload::Assistant {
+        thinking,
+        text,
+        calls,
+        upstream_failure,
+    } = &assistant
+    else {
+        unreachable!()
+    };
+    let ContentBlock::Text(text) = &text[0] else {
+        unreachable!()
+    };
+    assert!(!text.contains("leaked-secret-value"));
+    assert!(
+        !calls[0].input["command"]
+            .as_str()
+            .unwrap()
+            .contains("leaked-secret-value")
+    );
+    assert!(
+        !upstream_failure
+            .as_ref()
+            .unwrap()
+            .contains("leaked-secret-value")
+    );
+    // The documented exception: a thinking block carries a provider signature over
+    // its exact text, and a modified block is rejected on replay.
+    let ContentBlock::Thinking { text, .. } = &thinking[0] else {
+        unreachable!()
+    };
+    assert!(text.contains("leaked-secret-value"));
+
+    let mut ambient = Payload::Ambient(crate::log::Notification {
+        source: "tool".into(),
+        body: leak(),
+        slot: None,
+    });
+    masker.mask_payload(&mut ambient);
+    let Payload::Ambient(note) = &ambient else {
+        unreachable!()
+    };
+    assert!(!note.body.contains("leaked-secret-value"));
+
+    let mut preamble = Payload::Preamble {
+        system: leak(),
+        context: crate::context::Resolved::default(),
+    };
+    masker.mask_payload(&mut preamble);
+    let Payload::Preamble { system, .. } = &preamble else {
+        unreachable!()
+    };
+    assert!(!system.contains("leaked-secret-value"));
+}
+
+#[test]
+fn the_log_append_choke_point_filters_every_entry() {
+    let policy =
+        EnvPolicy::build_from(&BTreeMap::new(), &env(&[("A_KEY", "choke-point-secret")])).policy;
+    let mut log = crate::persist::Log::in_memory();
+    log.set_masker(policy.masker());
+    log.append(
+        1,
+        Payload::User(vec![ContentBlock::Text("here: choke-point-secret".into())]),
+    )
+    .unwrap();
+    let serialized = serde_json::to_string(&log.entries()[0]).unwrap();
+    assert!(!serialized.contains("choke-point-secret"));
+    assert!(serialized.contains("A_KEY"));
+}
+
+// ----------------------------------------------------------------- glob syntax
+
+#[test]
+fn glob_matching_is_star_only() {
+    assert!(glob_match("*_KEY", "OPENAI_API_KEY"));
+    assert!(!glob_match("*_KEY", "KEYRING"));
+    assert!(glob_match("EFFERENCE_*", "EFFERENCE_ROOT_SECRET"));
+    assert!(glob_match("A*C", "ABC"));
+    assert!(glob_match("A*C", "AC"));
+    assert!(!glob_match("A*C", "ABD"));
+    assert!(glob_match("*", "anything"));
+    assert!(glob_match("EXACT", "EXACT"));
+    assert!(!glob_match("EXACT", "EXACTLY"));
+}

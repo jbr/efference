@@ -114,6 +114,17 @@ accumulated visual tokens. The fork peek projects the canonical prefix with
 the same session placement (`ForkPeek.image_placement`), or its request would
 cold the shared cache lineage.
 
+**The inversion `WireState` is not: masking.** `WireState` is *reversible
+curation over immutable raw* — the verdict flips, `raw` survives. The `[env]`
+table's masking ([env.md](env.md)) is the opposite arrangement: **irreversible
+filtering upstream of the log**, applied at `Log::append_submission` before an
+entry exists. There is no verdict to flip, because the value never becomes
+`raw` — a raw copy on disk is half of what masking exists to prevent, so the
+reversibility that makes `WireState` right for redaction is exactly wrong here.
+Folding masking into a `WireState` variant would reintroduce that artifact.
+Byte-determinism of `project` is untouched either way: the filtering happens
+upstream, so by the time projection reads an entry its text is already final.
+
 Crucially, `Distilled` stores the **verdict** — which line ranges survive
 (`keep`) and an optional breadcrumb (`note`) — not the rendered bytes.
 `project` re-renders the kept hunks from `raw` each turn, so the wire is a

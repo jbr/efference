@@ -107,6 +107,10 @@ the config holds:
 - **`[commands]`** — the bash prefix-allowlist, a **set** of command-prefix keys (below).
 - **`tools`** and **`[paths]`** — the structured-tool name set and the filesystem-grant map
   the fast-path reads (below).
+- **`[env]`** — per-variable `strip` (does a spawned child see it?) and `mask` (does the
+  log ever store its value?). Its own subsystem: [env.md](env.md). It sits beside the
+  cascade rather than inside it — the gates guard the *action* direction of an accident,
+  masking the *disclosure* direction.
 - **`trust-threshold`** — where the watch-window/gate cutoffs will sit. Parsed, unused.
 
 **Two-layer decode, fail-closed.** Serde reads the file into a raw struct

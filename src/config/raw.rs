@@ -35,6 +35,12 @@ pub(super) struct RawConfig {
     /// `[bash]` table — the foreground-lifetime knobs ([`Config::bash`]).
     #[serde(default)]
     bash: RawBash,
+    /// `[env]` table — per-variable `strip`/`mask` (docs/env.md). Only the inline-table
+    /// form parses: a bare `"*_KEY" = false` cannot say which of the two questions it
+    /// answers, so it is a parse error rather than a guess. `deny_unknown_fields` on
+    /// [`crate::env_table::EnvEntry`] makes a typo'd key loud, as everywhere else.
+    #[serde(default)]
+    env: BTreeMap<String, crate::env_table::EnvEntry>,
 }
 
 /// The `[bash]` table: how long a foreground command may block the turn before
@@ -283,6 +289,7 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
         extends: raw.extends,
         context,
         mcp_servers,
+        env: raw.env,
         bash: crate::config::BashLimits {
             background_after: raw
                 .bash

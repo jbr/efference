@@ -151,6 +151,13 @@ pub struct Config {
     /// what any entry "is" — see [`ContextEntry`].
     pub context: Vec<ContextEntry>,
 
+    /// The `[env]` table as the operator wrote it (docs/env.md): per-variable
+    /// `strip` (does a spawned child see it?) and `mask` (does the log ever store
+    /// its value?). Held **unmerged** — the built-in defaults and the exact-beats-glob
+    /// precedence are resolved by [`crate::env_table::Table`], so this map stays a
+    /// faithful record of the file. Keys may be exact names or `*` globs.
+    pub env: BTreeMap<String, crate::env_table::EnvEntry>,
+
     /// Foreground-lifetime limits for the `bash` tool (docs/supervisor.md).
     pub bash: BashLimits,
     /// User-declared MCP servers to mount as connected providers (docs/tools.md).

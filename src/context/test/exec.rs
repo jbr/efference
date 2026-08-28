@@ -93,7 +93,13 @@ fn exec_nonzero_exit_fails_closed_with_stderr() {
 #[test]
 fn exec_timeout_fails_closed() {
     let dir = tmpdir("exec-hang");
-    let err = run_exec("sleep 30", &dir, std::time::Duration::from_millis(100)).unwrap_err();
+    let err = run_exec(
+        "sleep 30",
+        &dir,
+        std::time::Duration::from_millis(100),
+        &crate::env_table::StripList::default(),
+    )
+    .unwrap_err();
     assert!(err.to_string().contains("timed out"), "{err}");
     std::fs::remove_dir_all(&dir).unwrap();
 }

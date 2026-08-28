@@ -41,6 +41,7 @@ fn state_reports_the_retry_in_flight() {
         crate::api::upstream_failure_state(),
         Arc::clone(&retry),
         Default::default(),
+        Default::default(),
     );
 
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();

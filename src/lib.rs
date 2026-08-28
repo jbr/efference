@@ -9,6 +9,7 @@ pub mod context;
 pub mod daemon;
 pub mod distill;
 pub mod env;
+pub mod env_table;
 pub mod expand;
 pub mod frontend;
 pub mod fswatch;

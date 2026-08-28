@@ -62,6 +62,8 @@ impl Shared {
         // Mirror the foreground spawn's root strip (docs/web-bind.md): the machine
         // root never reaches a tool child.
         cmd.env_remove(crate::auth::ROOT_ENV);
+        // And the `[env]` table's strip set, as in the foreground spawn (docs/env.md).
+        self.env_policy.strip().apply_tokio(&mut cmd);
         let mut child = cmd.spawn()?;
         let pgid = child.id();
         let stdout = child.stdout.take().expect("stdout is piped");

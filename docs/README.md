@@ -150,6 +150,7 @@ Read top-down; open the subsystem doc you need.
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs` (+ `src/daemon/`), `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
 | Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/config.rs`, `src/policy.rs`, `src/agent.rs`, `src/daemon/config_edits.rs` |
 | The `[context]` preamble builder — what the session boots knowing | [context.md](context.md) | `src/context.rs`, `src/config.rs`, `src/env.rs`, `src/policy.rs` |
+| The `[env]` table — stripping env vars at spawn, masking them at append | [env.md](env.md) | `src/env_table.rs`, `src/persist.rs`, `src/bash.rs` |
 | Transport & streaming (upstream SSE, deltas, keepalive) | [transport.md](transport.md) | `src/api.rs` |
 | MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/http.rs` |
 | The TCP bind — the web client's front door (root-derived credentials, TOTP bootstrap, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/daemon/tcp.rs` |

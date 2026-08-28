@@ -329,6 +329,12 @@ pub struct Shared {
     /// [`crate::policy::probe_ledger`], maintained incrementally as the loop assesses moves), never on
     /// the wire — like `effective`, behind a lock because the loop mutates it mid-session.
     probes: Mutex<crate::policy::ProbeLedger>,
+    /// The session's resolved `[env]` policy (docs/env.md): the strip set every
+    /// background spawn applies, and the masker installed on the log. Not behind
+    /// a lock — the strip list is fixed at boot, and the masker owns its own
+    /// append-only interior state, so a config edit adds needles without
+    /// replacing the policy.
+    env_policy: crate::env_table::EnvPolicy,
     /// The operator's **review level** (docs/permissions.md), stored as an
     /// `AtomicU8` ordinal so it is lock-free and **runtime-mutable** (the `PATCH /loop {review_level}` verb,
     /// not just a boot flag). The loop's cascade reads it ([`Shared::review_level`]) to decide who
@@ -399,6 +405,12 @@ impl Shared {
         scratch: Option<PathBuf>,
         upstream_failure: UpstreamFailureState,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+        // Tests and the convenience constructors resolve the `[env]` policy from
+        // the role they were handed (docs/env.md); `serve` builds one earlier —
+        // it needs the strip set for the toolbox and the masker for the boot
+        // preamble — and passes it to [`Shared::full`] so the session has exactly
+        // one, whose needle set is append-only for its lifetime.
+        let env_policy = crate::env_table::EnvPolicy::build(&role.role.env).policy;
         Self::full(
             log,
             role,
@@ -406,6 +418,7 @@ impl Shared {
             upstream_failure,
             upstream_retry_state(),
             ImagePlacement::default(),
+            env_policy,
         )
     }
 
@@ -413,13 +426,18 @@ impl Shared {
     /// the provider at boot and fixed thereafter, so the canonical wire and the
     /// fork's cached prefix project byte-identically (docs/log-and-projection.md).
     pub(crate) fn full(
-        log: Log,
+        mut log: Log,
         role: LoadedConfig,
         scratch: Option<PathBuf>,
         upstream_failure: UpstreamFailureState,
         upstream_retry: UpstreamRetryState,
         image_placement: ImagePlacement,
+        env_policy: crate::env_table::EnvPolicy,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+        // Install the mask before the log takes another append (docs/env.md).
+        // Masking is irreversible filtering upstream of the log, so it has to be
+        // in force at the choke point rather than applied to a stored entry.
+        log.set_masker(env_policy.masker());
         let (turns_tx, turns_rx) = mpsc::unbounded_channel();
 
         // Bounded ring: a consumer that falls this far behind drops the oldest
@@ -502,6 +520,7 @@ impl Shared {
             effective: Mutex::new(effective),
             config_file: Mutex::new(config_file),
             probes: Mutex::new(probes),
+            env_policy,
             review_level: AtomicU8::new(crate::policy::ReviewLevel::SpotterHuman.as_u8()),
             pace: Mutex::new(Pace::default()),
             pace_interrupt: Notify::new(),

@@ -261,8 +261,32 @@ pub(crate) async fn serve(
         },
     );
 
+    // The `[env]` table (docs/env.md), resolved once against this process's
+    // environment: the strip set every spawn site applies, and the session's
+    // masker. An unresolvable precedence tie is a startup config error; a value
+    // under the maskability floor is a warning naming the variable only.
+    let env_report = efference::env_table::EnvPolicy::build(&loaded.role.env);
+    for conflict in &env_report.conflicts {
+        eprintln!("error: [env] {conflict}");
+    }
+    if !env_report.conflicts.is_empty() {
+        return Err("ambiguous [env] table".into());
+    }
+    for name in &env_report.below_floor {
+        eprintln!(
+            "[env: `{name}` is set to fewer than {} characters and will not be masked — \
+             too short a needle would shred unrelated output]",
+            efference::env_table::MASKABILITY_FLOOR
+        );
+    }
+    let env_policy = env_report.policy;
+
     let log_path = session_dir.join(LOG_NAME);
     let mut log = Log::create(&log_path)?;
+    // In force before the first append — the boot `Preamble` below is the first
+    // entry, and its `[context]` exec snapshot is exactly the kind of env capture
+    // masking exists for.
+    log.set_masker(env_policy.masker());
     eprintln!("session dir: {}", session_dir.display());
     eprintln!("logging to {}", log_path.display());
     let socket = session_dir.join(SOCKET_NAME);
@@ -285,7 +309,8 @@ pub(crate) async fn serve(
     // here, which is the one point in the boot that waits for a human
     // (docs/mcp-auth.md).
     let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))?
-        .with_bash_limits(loaded.role.bash);
+        .with_bash_limits(loaded.role.bash)
+        .with_env_strip(env_policy.strip());
     // Credentials live in the base dir, not the session dir: an authorization
     // belongs to the operator and the server, not to one session.
     let store = efference::mcp::auth::store::FileStore::new(Path::new(BASE_DIR));
@@ -303,20 +328,31 @@ pub(crate) async fn serve(
     // The [context] preamble builder (docs/context.md): resolve the operator's listed
     // files from cwd and fold the rendered block into the frozen prefix. Fail closed — configured
     // context that can't be read aborts startup rather than silently vanishing.
-    let resolved = match efference::context::resolve(&loaded.role.context, &cwd) {
+    let mut resolved = match efference::context::resolve_with_strip(
+        &loaded.role.context,
+        &cwd,
+        &env_policy.strip(),
+    ) {
         Ok(resolved) => resolved,
         Err(e) => {
             eprintln!("error: {e}");
             return Err("could not resolve [context] entries".into());
         }
     };
+    // Mask the resolved sections *before* rendering (docs/env.md). The preamble is
+    // the one string that both rides the request's `system` field and is
+    // snapshotted into the log, so masking it at the log's choke point alone would
+    // leave the wire copy unfiltered and the two copies no longer byte-identical —
+    // which is the whole point of the `Preamble` entry (docs/context.md). A
+    // `[context]` exec that prints the environment is the concrete case.
+    env_policy.mask_context(&mut resolved);
     let context_block = resolved.render();
-    let system = efference::env::system_prompt(
+    let system = env_policy.mask(&efference::env::system_prompt(
         model,
         context_block.as_deref(),
         role_section.as_deref(),
         unmounted_section.as_deref(),
-    );
+    ));
     // Snapshot the rendered boot preamble into the log (docs/context.md): the
     // [context] block folds in file contents that drift on disk, so the preamble is no longer
     // reconstructable from config + current files — this one entry keeps the log the complete
@@ -389,6 +425,7 @@ pub(crate) async fn serve(
             cwd: cwd.to_string_lossy().into_owned(),
         },
         bind,
+        env_policy,
     )
     .await;
     // Scratch lifecycle (docs/tools.md): cleaned on session end unless retained as

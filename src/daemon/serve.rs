@@ -20,6 +20,7 @@ pub async fn serve<D: Distiller, S: Spotter>(
     capabilities: crate::api::ModelCapabilities,
     identity: SessionIdentity,
     bind: Option<tcp::TcpBind>,
+    env_policy: crate::env_table::EnvPolicy,
 ) -> Result<(), Error> {
     let (shared, turns) = Shared::full(
         log,
@@ -28,6 +29,7 @@ pub async fn serve<D: Distiller, S: Spotter>(
         client.upstream_failure(),
         client.upstream_retry(),
         client.image_placement(),
+        env_policy,
     );
 
     // Set before the loop spawns: the gate reads it on the loop's thread (backlog/permissions/

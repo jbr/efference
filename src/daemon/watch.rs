@@ -119,6 +119,12 @@ pub(crate) fn refresh_and_emit(shared: &Shared) -> Option<Refreshed> {
             return Some(outcome);
         }
     };
+    // A newly-adopted `[env]` table can only *add* needles (docs/env.md): the set
+    // is append-only for the session, because a variable an edit stopped masking
+    // may still sit in files this session goes on to read. `ConfigChange` has no
+    // `env` variant, so the file itself is the only way the table moves — which is
+    // why the absorb hangs here rather than off the edit fold.
+    shared.absorb_env_table(&file_config);
     let changes = crate::config::diff_changes(&shared.effective_config(), &file_config);
     if changes.is_empty() {
         return Some(Refreshed::Adopted(file_config));
