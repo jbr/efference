@@ -295,6 +295,22 @@ export interface ProcessRecord {
   exit?: ProcessExit | null;
 }
 
+/** One tool's full definition — what `GET /tools/:name` answers with
+ * (docs/control-api.md). `input_schema` is served exactly as the model was sent
+ * it, so a `Toolbox`-mounted tool's schema carries the injected `intent`
+ * property while the loop-owned family's does not. `server` names the mounting
+ * server and is absent for one of the harness's own tools; where it is present,
+ * `title`/`description` (and the schema's per-property descriptions) are
+ * third-party prose, rendered as plain text and attributed. */
+export interface ToolEntry {
+  name: string;
+  title?: string;
+  description?: string;
+  input_schema: unknown;
+  annotations?: Record<string, unknown>;
+  server?: string | null;
+}
+
 export interface TokenCounts {
   input_tokens: number;
   output_tokens: number;

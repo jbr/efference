@@ -16,6 +16,7 @@ import type {
   ReviewLevel,
   Seq,
   StateSnapshot,
+  ToolEntry,
 } from "./types.ts";
 
 export class ApiError extends Error {
@@ -136,6 +137,13 @@ export const patchProcess = (
 // and for a log written before the records existed.
 export const fetchProcessRecord = (id: number) =>
   get<ProcessRecord>(`/v1/processes/${id}`);
+// One tool's definition, by the wire name a call carries (docs/control-api.md).
+// The catalog is snapshotted before the loop starts and never changes, so this
+// is immutably cacheable; `404 not_found` covers both an unknown name and a
+// recorded session opened with no daemon behind it, which is absence rather
+// than an error state.
+export const fetchToolEntry = (name: string) =>
+  get<ToolEntry>(`/v1/tools/${encodeURIComponent(name)}`);
 export const killProcess = (id: number) =>
   del<{ status: string }>(`/v1/processes/${id}`);
 // The cold seed for a process's tail. `output` is lossy with no replay

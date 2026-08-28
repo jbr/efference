@@ -1431,6 +1431,72 @@ select {
   margin: 0;
 }
 
+/* The tool the call was made against, above its arguments: the one place a
+   tool description is shown, on demand for a call already being asked about. */
+.tool-def {
+  margin-bottom: 0.8rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tool-def-name {
+  font-family: var(--font-mono);
+  margin-bottom: 0.25rem;
+}
+
+/* Descriptions — the tool's and each argument's — are prose, and plain text
+   whoever wrote them: a mounted server's sentence is third-party content and
+   never becomes markup. */
+.tool-prose {
+  font-family: var(--font-prose);
+  color: var(--fg-muted);
+  line-height: 1.4;
+  margin: 0.2rem 0;
+  white-space: pre-wrap;
+}
+
+/* Who wrote the prose above. Absent for the harness's own tools, which need no
+   attribution. */
+.prose-source {
+  font-size: 0.8em;
+}
+
+/* `required` on a sent argument is a fact; on a missing one it is the failure. */
+.arg-required,
+.arg-undeclared {
+  font-family: var(--font-mono);
+  font-size: 0.75em;
+  margin-left: 0.4rem;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+  border: 1px solid var(--fg-faint);
+  color: var(--fg-muted);
+}
+
+.arg-required.missing,
+.arg-undeclared {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+/* Declared and not passed: dimmer than what the call sent — an omitted
+   optional is ordinary — while the required ones keep their flag. */
+.args-absent {
+  margin-top: 0.9rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.args-absent-title {
+  font-size: 0.8em;
+  margin-bottom: 0.4rem;
+}
+
+.arg-row.absent .arg-key,
+.arg-row.absent .tool-prose {
+  color: var(--fg-faint);
+}
+
 .inspector-spot {
   display: flex;
   flex-direction: column;

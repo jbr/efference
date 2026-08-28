@@ -952,7 +952,43 @@ of the one thing worth reading (the same failure the TUI diagnosed once in
 `show all`. Scalars sort ahead of blobs whatever order the input serialized
 in: they are the call's identity, and a blob above them pushes "what did this
 touch" off the top of the tab. `intent` continues to render above the body
-rather than inside it — it is already the call's leading line. There is deliberately **no `file` tab**: the drawer
+rather than inside it — it is already the call's leading line.
+
+The tab (`ui/ArgsTab.tsx`) also **destructures the call against the tool's
+declared schema**, fetched from `GET /tools/:name`
+([control-api.md](control-api.md)) by `ui/toolDefinition.ts` — lazily, one name
+at a time, memoized for the page: the catalog is snapshotted before the loop
+starts and is session-constant, so a definition once read is the one every call
+in the tab was made against. A `404` is cached with it (an unknown name stays
+unknown, and *every* name is unknown in a recorded session opened with no daemon
+behind it); only a transport failure is left uncached. The join itself is pure
+and lives apart from both the fetch and the rendering (`render/argSchema.ts`).
+
+The tab **leads with the tool** — dotted name, optional `title`, and the
+description. That is the one place a tool description is paid for: on demand,
+for a call someone is already asking about, which is why the transcript never
+shows it (a static sentence repeated across 55 `ferritin.*` calls is noise, and
+the call's own `intent` occupies that line with something specific). Each sent
+argument is glossed with its schema description and marked `required`. The two
+mismatches nothing else surfaces are the value beyond presentation: a key the
+schema does not declare is flagged in place (the `crate` vs `crate_name` failure
+shape), and the declared properties the call omitted are listed below, dimmer,
+with a required-but-missing one flagged — the shape of a whole class of failed
+calls. `intent` is excluded from *both* sides of the analysis: a toolbox tool's
+served schema always declares it, so leaving it in would report "declared, not
+passed" on nearly every call and gloss a line the tab already renders above the
+list.
+
+Server prose is third-party: a description is rendered as **plain text, never
+markdown** (it never reaches `Markdown.tsx`), and a definition from a mounted
+server carries a dim `described by <server>` line covering the tool's own prose
+and its arguments' — the untrusted-server line the built-ins' annotations
+already draw, surviving to the pixel. A built-in (`server: null`) needs no
+attribution. With no definition at all the tab renders exactly what it rendered
+before any of this — the sent arguments, unglossed, with no error surface and no
+retry spinner.
+
+There is deliberately **no `file` tab**: the drawer
 is call-scoped, so a tab here would read as "the file at the time of this
 call", while a file read from disk is the file *now*, and serving the
 historical reading would mean snapshotting every file at every edit. The
