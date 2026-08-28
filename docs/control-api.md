@@ -292,6 +292,13 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "unpriced": 0                         // requests the fetch couldn't price (total is an undercount if > 0)
     }
   },
+  "stall": {                       // null unless the last trajectory gave up (transport.md)
+    "reason": "retries_exhausted", // "retries_exhausted" | "request_failed"
+    "attempts": 12,                // attempts spent, where the path counts them; else null
+    "at": 1754300000000,           // absolute Unix millis at which the loop gave up
+    "message": "the trajectory stopped: 12 attempts in a row aborted upstream — send a turn to retry",
+    "detail": "upstream SSE stream failed mid-stream: connection reset"
+  },
   "upstream_failure": {            // null once a 2xx arrives — the all-clear (transport.md)
     "status": 429,                 // the last non-success status; content-free by design
     "count": 2                     // consecutive responses carrying it
@@ -312,6 +319,33 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
   }
 }
 ```
+
+**`stall` distinguishes the two idle conditions `running: false` collapses.**
+When a turn's stream-abort budget is exhausted, or the request itself fails past
+the transport's retries, the loop appends its record-only entries, posts the
+turn-not-completed notification, and returns to idle
+([transport.md](transport.md)). The daemon does not exit: the socket stays up
+and one `POST /turns` recovers the session. But every other signal then reads
+as a finished run — `running: false`, `gate: null`, and `notifications: []`
+once a triage peek has dismissed the notice — so a supervising client cannot
+tell "done" from "gave up". This topic is that difference. It carries the
+reason, the attempts spent, the instant it stopped, a `message` in the same
+lead-with-what-happened register as `upstream_retry`, and the upstream's own
+words as `detail`. It is **cleared when a trajectory next starts**, not when one
+succeeds, so it always names the current condition rather than a past one.
+
+**How a supervising process watches for it.** There is no separate exit signal:
+a stalled daemon is a live daemon, by design. Two shapes, both already here:
+
+- **Long-poll** — `GET /state?wait=settled` blocks until the daemon reaches a
+  decision point (a gate is pending, or the loop is idle with nothing queued)
+  and returns the snapshot. A supervisor loops on it and branches on `stall`:
+  `null` with no gate means the run finished; non-`null` means it stopped
+  short, and `POST /turns` is the recovery. The 300 s server cap makes an
+  unchanged answer a re-poll rather than a hang.
+- **Subscribe** — `GET /events?include=state:stall,state:running` delivers the
+  topic on connect and on every change, for a supervisor already holding a
+  stream.
 
 **`session_identity` names what the session is** — the model it was configured
 with (the same string the system prompt's identity line states,

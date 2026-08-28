@@ -118,6 +118,42 @@ pub struct SessionIdentity {
     pub cwd: String,
 }
 
+/// Why a trajectory stopped short of finishing (docs/transport.md).
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StallReason {
+    /// The stream-abort budget was spent: every attempt died before finalizing.
+    RetriesExhausted,
+    /// The request itself failed after the transport's own retries.
+    RequestFailed,
+}
+
+/// A trajectory that ended without finishing (docs/transport.md).
+///
+/// The loop returns to idle on both failure paths above, which leaves the
+/// daemon's other signals — `running: false`, no gate, an empty inbox once a
+/// triage peek has dismissed the notification — identical to a run that
+/// finished its work. This topic is the difference a supervising client reads:
+/// set when the loop gives up, cleared when a trajectory next starts, so it
+/// names the *current* condition rather than a past one (the same clear-on-
+/// recovery rule the transport diagnostics follow).
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct Stall {
+    pub reason: StallReason,
+    /// How many attempts were spent, where the failure path counts them;
+    /// `null` where it does not.
+    pub attempts: Option<u32>,
+    /// Unix millis at which the loop gave up — absolute, like every other
+    /// instant on the control channel, so nothing has to re-emit a ticking
+    /// field (docs/control-api.md).
+    pub at: u64,
+    /// Leads with what happened and what recovers it — the same register the
+    /// retry topic's `message` uses.
+    pub message: String,
+    /// The upstream's own words for the failure that ended the trajectory.
+    pub detail: String,
+}
+
 /// Daemon state shared between the loop task and the HTTP handlers. Held as
 /// `Arc<Shared>` in both the loop and trillium's server-global `shared_state`
 /// (read in handlers via `conn.shared_state::<Arc<Shared>>()`). Per-conn state is
@@ -241,6 +277,13 @@ pub struct Shared {
     /// `session_identity` topic. `None` in tests and offline verbs that never
     /// booted a session, which the topic reports as `null`.
     identity: Mutex<Option<SessionIdentity>>,
+    /// A trajectory that gave up (docs/transport.md), read by the `stall`
+    /// topic. Written by the loop, which holds a [`Shared`] and signals
+    /// `state_changed` at both sites; `None` whenever a trajectory is running
+    /// or last ran to completion. Control state: never logged, never projected
+    /// — the durable record of the same event is the record-only entries and
+    /// the notification the loop already appends.
+    stall: Mutex<Option<Stall>>,
 
     /// The ephemeral inbox of pending ambient notifications (docs/inbox.md): out-of-band
     /// events awaiting their first triage gate. Control state, *not* a log payload —
@@ -450,6 +493,7 @@ impl Shared {
             capabilities: Mutex::new(None),
             cost: Arc::new(Mutex::new(CostCell::default())),
             identity: Mutex::new(None),
+            stall: Mutex::new(None),
             inbox: Mutex::new(Inbox::default()),
 
             proposals: Mutex::new(Vec::new()),
@@ -485,6 +529,32 @@ impl Shared {
     pub fn set_identity(&self, identity: SessionIdentity) {
         *self.identity.lock().unwrap() = Some(identity);
         self.touch_state();
+    }
+
+    /// Record that the trajectory gave up (docs/transport.md) — the loop is
+    /// returning to idle without finishing. Read back by the `stall` topic.
+    pub(crate) fn set_stall(&self, stall: Stall) {
+        *self.stall.lock().unwrap() = Some(stall);
+        self.touch_state();
+    }
+
+    /// Clear the stall: a trajectory is starting, so the last one's outcome is no
+    /// longer the current condition. Called at the top of every trajectory rather
+    /// than on a successful completion, so the topic is never both set and running.
+    pub(crate) fn clear_stall(&self) {
+        let mut stall = self.stall.lock().unwrap();
+        if stall.is_none() {
+            return;
+        }
+        *stall = None;
+        drop(stall);
+        self.touch_state();
+    }
+
+    /// The trajectory-stalled condition, or `None` when the last trajectory
+    /// finished (or none has run).
+    pub(crate) fn stall(&self) -> Option<Stall> {
+        self.stall.lock().unwrap().clone()
     }
 
     /// Cumulative triage retention over the whole session (docs/redaction-fork.md),

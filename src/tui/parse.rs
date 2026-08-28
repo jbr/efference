@@ -236,6 +236,18 @@ pub(super) fn parse_upstream_retry(retry: &serde_json::Value) -> Option<Upstream
     })
 }
 
+/// Parse the `stall` topic — a trajectory that gave up, or `None` once one
+/// starts again (docs/transport.md). Only the lead line is kept: see
+/// [`StallView`].
+pub(super) fn parse_stall(stall: &serde_json::Value) -> Option<StallView> {
+    if stall.is_null() {
+        return None;
+    }
+    Some(StallView {
+        message: stall.get("message")?.as_str()?.to_string(),
+    })
+}
+
 /// Parse the `session_identity` topic into a [`SessionIdentityView`]
 /// (docs/control-api.md). `null` — a daemon that never set it — is no view, and the
 /// sidebar's SESSION section simply doesn't render.

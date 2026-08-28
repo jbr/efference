@@ -213,6 +213,24 @@ export interface UpstreamRetry {
   detail: string;
 }
 
+// A trajectory that ended without finishing (docs/transport.md). The loop
+// returns to idle on the failure paths that produce it, so `running: false`,
+// no gate, and an empty inbox look exactly like a finished run; this topic is
+// the difference. Level-triggered: `null` once a trajectory starts again.
+export interface Stall {
+  // Why it stopped short.
+  reason: "retries_exhausted" | "request_failed";
+  // Attempts spent, where the failure path counts them.
+  attempts: number | null;
+  // Absolute Unix millis at which the loop gave up.
+  at: number;
+  // Leads with what happened and what recovers it — the same register the
+  // retry topic's `message` uses.
+  message: string;
+  // The upstream's own words for the failure that ended the trajectory.
+  detail: string;
+}
+
 // What this session is: the model it was configured with and the directory it
 // runs in (docs/control-api.md). Static per session today — it arrives on the
 // connect snapshot — but a topic, so a value that ever moves arrives the same way.
@@ -236,6 +254,7 @@ export interface StateTopics {
   pace?: Pace | null;
   review_level?: ReviewLevel | null;
   running?: boolean | null;
+  stall?: Stall | null;
   upstream_failure?: UpstreamFailure | null;
   upstream_retry?: UpstreamRetry | null;
   session_identity?: SessionIdentity | null;

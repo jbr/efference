@@ -175,6 +175,7 @@ export function App() {
           pace={session.topics.pace ?? null}
           reviewLevel={session.topics.review_level ?? null}
           running={session.topics.running ?? false}
+          stall={session.topics.stall ?? null}
           gatePending={gate != null}
           quiet={quiet}
           onReveal={() => setChromeOpen((open) => !open)}

@@ -140,6 +140,10 @@ fn decode_frame(
             "upstream_retry" => Some(send(TuiEvent::UpstreamRetry(parse::parse_upstream_retry(
                 data,
             )))),
+            // Level-triggered like the retry above: a `null` frame means a
+            // trajectory is running again, so it is forwarded as `None`
+            // (docs/transport.md).
+            "stall" => Some(send(TuiEvent::Stall(parse::parse_stall(data)))),
             // Static per session today, so this arrives once on the connect
             // snapshot; forwarded through the same path as anything else that
             // could move (docs/control-api.md).

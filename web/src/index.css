@@ -781,6 +781,17 @@ pre {
   font-size: 1.2em;
 }
 
+/* The trajectory stopped short (docs/transport.md). It sits where "your turn"
+   would, because the difference between the two is exactly what the row is
+   there to say; the daemon's sentence is a full one, so it may wrap out of the
+   row on narrow and is clipped rather than pushing the dials off. */
+.stalled {
+  color: var(--warn);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Near-square: the dock's chrome language is flat, and the input is inset
    into it rather than floating on it. 2px keeps the corner antialiasing
    soft without reading as "rounded". */

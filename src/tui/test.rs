@@ -1,8 +1,9 @@
 use crate::tui::UpstreamRetryView;
 use crate::tui::parse::{
-    parse_pending_gate, parse_session_identity, parse_upstream_failure, parse_upstream_retry,
+    parse_pending_gate, parse_session_identity, parse_stall, parse_upstream_failure,
+    parse_upstream_retry,
 };
-use crate::tui::state::upstream_retry_indicator;
+use crate::tui::state::{stall_indicator, upstream_retry_indicator};
 
 use crate::tui::run::{DEFAULT_THEME, resolve_theme};
 
@@ -94,6 +95,29 @@ fn retry_indicator_names_the_surface() {
         "↻ peek: stream aborted, retrying (2 of 12)"
     );
     assert!(upstream_retry_indicator(None).is_none());
+}
+
+/// The `stall` topic is what tells an idle TUI that the last trajectory gave up
+/// rather than finished (docs/transport.md). Only the lead line is kept, and it
+/// renders verbatim; `null` — a trajectory running again — is no indicator.
+#[test]
+fn stall_indicator_shows_the_daemons_lead_line() {
+    let topic = serde_json::json!({
+        "reason": "retries_exhausted",
+        "attempts": 12,
+        "at": 1754300002000u64,
+        "message": "the trajectory stopped: 12 attempts in a row aborted \
+                    upstream — send a turn to retry",
+        "detail": "upstream SSE stream failed mid-stream: connection reset",
+    });
+    let stall = parse_stall(&topic).expect("stall");
+    assert_eq!(
+        stall_indicator(Some(&stall)).unwrap(),
+        "⚠ the trajectory stopped: 12 attempts in a row aborted upstream — send a \
+         turn to retry"
+    );
+    assert!(parse_stall(&serde_json::Value::Null).is_none());
+    assert!(stall_indicator(None).is_none());
 }
 
 /// The `session_identity` topic names the model and the working directory

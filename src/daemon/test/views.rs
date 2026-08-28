@@ -75,6 +75,51 @@ fn state_reports_the_retry_in_flight() {
     );
 }
 
+/// `GET /state` distinguishes the two idle conditions `running: false` collapses:
+/// a trajectory that finished, and one that gave up (docs/transport.md). The
+/// `stall` topic is set when the loop stops short and cleared when a trajectory
+/// starts again, so a supervising client polling an idle daemon can tell them
+/// apart.
+#[test]
+fn state_reports_a_stalled_trajectory() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert!(
+        v["stall"].is_null(),
+        "an idle daemon that never gave up reports no stall"
+    );
+
+    shared.set_stall(Stall {
+        reason: StallReason::RetriesExhausted,
+        attempts: Some(12),
+        at: 1_754_300_000_000,
+        message: "the trajectory stopped: 12 attempts in a row aborted upstream — \
+                  send a turn to retry"
+            .into(),
+        detail: "upstream SSE stream failed mid-stream".into(),
+    });
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(
+        v["stall"],
+        serde_json::json!({
+            "reason": "retries_exhausted",
+            "attempts": 12,
+            "at": 1_754_300_000_000u64,
+            "message": "the trajectory stopped: 12 attempts in a row aborted upstream — \
+                        send a turn to retry",
+            "detail": "upstream SSE stream failed mid-stream",
+        })
+    );
+
+    shared.clear_stall();
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert!(
+        v["stall"].is_null(),
+        "a starting trajectory clears the last one's give-up"
+    );
+}
+
 /// `GET /state` names what the session is — the configured model and its working
 /// directory (docs/control-api.md) — as a topic, so a client reads it off the
 /// connect snapshot. `null` before `serve` sets it, which is what a test or an

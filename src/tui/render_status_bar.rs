@@ -39,6 +39,10 @@ impl<'a> InteractiveState<'a> {
             // is being done about the status the chip names (docs/transport.md).
             super::state::upstream_retry_indicator(self.upstream_retry.as_ref()),
             super::state::upstream_failure_indicator(self.upstream_failure),
+            // The stall leads nothing and trails everything: it is the terminal
+            // condition, true until a turn starts, where the two above are live
+            // transport state (docs/transport.md).
+            super::state::stall_indicator(self.stall.as_ref()),
         ]
         .into_iter()
         .flatten()

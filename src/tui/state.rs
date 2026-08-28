@@ -23,7 +23,7 @@ use crate::tui::projection::{self, LiveTail, Phase};
 use crate::tui::render_context::{RenderContext, ThemeError};
 use crate::tui::{
     BgProc, PaceCmd, PaceView, PendingGate, SessionIdentityView, SidebarCmd, SidebarReturn,
-    SidebarRow, TuiEvent, UpstreamFailureView, UpstreamRetryView, UsageStats,
+    SidebarRow, StallView, TuiEvent, UpstreamFailureView, UpstreamRetryView, UsageStats,
 };
 
 use crossbeam_channel::Receiver;
@@ -112,6 +112,15 @@ pub(super) fn upstream_retry_indicator(retry: Option<&UpstreamRetryView>) -> Opt
         "turn" => format!("↻ {}", retry.message),
         surface => format!("↻ {surface}: {}", retry.message),
     })
+}
+
+/// The status-bar stall indicator (docs/transport.md). The daemon's `message`
+/// already names both what happened and what recovers it — *the trajectory
+/// stopped: 12 attempts in a row aborted upstream — send a turn to retry* — so
+/// it is shown verbatim. It is the one indicator that means the loop is idle
+/// *and* unfinished, which nothing else in the bar says.
+pub(super) fn stall_indicator(stall: Option<&StallView>) -> Option<String> {
+    Some(format!("⚠ {}", stall?.message))
 }
 
 /// UI mode — the modal structure of the interface. ferritin's `DevLog` and
@@ -538,6 +547,11 @@ pub(super) struct InteractiveState<'a> {
     /// The retry in flight, polled from `GET /state`'s `upstream_retry`. Level-triggered:
     /// `None` while nothing is being retried. Status-bar chrome, never transcript content.
     pub upstream_retry: Option<UpstreamRetryView>,
+    /// The trajectory-stalled condition, from the `stall` topic
+    /// (docs/transport.md). `None` while a trajectory is running or after one
+    /// finished; set when the loop gave up. Status-bar chrome, never transcript
+    /// content.
+    pub stall: Option<StallView>,
     /// What this session is — the model and the working directory, from the
     /// `session_identity` topic (docs/control-api.md). `None` until the connect
     /// snapshot lands, and in views that never connect. Sidebar chrome.

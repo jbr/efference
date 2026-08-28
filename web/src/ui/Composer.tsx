@@ -8,7 +8,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { interruptLoop, patchLoop } from "../api/http.ts";
-import type { Pace, ReviewLevel } from "../api/types.ts";
+import type { Pace, ReviewLevel, Stall } from "../api/types.ts";
+import { turnState } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
 import { useNarrow } from "./useNarrow.ts";
 
@@ -26,6 +27,7 @@ export function Composer({
   pace,
   reviewLevel,
   running,
+  stall,
   gatePending,
   quiet,
   onReveal,
@@ -34,6 +36,9 @@ export function Composer({
   pace: Pace | null;
   reviewLevel: ReviewLevel | null;
   running: boolean;
+  /** The trajectory gave up rather than finished (docs/transport.md): the
+   * turn-state readout says so, since `running: false` alone cannot. */
+  stall: Stall | null;
   /** A gate float may own the above-dock slot; the compose chip yields to
    * it (the float carries its own steering input). */
   gatePending: boolean;
@@ -73,6 +78,7 @@ export function Composer({
   }
 
   const speed = pace?.speed_ms ?? 0;
+  const turn = turnState(running, stall);
   return (
     <>
       {collapsed && !gatePending && (
@@ -138,11 +144,18 @@ export function Composer({
       <div className="status-bar">
         <span className="turn-state">
           <span className={running ? "dot breathing" : "dot"} />
-          {running ? (
-            <span className="dim">running…</span>
-          ) : (
-            <span className="your-turn">your turn</span>
-          )}
+          <span
+            className={
+              turn.kind === "running"
+                ? "dim"
+                : turn.kind === "stalled"
+                  ? "stalled"
+                  : "your-turn"
+            }
+            title={turn.title}
+          >
+            {turn.text}
+          </span>
         </span>
         {/* Reserved: the key-hint strip lands here once binds exist. */}
         <span className="spacer" />

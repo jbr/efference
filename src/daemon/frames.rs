@@ -87,6 +87,11 @@ pub(crate) enum Topic {
     ReviewLevel,
     /// Whether the loop is executing a turn.
     Running,
+    /// A trajectory that gave up rather than finished (docs/transport.md).
+    /// `null` when the last one finished. Beside [`Running`](Self::Running)
+    /// because it is what distinguishes the two idle conditions that flag
+    /// cannot: "idle, done" from "idle, gave up".
+    Stall,
     /// The last non-success upstream response (docs/transport.md).
     UpstreamFailure,
     /// A retry in flight — which surface, which attempt, of what budget
@@ -105,7 +110,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 12] = [
+    pub(crate) const ALL: [Topic; 13] = [
         Self::Gate,
         Self::Processes,
         Self::Usage,
@@ -115,6 +120,7 @@ impl Topic {
         Self::Pace,
         Self::ReviewLevel,
         Self::Running,
+        Self::Stall,
         Self::UpstreamFailure,
         Self::UpstreamRetry,
         Self::SessionIdentity,
@@ -139,6 +145,7 @@ impl Topic {
             Self::Pace => "pace",
             Self::ReviewLevel => "review_level",
             Self::Running => "running",
+            Self::Stall => "stall",
             Self::UpstreamFailure => "upstream_failure",
             Self::UpstreamRetry => "upstream_retry",
             Self::SessionIdentity => "session_identity",

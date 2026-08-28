@@ -103,6 +103,11 @@ pub(crate) enum TuiEvent {
     /// The last non-success upstream response changed (the `upstream_failure` topic).
     /// Ephemeral transport diagnostic, rendered in the status bar.
     UpstreamFailure(Option<UpstreamFailureView>),
+    /// The trajectory-stalled condition changed (the `stall` topic,
+    /// docs/transport.md). Level-triggered: `None` once a trajectory starts
+    /// again. Status-bar chrome — it is what distinguishes an idle daemon that
+    /// finished from one that gave up.
+    Stall(Option<StallView>),
     /// A retry in flight changed (the `upstream_retry` topic, docs/transport.md).
     /// Level-triggered: `None` is the all-clear. Ephemeral transport diagnostic,
     /// rendered in the status bar.
@@ -292,6 +297,20 @@ pub(crate) struct UpstreamRetryView {
     pub surface: String,
     /// The daemon's lead line, e.g. *stream aborted, retrying (2 of 12)*. It already
     /// names the attempt and budget, so the status bar shows it verbatim.
+    pub message: String,
+}
+
+/// A trajectory that gave up, as surfaced by `GET /state`'s `stall`
+/// (docs/transport.md).
+///
+/// The topic also carries the reason, the attempt count, the instant it
+/// stopped, and the upstream's `detail`; the status bar keeps only the lead
+/// line, for the same reason it keeps only the retry's — one row, no clock.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StallView {
+    /// The daemon's lead line, e.g. *the trajectory stopped: 12 attempts in a
+    /// row aborted upstream — send a turn to retry*. It already names the
+    /// recovery, so the status bar shows it verbatim.
     pub message: String,
 }
 

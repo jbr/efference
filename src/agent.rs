@@ -19,7 +19,7 @@ use crate::api::{Client, Error, RetrySurface, Streamed, ToolChoice, UpstreamRetr
 use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
-use crate::daemon::{RequestOrigin, Shared, StreamDelta};
+use crate::daemon::{RequestOrigin, Shared, Stall, StallReason, StreamDelta};
 use crate::distill::{BgVerdict, Distiller, Pending, is_peek_tool};
 use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::{ShownNotification, active_shown};
@@ -92,8 +92,9 @@ const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 /// Sized to **wait the failure out**. A mid-stream abort is an ephemeral
 /// upstream condition, and the alternative on exhaustion — idling with "send a
 /// turn to retry" — is not clearly better than waiting another few minutes, and
-/// is strictly worse when nobody is at the keyboard to read it
-/// (backlog/autonomous-has-no-one-to-retry.md). It was 4, from a corpus in which
+/// is strictly worse when nobody is at the keyboard to read it — exhaustion is
+/// legible to a supervising client through the `stall` topic, but a turn still
+/// has to come from somewhere (docs/transport.md). It was 4, from a corpus in which
 /// every abort recovered on the first retry; a single run on 2026-08-28 then
 /// produced two streaks reaching attempt 3 and one exhausting all four, against
 /// an endpoint whose p99 latency sat near the client's timeout. Twelve attempts
@@ -133,6 +134,27 @@ pub(crate) fn stream_abort_retry(
             .saturating_add(pause.as_millis() as u64),
         message: format!("stream aborted, retrying ({attempt} of {STREAM_ABORT_ATTEMPTS})"),
         detail: why.to_string(),
+    }
+}
+
+/// The stalled-trajectory state one give-up publishes (docs/transport.md).
+///
+/// Both failure paths build their value here, so they differ only in the reason,
+/// the attempt count, and the words. `at` is stamped now and is absolute: the
+/// topic is level-triggered, and a field counting up from the stall would make it
+/// re-emit forever.
+pub(crate) fn stalled(
+    reason: StallReason,
+    attempts: Option<u32>,
+    message: String,
+    detail: String,
+) -> Stall {
+    Stall {
+        reason,
+        attempts,
+        at: crate::log::Timestamp::now().0,
+        message,
+        detail,
     }
 }
 
@@ -212,6 +234,12 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 )?;
             }
         }
+
+        // A trajectory is starting, so the previous one's give-up is no longer the
+        // current condition (docs/transport.md): the `stall` topic names what the
+        // daemon is *now*, and a supervisor that answered a stall by sending a turn
+        // sees it clear as that turn begins rather than only when it finishes.
+        shared.clear_stall();
 
         // A fresh turn starts un-interrupted: an interrupt fired while the loop was idle has
         // nothing to stop, and a latch left set would silently stop the *next* turn's first
@@ -324,6 +352,21 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                                 Some("stream-abort".to_string()),
                                 None,
                             );
+                            // The notification is addressed to whoever reads the
+                            // inbox, and a triage peek may dismiss it; the topic is
+                            // the copy addressed to a supervising *client*, which
+                            // otherwise sees an idle daemon indistinguishable from
+                            // a finished run (docs/transport.md).
+                            shared.set_stall(stalled(
+                                StallReason::RetriesExhausted,
+                                Some(aborted_attempts),
+                                format!(
+                                    "the trajectory stopped: {aborted_attempts} \
+                                     attempts in a row aborted upstream — send a \
+                                     turn to retry"
+                                ),
+                                why.clone(),
+                            ));
                             break None;
                         }
                         eprintln!(
@@ -370,6 +413,14 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                             Some("stream-abort".to_string()),
                             None,
                         );
+                        shared.set_stall(stalled(
+                            StallReason::RequestFailed,
+                            None,
+                            "the trajectory stopped: the upstream request failed — \
+                             send a turn to retry"
+                                .to_string(),
+                            error.to_string(),
+                        ));
                         break None;
                     }
                 }

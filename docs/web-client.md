@@ -555,7 +555,12 @@ dials at the far right — chrome frames content, as in a native status bar
 (the row originally sat *above* the input, which put the interactive content
 at the window edge; reversed on use, 2026-08-20). The turn state is a
 breathing accent dot beside "your turn" in the serif when the loop is idle,
-a dim `running…` while it moves; the span between state and dials is
+a dim `running…` while it moves, and the daemon's own sentence in the warn
+color when the `stall` topic is set — a trajectory that gave up rather than
+finished ([transport.md](transport.md)), which the idle state alone cannot
+say; the upstream's words ride along as the hover title. The three-way choice
+is `ui/turnState.ts`, a pure function of `running` and `stall`, so the
+component holds no branching of its own. The span between state and dials is
 reserved for the key-hint strip (binds are deferred to interactive
 suggestions; [backlog/web/README.md](../backlog/web/README.md)). The input
 carries no hint about mid-trajectory injection

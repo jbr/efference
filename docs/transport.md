@@ -167,6 +167,21 @@ output-token-cap notification) and returns to idle — the operator's view and
 the agent's next triage gate both see that the turn was not completed, rather
 than a silence indistinguishable from the model producing nothing.
 
+That idle is **legible as a stall**, not only as an idle. The daemon stays up on
+this path deliberately — the socket is alive and one turn recovers the session —
+but the return to idle otherwise looks exactly like a finished run to a client:
+`running: false`, no gate, and an inbox that a triage peek may already have
+cleared (observed 2026-08-28, where the peek dismissed the recovery notice and
+left a clean idle). So the loop also sets the **`stall` state topic**
+(control-api.md): the reason, the attempts spent, the instant it gave up, a lead
+line naming what recovers it, and the upstream's words as `detail`. It is
+cleared at the top of the next trajectory rather than on a successful
+completion, so it reports the condition now. The notification is addressed to
+the agent's next triage gate; the topic is the copy addressed to whatever is
+supervising the daemon from outside, which is the rung that can actually send
+the recovering turn. Both clients render it where turn state already shows — the
+TUI's status bar, the web composer's turn-state readout.
+
 The **fork peek** takes the same treatment on the same budget: an aborted peek
 stream is retried up to `STREAM_ABORT_ATTEMPTS` times on the same capped
 schedule, re-sending byte-identical messages over the warm prefix (its
@@ -196,7 +211,8 @@ fails the current trajectory rather than the daemon, but no longer only to
 stderr: the loop appends an empty record-only assistant entry carrying the
 error body — Anthropic's 4xx bodies name exactly what was malformed, and the
 log is the durable file where stderr is not — and posts the same
-turn-not-completed notification before returning to idle. The projection
+turn-not-completed notification, and sets `stall` with `reason:
+"request_failed"`, before returning to idle. The projection
 remains unchanged either way. Classifying *which* open failures deserve further
 loop-level retries beyond the transport's own remains deferred. Keepalive
 failures are transport-only and leave the log unchanged.
@@ -226,9 +242,9 @@ for a turn, `distill.rs` for a fork peek) through one shared constructor, so the
 surfaces differ only in the name they carry; the distinction is kept because an
 exhausted peek withholds a verdict where an exhausted turn ends the trajectory.
 It is set when an abort begins a pause, replaced per attempt, and cleared by the
-attempt that finalizes or by exhaustion — exhaustion is visible on its own
-through the turn-not-completed notification and the record-only entries, so the
-topic does not double as a gravestone. Without it, a generation on its third
+attempt that finalizes or by exhaustion — nothing is being retried once the
+budget is spent, so the topic does not double as a gravestone; `stall` is the
+topic that outlives the failure. Without it, a generation on its third
 attempt is indistinguishable from one that is taking a while, and an operator
 watching a live autonomous run cannot tell "the provider is flaky and the
 harness is absorbing it" from "the model is thinking hard" — which call for

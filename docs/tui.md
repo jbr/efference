@@ -181,6 +181,8 @@ The `upstream_failure` topic carries an optional upstream-failure diagnostic. A 
 
 The `upstream_retry` topic carries the retry in flight ([transport.md](transport.md)), decoded into an `UpstreamRetryView` and rendered ahead of the failure indicator — it is the live state, and it says what is being done about the status the failure indicator names. The daemon's own lead line is shown verbatim after a `↻`, so the status code is never the headline: `↻ stream aborted, retrying (2 of 12)`. A fork peek's retry takes a `peek:` prefix, since an exhausted peek withholds a verdict where an exhausted turn ends the trajectory. The topic is level-triggered — `null` is the all-clear and removes the indicator. The status bar renders no countdown: the topic's `next_attempt_at` and the upstream's `detail` text are read past, because the bar does not tick and the error body belongs in the log.
 
+The `stall` topic carries the terminal counterpart ([transport.md](transport.md)): a trajectory that gave up rather than finished, decoded into a `StallView` and rendered as `⚠ <the daemon's lead line>` after the transport indicators — it is a condition that persists at idle, where the two above are live transport state. The daemon's sentence already names the recovery (*send a turn to retry*), so it is shown verbatim, and the topic is level-triggered: it clears when the next trajectory starts. It is what tells an operator glancing at an idle session that the run stopped short, which `running: false` alone does not.
+
 ## Graduated Esc
 
 

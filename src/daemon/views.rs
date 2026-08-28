@@ -26,6 +26,7 @@ impl Shared {
             Topic::Pace => self.pace_json(),
             Topic::ReviewLevel => self.review_level_json(),
             Topic::Running => self.running_json(),
+            Topic::Stall => self.stall_json(),
             Topic::UpstreamFailure => self.upstream_failure_json(),
             Topic::UpstreamRetry => self.upstream_retry_json(),
             Topic::SessionIdentity => self.session_identity_json(),
@@ -182,6 +183,15 @@ impl Shared {
     /// long-running tool, so Esc can still reach it.
     fn running_json(&self) -> Value {
         Value::from(self.running.load(Ordering::SeqCst))
+    }
+
+    /// A trajectory that gave up (docs/transport.md): why, how many attempts it
+    /// spent, when it stopped, and a lead line naming what recovers it. `null`
+    /// once a trajectory starts again, so the topic reports the condition now
+    /// rather than one already recovered from. It is the difference between the
+    /// two idle states `running: false` collapses — finished, and stopped short.
+    fn stall_json(&self) -> Value {
+        serde_json::to_value(self.stall()).unwrap_or(Value::Null)
     }
 
     /// The last non-success upstream response (docs/transport.md). Cleared by the
