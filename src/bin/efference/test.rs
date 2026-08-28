@@ -428,3 +428,84 @@ fn the_scaffold_parses_and_lists_the_guide() {
         "the scaffold must list the guide overlay"
     );
 }
+
+/// What `efference cache` reads out of a session's `usage.jsonl`
+/// (docs/log-and-projection.md): a per-origin warm rate, the cold main-loop reads
+/// that carry their own explanation separated from the ones that do not, and the
+/// longest run of the latter — the number the threshold is set against. A malformed
+/// line is skipped rather than failing the report: the record is diagnostic, and its
+/// last line can be a half-flushed write from a killed daemon.
+#[test]
+fn cache_report_separates_explained_cold_reads_from_the_streak() {
+    use efference::daemon::UsageLine;
+    let line = |origin, at_ms, cache_read| UsageLine {
+        at_ms,
+        origin,
+        id: None,
+        model: Some("claude-haiku-4-5".into()),
+        input: 10,
+        output: 20,
+        cache_read,
+        cache_write: 0,
+    };
+    use efference::daemon::RequestOrigin::{Keepalive, Spot, Turn};
+    let t = 1_800_000_000_000u128;
+    let lines = vec![
+        line(Turn, t, 0),               // boot — explained
+        line(Turn, t + 1_000, 5_000),   // warm
+        line(Spot, t + 1_500, 0),       // a side channel, invisible to the streak
+        line(Turn, t + 2_000, 0),       // unexplained ×1
+        line(Turn, t + 3_000, 0),       // unexplained ×2
+        line(Keepalive, t + 4_000, 60), // touches the prefix
+        line(Turn, t + 5_000, 0),       // unexplained ×3
+    ];
+    let report = cache_report::fold_sessions(&[("s".into(), lines)]);
+
+    assert_eq!(report.sessions, 1);
+    let turn = report
+        .by_origin
+        .iter()
+        .find(|(o, _)| *o == Turn)
+        .map(|(_, t)| *t)
+        .expect("a turn row");
+    assert_eq!((turn.requests, turn.warm), (5, 1));
+    assert_eq!(
+        report.cold_starts,
+        [1, 0, 0],
+        "the session's first request is a boot cold start, not evidence"
+    );
+    assert_eq!(report.unexplained, 3);
+    assert_eq!(report.longest_streak, 3);
+    assert_eq!(
+        report.final_streak, 3,
+        "the record ends mid-streak — what the sidebar would be showing"
+    );
+}
+
+/// Two sessions are folded with two trackers, never one: a prefix belongs to a
+/// session, so the end of one must not be joined to the start of the next (which
+/// would swallow the second session's boot cold start into the first's streak).
+#[test]
+fn cache_report_does_not_join_streaks_across_sessions() {
+    use efference::daemon::RequestOrigin::Turn;
+    use efference::daemon::UsageLine;
+    let cold = |at_ms| UsageLine {
+        at_ms,
+        origin: Turn,
+        id: None,
+        model: None,
+        input: 1,
+        output: 1,
+        cache_read: 0,
+        cache_write: 0,
+    };
+    let t = 1_800_000_000_000u128;
+    let report = cache_report::fold_sessions(&[
+        ("a".into(), vec![cold(t), cold(t + 1_000)]),
+        ("b".into(), vec![cold(t + 2_000), cold(t + 3_000)]),
+    ]);
+    assert_eq!(report.sessions, 2);
+    assert_eq!(report.cold_starts[0], 2, "each session boots cold once");
+    assert_eq!(report.unexplained, 2);
+    assert_eq!(report.longest_streak, 1);
+}

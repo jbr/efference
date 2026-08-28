@@ -177,6 +177,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             )
             .await
         }
+        Command::Cache { session, all } => cache(session, name.clone(), all),
         Command::Attach => attach(client_socket()?).await,
         Command::Tui {
             theme,
@@ -217,6 +218,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 type CliResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
 use attach::attach;
+use cache_report::cache;
 use cli::*;
 use host::host as host_serve;
 use peek_replay::peek;
@@ -226,6 +228,7 @@ use spotter_eval::spotter_eval;
 use verbs::*;
 
 mod attach;
+mod cache_report;
 mod cli;
 mod host;
 mod mcp_mount;

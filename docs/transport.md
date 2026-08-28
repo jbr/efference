@@ -457,6 +457,15 @@ session just sat idle, reading as a hang. `GET /state` surfaces it as `usage.con
 alone is only the uncached remainder; null until the first request). The TUI
 sidebar renders it as the `ctx 7% · 14k/200k` line leading STATS.
 
+**Cache-read telemetry.** The same `/state` topic carries `usage.cold_streak`:
+consecutive main-loop requests that read nothing from the prompt cache and had
+no reason not to (not session boot, not a model change, not idle past the TTL).
+It is the live end of the empirical prefix oracle — the byte pins prove the
+harness emits what it emitted yesterday, and only a read rate proves the
+provider still matches it. The classifier, the threshold and the corpus it came
+from, and the offline `efference cache` view are in
+[log-and-projection](log-and-projection.md).
+
 **Session cost telemetry.** Where the provider has a per-request accounting
 surface, every recorded request (all four origins — turn, peek, spot,
 keepalive — plus keepalive pings funnel through the same two record methods)

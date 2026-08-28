@@ -144,6 +144,12 @@ impl Shared {
             "last_request_at": metrics.last_request_wall,
             "context": context,
             "cost": cost,
+            // The live end of the empirical prefix oracle
+            // (docs/log-and-projection.md): consecutive main-loop requests that read
+            // nothing from the cache and had no legitimate reason to (not boot, not a
+            // model change, not idle past the TTL). A number, not a flag, so the
+            // threshold stays a client decision; 0 whenever the last turn read warm.
+            "cold_streak": metrics.cold_streak.streak(),
             // Triage retention (docs/redaction-fork.md): how much of what the gate
             // showed survives on the wire, derived from the log rather than from
             // transport telemetry. `withheld` counts results whose output a failed

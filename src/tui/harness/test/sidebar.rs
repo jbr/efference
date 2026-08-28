@@ -40,6 +40,8 @@ fn sidebar_shows_processes_and_stats() {
         kept_lines: 13_276,
         shown_lines: 24_114,
         withheld_results: 0,
+        // The cache is being read (`cache_read_input_tokens` above), so no streak.
+        cold_streak: 0,
     }));
     play.snapshot("sidebar_processes_and_stats");
 }
@@ -64,6 +66,7 @@ fn sidebar_retention_before_any_triage_and_after_a_failed_gate() {
         kept_lines: kept,
         shown_lines: shown,
         withheld_results: withheld,
+        cold_streak: 0,
     };
 
     let mut play = Screenplay::new(110, 16);
@@ -81,6 +84,57 @@ fn sidebar_retention_before_any_triage_and_after_a_failed_gate() {
     assert!(
         after.contains("2 withheld"),
         "a failed gate is its own line, not a lower ratio:\n{after}"
+    );
+}
+
+/// The cold-cache warning beside the context meter (docs/log-and-projection.md):
+/// silent below the threshold, stated once a run of unexplained cold main-loop reads
+/// crosses it, and gone as soon as a warm read resets the daemon's count. A moved
+/// prefix is otherwise invisible from the client — every turn just costs full price.
+#[test]
+fn sidebar_warns_on_a_cold_cache_streak() {
+    use crate::tui::{TuiEvent, UsageStats};
+    let stats = |cold_streak| UsageStats {
+        input_tokens: 100,
+        output_tokens: 50,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        last_request_at: None,
+        seconds_since_last_request: None,
+        context_limit: Some(200_000),
+        context_used: Some(14_106),
+        cost_usd: None,
+        cost_unpriced: None,
+        kept_lines: 0,
+        shown_lines: 0,
+        withheld_results: 0,
+        cold_streak,
+    };
+
+    let mut play = Screenplay::new(110, 16);
+    play.user("go");
+    play.event(TuiEvent::Usage(stats(crate::daemon::COLD_STREAK_WARN - 1)));
+    let below = play.sidebar_grid();
+    assert!(
+        !below.contains("cache cold"),
+        "a run of one or two is normal operation, not a warning:\n{below}"
+    );
+
+    play.event(TuiEvent::Usage(stats(7)));
+    let warned = play.sidebar_grid();
+    assert!(
+        warned.contains("⚠ cache cold ×7"),
+        "the streak is stated beside the ctx meter:\n{warned}"
+    );
+    assert!(
+        warned.contains("ctx 7%"),
+        "beside, not instead of:\n{warned}"
+    );
+
+    play.event(TuiEvent::Usage(stats(0)));
+    assert!(
+        !play.sidebar_grid().contains("cache cold"),
+        "a warm read clears it"
     );
 }
 

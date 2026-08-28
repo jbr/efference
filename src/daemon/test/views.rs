@@ -209,6 +209,10 @@ fn state_reports_cache_telemetry() {
     let at = v["usage"]["last_request_at"].as_u64().expect("stamped");
     let now = crate::log::Timestamp::now().0;
     assert!(at <= now && now - at < 60_000, "a plausible recent stamp");
+    // The cold-read streak rides the same topic (docs/log-and-projection.md): the
+    // first turn's cold read was the session's boot, the second was warm, so nothing
+    // is outstanding.
+    assert_eq!(v["usage"]["cold_streak"], 0);
 }
 
 /// `GET /state` reports context-window occupancy (docs/transport.md): null with

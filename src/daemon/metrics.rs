@@ -40,6 +40,10 @@ pub(super) struct Metrics {
     pub(super) total_output: u64,
     pub(super) total_cache_read: u64,
     pub(super) total_cache_creation: u64,
+    /// Consecutive main-loop requests that read nothing from the cache and had no
+    /// legitimate reason to (docs/log-and-projection.md) — the live end of the
+    /// empirical prefix oracle, surfaced by `GET /state` as `usage.cold_streak`.
+    pub(super) cold_streak: ColdStreak,
 }
 
 /// Session cost telemetry (docs/transport.md): the endpoint whose accounting
@@ -57,7 +61,7 @@ pub(super) struct CostCell {
 /// Which request shape spent the tokens (docs/log-and-projection.md) — the tag on each
 /// persisted usage line, so per-shape spend is a query over `usage.jsonl` rather than a
 /// reconstruction from the canonical log.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RequestOrigin {
     /// An agent-loop completion (docs/README.md).
@@ -73,22 +77,164 @@ pub enum RequestOrigin {
     Keepalive,
 }
 
+/// How long the main-loop prefix may go untouched before a cold read on the next
+/// turn is explained by eviction rather than by a moved prefix — Anthropic's
+/// five-minute ephemeral TTL (docs/transport.md). The keepalive pings under it
+/// while a session idles, so a gap this long means the pings also stopped (the cap)
+/// or never ran.
+const CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// How many consecutive unexplained cold main-loop requests before the streak is
+/// worth surfacing (docs/log-and-projection.md). Four, from a fold over this repo's
+/// own corpus (77 `usage.jsonl` files, 44 with turns, 1371 `turn` requests,
+/// 2026-08-27): 155 of those turns read nothing from the cache, and this
+/// classifier explains 54 of them (38 session boot, 9 idle past the TTL, 7 a model
+/// change). The remaining 101 fall into 28 runs — 24 of length 1, two of length 3,
+/// and two of length 28 and 43, each of which was a whole session that never once
+/// read the cache. So runs of 1–3 are what normal operation produces (a retry that
+/// re-sent a prefix, an eviction this heuristic misses), and the defect signal is an
+/// order of magnitude longer; 4 sits in the empty band between them.
+pub const COLD_STREAK_WARN: u32 = 4;
+
+/// Why a cold main-loop read needed no explanation from the prefix
+/// (docs/log-and-projection.md) — the three conditions under which the provider is
+/// expected to have nothing cached, derivable from the usage record alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColdStart {
+    /// The session's first request: nothing was written yet.
+    Boot,
+    /// The model changed; a different model does not share a cached prefix.
+    ModelChange,
+    /// The prefix went untouched past [`CACHE_TTL`] — evicted, not moved.
+    Idle,
+}
+
+/// What one main-loop request's `cache_read_input_tokens` says about the prefix
+/// (docs/log-and-projection.md).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CacheRead {
+    /// The provider read a cached prefix: the bytes still match.
+    Warm,
+    /// Cold, with a reason that is not the prefix ([`ColdStart`]).
+    ColdStart(ColdStart),
+    /// Cold with no such reason — one observation of the prefix having moved.
+    /// Individually noisy; the streak is the signal.
+    Cold,
+}
+
+/// The consecutive-unexplained-cold-read counter over main-loop requests
+/// (docs/log-and-projection.md). The pins in `project.rs`/`api/test.rs` prove the
+/// harness emits the bytes it emitted yesterday; only a read rate proves the
+/// *provider* still matches them, so this folds the same `usage.jsonl` signal the
+/// `cache` verb reads offline — live, as the daemon records each request.
+///
+/// Only `RequestOrigin::Turn` moves the streak: the side channels carry their own
+/// prefixes at their own lineages. `Peek` and `Keepalive` ride the main-loop prefix
+/// without being main-loop requests, so they stamp the touch clock (an idle gap is
+/// measured from the last thing that could have refreshed the prefix) but never
+/// count as cold.
+#[derive(Default)]
+pub struct ColdStreak {
+    streak: u32,
+    last_touch_ms: Option<u128>,
+    last_model: Option<String>,
+}
+
+impl ColdStreak {
+    /// Fold one recorded request in, returning its classification for a main-loop
+    /// request and `None` for anything else. Takes the same four fields
+    /// `usage.jsonl` persists, so the offline verb replays a recorded session
+    /// through this exact logic.
+    pub fn observe(
+        &mut self,
+        origin: RequestOrigin,
+        at_ms: u128,
+        model: Option<&str>,
+        cache_read: u64,
+    ) -> Option<CacheRead> {
+        let touches_prefix = matches!(
+            origin,
+            RequestOrigin::Turn | RequestOrigin::Peek | RequestOrigin::Keepalive
+        );
+        let previous_touch = self.last_touch_ms;
+        if touches_prefix {
+            self.last_touch_ms = Some(at_ms);
+        }
+        if origin != RequestOrigin::Turn {
+            return None;
+        }
+        let previous_model = self.last_model.clone();
+        if let Some(model) = model {
+            self.last_model = Some(model.to_string());
+        }
+        if cache_read > 0 {
+            self.streak = 0;
+            return Some(CacheRead::Warm);
+        }
+        // A cold read with an explanation resets the streak like a warm one: the
+        // streak counts prefix evidence, and these three carry none.
+        let explanation = match (previous_touch, previous_model) {
+            (None, _) => Some(ColdStart::Boot),
+            (Some(_), Some(before)) if model.is_some_and(|m| m != before) => {
+                Some(ColdStart::ModelChange)
+            }
+            (Some(touch), _) if at_ms.saturating_sub(touch) > CACHE_TTL.as_millis() => {
+                Some(ColdStart::Idle)
+            }
+            _ => None,
+        };
+        match explanation {
+            Some(cause) => {
+                self.streak = 0;
+                Some(CacheRead::ColdStart(cause))
+            }
+            None => {
+                self.streak += 1;
+                Some(CacheRead::Cold)
+            }
+        }
+    }
+
+    /// Consecutive unexplained cold main-loop reads as of the last observation.
+    pub fn streak(&self) -> u32 {
+        self.streak
+    }
+}
+
 /// One line of `usage.jsonl`: when, which shape, the upstream's own id for the
 /// request, the model that served it, and the four token counts. The model is
 /// per line rather than per file because the session's model can change
 /// mid-log, so only a per-request record attributes every entry.
-#[derive(Serialize)]
-struct UsageLine<'a> {
-    at_ms: u128,
-    origin: RequestOrigin,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    model: Option<&'a str>,
-    input: u64,
-    output: u64,
-    cache_read: u64,
-    cache_write: u64,
+///
+/// Readable as well as writable: the `cache` verb (docs/operating.md) replays a
+/// recorded session's lines back through [`ColdStreak`], so the offline report and
+/// the live counter share one classification. Missing counters read as zero, which
+/// is what a line written before a field existed means.
+#[derive(Serialize, Deserialize)]
+pub struct UsageLine {
+    pub at_ms: u128,
+    pub origin: RequestOrigin,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub input: u64,
+    #[serde(default)]
+    pub output: u64,
+    #[serde(default)]
+    pub cache_read: u64,
+    #[serde(default)]
+    pub cache_write: u64,
+}
+
+/// Now, as Unix millis — the stamp on a usage line and the input to the
+/// idle-eviction test. Falls back to 0 on a clock before the epoch, as elsewhere.
+fn wall_millis() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default()
 }
 
 impl Shared {
@@ -109,18 +255,15 @@ impl Shared {
     /// Append one origin-tagged line to `usage.jsonl` (flushed per line — each is a
     /// completed upstream request worth surviving a crash). Failures are reported and
     /// dropped: the record is diagnostic, never load-bearing.
-    fn persist_usage(&self, origin: RequestOrigin, request: &RequestUsage) {
+    fn persist_usage(&self, origin: RequestOrigin, at_ms: u128, request: &RequestUsage) {
         use std::io::Write;
         let mut sink = self.usage_log.lock().unwrap();
         let Some(sink) = sink.as_mut() else { return };
         let line = UsageLine {
-            at_ms: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or_default(),
+            at_ms,
             origin,
-            id: request.id.as_deref(),
-            model: request.model.as_deref(),
+            id: request.id.clone(),
+            model: request.model.clone(),
             input: request.usage.input_tokens,
             output: request.usage.output_tokens,
             cache_read: request.usage.cache_read_input_tokens,
@@ -141,12 +284,19 @@ impl Shared {
     /// signal, docs/log-and-projection.md). Transport-only — no canonical-log append,
     /// no projection change.
     pub fn record_request(&self, origin: RequestOrigin, request: RequestUsage) {
-        self.persist_usage(origin, &request);
+        let at_ms = wall_millis();
+        self.persist_usage(origin, at_ms, &request);
         self.spawn_cost_fetch(&request);
         let mut m = self.metrics.lock().unwrap();
         if origin == RequestOrigin::Turn {
             m.last_turn_usage = Some(request.usage.clone());
         }
+        m.cold_streak.observe(
+            origin,
+            at_ms,
+            request.model.as_deref(),
+            request.usage.cache_read_input_tokens,
+        );
         Self::fold_usage(&mut m, request.usage);
         m.last_real_turn_at = Some(Instant::now());
     }
@@ -156,9 +306,18 @@ impl Shared {
     /// stamp the real-turn clock — a ping must not reset the cap that decides when to
     /// stop pinging.
     pub fn record_keepalive(&self, request: RequestUsage) {
-        self.persist_usage(RequestOrigin::Keepalive, &request);
+        let at_ms = wall_millis();
+        self.persist_usage(RequestOrigin::Keepalive, at_ms, &request);
         self.spawn_cost_fetch(&request);
         let mut m = self.metrics.lock().unwrap();
+        // A ping refreshes the prefix it read, so it stamps the touch clock the
+        // idle-eviction test reads — without ever counting as a main-loop request.
+        m.cold_streak.observe(
+            RequestOrigin::Keepalive,
+            at_ms,
+            request.model.as_deref(),
+            request.usage.cache_read_input_tokens,
+        );
         Self::fold_usage(&mut m, request.usage);
     }
 
@@ -206,6 +365,13 @@ impl Shared {
         m.last_request_at = Some(Instant::now());
         m.last_request_wall = Some(crate::log::Timestamp::now());
         m.last_usage = Some(usage);
+    }
+
+    /// Consecutive unexplained cold main-loop reads (docs/log-and-projection.md) —
+    /// what `GET /state` publishes as `usage.cold_streak` and the TUI sidebar warns
+    /// on past [`COLD_STREAK_WARN`].
+    pub fn cold_streak(&self) -> u32 {
+        self.metrics.lock().unwrap().cold_streak.streak()
     }
 
     /// `(since last cache-touch, since last real turn)` — the keepalive task's two

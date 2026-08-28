@@ -100,3 +100,96 @@ fn recorded_requests_land_in_the_usage_record() {
         "an absent id is omitted, not null"
     );
 }
+
+/// The cold-read classifier (docs/log-and-projection.md): only main-loop requests
+/// move the streak, a warm read clears it, and the three explained cold starts —
+/// boot, a model change, an idle gap past the TTL — clear it too, because none of
+/// them is evidence about the prefix. The side channels are invisible to it: a spot
+/// carries its own prefix, so a cold spot means nothing about the trajectory's.
+#[test]
+fn cold_streak_counts_only_unexplained_main_loop_reads() {
+    let mut streak = ColdStreak::default();
+    let t = 1_800_000_000_000u128;
+    let m = Some("claude-haiku-4-5");
+
+    // Boot: nothing was written yet, so a cold read is expected.
+    assert_eq!(
+        streak.observe(RequestOrigin::Turn, t, m, 0),
+        Some(CacheRead::ColdStart(ColdStart::Boot))
+    );
+    assert_eq!(streak.streak(), 0);
+
+    // Two unexplained cold turns in a row.
+    assert_eq!(
+        streak.observe(RequestOrigin::Turn, t + 1_000, m, 0),
+        Some(CacheRead::Cold)
+    );
+    assert_eq!(
+        streak.observe(RequestOrigin::Turn, t + 2_000, m, 0),
+        Some(CacheRead::Cold)
+    );
+    assert_eq!(streak.streak(), 2);
+
+    // A cold side channel neither counts nor clears.
+    assert_eq!(streak.observe(RequestOrigin::Spot, t + 2_500, m, 0), None);
+    assert_eq!(streak.streak(), 2);
+
+    // A warm main-loop read clears it — this is what the sidebar warning waits for.
+    assert_eq!(
+        streak.observe(RequestOrigin::Turn, t + 3_000, m, 12_000),
+        Some(CacheRead::Warm)
+    );
+    assert_eq!(streak.streak(), 0);
+
+    // A different model does not share a prefix.
+    assert_eq!(
+        streak.observe(RequestOrigin::Turn, t + 4_000, Some("claude-opus-4-8"), 0),
+        Some(CacheRead::ColdStart(ColdStart::ModelChange))
+    );
+    assert_eq!(streak.streak(), 0);
+
+    // Past the TTL with nothing touching the prefix: evicted, not moved.
+    let idle = t + 4_000 + 400_000;
+    assert_eq!(
+        streak.observe(RequestOrigin::Turn, idle, Some("claude-opus-4-8"), 0),
+        Some(CacheRead::ColdStart(ColdStart::Idle))
+    );
+
+    // A keepalive inside the window touches the prefix, so the gap is measured from
+    // the ping — the same turn is now unexplained.
+    let mut streak = ColdStreak::default();
+    streak.observe(RequestOrigin::Turn, t, m, 5_000);
+    streak.observe(RequestOrigin::Keepalive, t + 390_000, m, 5_000);
+    assert_eq!(
+        streak.observe(RequestOrigin::Turn, t + 400_000, m, 0),
+        Some(CacheRead::Cold),
+        "a ping refreshed the TTL, so eviction no longer explains the cold read"
+    );
+}
+
+/// The streak the daemon publishes is the one `GET /state` carries and the sidebar
+/// reads (docs/control-api.md), folded as each request is recorded.
+#[test]
+fn recorded_requests_move_the_published_cold_streak() {
+    let log_path = std::env::temp_dir().join("efference-cold-streak-test.jsonl");
+    let _ = std::fs::remove_file(&log_path);
+    let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
+    let turn = |read| RequestUsage {
+        id: None,
+        model: Some("claude-haiku-4-5".into()),
+        usage: Usage {
+            input_tokens: 1,
+            output_tokens: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: read,
+        },
+    };
+
+    shared.record_request(RequestOrigin::Turn, turn(0)); // boot — explained
+    assert_eq!(shared.cold_streak(), 0);
+    shared.record_request(RequestOrigin::Turn, turn(0));
+    shared.record_request(RequestOrigin::Turn, turn(0));
+    assert_eq!(shared.cold_streak(), 2);
+    shared.record_request(RequestOrigin::Turn, turn(9_000));
+    assert_eq!(shared.cold_streak(), 0, "a warm read clears the warning");
+}

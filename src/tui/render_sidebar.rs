@@ -167,6 +167,26 @@ impl<'a> InteractiveState<'a> {
                 put(buf, x0 + 1, y, max_w.saturating_sub(1), &line, text);
                 y += 1;
             }
+            // The cold-cache warning, beside the context meter
+            // (docs/log-and-projection.md): consecutive main-loop requests that read
+            // nothing from the cache and had no legitimate reason to. The byte pins
+            // prove the harness emits what it emitted yesterday; only this proves the
+            // provider still matches it, and a moved prefix is otherwise silent —
+            // every turn simply costs full price. Absent below the threshold, and it
+            // clears the moment a warm read arrives (the daemon resets the count).
+            if u.cold_streak >= crate::daemon::COLD_STREAK_WARN && y < bottom {
+                put(
+                    buf,
+                    x0 + 1,
+                    y,
+                    max_w.saturating_sub(1),
+                    &format!("⚠ cache cold ×{}", u.cold_streak),
+                    self.theme
+                        .status_style
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                );
+                y += 1;
+            }
             // Session cost (docs/transport.md): billed dollars from the provider's
             // accounting, absent where no per-request surface exists (direct
             // Anthropic). A nonzero unpriced count marks the total an undercount.

@@ -296,6 +296,12 @@ pub(crate) struct UsageStats {
     /// Results whose output a failed gate withheld, from `usage.retention.withheld`.
     /// Not folded into the ratio; rendered only when nonzero.
     pub withheld_results: u64,
+    /// Consecutive main-loop requests that read nothing from the cache with no
+    /// legitimate reason (not boot, not a model change, not idle past the TTL), from
+    /// `usage.cold_streak` (docs/log-and-projection.md). Past
+    /// `daemon::COLD_STREAK_WARN` the sidebar says so; a warm read resets it to 0,
+    /// which clears the line.
+    pub cold_streak: u32,
 }
 
 /// The last non-success upstream response, as surfaced by `GET /state`. Cleared

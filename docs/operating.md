@@ -39,6 +39,13 @@ Three reads, at three grains.
 `efference tui` is the interactive view of all three; `efference view <session>` opens a
 recorded log in the same rendering, inert.
 
+A fourth read is offline and about spend rather than content: **`efference cache`** folds a
+session's `usage.jsonl` into a prompt-cache read rate per request origin, separating the
+cold reads that explain themselves (session boot, a model change, an idle gap past the
+cache TTL) from the ones that do not, and reporting the longest run of the latter. With no
+argument it reads the most recently written session; `--all` sweeps the corpus, which is
+where a rate is worth comparing against. It needs no daemon and no network.
+
 Two things worth knowing about what you see. Tool output on the transcript is the **raw**
 result — the model's copy has been focused down by a triage pass, so what you read and what
 it reads differ, deliberately. And the pace dial (below) is operator-view state that is
@@ -197,6 +204,12 @@ A session that has said nothing for two minutes is in one of a few conditions, a
 
 Long-poll `GET /state?wait=settled` (or `efference settle`) blocks until a gate opens or the
 loop goes idle, capped server-side, and is the shape a supervising process should loop on.
+
+The inverse condition is a session that looks entirely healthy and is quietly paying full
+price for every turn: `usage.cold_streak` counts consecutive main-loop requests that read
+nothing from the prompt cache with no reason to (docs/log-and-projection.md), and the TUI
+sidebar states it as `⚠ cache cold ×N` beside the context meter. Nothing stalls, so nothing
+else says so. `efference cache` is the detail view.
 
 ## What the session was already told
 

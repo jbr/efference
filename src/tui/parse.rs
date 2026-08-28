@@ -348,5 +348,11 @@ pub(super) fn parse_usage(usage: &serde_json::Value) -> Option<UsageStats> {
         kept_lines: retention("kept_lines"),
         shown_lines: retention("shown_lines"),
         withheld_results: retention("withheld"),
+        // Absent on a daemon predating the counter — read as 0, i.e. nothing to
+        // warn about, which is the same as a warm read.
+        cold_streak: usage
+            .get("cold_streak")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
     })
 }

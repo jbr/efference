@@ -586,6 +586,23 @@ pub(crate) enum Command {
         #[arg(long, short = 'c')]
         config: Option<PathBuf>,
     },
+    /// Report a session's prompt-cache read rate from its `usage.jsonl`
+    /// (docs/log-and-projection.md) — the empirical half of the prefix oracle the
+    /// byte pins cover statically. Offline: no daemon, no network. Reads warm/cold
+    /// per `RequestOrigin`, separates the cold reads that need no explanation
+    /// (session boot, a model change, an idle gap past the cache TTL) from the ones
+    /// that do, and reports the longest run of the latter — a long run means the
+    /// provider stopped matching a prefix the pins say did not change.
+    Cache {
+        /// Which session to read: a session name (`.efference/<name>/usage.jsonl`), a
+        /// session directory, or a path to a `usage.jsonl`. Omit for the most
+        /// recently written session.
+        session: Option<String>,
+        /// Sweep every session under `.efference/` instead of one — the corpus view,
+        /// which is where a rate is worth comparing against.
+        #[arg(long, conflicts_with = "session")]
+        all: bool,
+    },
     /// Print the daemon's ephemeral control state (`GET /state`).
     State,
     /// Print the durable append-only log (`GET /log?since=<seq>`).

@@ -199,6 +199,12 @@ and must not be weakened:
   that change would silently bust the production cache, so it must break a
   test first.
 
+Both pins, and the whole-envelope pin in `src/api/test.rs`, answer one question:
+does the harness still emit the bytes it emitted yesterday? They cannot answer
+whether the **provider** still matches those bytes — a dependency's serialization
+changing under us, a provider-side normalization, a field that varies per session.
+That half is empirical, and its instrument is the read rate below.
+
 The primary determinism hazard: `HashMap` JSON key order is per-process
 random. Tool-call `input` is a `serde_json::Value` specifically because it
 serializes object maps with sorted keys. A `HashMap` here would kill caching
@@ -282,6 +288,32 @@ usage must stay out of the projection. The in-memory `Metrics` fold surfaced by
 `GET /state` is unchanged; the file is what makes spend reconciliation a query
 (joinable on the response id against provider accounting) rather than a
 reconstruction from the canonical log.
+
+### The cache-read oracle
+
+`cache_read` on those lines is the empirical end of the byte pins. A main-loop
+request that reads nothing from the cache is **cold**, and three conditions
+explain a cold read without implicating the prefix: the session's first request
+(nothing was written yet), a model change (a different model shares no prefix),
+and a gap past the five-minute TTL with nothing touching the prefix (evicted, not
+moved). Anything else is one observation of the prefix having moved.
+
+One observation is noise — a retry, an eviction the TTL heuristic misses — so the
+signal is the **run**. `ColdStreak` (`src/daemon/metrics.rs`) folds each recorded
+request into a consecutive-unexplained-cold counter: only `turn` requests move it
+(the side channels carry their own prefixes at their own lineages), `peek` and
+`keepalive` stamp the touch clock the idle test reads without counting, and any
+warm read clears it. `COLD_STREAK_WARN` is 4, set against this repo's own corpus:
+across 1371 recorded turns, unexplained cold reads formed 28 runs — 24 of length
+1, two of length 3, and two of length 28 and 43, each a whole session that never
+read the cache once. The constant's doc comment carries the full fold.
+
+Two surfaces read it. `GET /state` publishes the live count as
+`usage.cold_streak`, which the TUI sidebar states beside the context meter once it
+crosses the threshold and drops when a warm read arrives. `efference cache`
+(docs/operating.md) replays a recorded `usage.jsonl` through the same `ColdStreak`
+offline — per-origin read rates, the explained cold starts, and the longest run —
+for one session, or `--all` for the corpus.
 
 ---
 
