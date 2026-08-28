@@ -250,6 +250,11 @@ pub(crate) fn entry_nodes(
             // beside it, for offline analysis — it says nothing the transcript
             // reader does not already see, so it draws nothing.
             Payload::ToolTelemetry(_) => {}
+            // A process lifecycle record (docs/supervisor.md) — the durable half
+            // of what the transcript already shows in prose (the backgrounding
+            // result, the exit notification), kept for readers with no daemon.
+            // It draws nothing here.
+            Payload::ProcessEvent(_) => {}
             // The boot preamble snapshot (docs/context.md) — session boot record,
             // not conversation; the human inspects it via `efference wire`, not the transcript.
             Payload::Preamble { .. } => {}

@@ -376,7 +376,10 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 serde_json::to_string(&shared.process_states()).unwrap_or_else(|_| "[]".into());
             conn.with_status(200).with_body(body).halt()
         })
-        // One running process's representation.
+        // One process's record — running or exited, live registry or log fold
+        // (docs/supervisor.md): once a handle is minted it stays addressable at
+        // one URL for the life of the session, including in a recorded session
+        // whose daemon is long gone.
         .get("/v1/processes/:id", |conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
@@ -384,12 +387,9 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             let Some(id) = conn.param("id").and_then(|s| s.parse::<u64>().ok()) else {
                 return fail(conn, ErrorCode::BadRequest, "process id must be an integer");
             };
-            match shared
-                .running_process(id)
-                .map(|p| serde_json::to_string(&p))
-            {
+            match shared.process_record(id).map(|p| serde_json::to_string(&p)) {
                 Some(Ok(body)) => conn.with_status(200).with_body(body).halt(),
-                _ => fail(conn, ErrorCode::NotFound, "no running process with that id"),
+                _ => fail(conn, ErrorCode::NotFound, "no process with that id"),
             }
         })
         // A cursor read of one process's retained output. `?since=<cursor>` resumes

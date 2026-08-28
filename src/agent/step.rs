@@ -273,6 +273,10 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             // (kills the process group). Tool output streams to the control stream's `output` class
             // chunk-by-chunk as it runs (bash; the MCP tools resolve whole), tagged by call id.
             let mut handoff = None;
+            // The `p#<n>` the supervisor minted for this call, if it reached a
+            // spawn — recorded on the telemetry row so a reader can join the
+            // call to the process namespace (docs/supervisor.md).
+            let mut process_handle: Option<String> = None;
             // The telemetry clock starts here, after the cascade: a call that
             // waited at a human gate did not *run* for that long (docs/tools.md).
             let started = std::time::Instant::now();
@@ -286,16 +290,20 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                     // transcript entry can each find the other (docs/supervisor.md).
                     Some(command) => {
                         match shared.spawn_background(command, Some(call.id.0.clone())) {
-                            Ok(handle) => RawResult {
-                                images: Vec::new(),
-                                content: format!(
+                            Ok(handle) => {
+                                let content = format!(
                                     "backgrounded as {handle}. its recent output will surface in \
-                                 your inbox at each step, and you'll get a notification when \
-                                 it exits."
-                                ),
-                                is_error: false,
-                                content_elided: None,
-                            },
+                                     your inbox at each step, and you'll get a notification when \
+                                     it exits."
+                                );
+                                process_handle = Some(handle);
+                                RawResult {
+                                    images: Vec::new(),
+                                    content,
+                                    is_error: false,
+                                    content_elided: None,
+                                }
+                            }
                             Err(e) => {
                                 harness_error = true;
                                 RawResult {
@@ -374,8 +382,11 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 match outcome {
                     bash::Outcome::Done(result) => {
                         // The paired `tool_result` is the canonical output now; the
-                        // registry entry has done its job.
+                        // registry entry has done its job. Its handle stays on the
+                        // telemetry row, which is where a foreground process's
+                        // ordinal survives the removal (docs/supervisor.md).
                         if let Some(id) = fg_id.lock().unwrap().take() {
+                            process_handle = Some(crate::supervisor::handle(id));
                             shared.conclude_foreground(id);
                         }
                         result
@@ -393,6 +404,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                             .expect("a detach only reaches a spawned (registered) command");
                         let auto_after = detached.auto_after;
                         let handle = shared.adopt_background(*detached, id);
+                        process_handle = Some(handle.clone());
                         handoff = shared.take_detach_note();
                         // The two detaches read differently to the agent. An operator
                         // detach is something that happened *to* the call; an auto-detach
@@ -451,7 +463,13 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             // Measured after the cap and the config-write re-read, so
             // `result_bytes` and the outcome class describe the result that is
             // actually logged rather than an intermediate one.
-            let telemetry = Box::new(telemetry::observe(call, &result, elapsed, harness_error));
+            let telemetry = Box::new(telemetry::observe(
+                call,
+                &result,
+                elapsed,
+                harness_error,
+                process_handle,
+            ));
             // The interrupt's *after* juncture (docs/control-channel.md).
             if shared.take_interrupt() {
                 return Ok(Decision::Withheld(withheld(call, result)));

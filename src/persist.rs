@@ -57,6 +57,19 @@ impl Log {
         }
     }
 
+    /// An in-memory log seeded with entries replayed from disk ([`load`]) — the
+    /// shape a daemon reading a session it did not itself run has. No sink: this
+    /// stands in front of a record someone else wrote, so it must not append to
+    /// it. `seq` stays index-equal, because appends continue from the seeded
+    /// length.
+    pub fn in_memory_with(entries: Vec<LogEntry>) -> Self {
+        Self {
+            entries,
+            sink: None,
+            masker: Arc::default(),
+        }
+    }
+
     /// Install the session's `[env]` mask (docs/env.md). Set before the first
     /// append: masking is irreversible filtering *upstream* of the log, so an
     /// entry already written was written with whatever masker was in force.

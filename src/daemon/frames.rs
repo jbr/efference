@@ -307,6 +307,7 @@ pub(crate) fn payload_kind(payload: &Payload) -> &'static str {
         Payload::Ambient(_) => "ambient",
         Payload::Spot(_) => "spot",
         Payload::ToolTelemetry(_) => "tool_telemetry",
+        Payload::ProcessEvent(_) => "process_event",
         Payload::ConfigEdit(_) => "config_edit",
         Payload::Preamble { .. } => "preamble",
     }

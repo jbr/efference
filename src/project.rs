@@ -238,6 +238,12 @@ pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessa
             // what lets it be appended on every call without moving the cached
             // prefix (docs/log-and-projection.md).
             Payload::ToolTelemetry(_) => {}
+            // A process lifecycle record (docs/supervisor.md) is audit metadata
+            // beside events the wire already carries in prose — the backgrounding
+            // result and the exit notification. It projects to nothing, so a
+            // spawn or an exit mid-session cannot move the cached prefix
+            // (docs/log-and-projection.md).
+            Payload::ProcessEvent(_) => {}
             // A grant (docs/permissions.md) is audit-only too — its
             // *effect* reaches the model through the classifier (the policy fold), never
             // the transcript. So it projects to nothing, and appending one cannot perturb

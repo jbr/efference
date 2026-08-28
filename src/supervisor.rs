@@ -24,6 +24,9 @@ use serde_json::{Value, json};
 use crate::tools::{ToolBrief, anthropic_def};
 use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
 
+mod record;
+pub use record::{ProcessRecord, from_log};
+
 /// `list_processes` — the directed read of running processes (docs/supervisor.md). Named to
 /// avoid colliding with fs-mcp's `list`.
 pub const LIST: &str = "list_processes";
@@ -260,6 +263,11 @@ struct Process {
     /// notifies, but the running tail stops surfacing in the peek.
     muted: bool,
     running: bool,
+    /// How this process ended, stamped by [`Supervisor::finish`] — the same
+    /// record the log's exit entry carries, kept here so a live daemon answers
+    /// `GET /processes/:id` for an exited process without re-reading the log
+    /// (docs/supervisor.md). `None` while it runs.
+    exit: Option<crate::log::ProcessExit>,
     /// Registered output patterns awaiting a hit (docs/supervisor.md). Each fires
     /// once and is removed; an entry that never matches dies with the process.
     watches: Vec<String>,
@@ -330,6 +338,19 @@ pub struct ProcessState {
     /// than filtered so the listing is the whole truth; clients that hide muted rows
     /// do so themselves.
     pub muted: bool,
+}
+
+/// What one process's exit produced (docs/supervisor.md): the durable record for
+/// the log, and the `(source, body)` of the notification for the inbox. One
+/// return rather than two lookups — the drain task takes the registry lock once.
+#[derive(Clone, Debug)]
+pub struct Finished {
+    /// The exit as the log records it — status, duration, and when.
+    pub exit: crate::log::ProcessExit,
+    /// The notification's source: the plain `p#<n>` handle.
+    pub source: String,
+    /// The notification's body: status, duration, and the final tail.
+    pub body: String,
 }
 
 /// One fired watch (docs/supervisor.md), ready to become a
@@ -526,6 +547,7 @@ impl Supervisor {
             spawned_wall: crate::log::Timestamp::now(),
             muted: false,
             running: true,
+            exit: None,
             watches: Vec::new(),
             scanned: 0,
         });
@@ -621,15 +643,56 @@ impl Supervisor {
             .collect()
     }
 
-    /// One *running* process's representation, or `None` — the `GET`/`PATCH`
-    /// target check for `/processes/:id` (docs/control-api.md). Exited entries
-    /// answer `None` here (they have left the listing) while their retained output
-    /// stays readable through [`read_output`](Self::read_output).
+    /// One *running* process's representation, or `None` — the `PATCH`/`DELETE`
+    /// target check for `/processes/:id` (docs/control-api.md), where "running"
+    /// is what the verb needs. The `GET` reads [`record`](Self::record) instead,
+    /// which answers for exited processes too.
     pub fn running_state(&self, id: u64) -> Option<ProcessState> {
         self.procs
             .iter()
             .find(|p| p.id == id && p.running)
             .map(state_of)
+    }
+
+    /// One process's full record — running or exited — from the live registry
+    /// (docs/supervisor.md). The richest of the two sources `GET /processes/:id`
+    /// consults; the log fold ([`record::from_log`]) answers when this doesn't,
+    /// which is every reader of a session this daemon didn't run.
+    ///
+    /// A completed *foreground* entry is removed from the registry, so it answers
+    /// `None` here like any unknown id.
+    pub fn record(&self, id: u64) -> Option<ProcessRecord> {
+        let p = self.find(id)?;
+        Some(ProcessRecord {
+            id: p.id,
+            command: p.command.clone(),
+            call_id: p.call_id.clone(),
+            pid: p.pgid,
+            spawned_at: p.spawned_wall,
+            background: p.background,
+            muted: p.muted,
+            running: p.running,
+            exit: p.exit,
+        })
+    }
+
+    /// The **mint** half of a process's durable record (docs/supervisor.md),
+    /// built from the live entry: the payload the daemon appends when a process
+    /// enters the background namespace — at a background spawn, or at the
+    /// handoff that adopts a foreground command. `None` if the id is unknown.
+    pub fn spawn_event(&self, id: u64) -> Option<crate::log::ProcessEvent> {
+        let p = self.find(id)?;
+        Some(crate::log::ProcessEvent {
+            id: p.id,
+            kind: crate::log::ProcessEventKind::Spawned(crate::log::ProcessSpawn {
+                command: p.command.clone(),
+                call_id: p.call_id.clone().map(crate::log::CallId),
+                pid: p.pgid,
+                // The spawn stamp, which for an adopted command is older than the
+                // entry this payload lands in.
+                at: p.spawned_wall,
+            }),
+        })
     }
 
     /// The ambient auto-show: a snapshot of every *running, un-muted background*
@@ -668,23 +731,35 @@ impl Supervisor {
         Some((handle(p.id), body))
     }
 
-    /// Mark a process exited and produce its exit notification `(source, body)` —
-    /// status + duration + final tail (docs/supervisor.md, requirement #4). `None` if the
-    /// id is unknown.
-    pub fn finish(&mut self, id: u64, status: Option<ExitStatus>) -> Option<(String, String)> {
+    /// Mark a process exited, stamp its durable exit record, and produce its exit
+    /// notification — status + duration + final tail (docs/supervisor.md,
+    /// requirement #4). `None` if the id is unknown.
+    pub fn finish(&mut self, id: u64, status: Option<ExitStatus>) -> Option<Finished> {
         let ran = {
             let p = self.find(id)?;
             Instant::now().saturating_duration_since(p.spawned_at)
         };
+        let exit = crate::log::ProcessExit {
+            outcome: crate::log::ExitOutcome::of(status),
+            // Saturating: a duration past u64 milliseconds is unreachable, and a
+            // wrapped one would read as a fast process.
+            duration_ms: u64::try_from(ran.as_millis()).unwrap_or(u64::MAX),
+            at: crate::log::Timestamp::now(),
+        };
         let p = self.find_mut(id)?;
         p.running = false;
+        p.exit = Some(exit);
         let body = format!(
             "{} after {}; final output:\n{}",
             describe_status(status),
             humanize(ran),
             tail_text(&p.buffer, p.dropped)
         );
-        Some((handle(p.id), body))
+        Some(Finished {
+            exit,
+            source: handle(p.id),
+            body,
+        })
     }
 
     /// The directed `list_processes` view (docs/supervisor.md): all *running background*

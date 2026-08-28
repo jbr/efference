@@ -293,7 +293,11 @@ What it records:
   out of the result text by `bash::reported_exit_status`, which sits beside the
   writer that emits the marker — it never left that module in structured form,
   and widening `Outcome` to carry it would touch every backend for a field only
-  telemetry reads.
+  telemetry reads. Also the `p#<n>` **handle** the supervisor minted for the
+  command, when it reached a spawn ([supervisor.md](supervisor.md)) — the join
+  from a call to the process namespace, and for a foreground command (whose
+  registry entry is dropped when the call completes) the only typed place its
+  ordinal survives.
 - **Edit-shaped**: `operation`, anchor bytes, and content bytes, read off the
   call's own `input` under any of the spellings the mounted editing tools use.
 

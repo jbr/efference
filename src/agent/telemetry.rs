@@ -27,11 +27,16 @@ const CONTENT_KEYS: [&str; 4] = ["content", "new_content", "new_text", "new_stri
 /// is a datum about the model). It is set at the two sites that construct a
 /// harness-authored failure — never inferred from the text, which would put the
 /// classification back where it started.
+/// `handle` is the `p#<n>` the supervisor minted for this call's process, when
+/// it reached a spawn (docs/supervisor.md) — the join from a telemetry row to
+/// the process namespace, which for a foreground command is the only typed place
+/// its handle appears.
 pub(super) fn observe(
     call: &ToolCall,
     result: &RawResult,
     elapsed: std::time::Duration,
     harness_error: bool,
+    handle: Option<String>,
 ) -> ToolTelemetry {
     let outcome = match (harness_error, result.is_error) {
         (true, _) => ToolOutcome::HarnessError,
@@ -50,6 +55,7 @@ pub(super) fn observe(
         bash: (call.name == bash::NAME).then(|| BashTelemetry {
             exit_status: crate::bash::reported_exit_status(&result.content).map(str::to_string),
             background: bash::is_background_call(call),
+            handle,
         }),
         edit: edit_telemetry(call),
     }

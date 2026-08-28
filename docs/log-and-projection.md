@@ -37,6 +37,8 @@ enum Payload {
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
     Triage(Triage),    // a fork verdict — the audit record (see redaction-fork.md)
     Spot(Spot),        // a spotter permission verdict — audit only (see permissions.md)
+    ToolTelemetry(ToolTelemetry),  // what one call cost and how it came out (see tools.md)
+    ProcessEvent(ProcessEvent),    // a background process's mint or exit (see supervisor.md)
     ConfigEdit(ConfigEdit),  // one durable policy change — folded by the classifier (see permissions.md)
     Preamble { system: String },  // the boot preamble snapshot — replay/audit only (see context.md)
     // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)
@@ -47,6 +49,13 @@ enum Payload {
 
 `Commit` is a placeholder: when compaction needs an explicit freeze primitive
 it slots in here without touching any other type.
+
+`ToolTelemetry` and `ProcessEvent` are log metadata in the same sense timestamps
+are: both project to nothing, which is what lets them be appended mid-session —
+on every tool call, and at every background spawn and exit — without moving the
+cached prefix. `ProcessEvent` is the durable answer to "what was `p#3`" for a
+reader with no daemon ([supervisor.md](supervisor.md)); metadata only, since a
+process's output belongs to the registry's bounded best-effort capture.
 
 `Assistant.upstream_failure` is the assistant-side analogue of a `WireState`
 verdict: `Some(record)` marks a **record-only** entry — the stream that produced

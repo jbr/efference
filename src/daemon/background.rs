@@ -44,9 +44,17 @@ pub(crate) async fn drain_background(
     let status = child.wait().await.ok();
     let summary = shared.supervisor.lock().unwrap().finish(id, status);
     shared.touch_state();
-    if let Some((source, body)) = summary {
+    if let Some(finished) = summary {
+        // The durable half (docs/supervisor.md): the exit is a fact about the
+        // session, so it lands in the log where a reader with no daemon can still
+        // answer what `p#<id>` did. Appended before the notification, so a reader
+        // that sees the exit prose can always resolve the handle beside it.
+        shared.append_process_event(crate::log::ProcessEvent {
+            id,
+            kind: crate::log::ProcessEventKind::Exited(finished.exit),
+        });
         let slot = crate::supervisor::handle(id);
-        shared.notify(source, body, Some(slot), None);
+        shared.notify(finished.source, finished.body, Some(slot), None);
     }
 }
 
@@ -91,6 +99,7 @@ impl Shared {
             .lock()
             .unwrap()
             .register_background(command, pgid, call_id);
+        self.record_mint(id);
         self.touch_state();
         tokio::spawn(drain_background(
             Arc::clone(self),
@@ -171,6 +180,11 @@ impl Shared {
             ..
         } = detached;
         self.supervisor.lock().unwrap().make_background(id);
+        // The handle becomes a durable fact here, not at the foreground spawn:
+        // this is where it enters prose the model and the operator read
+        // (docs/supervisor.md). The record's spawn stamp is the original spawn's,
+        // so the adoption doesn't backdate the process.
+        self.record_mint(id);
         self.touch_state();
         tokio::spawn(drain_background(
             Arc::clone(self),
@@ -241,10 +255,49 @@ impl Shared {
         self.supervisor.lock().unwrap().read_since(id, cursor)
     }
 
-    /// One *running* process's representation — the `/processes/:id` target check
-    /// (docs/control-api.md).
+    /// One *running* process's representation — the `PATCH`/`DELETE` target check
+    /// for `/processes/:id` (docs/control-api.md).
     pub fn running_process(&self, id: u64) -> Option<crate::supervisor::ProcessState> {
         self.supervisor.lock().unwrap().running_state(id)
+    }
+
+    /// One process's record for `GET /processes/:id` — **any handle this session
+    /// ever minted into the background**, running or exited (docs/supervisor.md).
+    /// The live registry answers first (it is the richer source and holds the
+    /// capture the sibling output route reads); a log fold answers for a recorded
+    /// session or a daemon that outlived neither the process nor its own restart.
+    /// `None` only when nothing anywhere names the id.
+    pub fn process_record(&self, id: u64) -> Option<crate::supervisor::ProcessRecord> {
+        let live = self.supervisor.lock().unwrap().record(id);
+        if live.is_some() {
+            return live;
+        }
+        crate::supervisor::from_log(self.log.lock().unwrap().entries(), id)
+    }
+
+    /// Append the **mint** half of a process's durable record, read from the live
+    /// registry (docs/supervisor.md). Called where a handle enters the background
+    /// namespace — a background spawn, or the handoff's adoption.
+    fn record_mint(&self, id: u64) {
+        // The registry lock is dropped before the append, which writes to disk:
+        // every drain task takes this lock per output chunk.
+        let event = self.supervisor.lock().unwrap().spawn_event(id);
+        if let Some(event) = event {
+            self.append_process_event(event);
+        }
+    }
+
+    /// Append one [`ProcessEvent`](crate::log::ProcessEvent) (docs/supervisor.md).
+    /// It projects to nothing, so its turn is audit grouping only and the
+    /// in-flight turn is the honest placement — the same reasoning a `ConfigEdit`
+    /// appended out of band uses. A failed write is reported and dropped: the
+    /// record is worth having, and losing it must not fail the spawn or the exit
+    /// path that was writing it.
+    pub(crate) fn append_process_event(&self, event: crate::log::ProcessEvent) {
+        let turn = self.latest_turn();
+        if let Err(e) = self.append(turn, crate::log::Payload::ProcessEvent(event)) {
+            eprintln!("[process record: append failed: {e}]");
+        }
     }
 
     /// One cursor read of a process's retained output, structured — the body of

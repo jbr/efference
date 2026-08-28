@@ -37,6 +37,7 @@ export type Payload =
   | { Spot: Spot }
   | { ConfigEdit: ConfigEdit }
   | { ToolTelemetry: ToolTelemetry }
+  | { ProcessEvent: ProcessEvent }
   | { Preamble: { system: string; context: unknown } };
 
 export type ContentBlock =
@@ -138,6 +139,34 @@ export interface BashTelemetry {
   /** Whether the call asked to be backgrounded, in which case `duration_ms`
    * measures the spawn and `result_bytes` the handle message. */
   background: boolean;
+  /** The `p#<n>` the supervisor minted for this command, when it reached a
+   * spawn (docs/supervisor.md). Absent for a call that never spawned. */
+  handle?: string;
+}
+
+/** One lifecycle fact about a background process (docs/supervisor.md): the mint
+ * when it enters the background namespace, or the exit when it ends. The durable
+ * answer to "what was `p#3`" for a reader with no daemon — the transcript already
+ * carries both events in prose, so this is a record, not an entry to render. */
+export interface ProcessEvent {
+  id: number;
+  kind:
+    | {
+        Spawned: {
+          command: string;
+          call_id?: CallId;
+          pid?: number;
+          at: number;
+        };
+      }
+    | { Exited: ProcessExit };
+}
+
+export interface ProcessExit {
+  /** `{"code": 0}`, `"signal"`, or `"unknown"`. */
+  outcome: { code: number } | "signal" | "unknown";
+  duration_ms: number;
+  at: number;
 }
 
 /** Read off an edit-shaped call's own arguments, so any tool that spells them

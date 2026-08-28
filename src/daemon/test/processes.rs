@@ -46,9 +46,18 @@ async fn processes_listing_and_output_read() {
 
     let one = app.get("/v1/processes/1").await;
     let single: Value = serde_json::from_str(one.body()).unwrap();
+    for (key, value) in procs[0].as_object().expect("an object") {
+        assert_eq!(
+            single.get(key),
+            Some(value),
+            "the single read speaks the listing's vocabulary for {key}"
+        );
+    }
+    assert_eq!(single["running"], true);
     assert_eq!(
-        &single, &procs[0],
-        "listing and single read share one representation"
+        single["exit"],
+        Value::Null,
+        "a running process claims no exit"
     );
 
     let missing = app.get("/v1/processes/99").await;
@@ -57,6 +66,61 @@ async fn processes_listing_and_output_read() {
     app.get("/v1/processes/p%233").await.assert_status(400);
 
     shared.kill_all_bg();
+}
+
+/// A minted handle stays addressable at one URL for the life of the session
+/// (docs/supervisor.md): the live registry answers while the process runs and
+/// after it exits, and a log fold answers when the registry never had it — which
+/// is what a recorded session and a restarted daemon are.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_minted_handle_resolves_after_the_exit_and_after_the_daemon() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    shared
+        .spawn_background("true".into(), Some("toolu_abc".into()))
+        .expect("spawn");
+    let app = test_server(&shared).await;
+
+    // Exited, same daemon: the registry still holds the entry, now with its exit.
+    let mut tries = 0;
+    let exited = loop {
+        let v: Value = serde_json::from_str(app.get("/v1/processes/1").await.body()).unwrap();
+        if v["running"] == false {
+            break v;
+        }
+        tries += 1;
+        assert!(tries < 200, "the process never exited: {v}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert_eq!(exited["command"], "true");
+    assert_eq!(exited["call_id"], "toolu_abc");
+    assert_eq!(exited["exit"]["outcome"], serde_json::json!({"code": 0}));
+    // The listing is unchanged: an exit is still how a process leaves it.
+    let listing: Value = serde_json::from_str(app.get("/v1/processes").await.body()).unwrap();
+    assert_eq!(listing.as_array().expect("an array").len(), 0);
+
+    // Log-only: a second daemon over the same entries has an empty registry, so
+    // everything it answers came from the fold.
+    let entries = shared.snapshot();
+    assert!(
+        entries
+            .iter()
+            .any(|e| matches!(&e.payload, Payload::ProcessEvent(p) if p.id == 1)),
+        "the lifecycle records reached the log"
+    );
+    let (replay, _turns_rx) = Shared::new(Log::in_memory_with(entries));
+    let app = test_server(&replay).await;
+    let v: Value = serde_json::from_str(app.get("/v1/processes/1").await.body()).unwrap();
+    assert_eq!(v["id"], 1);
+    assert_eq!(v["command"], "true");
+    assert_eq!(v["call_id"], "toolu_abc");
+    assert_eq!(v["running"], false);
+    assert_eq!(v["exit"]["outcome"], serde_json::json!({"code": 0}));
+    assert_eq!(
+        v["spawned_at"], exited["spawned_at"],
+        "the record's spawn stamp is the process's, not the entry's"
+    );
+    // A handle nothing ever minted is a clean 404, not an error.
+    app.get("/v1/processes/9").await.assert_status(404);
 }
 
 /// `PATCH {muted}` applies synchronously both ways and answers with the

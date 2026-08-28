@@ -59,9 +59,18 @@ fn finish_marks_exited_summarizes_and_leaves_the_show() {
     let mut s = Supervisor::new();
     let id = s.register_background("x".into(), Some(7), None);
     s.push_chunk(id, b"done\n");
-    let (source, body) = s.finish(id, None).unwrap();
-    assert_eq!(source, "p#1");
-    assert!(body.contains("done"), "exit carries the final tail: {body}");
+    let finished = s.finish(id, None).unwrap();
+    assert_eq!(finished.source, "p#1");
+    assert!(
+        finished.body.contains("done"),
+        "exit carries the final tail: {}",
+        finished.body
+    );
+    assert_eq!(
+        finished.exit.outcome,
+        crate::log::ExitOutcome::Unknown,
+        "a wait that reported no status says so rather than inventing a code"
+    );
     assert!(s.views().is_empty(), "exited → off the ambient show");
     assert!(
         s.running_pgids().is_empty(),

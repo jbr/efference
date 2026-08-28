@@ -111,8 +111,50 @@ the bounded per-process capture buffer, and the read projections over it.
 **The exit** — status, duration, and final tail — is a discrete immutable event.
 The supervisor posts it to `POST /notifications` on slot `p#<id>`, using the control
 socket just as any other client would. This folds into the existing `Ambient`
-[inbox](inbox.md) with no new `Payload` variant. Spawn = `ToolResult`, exit and
-pinned tail = `Ambient`, the live state = ephemeral registry.
+[inbox](inbox.md). Spawn = `ToolResult`, exit and pinned tail = `Ambient`, the
+live state = ephemeral registry.
+
+## The durable record — what `p#<n>` was
+
+The three places above are what the *model* sees, and all three say the handle in
+prose. That prose outlives the registry, so a reader of a recorded session meets
+`p#3` with nothing to resolve it against — and recovering the mapping from
+`moved to the background as p#3` is the result-text parsing `ToolTelemetry`
+([tools.md](tools.md)) exists to end.
+
+So the mapping is also recorded structurally, as `Payload::ProcessEvent`
+(`src/log/process.rs`): a **mint** entry when a process enters the background
+namespace, and an **exit** entry when it ends. Like `ToolTelemetry` it projects to
+nothing — the wire already carries the backgrounding result and the exit
+notification; this is the audit record beside them, not a second copy — so
+appending one mid-session cannot move the cached prefix
+([log-and-projection.md](log-and-projection.md)).
+
+Metadata and output are **different promises**:
+
+- **Metadata is durable, always**: the handle, the spawning `call_id`, the
+  command, the spawn time, the exit status, and the duration.
+- **Output stays retained best-effort**: the bounded capture with its `lost`
+  count ([buffering](#buffering)) is the registry's, and dies with the daemon. A
+  log-derived answer carries the metadata and says nothing about output rather
+  than promising a buffer it does not have.
+
+Both halves carry their own wall stamp instead of leaning on the entry's `at`.
+The mint has to: a command adopted by the handoff is recorded when it is
+*adopted*, which is later than when it spawned, and the record must not backdate
+the process. The exit follows the mint so the two read the same way.
+
+The record covers processes that reach the **background** namespace — spawned
+with `background: true`, or adopted by the handoff. That is where the handle
+becomes something a reader can encounter: a foreground command that completes
+normally is fully described by its own `tool_use`/`tool_result` pair, and its
+ordinal survives on that call's `ToolTelemetry` (`bash.handle`,
+[tools.md](tools.md)) rather than in a lifecycle entry of its own.
+
+The read side is `GET /processes/:id` ([control-api.md](control-api.md)), which
+answers from the live registry when it has the process and from a fold over these
+entries (`supervisor::from_log`) when it does not — one URL for a handle whether
+its daemon is running, restarted, or gone.
 
 ## Foreground → background handoff
 
@@ -199,8 +241,10 @@ explicitly pins it.
 There is also a structural constraint: output arriving after the spawn's `tool_use`
 has already been answered has no `tool_use` to pair with, so it *cannot* be a
 `ToolResult`. Late output is structurally a live view or a notification — never a
-distilled result. The same argument applies to exit events, which is why exit routes
-through the Ambient inbox rather than a new payload type.
+distilled result. The same argument applies to exit events, which is why the exit
+reaches the model through the Ambient inbox. The `ProcessEvent` record above is
+not a second route to the model: it projects to nothing, and exists for readers
+that arrive after the session.
 
 ## One registry, two projections
 

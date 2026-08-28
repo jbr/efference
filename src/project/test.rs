@@ -453,6 +453,7 @@ fn tool_telemetry_projects_to_identical_bytes() {
                     bash: Some(BashTelemetry {
                         exit_status: Some("1".into()),
                         background: false,
+                        handle: Some("p#1".into()),
                     }),
                     edit: Some(EditTelemetry {
                         operation: Some("replace".into()),
@@ -467,6 +468,44 @@ fn tool_telemetry_projects_to_identical_bytes() {
             serde_json::to_string(&project(&with)).unwrap(),
             "telemetry appended at index {at} must not perturb the projected wire"
         );
+    }
+}
+
+/// A process lifecycle record (docs/supervisor.md) is log metadata too: the mint
+/// and the exit are appended mid-session, so if either moved a projected byte it
+/// would invalidate the cached prefix of every session that backgrounds a command
+/// (docs/log-and-projection.md).
+#[test]
+fn process_events_project_to_identical_bytes() {
+    use crate::log::{ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn};
+    let without = serde_json::to_string(&project(&sample_log())).unwrap();
+    let events = [
+        ProcessEventKind::Spawned(ProcessSpawn {
+            command: "cargo watch -x test".into(),
+            call_id: Some(CallId("toolu_1".into())),
+            pid: Some(4242),
+            at: Timestamp(1_754_300_000_000),
+        }),
+        ProcessEventKind::Exited(ProcessExit {
+            outcome: ExitOutcome::Code(1),
+            duration_ms: 12_000,
+            at: Timestamp(1_754_300_012_000),
+        }),
+    ];
+    // Interleaved mid-log and at the tail — position must not matter either.
+    for at in [2, 3] {
+        for kind in events.clone() {
+            let mut with = sample_log();
+            with.insert(
+                at,
+                entry(99, 1, Payload::ProcessEvent(ProcessEvent { id: 3, kind })),
+            );
+            assert_eq!(
+                without,
+                serde_json::to_string(&project(&with)).unwrap(),
+                "a process record appended at index {at} must not perturb the projected wire"
+            );
+        }
     }
 }
 

@@ -33,6 +33,7 @@ fn outcome_classes_derive_generically() {
         &result("body", false),
         INSTANT,
         false,
+        None,
     );
     assert_eq!(ok.outcome, crate::log::ToolOutcome::Applied);
     let refused = observe(
@@ -40,6 +41,7 @@ fn outcome_classes_derive_generically() {
         &result("anchor matched nothing", true),
         INSTANT,
         false,
+        None,
     );
     assert_eq!(refused.outcome, crate::log::ToolOutcome::Rejected);
     let broken = observe(
@@ -47,6 +49,7 @@ fn outcome_classes_derive_generically() {
         &result("failed to background: no pty", true),
         INSTANT,
         true,
+        None,
     );
     assert_eq!(broken.outcome, crate::log::ToolOutcome::HarnessError);
 }
@@ -60,6 +63,7 @@ fn common_fields_are_populated_for_any_tool() {
         &result("a much longer body", false),
         std::time::Duration::from_millis(1500),
         false,
+        None,
     );
     assert_eq!(t.tool, "ferritin__get");
     assert_eq!(t.call_id, CallId("toolu_1".into()));
@@ -80,6 +84,7 @@ fn bash_exit_status_round_trips_through_the_result_text() {
         &result("(no output)", false),
         INSTANT,
         false,
+        None,
     );
     let bash = clean.bash.expect("a bash call records bash fields");
     assert_eq!(bash.exit_status, None);
@@ -90,6 +95,7 @@ fn bash_exit_status_round_trips_through_the_result_text() {
         &result("some output\n[exited with status 1]", true),
         INSTANT,
         false,
+        None,
     );
     assert_eq!(
         failed.bash.expect("bash fields").exit_status.as_deref(),
@@ -100,6 +106,7 @@ fn bash_exit_status_round_trips_through_the_result_text() {
         &result("[exited with status signal]", true),
         INSTANT,
         false,
+        None,
     );
     assert_eq!(
         killed.bash.expect("bash fields").exit_status.as_deref(),
@@ -112,11 +119,18 @@ fn bash_exit_status_round_trips_through_the_result_text() {
             "bash",
             json!({"command": "cargo watch", "background": true}),
         ),
-        &result("backgrounded as p1", false),
+        &result("backgrounded as p#1", false),
         INSTANT,
         false,
+        Some("p#1".to_string()),
     );
-    assert!(backgrounded.bash.expect("bash fields").background);
+    let bash = backgrounded.bash.expect("bash fields");
+    assert!(bash.background);
+    assert_eq!(
+        bash.handle.as_deref(),
+        Some("p#1"),
+        "the minted handle is a field, not a string to parse back out of the result"
+    );
 }
 
 /// Edit fields come off the call's own arguments, under any of the spellings the
@@ -131,6 +145,7 @@ fn edit_fields_come_from_the_call_arguments() {
         &result("Applied", false),
         INSTANT,
         false,
+        None,
     );
     let edit = t.edit.expect("an edit-shaped call records edit fields");
     assert_eq!(edit.operation.as_deref(), Some("replace"));
@@ -143,6 +158,7 @@ fn edit_fields_come_from_the_call_arguments() {
         &result("ok", false),
         INSTANT,
         false,
+        None,
     );
     let edit = alt.edit.expect("recognized under the other spelling");
     assert_eq!(edit.anchor_bytes, Some(3));
@@ -160,6 +176,7 @@ fn telemetry_serializes_without_its_absent_halves() {
         &result("body", false),
         INSTANT,
         false,
+        None,
     );
     let line = serde_json::to_string(&crate::log::Payload::ToolTelemetry(t)).unwrap();
     assert!(!line.contains("bash"), "{line}");

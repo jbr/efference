@@ -8,7 +8,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod process;
 mod upstream;
+pub use process::{ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn};
 pub use upstream::{
     CAPTURED_HEADERS, FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord,
     is_captured_header,
@@ -164,6 +166,22 @@ pub enum Payload {
     /// [`ToolResult`]: Payload::ToolResult
     /// [`Spot`]: Payload::Spot
     ToolTelemetry(ToolTelemetry),
+    /// One lifecycle fact about a background process — its mint or its exit
+    /// (docs/supervisor.md). The supervisor's registry is ephemeral, but a
+    /// `p#<n>` handle appears in prose (the backgrounding result, the exit
+    /// notification) that outlives it, so these entries are what a reader of a
+    /// recorded session — or a restarted daemon — resolves the handle against.
+    /// Metadata only: the command, the spawning call, the spawn time, the exit
+    /// status and duration. A process's *output* is the registry's bounded
+    /// best-effort capture and is deliberately not recorded here.
+    ///
+    /// Projects to nothing, like [`ToolTelemetry`] — the exit still reaches the
+    /// model as an [`Ambient`] notification, and this is the audit record beside
+    /// it, not a second copy on the wire (docs/log-and-projection.md).
+    ///
+    /// [`ToolTelemetry`]: Payload::ToolTelemetry
+    /// [`Ambient`]: Payload::Ambient
+    ProcessEvent(ProcessEvent),
     /// A config edit — the durable record of one change to the policy table
     /// (docs/permissions.md). The config-edit loop turns a deny into
     /// negotiation: an orchestrator (human or coordinating session) edits the session's
@@ -599,6 +617,15 @@ pub struct BashTelemetry {
     /// measures the spawn and `result_bytes` the handle message — not the
     /// command.
     pub background: bool,
+    /// The `p#<n>` handle of the process this call spawned (docs/supervisor.md),
+    /// as the supervisor minted it. Present for every bash command that reached
+    /// a spawn — foreground included, since foreground and background share one
+    /// namespace — so the handle↔call join is readable off the telemetry row
+    /// without parsing result prose. `None` for a call that never spawned (a
+    /// refused command, a failed background spawn) and for logs written before
+    /// the field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
 }
 
 /// Fields read off an edit-shaped call's own arguments (docs/tools.md). Every

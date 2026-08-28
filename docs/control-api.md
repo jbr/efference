@@ -252,13 +252,38 @@ The running processes, as a JSON array of the same representation the
 
 `call_id` is the call↔process mapping ([supervisor.md](supervisor.md)): a client
 holding a transcript entry finds the process that answers it, and a client holding
-a process row finds the entry to jump to. Because the listing carries only
-*running* processes, a client that wants the mapping after an exit keeps what it
-saw while the process was live — the registry is ephemeral either way.
+a process row finds the entry to jump to. The listing carries only *running*
+processes — a process leaving it is how an exit is represented, which is what
+keeps it bounded over a long session — so a client asking about an exited one
+addresses it directly, below.
 
 #### `GET /processes/:id`
-One running process's representation, or `404 not_found` (exited processes
-leave the listing; their retained output stays readable below).
+One process's record — running or exited. Once a handle is minted it stays
+addressable at this one URL for the life of the session
+([supervisor.md](supervisor.md)), including in a session whose daemon has
+restarted or is long gone: the live registry answers when it has the process, and
+a fold over the log's lifecycle records answers when it does not.
+
+The body is the listing's representation plus the two fields it has no need for:
+
+```jsonc
+{ "id": 3, "command": "cargo watch -x test", "call_id": "toolu_01ab",
+  "pid": 4242, "spawned_at": 1754300000000, "background": true, "muted": false,
+  "running": false,             // false once it exited
+  "exit": { "outcome": {"code": 1},   // or "signal" / "unknown"
+            "duration_ms": 12000,
+            "at": 1754300012000 } }   // null while it runs, and when no exit was recorded
+```
+
+- `spawned_at` is the process's spawn, not the entry's append — a command adopted
+  by the handoff is recorded later than it started.
+- A log-derived answer reads `running: false` and `muted: false`: the process is
+  not in *this* daemon's registry, and mute is live-view state that was never
+  durable. `exit: null` beside `running: false` says the end was never observed
+  (the daemon died first).
+- `404 not_found` — no process with that id was ever minted into the background
+  this session. A log with no lifecycle records at all (one written before they
+  existed) answers this way for every id.
 
 #### `GET /processes/:id/output`
 A cursor read of the process's retained output. With no cursor it returns

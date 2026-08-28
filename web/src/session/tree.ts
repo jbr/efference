@@ -173,6 +173,12 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     // leaf's (see backlog/web/entry-architecture.md).
     if ("Triage" in p) continue;
 
+    // A process lifecycle record (docs/supervisor.md) is not rendered either:
+    // the transcript already carries both of its events in prose — the
+    // backgrounding result and the exit notification — and this is the durable
+    // record behind them, read by `GET /processes/:id`, not a block to show.
+    if ("ProcessEvent" in p) continue;
+
     nodes.push({ kind: "leaf", key: `${entry.seq}`, entry });
   }
 

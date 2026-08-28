@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Changed
+- **A `p#n` resolves for the life of the session**: backgrounding and exit append a non-projected `ProcessEvent` record (handle, spawning call, command, spawn time, exit status, duration), and `GET /processes/:id` now answers for any minted handle — running, exited, or read back from the log alone — with `running` and `exit` beside the listing's fields; a bash call's telemetry carries its `p#n` too.
 - An empty finalized stream records the evidence it used to discard: response status, an allowlist of diagnostic response headers (OpenRouter's `x-generation-id`), the `message_start` body as received, and the stream's frames — `upstream_failure` is now a record carrying them, serialized as the bare string it was when there are none.
 - Aborted stream attempts persist to `usage.jsonl` under their own `aborted_attempt` origin instead of `turn`, so they no longer get priced, no longer count as unpriced, and no longer inflate the cold-prefix streak or `efference cache`'s cold-read count — the report now states an abort rate instead.
 - Web: a call's **`ToolTelemetry` joins the call** rather than rendering as an `unknown entry` — the client's payload union predated the variant, so every call grew a stray raw-JSON block. The inspector now states outcome, dispatch duration, and pre-distillation result bytes (plus bash exit/background and edit operation/anchor/content sizes) in a "what the call cost" panel above the fork panel.

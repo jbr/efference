@@ -240,6 +240,15 @@ impl Masker {
             // a value the tool table or the harness produced, not a value from
             // the environment. Nothing to mask (docs/env.md).
             Payload::ToolTelemetry(_) => {}
+            // A process lifecycle record (docs/supervisor.md) carries one piece
+            // of free text — the command line, which is exactly where an
+            // interpolated secret would ride (docs/env.md). The rest is an
+            // ordinal, an exit status, and stamps.
+            Payload::ProcessEvent(event) => {
+                if let crate::log::ProcessEventKind::Spawned(spawn) = &mut event.kind {
+                    self.mask_in_place(&mut spawn.command);
+                }
+            }
             Payload::ConfigEdit(edit) => {
                 self.mask_in_place(&mut edit.note);
                 match &mut edit.change {

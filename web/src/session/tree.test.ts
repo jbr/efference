@@ -88,6 +88,43 @@ describe("the transcript tree", () => {
     expect(call.telemetry?.result_bytes).toBe(279);
   });
 
+  it("keeps a process lifecycle record out of the transcript", () => {
+    // The mint and the exit are already in the transcript as prose — the
+    // backgrounding result and the exit notification. The record behind them
+    // (docs/supervisor.md) is what `GET /processes/:id` reads; rendering it
+    // would put a raw-JSON block beside every backgrounded command.
+    const nodes = buildTree([
+      assistant(1, { calls: [{ id: "toolu_a", name: "bash" }] }),
+      entry(2, {
+        ProcessEvent: {
+          id: 1,
+          kind: {
+            Spawned: {
+              command: "cargo watch -x test",
+              call_id: "toolu_a",
+              pid: 4242,
+              at: 1754300000000,
+            },
+          },
+        },
+      }),
+      entry(3, {
+        ProcessEvent: {
+          id: 1,
+          kind: {
+            Exited: {
+              outcome: { code: 0 },
+              duration_ms: 12000,
+              at: 1754300012000,
+            },
+          },
+        },
+      }),
+    ]);
+    expect(nodes).toHaveLength(1);
+    expect(nodes.filter((n) => n.kind === "leaf")).toHaveLength(0);
+  });
+
   it("groups the calls of one step into one batch", () => {
     const nodes = buildTree([
       assistant(1, {
