@@ -127,6 +127,13 @@ pub struct ForkSpot {
     /// shell expands it in-child, so the spotter sees the *variable*), and without
     /// the alias the granted literal path and the variable never connect.
     scratch: Option<std::path::PathBuf>,
+    /// The directory a move's relative paths resolve against, and the one grants
+    /// are absolutized against. It is the *session's* working directory, which is
+    /// not always the spotter process's: the offline eval replays cases recorded
+    /// in other checkouts, and resolving those against the eval process's cwd
+    /// reads their in-grant absolute paths as outside-grants
+    /// (backlog/spotter-eval.md). `None` falls back to the process cwd.
+    cwd: Option<std::path::PathBuf>,
 }
 
 impl ForkSpot {
@@ -149,6 +156,7 @@ impl ForkSpot {
         ForkSpot {
             client: Client::new(endpoint, model, persona, None),
             scratch: None,
+            cwd: None,
         }
     }
 
@@ -156,6 +164,16 @@ impl ForkSpot {
     /// alias (docs/tools.md).
     pub fn with_scratch(mut self, scratch: Option<std::path::PathBuf>) -> Self {
         self.scratch = scratch;
+        self
+    }
+
+    /// Name the working directory the judged session runs in — what relative paths
+    /// in a move resolve against and what relative grants absolutize against. Every
+    /// caller that knows its session's cwd passes it; without it the process cwd
+    /// stands in, which is only the same directory when the spotter runs beside the
+    /// session it judges.
+    pub fn with_cwd(mut self, cwd: impl Into<std::path::PathBuf>) -> Self {
+        self.cwd = Some(cwd.into());
         self
     }
 }
@@ -176,7 +194,14 @@ impl Spotter for ForkSpot {
             role: ApiRole::User,
             content: vec![
                 ApiBlock::Text {
-                    text: render_context(role, self.scratch.as_deref()),
+                    text: render_context(
+                        role,
+                        self.cwd
+                            .clone()
+                            .or_else(|| std::env::current_dir().ok())
+                            .as_deref(),
+                        self.scratch.as_deref(),
+                    ),
                     cache_control: Some(CacheControl::Ephemeral),
                 },
                 ApiBlock::Text {
@@ -257,7 +282,17 @@ impl Spotter for StaticSpotter {
 /// start with `.`" — and gated a plain in-cwd write; leading with the absolute path
 /// makes containment string-visible against the working-directory line above, so no
 /// resolution of the *grant* side is asked of the model.
-fn render_context(role: &Config, scratch: Option<&std::path::Path>) -> String {
+///
+/// `cwd` is the *judged session's* working directory, passed in rather than read from
+/// the process: the offline eval (backlog/spotter-eval.md) replays cases recorded in
+/// other checkouts, and resolving those against its own cwd turns their in-grant
+/// absolute paths into apparent outside-grants. `None` renders the directory as
+/// unknown and leaves relative grants in their configured spelling.
+fn render_context(
+    role: &Config,
+    cwd: Option<&std::path::Path>,
+    scratch: Option<&std::path::Path>,
+) -> String {
     let mut s = String::from("Mission:\n");
     match role
         .scope
@@ -270,9 +305,7 @@ fn render_context(role: &Config, scratch: Option<&std::path::Path>) -> String {
     }
 
     s.push_str("\n\nScope for this session:\n");
-    let cwd = std::env::current_dir().ok();
     let cwd_display = cwd
-        .as_ref()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "unknown".into());
     s.push_str(&format!("- working directory: {cwd_display}\n"));
@@ -300,7 +333,7 @@ fn render_context(role: &Config, scratch: Option<&std::path::Path>) -> String {
             // The absolute form leads; the configured spelling stays so a move that
             // types `../x` literally still matches. A grant already in its resolved
             // spelling renders once, unannotated.
-            let line = match cwd.as_deref() {
+            let line = match cwd {
                 Some(cwd) => {
                     let resolved =
                         crate::policy::lexical_normalize(&crate::policy::absolutize(path, cwd))

@@ -368,7 +368,10 @@ narration. Grants render resolved to their absolute form (the same lexical rule 
 deterministic rung applies) with the configured spelling as an annotation, and the block
 states that a move's relative paths resolve against the cwd, with a worked example — a
 spotter once gated a plain in-cwd write by comparing spellings (`scratch/…` "does not
-start with `.`") instead of resolving; absolute grants make containment string-visible. The persona is sized to clear Haiku's cache floor on its own, so even a minimal
+start with `.`") instead of resolving; absolute grants make containment string-visible. The
+cwd is supplied by the caller (`ForkSpot::with_cwd`), not read from the process: `serve`
+passes the session's own directory, and the offline eval passes each case's recorded one, so
+a case replayed from another checkout still resolves the way its session did. The persona is sized to clear Haiku's cache floor on its own, so even a minimal
 config caches; within a session the scope is fixed, so every spotter call after the first is
 a cache read (the move is the only fresh tail). The verdict is forced through a `spot` tool:
 a graded [`Stance`] (`clear` / `clear_always` / `watch` / `gate`) plus a one-line `reason`

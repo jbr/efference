@@ -39,6 +39,13 @@ struct CaseIn {
     paths: BTreeMap<String, PermsIn>,
     #[serde(default)]
     scratch: bool,
+    /// The working directory of the session the case was recorded in — what its
+    /// relative grants and any relative path in the move resolve against. Absent in
+    /// corpus files extracted before the field existed; those fall back to the eval
+    /// process's cwd, which reads another checkout's absolute in-grant paths as
+    /// outside-grants (backlog/spotter-eval.md).
+    #[serde(default)]
+    cwd: Option<String>,
     call: CallIn,
     #[serde(default)]
     expected: Option<String>,
@@ -94,6 +101,9 @@ struct Attempt {
     /// the runs; absent when unpriced.
     cost: Option<f64>,
 }
+
+#[cfg(test)]
+mod test;
 
 fn binary(stance: Stance) -> &'static str {
     match stance {
@@ -191,6 +201,19 @@ pub(crate) async fn spotter_eval(
         }
     );
 
+    // Cases predating the `cwd` field render against this process's cwd, so a case
+    // recorded in another checkout has its in-grant absolute paths read as
+    // outside-grants — the false-gate artifact of the 2026-08-22 sweep. Re-run
+    // `eval/spotter/extract.py` to backfill the field rather than trusting an
+    // absolute friction rate measured this way.
+    let cwd_less = cases.iter().filter(|(c, ..)| c.cwd.is_none()).count();
+    if cwd_less > 0 {
+        eprintln!(
+            "warning: {cwd_less} case(s) carry no `cwd` — rendered against this process's \
+             working directory; absolute-path cases will read as outside-grants"
+        );
+    }
+
     let semaphore = Rc::new(tokio::sync::Semaphore::new(concurrency.max(1)));
     let cases = Rc::new(cases);
     let local = tokio::task::LocalSet::new();
@@ -244,6 +267,13 @@ pub(crate) async fn spotter_eval(
                             None => ForkSpot::new(endpoint.clone(), model.clone()),
                         }
                         .with_scratch(case.scratch.then(|| PathBuf::from(SCRATCH_PLACEHOLDER)));
+                        // A case without a recorded cwd keeps the pre-existing
+                        // behavior (the process cwd, via `ForkSpot`'s fallback);
+                        // the count is warned about up front.
+                        let spot = match &case.cwd {
+                            Some(cwd) => spot.with_cwd(cwd.as_str()),
+                            None => spot,
+                        };
                         let brief = efference::agent::brief(&toolbox, &call.name);
                         let start = Instant::now();
                         let spotting = spot.assess(&role, &call, brief.as_ref(), None).await;

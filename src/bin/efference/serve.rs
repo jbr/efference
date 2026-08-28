@@ -388,11 +388,14 @@ pub(crate) async fn serve(
     // The independent permission rung (docs/permissions.md): a fresh-context spotter
     // on its own Haiku-band client, built from the same endpoint. It re-decides the calls
     // the deterministic fast-path can't clear, before the human gate. It learns the
-    // scratch dir so its scope block can alias `$TMPDIR` to the granted path. Its own
+    // scratch dir so its scope block can alias `$TMPDIR` to the granted path, and this
+    // session's cwd so relative grants and relative moves resolve the same way the
+    // deterministic rung resolves them. Its own
     // sticky key (`for_spotter`): same endpoint, but a prefix the agent lineage never
     // shares, so pointing both at one model doesn't pin them to one route.
-    let spotter =
-        ForkSpot::new(endpoint.for_spotter(), spotter_model).with_scratch(Some(scratch.clone()));
+    let spotter = ForkSpot::new(endpoint.for_spotter(), spotter_model)
+        .with_scratch(Some(scratch.clone()))
+        .with_cwd(cwd.clone());
 
     // The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
     // canonical wire keeps only what the model retains. `Toolbox` is the docs/tools.md tool
@@ -506,11 +509,14 @@ pub(crate) async fn spotter_check(
         ..Default::default()
     };
 
+    // The tester judges a move as if made from here, so this is the cwd the scope
+    // block renders and resolves grants against.
+    let cwd = std::env::current_dir()?;
+
     // A structured move needs the mounted table to have a brief at all, so the toolbox is
     // built only in that mode — a bash check keeps costing nothing and spawning nothing.
     let toolbox = match &tool {
         Some(_) => {
-            let cwd = std::env::current_dir()?;
             let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), None)?;
             // Unlike `serve`, a mount failure is fatal here: the whole point is judging
             // against that server's real definition, and a skipped mount would silently
@@ -576,6 +582,7 @@ pub(crate) async fn spotter_check(
     // preview is useful with no key at all.
     let endpoint = efference::api::Endpoint::from_env()?;
     let spotting = ForkSpot::new(endpoint, model)
+        .with_cwd(cwd)
         .assess(&role, &call, sent, probe.as_deref())
         .await;
     println!("stance: {:?}", spotting.read.stance);

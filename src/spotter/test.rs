@@ -2,6 +2,7 @@ use super::*;
 use crate::api::{Completion, Usage};
 use crate::config::{Config, Perms};
 use crate::log::{CallId, Payload};
+use std::path::Path;
 
 fn spot_completion(name: &str, input: Value) -> Completion {
     Completion {
@@ -260,14 +261,13 @@ fn render_context_includes_scope_and_watch_for() {
         .collect(),
         ..Default::default()
     };
-    let ctx = render_context(&role, None);
+    let ctx = render_context(&role, Some(Path::new("/work/repo")), None);
     assert!(ctx.contains("Fix the build."), "{ctx}");
     // A relative grant leads with its resolved absolute form — string-visible
     // containment against the working-directory line — keeping the configured
     // spelling as the annotation; an absolute grant renders once, unannotated.
-    let cwd = std::env::current_dir().unwrap().display().to_string();
     assert!(
-        ctx.contains(&format!("  - {cwd} (read, write) — granted as `.`")),
+        ctx.contains("  - /work/repo (read, write) — granted as `.`"),
         "{ctx}"
     );
     assert!(ctx.contains("  - /refs (read only)\n"), "{ctx}");
@@ -284,10 +284,9 @@ fn render_context_includes_scope_and_watch_for() {
 /// comparing spellings instead of resolving.
 #[test]
 fn render_context_states_relative_path_resolution() {
-    let ctx = render_context(&Config::default(), None);
-    let cwd = std::env::current_dir().unwrap().display().to_string();
+    let ctx = render_context(&Config::default(), Some(Path::new("/work/repo")), None);
     assert!(
-        ctx.contains(&format!("`sub/file` means `{cwd}/sub/file`")),
+        ctx.contains("`sub/file` means `/work/repo/sub/file`"),
         "{ctx}"
     );
 }
@@ -308,17 +307,9 @@ fn render_context_resolves_parent_relative_grants() {
         .collect(),
         ..Default::default()
     };
-    let ctx = render_context(&role, None);
-    let parent = std::env::current_dir()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .display()
-        .to_string();
+    let ctx = render_context(&role, Some(Path::new("/work/repo")), None);
     assert!(
-        ctx.contains(&format!(
-            "  - {parent}/sibling (read, write) — granted as `../sibling`"
-        )),
+        ctx.contains("  - /work/sibling (read, write) — granted as `../sibling`"),
         "{ctx}"
     );
 }
@@ -326,7 +317,7 @@ fn render_context_resolves_parent_relative_grants() {
 #[test]
 fn render_context_handles_empty_role() {
     // No scope, no paths, no watch-for: the spotter still gets a usable frame.
-    let ctx = render_context(&Config::default(), None);
+    let ctx = render_context(&Config::default(), Some(Path::new("/work/repo")), None);
     assert!(ctx.contains("no scope specified"), "{ctx}");
     assert!(ctx.contains("none configured"), "{ctx}");
     assert!(
@@ -342,9 +333,70 @@ fn render_context_handles_empty_role() {
 fn render_context_names_the_scratch_alias() {
     let ctx = render_context(
         &Config::default(),
-        Some(std::path::Path::new("/var/tmp/efference-ab12")),
+        Some(Path::new("/work/repo")),
+        Some(Path::new("/var/tmp/efference-ab12")),
     );
     assert!(ctx.contains("$TMPDIR"), "{ctx}");
     assert!(ctx.contains("/var/tmp/efference-ab12"), "{ctx}");
     assert!(ctx.contains("scratch"), "{ctx}");
+}
+
+/// The artifact this seam exists to remove (backlog/spotter-eval.md): a session
+/// recorded in another checkout grants `.` there and reads a file by absolute path.
+/// Rendered against that session's cwd, the grant covers the file; rendered against
+/// some *other* directory — what an eval process's own cwd is — the same grant
+/// resolves elsewhere and the move reads as leaving the perimeter.
+#[test]
+fn render_context_resolves_grants_against_the_given_cwd_not_the_process() {
+    let role = Config {
+        paths: [(
+            ".".to_string(),
+            Perms {
+                read: true,
+                write: true,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        ..Default::default()
+    };
+    let theirs = render_context(&role, Some(Path::new("/Users/jbr/code/trillium")), None);
+    assert!(
+        theirs.contains("- working directory: /Users/jbr/code/trillium\n"),
+        "{theirs}"
+    );
+    assert!(
+        theirs.contains("  - /Users/jbr/code/trillium (read, write) — granted as `.`"),
+        "a move touching /Users/jbr/code/trillium/src is inside this grant: {theirs}"
+    );
+
+    // The same case rendered from elsewhere — the pre-fix behavior — puts the grant
+    // in a directory the move's absolute paths are not under.
+    let elsewhere = render_context(&role, Some(Path::new("/Users/jbr/code/efference")), None);
+    assert!(
+        !elsewhere.contains("/Users/jbr/code/trillium"),
+        "{elsewhere}"
+    );
+}
+
+/// With no cwd at all, the block says so rather than inventing one, and relative
+/// grants stay in their configured spelling — nothing is resolved against a
+/// directory the caller never named.
+#[test]
+fn render_context_without_a_cwd_names_no_directory() {
+    let role = Config {
+        paths: [(
+            ".".to_string(),
+            Perms {
+                read: true,
+                write: true,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        ..Default::default()
+    };
+    let ctx = render_context(&role, None, None);
+    assert!(ctx.contains("- working directory: unknown\n"), "{ctx}");
+    assert!(ctx.contains("  - . (read, write)\n"), "{ctx}");
 }
