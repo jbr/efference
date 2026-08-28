@@ -153,6 +153,33 @@ pub struct Stall {
     pub detail: String,
 }
 
+/// The config file on disk does not parse **and** could not be restored to the
+/// last content that did (`config::Refreshed::RevertFailed`) — the one state the
+/// adopted-or-rejected invariant cannot reach (docs/permissions.md).
+///
+/// It is terminal-until-repaired rather than a notice: the effective policy in
+/// memory is still the last good config, but the file no longer shows it, and the
+/// file is the perimeter's readable form. Running on indefinitely would mean a
+/// session acting under permissions nobody can inspect. Making it terminal
+/// introduces no blocked-with-nobody-home state, because a config write is the one
+/// operation that is never autonomous — it gates for the orchestrator even under
+/// `--autonomous`, so a file in this condition always has an owner.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct ConfigRepair {
+    /// The file a human has to fix.
+    pub path: String,
+    /// Unix millis at which the daemon parked, absolute like every other instant
+    /// on the control channel (docs/control-api.md).
+    pub at: u64,
+    /// Leads with the condition and what clears it — the same register the
+    /// `stall` topic's `message` uses.
+    pub message: String,
+    /// Why the file did not parse.
+    pub parse_error: String,
+    /// Why the restore of the last good content also failed.
+    pub restore_error: String,
+}
+
 /// Daemon state shared between the loop task and the HTTP handlers. Held as
 /// `Arc<Shared>` in both the loop and trillium's server-global `shared_state`
 /// (read in handlers via `conn.shared_state::<Arc<Shared>>()`). Per-conn state is
@@ -295,6 +322,14 @@ pub struct Shared {
     /// — the durable record of the same event is the record-only entries and
     /// the notification the loop already appends.
     stall: Mutex<Option<Stall>>,
+    /// The config-unparseable park (docs/permissions.md), read by the
+    /// `config_repair` topic and awaited by the loop. Set by the config watcher
+    /// on a failed revert, cleared by the same watcher the moment a refresh
+    /// parses — the human fixes the file, fs-watch picks it up, the gate clears.
+    config_repair: Mutex<Option<ConfigRepair>>,
+    /// Fires when [`Self::config_repair`] clears, so the parked loop wakes without
+    /// polling. Same lost-wakeup discipline as the pace hold: arm before reading.
+    config_repaired: Notify,
 
     /// The ephemeral inbox of pending ambient notifications (docs/inbox.md): out-of-band
     /// events awaiting their first triage gate. Control state, *not* a log payload —
@@ -525,6 +560,8 @@ impl Shared {
             cost: Arc::new(Mutex::new(CostCell::default())),
             identity: Mutex::new(None),
             stall: Mutex::new(None),
+            config_repair: Mutex::new(None),
+            config_repaired: Notify::new(),
             inbox: Mutex::new(Inbox::default()),
 
             proposals: Mutex::new(Vec::new()),
@@ -587,6 +624,54 @@ impl Shared {
     /// finished (or none has run).
     pub(crate) fn stall(&self) -> Option<Stall> {
         self.stall.lock().unwrap().clone()
+    }
+
+    /// Park the loop on "config unparseable — human must repair"
+    /// (docs/permissions.md). Idempotent: repeated failed saves replace the
+    /// condition rather than stacking, exactly as the revert notice supersedes on
+    /// its stable slot.
+    pub(crate) fn require_config_repair(&self, repair: ConfigRepair) {
+        *self.config_repair.lock().unwrap() = Some(repair);
+        self.touch_state();
+    }
+
+    /// The file parses again: clear the park and wake whoever is waiting on it.
+    /// Called from the same refresh that sets it, on every outcome that leaves
+    /// valid content on disk — an adopted edit, or a revert that succeeded.
+    pub(crate) fn clear_config_repair(&self) {
+        let mut repair = self.config_repair.lock().unwrap();
+        if repair.is_none() {
+            return;
+        }
+        *repair = None;
+        drop(repair);
+        self.config_repaired.notify_waiters();
+        self.touch_state();
+    }
+
+    /// The config-repair condition, or `None` when the file parses.
+    pub(crate) fn config_repair(&self) -> Option<ConfigRepair> {
+        self.config_repair.lock().unwrap().clone()
+    }
+
+    /// Wait until the config file parses again (docs/permissions.md). Returns
+    /// immediately when there is nothing to repair, which is the normal case.
+    ///
+    /// Lost-wakeup safe by the same discipline as the pace hold: the wake future is
+    /// armed before the state is read, so a repair landing in between still wakes
+    /// the wait. Re-checks after each wake, so a spurious notify cannot release a
+    /// park that is still warranted.
+    pub async fn await_config_repair(&self) {
+        loop {
+            let repaired = self.config_repaired.notified();
+            tokio::pin!(repaired);
+            repaired.as_mut().enable(); // arm before reading, so a racing repair isn't lost
+            let Some(repair) = self.config_repair() else {
+                return;
+            };
+            eprintln!("[config: parked — {}]", repair.message);
+            repaired.await;
+        }
     }
 
     /// Cumulative triage retention over the whole session (docs/redaction-fork.md),

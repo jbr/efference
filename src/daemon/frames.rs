@@ -106,6 +106,11 @@ pub(crate) enum Topic {
     /// A retry in flight — which surface, which attempt, of what budget
     /// (docs/transport.md). `null` when nothing is being retried.
     UpstreamRetry,
+    /// The config file on disk does not parse and could not be restored, so the
+    /// loop is parked until a human repairs it (docs/permissions.md). `null`
+    /// whenever the file parses — which is nearly always, since a bad edit is
+    /// normally reverted rather than left on disk.
+    ConfigRepair,
     /// What this session *is* — the configured model and its working directory
     /// (docs/control-api.md). Static for the session today; carried as a topic so a
     /// client reads it from the connect snapshot like everything else, and so a
@@ -119,7 +124,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 13] = [
+    pub(crate) const ALL: [Topic; 14] = [
         Self::Gate,
         Self::Processes,
         Self::Usage,
@@ -132,6 +137,7 @@ impl Topic {
         Self::Stall,
         Self::UpstreamFailure,
         Self::UpstreamRetry,
+        Self::ConfigRepair,
         Self::SessionIdentity,
     ];
 
@@ -157,6 +163,7 @@ impl Topic {
             Self::Stall => "stall",
             Self::UpstreamFailure => "upstream_failure",
             Self::UpstreamRetry => "upstream_retry",
+            Self::ConfigRepair => "config_repair",
             Self::SessionIdentity => "session_identity",
         }
     }

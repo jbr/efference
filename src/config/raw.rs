@@ -35,6 +35,9 @@ pub(super) struct RawConfig {
     /// `[bash]` table — the foreground-lifetime knobs ([`Config::bash`]).
     #[serde(default)]
     bash: RawBash,
+    /// `[transport]` table — the upstream-stream knobs ([`Config::transport`]).
+    #[serde(default)]
+    transport: RawTransport,
     /// `[env]` table — per-variable `strip`/`mask` (docs/env.md). Only the inline-table
     /// form parses: a bare `"*_KEY" = false` cannot say which of the two questions it
     /// answers, so it is a parse error rather than a guess. `deny_unknown_fields` on
@@ -56,6 +59,16 @@ pub(super) struct RawBash {
     background_after: Option<u64>,
     #[serde(rename = "background-after-max", default)]
     background_after_max: Option<u64>,
+}
+
+/// The `[transport]` table: how long one response's SSE stream may stay open
+/// before the read loop stops waiting on it (docs/transport.md). Seconds, like
+/// `[bash]`'s knobs. Absent → [`crate::api::DEFAULT_STREAM_CEILING`].
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawTransport {
+    #[serde(rename = "stream-ceiling", default)]
+    stream_ceiling: Option<u64>,
 }
 
 /// The `[mcp]` table. Only `servers` today; a table (rather than hoisting
@@ -331,6 +344,12 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
                 crate::bash::DEFAULT_BACKGROUND_AFTER_MAX,
                 Duration::from_secs,
             ),
+        },
+        transport: crate::config::TransportLimits {
+            stream_ceiling: raw
+                .transport
+                .stream_ceiling
+                .map_or(crate::api::DEFAULT_STREAM_CEILING, Duration::from_secs),
         },
     })
 }

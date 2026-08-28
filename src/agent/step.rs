@@ -191,10 +191,16 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                     // for the orchestrator-above.) Supervised: route to the human gate.
                     Stance::Watch | Stance::Gate => {
                         if shared.autonomous() {
-                            Approval::Redirect(autonomous_gate_message(
-                                shared.config_path(),
-                                &reason,
-                            ))
+                            // A structured call whose missing grants the fast path can name
+                            // gets the diagnosis, not just the verdict (docs/permissions.md):
+                            // the observed failure is a model reading a gated `edit` as a
+                            // broken tool and rewriting the file through bash instead.
+                            Approval::Redirect(match policy::missing_grants(&role, call) {
+                                Some(missing) => {
+                                    missing_grant_message(shared.config_path(), &reason, &missing)
+                                }
+                                None => autonomous_gate_message(shared.config_path(), &reason),
+                            })
                         } else {
                             frontend.approve(call).await
                         }

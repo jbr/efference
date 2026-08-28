@@ -249,6 +249,98 @@ pub(super) fn autonomous_gate_message_without_a_config_file_still_redirects() {
     assert!(!msg.contains("config.toml"));
 }
 
+/// A gated **structured** call gets the diagnosis, not just the verdict
+/// (docs/permissions.md). The observed failure it replaces: a model read a gated
+/// `edit`/`persist_edit` as a malfunction ("persist_edit without parameters doesn't work in
+/// autonomous mode", session `1784334112726`) and started rewriting files through
+/// `cat > file <<EOF`. So the copy has to say the call never ran, name the missing grant in
+/// the config's own vocabulary, point at the config-edit remedy, and close the bash detour.
+#[test]
+pub(super) fn a_gated_structured_edit_names_the_missing_grant_not_a_tool_defect() {
+    let msg = missing_grant_message(
+        Some(Path::new(".efference/x/config.toml")),
+        "writes outside the repo",
+        &crate::policy::MissingGrants {
+            tool: Some("edit".into()),
+            paths: vec!["src/lib.rs".into()],
+            needs_write: true,
+        },
+    );
+    assert!(
+        msg.contains("did not run"),
+        "the tool never executed: {msg}"
+    );
+    assert!(
+        msg.contains("not about the tool's behavior") || msg.contains("behavior"),
+        "rules out the tool-defect reading: {msg}"
+    );
+    assert!(msg.contains("`tools` does not list `edit`"), "{msg}");
+    assert!(msg.contains("`[paths]`") && msg.contains("write"), "{msg}");
+    assert!(msg.contains("src/lib.rs"), "names the target: {msg}");
+    assert!(
+        msg.contains(".efference/x/config.toml"),
+        "the remedy: {msg}"
+    );
+    assert!(
+        msg.contains("writes outside the repo"),
+        "the spotter reason: {msg}"
+    );
+    // The route-around is closed and said to be closed.
+    assert!(msg.contains("cat > "), "names the bash detour: {msg}");
+    assert!(msg.contains("gates the same way"), "{msg}");
+}
+
+/// Only the halves that are actually missing are named — a call gated on the path alone does
+/// not accuse the `tools` grant it has, and a read does not talk about writes.
+#[test]
+pub(super) fn the_missing_grant_message_names_only_what_is_missing() {
+    let msg = missing_grant_message(
+        None,
+        "outside scope",
+        &crate::policy::MissingGrants {
+            tool: None,
+            paths: vec!["/etc/hosts".into()],
+            needs_write: false,
+        },
+    );
+    assert!(!msg.contains("`tools`"), "the name grant is present: {msg}");
+    assert!(msg.contains("grants `read`"), "{msg}");
+    assert!(!msg.contains("cat > "), "no write detour to close: {msg}");
+    assert!(msg.contains("orchestrator"), "no file to name: {msg}");
+}
+
+/// The decomposition behind that copy: the two halves are reported independently, so a call
+/// missing only the tool name does not also claim its granted paths are ungranted (the path
+/// check requires the name grant, which is true of the *decision* and misleading as a
+/// *diagnosis*). `bash` has no such decomposition — its answer is a `[commands]` stance.
+#[test]
+pub(super) fn missing_grants_reports_the_two_halves_independently() {
+    use crate::log::CallId;
+    let role = crate::config::parse_text("[paths]\n\".\" = true\n");
+    let call = |name: &str, input| ToolCall {
+        id: CallId("toolu_x".into()),
+        name: name.into(),
+        input,
+    };
+    // Path granted, name not: only the name is reported.
+    let missing = crate::policy::missing_grants(
+        &role,
+        &call("edit", serde_json::json!({ "file_path": "src/lib.rs" })),
+    )
+    .expect("gated");
+    assert_eq!(missing.tool.as_deref(), Some("edit"));
+    assert!(missing.paths.is_empty(), "{:?}", missing.paths);
+    assert!(missing.needs_write);
+    // bash is not decomposed this way.
+    assert!(
+        crate::policy::missing_grants(
+            &role,
+            &call("bash", serde_json::json!({ "command": "rm -rf /" }))
+        )
+        .is_none()
+    );
+}
+
 /// The gate-time half of the two-outcome rule (docs/permissions.md):
 /// an approved config write that doesn't parse comes back to the model as an **error naming
 /// the parse failure**, with the file reverted and policy unchanged — not as the success the

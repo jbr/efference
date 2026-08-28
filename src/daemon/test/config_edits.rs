@@ -346,3 +346,72 @@ fn resumed_log_edits_fold_into_the_initial_effective_config() {
         Verdict::Clear
     );
 }
+
+/// The one outcome the adopted-or-rejected invariant can't reach: the file fails to
+/// parse **and** the restore fails too, leaving invalid content on disk
+/// (docs/permissions.md). That parks the loop on an explicit "human must repair"
+/// gate rather than running on under a policy the file no longer shows — and the
+/// gate clears the way it was always going to: the human fixes the file, the
+/// watcher's next refresh adopts it, and the park releases.
+#[tokio::test]
+async fn an_unrepairable_config_parks_the_loop_until_the_file_parses() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::env::temp_dir().join(format!("efference-repair-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("config.toml");
+    let good = "# my config\nscope = \"stay in src/\"\n";
+    std::fs::write(&path, good).unwrap();
+
+    let (shared, _rx) = Shared::with_role(Log::in_memory(), file_role(&path));
+    refresh_and_emit(&shared);
+    assert!(
+        shared.config_repair().is_none(),
+        "a parsing file parks nothing"
+    );
+
+    // Invalid content the harness cannot write back over: `[scope]` as a table, on a
+    // file the process may read but not replace.
+    std::fs::write(&path, "[scope]\ndefault = \"read\"\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+    if std::fs::write(&path, "probe").is_ok() {
+        // Running somewhere the mode doesn't bind (root); the failure this test needs
+        // cannot be produced, so there is nothing to assert.
+        std::fs::remove_dir_all(&dir).ok();
+        return;
+    }
+    refresh_and_emit(&shared);
+
+    let parked = shared.config_repair().expect("the loop is parked");
+    assert!(parked.message.contains("human"), "{}", parked.message);
+    assert!(
+        parked.parse_error.contains("scope"),
+        "{}",
+        parked.parse_error
+    );
+    assert!(
+        !parked.restore_error.is_empty(),
+        "names why the restore failed"
+    );
+    // Terminal, not a notice: the wait does not return while the file is invalid.
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), shared.await_config_repair())
+            .await
+            .is_err(),
+        "the park holds while the file is unparseable"
+    );
+
+    // The human repairs the file; the watcher picks it up; the gate clears.
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::write(&path, good).unwrap();
+    refresh_and_emit(&shared);
+    assert!(
+        shared.config_repair().is_none(),
+        "a parsing file clears the park"
+    );
+    tokio::time::timeout(Duration::from_secs(1), shared.await_config_repair())
+        .await
+        .expect("the park releases once the file parses");
+
+    std::fs::remove_dir_all(&dir).ok();
+}

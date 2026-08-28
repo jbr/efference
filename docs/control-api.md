@@ -356,6 +356,13 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "message": "stream aborted, retrying (2 of 12)",  // leads with what is happening
     "detail": "upstream SSE stream failed mid-stream: connection reset"
   },
+  "config_repair": {               // null whenever the config file parses (permissions.md)
+    "path": "/repo/.efference/work/config.toml",  // the file a human has to fix
+    "at": 1754300000000,           // absolute Unix millis at which the loop parked
+    "message": "config unparseable — the loop is parked until a human repairs the file",
+    "parse_error": "…",            // why the file did not parse
+    "restore_error": "…"           // why writing the last good content back also failed
+  },
   "session_identity": {           // null until `serve` sets it (tests, offline verbs)
     "model": "anthropic/claude-opus-4",  // the model id serve resolved, verbatim
     "cwd": "/Users/jbr/code/efference"   // absolute; shortening it is presentation
@@ -389,6 +396,16 @@ a stalled daemon is a live daemon, by design. Two shapes, both already here:
 - **Subscribe** — `GET /events?include=state:stall,state:running` delivers the
   topic on connect and on every change, for a supervisor already holding a
   stream.
+
+**`config_repair` is the one terminal condition the daemon holds.** It is set
+only when a config edit both fails to parse *and* cannot be reverted, which
+leaves the file on disk invalid while effective policy in memory is still the
+last good config ([permissions.md](permissions.md)). The loop parks rather than
+running on under a perimeter the file no longer shows, so unlike `stall` — which
+a `POST /turns` recovers — nothing a client sends clears this one: a human edits
+the file, fs-watch adopts it, and the topic goes `null` as the loop wakes. A
+supervisor distinguishes it from `stall` on exactly that: `stall` names a
+recovery it can perform, `config_repair` names one it cannot.
 
 **`session_identity` names what the session is** — the model it was configured
 with (the same string the system prompt's identity line states,

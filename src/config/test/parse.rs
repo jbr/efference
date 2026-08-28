@@ -692,3 +692,20 @@ fn the_env_table_rejects_the_bare_bool_shorthand_and_unknown_keys() {
         "deny_unknown_fields makes a typo loud"
     );
 }
+
+/// `[transport] stream-ceiling` is seconds, like `[bash]`'s knobs, and absent
+/// means the generous default rather than "no ceiling" (docs/transport.md).
+#[test]
+fn parses_the_transport_stream_ceiling() {
+    let role = parse_str(
+        r#"
+            [transport]
+            stream-ceiling = 900
+            "#,
+    );
+    assert_eq!(role.transport.stream_ceiling, Duration::from_secs(900));
+    assert_eq!(
+        parse_str("").transport.stream_ceiling,
+        crate::api::DEFAULT_STREAM_CEILING
+    );
+}

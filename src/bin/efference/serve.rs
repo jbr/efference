@@ -435,6 +435,10 @@ pub(crate) async fn serve(
     }
     let mut client = Client::new(endpoint.clone(), model, system, temperature)
         .with_upstream(upstream.clone())
+        // `[transport] stream-ceiling` (docs/transport.md): the bound on a stream
+        // that stays open without finalizing. It rides the agent client, which
+        // the fork peek shares, so both stream surfaces are bounded alike.
+        .with_stream_ceiling(loaded.role.transport.stream_ceiling)
         .with_model_reasoning(capabilities.supports_reasoning);
     // The output budget follows the model's reported cap (a reasoning model's
     // thinking bills against it; the 4096 default starves a long think). No

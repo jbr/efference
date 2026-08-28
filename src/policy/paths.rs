@@ -86,7 +86,17 @@ pub(super) fn context_granted(role: &Config, target: &str, perm: Perm, cwd: &Pat
 /// grant that points outside is treated as inside — acceptable under the error-not-deception
 /// threat model (docs/permissions.md).
 pub(super) fn path_granted(role: &Config, path: &str, perm: Perm, cwd: &Path) -> bool {
-    let target = lexical_normalize(&absolutize(path, cwd));
+    path_granted_at(role, &lexical_normalize(&absolutize(path, cwd)), perm, cwd)
+}
+
+/// [`path_granted`] for a target that is **already** absolute and normalized — the shape the
+/// bash redirection carve-out produces, where the write target may have been resolved
+/// against a `cd`'s directory rather than the process cwd
+/// ([`commands::classify_redirect_write`]). `cwd` still resolves the *grant* keys, which the
+/// operator may write relative (`"."`).
+///
+/// [`commands::classify_redirect_write`]: super::commands
+pub(super) fn path_granted_at(role: &Config, target: &Path, perm: Perm, cwd: &Path) -> bool {
     let governing = role
         .paths
         .iter()

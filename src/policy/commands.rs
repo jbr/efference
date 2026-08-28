@@ -9,7 +9,10 @@ use super::*;
 /// carve-out governs the same way whether or not the move arrived with a `cd` in front of it.
 pub(super) fn classify_bash(role: &Config, command: &str, cwd: &Path) -> Verdict {
     let Some(tokens) = bash_tokens_in(role, command, cwd) else {
-        return Verdict::Gate; // stage 1 rejected (complex, expanded, or unparseable)
+        // Stage 1 rejected it. One narrow shape gets a second look before it gates:
+        // a redirection or here-doc write to a single literal path, which is a
+        // `write` and is governed as one ([`classify_redirect_write`]).
+        return classify_redirect_write(role, command, cwd);
     };
     match command_stance(role, &tokens) {
         Some(CommandStance::Clear) => Verdict::Clear,
@@ -74,6 +77,168 @@ pub fn promotable_command(role: &Config, prefix: &str) -> Option<String> {
         return None;
     }
     Some(prefix.trim().to_string())
+}
+
+/// A bash command that is a **write to one literal path** — the redirection carve-out
+/// (docs/permissions.md). `tokens` is the command as stage 2 would see it with the
+/// redirection removed; `target` is the file it writes, already resolved against the
+/// directory the command runs in.
+struct RedirectWrite {
+    tokens: Vec<String>,
+    target: PathBuf,
+}
+
+/// **The redirection carve-out**: a strictly-parseable redirection or here-doc write to a
+/// single literal path is a `write`, governed by the `[paths]` write grants
+/// (docs/permissions.md).
+///
+/// Stage 1 rejects file redirections outright, so before this a `cat > notes.md <<EOF`
+/// always cost a spotter round-trip — and under gating friction the heredoc *is* the shape
+/// a model reaches for when the structured `write` doesn't go through, which turns a
+/// reviewable diff into an un-reviewable whole-file rewrite. Governing it as the write it
+/// is makes the granted case cheap and the ungranted case gate the way the structured
+/// `write` gates, so routing around the tool changes nothing about the answer.
+///
+/// **Two authorities govern, and the more restrictive one wins.** The command still has to
+/// clear stage 2 on its own (`cat` must carry a `clear` stance), *and* the target still has
+/// to be write-granted by `[paths]`. A `[commands]` `deny` refuses regardless of the path;
+/// a `clear` command writing to an ungranted path gates. The `tools` set is not consulted:
+/// it names structured tools, and the tool being called here is `bash`, whose name grant is
+/// its `[commands]` stance. The self-surface stack (docs/permissions.md) needs no special
+/// case — it already denies writes under `.efference/`, so a here-doc aimed at a session's
+/// own `config.toml` or log fails the path check like anything else there.
+///
+/// This does not loosen stage 1 generally: every shape outside the list below still gates.
+fn classify_redirect_write(role: &Config, command: &str, cwd: &Path) -> Verdict {
+    let Some(write) = redirect_write_in(role, command, cwd) else {
+        return Verdict::Gate;
+    };
+    match command_stance(role, &write.tokens) {
+        // The operator wrote the answer for this prefix; a redirection cannot soften it.
+        Some(CommandStance::Deny) => Verdict::Deny,
+        // Cleared as a command — now it must also be cleared as a write.
+        Some(CommandStance::Clear) => {
+            if path_granted_at(role, &write.target, Perm::Write, cwd) {
+                Verdict::Clear
+            } else {
+                Verdict::Gate
+            }
+        }
+        Some(CommandStance::Watch | CommandStance::Gate) | None => Verdict::Gate,
+    }
+}
+
+/// The admitted write shapes, and nothing else (docs/permissions.md). Everything here is
+/// decided by the same yash parse and the same literal-word inspection stage 1 uses, so
+/// "strictly parseable" means the same thing it means there.
+///
+/// Admitted:
+///
+/// - **one simple command** whose every word is literal (no operators, no expansions, no
+///   assignment prefix, no glob) — the stage 1 core;
+/// - carrying **exactly one** file-write redirection: `>` (truncate), `>>` (append), or
+///   `>|` (truncate past `noclobber`). All three are writes, and a write grant covers a
+///   write; the distinction between them is not one `[paths]` can express. Its fd must be
+///   unspecified or `1` — `2> file` is a write too, but admitting only the shape models
+///   actually emit keeps the surface small.
+/// - whose **operand is a literal path** ([`literal_word`]) — an expansion or a glob in the
+///   target means the destination isn't decidable here, so it gates;
+/// - optionally a **here-doc on stdin** (`<<EOF`, `<<'EOF'`, `<<-EOF`), whose *content* must
+///   be wholly literal. An unquoted here-doc expands, and `$(…)` inside one executes — yash
+///   surfaces that as a `CommandSubst` unit, so requiring literal content rejects it while
+///   still admitting the quoted form and the unquoted-but-literal one;
+/// - alongside any number of the fd duplications stage 1 already tolerates ([`is_safe_fd_dup`]);
+/// - optionally behind the same single leading `cd <read-granted literal dir> &&`. The write
+///   target then resolves against **that** directory, not the process cwd, because that is
+///   where the command actually runs.
+///
+/// Fails closed (gates, exactly as today): pipes, `;`, `||`, backgrounding, more than one
+/// file redirection, an input redirection or here-string, a redirection whose target
+/// expands or globs, a here-doc containing any expansion or substitution, a negated or
+/// compound command, an assignment prefix, and anything that does not parse.
+fn redirect_write_in(role: &Config, command: &str, cwd: &Path) -> Option<RedirectWrite> {
+    use yash_syntax::syntax::{AndOr, Command, List, RedirBody, RedirOp, TextUnit};
+
+    let list: List = command.parse().ok()?;
+    let [item] = list.0.as_slice() else {
+        return None;
+    };
+    if item.async_flag.is_some() {
+        return None;
+    }
+    let and_or = &item.and_or;
+    // The `cd` tolerance, and what it does to the target: after `cd sub`, `> out` names
+    // `sub/out`. Resolving against the process cwd would check the grant on the wrong file.
+    let (pipeline, run_dir) = match and_or.rest.as_slice() {
+        [] => (&and_or.first, cwd.to_path_buf()),
+        [(AndOr::AndThen, remainder)] => {
+            let head = pipeline_tokens(&and_or.first)?;
+            let [program, target] = head.as_slice() else {
+                return None;
+            };
+            if program != "cd" || !path_granted(role, target, Perm::Read, cwd) {
+                return None;
+            }
+            (remainder, lexical_normalize(&absolutize(target, cwd)))
+        }
+        _ => return None,
+    };
+    if pipeline.negation {
+        return None;
+    }
+    let [command] = pipeline.commands.as_slice() else {
+        return None; // no `|`
+    };
+    let Command::Simple(simple) = &**command else {
+        return None;
+    };
+    if !simple.assigns.is_empty() {
+        return None;
+    }
+    let mut target = None;
+    for redir in simple.redirs.iter() {
+        if is_safe_fd_dup(redir) {
+            continue;
+        }
+        match &redir.body {
+            RedirBody::Normal { operator, operand }
+                if matches!(
+                    operator,
+                    RedirOp::FileOut | RedirOp::FileAppend | RedirOp::FileClobber
+                ) && redir.fd.is_none_or(|fd| fd.0 == 1) =>
+            {
+                if target.is_some() {
+                    return None; // exactly one file write, so one path decides
+                }
+                target = Some(literal_word(operand)?);
+            }
+            RedirBody::HereDoc(here) if redir.fd.is_none_or(|fd| fd.0 == 0) => {
+                // Data, not a file — but only if it is *only* data: an expansion or a
+                // command substitution in the content runs.
+                let content = here.content.get()?;
+                if !content
+                    .0
+                    .iter()
+                    .all(|unit| matches!(unit, TextUnit::Literal(_) | TextUnit::Backslashed(_)))
+                {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+    let target = target?;
+    let mut tokens = Vec::with_capacity(simple.words.len());
+    for (word, _mode) in &simple.words {
+        tokens.push(literal_word(word)?);
+    }
+    if tokens.is_empty() || tokens.first().is_some_and(|t| t == "cd") {
+        return None;
+    }
+    Some(RedirectWrite {
+        target: lexical_normalize(&absolutize(&target, &run_dir)),
+        tokens,
+    })
 }
 
 /// Whether a redirection is a pure file-descriptor **duplication or closure** (`2>&1`, `>&2`,

@@ -29,6 +29,7 @@ impl Shared {
             Topic::Stall => self.stall_json(),
             Topic::UpstreamFailure => self.upstream_failure_json(),
             Topic::UpstreamRetry => self.upstream_retry_json(),
+            Topic::ConfigRepair => self.config_repair_json(),
             Topic::SessionIdentity => self.session_identity_json(),
         }
     }
@@ -207,6 +208,14 @@ impl Shared {
     /// budget is exhausted.
     fn upstream_retry_json(&self) -> Value {
         serde_json::to_value(self.upstream_retry.get()).unwrap_or(Value::Null)
+    }
+
+    /// The config-unparseable park (docs/permissions.md): which file, when, why it
+    /// did not parse, and why the restore failed too. `null` whenever the file
+    /// parses — so a client that sees a value knows the loop is stopped on it and
+    /// that editing the file is what clears it.
+    fn config_repair_json(&self) -> Value {
+        serde_json::to_value(self.config_repair()).unwrap_or(Value::Null)
     }
 
     /// What this session is (docs/control-api.md): the configured model id and the

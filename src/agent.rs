@@ -280,6 +280,17 @@ pub async fn run<F: Frontend, S: Spotter>(
             // dial. An interruptible daemon-side sleep at this same juncture, transparent to the
             // agent (never logged/projected) — a submitted turn or a release ends it immediately,
             // so the drain below picks up anything that arrived during the wait.
+            // The config-unparseable park (docs/permissions.md). A config edit
+            // resolves to adopted or rejected-with-a-reason; the one outcome that
+            // reaches neither is the file failing to parse *and* the restore
+            // failing too, which leaves policy in memory that the file no longer
+            // shows. Rather than keep running under a perimeter nobody can
+            // inspect, the loop stops here until the file parses again — the human
+            // fixes it, fs-watch adopts it, and this returns. Checked at every
+            // step, not only at the trajectory's start, because an approved config
+            // write can land the condition mid-trajectory. Resolves at once in
+            // every other case, which is nearly always.
+            shared.await_config_repair().await;
             if !first_step {
                 shared.pace_at_seam().await;
             }

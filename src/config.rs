@@ -100,6 +100,28 @@ impl Default for BashLimits {
     }
 }
 
+/// Transport-layer limits an operator can set (docs/transport.md). One knob so
+/// far: how long a single response's SSE stream may stay open before the read
+/// loop stops waiting on it. It is operator-set because the right value is
+/// workload-dependent — a long think and a hung gateway look identical from
+/// outside until one of them ends, so only someone who knows the workload can
+/// say where the line is.
+///
+/// Transport-only: nothing here reaches the request body, so no value of it can
+/// move the cached prefix (docs/log-and-projection.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransportLimits {
+    pub stream_ceiling: Duration,
+}
+
+impl Default for TransportLimits {
+    fn default() -> Self {
+        Self {
+            stream_ceiling: crate::api::DEFAULT_STREAM_CEILING,
+        }
+    }
+}
+
 /// What a `[commands]` key says about the prefix it addresses (docs/permissions.md) — the
 /// spotter's stance vocabulary, spelled the same way at the fast path so one word means one
 /// thing at both rungs. A `bool` value is sugar: `true` = [`Clear`], `false` = [`Deny`].
@@ -205,6 +227,9 @@ pub struct Config {
 
     /// Foreground-lifetime limits for the `bash` tool (docs/supervisor.md).
     pub bash: BashLimits,
+    /// Transport limits — today, the SSE stream duration ceiling
+    /// (docs/transport.md). TOML `[transport]` table.
+    pub transport: TransportLimits,
     /// User-declared MCP servers to mount as connected providers (docs/tools.md).
     /// A `BTreeMap` so mount order — and therefore the wire `tools[]` order — is
     /// deterministic (docs/log-and-projection.md). Declaring a server here is the

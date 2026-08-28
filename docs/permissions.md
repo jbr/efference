@@ -188,6 +188,35 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
   spotter round-trip whatever `[commands]` granted. The tolerance is in the bash-call lexer
   only; the `[commands]`-key lexer stays single-simple-command, so a `cd …` compound can never
   be stored as a grant.
+- **The redirection carve-out.** A stage 1 rejection is not always final. One shape gets a
+  second look: a **write to a single literal path** — `cmd > path`, `cmd >> path`,
+  `cmd >| path`, optionally fed by a here-doc (`cat > path <<EOF`, `<<'EOF'`, `<<-EOF`). That
+  is a `write`, so it is governed as one, by the `[paths]` write grants. A granted target
+  clears on the fast path with no spotter round-trip; an ungranted one gates exactly the way
+  the structured `write` gates.
+
+  This exists because the heredoc is what a model reaches for when `edit`/`write` doesn't go
+  through: the harness then loses the reviewable diff at the moment review matters most
+  (observed in session `1784334112726`). Governing the bash form as the same write means
+  routing around the tool changes nothing about the answer.
+
+  **Two authorities govern and the more restrictive one wins.** The command must still clear
+  stage 2 on its own — `cat` needs a `clear` stance — *and* the target must be write-granted.
+  A `[commands]` `deny` refuses whatever the path says; a `clear` command writing outside a
+  write grant gates. The `tools` set is not consulted: it names structured tools, and the tool
+  being called is `bash`, whose name grant is its `[commands]` stance. Composed with the `cd`
+  tolerance, the target resolves against the **`cd`'s** directory, since that is where the
+  command runs. The self-surface stack needs no special case — it already denies writes under
+  `.efference/`, so a here-doc aimed at a session's own `config.toml` or log fails the path
+  check like any other ungranted target.
+
+  The admitted shapes are exhaustive and everything else fails closed to the spotter as
+  before: an expansion or glob in the target, more than one file redirection, an input
+  redirection or here-string, a non-stdout fd (`2> file`), a here-doc whose content contains
+  any expansion or substitution (an unquoted here-doc *runs* `$(…)`, which yash surfaces as a
+  substitution unit), pipes, process substitution, lists, backgrounding, negation, assignment
+  prefixes, and anything that does not parse. It is a governed exception, not a general
+  loosening of stage 1's rejection of file redirections.
 - **Stage 2** matches the lexed `[program, args…]` against the `[commands]` map: each key
   is **re-lexed with the same lexer** and compared token-wise (so `"git diff"` matches as
   `["git", "diff"]`, not by string), an empty-args key (`cargo`) addressing the whole
@@ -587,6 +616,23 @@ did nothing cost one session ~20 turns against a wall it believed it had cleared
 invariant can't reach — the file is invalid *and* the restore failed — is reported as itself
 (`Refreshed::RevertFailed`) rather than claiming a revert that didn't happen.
 
+**And it is terminal until a human repairs it.** Effective policy in memory is still the last
+good config, but the file no longer shows it, and the file is what an operator reads to see the
+perimeter a session ran under — so continuing would mean acting under permissions nobody can
+inspect. `refresh_and_emit` therefore sets the **`config_repair` state topic** (`daemon.rs`,
+control-api.md): the path, the parse error, the restore error, and a lead line saying a human must
+fix the file. The loop awaits it (`Shared::await_config_repair`) at every step, not only at a
+trajectory's start, because an approved config write can land the condition mid-trajectory; it
+resolves immediately in every other case. The park is an infinite wait on a `Notify` armed before
+the state is read, the same lost-wakeup discipline the pace hold uses.
+
+It clears by the route that was always going to fix it: the human edits the file, fs-watch calls
+`refresh` again, and any outcome that leaves valid content on disk — adopted, or a revert that
+succeeded this time — clears the topic and wakes the loop. Making it terminal introduces no
+blocked-with-nobody-home state, because a config write is the one operation that is **never**
+autonomous: it gates for the orchestrator even under `--autonomous`, so a file in this condition
+always has an owner.
+
 ## The review-level dial (`src/agent.rs`, `src/daemon/config_edits.rs`)
 
 **Who reviews a call the fast-path didn't clear** is a runtime dial — a [`ReviewLevel`] ordinal on
@@ -602,6 +648,21 @@ positions of increasing human involvement:
   carve-out and **still gates**, held for the orchestrator-above. So autonomous mode relocates the
   human, it doesn't remove it: routine gated calls self-resolve, and the operator's attention is spent
   only on genuine policy-change requests. (`serve --autonomous` boots into this position.)
+  **A structured call's redirect names the grant it lacked.** The generic copy above says the
+  call was gated; it does not say why the *tool* produced nothing, and a model reading a
+  `write`/`edit` come back empty has been observed to conclude the tool is broken rather than
+  that a grant is missing — session `1784334112726` decided "persist_edit without parameters
+  doesn't work in autonomous mode" and switched to rewriting files through `cat > file <<EOF`,
+  trading a reviewable diff for a whole-file rewrite. A model that thinks the tool is broken
+  has no reason to fix its config; one that knows it lacks a grant does. So when the fast path
+  can decompose the refusal (`policy::missing_grants`), the redirect
+  (`agent::missing_grant_message`) leads with "the call did not run — this is not about the
+  tool's behavior", names what is missing in the config's own vocabulary (`tools` does not
+  list `edit`; no `[paths]` entry grants `write` for `src/lib.rs`), points at the config-edit
+  remedy, and — for a write — says that the bash form lands on the same grant and gates the
+  same way, which since the redirection carve-out it does. The two halves are reported
+  independently: the path check requires the name grant as a precondition, which is true of
+  the decision and misleading as a diagnosis.
 - **`SpotterHuman`** — the supervised default: fast-path → spotter → human gate.
 - **`HumanOnly`** — the human takes the spotter's role **entirely**: the spotter is **skipped**
   (no model call, no token cost, no `Spot` entry), and every call the fast-path didn't clear goes

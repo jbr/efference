@@ -19,6 +19,56 @@ pub(super) fn autonomous_gate_message(config_path: Option<&Path>, reason: &str) 
     )
 }
 
+/// The redirect a gated **structured** call gets in autonomous mode, when the fast path can
+/// name the grants it lacked (docs/permissions.md).
+///
+/// The generic message above says the call was gated; it does not say *why the tool did not
+/// run*, and a model reading a `write`/`edit` come back with nothing to show for it has been
+/// observed to conclude the tool is broken — session `1784334112726` decided "persist_edit
+/// without parameters doesn't work in autonomous mode" and started rewriting files through
+/// `cat > file <<EOF` instead, which replaces a reviewable diff with an un-reviewable
+/// whole-file rewrite. A model that believes the tool is broken has no reason to fix its
+/// config; one that reads which grant is missing does. So this variant leads with the
+/// diagnosis, names the missing grant in the vocabulary the config uses, and — for a write —
+/// says outright that the bash route lands on the same grant, which it now does
+/// ([`crate::policy`]'s redirection carve-out).
+pub(super) fn missing_grant_message(
+    config_path: Option<&Path>,
+    reason: &str,
+    missing: &policy::MissingGrants,
+) -> String {
+    let mut lacks = Vec::new();
+    if let Some(tool) = &missing.tool {
+        lacks.push(format!("`tools` does not list `{tool}`"));
+    }
+    if !missing.paths.is_empty() {
+        let perm = if missing.needs_write { "write" } else { "read" };
+        lacks.push(format!(
+            "no `[paths]` entry grants `{perm}` for {}",
+            missing
+                .paths
+                .iter()
+                .map(|p| format!("`{p}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let detour = if missing.needs_write {
+        " Writing the same file through bash (`cat > … <<EOF`, `tee`, a redirection) is the \
+         same write under the same `[paths]` grant and gates the same way, so it is not a way \
+         around this — and it costs you the reviewable diff."
+    } else {
+        ""
+    };
+    format!(
+        "Gated on permissions — the call did not run, so nothing here is about the tool's \
+         behavior or its parameters. What is missing: {}.\n\nSpotter: {reason}\n\n{} \
+         Otherwise, find another approach within your current scope.{detour}",
+        lacks.join("; "),
+        config_request_sentence(config_path),
+    )
+}
+
 /// The redirect a **denied** call gets in autonomous mode (docs/permissions.md). Same shape as
 /// [`autonomous_gate_message`] and the same request paragraph, but it names the config as the
 /// author of the refusal rather than the spotter — a `[commands]` key carrying `deny` decided
@@ -81,8 +131,9 @@ pub(super) fn config_write_outcome(shared: &Shared, result: RawResult) -> RawRes
             content: format!(
                 "Your config edit was not adopted: the file did not parse, and restoring the last \
                  valid config also failed, so the file on disk is currently invalid. Your \
-                 effective permissions are unchanged. This needs a human to repair the \
-                 file.\n\nParse error: {error}\nRestore error: {io}"
+                 effective permissions are unchanged. This needs a human to repair the file, and \
+                 the loop is parked until it parses again — there is nothing further you can do \
+                 here.\n\nParse error: {error}\nRestore error: {io}"
             ),
             is_error: true,
             content_elided: None,

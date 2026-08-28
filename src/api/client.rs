@@ -16,6 +16,21 @@ use trillium_client_retry::RetryHandler;
 const RETRY_MAX_ATTEMPTS: u32 = 4;
 const RETRY_MAX_ELAPSED: Duration = Duration::from_secs(30);
 
+/// How long one SSE response may stay open before the read loop stops waiting on
+/// it (docs/transport.md). The retry policy above bounds *failures*; this bounds
+/// *success taking forever* — a stream that neither finalizes nor dies has no
+/// other bound, and blocks its turn with nothing on `GET /state` to read.
+///
+/// One hour. The widest model call in this repo's corpus (2026-08-28: 2281
+/// assistant entries across every `.efference/*/log.jsonl`) took 363 seconds, and
+/// the 99.9th percentile 253 — so an hour is roughly ten times the longest turn
+/// anyone here has actually waited out. It is set that far above the observed
+/// spread deliberately: hours-scale thinking is a thing models are moving toward,
+/// and a ceiling that fires on a *slow* stream throws away real work, where one
+/// that fires late only delays the diagnosis of a hang. Operators whose workload
+/// says otherwise set `[transport] stream-ceiling` (`config::TransportLimits`).
+pub const DEFAULT_STREAM_CEILING: Duration = Duration::from_secs(3600);
+
 /// Record one non-success upstream status. Matching statuses increment the
 /// diagnostic's count; a different one starts a new run (docs/transport.md).
 pub(super) fn record_upstream_failure(failure: &UpstreamFailureState, status: u16) {
@@ -113,6 +128,11 @@ pub struct Client {
     /// (observed live, 2026-08-21). Session-constant, so it never perturbs the
     /// cached prefix.
     max_tokens: u32,
+    /// How long one response's SSE stream may stay open (docs/transport.md).
+    /// Session-constant and transport-only — it never reaches the request body,
+    /// so it cannot move the cached prefix. Both stream surfaces ride it: the
+    /// turn loop and the fork peek call the same [`Self::complete`].
+    stream_ceiling: Duration,
     /// Which upstream serves this session, when pinned (docs/transport.md).
     upstream: Option<Upstream>,
     upstream_failure: UpstreamFailureState,
@@ -174,6 +194,7 @@ impl Client {
             temperature,
             model_reasoning: false,
             max_tokens: MAX_TOKENS,
+            stream_ceiling: DEFAULT_STREAM_CEILING,
             upstream: None,
             upstream_failure,
             upstream_retry: upstream_retry_state(),
@@ -232,6 +253,15 @@ impl Client {
 
     pub fn with_model_reasoning(mut self, model_reasoning: bool) -> Self {
         self.model_reasoning = model_reasoning;
+        self
+    }
+
+    /// Set how long one response's SSE stream may stay open before the read loop
+    /// gives up on it (`[transport] stream-ceiling`, docs/transport.md). Applies
+    /// to every request this client makes, so a session's turns and its fork
+    /// peeks are bounded alike.
+    pub fn with_stream_ceiling(mut self, ceiling: Duration) -> Self {
+        self.stream_ceiling = ceiling;
         self
     }
 
@@ -306,7 +336,28 @@ impl Client {
         // completion's `upstream_failure`, alongside whatever content accumulated
         // (docs/transport.md). Only a failure to *open* the stream (above) is an
         // `Err` from this function.
-        while let Some(event) = events.next().await {
+        //
+        // The duration ceiling (docs/transport.md). A stream that stays open and
+        // never finalizes is bounded by nothing else — the retry policy above
+        // applies only while opening a response — so the read loop carries an
+        // absolute deadline. Exceeding it is marked exactly like a mid-stream
+        // death: the partial is kept, `finish` folds the reason into the
+        // completion's `upstream_failure`, and the caller's abort-retry budget
+        // decides what happens next.
+        let deadline = tokio::time::Instant::now() + self.stream_ceiling;
+        while let Some(event) = match tokio::time::timeout_at(deadline, events.next()).await {
+            Ok(event) => event,
+            Err(_) => {
+                let why = format!(
+                    "upstream SSE stream stayed open past the {}s ceiling without \
+                     finalizing ([transport] stream-ceiling)",
+                    self.stream_ceiling.as_secs()
+                );
+                log::error!("{why}");
+                assembler.fail(why);
+                None
+            }
+        } {
             let event = match event {
                 Ok(event) => event,
                 Err(e) => {

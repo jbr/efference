@@ -194,6 +194,42 @@ controlled run a withheld conformance `PASS` was re-earned by re-running the
 suite against a still-live server whose counters the invisible first run had
 moved, turning the pass into a spurious failure.
 
+### The duration ceiling
+
+Everything above bounds *failures*. A stream that stays open and keeps trickling
+— or stops trickling without closing — is bounded by none of it: the retry
+handler's 30-second budget covers only the attempt to *open* a response, and a
+response that is open has no other clock on it. Left alone, such a stream blocks
+its turn indefinitely and shows nowhere, since nothing aborts and `upstream_retry`
+only reports a retry already in flight.
+
+So the read loop in `Client::complete` carries an absolute deadline
+(`tokio::time::timeout_at` on each `events.next()`). Exceeding it stops the read
+and marks the stream through the same `Assembler::fail` a mid-stream death takes:
+the partial is kept as a record-only entry, the reason rides on the completion's
+`upstream_failure`, and the caller's abort-retry budget decides what happens next
+— which means it is retried on the schedule above, publishes `upstream_retry`
+while it waits, and lands on `stall` if the budget runs out. It is never a silent
+kill. Because `complete` is the one read loop, **both** stream surfaces are
+bounded by it: a turn and a fork peek alike.
+
+The value is operator-set — `[transport] stream-ceiling`, in seconds, alongside
+`[bash]`'s knobs (`config::TransportLimits`) — because the right one is
+workload-dependent: a long think and a hung gateway look identical from outside
+until one of them ends. The default is **one hour**. The widest model call in
+this repo's corpus (2026-08-28, 2281 assistant entries) took 363 seconds and the
+99.9th percentile 253, so an hour is about ten times the longest wait anyone here
+has actually sat through. It is set that far out on purpose: hours-scale thinking
+is a direction models are moving, a ceiling that fires on a merely *slow* stream
+discards real work, and one that fires late only delays the diagnosis of a hang.
+The counterpart to a generous value is that a genuinely hung endpoint costs the
+ceiling once per abort-retry attempt before the trajectory stalls — which is the
+other reason the number belongs to whoever knows the workload.
+
+This was never observed directly; the empty-finalized-turn cases were *consistent
+with* a gateway timing out in front of a slow upstream, and the ceiling closes the
+adjacent hole rather than a measured one.
+
 A stream that **finalizes with nothing** — proper termination, zero content
 blocks, zero usage, no generation id — is the complement of one that dies before
 finalizing, and is marked the same way. A gateway in front of a slow upstream can

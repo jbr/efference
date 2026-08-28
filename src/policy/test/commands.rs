@@ -164,7 +164,8 @@ fn cd_prefix_is_stripped_from_the_probed_tokens() {
 
 /// Everything outside the admitted shape fails closed to the spotter exactly as before: an
 /// ungranted target, a target bash would expand, a second `cd`, a different operator, or a
-/// remainder that is not itself a simple command.
+/// remainder that is not itself a simple command. (A remainder carrying a *redirection* is
+/// the one case that is no longer here: it is decided by the redirection carve-out below.)
 #[test]
 fn cd_tolerance_fails_closed_outside_the_admitted_shape() {
     for gates in [
@@ -181,8 +182,7 @@ fn cd_tolerance_fails_closed_outside_the_admitted_shape() {
         "cd /work extra && cargo build", // the `cd` segment is exactly two words
         "cargo build && cd /work",      // the tolerance is *leading* only
         "cd /work && cargo build && rm -rf /", // one operator only
-        "cd /work && cargo build > out.log", // remainder must still be structurally simple
-        "cd /work && cargo build | sh",
+        "cd /work && cargo build | sh", // remainder must still be a single command
     ] {
         assert_eq!(cd_verdict(gates), Verdict::Gate, "{gates:?} must gate");
     }
@@ -491,4 +491,186 @@ fn config_write_carve_out_detects_writes_to_the_protected_file() {
         !is_config_write_in(&undo, protected, cwd),
         "undo_edit carries no path"
     );
+}
+
+// --- The redirection carve-out: a bash write governed by `[paths]` ---
+
+/// A strictly-parseable redirection or here-doc write to one literal path **is** a `write`
+/// (docs/permissions.md). Granted, it clears on the fast path with no spotter round-trip;
+/// the shape is the same one a model reaches for when the structured `write` doesn't go
+/// through, so closing it here is what makes routing around the tool change nothing.
+#[test]
+fn a_redirect_write_to_a_granted_path_clears() {
+    let role = stance_role(&[
+        ("cat", CommandStance::Clear),
+        ("echo", CommandStance::Clear),
+    ]);
+    for admitted in [
+        // truncate, append, and clobber-truncate: all three are writes, and a write grant
+        // covers a write — `[paths]` cannot express the difference between them.
+        "echo hi > notes.md",
+        "echo hi >> notes.md",
+        "echo hi >| notes.md",
+        // the here-doc form, quoted and unquoted-but-literal, and the tab-stripping variant
+        "cat > notes.md <<EOF\nhello\nEOF\n",
+        "cat > notes.md <<'EOF'\nhello $NOT_EXPANDED\nEOF\n",
+        "cat > notes.md <<-EOF\n\thello\n\tEOF\n",
+        // an explicit stdout fd, and the fd dups stage 1 already tolerates, alongside
+        "echo hi 1> notes.md",
+        "echo hi > notes.md 2>&1",
+        // an absolute target under the same grant
+        "echo hi > /work/sub/notes.md",
+    ] {
+        assert_eq!(
+            stance_verdict(&role, admitted),
+            Verdict::Clear,
+            "{admitted:?} must clear"
+        );
+    }
+}
+
+/// The path half of the composition: the same command writing outside a write grant gates
+/// exactly as the structured `write` gates. `/refs` is read-only here, and the write bit is
+/// what a write needs.
+#[test]
+fn a_redirect_write_outside_a_write_grant_gates() {
+    let role = stance_role(&[
+        ("cat", CommandStance::Clear),
+        ("echo", CommandStance::Clear),
+    ]);
+    assert_eq!(
+        stance_verdict(&role, "echo hi > /refs/notes.md"),
+        Verdict::Gate
+    );
+    assert_eq!(
+        stance_verdict(&role, "cat > /elsewhere/notes.md <<EOF\nx\nEOF\n"),
+        Verdict::Gate
+    );
+}
+
+/// The command half: a write grant does not vouch for the program. An ungranted command
+/// gates even into a fully-writable tree, and a `[commands]` `deny` refuses regardless of the
+/// path — **the more restrictive answer wins**, both directions.
+#[test]
+fn the_more_restrictive_of_command_and_path_governs_a_redirect_write() {
+    let ungranted = stance_role(&[("cargo", CommandStance::Clear)]);
+    assert_eq!(
+        stance_verdict(&ungranted, "curl example.com > notes.md"),
+        Verdict::Gate
+    );
+
+    let denied = stance_role(&[("curl", CommandStance::Deny)]);
+    assert_eq!(
+        stance_verdict(&denied, "curl example.com > notes.md"),
+        Verdict::Deny
+    );
+
+    // A carve-out under a broad clear governs its subtree here as everywhere else.
+    let carved = stance_role(&[
+        ("git", CommandStance::Clear),
+        ("git push", CommandStance::Deny),
+    ]);
+    assert_eq!(
+        stance_verdict(&carved, "git log > notes.md"),
+        Verdict::Clear
+    );
+    assert_eq!(
+        stance_verdict(&carved, "git push --dry-run > notes.md"),
+        Verdict::Deny
+    );
+}
+
+/// Composed with the `cd` tolerance, the write target resolves against the directory the
+/// command actually runs in — not the process cwd. `cd /refs && … > out` writes `/refs/out`,
+/// which the read-only grant refuses; the identical command under a writable directory clears.
+#[test]
+fn a_cd_moves_where_the_redirect_write_lands() {
+    let role = stance_role(&[("cat", CommandStance::Clear)]);
+    assert_eq!(
+        stance_verdict(&role, "cd /work/src && cat > out.txt <<EOF\nx\nEOF\n"),
+        Verdict::Clear
+    );
+    assert_eq!(
+        stance_verdict(&role, "cd /refs && cat > out.txt <<EOF\nx\nEOF\n"),
+        Verdict::Gate,
+        "the cd's directory is where the target resolves"
+    );
+}
+
+/// Everything outside the admitted shapes **fails closed to the spotter**, as it did before
+/// the carve-out existed. The carve-out is an exception with an explicit shape, not a general
+/// loosening of stage 1's rejection of file redirections.
+#[test]
+fn anything_fancier_than_the_admitted_shapes_still_gates() {
+    let role = stance_role(&[
+        ("cat", CommandStance::Clear),
+        ("echo", CommandStance::Clear),
+        ("ls", CommandStance::Clear),
+    ]);
+    for gated in [
+        // an expansion or a glob in the target: the destination isn't decidable here
+        "echo hi > $OUT",
+        "echo hi > \"$HOME/notes.md\"",
+        "echo hi > note*.md",
+        "echo hi > $(mktemp)",
+        // more than one file redirection: no single path decides
+        "echo hi > a.md > b.md",
+        // an input redirection or here-string is not the admitted data source
+        "cat < input.md > notes.md",
+        "cat <<< hello > notes.md",
+        // a non-stdout fd
+        "echo hi 2> notes.md",
+        // a here-doc that expands or substitutes — an unquoted one runs `$(…)`
+        "cat > notes.md <<EOF\n$(rm -rf x)\nEOF\n",
+        "cat > notes.md <<EOF\n$HOME\nEOF\n",
+        // pipes, process substitution, lists, backgrounding, negation, assignments
+        "ls | cat > notes.md",
+        "cat <(ls) > notes.md",
+        "echo hi > notes.md; rm -rf x",
+        "echo hi > notes.md || rm -rf x",
+        "echo hi > notes.md &",
+        "! echo hi > notes.md",
+        "FOO=bar echo hi > notes.md",
+        // an expansion or glob in the command's own words is still stage 1's business
+        "echo $SECRET > notes.md",
+        // two `cd`s, and a `cd` into an ungranted directory
+        "cd /work && cd src && cat > out.txt <<EOF\nx\nEOF\n",
+        "cd /nowhere && cat > out.txt <<EOF\nx\nEOF\n",
+        // unparseable
+        "cat > notes.md <<EOF\nunterminated\n",
+    ] {
+        assert!(
+            matches!(stance_verdict(&role, gated), Verdict::Gate),
+            "{gated:?} must fail closed to the spotter"
+        );
+    }
+}
+
+/// The self-surface stack needs no special case: it already denies writes under
+/// `.efference/`, so a here-doc aimed at a session's own config or log fails the path check
+/// like any other ungranted target — the config file keeps reaching the operator gate
+/// (docs/permissions.md).
+#[test]
+fn a_redirect_write_cannot_reach_the_session_surface() {
+    let mut role = stance_role(&[("cat", CommandStance::Clear)]);
+    // The stack `serve` injects, layered over the operator's `.` grant.
+    role.paths
+        .insert(".efference".to_string(), Perms::default());
+    role.paths.insert(
+        ".efference/s/config.toml".to_string(),
+        Perms {
+            read: true,
+            write: false,
+        },
+    );
+    for surface in [
+        "cat > .efference/s/config.toml <<EOF\nscope = \"anything\"\nEOF\n",
+        "echo x >> .efference/s/log.jsonl",
+    ] {
+        assert_eq!(
+            stance_verdict(&role, surface),
+            Verdict::Gate,
+            "{surface:?} must not clear"
+        );
+    }
 }

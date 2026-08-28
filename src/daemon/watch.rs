@@ -86,6 +86,9 @@ pub(crate) fn refresh_and_emit(shared: &Shared) -> Option<Refreshed> {
     let file_config = match outcome {
         Refreshed::Adopted(config) => config,
         Refreshed::Reverted { ref error } => {
+            // The revert put valid content back on disk, so a prior park (if any) is over —
+            // the file parses again, which is the whole condition (docs/permissions.md).
+            shared.clear_config_repair();
             eprintln!("[config: edit did not parse, reverted to last good: {error}]");
             shared.notify(
                 "config".to_string(),
@@ -103,19 +106,34 @@ pub(crate) fn refresh_and_emit(shared: &Shared) -> Option<Refreshed> {
         }
         Refreshed::RevertFailed { ref error, ref io } => {
             // The one state the invariant can't reach: the file is invalid and we couldn't put it
-            // back. Say so plainly rather than implying a revert that didn't happen.
+            // back. Say so plainly rather than implying a revert that didn't happen — and park the
+            // loop on it (docs/permissions.md) rather than running on indefinitely under a policy
+            // the file no longer shows. Safe to make terminal because a config write is never
+            // autonomous, so there is always an owner to do the repair.
             eprintln!("[config: edit did not parse AND the revert failed: {error} / {io}]");
             shared.notify(
                 "config".to_string(),
                 format!(
                     "Your config edit did not parse, and restoring the last valid config also \
                      failed — the file on disk is currently invalid and the effective policy is \
-                     unchanged (last good config still in force). It needs a human repair. \
+                     unchanged (last good config still in force). The loop is parked until the \
+                     file parses again; it needs a human repair. \
                      Parse error: {error}. Restore error: {io}"
                 ),
                 Some("config-parse-error".to_string()),
                 None,
             );
+            shared.require_config_repair(crate::daemon::ConfigRepair {
+                path: shared
+                    .config_path()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default(),
+                at: crate::log::Timestamp::now().0,
+                message: "config unparseable — the loop is parked until a human repairs the file"
+                    .to_string(),
+                parse_error: error.clone(),
+                restore_error: io.to_string(),
+            });
             return Some(outcome);
         }
     };
@@ -129,6 +147,10 @@ pub(crate) fn refresh_and_emit(shared: &Shared) -> Option<Refreshed> {
     // someone to answer it. A failure is announced on its own stable slot rather
     // than left to surface as a tool's opaque auth error later; the value in
     // force is unchanged, because injection is fixed at boot.
+    // Adopted: the file parses, so a park on it is over and the loop wakes
+    // (docs/permissions.md). This is the human-repair path — they fix the file,
+    // fs-watch lands here, the gate clears.
+    shared.clear_config_repair();
     let unresolved = shared.absorb_env_table(&file_config);
     if !unresolved.is_empty() {
         let detail = unresolved

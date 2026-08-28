@@ -327,7 +327,7 @@ mod provider;
 mod render;
 mod thinking;
 
-pub use client::Client;
+pub use client::{Client, DEFAULT_STREAM_CEILING};
 pub use diagnostics::{
     RetrySurface, UpstreamAttemptFailure, UpstreamAttemptQueue, UpstreamFailure,
     UpstreamFailureState, UpstreamRetry, UpstreamRetryCell, UpstreamRetryState,

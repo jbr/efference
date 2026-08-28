@@ -1383,3 +1383,81 @@ fn an_empty_turn_that_was_billed_is_left_alone() {
         "a billed turn is not an empty stream"
     );
 }
+
+/// **The duration ceiling** (docs/transport.md): a stream that opens, trickles,
+/// and then never finalizes is given up on rather than blocking its turn forever,
+/// and the completion comes back marked exactly the way a mid-stream abort is —
+/// record-only, retryable, with the reason on it. The server here holds the
+/// connection open with an unterminated SSE body, which is the shape nothing
+/// bounded before this: the retry policy applies only while *opening* a response.
+///
+/// One read loop serves both stream surfaces, so a turn and a fork peek are
+/// bounded by the same knob.
+#[tokio::test]
+async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    // The server holds the connection open until the test says it is done, so the
+    // *client's* ceiling is always what ends the read. A server that closed on its
+    // own timer would race it, and an EOF already waiting on the socket wins over an
+    // elapsed deadline — the assertion would then be about the wrong failure.
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let held = std::sync::Arc::clone(&done);
+    let server = std::thread::spawn(move || {
+        let (mut sock, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 8192];
+        let _ = sock.read(&mut buf);
+        let event = "event: message_start\ndata: {\"message\":{\"model\":\"m\",\
+                     \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
+        sock.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                 transfer-encoding: chunked\r\n\r\n{:x}\r\n{event}\r\n",
+                event.len()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        sock.flush().unwrap();
+        // Never send the terminating chunk: the response is open and unfinalized,
+        // which is the shape nothing bounded before this.
+        sock.set_read_timeout(Some(std::time::Duration::from_millis(50)))
+            .unwrap();
+        while !held.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = sock.read(&mut buf);
+        }
+    });
+
+    let endpoint = Endpoint {
+        provider: Provider::Anthropic,
+        url: format!("http://{addr}/v1/messages"),
+        auth_header: "x-api-key".into(),
+        auth_value: "k".into(),
+        session_id: None,
+    };
+    let client = Client::new(endpoint, "m", "sys", None)
+        .with_stream_ceiling(std::time::Duration::from_millis(200));
+    let completion = client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .expect("the ceiling is not an open failure — it assembles a partial");
+    done.store(true, std::sync::atomic::Ordering::SeqCst);
+    let why = completion.upstream_failure().expect("must be marked");
+    assert!(why.contains("ceiling"), "{why}");
+    assert!(why.contains("stream-ceiling"), "names the knob: {why}");
+    server.join().unwrap();
+}
+
+/// The ceiling is a `[transport]` knob with a generous default, not a hardcoded
+/// number: the right value is workload-dependent (docs/transport.md).
+#[test]
+fn the_stream_ceiling_defaults_generously_and_is_operator_settable() {
+    assert_eq!(
+        crate::config::TransportLimits::default().stream_ceiling,
+        DEFAULT_STREAM_CEILING
+    );
+    // Comfortably past the widest model call in this repo's corpus (363s).
+    assert!(DEFAULT_STREAM_CEILING >= std::time::Duration::from_secs(3600));
+}

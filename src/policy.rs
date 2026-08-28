@@ -30,6 +30,12 @@
 //!   fast path ([`is_safe_fd_dup`]). The one operator it tolerates is a single leading
 //!   `cd <dir> &&` whose literal target is read-granted by `[paths]`; the remainder is what
 //!   stage 2 matches and what prefix-promotion probes ([`commands::bash_tokens_in`]).
+//!   A rejection here is not always final: one narrow shape — a redirection or here-doc
+//!   **write to a single literal path** — is re-read as the `write` it is and governed by
+//!   the `[paths]` write grants ([`commands::classify_redirect_write`]). Both authorities
+//!   apply and the more restrictive wins: the command must still clear stage 2, and the
+//!   target must still be write-granted. Everything else about a file redirection gates as
+//!   before.
 //!   yash is POSIX-strict, which only
 //!   costs *coverage* (a few bash-only forms gate to the spotter), never *soundness* —
 //!   bash's dangerous operators are POSIX too, so they parse as operators and gate;
@@ -292,6 +298,62 @@ pub(crate) fn tool_granted(role: &Config, wire_name: &str) -> bool {
                 "{namespace}{}{wire_name}",
                 crate::mcp::NAMESPACE_SEPARATOR
             )))
+}
+
+/// What a gated **structured** call is missing, phrased the way the config spells it
+/// (docs/permissions.md). Consumed by the autonomous redirect, which names it back to the
+/// model so a missing grant reads as a missing grant rather than as a broken tool.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissingGrants {
+    /// The wire tool name, when the `tools` set does not grant it; `None` when it does.
+    pub tool: Option<String>,
+    /// The call's targets that no `[paths]` or `[context]` grant covers with the needed
+    /// permission, as the call spelled them.
+    pub paths: Vec<String>,
+    /// Whether those targets needed `write` (as against `read`) — which key of a `[paths]`
+    /// entry would have to change.
+    pub needs_write: bool,
+}
+
+/// Decompose why the fast-path did not clear a structured call into the grants that would
+/// have (docs/permissions.md). `None` for `bash` (whose answer is a `[commands]` stance, not
+/// a set of grants) and for a call the fast-path would clear.
+///
+/// The two halves are reported **independently**: the path check in [`classify_structured`]
+/// requires the name grant as a precondition on the `[paths]` source, which would report
+/// every target as ungranted whenever the tool name is missing. That is true of the
+/// *decision* and misleading as a *diagnosis*, so the path half here asks only whether some
+/// grant covers the target.
+pub fn missing_grants(role: &Config, call: &ToolCall) -> Option<MissingGrants> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    missing_grants_in(role, call, &cwd)
+}
+
+/// The cwd-injected core of [`missing_grants`], for deterministic tests.
+fn missing_grants_in(role: &Config, call: &ToolCall, cwd: &Path) -> Option<MissingGrants> {
+    if call.name == bash::NAME {
+        return None;
+    }
+    let tool = (!tool_granted(role, &call.name)).then(|| call.name.clone());
+    let (paths, needs_write) = match path_spec(&call.name) {
+        Some((key, perm, default)) => {
+            let targets = input_targets(&call.input, key, default).unwrap_or_default();
+            let ungranted = targets
+                .into_iter()
+                .filter(|t| {
+                    !(context_granted(role, t, perm, cwd) || path_granted(role, t, perm, cwd))
+                })
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            (ungranted, perm == Perm::Write)
+        }
+        None => (Vec::new(), false),
+    };
+    (tool.is_some() || !paths.is_empty()).then_some(MissingGrants {
+        tool,
+        paths,
+        needs_write,
+    })
 }
 
 /// Tiny helper: fold a boolean clearance decision into a [`Verdict`].
