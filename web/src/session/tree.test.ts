@@ -65,6 +65,29 @@ describe("the transcript tree", () => {
     expect(call.result?.seq).toBe(3);
   });
 
+  it("attaches tool telemetry to the call it names, never as a leaf", () => {
+    // Regression: the `ToolTelemetry` variant shipped after this client's
+    // `Payload` union was written, so it fell through to the unknown-entry
+    // renderer and every call grew a stray `{"ToolTelemetry":{…}}` block in the
+    // transcript. It is a fact about a call, like `Spot`, not an entry to read.
+    const nodes = buildTree([
+      assistant(1, { calls: [{ id: "toolu_a", name: "list" }] }),
+      entry(2, {
+        ToolTelemetry: {
+          call_id: "toolu_a",
+          tool: "list",
+          duration_ms: 4,
+          outcome: "applied",
+          result_bytes: 279,
+        },
+      } as LogEntry["payload"]),
+    ]);
+    expect(nodes).toHaveLength(1);
+    const call = onlyCall(nodes);
+    expect(call.telemetry?.duration_ms).toBe(4);
+    expect(call.telemetry?.result_bytes).toBe(279);
+  });
+
   it("groups the calls of one step into one batch", () => {
     const nodes = buildTree([
       assistant(1, {

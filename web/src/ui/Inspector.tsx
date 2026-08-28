@@ -5,7 +5,14 @@
 // cordon's renderers rather than growing its own.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CallId, Keep, RawResult, WireState } from "../api/types.ts";
+import type {
+  CallId,
+  Keep,
+  RawResult,
+  ToolOutcome,
+  ToolTelemetry,
+  WireState,
+} from "../api/types.ts";
 import type { CallNode } from "../session/tree.ts";
 import { Code } from "./Code.tsx";
 import { ResultBody } from "./ToolBlocks.tsx";
@@ -150,6 +157,67 @@ function ForkPanel({ raw, wire }: { raw: RawResult; wire: WireState }) {
             <span className="note-text">{wire.Distilled.note}</span>
           </div>
         )}
+    </div>
+  );
+}
+
+const OUTCOME_LABEL: Record<ToolOutcome, string> = {
+  applied: "applied",
+  rejected: "rejected",
+  harnesserror: "harness error",
+};
+
+const formatBytes = (n: number): string =>
+  n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KiB`;
+
+/** "What the call cost": the harness's own measurement of the dispatch
+ * (docs/tools.md), as distinct from `ForkPanel`, which reports what the fork did
+ * to the result afterwards. `duration_ms` excludes the permission cascade, so a
+ * call that waited at a gate does not read as a slow call; `result_bytes` is the
+ * raw size before distillation, which is what makes the pair with the fork panel
+ * legible. */
+function TelemetryPanel({ telemetry }: { telemetry: ToolTelemetry }) {
+  const rows: [string, string][] = [
+    ["outcome", OUTCOME_LABEL[telemetry.outcome] ?? telemetry.outcome],
+    ["duration", `${telemetry.duration_ms} ms`],
+    ["result", formatBytes(telemetry.result_bytes)],
+  ];
+  if (telemetry.images !== undefined && telemetry.images > 0) {
+    rows.push([
+      "images",
+      `${telemetry.images} ${telemetry.images === 1 ? "block" : "blocks"}`,
+    ]);
+  }
+  const bash = telemetry.bash;
+  if (bash !== undefined) {
+    // Absent `exit_status` on a completed foreground command is exit zero — the
+    // log omits the field rather than writing "0", so the label is restored here.
+    rows.push([
+      "exit",
+      bash.background ? "backgrounded" : (bash.exit_status ?? "0"),
+    ]);
+  }
+  const edit = telemetry.edit;
+  if (edit !== undefined) {
+    if (edit.operation !== undefined) rows.push(["operation", edit.operation]);
+    if (edit.anchor_bytes !== undefined) {
+      rows.push(["anchor", formatBytes(edit.anchor_bytes)]);
+    }
+    if (edit.content_bytes !== undefined) {
+      rows.push(["content", formatBytes(edit.content_bytes)]);
+    }
+  }
+  return (
+    <div className="fork-panel">
+      <div className="fork-title">what the call cost</div>
+      <div className="fork-grid">
+        {rows.map(([k, v]) => (
+          <div className="fork-row" key={k}>
+            <span className="dim">{k}</span>
+            <span>{v}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -430,6 +498,7 @@ export function Inspector({
           onOpenFile={onOpenFile}
         />
       )}
+      {node.telemetry !== null && <TelemetryPanel telemetry={node.telemetry} />}
       {result !== null && <ForkPanel raw={result.raw} wire={result.wire} />}
     </div>
   );

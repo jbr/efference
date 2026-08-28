@@ -36,6 +36,7 @@ export type Payload =
   | { Ambient: Notification }
   | { Spot: Spot }
   | { ConfigEdit: ConfigEdit }
+  | { ToolTelemetry: ToolTelemetry }
   | { Preamble: { system: string; context: unknown } };
 
 export type ContentBlock =
@@ -104,6 +105,48 @@ export interface Notification {
 }
 
 export type Stance = "clear" | "watch" | "gate" | "clear_always";
+
+/** What one tool call cost and how it came out (docs/tools.md) — the harness's
+ * own measurement of the dispatch, joined to its call by `call_id`. `duration_ms`
+ * excludes the permission cascade, and `result_bytes` is the raw result before
+ * the fork peek distills it, so the pair (this, the rendered result) is what
+ * says how much a gate saved. Additive by construction on the Rust side: fields
+ * may appear here that this client does not read yet. */
+export interface ToolTelemetry {
+  call_id: CallId;
+  tool: string;
+  duration_ms: number;
+  outcome: ToolOutcome;
+  result_bytes: number;
+  /** Realized image blocks the result carried; omitted when zero. */
+  images?: number;
+  bash?: BashTelemetry;
+  edit?: EditTelemetry;
+}
+
+/** How one call came out (docs/tools.md). `rejected` is the tool running and
+ * declining — an anchor that matched nothing, a command that exited non-zero, a
+ * path outside a grant. `harnesserror` is the harness failing to run the call at
+ * all, which is a defect signal rather than a datum about the model. */
+export type ToolOutcome = "applied" | "rejected" | "harnesserror";
+
+export interface BashTelemetry {
+  /** The status the result reported — `"1"`, or `"signal"` for a command a
+   * signal killed. Absent means the result reported none, which for a completed
+   * foreground command is exit zero. */
+  exit_status?: string;
+  /** Whether the call asked to be backgrounded, in which case `duration_ms`
+   * measures the spawn and `result_bytes` the handle message. */
+  background: boolean;
+}
+
+/** Read off an edit-shaped call's own arguments, so any tool that spells them
+ * this way contributes. */
+export interface EditTelemetry {
+  operation?: string;
+  anchor_bytes?: number;
+  content_bytes?: number;
+}
 
 export interface Spot {
   call_id: CallId;

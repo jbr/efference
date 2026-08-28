@@ -564,11 +564,16 @@ pub enum ToolOutcome {
     /// visible.
     Rejected,
     /// The harness could not run the call at all: no mounted tool owns the name,
-    /// a spawn failed, an argument would not deserialize. Distinct from
-    /// [`Rejected`] because it is a defect signal about the harness, not a datum
-    /// about the model's judgment.
+    /// or a background spawn failed. Distinct from [`Rejected`] because it is a
+    /// defect signal about the harness, not a datum about the model's judgment.
     ///
-    /// [`Rejected`]: ToolOutcome::HarnessError
+    /// Set from an explicit flag at the sites that *construct* a harness-authored
+    /// failure, never inferred from result text. So an argument that would not
+    /// deserialize is **not** here: the tool returned that error itself, and a
+    /// model sending a string where the schema declares an array is a datum about
+    /// the model. It classifies as [`Rejected`].
+    ///
+    /// [`Rejected`]: ToolOutcome::Rejected
     HarnessError,
 }
 

@@ -21,7 +21,13 @@
 // real boundary that is not nested on: it would put agent prose a level deeper
 // than the calls issued in the same breath, and the prose is often the answer.
 
-import type { CallId, LogEntry, Seq, Spot } from "../api/types.ts";
+import type {
+  CallId,
+  LogEntry,
+  Seq,
+  Spot,
+  ToolTelemetry,
+} from "../api/types.ts";
 
 /** A leaf: one log entry rendered on its own, at session level. */
 export interface LeafNode {
@@ -47,6 +53,10 @@ export interface CallNode {
   spot: Spot | null;
   /** The `ToolResult` entry, once the call has returned. */
   result: LogEntry | null;
+  /** What the dispatch cost and how it came out, once logged. Folded onto the
+   * call rather than rendered as a leaf for the same reason `Spot` is: it is a
+   * fact *about* this call, and the log's ordering already ties it to one. */
+  telemetry: ToolTelemetry | null;
 }
 
 /** The calls issued in one step, grouped. Present even for a single call: the
@@ -125,6 +135,7 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
               issued: entry,
               spot: null,
               result: null,
+              telemetry: null,
             };
             byCall.set(call.id, node);
             return node;
@@ -144,6 +155,12 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     if ("Spot" in p) {
       const owner = byCall.get(p.Spot.call_id);
       if (owner !== undefined) owner.spot = p.Spot;
+      continue;
+    }
+
+    if ("ToolTelemetry" in p) {
+      const owner = byCall.get(p.ToolTelemetry.call_id);
+      if (owner !== undefined) owner.telemetry = p.ToolTelemetry;
       continue;
     }
 

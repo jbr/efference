@@ -341,8 +341,12 @@ impl Assembler {
         }
         // A stream that finalizes with **nothing** is the complement of one that
         // dies before finalizing (docs/transport.md): proper termination, zero
-        // content blocks, zero usage, no generation id — a gateway answering for
-        // a slow upstream with a well-formed empty stream rather than an error.
+        // content blocks, zero usage — a gateway answering for a slow upstream
+        // with a well-formed empty stream rather than an error. It does carry a
+        // generation id, because a `message_start` frame arrives and sets it;
+        // that id is the only handle the event leaves, and on OpenRouter it 404s
+        // permanently, so nothing can be recovered from it after the fact
+        // (backlog/empty-stream-diagnostics.md).
         // Committed as-is it reads as the model choosing silence, so the loop has
         // nothing to dispatch and goes idle mid-task, which is what it did on
         // 2026-08-22 and again on 2026-08-28.
