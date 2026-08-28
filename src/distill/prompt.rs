@@ -443,6 +443,20 @@ pub(super) fn result_view(call: &ToolCall, raw: &RawResult) -> String {
     view
 }
 
+/// A bypassed result's block in the peek view (docs/redaction-fork.md). The call must
+/// still be answered — the API rejects a request that leaves a `tool_use` unpaired — but
+/// the output itself is not shown: it is going to the wire verbatim, so showing it would
+/// spend the fork's uncached tail on text no verdict can change, and offering it beside
+/// the results that *are* in question invites a verdict on it.
+pub(super) fn bypassed_view(call: &ToolCall, shape: &str) -> String {
+    format!(
+        "═══ result · [{}] {} ═══\nnot triaged — this result carries a {shape}, a value that \
+         only works reproduced exactly, so its full output goes to you unchanged. It is not \
+         one of the results you are deciding about below.",
+        call.id.0, call.name
+    )
+}
+
 /// Render every line `cat -n`-style (1-based, 6-wide, tab-separated). This is the
 /// coordinate system the fork-peek gate (docs/redaction-fork.md) addresses with
 /// `retain(lines=…)`, so it is shown ONLY in the throwaway fork — never on the

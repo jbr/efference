@@ -89,6 +89,57 @@ pub struct Pending<'a> {
     pub raw: &'a RawResult,
 }
 
+/// The known-shape rule (docs/redaction-fork.md): the name of the verbatim handle
+/// this result carries, if any. A handle-bearing result is **bypassed** — kept out
+/// of the ask, decided by the harness, and delivered raw — because the peek has
+/// nothing in front of it that says the text is unsummarizable.
+fn bypassed(pending: &Pending<'_>) -> Option<&'static str> {
+    verbatim_handle(&pending.raw.content)
+}
+
+/// The call ids this gate asks about: every pending result the shape rule did not
+/// bypass. This is the verdict's coordinate system, so the bypassed ids appear in
+/// neither the ask nor the coverage check — the peek is never asked to decide
+/// something the harness already decided.
+fn offered_ids(pending: &[Pending<'_>]) -> Vec<String> {
+    pending
+        .iter()
+        .filter(|p| bypassed(p).is_none())
+        .map(|p| p.call.id.0.clone())
+        .collect()
+}
+
+/// The harness's verdict on a bypassed result (docs/redaction-fork.md):
+/// [`WireState::Raw`], so the whole body — handle included — projects verbatim.
+/// `origin` is `Fallback` because no model produced it; `raw_keep` names the shape,
+/// which is what separates a bypass from a failed gate in the log after the fact.
+fn bypass_verdict(shape: &str) -> Distillation {
+    Distillation {
+        wire: WireState::Raw,
+        origin: Origin::Fallback,
+        raw_keep: format!("bypassed triage: {shape} — delivered verbatim"),
+    }
+}
+
+/// The whole gate's outcome when the shape rule bypassed **every** result: decided
+/// without a request at all, since there is nothing left to ask about — a skipped
+/// verdict is also a skipped round-trip. `None` means at least one result is still
+/// the fork's, and the peek runs.
+///
+/// The gate-scoped riders (inbox, background, surfacing) simply wait for the next
+/// gate: an undispositioned notification stays active and is re-shown there
+/// (docs/inbox.md), so nothing is lost by not opening a peek for them here.
+fn bypassed_gate(pending: &[Pending<'_>]) -> Option<GateOutcome> {
+    let results: Vec<Distillation> = pending
+        .iter()
+        .map_while(|p| bypassed(p).map(bypass_verdict))
+        .collect();
+    (results.len() == pending.len()).then(|| GateOutcome {
+        results,
+        ..GateOutcome::default()
+    })
+}
+
 /// The verdict on **one** tool result (docs/redaction-fork.md): the wire form plus the
 /// audit pieces the loop stamps into that result's [`Triage`](crate::log::Triage)
 /// entry. `raw` is never mutated — it stays in the log.
@@ -573,7 +624,7 @@ fn peek_messages(
     // Scoped to exactly this gate's ids, and shape-selected on its size — the tail is
     // discarded with the fork, so nothing here is cache-keyed (docs/redaction-fork.md).
     // A rider's field row is offered only when its section is actually above.
-    let offered: Vec<String> = pending.iter().map(|p| p.call.id.0.clone()).collect();
+    let offered = offered_ids(pending);
     let mut riders: Vec<&str> = Vec::new();
     if !inbox.is_empty() {
         riders.push(INBOX_FIELD);
@@ -590,11 +641,18 @@ fn peek_messages(
     // discarded — the canonical lineage never sees raw (docs/redaction-fork.md).
     let mut messages = project_with(prefix, placement);
     place_trailing_cache_breakpoint(&mut messages);
+    // Every call is answered — a `tool_use` left unpaired makes the request invalid —
+    // but a bypassed result answers with a stand-in rather than its output: the harness
+    // already decided it (docs/redaction-fork.md), and the ask above does not offer it.
     let mut content: Vec<ApiBlock> = pending
         .iter()
         .map(|p| ApiBlock::ToolResult {
             tool_use_id: p.call.id.0.clone(),
-            content: result_view(p.call, p.raw).into(),
+            content: match bypassed(p) {
+                Some(shape) => bypassed_view(p.call, shape),
+                None => result_view(p.call, p.raw),
+            }
+            .into(),
             is_error: p.raw.is_error,
             cache_control: None,
         })
@@ -681,9 +739,10 @@ pub async fn peek_attempt(
     inbox: &[ShownNotification],
     background: &[BgView],
 ) -> Result<PeekAttempt, String> {
-    let offered: Vec<String> = pending.iter().map(|p| p.call.id.0.clone()).collect();
+    let offered = offered_ids(pending);
     let shown_lines: Vec<(String, usize)> = pending
         .iter()
+        .filter(|p| bypassed(p).is_none())
         .map(|p| (p.call.id.0.clone(), shown_line_count(p.raw)))
         .collect();
     let messages = peek_request(prefix, pending, inbox, background, client.image_placement());
@@ -759,12 +818,16 @@ impl Distiller for ForkPeek {
             return GateOutcome::default();
         }
         // The ids this gate is asking about, in call order — the `retain` verdict's
-        // coordinate system. Coverage of every offered id is part of verdict
-        // *validity* ([`require_coverage`]): an incomplete verdict retries in-fork
-        // rather than leaving a result untriaged.
-        let offered: Vec<String> = pending.iter().map(|p| p.call.id.0.clone()).collect();
+        // coordinate system, minus the results the shape rule bypassed. Coverage of
+        // every offered id is part of verdict *validity* ([`require_coverage`]): an
+        // incomplete verdict retries in-fork rather than leaving a result untriaged.
+        if let Some(outcome) = bypassed_gate(pending) {
+            return outcome;
+        }
+        let offered = offered_ids(pending);
         let shown_lines: Vec<(String, usize)> = pending
             .iter()
+            .filter(|p| bypassed(p).is_none())
             .map(|p| (p.call.id.0.clone(), shown_line_count(p.raw)))
             .collect();
 
@@ -821,8 +884,12 @@ impl Distiller for ForkPeek {
         // roster names below.
         let results = pending
             .iter()
-            .map(
-                |p| match verdict.results.iter().find(|v| v.call_id == p.call.id.0) {
+            .map(|p| match bypassed(p) {
+                // Decided by the shape rule before the fork was consulted
+                // (docs/redaction-fork.md) — a `retain` entry for it, had the peek
+                // written one unasked, finds no home.
+                Some(shape) => bypass_verdict(shape),
+                None => match verdict.results.iter().find(|v| v.call_id == p.call.id.0) {
                     Some(v) => Distillation {
                         wire: WireState::Distilled {
                             keep: v.keep.clone(),
@@ -841,7 +908,7 @@ impl Distiller for ForkPeek {
                         raw_keep: String::new(),
                     },
                 },
-            )
+            })
             .collect();
 
         // Keep only dispositions for notifications we actually showed (drop any stray id
@@ -960,10 +1027,12 @@ type Dispositions = (Vec<(Seq, Disposition)>, Vec<(String, BgVerdict)>);
 #[cfg(test)]
 mod test;
 
+mod handles;
 mod parse;
 mod prompt;
 mod schema;
 
+use handles::*;
 use parse::*;
 use prompt::*;
 

@@ -57,8 +57,9 @@ impl Retention {
                 self.truncated_lines += d.dropped as u64;
             }
             WireState::TriageFailed { .. } => self.withheld += 1,
-            // Untriaged (the uncommitted tail) and elided results are not verdicts
-            // about line-level relevance, so neither counts.
+            // Untriaged (the uncommitted tail), bypassed (the known-shape rule,
+            // docs/redaction-fork.md — never shown to triage) and elided results are
+            // not verdicts about line-level relevance, so none of them counts.
             WireState::Raw | WireState::Elided => {}
         }
     }

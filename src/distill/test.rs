@@ -971,3 +971,190 @@ fn an_aborted_peek_stream_backs_off_on_the_main_loops_budget() {
         .sum();
     assert!((120..400).contains(&total), "whole schedule was {total}s");
 }
+
+// ---- the known-result-shape rule (docs/redaction-fork.md) ----
+
+/// An fs-mcp `write` refusal: the rejected body is preserved server-side under a token
+/// the model has to send back **verbatim** to reach it.
+const HANDLE_RESULT: &str = "File src/main.rs already exists, use \"overwrite\": true if you \
+intend to replace it.\n\nYour 8772 bytes of contents are preserved under \
+`write-retry-9f3a1c04be27d5e8`: repeat the call with \"overwrite\": true and \"contents\": \
+\"write-retry-9f3a1c04be27d5e8\" to confirm this exact write.";
+
+fn call(id: &str, name: &str) -> ToolCall {
+    ToolCall {
+        id: CallId(id.into()),
+        name: name.into(),
+        input: json!({}),
+    }
+}
+
+fn raw(content: &str, is_error: bool) -> RawResult {
+    RawResult {
+        images: Vec::new(),
+        content: content.into(),
+        is_error,
+    }
+}
+
+/// A gate carrying nothing but handle-bearing results is decided by the harness with no
+/// request at all — the skipped verdict is also a skipped round-trip — and each result
+/// projects `WireState::Raw`, so the token reaches the model exactly as the tool wrote it.
+#[test]
+fn a_gate_of_only_handle_bearing_results_is_decided_without_a_peek() {
+    let call = call("write_1", "write");
+    let raw = raw(HANDLE_RESULT, true);
+    let pending = vec![Pending {
+        call: &call,
+        raw: &raw,
+    }];
+    let outcome = bypassed_gate(&pending).expect("every result is bypassed");
+    assert_eq!(outcome.results.len(), 1);
+    assert!(matches!(outcome.results[0].wire, WireState::Raw));
+    assert_eq!(outcome.results[0].origin, Origin::Fallback);
+    assert!(
+        outcome.results[0]
+            .raw_keep
+            .contains("fs-mcp write retry token"),
+        "the breadcrumb names the shape, which is what separates a bypass from a \
+         failed gate in the log: {}",
+        outcome.results[0].raw_keep
+    );
+    // No request was made, so there is nothing to bill and no retry to record.
+    assert!(outcome.usage.is_empty() && outcome.retries.is_empty());
+}
+
+/// An ordinary result is still the fork's: no bypass, and it is offered for a verdict.
+#[test]
+fn an_ordinary_result_still_goes_through_the_fork() {
+    let call = call("read_1", "read");
+    let raw = raw("alpha\nbeta\n", false);
+    let pending = vec![Pending {
+        call: &call,
+        raw: &raw,
+    }];
+    assert!(bypassed_gate(&pending).is_none());
+    assert_eq!(offered_ids(&pending), vec!["read_1".to_string()]);
+}
+
+/// A mixed gate still runs — the handle-bearing result is answered (an unpaired
+/// `tool_use` makes the request invalid) but with a stand-in, and only the other id is
+/// offered, so the peek is never asked to decide the one the harness already decided.
+#[test]
+fn a_handle_bearing_result_is_answered_but_never_offered() {
+    let calls = [call("write_1", "write"), call("read_2", "read")];
+    let raws = [raw(HANDLE_RESULT, true), raw("alpha\nbeta\n", false)];
+    let prefix = vec![
+        entry(
+            1,
+            Payload::User(vec![crate::log::ContentBlock::Text("go".into())]),
+        ),
+        entry(
+            2,
+            Payload::Assistant {
+                thinking: vec![],
+                text: vec![],
+                calls: calls.to_vec(),
+                upstream_failure: None,
+            },
+        ),
+    ];
+    let pending: Vec<Pending<'_>> = calls
+        .iter()
+        .zip(&raws)
+        .map(|(call, raw)| Pending { call, raw })
+        .collect();
+
+    assert!(
+        bypassed_gate(&pending).is_none(),
+        "one result still needs a verdict"
+    );
+    assert_eq!(offered_ids(&pending), vec!["read_2".to_string()]);
+
+    let messages = peek_messages(&prefix, &pending, &[], &[], &[], ImagePlacement::default());
+    let tail = messages.last().expect("a tail message");
+    let blocks: Vec<(&str, &str)> = tail
+        .content
+        .iter()
+        .filter_map(|b| match b {
+            ApiBlock::ToolResult {
+                tool_use_id,
+                content,
+                ..
+            } => Some((tool_use_id.as_str(), content.as_text().unwrap_or_default())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        blocks.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+        vec!["write_1", "read_2"],
+        "both calls are paired or the API rejects the request"
+    );
+    assert!(
+        blocks[0].1.contains("not triaged") && !blocks[0].1.contains("write-retry-"),
+        "the bypassed result answers with a stand-in, not its output: {}",
+        blocks[0].1
+    );
+    assert!(blocks[1].1.contains("     1\talpha"));
+
+    let instruction = match tail.content.last() {
+        Some(ApiBlock::Text { text, .. }) => text.as_str(),
+        other => panic!("the ask rides the trailing text block, got {other:?}"),
+    };
+    assert!(
+        !instruction.contains("write_1"),
+        "the bypassed id is not offered: {instruction}"
+    );
+    assert!(
+        instruction.contains("the one call you just made"),
+        "one offered id means the single-result shape: {instruction}"
+    );
+}
+
+/// End to end: a bypassed result's `WireState::Raw` projects the whole body onto the
+/// canonical wire, token intact. This is the property the rule exists for — a
+/// summarized token is unusable, and the model is told to quote it back.
+#[test]
+fn a_bypassed_result_reaches_the_wire_verbatim() {
+    let verdict = bypass_verdict("fs-mcp write retry token");
+    let log = vec![
+        entry(
+            1,
+            Payload::User(vec![crate::log::ContentBlock::Text("go".into())]),
+        ),
+        entry(
+            2,
+            Payload::Assistant {
+                thinking: vec![],
+                text: vec![],
+                calls: vec![call("write_1", "write")],
+                upstream_failure: None,
+            },
+        ),
+        entry(
+            3,
+            Payload::ToolResult {
+                call_id: CallId("write_1".into()),
+                raw: raw(HANDLE_RESULT, true),
+                wire: verdict.wire,
+            },
+        ),
+    ];
+    let wire = project_with(&log, ImagePlacement::default());
+    let result = wire
+        .iter()
+        .flat_map(|m| &m.content)
+        .find_map(|b| match b {
+            ApiBlock::ToolResult { content, .. } => content.as_text(),
+            _ => None,
+        })
+        .expect("the result is on the wire");
+    assert!(
+        result.contains("write-retry-9f3a1c04be27d5e8"),
+        "the token survives to the wire: {result}"
+    );
+    assert!(
+        result.ends_with(HANDLE_RESULT),
+        "and so does the rest of the refusal, byte for byte: {result}"
+    );
+}

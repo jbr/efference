@@ -51,6 +51,49 @@ one extra round-trip per result — latency, not tokens — explicitly accepted.
 point is agent-facing: the agent never has to fear reading a whole file, because
 only the relevant parts come back (see [positions.md](positions.md)).
 
+## The known-result-shape rule — what the fork is not asked to decide
+
+Size is not an exemption; **shape** is the one that is. A result whose value is a
+machine-precise handle the model must reproduce exactly cannot pass through a
+summarizer: a paraphrase preserves the meaning and destroys the function, and the
+information that this result is unsummarizable is not present in the result. The peek
+judges such a result reasonably — a short refusal is exactly the boilerplate the gate
+compresses — and the paraphrase is silently useless.
+
+So the decision is taken away from the fork rather than delegated to a prompt.
+`src/distill/handles.rs` holds one entry per known handle-bearing shape, matched as a
+sentinel plus a fixed-width hex digest anywhere in the result text. The shipped entry is
+fs-mcp's refused-`write` retry token, `write-retry-` followed by 16 hex digits: a `write`
+refused because the path exists (or because `overwrite` and `append` were both set)
+preserves the rejected body server-side under that token and tells the caller to repeat
+the call with the token as `contents`. The digest width and the hex alphabet are what
+keep the match narrow — text that merely mentions the sentinel is not a handle. A second
+handle-bearing format is one more entry in that list, not another mechanism.
+
+A matched result is **bypassed**:
+
+- Its call id is not in the gate's `offered` list, so the ask never mentions it and
+  coverage never requires a verdict for it.
+- Its block in the peek view is a stand-in — the call must still be answered or the
+  request is invalid, but its output is not shown, since no verdict can change it.
+- Its wire form is `WireState::Raw`: the whole body reaches the model byte-for-byte.
+- The `Triage` records `origin: Fallback` with a `raw_keep` breadcrumb naming the shape,
+  which is what distinguishes a bypass from a failed gate in the log after the fact. Its
+  lines count toward neither side of the retention ratio: nobody triaged them.
+
+When **every** result in a gate is bypassed the peek is not sent at all — the skipped
+verdict is also a skipped round-trip. The gate-scoped riders wait for the next gate; an
+undispositioned notification stays active and is re-shown there ([inbox.md](inbox.md)).
+
+Two alternatives were rejected. **Prompting the fork** to preserve identifiers is exactly
+the instruction a summarizer follows unreliably, and the failure is silent. **A
+tool-declared not-distillable property** is the general answer if a third-party tool ever
+mints handles, but it is a new trust surface — a tool that over-claims it defeats triage
+wholesale — so it waits for that case. Removing the handle from the tool instead (having
+`write` default to overwrite, or confirming a refusal by path and flag alone) is also not
+taken: the token disambiguates *which* write failed when several are in flight, which a
+path and a flag cannot.
+
 ## One request shape — the shared envelope
 
 The peek sends the **same request envelope as an agent turn**: the turn's full
