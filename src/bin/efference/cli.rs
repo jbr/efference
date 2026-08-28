@@ -31,7 +31,8 @@ pub(crate) const CONFIG_SCAFFOLD: &str = "\
 #                                       #   carve-outs: git = true with \"git push\" = \"deny\".
 #   [paths]                             # filesystem grants, e.g. \".\" = true or \"/refs\" = { read = true }
 #   [context]                           # knowledge the session boots with (docs/context.md), e.g.
-#                                       #   \"CLAUDE.md\" = true or Label = { exec = \"...\" } (stdout at boot)
+#                                       #   \"CLAUDE.md\" = true, Label = { exec = \"...\" } (stdout at boot),
+#                                       #   or Label = { builtin = \"guide\" } (the harness's own docs)
 #   [env]                               # per-variable env policy (docs/env.md): strip = keep it out of
 #                                       #   spawned children, mask = never store its value in the log.
 #                                       #   e.g. \"*_KEY\" = { mask = true } or \"CI_*\" = { strip = true }.
@@ -43,6 +44,11 @@ pub(crate) const CONFIG_SCAFFOLD: &str = "\
 # Orientation as config: this section's stdout is frozen into the session preamble at boot.
 [context]
 \"Environment at boot\" = { exec = 'echo \"working directory: $PWD\"; echo \"platform: $(uname -sm)\"; echo \"top-level entries:\"; ls' }
+# The harness's own usage documents, listed as read-on-demand stubs. This is what makes a
+# session with no project config recoverable: it starts knowing how to learn everything
+# else, including how to write this file. Delete the line to stop listing them; the
+# documents stay readable at their paths either way.
+EfferenceGuide = { builtin = \"guide\" }
 ";
 
 #[derive(Parser)]

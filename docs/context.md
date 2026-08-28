@@ -27,8 +27,8 @@ render-when-present remainder).
 ## One mechanism, three config shapes
 
 CLAUDE.md-alikes, "skills", and "memories" are one mechanism: markdown files the operator
-lists, each self-describing via frontmatter. A `[context]` entry takes one of three
-shapes, disambiguated by its value:
+lists, each self-describing via frontmatter. A `[context]` entry takes one of four
+shapes, disambiguated by its value (the fourth, `builtin`, is the guide overlay below):
 
 ```toml
 [context]
@@ -36,6 +36,7 @@ shapes, disambiguated by its value:
 "ARCHITECTURE.md" = { update = true }                          # bare path — read + update
 Memories = { path = "memories/", create = true }               # labeled group
 Skills   = { paths = ["skills/a.md", "skills/b.md"] }          # labeled group, explicit list
+EfferenceGuide = { builtin = "guide" }                         # documents compiled into the binary
 ```
 
 A **bare path** (the key is the path) renders with no heading and may carry only
@@ -125,6 +126,58 @@ ordinary config line — the scaffold written for a config-less session ships
 `"Environment at boot" = { exec = 'echo "working directory: $PWD"; …' }`, so a bare
 session still boots oriented, visibly and editably, and a written config owns the whole
 preamble (omitting the entry omits the block — explicit over magic).
+
+## The guide overlay — a fourth entry shape whose files are in the binary
+
+`Label = { builtin = "guide" }` lists a set of documents compiled into the binary
+(`src/guide.rs`, sources in `assets/guide/` plus [operating.md](operating.md)). The one
+mount name is `guide`; any other fails the file rather than rendering an empty section.
+
+They are **born resolved**: each document is a compiled-in `(slug, description, body)`
+triple that enters as a `Resolved::Item::Listed` directly, so the entry reuses the *render*
+half of this pipeline and never touches the disk or the frontmatter parser. What renders is
+an ordinary labeled group — the operator's key as the heading, a `<description>` (the
+mount's own, unless the operator wrote one), and one stub per document.
+
+Each stub's `path` is a reserved, **scheme-shaped** prefix rather than a filesystem path:
+`efference://guide/<slug>`. Scheme-shaped because the dispatch layer only ever compares the
+front of a path against a string, and this leaves room for `read` to grow other schemes
+without re-deciding what a leading `/` would have meant.
+
+- **Interception is at tool dispatch, before the real `read`** (`src/agent/step.rs`): a
+  `read` naming the prefix is answered with the embedded bytes as an ordinary `RawResult`.
+  Because the served body is a normal tool result, `project` and byte-stability never learn
+  it is special — the log and projection core is untouched, which is what makes the whole
+  mechanism cheap.
+- **The prefix is read-granted, never write-granted** (`src/policy/paths.rs`). Read clears
+  with no config at all, which is the point: a session that knows nothing else still knows
+  how to learn. Write is refused by both grant sources, and a guide path never resolves
+  through `[paths]` at all — joined onto the cwd it would look like an ordinary relative
+  path, and a broad grant would then appear to cover it.
+- **Only `read` resolves on the prefix.** A `write`/`edit`/`list`/`search` naming it is
+  answered before the permission cascade with the list of documents, because no rung's
+  answer could make it run. The stub listing substitutes for a directory listing; `ls` and
+  glob over the prefix are a stated non-feature rather than a half-implementation.
+- **A batch mixing documents and files is refused whole**, naming the file. The two halves
+  come from different places and answering half of one silently would be worse than one
+  corrective turn.
+- **Snapshot.** The stubs ride the `Payload::Preamble` snapshot like any group; the bodies
+  are served later and stored on their `ToolResult`. Across a mid-session binary upgrade
+  those can diverge, and the log honestly records what was served each time.
+
+**Listing is opt-in when a config exists, and the mount exists regardless.** An operator's
+config renders the group only if it names the entry. The scaffold written for a session
+with no project config *does* name it (`src/bin/efference/cli.rs`) — a visible, deletable
+line in the session's own file, the same way orientation is — because a config-less session
+whose only recovery path is "read how to write a config" needs that path listed. Deleting
+the line stops the listing; the documents stay readable at their paths either way.
+
+**Compiled-in means testable.** Filesystem skills drift independently of the tool; these are
+versioned with the binary, so `src/guide/test.rs` asserts the references still hold: every
+fenced `toml` block in a document parses and validates as a real config (the schema rejects
+unknown fields, so a renamed key fails there), every tool name a document declares is one
+`agent::tool_definitions` advertises and is actually mentioned in its prose, and every
+`efference://` link resolves to a document that exists.
 
 ## Boot discipline: freeze, snapshot, fail closed
 

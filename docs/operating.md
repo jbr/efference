@@ -1,0 +1,234 @@
+# Operating a session
+
+You are supervising a running efference session. This is what you can see, what you can
+change, and what each situation calls for. It is written for whoever is at the controls —
+a human with a terminal or an agent with a socket; there is no privileged client, so the
+same surface serves both.
+
+The rest of `docs/` describes how the harness is built. This one describes how it is
+driven, and it is refined from use rather than written ahead of it.
+
+## Where a session lives
+
+`efference serve` mints `.efference/<id>/` and never reuses one. It holds:
+
+- `control.sock` — the HTTP control channel, the only input path into the loop.
+- `log.jsonl` — the append-only record; every entry, raw.
+- `config.toml` — this session's live perimeter, copied once from the project template at
+  boot and independent of it thereafter.
+
+A client verb finds the socket by `--name <id>`, or by scanning for the single
+*connectable* one, or from an explicit `--socket`. A stale directory from a dead daemon is
+skipped, so discovery finds the running session rather than the most recent one.
+
+## Reading the session
+
+Three reads, at three grains.
+
+- **`efference state`** — the whole ephemeral picture in one JSON object: the pending gate,
+  the inbox, running processes, token usage and cost, the pace and review-level dials, the
+  **effective** policy in force, and the three condition topics (`stall`, `upstream_retry`,
+  `config_repair`). Effective, not boot: a grant made twenty minutes ago shows up here.
+- **`efference log [--since N]`** — the durable history. Entries are immutable, so anything
+  you have already read stays valid.
+- **`GET /events`** — one SSE stream carrying everything as it happens, in one order:
+  durable log entries, pre-commit output (assistant text, thinking, tool arguments
+  arriving, live process output), and whole-topic state replacements. A client holding this
+  stream never needs to poll.
+
+`efference tui` is the interactive view of all three; `efference view <session>` opens a
+recorded log in the same rendering, inert.
+
+Two things worth knowing about what you see. Tool output on the transcript is the **raw**
+result — the model's copy has been focused down by a triage pass, so what you read and what
+it reads differ, deliberately. And the pace dial (below) is operator-view state that is
+never logged and never projected, so slowing or holding a session leaves no trace the model
+can perceive.
+
+## The gate
+
+When a call is not cleared by policy, the loop blocks and `state.gate` names it: the call
+id, the tool, its input verbatim, and — when the spotter ran — its one-line reason. Four
+decisions resolve it:
+
+| decision | effect |
+| --- | --- |
+| **approve** | run this call, once. No policy changes. |
+| **abort** | reject it; the turn unwinds. |
+| **redirect** | reject it, and send text to the model as the next user turn. |
+| **config_edit** | change the rule, then re-check *this* call against the new one. |
+
+`efference approve` sends the first; `--abort` and `--redirect <msg>` the next two. In the
+TUI, an empty composer approves, `.abort` aborts, and any other text redirects.
+
+**What approving scopes: this call, and nothing else.** There is no "allow this kind of
+thing" in an approval. A call that comes back needing a correction — a `write` refused
+because the file exists, retried with `overwrite: true` — is a *new* call and gates again.
+Six approvals for two logical writes is what that looks like from the outside, and it is
+working as designed: the mechanism has no way to know the second call is the first one
+fixed. If you find yourself approving the same shape repeatedly, that is the signal to
+change the rule instead (below), not to approve faster.
+
+**Redirect is the underused one.** It keeps the turn alive: the model reads the rejection
+and your words together, in the same message, and continues. Aborting throws away the
+trajectory; redirecting steers it.
+
+## Granting instead of approving
+
+A `config_edit` decision carries one `ConfigChange`, writes it to the session's
+`config.toml`, folds it into effective policy, and re-classifies the gated call. The call
+runs only if the new rule actually clears it — the rule changes, and the mechanism
+re-authorizes; nothing rides along.
+
+The vocabulary is four shapes:
+
+- **`command`** — a bash command prefix, matched token-wise, longest-prefix-wins.
+  `cargo` grants the whole program; `git log` grants only that sub-verb. Granting broad and
+  carving out (`git` = clear, `git push` = deny) is available in the config file, though a
+  grant made at a gate is always a *clear*.
+- **`path`** — a filesystem subtree with `read`/`write`. Deeper keys govern shallower ones,
+  so a narrow grant inside a broad denial works, and a narrow denial inside a broad grant
+  works too.
+- **`tool`** — a structured tool name. Path-bearing tools still need their target under a
+  path grant, so this is half of a grant, not all of it.
+- **`scope`** — replaces the perimeter prose the spotter judges against. The frozen boot
+  preamble is not re-rendered; the session learns about it as a notification.
+
+`path` and `scope` are **session-visible**: the session is told its perimeter moved.
+`command` and `tool` reach it only through the classifier — the next call simply does not
+gate.
+
+In the TUI, `.allow` at a gate commits a grant directly: bare, it derives one from the
+gated call (the bash program, or the tool's name); `.allow git log` grants that prefix
+instead. Over the API it is
+`PUT /approvals/:call_id {"decision": "config_edit", "change": {...}}`.
+
+**When a grant beats an approval.** Ask whether the *next* call of this shape should also
+stop you. If the answer is no — you are about to approve `cargo test` for the fourth time,
+or the session needs to read a directory it will keep needing — grant it. A grant is
+specific, written to a file you can read, and prunable; it is not an "always allow" mode.
+The two cases where reaching for a grant is clearly right:
+
+- **A repeated gate on the same prefix.** Grant the prefix. The session stops asking and
+  you stop deciding the same thing.
+- **A read-only path outside the working tree** — a dependency source, a reference
+  checkout. A `path` grant with `read = true` is one edit; the alternative the harness makes
+  available otherwise is copying the material into the session's scratch directory, which
+  works and costs a detour.
+
+The perimeter also moves without you: the session may **edit its own `config.toml`** to
+request a change, and that write always gates for you whatever else the config allows —
+including under `--autonomous`. Reading the diff *is* reading the request, and approving it
+is granting it. Separately, the spotter files **proposals** for command prefixes it has
+judged safe across repeated sightings; they sit inert in `state.proposals` until
+`PATCH /proposals/:seq` commits or cancels one. A session can file a proposal; it can never
+resolve its own.
+
+## The dials
+
+- **`efference review-level <level>`** — who reviews a call the fast path did not clear.
+  `spotter_human` is the supervised default (fast path → spotter → you). `autonomous`
+  removes the synchronous human: the spotter still runs and can clear, and what it will not
+  clear is handed back to the model with the reason and a pointer at its own config file —
+  so routine gates self-resolve and your attention is spent on genuine policy requests.
+  `human_only` skips the spotter entirely and sends everything it did not clear to you.
+- **`efference pace [--speed-ms N] [--hold | --resume]`** — a between-turns wall-clock
+  delay, and a hold overlay on top of it. Holding parks the loop at the next juncture; the
+  speed underneath is retained, so resuming returns to it. Sending a turn also resumes.
+  None of this is visible to the agent.
+- **`efference interrupt`** — signal a running tool: its process group is killed. Fired
+  while the model is generating instead, the *next* call does not run. Fired where a
+  result lands, the call's output is kept out of the model's context entirely while staying
+  in the log for you — the answer when a cleared call is about to put several thousand
+  tokens of the wrong thing into the transcript.
+- **`efference background [--note …]`** — hand the running foreground command to the
+  background supervisor instead of killing it. It keeps running as `p#<n>`, its output
+  surfaces at later steps, and the optional note is delivered to the model as a user
+  message alongside the handoff.
+
+## Speaking to a running session
+
+- **`efference turn <text>`** — a user turn. It never waits for the trajectory to end: it is
+  picked up at the next juncture, after the current tool's results land, and merges into the
+  same message as those results. So mid-trajectory steering arrives *with* the evidence the
+  model is about to reason from, not after it.
+- **`efference notify <source> <body>`** — an ambient notification into the inbox. Unlike a
+  turn, this is **triageable**: the model may pin it, dismiss it, or leave it. Use it for
+  things that can wait and might not matter. `--slot <name>` supersedes an earlier
+  notification on the same channel rather than stacking.
+
+The asymmetry is deliberate: a user turn is canonical and cannot be dismissed by the model;
+a notification can. Say it as a turn when it must land.
+
+`--wait` on `turn` and `approve`, and the standalone `efference settle`, block until the
+daemon reaches a decision point and print the resulting state — which is how a script or an
+agent operator drives a session as *act, read, act* instead of polling.
+
+## Silence, and what it means
+
+A session that has said nothing for two minutes is in one of a few conditions, and
+`efference state` distinguishes them. Guessing is no longer necessary.
+
+- **`upstream_retry` is non-null** — a request or a stream failed and the transport is
+  retrying on a capped schedule. The topic carries the attempt, the budget, when the next
+  attempt is due, and the upstream's own words. Nothing to do; it is working.
+- **`stall` is non-null** — the retries were exhausted, or the request failed past them.
+  The loop appended its record and returned to idle. Every other signal reads like a
+  finished run (`running: false`, no gate, an empty inbox), which is why this topic exists.
+  The recovery is a `POST /turns` — send a turn and the session picks up.
+- **`config_repair` is non-null** — the config file on disk does not parse *and* could not
+  be reverted. The loop is parked, deliberately: effective policy in memory is still the
+  last good config, but the file no longer shows it, and the file is what says what the
+  session is running under. Nothing you send clears this. Edit the file until it parses;
+  fs-watch adopts it and the loop wakes.
+- **A gate is pending** — `state.gate` is non-null and everyone is waiting on you.
+- **Everything null and `running: true`** — it is thinking, or a tool is running. The event
+  stream's `thinking_delta` and `tool_call_input` frames are what tell a live turn from a
+  hung one; the TUI renders them.
+
+Long-poll `GET /state?wait=settled` (or `efference settle`) blocks until a gate opens or the
+loop goes idle, capped server-side, and is the shape a supervising process should loop on.
+
+## What the session was already told
+
+Operator guidance that contradicts the preamble costs the session a turn reconciling them.
+The frozen system prompt tells it, in these words or close to them:
+
+- **Explore the workspace directly.** The cwd is the workspace root; it should look rather
+  than ask.
+- **Tool output is focused for it.** Only the relevant parts of each result stay on its
+  transcript, marked with `… [N lines elided] …`. It is told to treat what arrives as the
+  output — and specifically **not** to pre-filter by piping to `head`/`grep`/`sed`, because
+  trimming before the harness can focus risks discarding the part that mattered. Telling it
+  to grep its own output undoes this.
+- **Prefer the file tools over the shell** — `read`, `search`, `write`, `list` — because
+  their structured results curate cleanly.
+- **`$TMPDIR` is scratch space**: a private per-session directory, always granted
+  read/write, exported into every tool child, expanded in the file tools' path arguments,
+  and deleted at session end (`serve --keep-scratch` retains it). It is the sanctioned
+  answer for temporary files, and it does not need a grant.
+- **Every call carries an `intent`**: one line on why this call, now, written before the
+  other arguments. It is stripped before the tool runs and is shown to you at the gate. It
+  is deliberately *not* shown to the spotter, so a call cannot argue its way past that rung.
+
+Two things the session is **not** told: the path to its own config file (it learns that from
+a gate rejection when a move actually strays, so the perimeter stays out of its attention
+until it is relevant), and the `watch-for` list (which the spotter holds instead).
+
+## Reading the log for audit
+
+Beyond turns, calls, and results, the log carries the decisions:
+
+- **`Spot`** — every spotter verdict, its stance, its one-line reason, and the prefix it was
+  asked to vouch for. Audit-only; it never reaches the wire. `efference spotter-log`
+  summarizes these across sessions.
+- **`ConfigEdit`** — every proposed, committed, or cancelled policy change, with its note.
+- **`Triage`** — what each result's peek decided to keep, and whether the verdict came from
+  the model or a fallback.
+- **`Mark`** — today only a consolidation boundary, written by the `consolidate` tool. There
+  is no operator verb that writes a mark; salience annotations are the agent's own.
+- **`Preamble`** — the exact system prompt this session booted with, snapshotted, because it
+  folds in file contents that drift on disk and is otherwise unreconstructable.
+
+Fast-path clears are deliberately unlogged: the log records the decisions someone made, not
+the ones nobody had to.

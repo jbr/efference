@@ -311,6 +311,13 @@ pub enum ContextSource {
     Files(Vec<String>),
     /// A command whose stdout is the section body, run once at boot (docs/context.md).
     Exec(String),
+    /// A set of documents compiled into the binary, listed as stubs at virtual paths
+    /// (`{ builtin = "guide" }` — docs/context.md, [`crate::guide`]). The string is the
+    /// mount name; `guide` is the only one, and [`validate_context_entry`] rejects any
+    /// other rather than rendering an empty section.
+    ///
+    /// [`validate_context_entry`]: raw::validate_context_entry
+    Builtin(String),
 }
 
 /// Write grants a [`ContextEntry`] carries (read is always implied for listed files).
@@ -359,6 +366,14 @@ impl Config {
 #[cfg(test)]
 pub(crate) fn parse_text(text: &str) -> Config {
     parse(Path::new("test.toml"), text).expect("test config parses")
+}
+
+/// [`parse_text`] keeping the error — for tests that assert a shape is *rejected*, and for
+/// the guide's reference-validity check, which needs to name the document a bad block came
+/// from rather than panicking with the parser's message alone.
+#[cfg(test)]
+pub(crate) fn try_parse_text(text: &str) -> Result<Config, LoadError> {
+    parse(Path::new("test.toml"), text)
 }
 
 #[cfg(test)]

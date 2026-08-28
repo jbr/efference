@@ -1,0 +1,233 @@
+//! The harness guide overlay — usage documents compiled into the binary and served
+//! through the `read` tool at virtual paths (docs/context.md).
+//!
+//! The documents are `[context]` entries that are **born resolved**: each is a
+//! `(name, description, body)` triple in [`DOCUMENTS`], entering the preamble as a
+//! [`crate::context::Item::Listed`] stub without a frontmatter round-trip. Only the
+//! *source* and the path *resolution* differ from an operator's group; the render is the
+//! same code.
+//!
+//! A `read` of one of those paths is intercepted at dispatch ([`read_documents`],
+//! `crate::agent::step`) and answered from the binary as an ordinary [`RawResult`], so
+//! `project` never learns the result was special and no log or wire type changes. The
+//! prefix is read-granted by the fast path (`crate::policy`) and never write-granted: the
+//! harness cannot write into its own binary, and granting itself write on its own
+//! documents would be meaningless.
+//!
+//! **Known edge, deliberately not half-implemented:** only `read` resolves on the prefix.
+//! `list`, `search`, and the edit tools answer with [`reject_non_read`] instead — the stub
+//! listing in the preamble is what substitutes for a directory listing.
+
+use crate::log::{RawResult, ToolCall};
+
+/// The reserved path prefix. Scheme-shaped rather than path-shaped so `read` can grow
+/// other schemes later without re-deciding what a leading `/` means; the dispatch layer
+/// only ever checks the front of a path against this string.
+pub const SCHEME: &str = "efference://";
+
+/// The one mount under [`SCHEME`] today. `[context]` names it as `{ builtin = "guide" }`;
+/// [`BUILTIN`] is that config value and this is the path segment it serves at.
+pub const MOUNT: &str = "efference://guide/";
+
+/// The `[context]` value that lists this mount: `Label = { builtin = "guide" }`.
+pub const BUILTIN: &str = "guide";
+
+/// The group heading used when the harness lists the guide itself — the config-less boot,
+/// where no operator wrote a label. An operator who lists the mount supplies their own.
+pub const DEFAULT_HEADING: &str = "EfferenceGuide";
+
+/// The `<description>` rendered above the stub listing, telling the model what the paths
+/// are and that `read` is how they open.
+pub const GROUP_DESCRIPTION: &str = "Documentation for this harness, compiled into the binary rather than stored on disk. \
+     Read one of these paths with the `read` tool to load the document.";
+
+/// One compiled-in document. `slug` is its address under [`MOUNT`] and its tag name in the
+/// preamble; `description` is the one line that rides in the stub; `body` is what a `read`
+/// returns.
+pub struct Document {
+    pub slug: &'static str,
+    pub description: &'static str,
+    pub body: &'static str,
+    /// The tool names this document tells the reader to call. Not rendered — it is what
+    /// the reference-validity test checks against the mounted table, so a renamed tool
+    /// breaks the build rather than the reader (`test.rs`).
+    pub tools: &'static [&'static str],
+}
+
+/// The document set. Order is the listing order in the preamble.
+pub const DOCUMENTS: &[Document] = &[
+    Document {
+        slug: "new-project",
+        description: "Setting up a project: where the config lives, what belongs in it, \
+                      and the difference between the project template and a session's own copy.",
+        body: include_str!("../assets/guide/new-project.md"),
+        tools: &["read"],
+    },
+    Document {
+        slug: "config-format",
+        description: "Reference for every `efference.toml` key: scope, tools, [commands], \
+                      [paths], [context], [env], [bash], [transport], [mcp.servers].",
+        body: include_str!("../assets/guide/config-format.md"),
+        tools: &["read"],
+    },
+    Document {
+        slug: "editing",
+        description: "Working with files: batched reads, the no-clobber write, and the \
+                      anchor-based edit pipeline (edit / find_anchor / retarget_edit / undo_edit).",
+        body: include_str!("../assets/guide/editing.md"),
+        tools: &[
+            "read",
+            "search",
+            "list",
+            "write",
+            "edit",
+            "find_anchor",
+            "retarget_edit",
+            "undo_edit",
+            "bash",
+        ],
+    },
+    Document {
+        slug: "operating",
+        description: "Supervising a running session from the outside: reading it, the gate \
+                      vocabulary, when to grant instead of approve, and what silence means.",
+        // One text, two surfaces: this is the repository's own operator document
+        // (docs/operating.md), compiled in so an operator's harness can fetch it the
+        // same way. Keeping one copy is what keeps the two from drifting.
+        body: include_str!("../docs/operating.md"),
+        tools: &["read"],
+    },
+];
+
+/// The virtual path a slug is addressed at.
+pub fn path(slug: &str) -> String {
+    format!("{MOUNT}{slug}")
+}
+
+/// Whether a `read` (or any other) target names the virtual mount rather than the
+/// filesystem. The whole reserved space, not just the documents that exist — a typo'd slug
+/// must be answered by the overlay ("no such document, here are the ones there are"), not
+/// handed to a filesystem tool that would report a missing file.
+pub fn is_virtual(target: &str) -> bool {
+    target.starts_with(SCHEME)
+}
+
+/// The document at a virtual path, if the slug names one.
+pub fn lookup(target: &str) -> Option<&'static Document> {
+    let slug = target.strip_prefix(MOUNT)?;
+    DOCUMENTS.iter().find(|d| d.slug == slug)
+}
+
+/// The `[context]` section this mount renders as, under `heading`. Built directly as
+/// resolved items — the render half of the `[context]` pipeline, not the read-from-disk
+/// half (docs/context.md).
+pub fn section(heading: &str) -> crate::context::Section {
+    crate::context::Section {
+        heading: Some(heading.to_string()),
+        description: Some(GROUP_DESCRIPTION.to_string()),
+        items: DOCUMENTS
+            .iter()
+            .map(|d| crate::context::Item::Listed {
+                name: d.slug.to_string(),
+                description: d.description.to_string(),
+                path: path(d.slug),
+            })
+            .collect(),
+    }
+}
+
+/// Every path the mount serves, one per line — what a wrong slug and a wrong tool are both
+/// told, so a reader that guessed can correct itself in one turn.
+fn listing() -> String {
+    DOCUMENTS
+        .iter()
+        .map(|d| format!("  {} — {}", path(d.slug), d.description))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The path target(s) a call names, for the two hooks below. Reuses the classifier's own
+/// per-tool key map so a tool's path field is named in exactly one place
+/// (docs/permissions.md).
+fn targets(call: &ToolCall) -> Vec<&str> {
+    let Some((key, _, default)) = crate::policy::path_spec(&call.name) else {
+        return Vec::new();
+    };
+    match call.input.get(key) {
+        Some(serde_json::Value::String(s)) => vec![s.as_str()],
+        Some(serde_json::Value::Array(items)) => {
+            items.iter().filter_map(serde_json::Value::as_str).collect()
+        }
+        _ => default.into_iter().collect(),
+    }
+}
+
+/// A call that names a virtual path but is not a `read` — answered before the permission
+/// cascade, because nothing any rung could say would make it run and a gate spent on it
+/// teaches the operator nothing.
+pub fn reject_non_read(call: &ToolCall) -> Option<RawResult> {
+    if call.name == "read" || !targets(call).iter().any(|t| is_virtual(t)) {
+        return None;
+    }
+    Some(RawResult {
+        images: Vec::new(),
+        content: format!(
+            "`{}` does not resolve on `{SCHEME}` paths. These are documents compiled into \
+             the harness binary, not files: `read` is the only tool that opens them, and \
+             nothing writes to them.\n\nThe documents are:\n{}",
+            call.name,
+            listing()
+        ),
+        is_error: true,
+        content_elided: None,
+    })
+}
+
+/// Serve a `read` of the virtual mount from the binary, or `None` when the call names no
+/// virtual path and the real `read` should run.
+///
+/// A batch mixing virtual and real paths is refused rather than split: the two halves come
+/// from different places, and answering half a batch silently would be worse than one
+/// corrective turn.
+pub fn read_documents(call: &ToolCall) -> Option<RawResult> {
+    if call.name != "read" {
+        return None;
+    }
+    let targets = targets(call);
+    if !targets.iter().any(|t| is_virtual(t)) {
+        return None;
+    }
+    let error = |content: String| RawResult {
+        images: Vec::new(),
+        content,
+        is_error: true,
+        content_elided: None,
+    };
+    if let Some(real) = targets.iter().find(|t| !is_virtual(t)) {
+        return Some(error(format!(
+            "this `read` mixes harness documents with a file on disk (`{real}`). They are \
+             served from different places, so read them in separate calls.",
+        )));
+    }
+    let mut bodies = Vec::with_capacity(targets.len());
+    for target in &targets {
+        match lookup(target) {
+            Some(document) => bodies.push(document.body.trim_end().to_string()),
+            None => {
+                return Some(error(format!(
+                    "no harness document at `{target}`. The documents are:\n{}",
+                    listing()
+                )));
+            }
+        }
+    }
+    Some(RawResult {
+        images: Vec::new(),
+        content: bodies.join("\n\n---\n\n"),
+        is_error: false,
+        content_elided: None,
+    })
+}
+
+#[cfg(test)]
+mod test;

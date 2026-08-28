@@ -55,6 +55,14 @@ pub(super) fn input_targets<'a>(
 /// and is harmless here because a verdict is derived state, never on the wire
 /// (docs/log-and-projection.md). `exec` entries have no files and grant nothing.
 pub(super) fn context_granted(role: &Config, target: &str, perm: Perm, cwd: &Path) -> bool {
+    // The guide overlay's virtual prefix (docs/context.md, [`crate::guide`]) is read-granted
+    // unconditionally — the mount exists whether or not the config lists it, and the
+    // documents are the recovery path for a session whose config knows nothing else. Never
+    // write-granted: there is nothing on disk to write, and a harness granting itself write
+    // on its own documents would be the self-authorization the config design forbids.
+    if crate::guide::is_virtual(target) {
+        return perm == Perm::Read;
+    }
     let target = lexical_normalize(&absolutize(target, cwd));
     role.context.iter().any(|entry| {
         let crate::config::ContextSource::Files(paths) = &entry.source else {
@@ -86,6 +94,13 @@ pub(super) fn context_granted(role: &Config, target: &str, perm: Perm, cwd: &Pat
 /// grant that points outside is treated as inside — acceptable under the error-not-deception
 /// threat model (docs/permissions.md).
 pub(super) fn path_granted(role: &Config, path: &str, perm: Perm, cwd: &Path) -> bool {
+    // A guide-overlay path names a document in the binary, not a location on disk
+    // ([`crate::guide`]). It must never resolve through this table: joined onto the cwd it
+    // would look like an ordinary relative path and a broad `[paths]` grant would then
+    // appear to grant *write* on it. Its own read grant is in [`context_granted`].
+    if crate::guide::is_virtual(path) {
+        return false;
+    }
     path_granted_at(role, &lexical_normalize(&absolutize(path, cwd)), perm, cwd)
 }
 

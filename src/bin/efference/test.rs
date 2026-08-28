@@ -401,3 +401,30 @@ fn a_completion_with_no_results_opens_no_gate() {
     )];
     assert!(gates(&log).is_empty());
 }
+
+/// The scaffold written for a session with no project config has to be a valid config, and
+/// it has to list the guide overlay — that listing is the whole recovery path for a session
+/// that knows nothing else (docs/context.md). Both halves, because a scaffold that stopped
+/// parsing would fail every config-less boot and a scaffold that lost the entry would fail
+/// silently.
+#[test]
+fn the_scaffold_parses_and_lists_the_guide() {
+    let path = std::env::temp_dir().join(format!("efference-scaffold-{}.toml", std::process::id()));
+    std::fs::write(&path, CONFIG_SCAFFOLD).unwrap();
+    let loaded = efference::config::load(Some(&path));
+    let _ = std::fs::remove_file(&path);
+    let config = match loaded {
+        Ok(loaded) => loaded.role,
+        Err(e) => {
+            e.eprint();
+            panic!("the config scaffold must parse");
+        }
+    };
+    assert!(
+        config.context.iter().any(|entry| matches!(
+            &entry.source,
+            efference::config::ContextSource::Builtin(name) if name == efference::guide::BUILTIN
+        )),
+        "the scaffold must list the guide overlay"
+    );
+}

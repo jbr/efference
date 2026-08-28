@@ -416,6 +416,14 @@ never on the wire. The context rung covers only the structured path-bearing tool
 never clears through it. A write to the session's own config file still bypasses
 everything to the human gate.
 
+The guide overlay's reserved prefix ([context.md](context.md)) rides this rung as a
+standing grant: an `efference://` target is **read**-granted with no config entry at all —
+the documents are the recovery path for a session whose config knows nothing else — and is
+never write-granted, since there is nothing on disk to write and a harness authorizing
+itself over its own documents would be the self-authorization the config design forbids. It
+is also excluded from `[paths]` resolution outright, because joined onto the cwd it would
+look like an ordinary relative path and a broad grant would then appear to cover it.
+
 ## The spotter (`src/spotter.rs`)
 
 What the fast-path can't `Clear` falls to the **spotter** before it reaches the human — a

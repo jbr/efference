@@ -122,6 +122,11 @@ pub(super) struct RawContextEntry {
     paths: Vec<String>,
     #[serde(default)]
     exec: Option<String>,
+    /// `{ builtin = "guide" }` — list a set of documents compiled into the binary
+    /// (docs/context.md, [`crate::guide`]). Like `exec`, it names a source rather than
+    /// files, so it mixes with nothing else.
+    #[serde(default)]
+    builtin: Option<String>,
     #[serde(default)]
     update: bool,
     #[serde(default)]
@@ -209,6 +214,12 @@ pub enum ValidationError {
     /// A `[context]` `exec` entry that also carries `path`/`paths`/grants/`sort` — the source is
     /// ambiguous (command stdout *or* files?). An `exec` section has no files to grant or sort.
     ContextExecConflict(String),
+    /// A `[context]` `builtin` entry that also carries files, an `exec`, grants, or a sort —
+    /// the source is ambiguous, and a compiled-in document set has no files to grant or sort.
+    ContextBuiltinConflict(String),
+    /// A `[context]` `builtin` naming a mount the binary does not ship. Rejected rather than
+    /// rendering an empty section, which would read as "the harness has no documentation".
+    ContextBuiltinUnknown(String, String),
     /// A group-only key (`create` or `sort`, named in the payload) on a **bare path** (a `[context]`
     /// entry whose key *is* the path, with no `path`/`paths`). Both are about a *location of many
     /// files*; a single file has nowhere to create into and nothing to sort.
@@ -248,6 +259,18 @@ impl std::fmt::Display for ValidationError {
                 f,
                 "context entry `{key}` mixes `exec` with `path`/`paths`/grants/`sort` — an exec \
                  section's body is the command's stdout and has no files to grant or sort"
+            ),
+            ValidationError::ContextBuiltinConflict(key) => write!(
+                f,
+                "context entry `{key}` mixes `builtin` with `path`/`paths`/`exec`/grants/`sort` \
+                 — a builtin entry lists documents compiled into the binary and has no files \
+                 to grant or sort"
+            ),
+            ValidationError::ContextBuiltinUnknown(key, name) => write!(
+                f,
+                "context entry `{key}` names builtin `{name}`, which this binary does not ship \
+                 — the only builtin is `{}`",
+                crate::guide::BUILTIN
             ),
             ValidationError::ContextBarePathGrant(key, which) => write!(
                 f,
@@ -444,6 +467,31 @@ pub(super) fn validate_context_entry(
         RawContextValue::Sugar(false) => return Err(ValidationError::ContextDisabled(key)),
         RawContextValue::Table(t) => {
             let has_files = t.path.is_some() || !t.paths.is_empty();
+            if let Some(builtin) = t.builtin {
+                // Same rule as `exec`: the entry names a source that is not files, so
+                // file grants, a sort, an exclude, and a second source are all
+                // meaningless alongside it.
+                if has_files
+                    || t.exec.is_some()
+                    || t.update
+                    || t.create
+                    || t.sort.is_some()
+                    || !t.exclude.is_empty()
+                {
+                    return Err(ValidationError::ContextBuiltinConflict(key));
+                }
+                if builtin != crate::guide::BUILTIN {
+                    return Err(ValidationError::ContextBuiltinUnknown(key, builtin));
+                }
+                return Ok(ContextEntry {
+                    heading: Some(key),
+                    source: ContextSource::Builtin(builtin),
+                    grants: ContextGrants::default(),
+                    sort: None,
+                    exclude: Vec::new(),
+                    description: t.description,
+                });
+            }
             if let Some(exec) = t.exec {
                 // A dynamic section is a labeled group whose body is command stdout: it has no
                 // files, so file grants and a sort would be meaningless — reject the mix.

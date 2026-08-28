@@ -1,0 +1,298 @@
+//! Reference validity, plus the two dispatch hooks.
+//!
+//! The point of compiling the documents in is that they are versioned with the harness and
+//! can therefore be *checked* against it. These tests are that check: a config key a
+//! document shows, a tool name it tells the reader to call, and a path it points at all
+//! have to still exist, so a rename breaks the build rather than the reader.
+
+use super::*;
+use crate::log::CallId;
+use serde_json::json;
+use std::path::Path;
+
+fn call(name: &str, input: serde_json::Value) -> ToolCall {
+    ToolCall {
+        id: CallId("toolu_test".into()),
+        name: name.into(),
+        input,
+    }
+}
+
+/// Every fenced ```toml block in a guide has to parse and validate as a real config. This
+/// is the config-key half of the reference check, and it needs no separate list of keys:
+/// the schema rejects unknown fields, so a renamed key fails here the moment the document
+/// still shows the old spelling.
+#[test]
+fn every_toml_block_in_a_guide_is_a_valid_config() {
+    let mut checked = 0;
+    for document in DOCUMENTS {
+        for block in toml_blocks(document.body) {
+            checked += 1;
+            if let Err(e) = crate::config::try_parse_text(&block) {
+                panic!(
+                    "a ```toml block in `{}` is not a valid config: {e}\n---\n{block}",
+                    path(document.slug)
+                );
+            }
+        }
+    }
+    assert!(
+        checked >= 6,
+        "expected the guide to show real config; found {checked} toml blocks"
+    );
+}
+
+/// Every tool name a document tells the reader to call is a tool a turn advertises. The
+/// declared list is what a document *claims*; this is the claim measured against
+/// `agent::tool_definitions`, which is the same array the request carries.
+#[test]
+fn every_tool_a_guide_names_is_mounted() {
+    let toolbox = crate::tools::Toolbox::bash_and_mcps(std::env::current_dir().unwrap(), None)
+        .expect("toolbox mounts");
+    let mounted = crate::agent::callable_names(&toolbox);
+    for document in DOCUMENTS {
+        for tool in document.tools {
+            assert!(
+                mounted.iter().any(|m| m == tool),
+                "`{}` names the tool `{tool}`, which no turn advertises. Mounted: {}",
+                path(document.slug),
+                mounted.join(", ")
+            );
+        }
+        // The declaration is only worth having if it tracks the prose, so require that a
+        // named tool is actually mentioned — a stale entry left behind after a rewrite
+        // would otherwise keep passing the check above forever.
+        for tool in document.tools {
+            assert!(
+                document.body.contains(tool),
+                "`{}` declares the tool `{tool}` but never mentions it",
+                path(document.slug)
+            );
+        }
+    }
+}
+
+/// A document that points at another document points at one that exists — the cross-link
+/// half of the check, and the reason a slug rename cannot quietly strand a reader.
+#[test]
+fn every_guide_link_resolves() {
+    for document in DOCUMENTS {
+        for link in virtual_links(document.body) {
+            assert!(
+                lookup(&link).is_some(),
+                "`{}` links to `{link}`, which is not a document",
+                path(document.slug)
+            );
+        }
+    }
+    // And the listing the harness offers on a wrong slug names only real documents.
+    for document in DOCUMENTS {
+        assert!(listing().contains(&path(document.slug)));
+    }
+}
+
+/// The stub listing renders as an ordinary `[context]` group: a heading wrapper, the
+/// group description, and one `<name path="…">` stub per document (docs/context.md).
+#[test]
+fn the_guide_renders_as_a_context_group() {
+    let resolved = crate::context::Resolved {
+        sections: vec![section(DEFAULT_HEADING)],
+    };
+    let rendered = resolved.render().expect("a non-empty section renders");
+    assert!(rendered.contains(&format!("<{DEFAULT_HEADING}>")));
+    assert!(rendered.contains(&format!("</{DEFAULT_HEADING}>")));
+    assert!(rendered.contains(&format!("<description>{GROUP_DESCRIPTION}</description>")));
+    for document in DOCUMENTS {
+        assert!(rendered.contains(&format!(
+            "<{slug} path=\"{}\">",
+            path(document.slug),
+            slug = document.slug
+        )));
+    }
+    // Bodies never ride in the preamble: the whole point of the mount is that these are
+    // progressively revealed, so the listing costs one line each.
+    assert!(!rendered.contains("## A starter template"));
+}
+
+/// A `builtin` entry resolves without touching the disk — the born-resolved path. The
+/// operator's key is the heading; their `description`, when they write one, replaces the
+/// mount's.
+#[test]
+fn a_builtin_context_entry_resolves_to_the_listing() {
+    let config = crate::config::parse_text("[context]\nHarness = { builtin = \"guide\" }\n");
+    let resolved = crate::context::resolve(&config.context, Path::new("/nonexistent"))
+        .expect("a builtin entry reads no files");
+    assert_eq!(resolved.sections.len(), 1);
+    assert_eq!(resolved.sections[0].heading.as_deref(), Some("Harness"));
+    assert_eq!(resolved.sections[0].items.len(), DOCUMENTS.len());
+    assert_eq!(
+        resolved.sections[0].description.as_deref(),
+        Some(GROUP_DESCRIPTION)
+    );
+
+    let custom = crate::config::parse_text(
+        "[context]\nHarness = { builtin = \"guide\", description = \"mine\" }\n",
+    );
+    let resolved = crate::context::resolve(&custom.context, Path::new("/nonexistent")).unwrap();
+    assert_eq!(resolved.sections[0].description.as_deref(), Some("mine"));
+}
+
+/// The shapes that must fail the whole file rather than render something empty or
+/// ambiguous (docs/context.md).
+#[test]
+fn a_bad_builtin_entry_fails_the_file() {
+    for bad in [
+        "[context]\nX = { builtin = \"nosuchthing\" }\n",
+        "[context]\nX = { builtin = \"guide\", path = \"docs/\" }\n",
+        "[context]\nX = { builtin = \"guide\", exec = \"date\" }\n",
+        "[context]\nX = { builtin = \"guide\", update = true }\n",
+        "[context]\nX = { builtin = \"guide\", sort = \"name asc\" }\n",
+    ] {
+        assert!(
+            crate::config::try_parse_text(bad).is_err(),
+            "expected `{bad}` to be rejected"
+        );
+    }
+}
+
+/// A `read` of a document path is answered from the binary, verbatim.
+#[test]
+fn a_read_of_a_document_is_served_from_the_binary() {
+    let result = read_documents(&call("read", json!({ "paths": [path("config-format")] })))
+        .expect("a virtual read is intercepted");
+    assert!(!result.is_error);
+    assert_eq!(result.content, DOCUMENTS[1].body.trim_end());
+
+    // Several at once concatenate, in the order asked.
+    let both = read_documents(&call(
+        "read",
+        json!({ "paths": [path("editing"), path("new-project")] }),
+    ))
+    .expect("intercepted");
+    assert!(both.content.starts_with(DOCUMENTS[2].body.trim_end()));
+    assert!(both.content.ends_with(DOCUMENTS[0].body.trim_end()));
+
+    // A read that names no virtual path is not this module's business.
+    assert!(read_documents(&call("read", json!({ "paths": ["src/lib.rs"] }))).is_none());
+}
+
+/// A wrong slug is answered by the overlay, not handed to the filesystem, and the answer
+/// says what does exist.
+#[test]
+fn an_unknown_slug_lists_the_documents() {
+    let result = read_documents(&call(
+        "read",
+        json!({ "paths": ["efference://guide/how-to-fly"] }),
+    ))
+    .expect("intercepted");
+    assert!(result.is_error);
+    assert!(result.content.contains(&path("config-format")));
+}
+
+/// A batch mixing a document and a file is refused whole, naming the file — the stated
+/// edge, answered in one corrective turn rather than half-served.
+#[test]
+fn a_mixed_batch_is_refused() {
+    let result = read_documents(&call(
+        "read",
+        json!({ "paths": [path("editing"), "src/lib.rs"] }),
+    ))
+    .expect("intercepted");
+    assert!(result.is_error);
+    assert!(result.content.contains("src/lib.rs"));
+}
+
+/// Only `read` resolves on the prefix; everything else is refused ahead of the permission
+/// cascade, with the paths that do work.
+#[test]
+fn only_read_resolves_on_the_prefix() {
+    for (name, input) in [
+        ("write", json!({ "path": path("editing"), "contents": "x" })),
+        ("edit", json!({ "file_path": path("editing") })),
+        ("list", json!({ "path": MOUNT })),
+        ("search", json!({ "path": MOUNT })),
+    ] {
+        let result = reject_non_read(&call(name, input))
+            .unwrap_or_else(|| panic!("`{name}` on the prefix should be refused"));
+        assert!(result.is_error);
+        assert!(result.content.contains(&path("new-project")));
+    }
+    // A read passes through this hook to the one that serves it, and a real path is
+    // untouched by either.
+    assert!(reject_non_read(&call("read", json!({ "paths": [path("editing")] }))).is_none());
+    assert!(reject_non_read(&call("write", json!({ "path": "src/lib.rs" }))).is_none());
+}
+
+/// The prefix is read-granted with no config at all — that is what makes the documents the
+/// recovery path for a session whose config knows nothing else — and is never
+/// write-granted (docs/permissions.md).
+#[test]
+fn the_prefix_is_read_granted_and_never_write_granted() {
+    let empty = crate::config::Config::default();
+    assert_eq!(
+        crate::policy::classify(
+            &empty,
+            &call("read", json!({ "paths": [path("new-project")] }))
+        ),
+        crate::policy::Verdict::Clear
+    );
+    // A batch mixing a granted file and a document clears; the ungranted file still
+    // poisons it, exactly as any other mixed batch.
+    let granted = crate::config::parse_text("tools = [\"read\"]\n[paths]\n\"/work\" = true\n");
+    assert_eq!(
+        crate::policy::classify(
+            &granted,
+            &call("read", json!({ "paths": [path("editing"), "/work/x.rs"] }))
+        ),
+        crate::policy::Verdict::Clear
+    );
+    assert_eq!(
+        crate::policy::classify(
+            &granted,
+            &call(
+                "read",
+                json!({ "paths": [path("editing"), "/elsewhere/x.rs"] })
+            )
+        ),
+        crate::policy::Verdict::Gate
+    );
+    // No config can grant a write to the mount; there is nothing on disk to write.
+    let permissive = crate::config::parse_text("tools = [\"write\"]\n[paths]\n\"/\" = true\n");
+    assert_eq!(
+        crate::policy::classify(
+            &permissive,
+            &call("write", json!({ "path": path("editing"), "contents": "x" }))
+        ),
+        crate::policy::Verdict::Gate
+    );
+}
+
+/// Extract the contents of every ```toml fence in a document.
+fn toml_blocks(body: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut current: Option<Vec<&str>> = None;
+    for line in body.lines() {
+        match (&mut current, line.trim_end()) {
+            (None, "```toml") => current = Some(Vec::new()),
+            (Some(_), "```") => blocks.push(current.take().unwrap().join("\n")),
+            (Some(lines), line) => lines.push(line),
+            (None, _) => {}
+        }
+    }
+    blocks
+}
+
+/// Every `efference://…` path a document's prose points at, stripped of trailing
+/// punctuation and markup.
+fn virtual_links(body: &str) -> Vec<String> {
+    body.match_indices(SCHEME)
+        .map(|(at, _)| {
+            body[at..]
+                .split(|c: char| c.is_whitespace() || matches!(c, '`' | ')' | '"' | '>'))
+                .next()
+                .unwrap_or_default()
+                .trim_end_matches(['.', ','])
+                .to_string()
+        })
+        .collect()
+}

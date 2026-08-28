@@ -79,6 +79,19 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     if !callable.contains(&call.name) {
         return Ok(Decision::Direct(vec![unknown_tool(call, &callable)]));
     }
+    // The guide overlay's one closed door (docs/context.md): a call that names an
+    // `efference://` path with anything but `read` is answered here, ahead of the cascade.
+    // The prefix addresses documents compiled into the binary, not files, so no rung's
+    // answer could make the call run — and a gate spent on it would ask the operator a
+    // question with no second option. The corrective text names the paths that do work,
+    // and rides to the wire verbatim as a `Direct` payload.
+    if let Some(result) = crate::guide::reject_non_read(call) {
+        return Ok(Decision::Direct(vec![Payload::ToolResult {
+            call_id: call.id.clone(),
+            raw: result,
+            wire: WireState::Raw,
+        }]));
+    }
     // The permission cascade (docs/permissions.md). First the deterministic fast-path: a
     // `Clear` verdict auto-approves with zero model cost. What it can't clear falls to
     // the independent spotter — a fresh-context model rung that re-decides on the
@@ -283,6 +296,13 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                         content_elided: None,
                     },
                 }
+            } else if let Some(r) = crate::guide::read_documents(call) {
+                // The guide overlay (docs/context.md): a `read` of the virtual mount is
+                // answered from the binary, before the real `read` sees a path it could
+                // not stat. What comes back is an ordinary `RawResult` on an ordinary
+                // `tool_result`, so triage, the log, and `project` never learn it was
+                // served from anywhere unusual.
+                r
             } else if let Some(r) = supervisor_tool_result(shared, call) {
                 // A supervisor/inbox read/act tool (docs/supervisor.md) — resolves against
                 // daemon state synchronously, no world run.

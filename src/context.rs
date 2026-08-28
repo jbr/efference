@@ -199,6 +199,23 @@ pub fn resolve_with_child_env(
     for entry in entries {
         let paths = match &entry.source {
             ContextSource::Files(paths) => paths,
+            // The guide overlay (docs/context.md, [`crate::guide`]): born resolved. The
+            // items are compiled-in `(name, description, body)` triples, so this reuses the
+            // *render* half of the pipeline and never touches the disk or the frontmatter
+            // parser. The operator's label is the heading; their `description`, if they
+            // wrote one, replaces the mount's own.
+            ContextSource::Builtin(_) => {
+                let heading = entry
+                    .heading
+                    .clone()
+                    .expect("validate gives every builtin entry a heading");
+                let mut section = crate::guide::section(&heading);
+                if entry.description.is_some() {
+                    section.description = entry.description.clone();
+                }
+                sections.push(section);
+                continue;
+            }
             ContextSource::Exec(command) => {
                 let name = entry
                     .heading
