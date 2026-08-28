@@ -1,7 +1,7 @@
 //! Tests for `entry_view.rs`.
 
 use super::*;
-use crate::log::{ContentBlock, Timestamp, WireState};
+use crate::log::{ContentBlock, ContentElision, Timestamp, WireState};
 
 fn entry(seq: u64, submission_id: Option<&str>, payload: Payload) -> LogEntry {
     LogEntry {
@@ -20,13 +20,15 @@ fn result_with_images(images: Vec<ResultImage>) -> Payload {
             content: "1×1 image/webp, 1 visual tokens".into(),
             is_error: false,
             images,
+            content_elided: None,
         },
         wire: WireState::Raw,
     }
 }
 
-/// The mirror pin: an image-free entry serializes byte-identically through the view
-/// and the derived path, across every payload shape the view touches or delegates.
+/// The mirror pin: an image-free entry **under the threshold** serializes
+/// byte-identically through the view and the derived path, across every payload shape
+/// the view touches or delegates.
 /// A field added to `LogEntry`/`RawResult` without updating `entry_view.rs` fails here.
 #[test]
 fn view_of_an_image_free_entry_is_the_derived_bytes() {
@@ -60,6 +62,7 @@ fn view_of_an_image_free_entry_is_the_derived_bytes() {
                     content: "gone".into(),
                     is_error: true,
                     images: Vec::new(),
+                    content_elided: None,
                 },
                 wire: WireState::Elided,
             },
@@ -67,7 +70,7 @@ fn view_of_an_image_free_entry_is_the_derived_bytes() {
     ];
     for case in &cases {
         assert_eq!(
-            serde_json::to_string(&EntryView(case)).unwrap(),
+            serde_json::to_string(&EntryView::new(case)).unwrap(),
             serde_json::to_string(case).unwrap(),
             "diverged on seq {}",
             case.seq
@@ -89,7 +92,7 @@ fn view_strips_image_data_and_keeps_layout_metadata() {
             height: 30,
         }]),
     );
-    let view = serde_json::to_string(&EntryView(&case)).unwrap();
+    let view = serde_json::to_string(&EntryView::new(&case)).unwrap();
     assert!(
         !view.contains("AAAA"),
         "base64 must not ride the view: {view}"
@@ -123,7 +126,7 @@ fn stripped_view_deserializes_as_a_log_entry() {
             height: 2,
         }]),
     );
-    let view = serde_json::to_string(&EntryView(&case)).unwrap();
+    let view = serde_json::to_string(&EntryView::new(&case)).unwrap();
     let parsed: LogEntry = serde_json::from_str(&view).expect("view parses as LogEntry");
     let Payload::ToolResult { raw, .. } = &parsed.payload else {
         panic!("payload variant survived");
@@ -131,4 +134,89 @@ fn stripped_view_deserializes_as_a_log_entry() {
     assert_eq!(raw.images.len(), 1);
     assert_eq!(raw.images[0].media_type, "image/png");
     assert_eq!(raw.images[0].data, "", "absent data reads back empty");
+}
+
+fn text_result(content: String) -> Payload {
+    Payload::ToolResult {
+        call_id: CallId("toolu_big".into()),
+        raw: RawResult {
+            content,
+            is_error: false,
+            images: Vec::new(),
+            content_elided: None,
+        },
+        wire: WireState::Raw,
+    }
+}
+
+/// The threshold's two sides. A small result is byte-identical through the windowed
+/// view, the dereference view, and the derived path — the shape the frame ≡ window
+/// pin depends on (frames.rs). An oversized one diverges exactly once: the windowed
+/// view carries a prefix plus the tag, `EntryView::full` (what `GET /log/:seq`
+/// serves) carries the whole string and no tag.
+#[test]
+fn oversized_content_is_elided_in_the_window_and_whole_at_the_entry_route() {
+    let small = entry(7, None, text_result("x".repeat(MAX_INLINE_RESULT_BYTES)));
+    let windowed = serde_json::to_string(&EntryView::new(&small)).unwrap();
+    assert_eq!(
+        windowed,
+        serde_json::to_string(&EntryView::full(&small)).unwrap(),
+        "at the threshold the two views are the same bytes"
+    );
+    assert_eq!(
+        windowed,
+        serde_json::to_string(&small).unwrap(),
+        "and both are the derived bytes"
+    );
+    assert!(!windowed.contains("content_elided"), "no tag when whole");
+
+    let content = "y".repeat(MAX_INLINE_RESULT_BYTES * 2);
+    let big = entry(8, None, text_result(content.clone()));
+    let windowed = serde_json::to_string(&EntryView::new(&big)).unwrap();
+    let full = serde_json::to_string(&EntryView::full(&big)).unwrap();
+
+    assert!(windowed.len() < full.len(), "the window carries less");
+    assert_eq!(
+        full,
+        serde_json::to_string(&big).unwrap(),
+        "the entry route serves the entry verbatim"
+    );
+    assert!(!full.contains("content_elided"), "and carries no tag");
+
+    let parsed: LogEntry = serde_json::from_str(&windowed).expect("the view parses as a LogEntry");
+    let Payload::ToolResult { raw, .. } = &parsed.payload else {
+        panic!("payload variant survived");
+    };
+    assert_eq!(raw.content.len(), MAX_INLINE_RESULT_BYTES);
+    assert!(content.starts_with(&raw.content), "a prefix, not a summary");
+    assert_eq!(
+        raw.content_elided,
+        Some(ContentElision {
+            kept_bytes: MAX_INLINE_RESULT_BYTES,
+            total_bytes: MAX_INLINE_RESULT_BYTES * 2,
+        }),
+        "tagged with what was kept and what exists"
+    );
+}
+
+/// The prefix is cut at a UTF-8 boundary, so `kept_bytes` can land below the
+/// threshold rather than splitting a code point into invalid bytes.
+#[test]
+fn an_elided_prefix_ends_on_a_character_boundary() {
+    // Three-byte characters do not divide the threshold evenly, so the cut lands mid
+    // character unless it is walked back.
+    let content = "☃".repeat(MAX_INLINE_RESULT_BYTES);
+    let case = entry(9, None, text_result(content));
+    let view = serde_json::to_string(&EntryView::new(&case)).unwrap();
+    let parsed: LogEntry = serde_json::from_str(&view).expect("a valid string survived the cut");
+    let Payload::ToolResult { raw, .. } = &parsed.payload else {
+        panic!("payload variant survived");
+    };
+    assert!(raw.content.len() <= MAX_INLINE_RESULT_BYTES);
+    assert!(raw.content.len() > MAX_INLINE_RESULT_BYTES - 3);
+    assert_eq!(
+        raw.content_elided.map(|e| e.kept_bytes),
+        Some(raw.content.len()),
+        "kept_bytes is the prefix actually carried"
+    );
 }

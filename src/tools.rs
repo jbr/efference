@@ -297,6 +297,7 @@ where
                     images: Vec::new(),
                     content: format!("invalid input for {name}: {e}"),
                     is_error: true,
+                    content_elided: None,
                 };
             }
         };
@@ -306,6 +307,7 @@ where
                 images: Vec::new(),
                 content: e.to_string(),
                 is_error: true,
+                content_elided: None,
             },
         }
     }
@@ -565,6 +567,7 @@ impl Toolbox {
                 images: Vec::new(),
                 content: self.unknown_tool_message(&call.name),
                 is_error: true,
+                content_elided: None,
             }
             .into(),
         }

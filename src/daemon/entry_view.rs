@@ -2,31 +2,82 @@
 //!
 //! Every surface that hands an entry to a client — `GET /log`, `GET /log/:seq`, and a
 //! `log` frame's `data` — serializes through [`EntryView`], never the entry directly.
-//! The view is the entry verbatim except that a result image's base64 `data` is
-//! omitted: the bytes are a resource at `GET /log/:seq/images/:idx`, fetched and
-//! HTTP-cached separately, so a multi-megabyte image never rides a log window, a
-//! replay, or the SSE stream, where it would queue every later frame behind it. The
-//! image's `media_type`/`width`/`height` stay in the view so a client can lay out
-//! before fetching. The log file and the wire projection are untouched — both keep
-//! the bytes inline (docs/log-and-projection.md).
+//! The view is the entry verbatim except for two elisions, both resolved by fetching
+//! the entry's own address:
+//!
+//! - **A result image's base64 `data` is omitted, always.** The bytes are a resource
+//!   at `GET /log/:seq/images/:idx`, fetched and HTTP-cached separately, so a
+//!   multi-megabyte image never rides a log window, a replay, or the SSE stream,
+//!   where it would queue every later frame behind it. The image's
+//!   `media_type`/`width`/`height` stay in the view so a client can lay out before
+//!   fetching.
+//! - **A result's `content` past [`MAX_INLINE_RESULT_BYTES`] is truncated, in the
+//!   window and frame views only.** [`EntryView::full`] — what `GET /log/:seq`
+//!   serves — keeps the whole string. The truncated form is tagged with
+//!   `content_elided: {kept_bytes, total_bytes}`, so a client reads "content, cut at
+//!   N of M bytes" rather than inferring it from a length.
+//!
+//! The log file and the wire projection are untouched — both keep everything inline
+//! (docs/log-and-projection.md).
 //!
 //! Hand-written `Serialize` impls that mirror the derived ones field-for-field, in
 //! declaration order. A `serde_json::Value` round-trip would be shorter but re-sorts
 //! object keys, breaking the byte-identity between a log frame's `data` and the
 //! `GET /log` element (see frames.rs). The mirror obligation is pinned by test:
-//! an image-free entry serializes byte-identically through both paths, so a field
-//! added to [`LogEntry`] or [`RawResult`] without updating this module fails there.
+//! an image-free entry under the threshold serializes byte-identically through both
+//! paths, so a field added to [`LogEntry`] or [`RawResult`] without updating this
+//! module fails there.
 
 use super::*;
-use crate::log::{RawResult, ResultImage};
+use crate::log::{ContentElision, RawResult, ResultImage};
 use serde::ser::{SerializeStruct, SerializeStructVariant, Serializer};
 
+/// How much of a tool result's `content` rides a window read or a `log` frame before
+/// the rest is left to `GET /log/:seq` (docs/control-api.md).
+///
+/// 16 KiB, derived from the result-size distribution of this repo's own sessions
+/// (2,131 results across 124 logs): the median result is ~1 KB and p90 is ~13 KB, so
+/// the threshold sits just past the body of the distribution — ~8% of results elide,
+/// and that 8% is ~35% of all result bytes. Halving it to 8 KiB nearly doubles the
+/// fetch count for 18 more points of bytes; doubling it to 32 KiB halves the bytes
+/// saved. It is the point where a frame's own cost stops being the dominant one:
+/// below it, a payload is comparable to the HTTP round-trip that would fetch it, so
+/// eliding trades a cheap frame for a dereference and an N+1 read over a normal
+/// session.
+pub(crate) const MAX_INLINE_RESULT_BYTES: usize = 16 * 1024;
+
 /// A [`LogEntry`] as served to control-channel clients.
-pub(crate) struct EntryView<'a>(pub(crate) &'a LogEntry);
+pub(crate) struct EntryView<'a> {
+    entry: &'a LogEntry,
+    /// Whether an oversized result's `content` is truncated. False only for
+    /// [`EntryView::full`].
+    elide_text: bool,
+}
+
+impl<'a> EntryView<'a> {
+    /// The windowed view — image data omitted, oversized text truncated and tagged.
+    /// What `GET /log` elements and `log` frames carry.
+    pub(crate) fn new(entry: &'a LogEntry) -> Self {
+        Self {
+            entry,
+            elide_text: true,
+        }
+    }
+
+    /// The dereference view — image data still omitted (it has its own address), but
+    /// `content` whole. What `GET /log/:seq` serves, and the reason a client holding a
+    /// truncated result has somewhere to go.
+    pub(crate) fn full(entry: &'a LogEntry) -> Self {
+        Self {
+            entry,
+            elide_text: false,
+        }
+    }
+}
 
 impl Serialize for EntryView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let entry = self.0;
+        let entry = self.entry;
         let fields = 4 + usize::from(entry.submission_id.is_some());
         let mut s = serializer.serialize_struct("LogEntry", fields)?;
         s.serialize_field("seq", &entry.seq)?;
@@ -35,14 +86,14 @@ impl Serialize for EntryView<'_> {
         if let Some(submission_id) = &entry.submission_id {
             s.serialize_field("submission_id", submission_id)?;
         }
-        s.serialize_field("payload", &PayloadView(&entry.payload))?;
+        s.serialize_field("payload", &PayloadView(&entry.payload, self.elide_text))?;
         s.end()
     }
 }
 
 /// Delegates every variant to the derived serialization except `ToolResult`, the one
-/// place a [`ResultImage`] lives.
-struct PayloadView<'a>(&'a Payload);
+/// place a [`ResultImage`] and an oversized `content` live.
+struct PayloadView<'a>(&'a Payload, bool);
 
 impl Serialize for PayloadView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -50,7 +101,7 @@ impl Serialize for PayloadView<'_> {
             Payload::ToolResult { call_id, raw, wire } => {
                 let mut s = serializer.serialize_struct_variant("Payload", 2, "ToolResult", 3)?;
                 s.serialize_field("call_id", call_id)?;
-                s.serialize_field("raw", &RawResultView(raw))?;
+                s.serialize_field("raw", &RawResultView(raw, self.1))?;
                 s.serialize_field("wire", wire)?;
                 s.end()
             }
@@ -59,15 +110,59 @@ impl Serialize for PayloadView<'_> {
     }
 }
 
-struct RawResultView<'a>(&'a RawResult);
+/// How much of a `content` string a view carries: the whole thing, or a prefix plus
+/// the tag saying so.
+enum ContentView<'a> {
+    Whole(&'a str),
+    /// `(prefix, total_bytes)` — the prefix is `content[..kept]` cut at a UTF-8
+    /// boundary at or below [`MAX_INLINE_RESULT_BYTES`], so the elided form is still a
+    /// valid string rather than a split code point.
+    Elided(&'a str, usize),
+}
+
+impl<'a> ContentView<'a> {
+    fn of(content: &'a str, elide: bool) -> Self {
+        if !elide || content.len() <= MAX_INLINE_RESULT_BYTES {
+            return Self::Whole(content);
+        }
+        let mut kept = MAX_INLINE_RESULT_BYTES;
+        while kept > 0 && !content.is_char_boundary(kept) {
+            kept -= 1;
+        }
+        Self::Elided(&content[..kept], content.len())
+    }
+}
+
+struct RawResultView<'a>(&'a RawResult, bool);
 
 impl Serialize for RawResultView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let raw = self.0;
-        let fields = 2 + usize::from(!raw.images.is_empty());
+        let content = ContentView::of(&raw.content, self.1);
+        // The tagging field is *added* when a result is oversized rather than always
+        // present: a result under the threshold serializes exactly as it did before
+        // the field existed, which is what keeps the frame ≡ window ≡ entry identity
+        // true below the threshold (frames.rs).
+        let elided = matches!(content, ContentView::Elided(..));
+        let fields = 2 + usize::from(elided) + usize::from(!raw.images.is_empty());
         let mut s = serializer.serialize_struct("RawResult", fields)?;
-        s.serialize_field("content", &raw.content)?;
-        s.serialize_field("is_error", &raw.is_error)?;
+        match content {
+            ContentView::Whole(text) => {
+                s.serialize_field("content", text)?;
+                s.serialize_field("is_error", &raw.is_error)?;
+            }
+            ContentView::Elided(prefix, total) => {
+                s.serialize_field("content", prefix)?;
+                s.serialize_field("is_error", &raw.is_error)?;
+                s.serialize_field(
+                    "content_elided",
+                    &ContentElision {
+                        kept_bytes: prefix.len(),
+                        total_bytes: total,
+                    },
+                )?;
+            }
+        }
         if !raw.images.is_empty() {
             s.serialize_field("images", &ImagesView(&raw.images))?;
         }

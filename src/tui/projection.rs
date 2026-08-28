@@ -447,6 +447,20 @@ fn result_entry(
         1 => format!("{size} · 1 image"),
         n => format!("{size} · {n} images"),
     };
+    // The control channel truncates an oversized result's `content` on the window
+    // and stream views and tags what it cut (docs/control-api.md). Name the cut in
+    // the header: a body that stops mid-output would otherwise read as the whole of
+    // what the tool returned. The rest lives at `GET /log/:seq`, which this client
+    // does not fetch today — the marker says what is on screen, not that it can be
+    // completed.
+    let size = match raw.content_elided {
+        None => size,
+        Some(elision) => format!(
+            "{size} · {} of {} shown",
+            byte_size(elision.kept_bytes),
+            byte_size(elision.total_bytes)
+        ),
+    };
 
     let mut header = vec![Span {
         text: size.into(),
@@ -512,6 +526,16 @@ fn distillate_note(
         ));
     }
     nodes
+}
+
+/// A byte count for the result header's elision marker: bytes below a kibibyte,
+/// whole KiB above it. Rounded, because it is a gloss on how much of an output the
+/// stream carried, not an accounting figure.
+fn byte_size(bytes: usize) -> String {
+    match bytes {
+        n if n < 1024 => format!("{n} B"),
+        n => format!("{} KiB", n / 1024),
+    }
 }
 
 /// `"1 line"` / `"N lines"` — the result header's size gloss. Counted over the

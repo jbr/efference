@@ -22,6 +22,15 @@
 //!   human-wire render document (docs/tool-contract) is an annotation *of the frame*.
 //!   Folding it into `data` would fork the two representations of one entry.
 //!
+//! The frame ≡ window byte-identity holds **below the result-size threshold**, which
+//! is the whole of it in every ordinary session. Above it the two agree with each
+//! other and diverge from `GET /log/:seq`: both carry a tagged prefix of an oversized
+//! result's `content`, while the entry route serves it whole
+//! (`MAX_INLINE_RESULT_BYTES`, entry_view.rs). That divergence is the feature — a
+//! multi-megabyte result would otherwise queue every later frame behind it and re-ship
+//! on every replay and window read — and it is deliberately narrow: one field of one
+//! payload, tagged where it happens, dereferenced at the address images already use.
+//!
 //! All three classes nest their payload under `data` — uniformly, including `output`,
 //! whose fields would otherwise sit at the top level and force a client to special-case
 //! one class in the parser it was supposed to write once.
@@ -178,13 +187,14 @@ pub(crate) struct Frame {
 impl Frame {
     /// A durable log frame. The only constructor that sets `seq`, and the only one
     /// whose `data` is byte-identical to a `GET /log` element — both serialize the
-    /// entry's [`EntryView`] (image `data` omitted; entry_view.rs).
+    /// entry's [`EntryView::new`] (image `data` omitted, oversized result text
+    /// truncated and tagged; entry_view.rs).
     pub(crate) fn log(entry: &LogEntry) -> Self {
         Self {
             class: Class::Log,
             kind: payload_kind(&entry.payload),
             seq: Some(entry.seq),
-            data: raw(&EntryView(entry)),
+            data: raw(&EntryView::new(entry)),
             render: None,
         }
     }

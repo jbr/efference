@@ -12,6 +12,8 @@ import {
   readMarker,
   readRows,
   resultRender,
+  byteSize,
+  elisionLabel,
 } from "./parse.ts";
 
 const ok = (content: string) => ({ content, is_error: false });
@@ -253,4 +255,26 @@ test("callArgs puts a write's path ahead of its contents, however serialized", (
     "path",
     "contents",
   ]);
+});
+
+// The elision marker mirrors the header `result_entry` composes in
+// `src/tui/projection.rs`: same words, same rounding.
+test("an elided result is labelled from its tag, not from its content", () => {
+  const elided = {
+    content: "x".repeat(16 * 1024),
+    is_error: false,
+    content_elided: { kept_bytes: 16 * 1024, total_bytes: 256 * 1024 },
+  };
+  expect(elisionLabel(elided)).toBe("16 KiB of 256 KiB shown");
+  expect(resultRender("bash", elided, "Raw").elisionLabel).toBe(
+    "16 KiB of 256 KiB shown",
+  );
+
+  // A whole result carries no marker — absence of the tag is the signal, so a
+  // long-but-inline result says nothing about size.
+  expect(elisionLabel(ok("x".repeat(64 * 1024)))).toBeNull();
+  expect(resultRender("bash", ok("hi"), "Raw").elisionLabel).toBeNull();
+
+  expect(byteSize(900)).toBe("900 B");
+  expect(byteSize(1024)).toBe("1 KiB");
 });

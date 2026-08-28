@@ -18,6 +18,7 @@ fn result(seq: u64, lines: usize, wire: WireState) -> LogEntry {
                 images: Vec::new(),
                 content,
                 is_error: false,
+                content_elided: None,
             },
             wire,
         },

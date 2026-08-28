@@ -28,6 +28,7 @@ fn sample(log: &mut Log) {
                 images: Vec::new(),
                 content: "file.txt".into(),
                 is_error: false,
+                content_elided: None,
             },
             wire: WireState::Raw,
         },

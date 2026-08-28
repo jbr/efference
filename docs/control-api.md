@@ -442,12 +442,44 @@ routes exist; reference resolution is the smaller one.
 
 Every read that serves an entry — the window, this route, and a `log` frame's
 `data` — serializes the same **entry view** (`daemon/entry_view.rs`): the entry
-verbatim, except that a result image's base64 `data` is omitted. A result image
+verbatim, except for two elisions, both resolved by fetching an address.
+
+**A result image's base64 `data` is omitted, on every route.** A result image
 appears as `{media_type, width, height}` — enough to lay out before fetching —
-and the bytes resolve through the route below. This keeps a multi-megabyte
-image from riding every window, replay, and SSE frame; the log file and the
-wire projection keep the bytes inline
-([log-and-projection.md](log-and-projection.md)).
+and the bytes resolve through the route below.
+
+**A tool result's `content` past 16 KiB is truncated — in the window and on the
+stream, but not here.** This route serves the whole string; it is the
+dereference address for the truncated copies, exactly as the images route is for
+image bytes. The truncated form is *tagged*, so a client never has to infer it
+from a length:
+
+```jsonc
+"raw": {
+  "content": "…the first 16 KiB…",
+  "is_error": false,
+  "content_elided": { "kept_bytes": 16384, "total_bytes": 262144 }
+}
+```
+
+`content_elided` is **absent** when the content is whole — its presence is the
+signal, and its `kept_bytes` is the prefix actually carried (cut back to a UTF-8
+boundary, so it is a valid string rather than a split code point). A client
+holding one renders the prefix, says what it is, and fetches `/log/:seq` when it
+wants the rest.
+
+Both elisions keep a bulky payload from riding every window, replay, and SSE
+frame, where it would queue every later frame behind it on an expensively-framed
+transport. The threshold is where the frame's own cost stops dominating the
+fetch that replaces it: in this repo's own corpus (2,131 results), the median
+result is ~1 KB and p90 ~13 KB, so 16 KiB elides ~8% of results and ~35% of all
+result bytes — the tail, not the body. Below it, no route diverges from any
+other.
+
+The log file and the wire projection keep everything inline
+([log-and-projection.md](log-and-projection.md)); genuinely *streaming* payloads
+— assistant and thinking deltas — stay on the stream, since they arrive
+incrementally rather than whole.
 
 #### `GET /log/:seq/images/:idx`
 The decoded bytes of one logged result image — the dereference target for the
@@ -546,6 +578,22 @@ means the ephemeral class *could* stall the durable one, which separate sockets
 could not. So: `log` frames go unconditionally, `state` once its watermark is
 passed, `output` only when nothing durable is pending, from a drop-oldest ring.
 That policy is what makes the durability table above true over one connection.
+
+**A committed entry preempts the deltas describing it.** Log priority means an
+`Assistant` entry's frame overtakes the block deltas of the response it commits;
+those deltas are then *dropped*, not delivered behind it. A client that folded
+them would reopen a block the entry closed — a nameless tool call holding a
+trailing `}`, or a turn's last sentence rendered twice. So: after a `log` frame
+for an `Assistant` entry, the four block kinds (`assistant_delta`,
+`thinking_delta`, `tool_call_start`, `tool_call_input`) do not arrive again until
+the next log frame. `tool_output` and `process_output` are unaffected — they are
+keyed by a call id and a process id rather than by a block index, and a
+backgrounded process emitting while a turn commits must still reach the client.
+
+This is a per-connection property of the daemon's drain, so a delta that already
+left the daemon can still be in flight elsewhere in a client's own transport. A
+client that buffers block deltas should keep dropping late ones as well; the
+daemon's drop makes that the rare case rather than the normal one.
 
 A client opening **cold** should read `GET /log?tail=N` and then connect with
 `?since=<last_seq + 1>`, rather than `?since=0`. Both are correct; the second

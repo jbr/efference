@@ -127,6 +127,29 @@ struct Tail {
     /// every time the connection goes idle, not only under backpressure. Always `None`
     /// when the wait is reached, because the output drain step empties it first.
     received_output: Option<StreamDelta>,
+    /// Set when the last `log` frame this connection emitted was an `Assistant` entry:
+    /// the response those block deltas were describing has committed, so the deltas
+    /// still queued behind it are superseded. Cleared by the next log frame of any
+    /// other kind. An assistant response never directly follows another — a
+    /// `ToolResult` or a `User` turn always intervenes — so the drain cannot swallow
+    /// the start of the next response.
+    draining_blocks: bool,
+}
+
+/// Whether a delta describes a content block of the response now in flight — the
+/// deltas a committed `Assistant` entry supersedes (docs/control-api.md).
+///
+/// `ToolOutput` and `ProcessOutput` are excluded on purpose: they are keyed by a call
+/// id and a process id rather than by a block index, and a backgrounded process
+/// emitting while a turn commits must still reach the client.
+fn is_block_delta(delta: &StreamDelta) -> bool {
+    matches!(
+        delta,
+        StreamDelta::AssistantText { .. }
+            | StreamDelta::ThinkingText { .. }
+            | StreamDelta::ToolCallStart { .. }
+            | StreamDelta::ToolCallInput { .. }
+    )
 }
 
 impl Tail {
@@ -199,6 +222,11 @@ impl Tail {
     /// single-digit Hz at worst, and output is correctly last, since a catching-up client
     /// dropping deltas for a turn that already committed is right — the committed entry
     /// is the authoritative copy.
+    ///
+    /// Priority makes a committed entry *overtake* its own deltas, so the drain also
+    /// **drops** what it overtook: once the `Assistant` frame has gone out, the block
+    /// deltas still queued for that response are superseded and are skipped rather than
+    /// delivered ([`is_block_delta`], [`Tail::draining_blocks`]).
     async fn next_frame(&mut self) -> Option<Frame> {
         loop {
             // Arm before reading, so an append landing between the read and the await is
@@ -214,6 +242,7 @@ impl Tail {
                 && let Some(entry) = self.shared.entry_at(self.next_log)
             {
                 self.next_log += 1;
+                self.draining_blocks = matches!(entry.payload, Payload::Assistant { .. });
                 return Some(Frame::log(&entry));
             }
 
@@ -222,16 +251,39 @@ impl Tail {
             }
 
             if self.include.output {
-                if let Some(delta) = self.received_output.take() {
+                // Loops so a superseded delta is *skipped*, not merely un-sent: dropping
+                // one must move on to the next candidate rather than fall through to the
+                // wait, or the whole tail of a committed response would be delivered one
+                // park at a time.
+                let mut closed = false;
+                loop {
+                    let delta = match self.received_output.take() {
+                        Some(delta) => delta,
+                        None => match self.output_rx.try_recv() {
+                            Ok(delta) => delta,
+                            // Drop-oldest: the ring already discarded them, and the
+                            // committed entries on the `log` class are the authoritative
+                            // copy.
+                            Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
+                            Err(broadcast::error::TryRecvError::Closed) => {
+                                closed = true;
+                                break;
+                            }
+                            Err(broadcast::error::TryRecvError::Empty) => break,
+                        },
+                    };
+                    // The committed entry preempts the deltas describing it
+                    // (docs/control-api.md): once this connection has delivered the
+                    // `Assistant` frame, a queued block delta describes a response the
+                    // client has already committed, and delivering it would reopen a
+                    // block the entry closed.
+                    if self.draining_blocks && is_block_delta(&delta) {
+                        continue;
+                    }
                     return Some(Frame::output(&delta));
                 }
-                match self.output_rx.try_recv() {
-                    Ok(delta) => return Some(Frame::output(&delta)),
-                    // Drop-oldest: the ring already discarded them, and the committed
-                    // entries on the `log` class are the authoritative copy.
-                    Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
-                    Err(broadcast::error::TryRecvError::Closed) => return None,
-                    Err(broadcast::error::TryRecvError::Empty) => {}
+                if closed {
+                    return None;
                 }
             }
 
@@ -313,6 +365,7 @@ pub(crate) fn control_stream(
         next_log: since,
         pending: BTreeMap::new(),
         received_output: None,
+        draining_blocks: false,
     };
     // Subscribe *then* snapshot: an update landing in between is absorbed as a duplicate
     // replacement, which is harmless. Snapshotting first and subscribing after would drop

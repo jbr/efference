@@ -268,6 +268,17 @@ aspect box before the bytes land — and the browser supplies the fetch (ambient
 session cookie), the immutable caching, and lazy loading. Capped at 420px
 display width; full resolution is the browser's own open-image-in-new-tab.
 
+An oversized result's **text** arrives the same way — a prefix plus
+`content_elided`, whole at `GET /v1/log/{seq}` ([control-api.md](control-api.md)).
+`resultRender` turns the tag into the head's `16 KiB of 256 KiB shown` marker
+(the same words the TUI header uses), and `useWholeResult` (`ui/wholeResult.ts`)
+does the dereference: in the transcript it waits for a click, since most
+truncated results are scrolled past and fetching them all would restore the
+head-of-line problem the elision removed; in the inspector it fires on open,
+because opening the inspector *is* the request for the whole thing. A failed
+fetch is a value — the prefix stays on screen and the affordance says the rest
+did not arrive.
+
 **What is deliberately not a container.** There is no per-user-message grouping.
 An operator interjection is often incidental (*"check this path: …"*, an API
 tip), and mid-trajectory injection ([control-channel.md](control-channel.md))

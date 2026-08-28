@@ -616,11 +616,13 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
             images: Vec::new(),
             content: "alpha\nbeta".into(),
             is_error: false,
+            content_elided: None,
         },
         RawResult {
             images: Vec::new(),
             content: "gamma".into(),
             is_error: false,
+            content_elided: None,
         },
     ];
     let pending: Vec<Pending<'_>> = calls
@@ -995,6 +997,7 @@ fn raw(content: &str, is_error: bool) -> RawResult {
         images: Vec::new(),
         content: content.into(),
         is_error,
+        content_elided: None,
     }
 }
 

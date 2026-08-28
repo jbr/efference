@@ -288,6 +288,7 @@ fn result(seq: u64, id: &str) -> LogEntry {
                 images: Vec::new(),
                 content: "out".into(),
                 is_error: false,
+                content_elided: None,
             },
             wire: WireState::Raw,
         },

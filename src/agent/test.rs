@@ -55,6 +55,7 @@ pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_sp
                     images: Vec::new(),
                     content: "SECRET_TOKEN=hunter2\n…120k of log…".into(),
                     is_error: false,
+                    content_elided: None,
                 },
             ),
         )
@@ -390,6 +391,7 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
                         images: Vec::new(),
                         content: content.into(),
                         is_error: false,
+                        content_elided: None,
                     },
                     wire: WireState::Raw,
                 },

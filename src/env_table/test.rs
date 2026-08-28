@@ -509,6 +509,7 @@ fn every_text_bearing_payload_path_is_masked() {
             content: leak(),
             is_error: false,
             images: Vec::new(),
+            content_elided: None,
         },
         wire: WireState::Raw,
     };

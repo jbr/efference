@@ -74,6 +74,7 @@ pub(super) fn config_write_outcome(shared: &Shared, result: RawResult) -> RawRes
                  and write a version that parses.\n\nParse error: {error}"
             ),
             is_error: true,
+            content_elided: None,
         },
         Some(Refreshed::RevertFailed { error, io }) => RawResult {
             images: Vec::new(),
@@ -84,6 +85,7 @@ pub(super) fn config_write_outcome(shared: &Shared, result: RawResult) -> RawRes
                  file.\n\nParse error: {error}\nRestore error: {io}"
             ),
             is_error: true,
+            content_elided: None,
         },
         // Adopted, or no config file at all — the write stands as reported.
         Some(Refreshed::Adopted(_)) | None => result,

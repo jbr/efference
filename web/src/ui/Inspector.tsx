@@ -17,6 +17,7 @@ import {
   type ArgField,
 } from "../render/parse.ts";
 import { openablePaths } from "../session/touchedFiles.ts";
+import { useWholeResult } from "./wholeResult.ts";
 import { fetchProcessOutput } from "../api/http.ts";
 
 /** Drag-to-resize, persisted. The drawer floats over the content (the
@@ -215,13 +216,7 @@ function useRetainedOutput(
   return fetched !== null && fetched.id === processId ? fetched.read : null;
 }
 
-function OutputSection({
-  label,
-  read,
-}: {
-  label: string;
-  read: OutputRead;
-}) {
+function OutputSection({ label, read }: { label: string; read: OutputRead }) {
   return (
     <div className="inspector-output">
       <div className="dim">{label}</div>
@@ -281,10 +276,31 @@ export function Inspector({
     () => (call !== null ? callArgs(call.name, call.input) : []),
     [call],
   );
-  const result =
+  const entry =
     node.result !== null && "ToolResult" in node.result.payload
-      ? node.result.payload.ToolResult
+      ? node.result
       : null;
+  const payload =
+    entry !== null && "ToolResult" in entry.payload
+      ? entry.payload.ToolResult
+      : null;
+  // Inspecting *is* the request for the whole thing, so a truncated result
+  // (docs/control-api.md) dereferences itself here rather than waiting for a
+  // second click — the transcript is where the on-demand affordance lives.
+  const whole = useWholeResult(entry?.seq ?? null, payload?.raw ?? null);
+  useEffect(() => {
+    if (whole.elided !== undefined) whole.fetchWhole();
+  }, [whole.elided, whole.fetchWhole, whole]);
+  // Memoized so the identity is stable across renders: the render below keys
+  // its own memo on it.
+  const wholeRaw = whole.raw;
+  const result = useMemo(
+    () =>
+      payload !== null && wholeRaw !== null
+        ? { ...payload, raw: wholeRaw }
+        : null,
+    [payload, wholeRaw],
+  );
   const rendered = useMemo(
     () =>
       result !== null ? resultRender(node.name, result.raw, result.wire) : null,
@@ -295,7 +311,10 @@ export function Inspector({
   // that is still growing, while the capture read is a point-in-time snapshot.
   const output: { label: string; read: OutputRead } | null =
     liveOutput !== undefined
-      ? { label: "live output · running", read: { output: liveOutput, lost: 0 } }
+      ? {
+          label: "live output · running",
+          read: { output: liveOutput, lost: 0 },
+        }
       : retained !== null
         ? { label: `p#${processId} output`, read: retained }
         : null;

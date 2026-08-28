@@ -351,3 +351,94 @@ async fn the_durable_class_is_drained_first() {
         "the ephemeral class still arrives"
     );
 }
+
+fn assistant(text: &str) -> Payload {
+    Payload::Assistant {
+        thinking: vec![],
+        text: vec![crate::log::ContentBlock::Text(text.into())],
+        calls: vec![],
+        upstream_failure: None,
+    }
+}
+
+/// The committed entry preempts the deltas describing it. Log priority makes the
+/// `Assistant` frame overtake its own queued block deltas, so those deltas are dropped
+/// rather than delivered behind it — otherwise a client folds fragments into a
+/// response it has already committed, reopening a block the entry closed.
+///
+/// Process output is explicitly not turn-scoped: a backgrounded process emitting while
+/// a turn commits must still reach the client.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_committed_entry_preempts_the_deltas_describing_it() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let mut stream = control_stream(
+        Arc::clone(&shared),
+        Include::parse(Some("log,output")).unwrap(),
+        0,
+    );
+
+    // Queued before the commit, and still unread when the log frame goes out.
+    for i in 0..3 {
+        shared.publish_delta(StreamDelta::AssistantText {
+            index: 0,
+            text: format!("fragment {i}"),
+        });
+    }
+    shared.publish_delta(StreamDelta::ToolCallInput {
+        index: 1,
+        fragment: "{\"command\":\"ls".into(),
+    });
+    shared.publish_delta(StreamDelta::ProcessOutput {
+        id: 7,
+        chunk: "still running".into(),
+    });
+    shared.append(1, assistant("the whole answer")).unwrap();
+
+    let seen = collect(&mut stream).await;
+    assert_eq!(
+        seen.first().map(|f| f.class.as_str()),
+        Some("log"),
+        "the entry leads: {seen:?}"
+    );
+    assert!(
+        !seen
+            .iter()
+            .any(|f| f.kind == "assistant_delta" || f.kind == "tool_call_input"),
+        "no block delta survives the entry that superseded it: {seen:?}"
+    );
+    assert!(
+        seen.iter().any(|f| f.kind == "process_output"),
+        "process output is not turn-scoped and still flows: {seen:?}"
+    );
+}
+
+/// The drop is scoped to the response that committed, not to the connection: the next
+/// entry ends it, so the deltas of the *next* response are delivered normally.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn block_deltas_flow_again_after_the_next_entry() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let mut stream = control_stream(
+        Arc::clone(&shared),
+        Include::parse(Some("log,output")).unwrap(),
+        0,
+    );
+
+    shared.append(1, assistant("first answer")).unwrap();
+    collect(&mut stream).await;
+
+    // A `ToolResult` or a `User` turn always intervenes between two responses.
+    shared.append(2, user("next")).unwrap();
+    shared.publish_delta(StreamDelta::AssistantText {
+        index: 0,
+        text: "second answer".into(),
+    });
+
+    let seen = collect(&mut stream).await;
+    assert_eq!(
+        seen.iter()
+            .find(|f| f.kind == "assistant_delta")
+            .map(|f| f.data["text"].clone()),
+        Some(Value::from("second answer")),
+        "the next response streams normally: {seen:?}"
+    );
+}

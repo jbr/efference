@@ -287,6 +287,7 @@ impl Bash {
                     images: Vec::new(),
                     content,
                     is_error: true,
+                    content_elided: None,
                 }
                 .into()
             }
@@ -379,6 +380,7 @@ fn render(combined: Vec<u8>, status: ExitStatus) -> RawResult {
         images: Vec::new(),
         content,
         is_error,
+        content_elided: None,
     }
 }
 
@@ -393,6 +395,7 @@ fn error(content: impl Into<String>) -> RawResult {
         images: Vec::new(),
         content: content.into(),
         is_error: true,
+        content_elided: None,
     }
 }
 

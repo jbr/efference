@@ -1,5 +1,6 @@
 use super::*;
-use crate::log::ContentBlock;
+use crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES;
+use crate::log::{ContentBlock, RawResult, WireState};
 
 fn one_entry(payload: Payload) -> LogEntry {
     let mut log = Log::in_memory();
@@ -14,6 +15,12 @@ fn user(text: &str) -> Payload {
 /// The `log` class is the only one carrying a cursor, and its `data` must stay
 /// byte-identical to the corresponding `GET /log` element — the property `sse.rs`
 /// relies on so the tail and the catch-up read agree per entry.
+///
+/// **Pin, relaxed deliberately (2026-08-27):** identity holds *below*
+/// [`MAX_INLINE_RESULT_BYTES`]. Above it a frame and a window element still agree
+/// with each other — both are `EntryView::new` — but both diverge from
+/// `GET /log/:seq`, which serves the whole result. See the module docs; the two
+/// sides of the threshold are pinned below.
 #[test]
 fn log_frames_carry_seq_and_data_matching_the_log_bytes() {
     let entry = one_entry(user("hello"));
@@ -181,5 +188,63 @@ fn topic_wire_names_are_pinned() {
             "upstream_retry",
             "session_identity",
         ]
+    );
+}
+
+/// The relaxed pin, both sides. A frame's `data` is the window element for the same
+/// entry, threshold or no threshold — `Frame::log` and `log_json` call the same
+/// constructor — and the divergence is only ever against the entry route.
+#[test]
+fn a_log_frame_matches_the_window_and_defers_to_the_entry_route_when_oversized() {
+    let small = one_entry(Payload::ToolResult {
+        call_id: CallId("toolu_small".into()),
+        raw: RawResult {
+            content: "small".into(),
+            is_error: false,
+            images: Vec::new(),
+            content_elided: None,
+        },
+        wire: WireState::Raw,
+    });
+    let frame = Frame::log(&small);
+    assert_eq!(
+        frame.data.get(),
+        serde_json::to_string(&crate::daemon::entry_view::EntryView::new(&small)).unwrap(),
+        "the frame is the window element"
+    );
+    assert_eq!(
+        frame.data.get(),
+        serde_json::to_string(&crate::daemon::entry_view::EntryView::full(&small)).unwrap(),
+        "below the threshold the entry route is the same bytes"
+    );
+    assert!(!frame.data.get().contains("content_elided"));
+
+    let big = one_entry(Payload::ToolResult {
+        call_id: CallId("toolu_big".into()),
+        raw: RawResult {
+            content: "z".repeat(MAX_INLINE_RESULT_BYTES * 2),
+            is_error: false,
+            images: Vec::new(),
+            content_elided: None,
+        },
+        wire: WireState::Raw,
+    });
+    let frame = Frame::log(&big);
+    assert_eq!(
+        frame.data.get(),
+        serde_json::to_string(&crate::daemon::entry_view::EntryView::new(&big)).unwrap(),
+        "the frame is still the window element"
+    );
+    assert!(
+        frame.data.get().contains(&format!(
+            r#""content_elided":{{"kept_bytes":{MAX_INLINE_RESULT_BYTES},"total_bytes":{}}}"#,
+            MAX_INLINE_RESULT_BYTES * 2
+        )),
+        "the tag rides the frame in declaration order: {}",
+        &frame.data.get()[..200]
+    );
+    assert!(
+        frame.data.get().len() < serde_json::to_string(&big).unwrap().len(),
+        "and the whole result stayed off the stream"
     );
 }

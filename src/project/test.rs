@@ -50,6 +50,7 @@ fn sample_log() -> Vec<LogEntry> {
                     images: Vec::new(),
                     content: "file.txt".into(),
                     is_error: false,
+                    content_elided: None,
                 },
                 wire: WireState::Raw,
             },
@@ -260,6 +261,7 @@ fn imageless_raw_result_serialization_is_unchanged() {
         content: "file.txt".into(),
         is_error: false,
         images: Vec::new(),
+        content_elided: None,
     };
     assert_eq!(
         serde_json::to_string(&raw).unwrap(),

@@ -35,6 +35,7 @@ fn tool_result(call_id: &str) -> Payload {
             content: "ok".into(),
             is_error: false,
             images: vec![],
+            content_elided: None,
         },
         wire: crate::log::WireState::Raw,
     }

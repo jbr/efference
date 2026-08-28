@@ -300,8 +300,7 @@ impl ConnectedProvider {
             interrupt = abort => match interrupt {
                 Interrupt::Kill => RawResult { images: Vec::new(),
                     content: format!("`{}` call cancelled by the operator", call.name),
-                    is_error: true,
-                }
+                    is_error: true, content_elided: None,}
                 .into(),
                 Interrupt::Detach => call_future.await.into(),
             },
@@ -342,17 +341,20 @@ impl ConnectedProvider {
                         describe_input_required(&interim),
                     ),
                     is_error: true,
+                    content_elided: None,
                 },
                 Err(e) => RawResult {
                     images: Vec::new(),
                     content: format!("`{}` returned an unparseable tool result: {e}", self.name),
                     is_error: true,
+                    content_elided: None,
                 },
             },
             Err(e) => RawResult {
                 images: Vec::new(),
                 content: format!("`{}` call failed: {e}", self.name),
                 is_error: true,
+                content_elided: None,
             },
         }
     }
@@ -579,6 +581,7 @@ pub(crate) fn render_result(result: CallToolResult) -> RawResult {
         images,
         content: parts.join("\n\n"),
         is_error,
+        content_elided: None,
     }
 }
 

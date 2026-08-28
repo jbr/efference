@@ -7,6 +7,7 @@ pub(super) fn ok(content: String) -> RawResult {
         images: Vec::new(),
         content,
         is_error: false,
+        content_elided: None,
     }
 }
 
@@ -15,6 +16,7 @@ pub(super) fn err(content: String) -> RawResult {
         images: Vec::new(),
         content,
         is_error: true,
+        content_elided: None,
     }
 }
 
@@ -121,6 +123,7 @@ pub(super) fn unasked(call: &ToolCall) -> Payload {
                 call.name
             ),
             is_error: true,
+            content_elided: None,
         },
         wire: WireState::Raw,
     }
@@ -136,6 +139,7 @@ pub(super) fn aborted(call: &ToolCall) -> Payload {
             images: Vec::new(),
             content: "aborted by user".into(),
             is_error: true,
+            content_elided: None,
         },
         wire: WireState::Raw,
     }
@@ -174,6 +178,7 @@ pub(super) fn expansion_error(call: &ToolCall, message: &str) -> Payload {
             images: Vec::new(),
             content: format!("not run — {message}"),
             is_error: true,
+            content_elided: None,
         },
         wire: WireState::Raw,
     }
@@ -194,6 +199,7 @@ pub(super) fn rejected(call: &ToolCall) -> Payload {
             content: "Not run — the user replied instead of approving; see their next message."
                 .into(),
             is_error: true,
+            content_elided: None,
         },
         wire: WireState::Raw,
     }

@@ -540,6 +540,7 @@ fn state_reports_triage_retention() {
                         images: Vec::new(),
                         content,
                         is_error: false,
+                        content_elided: None,
                     },
                     wire,
                 },

@@ -178,6 +178,7 @@ impl ReadImage {
                 width: prepared.width,
                 height: prepared.height,
             }],
+            content_elided: None,
         }
     }
 }
@@ -249,6 +250,7 @@ fn error(content: impl Into<String>) -> RawResult {
         content: content.into(),
         is_error: true,
         images: Vec::new(),
+        content_elided: None,
     }
 }
 

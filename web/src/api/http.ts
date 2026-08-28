@@ -11,6 +11,7 @@ import type {
   LogEntry,
   Process,
   ReviewLevel,
+  Seq,
   StateSnapshot,
 } from "./types.ts";
 
@@ -64,6 +65,10 @@ export const del = <T>(path: string) => request<T>("DELETE", path);
 
 export const fetchState = () => get<StateSnapshot>("/v1/state");
 export const fetchLogTail = (n: number) => get<LogEntry[]>(`/v1/log?tail=${n}`);
+// One entry by seq — the dereference address for what the window and the stream
+// elide (a truncated result's `content`, docs/control-api.md). Immutable, so the
+// browser caches it and a second look costs nothing.
+export const fetchLogEntry = (seq: Seq) => get<LogEntry>(`/v1/log/${seq}`);
 export const submitTurn = (text: string, submissionId: string) =>
   post<{ status: string; submission_id: string }>("/v1/turns", {
     text,

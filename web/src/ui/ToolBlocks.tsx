@@ -13,9 +13,15 @@ import {
   partialInput,
   streamingLang,
 } from "../render/partial.ts";
-import { callView, resultRender, type ResultView } from "../render/parse.ts";
+import {
+  byteSize,
+  callView,
+  resultRender,
+  type ResultView,
+} from "../render/parse.ts";
 import { openablePaths } from "../session/touchedFiles.ts";
 import { useNarrow } from "./useNarrow.ts";
+import { useWholeResult } from "./wholeResult.ts";
 
 /** The call's header row: the accent prompt, the tool, its identifying
  * argument. One shape for committed and streaming calls, so a call does not
@@ -268,11 +274,20 @@ export function ResultBlock({
   raw: RawResult;
   wire: WireState;
 }) {
+  // An oversized result arrives truncated (docs/control-api.md); the whole one
+  // is one immutable fetch away, on demand rather than eagerly — most truncated
+  // results are scrolled past, and fetching them all would restore the head-of-
+  // line problem the elision removed.
+  const whole = useWholeResult(seq, raw);
+  const shown = whole.raw ?? raw;
   // The cordon parses the whole raw result — sentinel stripping, diff
   // classification, the kept-line filter. A store update re-renders every
   // entry, so without this a streamed token re-parses every result in the
   // session.
-  const view = useMemo(() => resultRender(tool, raw, wire), [tool, raw, wire]);
+  const view = useMemo(
+    () => resultRender(tool, shown, wire),
+    [tool, shown, wire],
+  );
   const narrow = useNarrow();
   const { body, hidden } = useMemo(
     () => truncateBody(view.body, tool, narrow),
@@ -284,6 +299,7 @@ export function ResultBlock({
   const parts = [
     view.stateWord,
     view.sizeLabel,
+    view.elisionLabel,
     view.isError ? "error" : null,
   ].filter((part) => part !== null);
   const label = parts.join(", ");
@@ -295,7 +311,7 @@ export function ResultBlock({
         {parts.length > 0 ? `result (${label})` : "result"}
       </div>
       <ResultBody body={body} />
-      {(raw.images ?? []).map((image, idx) => (
+      {(shown.images ?? []).map((image, idx) => (
         // The view carries only the reference (docs/control-api.md); the
         // bytes come from the image route, cookie-authed and
         // immutably-cached by the browser. width/height reserve layout
@@ -311,6 +327,24 @@ export function ResultBlock({
         />
       ))}
       {hidden > 0 && <MoreLines hidden={hidden} />}
+      {whole.elided !== undefined && (
+        // The affordance is the honest half of the marker in the head: the
+        // reader is looking at a prefix, and this is where the rest lives.
+        <div className="note">
+          <button
+            type="button"
+            className="linkish"
+            disabled={whole.state === "fetching"}
+            onClick={whole.fetchWhole}
+          >
+            {whole.state === "fetching"
+              ? "fetching the whole result…"
+              : whole.state === "failed"
+                ? "the whole result did not arrive — retry"
+                : `show the whole result (${byteSize(whole.elided.total_bytes)})`}
+          </button>
+        </div>
+      )}
       {view.note !== null && (
         // The distiller's note sits beside the result as its own annotation
         // row — that rung's account *of* the output, not something the tool

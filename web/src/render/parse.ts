@@ -154,7 +154,25 @@ export interface ResultRender {
   sizeLabel: string | null;
   /** The distiller's note; true of the output whichever form is shown. */
   note: string | null;
+  /** "16 KiB of 256 KiB shown" when the control channel truncated this
+   * result's `content` (docs/control-api.md), else null. Mirrors the marker
+   * `result_entry` puts in the TUI's result header, so a body that stops
+   * mid-output is never read as the whole of what the tool returned. */
+  elisionLabel: string | null;
   isError: boolean;
+}
+
+/** Mirrors `byte_size` (`src/tui/projection.rs`): bytes below a kibibyte,
+ * whole KiB above it. A gloss, not an accounting figure. */
+export const byteSize = (bytes: number) =>
+  bytes < 1024 ? `${bytes} B` : `${Math.floor(bytes / 1024)} KiB`;
+
+/** The elision marker for a result, from the tag the view carries — never
+ * from measuring `content`, which is only ever the prefix that arrived. */
+export function elisionLabel(raw: RawResult): string | null {
+  const elided = raw.content_elided;
+  if (elided === undefined) return null;
+  return `${byteSize(elided.kept_bytes)} of ${byteSize(elided.total_bytes)} shown`;
 }
 
 /** Mirrors `result_body`'s raw-state dispatch: a diff tool's `===DIFF===`
@@ -220,6 +238,7 @@ export function resultRender(
       stateWord: "raw",
       sizeLabel: null,
       note: null,
+      elisionLabel: elisionLabel(raw),
       isError: raw.is_error,
     };
   }
@@ -229,6 +248,7 @@ export function resultRender(
       stateWord: "elided",
       sizeLabel: null,
       note: null,
+      elisionLabel: null,
       isError: false,
     };
   }
@@ -246,6 +266,7 @@ export function resultRender(
         ? null
         : `kept ${kept.length} of ${total} line${total === 1 ? "" : "s"}`,
       note,
+      elisionLabel: elisionLabel(raw),
       isError: raw.is_error,
     };
   }
@@ -254,6 +275,7 @@ export function resultRender(
     stateWord: `triage failed: ${wire.TriageFailed.why}`,
     sizeLabel: null,
     note: null,
+    elisionLabel: null,
     isError: true,
   };
 }
@@ -316,7 +338,8 @@ export function callView(name: string, input: unknown): CallView {
     const path = str("path");
     if (path !== null) {
       const longEdge = typeof obj.long_edge === "number" ? obj.long_edge : null;
-      let summary = longEdge === null ? path : `${path} · long_edge ${longEdge}`;
+      let summary =
+        longEdge === null ? path : `${path} · long_edge ${longEdge}`;
       // A `region` says the call read part of the frame, which is the
       // difference between two reads of the same path.
       const region = obj.region;

@@ -218,6 +218,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                         images: Vec::new(),
                         content: "consolidated".into(),
                         is_error: false,
+                        content_elided: None,
                     },
                     wire: WireState::Raw,
                 },
@@ -245,11 +246,13 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                                  it exits."
                                 ),
                                 is_error: false,
+                                content_elided: None,
                             },
                             Err(e) => RawResult {
                                 images: Vec::new(),
                                 content: format!("failed to background: {e}"),
                                 is_error: true,
+                                content_elided: None,
                             },
                         }
                     }
@@ -257,6 +260,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                         images: Vec::new(),
                         content: "background bash requires a `command`".into(),
                         is_error: true,
+                        content_elided: None,
                     },
                 }
             } else if let Some(r) = supervisor_tool_result(shared, call) {
@@ -360,6 +364,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                             images: Vec::new(),
                             content,
                             is_error: false,
+                            content_elided: None,
                         }
                     }
                 }

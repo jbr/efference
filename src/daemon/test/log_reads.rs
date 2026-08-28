@@ -215,6 +215,7 @@ fn result_with_image() -> Payload {
                 width: 2,
                 height: 2,
             }],
+            content_elided: None,
         },
         wire: crate::log::WireState::Raw,
     }
@@ -275,4 +276,69 @@ async fn an_image_resolves_by_seq_and_index() {
     }
     app.get("/v1/log/x/images/0").await.assert_status(400);
     app.get("/v1/log/1/images/-1").await.assert_status(400);
+}
+
+/// The two sides of the result-size threshold, over the real routes
+/// (docs/control-api.md). The window elides an oversized result's `content` and tags
+/// what it cut; `GET /log/:seq` — the dereference address — serves it whole. A result
+/// under the threshold is byte-identical through both, which is the property the
+/// frame ≡ window pin now states (`frames.rs`).
+#[tokio::test]
+async fn an_oversized_result_is_elided_in_the_window_and_whole_by_seq() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let big = "z".repeat(crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES * 2);
+    let result = |call_id: &str, content: &str| Payload::ToolResult {
+        call_id: CallId(call_id.into()),
+        raw: crate::log::RawResult {
+            content: content.into(),
+            is_error: false,
+            images: Vec::new(),
+            content_elided: None,
+        },
+        wire: crate::log::WireState::Raw,
+    };
+    shared.append(1, result("toolu_small", "small")).unwrap();
+    shared.append(1, result("toolu_big", &big)).unwrap();
+    let app = test_server(&shared).await;
+
+    let window = app.get("/v1/log").await;
+    window.assert_ok();
+    let entries: Vec<Value> = serde_json::from_str(window.body()).unwrap();
+
+    let small = &entries[0]["payload"]["ToolResult"]["raw"];
+    assert_eq!(small["content"], "small");
+    assert!(
+        small.get("content_elided").is_none(),
+        "no tag on a result that fits: {small}"
+    );
+
+    let elided = &entries[1]["payload"]["ToolResult"]["raw"];
+    assert_eq!(
+        elided["content"].as_str().unwrap().len(),
+        crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES,
+        "the window carries the prefix"
+    );
+    assert_eq!(
+        elided["content_elided"]["kept_bytes"],
+        crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES
+    );
+    assert_eq!(elided["content_elided"]["total_bytes"], big.len());
+
+    // The same two entries by address: the small one identical, the big one whole.
+    let by_seq = app.get("/v1/log/0").await;
+    by_seq.assert_ok();
+    by_seq.assert_json_body_with(|entry: &Value| {
+        assert_eq!(*entry, entries[0], "below the threshold the routes agree");
+    });
+
+    let by_seq = app.get("/v1/log/1").await;
+    by_seq.assert_ok();
+    by_seq.assert_json_body_with(|entry: &Value| {
+        let raw = &entry["payload"]["ToolResult"]["raw"];
+        assert_eq!(raw["content"].as_str().unwrap().len(), big.len());
+        assert!(
+            raw.get("content_elided").is_none(),
+            "the whole result carries no elision tag"
+        );
+    });
 }

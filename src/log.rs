@@ -221,6 +221,17 @@ impl ToolCall {
 pub struct RawResult {
     pub content: String,
     pub is_error: bool,
+    /// Set **only by the control-channel entry view**, and only on the window and
+    /// frame copies of an oversized result: it says the `content` beside it is a
+    /// prefix, and how much of the whole string that prefix is
+    /// (`daemon/entry_view.rs`, docs/control-api.md). The mirror of
+    /// [`ResultImage::data`], which the same views omit — a Rust client parsing a
+    /// view with this shared type reads the elision as a value rather than
+    /// inferring it from a length. The log itself always writes `content` whole
+    /// and never writes this field, so it is `None` in every in-process result and
+    /// absent from every logged line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_elided: Option<ContentElision>,
     /// Images the tool returned alongside `content` (docs/log-and-projection.md).
     /// The realized bytes live here, in the log entry itself, so projection is a
     /// copy of stored data — never a re-read or re-encode of anything on disk.
@@ -229,6 +240,15 @@ pub struct RawResult {
     /// to before the field existed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<ResultImage>,
+}
+
+/// The tag on a `content` a control-channel view truncated: how many bytes the view
+/// carries, and how many the whole result holds. `GET /log/:seq` serves the rest
+/// (docs/control-api.md).
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ContentElision {
+    pub kept_bytes: usize,
+    pub total_bytes: usize,
 }
 
 /// One image in a [`RawResult`]: the exact bytes projected onto the wire, plus

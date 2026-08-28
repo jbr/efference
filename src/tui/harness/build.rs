@@ -158,6 +158,7 @@ impl Screenplay<'_> {
                 images: Vec::new(),
                 content: content.into(),
                 is_error,
+                content_elided: None,
             },
             wire,
         })
@@ -189,6 +190,7 @@ impl Screenplay<'_> {
                 images,
                 content: content.into(),
                 is_error: false,
+                content_elided: None,
             },
             wire: WireState::Raw,
         })

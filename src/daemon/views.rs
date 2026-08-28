@@ -261,13 +261,14 @@ impl Shared {
     }
 
     /// The selected window of the log, as a JSON array (docs/control-api.md). Each
-    /// element is the entry's [`EntryView`] — image `data` omitted, resolvable through
-    /// [`Self::image_bytes`].
+    /// element is the entry's [`EntryView::new`] — image `data` omitted, resolvable
+    /// through [`Self::image_bytes`], and an oversized result's `content` truncated and
+    /// tagged, resolvable through [`Self::entry_json`].
     pub(super) fn log_json(&self, select: &LogSelect) -> String {
         let log = self.log.lock().unwrap();
         let views: Vec<_> = window(log.entries(), select)
             .iter()
-            .map(EntryView)
+            .map(EntryView::new)
             .collect();
         serde_json::to_string(&views).unwrap_or_else(|_| "[]".into())
     }
@@ -281,7 +282,7 @@ impl Shared {
     pub(super) fn entry_json(&self, seq: u64) -> Option<String> {
         let log = self.log.lock().unwrap();
         let entry = log.entries().iter().find(|e| e.seq == seq)?;
-        serde_json::to_string(&EntryView(entry)).ok()
+        serde_json::to_string(&EntryView::full(entry)).ok()
     }
 
     /// The decoded bytes of one logged result image, addressed by its entry's `seq` and

@@ -164,6 +164,7 @@ fn distilled_projects_the_verdict_not_raw() {
                     images: Vec::new(),
                     content: "the gist line\nten thousand lines of output".into(),
                     is_error: false,
+                    content_elided: None,
                 },
                 wire: WireState::Distilled {
                     keep: Keep::Ranges(vec![(1, 1)]),
@@ -214,6 +215,7 @@ fn triage_failed_projects_an_error_never_the_raw() {
                     images: Vec::new(),
                     content: "ten thousand lines of output".into(),
                     is_error: false,
+                    content_elided: None,
                 },
                 wire: WireState::TriageFailed {
                     why: "peek called no tool (attempt 3 of 3)".into(),

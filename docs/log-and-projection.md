@@ -94,6 +94,13 @@ empty, so text-only results and pre-existing logs serialize byte-identically.
 (The log file and the wire both keep `data` inline; the control channel is the
 one surface that does not — its entry views omit it and serve the bytes at
 `GET /log/:seq/images/:idx` instead — see [control-api.md](control-api.md).)
+
+A fourth field, `content_elided: Option<ContentElision>`, is **written by
+nothing in the log**: it is the control channel's tag for a `content` its window
+and stream views truncated, carried on the shared type so a Rust client parses a
+view with the log's own types (the mirror of `ResultImage::data`, which those
+same views omit). Defaulted and skipped, so every logged line and every existing
+log is unchanged.
 On the wire, image placement is provider-conditional (`ImagePlacement`, chosen
 from the provider once at boot and fixed for the session — `project_with`
 takes it as its second input, so projection stays deterministic: same log +

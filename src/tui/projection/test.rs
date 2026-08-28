@@ -40,6 +40,7 @@ fn sample_log() -> Vec<LogEntry> {
                     images: Vec::new(),
                     content: "line one\nline two".into(),
                     is_error: false,
+                    content_elided: None,
                 },
                 wire: WireState::Raw,
             },
@@ -136,6 +137,7 @@ fn a_long_result_renders_whole() {
                     images: Vec::new(),
                     content: body.clone(),
                     is_error: false,
+                    content_elided: None,
                 },
                 wire: WireState::Raw,
             },
@@ -180,6 +182,7 @@ fn a_failed_result_is_marked_on_the_result_not_the_call() {
                     images: Vec::new(),
                     content: "boom".into(),
                     is_error: true,
+                    content_elided: None,
                 },
                 wire: WireState::Raw,
             },
@@ -233,6 +236,7 @@ fn distilled_wire_supersedes_raw() {
                     images: Vec::new(),
                     content: "RAW-NOISE\nthe kept line".into(),
                     is_error: false,
+                    content_elided: None,
                 },
                 wire: WireState::Distilled {
                     keep: Keep::Ranges(vec![(2, 2)]),
@@ -309,6 +313,7 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
                     images: Vec::new(),
                     content: "RAW-NOISE\nthe kept line".into(),
                     is_error: false,
+                    content_elided: None,
                 },
                 wire: WireState::Distilled {
                     keep: Keep::Ranges(vec![(2, 2)]),
@@ -490,4 +495,44 @@ fn collect_code(nodes: &[DocumentNode<'_>]) -> String {
         }
     }
     out
+}
+
+/// A result the control channel truncated says so in its header, so a body that
+/// stops mid-output is not read as the whole of what the tool returned
+/// (docs/control-api.md). The tag is the source — the TUI never measures the string
+/// itself, which is only ever the prefix it was sent.
+#[test]
+fn an_elided_result_names_the_elision_in_its_header() {
+    let mut log = sample_log();
+    let Payload::ToolResult { raw, .. } = &mut log[2].payload else {
+        panic!("the sample's third entry is the result");
+    };
+    raw.content = "x".repeat(16 * 1024);
+    raw.content_elided = Some(crate::log::ContentElision {
+        kept_bytes: 16 * 1024,
+        total_bytes: 256 * 1024,
+    });
+
+    let doc = project(
+        &log,
+        &LiveTail::default(),
+        &ViewState::default(),
+        Gate::default(),
+        &[],
+    );
+    let header = header_of(&doc, EntryKind::ToolResult);
+    assert!(
+        header.contains("16 KiB of 256 KiB shown"),
+        "the header names what was kept and what exists: {header}"
+    );
+
+    // A whole result carries no marker at all.
+    let plain = project(
+        &sample_log(),
+        &LiveTail::default(),
+        &ViewState::default(),
+        Gate::default(),
+        &[],
+    );
+    assert_eq!(header_of(&plain, EntryKind::ToolResult), "2 lines");
 }

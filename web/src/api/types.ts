@@ -52,9 +52,19 @@ export interface ToolCall {
 export interface RawResult {
   content: string;
   is_error: boolean;
+  /** Present only when `content` is a *prefix* (docs/control-api.md): the
+   * window and stream views truncate an oversized result past 16 KiB, and
+   * `GET /v1/log/{seq}` serves it whole. Absent means the content is whole —
+   * the presence of this field is the signal, never a length comparison. */
+  content_elided?: ContentElision;
   /** Image references (docs/control-api.md): the view omits the base64 `data`;
    * the bytes are at `GET /v1/log/{seq}/images/{idx}`. Absent when empty. */
   images?: ResultImage[];
+}
+
+export interface ContentElision {
+  kept_bytes: number;
+  total_bytes: number;
 }
 
 export interface ResultImage {
