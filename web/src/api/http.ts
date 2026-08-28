@@ -82,6 +82,13 @@ export const submitTurn = (text: string, submissionId: string) =>
     text,
     submission_id: submissionId,
   });
+// Withdraw the pending-queue suffix beginning at this submission (docs/control-api.md —
+// recall). The answer is authoritative: the loop may have dequeued the turn already, so
+// `withdrawn` can be shorter than the queue showed, or empty. A caller splices only this.
+export const withdrawTurns = (submissionId: string) =>
+  del<{ withdrawn: { submission_id: string; text: string }[] }>(
+    `/v1/turns/${encodeURIComponent(submissionId)}`,
+  );
 // The id is a precondition: a 409 gate_moved answer means that call is no
 // longer the pending gate, and `detail` carries the current one.
 export const resolveApproval = (callId: CallId, decision: Decision) =>

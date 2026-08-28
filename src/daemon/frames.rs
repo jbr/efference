@@ -96,6 +96,10 @@ pub(crate) enum Topic {
     ReviewLevel,
     /// Whether the loop is executing a turn.
     Running,
+    /// Turns submitted but not yet dequeued, in submission order — `[{submission_id, text}]`
+    /// (docs/control-channel.md). The clients' optimistic pending echo keys off it, and it is
+    /// what makes the queue addressable for a withdraw.
+    Queued,
     /// A trajectory that gave up rather than finished (docs/transport.md).
     /// `null` when the last one finished. Beside [`Running`](Self::Running)
     /// because it is what distinguishes the two idle conditions that flag
@@ -124,7 +128,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 14] = [
+    pub(crate) const ALL: [Topic; 15] = [
         Self::Gate,
         Self::Processes,
         Self::Usage,
@@ -134,6 +138,7 @@ impl Topic {
         Self::Pace,
         Self::ReviewLevel,
         Self::Running,
+        Self::Queued,
         Self::Stall,
         Self::UpstreamFailure,
         Self::UpstreamRetry,
@@ -160,6 +165,7 @@ impl Topic {
             Self::Pace => "pace",
             Self::ReviewLevel => "review_level",
             Self::Running => "running",
+            Self::Queued => "queued",
             Self::Stall => "stall",
             Self::UpstreamFailure => "upstream_failure",
             Self::UpstreamRetry => "upstream_retry",

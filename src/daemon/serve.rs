@@ -152,6 +152,25 @@ pub async fn serve<S: Spotter>(
         tokio::spawn(config_watch_loop(Arc::clone(&shared), config_path));
     }
 
+    // The attachment store (docs/inbox.md): the same fs-watch affordance, over
+    // `.efference/<id>/attachments/`. A file appearing there — pasted, dragged, moved in —
+    // becomes a notification naming what arrived; the bytes stay on disk until the model
+    // pulls them, so nothing here enters the log. The session dir is the socket's parent,
+    // by the same construction the usage log uses.
+    if let Some(session_dir) = socket.parent() {
+        let dir = crate::attachments::dir_for_session(session_dir);
+        let display = dir
+            .canonicalize()
+            .ok()
+            .and_then(|abs| {
+                std::env::current_dir()
+                    .ok()
+                    .and_then(|cwd| abs.strip_prefix(cwd).ok().map(std::path::Path::to_path_buf))
+            })
+            .unwrap_or_else(|| dir.clone());
+        tokio::spawn(attachments_watch_loop(Arc::clone(&shared), dir, display));
+    }
+
     // Trillium owns the signal registry: by default it registers SIGINT/SIGTERM and
     // drives graceful shutdown through its `Swansong`. But the future `serve` awaits
     // is `agent::run`, which parks in `read_user_turn` on the turn channel — whose

@@ -98,6 +98,27 @@ export function SessionView() {
   // not a mode worth persisting.
   const narrow = useNarrow();
   const [chromeOpen, setChromeOpen] = useState(false);
+  // What a recall handed back, for the composer to prepend (docs/web-client.md). The
+  // counter is the trigger: recalling the same text twice must still splice twice, and
+  // the composer owns its draft, so the splice has to be an event rather than a value.
+  const [recalled, setRecalled] = useState<{
+    text: string;
+    nonce: number;
+  } | null>(null);
+  // Only what the daemon reports it actually popped reaches the composer — a turn the
+  // loop already dequeued comes back as an empty list and the draft is left alone.
+  const onRecall = useCallback(
+    (id: string) => {
+      void actions.recallTurn(id).then((texts) => {
+        if (texts.length === 0) return;
+        setRecalled((prev) => ({
+          text: texts.join("\n"),
+          nonce: (prev?.nonce ?? 0) + 1,
+        }));
+      });
+    },
+    [actions],
+  );
 
   // One open request: the path, the call that asked (which is where the edit's
   // anchor comes from — session/editAnchor.ts), and a key that changes even
@@ -176,6 +197,7 @@ export function SessionView() {
         nodes={nodes}
         streaming={session.streaming}
         pending={session.pendingTurns}
+        onRecall={onRecall}
         onInspect={onInspect}
         onOpenFile={onOpenFile}
       />
@@ -242,6 +264,7 @@ export function SessionView() {
         />
         <Composer
           submit={actions.submitTurn}
+          recalled={recalled}
           pace={session.topics.pace ?? null}
           reviewLevel={session.topics.review_level ?? null}
           running={session.topics.running ?? false}

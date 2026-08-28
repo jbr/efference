@@ -112,6 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             slot,
             replaces,
         } => notify(client_socket()?, source, body.join(" "), slot, replaces).await,
+        Command::Image { seq, idx, out } => image(client_socket()?, seq, idx, out).await,
         Command::Dismiss { id } => dismiss(client_socket()?, id).await,
         Command::State => state(client_socket()?).await,
         Command::Log { since } => log(client_socket()?, since).await,

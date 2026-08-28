@@ -121,7 +121,7 @@ fn a_running_or_gated_loop_declines() {
         shared.request_continue().unwrap_err().message(),
         "the loop is already running — there is nothing to hand back"
     );
-    shared.dequeued_turn();
+    shared.claim_turn("sub-test", true);
     assert!(shared.request_continue().is_err(), "mid-turn declines");
 
     let call = bash_call("ls");

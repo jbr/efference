@@ -27,6 +27,53 @@ as it would any other ambient event.
 `DELETE /notifications/:id` clears a pending notification out-of-band, before it
 is ever shown — it is archived in the ephemeral queue and never reaches the log.
 
+## Attachments — an arrival on disk is a notification
+
+The attachment store is a **plain directory**, `.efference/<id>/attachments/`, beside
+`config.toml` (`src/attachments.rs`, `src/daemon/attachments.rs`). A file appearing there —
+pasted, dragged in, `mv`d, downloaded — is an attachment, whatever put it there. The daemon
+runs a debounced `notify` watcher over the directory (the same machinery `config.toml` uses,
+see [permissions.md](permissions.md)); each newly-arrived file is inspected and enqueued as an
+ordinary `Notification` on the rail above. Files already present at boot are recorded as seen
+and not re-announced.
+
+**Nothing enters the log at arrival.** The bytes stay on disk; only the small notice rides
+along, so a 50 KB paste never pins 50 KB into every subsequent turn's cached prefix
+([log-and-projection.md](log-and-projection.md)). The model pulls what it wants with the tools
+it already has — `read`/`search` for text, `read_image` for an image — and the bytes then enter
+as an ordinary tool result, `Elidable` like any other. Because the store is only an ingestion
+surface, nothing deterministic depends on it: a realized image is base64'd into its log entry at
+pull time, so rearranging this directory can neither move committed wire bytes nor cold the
+cache.
+
+The notice states **what arrived and where**, and nothing about what to do with it. The harness
+takes no stance on disposition: the user attached the file and the user can say what that
+means, so there is no eager-read default baked in and no ask-first one either. Per-type triage
+signals, chosen to be enough to decide *whether* to pull without re-deriving the content:
+
+```
+attachment at .efference/work/attachments/paste-1756345.txt
+text · 51.2 KB · 1204 lines · looks like JSON
+first line: {"model":"claude-opus-4","messages":[
+```
+
+- **text** — byte size, line count, a coarse sniffed shape (JSON / a diff / a stack trace /
+  log output / prose), and the first non-blank line.
+- **image** — format, pixel dimensions, byte size.
+- **neither** — byte size alone.
+
+The field set is prototype-first and tunable; the shapes are pinned by test, the heuristics
+that produce them are not. The `slot` is the file's path, so a second arrival at the same name
+supersedes the first notice rather than stacking a second one for the same bytes.
+
+**Paste is a write to that directory.** The TUI composer inlines a paste of up to a dozen
+lines and stores anything longer, and stores any clipboard image (re-encoded as PNG); the
+watcher then describes it exactly as it describes a drag-in, so there is one path rather than
+two ([tui.md](tui.md)). A colliding name is suffixed (`paste-2.txt`), never overwritten — an
+attachment the model may not have read yet is not something a later arrival gets to replace.
+The web client has no local filesystem to write to, so its paste routing waits on a daemon
+upload endpoint (`backlog/attachments-remote.md`).
+
 ## Event-sourced, logged at first-show
 
 A notification is appended to the log as a `Payload::Ambient` entry the moment a fork

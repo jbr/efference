@@ -568,8 +568,17 @@ arrive outside the fold, and both are handled: the entry's log frame can fold
 independently of writing the response), so the push skips itself when the
 entry with its id already folded; and a re-seed (`seed`) settles pending
 turns against the entries it absorbs, since those never pass through
-`applyLog`. (The TUI settles its echoes by content match instead — sound
-there because its push is optimistic, ordered before any possible arrival.)
+`applyLog`. (The TUI mints and keys the same way.)
+
+Each echo carries a **recall** affordance: `DELETE /turns/:submission_id`
+withdraws the pending-queue suffix beginning at that turn and answers with what
+it actually popped (docs/control-api.md). Nothing was ever logged, so there is
+nothing to retract. The action drops only the echoes the daemon reported
+popping, and hands the texts to the composer, which prepends them to the draft
+already there joined with a newline — via a `{text, nonce}` prop, because the
+composer owns its draft and recalling the same text twice is two events rather
+than one value. An empty answer is the lost race — the loop dequeued the turn
+first — and the draft is left alone.
 
 **The live-output peek.** A running tool's streamed output shows as the last
 10 lines, dimmed, under a `⋯ running · N lines` header — a glance at a live

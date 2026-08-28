@@ -153,6 +153,11 @@ pub(crate) enum TuiEvent {
     /// Rendered in the status line and nowhere else: it is operator chrome, never
     /// transcript content.
     Notice(String),
+    /// A recall came back: the turns the daemon **actually** withdrew, in submission order
+    /// (docs/tui.md). The list can be shorter than what was asked for — or empty, when the loop
+    /// dequeued the turn first — because the server's answer is authoritative; the composer
+    /// splices exactly this and nothing else.
+    Recalled(Vec<crate::client::WithdrawnTurn>),
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
 }

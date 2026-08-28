@@ -157,8 +157,17 @@ resolve its own.
   things that can wait and might not matter. `--slot <name>` supersedes an earlier
   notification on the same channel rather than stacking.
 
+- **Drop a file into `.efference/<id>/attachments/`** — an attachment. The bytes stay on disk;
+  the session is told what arrived (type, size, shape) and reads it, or not, on the terms of
+  whatever you asked for ([inbox.md](inbox.md)). Prefer this to pasting a large blob into a
+  turn: pasted bytes ride in the cached prefix for the rest of the session, an attachment's
+  do not.
+
 The asymmetry is deliberate: a user turn is canonical and cannot be dismissed by the model;
 a notification can. Say it as a turn when it must land.
+
+**`efference image <seq> [idx]`** writes a logged result image back out as a file — the same
+bytes the model was sent, not a re-render of a source file that may since have changed.
 
 `--wait` on `turn` and `approve`, and the standalone `efference settle`, block until the
 daemon reaches a decision point and print the resulting state — which is how a script or an

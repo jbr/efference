@@ -12,6 +12,12 @@ pub struct Frontmatter {
     pub description: Option<String>,
     /// Explicit mode override: `inline: true` forces a described file to inline anyway.
     pub inline: Option<bool>,
+    /// Every top-level scalar key in the block, verbatim and unparsed — including the three named
+    /// above. These are the columns a group's `sort` override addresses (docs/context.md): a file
+    /// is a row, its frontmatter keys are that row's fields, and the sort decides typing per column
+    /// (numeric when every present value parses as a number, else lexical). Nested structures are
+    /// consumed, never flattened into here, so a `metadata:` map contributes no columns.
+    pub fields: std::collections::BTreeMap<String, String>,
 }
 
 /// A file split into its optional frontmatter and its body (everything after the frontmatter block,
@@ -145,9 +151,12 @@ pub(super) fn close_block_scalar(fm: &mut Frontmatter, block: BlockScalar) {
     set_frontmatter_key(fm, &block.key, &value);
 }
 
-/// Assign one frontmatter value to the key it names. Unknown keys are ignored; an unrecognized
-/// `inline` value leaves the flag unset.
+/// Assign one frontmatter value to the key it names. Every key — known or not — is also recorded
+/// verbatim in [`Frontmatter::fields`], which is what a group's `sort` override reads as columns
+/// (docs/context.md). A repeated key keeps the last occurrence, matching the typed slots below.
+/// An unrecognized `inline` value leaves the flag unset (but is still recorded as a field).
 pub(super) fn set_frontmatter_key(fm: &mut Frontmatter, key: &str, value: &str) {
+    fm.fields.insert(key.to_string(), value.to_string());
     match key {
         "name" => fm.name = Some(value.to_string()),
         "description" => fm.description = Some(value.to_string()),
@@ -190,12 +199,17 @@ impl Split<'_> {
     }
 }
 
-/// The display name a listed file falls back to when its frontmatter omits `name`: the file's
-/// basename without extension (`docs/verify.md` → `verify`), or the whole basename when it has no
-/// stem, or `"context"` for a pathological path.
+/// The display name a file falls back to when its frontmatter omits `name`: the **full basename**,
+/// extension included (`docs/verify.md` → `verify.md`, `CLAUDE.md` → `CLAUDE.md`), or `"context"`
+/// for a path with no final component.
+///
+/// The extension is kept because the name is also the render's tag (`<CLAUDE.md>…`,
+/// docs/context.md) and a tag that names a real file the model can `read` is one the stem would
+/// have hidden. Files whose frontmatter carries a `name` — skills — are unaffected. Changing this
+/// moves the rendered preamble bytes, so it moves the cached prefix for any session whose config
+/// lists a nameless file: the render pin is updated deliberately alongside it.
 pub fn fallback_name(path: &Path) -> String {
-    path.file_stem()
-        .or_else(|| path.file_name())
+    path.file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "context".to_string())
 }

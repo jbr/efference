@@ -62,7 +62,7 @@ fn exclude_prunes_files_and_subtrees_unread() {
         .collect();
     assert_eq!(
         names,
-        vec!["keep", "keep2"],
+        vec!["keep.md", "keep2.md"],
         "index and archive pruned: {names:?}"
     );
 
@@ -99,7 +99,7 @@ fn resolve_bare_inline_file_uses_the_basename() {
             heading: None,
             description: None,
             items: vec![Item::Inline {
-                name: "CLAUDE".into(),
+                name: "CLAUDE.md".into(),
                 path: "CLAUDE.md".into(),
                 body: "# efference\nbody\n".into(),
             }],
@@ -302,3 +302,4 @@ fn resolve_unterminated_frontmatter_fails_closed() {
 mod exec;
 mod frontmatter;
 mod render;
+mod sort;

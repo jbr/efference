@@ -95,11 +95,12 @@ fieldwork = "0.5.3"
 thiserror = "2"
 unicode-width = "0.2.2"
 unicode-segmentation = "1.13"
-# System text clipboard for the interactive TUI. The adapter in `src/tui/clipboard.rs`
+# System clipboard for the interactive TUI. The adapter in `src/tui/clipboard.rs`
 # keeps OS access and its in-process fallback outside the deterministic composer.
-# Text only: the default `image-data` feature would pull the image/tiff/zune-jpeg
-# stack for clipboard bitmaps nothing here reads or writes.
-arboard = { version = "3.6.1", default-features = false }
+# `image-data` is on because a pasted screenshot is an attachment (docs/inbox.md):
+# the clipboard's raw RGBA is re-encoded as a PNG into the store. It costs the
+# image/tiff/zune-jpeg stack, most of which `image` (below) already pulls in.
+arboard = { version = "3.6.1", default-features = false, features = ["image-data"] }
 yash-syntax = "=0.14.1"
 # Config (docs/permissions.md): the file is TOML, decoded via `toml_edit`'s
 # serde layer and edited in place via its format-preserving `DocumentMut` — the same crate both

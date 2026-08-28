@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type { CallId, Decision } from "../api/types.ts";
-import { resolveGate, submitTurn } from "./actions.ts";
+import { recallTurn, resolveGate, submitTurn } from "./actions.ts";
 import { connect, type Connector } from "./connect.ts";
 import { ProcessSeeder } from "./processSeed.ts";
 import { Store, type Session } from "./store.ts";
@@ -18,6 +18,9 @@ import { Store, type Session } from "./store.ts";
 export interface SessionActions {
   resolveGate(callId: CallId, decision: Decision): Promise<"applied" | "moved">;
   submitTurn(text: string): Promise<void>;
+  /** Withdraw the pending suffix from this submission; resolves with the texts
+   * actually popped, for the composer to splice. */
+  recallTurn(id: string): Promise<string[]>;
 }
 
 export function useSession(): {
@@ -76,6 +79,7 @@ export function useSession(): {
     () => ({
       resolveGate: (callId, decision) => resolveGate(store, callId, decision),
       submitTurn: (text) => submitTurn(store, text),
+      recallTurn: (id) => recallTurn(store, id),
     }),
     [store],
   );

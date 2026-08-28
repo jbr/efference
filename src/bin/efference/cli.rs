@@ -424,6 +424,19 @@ pub(crate) enum Command {
         #[arg(long)]
         replaces: Option<u64>,
     },
+    /// Write a logged result image back out as a file (`GET /log/{seq}/images/{idx}`,
+    /// docs/control-api.md) — the human-audit answer to "what did the model actually see".
+    Image {
+        /// The `seq` of the log entry whose result carried the image.
+        seq: u64,
+        /// Which image on that result, when it carried several (default 0).
+        #[arg(default_value_t = 0)]
+        idx: usize,
+        /// Where to write the bytes. Defaults to `image-<seq>-<idx>.<ext>` in the cwd, the
+        /// extension taken from what the daemon says the bytes are.
+        #[arg(long, short)]
+        out: Option<PathBuf>,
+    },
     /// Dismiss a pending notification by id (`POST /notifications/{id}/dismiss`, docs/inbox.md).
     Dismiss {
         /// The notification id (from `notify`'s output or `state`).

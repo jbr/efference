@@ -42,9 +42,32 @@ impl Screenplay<'_> {
         self
     }
 
-    /// A committed user turn (markdown prose).
+    /// A committed user turn (markdown prose), carrying no submission id — the shape of a turn
+    /// submitted by some other client.
     pub(crate) fn user(&mut self, text: &str) -> &mut Self {
         self.commit(Payload::User(vec![ContentBlock::Text(text.into())]))
+    }
+
+    /// The daemon committing the **oldest pending echo**: a `User` entry carrying that
+    /// submission's id, which is what settles the echo (docs/tui.md — the echo is keyed by
+    /// `submission_id`, never by text). Panics when nothing is pending, since the scenario then
+    /// means something other than what it says.
+    pub(crate) fn commit_pending(&mut self) -> &mut Self {
+        let pending = self
+            .state
+            .pending_turns
+            .first()
+            .cloned()
+            .expect("a pending turn to commit");
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        self.event(TuiEvent::Entry(LogEntry {
+            seq,
+            turn: 1,
+            at: Timestamp(0),
+            submission_id: Some(pending.submission_id),
+            payload: Payload::User(vec![ContentBlock::Text(pending.text)]),
+        }))
     }
 
     /// A committed assistant turn: markdown prose plus zero or more tool calls.

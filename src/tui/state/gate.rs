@@ -44,13 +44,20 @@ impl<'a> InteractiveState<'a> {
             return;
         }
 
-        if self.submit_tx.send(text.clone()).is_ok() {
+        // Mint the submission id here (docs/tui.md): the echo below and any later recall both
+        // address this exact submission, which text equality could not do once a recalled turn
+        // can be edited and re-sent.
+        let submitted = crate::frontend::SubmittedTurn {
+            text,
+            submission_id: crate::daemon::mint_submission_id(),
+        };
+        if self.submit_tx.send(submitted.clone()).is_ok() {
             // Echo the message immediately as a pending transcript unit
             // (docs/tui.md): it's handed to the daemon but not yet a
             // committed `User` entry, so it renders dimmed until its log entry streams back
             // via `/events`. Reproject now so the echo appears on this keypress rather than
             // waiting for the next daemon event.
-            self.pending_turns.push(text);
+            self.pending_turns.push(submitted);
             self.composer.clear();
             self.ui.debug_message = "sent".into();
             // Follow the new turn as it streams in.
@@ -74,6 +81,62 @@ impl<'a> InteractiveState<'a> {
             self.ui.debug_message = "could not send (daemon gone?)".into();
         }
         self.dirty = true;
+    }
+
+    /// Pull the most recent queued-but-unsent turn back into the composer (docs/tui.md — the
+    /// recall gesture). Nothing has been sent to the model yet: a pending turn sits in the
+    /// daemon's queue, unlogged and unprojected, so this is ordinary ephemeral control state.
+    ///
+    /// The request is a **suffix pop** addressed by submission id — asking for an older turn
+    /// takes it and everything after it — and the composer is spliced only when the daemon
+    /// answers with what it actually popped ([`apply_recall`](Self::apply_recall)).
+    pub(in crate::tui) fn recall_pending_turn(&mut self) {
+        let Some(last) = self.pending_turns.last() else {
+            self.ui.debug_message = "nothing queued to recall".into();
+            self.dirty = true;
+            return;
+        };
+        if self.recall_tx.send(last.submission_id.clone()).is_err() {
+            self.ui.debug_message = "could not send (daemon gone?)".into();
+        }
+        self.dirty = true;
+    }
+
+    /// Splice the turns a recall actually withdrew into the composer, in submission order, ahead
+    /// of whatever draft is already there — joined with a newline, since adjacent pending turns
+    /// are separate blocks on the wire and popping several into one buffer has to invent a join.
+    /// The buffer is the uncommitted tail, so nothing here touches the log or the cached prefix.
+    ///
+    /// An empty list is the lost race: the loop dequeued the turn between the keypress and the
+    /// withdraw. Nothing is spliced and the status line says so — the echo stays until its `User`
+    /// entry settles it.
+    pub(in crate::tui) fn apply_recall(&mut self, withdrawn: Vec<crate::client::WithdrawnTurn>) {
+        if withdrawn.is_empty() {
+            self.ui.debug_message = "already sent — nothing recalled".into();
+            self.dirty = true;
+            return;
+        }
+        for turn in &withdrawn {
+            self.pending_turns
+                .retain(|p| p.submission_id != turn.submission_id);
+        }
+        let mut buffer = withdrawn
+            .iter()
+            .map(|t| t.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let draft = self.composer.text().to_string();
+        if !draft.is_empty() {
+            buffer.push('\n');
+            buffer.push_str(&draft);
+        }
+        self.composer.set_text(&buffer);
+        self.ui.debug_message = if withdrawn.len() == 1 {
+            "recalled".into()
+        } else {
+            format!("recalled {}", withdrawn.len()).into()
+        };
+        self.mark_reproject();
     }
 
     /// Handle a composer submission. When a gate is pending, the text resolves it

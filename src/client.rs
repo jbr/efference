@@ -70,6 +70,19 @@ impl Client {
         self.post("/turns", body).await
     }
 
+    /// Withdraw the pending-queue suffix beginning at `submission_id`
+    /// (`DELETE /turns/{submission_id}`, docs/control-api.md) and return what was
+    /// **actually** popped, in submission order. The loop may have dequeued the turn first, so
+    /// this can return fewer turns than the queue showed — possibly none. That is the contract:
+    /// a caller splicing the popped text into a composer splices only this, never a turn already
+    /// on its way to the model.
+    pub async fn withdraw_turns(&self, submission_id: &str) -> Result<Vec<WithdrawnTurn>> {
+        let body = self.delete(&format!("/turns/{submission_id}")).await?;
+        let parsed: WithdrawResponse = serde_json::from_str(&body)
+            .with_context(|| format!("parsing the withdraw response: {body}"))?;
+        Ok(parsed.withdrawn)
+    }
+
     /// Submit a turn and **block until the daemon settles** (`POST /turns?wait`) — the turn
     /// reaches a gate or completes — returning the resulting `/state` JSON. Collapses
     /// "act → poll `/state` in a loop → read" into one round-trip
@@ -476,6 +489,19 @@ impl Client {
             .with_context(|| format!("GET {path} from the control socket"))?;
         read_2xx(conn, "GET", path).await
     }
+}
+
+/// One turn a `DELETE /turns/:submission_id` actually popped (docs/control-api.md) — the text a
+/// client splices back into its composer, with the id it was submitted under.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
+pub struct WithdrawnTurn {
+    pub submission_id: String,
+    pub text: String,
+}
+
+#[derive(serde::Deserialize)]
+struct WithdrawResponse {
+    withdrawn: Vec<WithdrawnTurn>,
 }
 
 /// What a `POST /loop/continue` came back with (docs/control-api.md). A decline

@@ -104,6 +104,23 @@ decoupled from inference.
   gate or completes), then return the `/state` snapshot (`200`) instead of `202`.
 - `400 bad_request` — unparseable body, or a `submission_id` outside 1–128 bytes
 
+#### `DELETE /turns/:submission_id`
+**Recall** — withdraw the pending-queue **suffix** beginning at this submission,
+returning what it actually popped. Nothing was ever logged (a pending turn sits
+in the daemon's queue, unprojected), so there is nothing to retract; a draft is
+not history.
+
+A suffix rather than an arbitrary delete: recalling an older queued turn means
+"pop up to and including that one", which is identical to popping repeatedly, so
+queue order is preserved for free and there is exactly one operation.
+
+- `200 {"withdrawn":[{"submission_id":"…","text":"…"}, …]}` — in submission
+  order. The response is **authoritative**: the loop may have dequeued the turn
+  between the read and this call, in which case fewer turns come back — possibly
+  none, which is an ordinary race outcome and not an error. A client splicing the
+  text back into a composer splices exactly this list, so a turn already on its
+  way to the model is never handed back as a draft.
+
 #### `PUT /approvals/:call_id`
 Resolve the pending approval gate, addressed by the tool call's `tool_use` id
 (`call_id`). The id is a **precondition**, not a lookup: the decision applies
@@ -344,6 +361,10 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "unpriced": 0                         // requests the fetch couldn't price (total is an undercount if > 0)
     }
   },
+  "queued": [                      // turns submitted but not yet dequeued, in submission order
+    { "submission_id": "…",        //   `[]` when nothing is pending. Ephemeral — a pending
+      "text": "…" }                //   turn is never logged, so this is the only place it is
+  ],                               //   readable, and what `DELETE /turns/:id` addresses
   "stall": {                       // null unless the last trajectory gave up (transport.md)
     "reason": "retries_exhausted", // "retries_exhausted" | "request_failed"
     "attempts": 12,                // attempts spent, where the path counts them; else null

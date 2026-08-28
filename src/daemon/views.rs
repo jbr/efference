@@ -26,6 +26,7 @@ impl Shared {
             Topic::Pace => self.pace_json(),
             Topic::ReviewLevel => self.review_level_json(),
             Topic::Running => self.running_json(),
+            Topic::Queued => self.queued_json(),
             Topic::Stall => self.stall_json(),
             Topic::UpstreamFailure => self.upstream_failure_json(),
             Topic::UpstreamRetry => self.upstream_retry_json(),
@@ -184,6 +185,19 @@ impl Shared {
     /// long-running tool, so Esc can still reach it.
     fn running_json(&self) -> Value {
         Value::from(self.running.load(Ordering::SeqCst))
+    }
+
+    /// The pending turn queue in submission order: `[{"submission_id":…,"text":…}]`, `[]` when
+    /// nothing is queued (docs/control-api.md). A pending turn is ephemeral control state — never
+    /// logged, never projected — so this is the only place it is readable, and it is what a
+    /// client's optimistic echo and its recall affordance both address.
+    fn queued_json(&self) -> Value {
+        Value::Array(
+            self.queued_turns()
+                .into_iter()
+                .map(|t| serde_json::json!({ "submission_id": t.submission_id, "text": t.text }))
+                .collect(),
+        )
     }
 
     /// A trajectory that gave up (docs/transport.md): why, how many attempts it

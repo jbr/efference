@@ -4,8 +4,8 @@
 
 import { afterEach, expect, test, vi } from "vitest";
 import { ApiError } from "../api/http.ts";
-import { resolveGate } from "./actions.ts";
-import { Store } from "./store.ts";
+import { recallTurn, resolveGate } from "./actions.ts";
+import { pushPendingTurn, Store } from "./store.ts";
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status });
@@ -69,4 +69,31 @@ test("other errors rethrow as ApiError", async () => {
   await expect(
     resolveGate(store, "a", { decision: "approve" }),
   ).rejects.toBeInstanceOf(ApiError);
+});
+
+test("recall drops only the echoes the daemon reports popping", async () => {
+  const store = new Store();
+  store.update((s) => pushPendingTurn(s, "a", "one"));
+  store.update((s) => pushPendingTurn(s, "b", "two"));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      json(200, {
+        withdrawn: [{ submission_id: "b", text: "two" }],
+      }),
+    ),
+  );
+  expect(await recallTurn(store, "b")).toEqual(["two"]);
+  expect(store.snapshot().pendingTurns.map((p) => p.id)).toEqual(["a"]);
+});
+
+test("a recall that popped nothing leaves the queue alone", async () => {
+  const store = new Store();
+  store.update((s) => pushPendingTurn(s, "a", "one"));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(json(200, { withdrawn: [] })),
+  );
+  expect(await recallTurn(store, "a")).toEqual([]);
+  expect(store.snapshot().pendingTurns.map((p) => p.id)).toEqual(["a"]);
 });

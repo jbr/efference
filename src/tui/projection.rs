@@ -9,6 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::frontend::SubmittedTurn;
 use crate::log::{ContentBlock, LogEntry, MarkKind, Payload, RawResult, ToolCall, WireState};
 use crate::tui::document::{
     DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, ListItem, Span, SpanStyle,
@@ -41,7 +42,7 @@ pub(crate) fn project(
     live: &LiveTail,
     view: &ViewState,
     gate: Gate<'_>,
-    pending_turns: &[String],
+    pending_turns: &[SubmittedTurn],
 ) -> Document<'static> {
     let mut index = CallIndex::default();
     for (idx, entry) in log.iter().enumerate() {
@@ -264,7 +265,7 @@ pub(crate) fn entry_nodes(
 pub(crate) fn tail_nodes(
     live: &LiveTail,
     view: &ViewState,
-    pending_turns: &[String],
+    pending_turns: &[SubmittedTurn],
 ) -> Vec<DocumentNode<'static>> {
     let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
 
@@ -296,8 +297,8 @@ pub(crate) fn tail_nodes(
     }
 
     // Optimistic echoes of just-submitted turns, last of all (docs/tui.md).
-    for text in pending_turns {
-        nodes.push(pending_turn(text));
+    for turn in pending_turns {
+        nodes.push(pending_turn(&turn.text));
     }
 
     nodes

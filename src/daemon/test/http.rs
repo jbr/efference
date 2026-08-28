@@ -79,6 +79,39 @@ async fn turn_submission_ids_adopt_or_mint() {
     assert!(turns_rx.try_recv().is_err(), "rejected turn never queued");
 }
 
+/// Recall over the wire (docs/control-api.md): `DELETE /turns/:submission_id` pops the suffix
+/// and answers with what it actually popped, the `queued` state topic reflects the remainder,
+/// and an id the loop already consumed pops nothing rather than erroring.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn withdraw_turns_pops_a_suffix_and_reports_what_it_popped() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let client = test_client(&shared).await;
+
+    client.turn_with_submission_id("one", "s1").await.unwrap();
+    client.turn_with_submission_id("two", "s2").await.unwrap();
+    client.turn_with_submission_id("three", "s3").await.unwrap();
+
+    let state = client.state().await.unwrap();
+    assert!(
+        state.contains(r#""queued":[{"submission_id":"s1","text":"one"}"#),
+        "the queue is readable in /state: {state}"
+    );
+
+    let popped = client.withdraw_turns("s2").await.unwrap();
+    assert_eq!(
+        popped.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
+        ["two", "three"]
+    );
+    let state = client.state().await.unwrap();
+    assert!(
+        state.contains(r#""queued":[{"submission_id":"s1","text":"one"}]"#),
+        "the suffix is gone: {state}"
+    );
+
+    // The lost race: nothing left under that id — an empty pop, not an error.
+    assert!(client.withdraw_turns("s2").await.unwrap().is_empty());
+}
+
 /// A `config_edit` decision body decodes into its change, the wire shape the orchestrator
 /// posts to upgrade a gate (docs/permissions.md). A `lifetime` from an older
 /// client is ignored rather than rejected — every committed change is written to the file now,

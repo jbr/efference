@@ -48,7 +48,7 @@ directory expands to every `.md` file **recursively** beneath it — which is wh
 Claude-Code-style skills tree (`skills/<name>/SKILL.md`, one directory per skill) land as
 one listing per skill — skipping hidden children, following symlinks with a cycle guard
 (a symlinked skill collection is a real layout), default order `name asc` by display path
-(the SQL-ish `sort` override is parsed but not yet applied). Validation fails closed on
+(the SQL-ish `sort` override below reorders it). Validation fails closed on
 the nonsense shapes (`false` entries, group-only keys on a bare path, `exec` mixed with
 files).
 
@@ -65,6 +65,32 @@ where the fix must not require restructuring a directory the harness doesn't own
 e.g. for a memory store whose files are read by path with the `read` tool. It renders as a
 `<description>` child element inside the group wrapper, before the file listing. It has no
 meaning to the harness; the model decides what to do with it.
+
+## `sort` — a group's files are rows
+
+`sort = "<field> [asc|desc]"`, comma-separated, reorders a labeled group's files
+(`src/context/sort.rs`). Each file is a **row**; its columns are its top-level frontmatter
+keys plus two built-ins, `name` (the file's frontmatter `name`, else its basename) and
+`modified` (its mtime). A frontmatter key of the same name wins over the built-in.
+
+- **Typing is per column, over the whole group.** If every row that has a value for the
+  column parses as a number, the column compares numerically; one non-numeric value makes
+  the whole column lexical. Nothing is declared — the data decides.
+- **Missing sorts last, in both directions** (NULLS LAST): direction reorders the rows that
+  have a value; it does not promote the ones that don't.
+- **An implicit final `name asc`** breaks ties, then the display path, so the order is total
+  and the resolved listing is reproducible.
+- A spec that isn't `<field> [asc|desc]` **fails the load closed** — a misspelled sort
+  quietly reverting to the default would be an order the operator did not write.
+
+Sort order is a pure semantic choice, never a stability constraint: the preamble is read
+once at boot and the resolved order is frozen into the `Payload::Preamble` snapshot, so
+changing a `sort` can only affect the next session's prefix.
+
+The frontmatter parser stays the minimal one (`src/context/frontmatter.rs`) and keeps
+every top-level scalar key verbatim as a string column. A full YAML engine would buy typed
+values these semantics don't ask for — the numeric/lexical call is made from the strings,
+per column — so the dependency waits for a need that nested keys or real YAML types create.
 
 ## Mode is the file's call; grants are the operator's
 
@@ -95,7 +121,9 @@ a memory store: descriptions are the index, `read` is recall, a write is a save,
 
 `context::Resolved::render` renders each file as a `<name>…</name>` tag — the operator's
 label (when a labeled entry resolves to one file), else the frontmatter `name`, else the
-basename — and wraps a multi-file group in a verbatim `<Heading>` tag. When the group
+**full basename**, extension included (`<CLAUDE.md>`, not `<CLAUDE>`: the tag then names a
+file the model can `read`) — and wraps a multi-file group in a verbatim `<Heading>` tag.
+When the group
 carries a `description`, it renders as a `<description>…</description>` child element
 before the file listing. Inlined bodies ride verbatim inside their tag, so a body's own
 `#`/`---`/``` cannot blur a boundary. The
@@ -199,6 +227,5 @@ unknown fields, so a renamed key fails there), every tool name a document declar
 
 ## Deferred
 
-Live mid-session discovery of context files (`backlog/live-context-update.md`), and
-globs + the `sort` override + the fallback-tag-name call
-(`backlog/context-globs-and-sort.md`).
+Live mid-session discovery of context files (`backlog/live-context-update.md`) and glob
+paths (`backlog/context-globs.md`).

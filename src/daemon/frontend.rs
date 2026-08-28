@@ -16,27 +16,29 @@ impl Frontend for RemoteFrontend {
     async fn read_user_turn(&mut self) -> Option<SubmittedTurn> {
         // Mark the loop parked so `/settle` reports idle while we wait (and wake any waiter).
         self.shared.parking();
-        // Blocks until a `POST /turns` arrives. `None` (all senders dropped) only
-        // happens once the daemon is tearing down, which ends the loop cleanly.
-        let turn = self.turns.recv().await;
-        if turn.is_some() {
-            // Back to busy: mark running and consume the queued count.
-            self.shared.dequeued_turn();
+        loop {
+            // Blocks until a `POST /turns` arrives. `None` (all senders dropped) only
+            // happens once the daemon is tearing down, which ends the loop cleanly.
+            let turn = self.turns.recv().await?;
+            // The channel cannot be searched, so a withdrawn turn still surfaces here; the
+            // pending queue is the authority (docs/control-channel.md). An unclaimed turn was
+            // recalled while in flight — drop it and keep waiting, still parked.
+            if self.shared.claim_turn(&turn.submission_id, true) {
+                return Some(turn);
+            }
         }
-        turn
     }
 
     fn drain_injected_turns(&mut self) -> Vec<SubmittedTurn> {
         // Non-blocking pull of everything queued right now (docs/control-channel.md).
-        // Each drained turn consumes its `queued` count — the loop is already running, so we
-        // only balance the counter (never touch `running`), or `/settle` would read "busy"
-        // forever after the trajectory ends. Blank turns are dropped (still counted): a
-        // mid-trajectory empty submit mirrors the idle path's blank-keep-idling, never landing
-        // an empty `User` entry on the wire.
+        // Each drained turn is claimed off the pending queue — the loop is already running, so
+        // `running` is left alone (unlike the idle path), or `/settle` would read "busy" forever
+        // after the trajectory ends. A turn withdrawn while in flight fails the claim and is
+        // dropped. Blank turns are dropped (still claimed): a mid-trajectory empty submit mirrors
+        // the idle path's blank-keep-idling, never landing an empty `User` entry on the wire.
         let mut turns = Vec::new();
         while let Ok(turn) = self.turns.try_recv() {
-            self.shared.injected_turn_dequeued();
-            if !turn.text.trim().is_empty() {
+            if self.shared.claim_turn(&turn.submission_id, false) && !turn.text.trim().is_empty() {
                 turns.push(turn);
             }
         }

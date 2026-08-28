@@ -5,9 +5,15 @@ import {
   ApiError,
   resolveApproval,
   submitTurn as postTurn,
+  withdrawTurns,
 } from "../api/http.ts";
 import type { CallId, Decision, Gate } from "../api/types.ts";
-import { applyFrame, pushPendingTurn, type Store } from "./store.ts";
+import {
+  applyFrame,
+  pushPendingTurn,
+  removePendingTurns,
+  type Store,
+} from "./store.ts";
 
 /**
  * Submit a turn and queue its delivery echo. The queue push happens after the
@@ -23,6 +29,27 @@ export async function submitTurn(store: Store, text: string): Promise<void> {
   const id = crypto.randomUUID();
   await postTurn(text, id);
   store.update((s) => pushPendingTurn(s, id, text));
+}
+
+/**
+ * Recall a queued-but-unsent turn (docs/web-client.md): withdraw the pending-queue
+ * suffix beginning at `id` and return the texts the daemon **actually** popped, in
+ * submission order, for the composer to splice.
+ *
+ * Nothing was ever logged — a pending turn sits in the daemon's queue, unprojected —
+ * so there is nothing to retract, and the echoes are dropped only for the ids that
+ * came back. An empty result is the lost race (the loop dequeued it first); the caller
+ * leaves its draft alone.
+ */
+export async function recallTurn(store: Store, id: string): Promise<string[]> {
+  const { withdrawn } = await withdrawTurns(id);
+  store.update((s) =>
+    removePendingTurns(
+      s,
+      withdrawn.map((t) => t.submission_id),
+    ),
+  );
+  return withdrawn.map((t) => t.text);
 }
 
 /**

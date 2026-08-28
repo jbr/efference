@@ -18,10 +18,10 @@ pub(super) struct Pace {
 
 impl Shared {
     pub(super) fn submit_turn(&self, turn: SubmittedTurn) {
-        // Count the turn as queued *before* sending, so `is_settled` reads "busy" the instant
+        // Record the turn as queued *before* sending, so `is_settled` reads "busy" the instant
         // the turn is accepted — even before the loop dequeues it (the `/settle` submit race,
         // docs/permissions.md).
-        self.queued.fetch_add(1, Ordering::SeqCst);
+        self.queue.lock().unwrap().push_back(turn.clone());
         // Submit ⇒ resume, always (docs/control-channel.md): drop any hold and wake an
         // in-flight juncture sleep so the message is delivered at the next juncture *immediately*, not
         // after the remaining paced delay. The retained `speed` is untouched (it recolors later
@@ -34,6 +34,65 @@ impl Shared {
         // The receiver lives in the loop's `RemoteFrontend`; a send fails only if
         // the loop has exited, in which case the daemon is shutting down anyway.
         let _ = self.turns_tx.send(turn);
+        self.touch_state();
+    }
+
+    /// The pending queue, in submission order — the `queued` state topic's source and the
+    /// TUI/web pending echo's authority (docs/control-channel.md).
+    pub(super) fn queued_turns(&self) -> Vec<SubmittedTurn> {
+        self.queue.lock().unwrap().iter().cloned().collect()
+    }
+
+    /// Withdraw the **suffix** of the pending queue beginning at `submission_id`, returning what
+    /// was actually popped, in submission order (docs/control-api.md — `DELETE /turns/:id`).
+    ///
+    /// A suffix, not an arbitrary delete: recalling an older turn means "pop up to and including
+    /// that one", which is identical to popping repeatedly, so queue order is preserved for free
+    /// and there is exactly one operation. The return value is what makes the race benign — the
+    /// loop may have dequeued the turn already, in which case this pops fewer turns than asked
+    /// (possibly none) and the client splices only what came back, never a message already sent.
+    ///
+    /// Nothing is logged: a pending turn was never appended, so a withdrawal has nothing to
+    /// retract. A draft is not history.
+    pub(super) fn withdraw_turns(&self, submission_id: &str) -> Vec<SubmittedTurn> {
+        let popped: Vec<SubmittedTurn> = {
+            let mut q = self.queue.lock().unwrap();
+            match q.iter().position(|t| t.submission_id == submission_id) {
+                Some(pos) => q.split_off(pos).into_iter().collect(),
+                None => Vec::new(),
+            }
+        };
+        if !popped.is_empty() {
+            // Emptying the queue while the loop is parked makes the daemon settled, and the
+            // `/settle` long-poll is edge-triggered on this.
+            self.settle_changed.notify_waiters();
+            self.touch_state();
+        }
+        popped
+    }
+
+    /// Claim a turn the loop just received off the channel: `true` when it is still pending (and
+    /// it is removed from the queue), `false` when it was withdrawn while in flight — the caller
+    /// then drops it unappended. `running` is set **before** the removal so [`is_settled`] never
+    /// sees an empty queue and a not-running loop while a turn is in flight.
+    ///
+    /// [`is_settled`]: Shared::is_settled
+    pub(super) fn claim_turn(&self, submission_id: &str, mark_running: bool) -> bool {
+        let claimed = {
+            let mut q = self.queue.lock().unwrap();
+            match q.iter().position(|t| t.submission_id == submission_id) {
+                Some(pos) => {
+                    if mark_running {
+                        self.running.store(true, Ordering::SeqCst);
+                    }
+                    q.remove(pos);
+                    true
+                }
+                None => false,
+            }
+        };
+        self.touch_state();
+        claimed
     }
 
     /// The current pace `(speed, held)` — surfaced on `GET /state` and read by the juncture sleep.
@@ -86,7 +145,7 @@ impl Shared {
         tokio::pin!(interrupt);
         interrupt.as_mut().enable(); // register before reading state, so a racing wake isn't lost
         // A submitted turn always wins — deliver it now rather than pacing over it.
-        if self.queued.load(Ordering::SeqCst) > 0 {
+        if !self.queue.lock().unwrap().is_empty() {
             return;
         }
         let (speed, held) = self.pace_snapshot();
@@ -103,31 +162,12 @@ impl Shared {
         // Not held, no delay → proceed at once.
     }
 
-    /// The loop dequeued a turn: mark running, then consume the queued count — `running` set
-    /// *before* the decrement so [`is_settled`] never sees both clear while a turn is in flight.
-    ///
-    /// [`is_settled`]: Shared::is_settled
-    pub(super) fn dequeued_turn(&self) {
-        self.running.store(true, Ordering::SeqCst);
-        self.queued.fetch_sub(1, Ordering::SeqCst);
-    }
-
-    /// A turn was drained mid-trajectory at the injection juncture
-    /// (docs/control-channel.md): consume its `queued` count so `/settle` can
-    /// still settle once the trajectory ends, but leave `running` alone — the loop is already
-    /// running, so unlike [`dequeued_turn`] there's no busy edge to guard. Mirrors only the
-    /// queued-count half of the dequeue.
-    ///
-    /// [`dequeued_turn`]: Shared::dequeued_turn
-    pub(super) fn injected_turn_dequeued(&self) {
-        self.queued.fetch_sub(1, Ordering::SeqCst);
-    }
-
     /// The loop is parking (about to await the next user turn): mark not-running and wake any
-    /// `/settle` waiter. If a turn is already queued, `recv` resolves at once and [`dequeued_turn`]
-    /// re-sets running, so a transient `running == false` with `queued > 0` still reads as busy.
+    /// `/settle` waiter. If a turn is already queued, `recv` resolves at once and [`claim_turn`]
+    /// re-sets running, so a transient `running == false` with a non-empty queue still reads as
+    /// busy.
     ///
-    /// [`dequeued_turn`]: Shared::dequeued_turn
+    /// [`claim_turn`]: Shared::claim_turn
     pub(super) fn parking(&self) {
         self.running.store(false, Ordering::SeqCst);
         self.settle_changed.notify_waiters();
@@ -139,7 +179,7 @@ impl Shared {
     pub(super) fn is_settled(&self) -> bool {
         self.pending.lock().unwrap().is_some()
             || (!self.running.load(Ordering::SeqCst)
-                && self.queued.load(Ordering::SeqCst) == 0
+                && self.queue.lock().unwrap().is_empty()
                 // An accepted `POST /loop/continue` (docs/control-api.md) is a turn
                 // about to run, exactly as a queued submission is.
                 && !self.continue_pending())

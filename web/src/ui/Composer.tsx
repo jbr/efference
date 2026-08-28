@@ -29,6 +29,7 @@ const LEVELS: ReviewLevel[] = ["autonomous", "spotter_human", "human_only"];
 
 export function Composer({
   submit: send,
+  recalled,
   pace,
   reviewLevel,
   running,
@@ -38,6 +39,10 @@ export function Composer({
   onReveal,
 }: {
   submit: (text: string) => Promise<void>;
+  /** Text a recall pulled back out of the daemon's queue, to prepend to the draft
+   * (docs/web-client.md). `nonce` is what makes a repeat splice — recalling the same
+   * text twice is two events, not one value. */
+  recalled: { text: string; nonce: number } | null;
   pace: Pace | null;
   reviewLevel: ReviewLevel | null;
   running: boolean;
@@ -66,6 +71,21 @@ export function Composer({
   useEffect(() => {
     if (narrow && expanded) field.current?.focus();
   }, [narrow, expanded]);
+  // Splice a recall in ahead of whatever is already drafted, joined with a newline —
+  // adjacent pending turns are separate blocks on the wire, so popping several into one
+  // buffer has to invent a join (docs/web-client.md). Keyed on the nonce so recalling
+  // the same text twice splices twice; the draft is uncommitted, so nothing here touches
+  // the log or the cached prefix.
+  const spliced = useRef<number | null>(null);
+  useEffect(() => {
+    if (!recalled || spliced.current === recalled.nonce) return;
+    spliced.current = recalled.nonce;
+    setDraft((current) =>
+      current ? `${recalled.text}\n${current}` : recalled.text,
+    );
+    setExpanded(true);
+    field.current?.focus();
+  }, [recalled]);
   const act = (call: Promise<unknown>) =>
     void call.then(() => setError(null)).catch((e) => setError(`${e}`));
 

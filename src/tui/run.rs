@@ -7,6 +7,9 @@ pub async fn run(
     theme: Option<String>,
     images: ImageMode,
     frame_cost: bool,
+    // This session's attachment store (docs/inbox.md) — where a paste past the inline
+    // threshold is written. `None` disables the routing and pastes inline as before.
+    attachments_dir: Option<std::path::PathBuf>,
 ) -> Result<()> {
     use crate::frontend::Approval;
 
@@ -15,7 +18,9 @@ pub async fn run(
     let theme = resolve_theme(theme)?;
 
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
-    let (submit_tx, mut submit_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (submit_tx, mut submit_rx) =
+        tokio::sync::mpsc::unbounded_channel::<crate::frontend::SubmittedTurn>();
+    let (recall_tx, mut recall_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let (continue_tx, mut continue_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     let (approve_tx, mut approve_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Approval)>();
     let (pace_tx, mut pace_rx) = tokio::sync::mpsc::unbounded_channel::<PaceCmd>();
@@ -36,8 +41,28 @@ pub async fn run(
     // Turn sender: each composer submission is POSTed as a user turn (M2 write path).
     let turn_client = client.clone();
     let sender = tokio::spawn(async move {
-        while let Some(text) = submit_rx.recv().await {
-            let _ = turn_client.turn(&text).await;
+        while let Some(turn) = submit_rx.recv().await {
+            let _ = turn_client
+                .turn_with_submission_id(&turn.text, &turn.submission_id)
+                .await;
+        }
+    });
+
+    // Recall dispatcher (docs/tui.md): withdraw the pending-queue suffix from a submission id
+    // and send home what the daemon *actually* popped. Like the continue sender this one answers
+    // back, and the answer is the whole point — the composer splices the server's list, so a turn
+    // the loop already dequeued is never handed back as if it were still a draft.
+    let recall_client = client.clone();
+    let recall_events = tx.clone();
+    let recaller = tokio::spawn(async move {
+        while let Some(submission_id) = recall_rx.recv().await {
+            let event = match recall_client.withdraw_turns(&submission_id).await {
+                Ok(withdrawn) => TuiEvent::Recalled(withdrawn),
+                Err(e) => TuiEvent::Notice(format!("recall failed: {e}")),
+            };
+            if recall_events.send(event).is_err() {
+                break; // UI thread gone.
+            }
         }
     });
 
@@ -144,6 +169,7 @@ pub async fn run(
     let ui = tokio::task::spawn_blocking(move || {
         let senders = Senders {
             submit: submit_tx,
+            recall: recall_tx,
             continue_loop: continue_tx,
             approve: approve_tx,
             pace: pace_tx,
@@ -151,12 +177,21 @@ pub async fn run(
             sidebar: sidebar_tx,
             images: images_tx,
         };
-        ui_loop(rx, senders, theme, images, None, frame_cost)
+        ui_loop(
+            rx,
+            senders,
+            theme,
+            images,
+            None,
+            frame_cost,
+            attachments_dir,
+        )
     });
 
     let result = ui.await.context("the TUI thread panicked")?;
     bridge.abort();
     sender.abort();
+    recaller.abort();
     continuer.abort();
     approver.abort();
     pacer.abort();
@@ -210,7 +245,9 @@ async fn run_offline(
     let theme = resolve_theme(theme)?;
 
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
-    let (submit_tx, submit_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (submit_tx, submit_rx) =
+        tokio::sync::mpsc::unbounded_channel::<crate::frontend::SubmittedTurn>();
+    let (recall_tx, recall_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let (continue_tx, continue_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     let (approve_tx, approve_rx) =
         tokio::sync::mpsc::unbounded_channel::<(String, crate::frontend::Approval)>();
@@ -238,6 +275,7 @@ async fn run_offline(
     let ui = tokio::task::spawn_blocking(move || {
         let senders = Senders {
             submit: submit_tx,
+            recall: recall_tx,
             continue_loop: continue_tx,
             approve: approve_tx,
             pace: pace_tx,
@@ -245,7 +283,7 @@ async fn run_offline(
             sidebar: sidebar_tx,
             images: images_tx,
         };
-        ui_loop(rx, senders, theme, images, viewing, frame_cost)
+        ui_loop(rx, senders, theme, images, viewing, frame_cost, None)
     });
     let result = ui.await.context("the TUI thread panicked")?;
 
@@ -256,6 +294,7 @@ async fn run_offline(
     // Hold the far-ends until the UI exits, so the channels stay open for its life.
     drop(tx);
     drop(submit_rx);
+    drop(recall_rx);
     drop(continue_rx);
     drop(approve_rx);
     drop(pace_rx);

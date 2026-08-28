@@ -376,13 +376,31 @@ function StreamingTail({ streaming }: { streaming: Streaming }) {
 /** The submitted turns the daemon accepted but has not put on the wire —
  * dimmed, `⋯`-marked echoes after the live tail, re-rendered as committed
  * turns when the matching `User` entry streams back (`session/store.ts`). */
-function PendingTurns({ pending }: { pending: PendingTurn[] }) {
+function PendingTurns({
+  pending,
+  onRecall,
+}: {
+  pending: PendingTurn[];
+  onRecall: (id: string) => void;
+}) {
   return (
     <>
       {pending.map((turn) => (
         <Entry key={`pending:${turn.id}`} label="you" as="user pending">
           <Markdown>{turn.text}</Markdown>
-          <div className="pending-mark">⋯ pending</div>
+          <div className="pending-mark">
+            ⋯ pending
+            {/* Recall is a suffix pop: this turn and every one queued after it
+             * come back to the composer together (docs/web-client.md). */}
+            <button
+              type="button"
+              className="linkish"
+              title="pull this turn (and any queued after it) back into the composer"
+              onClick={() => onRecall(turn.id)}
+            >
+              recall
+            </button>
+          </div>
         </Entry>
       ))}
     </>
@@ -393,6 +411,7 @@ export function Transcript({
   nodes,
   streaming,
   pending,
+  onRecall,
   onInspect,
   onOpenFile,
 }: {
@@ -400,6 +419,7 @@ export function Transcript({
   nodes: TranscriptNode[];
   streaming: Streaming;
   pending: PendingTurn[];
+  onRecall: (id: string) => void;
   onInspect: (callId: CallId) => void;
   onOpenFile: (path: string, callId: CallId) => void;
 }) {
@@ -426,7 +446,7 @@ export function Transcript({
         ),
       )}
       <StreamingTail streaming={streaming} />
-      <PendingTurns pending={pending} />
+      <PendingTurns pending={pending} onRecall={onRecall} />
     </div>
   );
 }

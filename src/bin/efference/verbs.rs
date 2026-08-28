@@ -171,7 +171,18 @@ pub(crate) async fn tui(
     images: efference::tui::ImageMode,
     frame_cost: bool,
 ) -> CliResult {
-    efference::tui::run(ControlClient::new(socket), theme, images, frame_cost).await?;
+    // The attachment store lives beside the socket in the session dir (docs/inbox.md), so a
+    // paste past the inline threshold has somewhere local to land. A socket with no parent
+    // leaves the TUI storeless and pasting inline.
+    let attachments = socket.parent().map(efference::attachments::dir_for_session);
+    efference::tui::run(
+        ControlClient::new(socket),
+        theme,
+        images,
+        frame_cost,
+        attachments,
+    )
+    .await?;
     Ok(())
 }
 
@@ -308,6 +319,30 @@ pub(crate) async fn background(socket: PathBuf, note: Option<String>) -> CliResu
         }
         None => println!("no foreground tool running; nothing to background"),
     }
+    Ok(())
+}
+
+/// Write one logged result image back out as a file (docs/control-api.md). A thin consumer of
+/// `GET /log/:seq/images/:idx`: the daemon holds the bytes base64'd on the entry and hands them
+/// over decoded, so this is the audit path for "what did the model actually see" — the same
+/// bytes the model was sent, not a re-render of the source file, which may since have changed.
+pub(crate) async fn image(
+    socket: PathBuf,
+    seq: u64,
+    idx: usize,
+    out: Option<PathBuf>,
+) -> CliResult {
+    let bytes = ControlClient::new(socket).log_image(seq, idx).await?;
+    // The extension comes from the bytes rather than from a media type the client would have to
+    // re-request: the image was realized into one of a handful of encodings, and guessing wrong
+    // here would name a file that no viewer opens.
+    let extension = image::guess_format(&bytes)
+        .ok()
+        .and_then(|f| f.extensions_str().first().copied())
+        .unwrap_or("bin");
+    let path = out.unwrap_or_else(|| PathBuf::from(format!("image-{seq}-{idx}.{extension}")));
+    std::fs::write(&path, &bytes)?;
+    println!("wrote {} ({} bytes)", path.display(), bytes.len());
     Ok(())
 }
 

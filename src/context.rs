@@ -145,6 +145,9 @@ pub enum ResolveError {
     /// An `exec` section's command failed — couldn't spawn, exited non-zero, timed out, or
     /// produced non-UTF-8 stdout. The detail says which.
     Exec { command: String, detail: String },
+    /// A group's `sort` override isn't `<field> [asc|desc]`, comma-separated. Fails closed rather
+    /// than falling back to the default order (docs/context.md).
+    Sort(SortSpecError),
 }
 
 impl std::fmt::Display for ResolveError {
@@ -159,6 +162,7 @@ impl std::fmt::Display for ResolveError {
             ResolveError::Exec { command, detail } => {
                 write!(f, "context exec `{command}`: {detail}")
             }
+            ResolveError::Sort(e) => write!(f, "context sort override: {e}"),
         }
     }
 }
@@ -173,8 +177,9 @@ impl std::error::Error for ResolveError {}
 /// Tag-name precedence: the operator's label (when a labeled entry resolves to a *single* file) →
 /// the file's frontmatter `name` (skills-compat) → the basename. A labeled entry with *many* files
 /// becomes a `<Heading>` group whose members are named individually; a bare entry never gets a
-/// wrapper. Directory paths expand to their `.md` children, sorted name-ascending (the default; the
-/// SQL-ish `sort` override and globs are later increments).
+/// wrapper. Directory paths expand to their `.md` children, sorted name-ascending; a group's
+/// SQL-ish `sort` override then reorders the whole entry ([`sort`]). (Globs are a later increment;
+/// a `*` path just won't stat and fails closed.)
 ///
 /// An `exec` entry runs its command **here, once at boot** ([`run_exec`]) — its stdout is the
 /// section body, frozen and snapshotted like everything else (docs/context.md). It
@@ -239,6 +244,10 @@ pub fn resolve_with_child_env(
         // otherwise the label is a group wrapper and members are named individually.
         let labeled_single = entry.heading.is_some() && files.len() == 1;
         let mut items = Vec::new();
+        // Rows parallel to `items`, carrying the columns a `sort` override addresses. Built
+        // unconditionally (they cost one `metadata` call each) so the sort branch below is a pure
+        // reordering of what was already read.
+        let mut rows: Vec<sort::Row> = Vec::new();
         for (display, full) in &files {
             let text =
                 std::fs::read_to_string(full).map_err(|e| ResolveError::Io(full.clone(), e))?;
@@ -257,6 +266,27 @@ pub fn resolve_with_child_env(
                     .and_then(|fm| fm.name.clone())
                     .unwrap_or_else(|| basename.clone())
             };
+            rows.push(sort::Row {
+                // The sort's `name` column is the file's own name — its frontmatter `name`, else
+                // its basename — never the operator's collapsed label, which is a property of the
+                // entry rather than of the row.
+                name: split
+                    .frontmatter
+                    .as_ref()
+                    .and_then(|fm| fm.name.clone())
+                    .unwrap_or_else(|| basename.clone()),
+                display: display.clone(),
+                modified: std::fs::metadata(full)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs_f64()),
+                fields: split
+                    .frontmatter
+                    .as_ref()
+                    .map(|fm| fm.fields.clone())
+                    .unwrap_or_default(),
+            });
             items.push(match split.mode(&basename) {
                 Mode::Inline => Item::Inline {
                     name,
@@ -272,6 +302,12 @@ pub fn resolve_with_child_env(
         }
         if items.is_empty() {
             continue;
+        }
+        // The override replaces the default order (`name asc` by display path for a directory
+        // expansion, written order for an explicit list) for this entry only.
+        if let Some(spec) = &entry.sort {
+            let keys = sort::parse(spec).map_err(ResolveError::Sort)?;
+            sort::apply(&mut items, &mut rows, &keys);
         }
         let heading =
             (entry.heading.is_some() && !labeled_single).then(|| entry.heading.clone().unwrap());
@@ -441,7 +477,9 @@ fn run_exec(
 mod test;
 
 mod frontmatter;
+pub mod sort;
 
 pub use frontmatter::{
     Frontmatter, Mode, Split, UnterminatedFrontmatter, fallback_name, split_frontmatter,
 };
+pub use sort::SortSpecError;

@@ -15,7 +15,7 @@ use std::time::Instant;
 use super::control_strip::{StripItem, StripVerb};
 use super::theme::InteractiveTheme;
 use super::utils::{find_node_at_path_mut, supports_cursor_shape};
-use crate::frontend::{Approval, Interrupt};
+use crate::frontend::{Approval, Interrupt, SubmittedTurn};
 use crate::log::{LogEntry, Payload};
 use crate::tui::clipboard::TextClipboard;
 use crate::tui::composer::Composer;
@@ -491,20 +491,35 @@ pub(super) struct InteractiveState<'a> {
     /// each frame — what a click resolves against, ahead of the whole-header
     /// expand action underneath it.
     pub block_menu_hits: Vec<(Rect, usize)>,
-    /// Sends a submitted turn to the tokio side, which `POST`s it to the daemon.
-    pub submit_tx: UnboundedSender<String>,
+    /// Sends a submitted turn to the tokio side, which `POST`s it to the daemon. The
+    /// **submission id is minted here**, so the echo below and a later recall both address the
+    /// exact submission rather than its text (docs/tui.md).
+    pub submit_tx: UnboundedSender<SubmittedTurn>,
+    /// Asks the tokio side to withdraw the pending-queue suffix beginning at this submission id
+    /// (`DELETE /turns/:id`, docs/control-api.md). What actually came back arrives as a
+    /// [`TuiEvent::Recalled`] — the server's answer is authoritative, so a turn the loop already
+    /// took is never spliced back into the composer.
+    pub recall_tx: UnboundedSender<String>,
     /// Fires the zero-token continue (`POST /loop/continue`, docs/control-api.md) —
     /// the empty-composer `⏎` when it is the operator's turn. Carries no payload
     /// because the verb carries none: nothing is submitted and nothing is appended.
     /// A decline comes back as a [`TuiEvent::Notice`] for the status line.
     pub continue_tx: UnboundedSender<()>,
+    /// This session's attachment store — `.efference/<id>/attachments/`, or `None` for a run
+    /// with no session behind it (the gallery, a read-only view). A paste past the inline
+    /// threshold is written here and described by the daemon's watcher (docs/inbox.md); the TUI
+    /// never announces an attachment itself, so paste and drag-in are one path.
+    pub attachments_dir: Option<std::path::PathBuf>,
     /// Optimistic echoes of just-submitted user turns, in submission order, not yet
     /// confirmed by a committed `User` log entry (docs/tui.md).
-    /// `project` renders them dimmed after the live tail; each is dropped when its
-    /// matching `User` entry arrives via `/events` (content match on this ordered
-    /// queue). The delivery indicator: a message never vanishes into the void while a
-    /// trajectory runs, and the pending→committed flip *is* "now on the wire."
-    pub pending_turns: Vec<String>,
+    /// `project` renders them dimmed after the live tail; each is dropped when the `User` entry
+    /// carrying its `submission_id` arrives via `/events`. The delivery indicator: a message never
+    /// vanishes into the void while a trajectory runs, and the pending→committed flip *is* "now on
+    /// the wire."
+    ///
+    /// Keyed by `submission_id`, not by text: recall hands a queued turn back to be edited and
+    /// re-sent, at which point a content match would settle the wrong echo.
+    pub pending_turns: Vec<SubmittedTurn>,
     /// The pending tool-approval gate, if any (polled from `GET /state`, M3).
     pub pending_gate: Option<PendingGate>,
     /// Sends an approval decision (`call_id`, decision) to the tokio side, which

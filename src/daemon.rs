@@ -21,7 +21,7 @@ use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -227,10 +227,15 @@ pub struct Shared {
     /// ([`Shared::is_settled`], docs/permissions.md). The loop owns it:
     /// set true when it dequeues a turn, false when it parks.
     running: AtomicBool,
-    /// Turns submitted (`POST /turns`) but not yet dequeued by the loop — the submit→dequeue
-    /// handoff counter that closes the cross-task race in [`Shared::is_settled`] (a turn exists
-    /// even in the instant before the loop marks itself `running`).
-    queued: AtomicUsize,
+    /// Turns submitted (`POST /turns`) but not yet dequeued by the loop, in submission order —
+    /// the **authority** on what is pending, mirroring what was pushed into `turns_tx`. It closes
+    /// the cross-task race in [`Shared::is_settled`] (a turn exists even in the instant before the
+    /// loop marks itself `running`), it is what `GET /state`'s `queued` topic reads, and it is
+    /// what a withdraw removes from (docs/control-channel.md). Because the channel cannot be
+    /// searched, the loop **claims** each received turn against this queue and drops one that is
+    /// no longer here — that is how a withdrawn turn is never appended. A pending turn is
+    /// ephemeral: it is not in the log, so withdrawing one leaves no trace to retract.
+    queue: Mutex<std::collections::VecDeque<SubmittedTurn>>,
     /// Pinged whenever the daemon may have reached a **settled** state — a gate appeared
     /// ([`register_pending`]) or the loop parked ([`parking`]). The `/settle` long-poll waits on it.
     ///
@@ -543,7 +548,7 @@ impl Shared {
             detach_note: Mutex::new(None),
             appended: Notify::new(),
             running: AtomicBool::new(false),
-            queued: AtomicUsize::new(0),
+            queue: Mutex::new(std::collections::VecDeque::new()),
             settle_changed: Notify::new(),
             continue_pending: AtomicBool::new(false),
             continue_signal: Notify::new(),
@@ -859,6 +864,7 @@ pub const SESSION_BASE: &str = ".efference";
 pub const SOCKET_NAME: &str = "control.sock";
 
 mod approvals;
+mod attachments;
 mod background;
 mod config_edits;
 mod continuation;
@@ -901,6 +907,8 @@ use pace::Pace;
 use stream::{Include, control_stream};
 use topics::{StateUpdate, watch_topics};
 
+use attachments::attachments_watch_loop;
+pub use http::mint_submission_id;
 use http::{LogSelect, router};
 pub use keepalive::DEFAULT_KEEPALIVE_INTERVAL;
 use keepalive::keepalive_loop;

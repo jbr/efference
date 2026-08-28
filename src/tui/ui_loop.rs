@@ -11,7 +11,10 @@ use std::io::Write;
 /// state. The tokio side turns each into its control-channel call; an offline run
 /// (the gallery, a read-only view) holds the far-ends so a send can't error.
 pub(super) struct Senders {
-    pub submit: tokio::sync::mpsc::UnboundedSender<String>,
+    pub submit: tokio::sync::mpsc::UnboundedSender<crate::frontend::SubmittedTurn>,
+    /// Withdraw the pending-queue suffix from a submission id (docs/control-api.md); the
+    /// answer rides home as a [`TuiEvent::Recalled`].
+    pub recall: tokio::sync::mpsc::UnboundedSender<String>,
     /// The zero-token continue (docs/control-api.md): payload-free, because the
     /// verb is.
     pub continue_loop: tokio::sync::mpsc::UnboundedSender<()>,
@@ -39,6 +42,9 @@ pub(super) fn ui_loop(
     // every normal run; the readout is not reproducible, so nothing that snapshots
     // can turn it on.
     frame_cost: bool,
+    // This session's attachment store (docs/inbox.md), or `None` for a run with no session
+    // behind it — the gallery and the read-only view.
+    attachments_dir: Option<std::path::PathBuf>,
 ) -> io::Result<()> {
     // Build the render context: interactive TTY, sized to the terminal.
     let width = crossterm::terminal::size()
@@ -93,6 +99,7 @@ pub(super) fn ui_loop(
     let mut state = InteractiveState::new(
         events,
         senders.submit,
+        senders.recall,
         senders.continue_loop,
         senders.approve,
         senders.pace,
@@ -102,6 +109,7 @@ pub(super) fn ui_loop(
         render_context,
         theme,
     );
+    state.attachments_dir = attachments_dir;
     if let Some(label) = viewing {
         state.set_viewing(label);
     }

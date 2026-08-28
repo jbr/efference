@@ -138,6 +138,18 @@ export function pushPendingTurn(
   return { ...session, pendingTurns: [...session.pendingTurns, { id, text }] };
 }
 
+/** Drop the delivery echoes a recall actually withdrew (docs/web-client.md). Only
+ * the ids the daemon reported popping are dropped — one it had already dequeued
+ * stays queued and settles the ordinary way, when its `User` entry arrives. */
+export function removePendingTurns(session: Session, ids: string[]): Session {
+  if (ids.length === 0) return session;
+  const gone = new Set(ids);
+  return {
+    ...session,
+    pendingTurns: session.pendingTurns.filter((p) => !gone.has(p.id)),
+  };
+}
+
 const settlePendingTurns = (
   pending: PendingTurn[],
   entry: LogEntry,

@@ -148,7 +148,7 @@ Read top-down; open the subsystem doc you need.
 | Per-result triage — how every tool result is distilled | [redaction-fork.md](redaction-fork.md) | `src/distill.rs`, `src/project.rs` |
 | Tools (in-process `Tool` trait; in-process MCP; per-call telemetry) | [tools.md](tools.md) | `src/tools.rs`, `src/bash.rs`, `src/agent/telemetry.rs` |
 | Trajectory consolidation (compaction as a fold over a span) | [consolidate.md](consolidate.md) | `src/consolidate.rs`, `src/agent.rs` |
-| Ambient notifications — the inbox (enqueue then triage) | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon/notifications.rs` |
+| Ambient notifications — the inbox (enqueue then triage), and the attachment store | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon/notifications.rs`, `src/attachments.rs`, `src/daemon/attachments.rs` |
 | Background processes — the supervisor | [supervisor.md](supervisor.md) | `src/supervisor.rs`, `src/bash.rs`, `src/daemon/background.rs` |
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs` (+ `src/daemon/`), `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
 | Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/config.rs`, `src/policy.rs`, `src/agent.rs`, `src/daemon/config_edits.rs` |

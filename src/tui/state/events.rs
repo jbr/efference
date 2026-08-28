@@ -24,15 +24,14 @@ impl<'a> InteractiveState<'a> {
                 }
                 self.resolve_result_images(&entry);
                 // A committed user turn resolves its optimistic pending echo
-                // (docs/tui.md): the entry *is* on the wire now
-                // (`project(log)` is exactly what the request sends), so drop the matching
-                // queued echo. First-match on the ordered queue keeps ordering correct even
-                // when the same message was sent twice.
-                if let Payload::User(blocks) = &entry.payload {
-                    let text = projection::join_text(blocks);
-                    if let Some(pos) = self.pending_turns.iter().position(|p| *p == text) {
-                        self.pending_turns.remove(pos);
-                    }
+                // (docs/tui.md): the entry *is* on the wire now (`project(log)` is exactly what
+                // the request sends), so drop the echo carrying that `submission_id`. Keyed by
+                // id rather than by text — recall hands a queued turn back to be edited and
+                // re-sent, and a content match would then settle the wrong echo.
+                if matches!(entry.payload, Payload::User(_))
+                    && let Some(id) = entry.submission_id.as_deref()
+                {
+                    self.pending_turns.retain(|p| p.submission_id != id);
                 }
                 // Entries can arrive out of order across the durable/replay boundary;
                 // keep the log sorted by seq so the projection is stable.
@@ -211,6 +210,7 @@ impl<'a> InteractiveState<'a> {
                 self.ui.debug_message = note.into();
                 self.dirty = true;
             }
+            TuiEvent::Recalled(withdrawn) => self.apply_recall(withdrawn),
             TuiEvent::Disconnected => return true,
         }
         false

@@ -24,7 +24,7 @@ fn submitted_turn_echoes_pending_then_resolves_on_commit() {
     // …and the composer was cleared (the text isn't sitting in the input anymore,
     // only in the transcript echo — one occurrence on screen).
     // Now the daemon's `/events` delivers the committed User entry.
-    play.user("hello there");
+    play.commit_pending();
 
     assert!(
         play.find("⋯").is_none(),
@@ -421,4 +421,52 @@ fn transcript_rows(frame: &str) -> String {
         .take_while(|line| !line.contains("help ?"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Recall (docs/tui.md): Ctrl-R asks the daemon to withdraw the most recent queued turn,
+/// addressed by the submission id the TUI minted. Nothing moves until the daemon answers — and
+/// what it answers is what the composer gets, prepended ahead of the draft already there.
+#[test]
+fn recall_asks_by_submission_id_and_splices_what_came_back() {
+    let mut play = Screenplay::new(60, 12);
+    play.type_str("queued message");
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    let submitted = play.state.pending_turns[0].clone();
+    assert_eq!(play.took_turn().as_deref(), Some("queued message"));
+
+    // A draft is already in the composer when the recall goes out.
+    play.type_str("draft");
+    play.route_key(KeyCode::Char('r'), KeyModifiers::CONTROL);
+    assert_eq!(
+        play.took_recall().as_deref(),
+        Some(submitted.submission_id.as_str()),
+        "the recall addresses the exact submission"
+    );
+    assert!(
+        play.find("⋯").is_some(),
+        "the echo stays until the daemon answers"
+    );
+
+    play.event(TuiEvent::Recalled(vec![crate::client::WithdrawnTurn {
+        submission_id: submitted.submission_id.clone(),
+        text: submitted.text.clone(),
+    }]));
+    assert!(
+        play.state.pending_turns.is_empty(),
+        "the echo is gone once the withdraw is confirmed"
+    );
+    assert_eq!(play.state.composer.text(), "queued message\ndraft");
+}
+
+/// The lost race: the loop dequeued the turn first, so the daemon pops nothing. The composer is
+/// left alone rather than handed back text that is already on its way to the model.
+#[test]
+fn a_recall_that_popped_nothing_leaves_the_composer_alone() {
+    let mut play = Screenplay::new(60, 12);
+    play.type_str("already sent");
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    play.route_key(KeyCode::Char('r'), KeyModifiers::CONTROL);
+    play.event(TuiEvent::Recalled(Vec::new()));
+    assert_eq!(play.state.composer.text(), "");
+    assert_eq!(play.state.pending_turns.len(), 1, "the echo is untouched");
 }

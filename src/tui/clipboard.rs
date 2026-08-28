@@ -1,16 +1,23 @@
-//! Plain-text clipboard access for the interactive TUI.
+//! Clipboard access for the interactive TUI.
 //!
 //! The composer remains deterministic and has no operating-system side effects.
 //! This adapter owns one persistent system clipboard plus an in-process fallback,
 //! which keeps copy/cut usable when the platform clipboard cannot be reached.
+//!
+//! Images are read as well as text: a pasted screenshot is an attachment
+//! (docs/inbox.md), so it is re-encoded as a PNG and lands in the store like any other
+//! arrival rather than being pushed into the conversation.
 
 use arboard::{Clipboard, Error};
 
-/// Result of trying to read plain text from the clipboard.
+/// Result of trying to read from the clipboard.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Paste {
     /// UTF-8 text is available.
     Text(String),
+    /// A bitmap is available, already encoded as PNG bytes — the store's format, chosen here
+    /// because the clipboard hands over raw RGBA and something has to name an encoding.
+    Image(Vec<u8>),
     /// The system clipboard cannot be read; callers may use the fallback.
     Unavailable,
     /// `arboard` reports unavailable text, which conflates empty and incompatible
@@ -69,6 +76,13 @@ impl TextClipboard {
         let Some(system) = self.system.as_mut() else {
             return Paste::Unavailable;
         };
+        // Text first: a copy from an editor often carries a bitmap flavour too, and text is
+        // what the operator meant. Only when there is no text at all is an image the answer.
+        if let Ok(image) = system.get_image()
+            && let Some(png) = encode_png(&image)
+        {
+            return Paste::Image(png);
+        }
         match system.get_text() {
             Ok(text) => {
                 self.fallback = Some(text.clone());
@@ -82,6 +96,24 @@ impl TextClipboard {
     pub(super) fn fallback(&self) -> Option<&str> {
         self.fallback.as_deref()
     }
+}
+
+/// Re-encode the clipboard's raw RGBA as PNG. `None` when the buffer does not describe an
+/// image of the stated size — a clipboard that lies is a skipped paste, not a panic.
+fn encode_png(image: &arboard::ImageData<'_>) -> Option<Vec<u8>> {
+    let buffer = ::image::RgbaImage::from_raw(
+        u32::try_from(image.width).ok()?,
+        u32::try_from(image.height).ok()?,
+        image.bytes.to_vec(),
+    )?;
+    let mut png = Vec::new();
+    ::image::DynamicImage::ImageRgba8(buffer)
+        .write_to(
+            &mut std::io::Cursor::new(&mut png),
+            ::image::ImageFormat::Png,
+        )
+        .ok()?;
+    Some(png)
 }
 
 #[cfg(test)]

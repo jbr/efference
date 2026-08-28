@@ -22,6 +22,10 @@ impl<'a> InteractiveState<'a> {
         } else if char_with('w') && ctrl {
             self.cut_selection_or_delete_word(key);
             ComposerAction::Consumed
+        } else if char_with('r') && ctrl && !alt && !super_key {
+            // Recall the most recent queued-but-unsent turn into the composer (docs/tui.md).
+            self.recall_pending_turn();
+            ComposerAction::Consumed
         } else if char_with('y') && ctrl && !alt {
             self.paste_clipboard();
             ComposerAction::Consumed

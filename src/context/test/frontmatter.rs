@@ -21,6 +21,15 @@ fn frontmatter_with_description_lists_and_splits_the_body() {
             name: Some("verify".into()),
             description: Some("Drive the flow end to end.".into()),
             inline: None,
+            fields: [
+                ("name".to_string(), "verify".to_string()),
+                (
+                    "description".to_string(),
+                    "Drive the flow end to end.".to_string()
+                ),
+            ]
+            .into_iter()
+            .collect(),
         })
     );
     assert_eq!(split.body, "The body.\n");
@@ -167,8 +176,28 @@ fn empty_frontmatter_block_inlines() {
     assert_eq!(split.mode("d"), Mode::Inline);
 }
 
+/// The fallback tag name keeps the extension — the tag names a file the model can `read`, and the
+/// stem would have hidden it (docs/context.md).
 #[test]
-fn fallback_name_is_the_stem() {
-    assert_eq!(fallback_name(Path::new("docs/verify.md")), "verify");
-    assert_eq!(fallback_name(Path::new("CLAUDE.md")), "CLAUDE");
+fn fallback_name_is_the_full_basename() {
+    assert_eq!(fallback_name(Path::new("docs/verify.md")), "verify.md");
+    assert_eq!(fallback_name(Path::new("CLAUDE.md")), "CLAUDE.md");
+}
+
+/// Every top-level scalar key lands in `fields` — including unknown ones and block scalars — since
+/// those are the columns a group's `sort` addresses. Nested structures contribute nothing.
+#[test]
+fn fields_capture_every_top_level_key() {
+    let text = "---\nname: verify\npriority: 3\nnotes: >-\n  folded\n  value\nmetadata:\n  name: nested\n---\nbody\n";
+    let fm = split_frontmatter(text).unwrap().frontmatter.unwrap();
+    assert_eq!(fm.fields.get("name").map(String::as_str), Some("verify"));
+    assert_eq!(fm.fields.get("priority").map(String::as_str), Some("3"));
+    assert_eq!(
+        fm.fields.get("notes").map(String::as_str),
+        Some("folded value")
+    );
+    // The `metadata:` key itself is top-level (an empty column); its indented children are not,
+    // so a nested `name:` never displaces the real one.
+    assert_eq!(fm.fields.get("metadata").map(String::as_str), Some(""));
+    assert_eq!(fm.fields.len(), 4);
 }

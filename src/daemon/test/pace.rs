@@ -21,7 +21,7 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
     );
 
     // Dequeued, running mid-turn — still busy.
-    shared.dequeued_turn();
+    shared.claim_turn("sub-test", true);
     assert!(!shared.is_settled(), "mid-turn is busy");
 
     // A gate is a decision point — settled.
@@ -53,7 +53,7 @@ async fn await_settled_returns_when_the_loop_parks() {
         text: "hi".into(),
         submission_id: "sub-test".into(),
     });
-    shared.dequeued_turn(); // busy, mid-turn
+    shared.claim_turn("sub-test", true); // busy, mid-turn
 
     let waiter = {
         let shared = Arc::clone(&shared);
@@ -239,4 +239,82 @@ fn an_interrupt_latches_and_is_consumed_exactly_once() {
     shared.interrupt();
     assert!(shared.take_interrupt());
     assert!(!shared.take_interrupt());
+}
+
+/// Recall is a **suffix pop**: withdrawing by the id of an older pending turn takes it and
+/// everything after it, in submission order, and leaves what came before untouched.
+#[test]
+fn withdraw_pops_the_suffix_from_the_named_turn() {
+    let (shared, _rx) = Shared::new(Log::in_memory());
+    for (text, id) in [("one", "s1"), ("two", "s2"), ("three", "s3")] {
+        shared.submit_turn(SubmittedTurn {
+            text: text.into(),
+            submission_id: id.into(),
+        });
+    }
+    let popped = shared.withdraw_turns("s2");
+    assert_eq!(
+        popped.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
+        ["two", "three"]
+    );
+    assert_eq!(
+        shared
+            .queued_turns()
+            .iter()
+            .map(|t| t.text.as_str())
+            .collect::<Vec<_>>(),
+        ["one"]
+    );
+    // The queue is still non-empty, so the daemon is still busy.
+    assert!(!shared.is_settled());
+    // Withdrawing the last one settles the daemon: nothing is pending and nothing ran.
+    assert_eq!(shared.withdraw_turns("s1").len(), 1);
+    assert!(shared.is_settled(), "an emptied queue settles");
+}
+
+/// The lost race: the loop claimed the turn before the withdraw landed, so the withdraw pops
+/// nothing rather than handing back text the model is already being sent.
+#[test]
+fn withdraw_pops_nothing_once_the_loop_has_claimed_the_turn() {
+    let (shared, _rx) = Shared::new(Log::in_memory());
+    shared.submit_turn(SubmittedTurn {
+        text: "sent".into(),
+        submission_id: "s1".into(),
+    });
+    assert!(shared.claim_turn("s1", true));
+    assert!(shared.withdraw_turns("s1").is_empty());
+}
+
+/// A turn withdrawn while already in flight down the channel fails its claim, so the loop drops
+/// it unappended — the pending queue, not the channel, is the authority.
+#[tokio::test]
+async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
+    let (shared, turns_rx) = Shared::new(Log::in_memory());
+    let mut frontend = RemoteFrontend {
+        shared: Arc::clone(&shared),
+        turns: turns_rx,
+    };
+    shared.submit_turn(SubmittedTurn {
+        text: "recalled".into(),
+        submission_id: "s1".into(),
+    });
+    shared.submit_turn(SubmittedTurn {
+        text: "kept".into(),
+        submission_id: "s2".into(),
+    });
+    assert_eq!(
+        shared.withdraw_turns("s1").len(),
+        2,
+        "suffix pop takes both"
+    );
+    // Both are still sitting in the channel; neither may be delivered.
+    assert!(frontend.drain_injected_turns().is_empty());
+
+    shared.submit_turn(SubmittedTurn {
+        text: "fresh".into(),
+        submission_id: "s3".into(),
+    });
+    let delivered = frontend.drain_injected_turns();
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0].text, "fresh");
 }

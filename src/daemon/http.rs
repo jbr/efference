@@ -19,8 +19,10 @@ const SUBMISSION_ID_MAX: usize = 128;
 
 /// Mint a submission id for a `POST /v1/turns` whose body didn't carry one, so
 /// every submitted turn is identified in the log regardless of client
-/// (docs/control-api.md).
-fn mint_submission_id() -> String {
+/// (docs/control-api.md). Public because a client that wants its submission
+/// addressable — for the delivery echo, or to recall it — mints its own with
+/// the same scheme rather than inventing a second one (docs/tui.md).
+pub fn mint_submission_id() -> String {
     use rand::Rng;
     let mut bytes = [0u8; 16];
     rand::rng().fill_bytes(&mut bytes);
@@ -191,6 +193,25 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 }
                 Err(e) => fail(conn, ErrorCode::BadRequest, format!("bad /turns body: {e}")),
             }
+        })
+        // Withdraw the pending-queue suffix beginning at this submission id — recall
+        // (docs/control-api.md). Always 200: the loop may have dequeued the turn already,
+        // and "popped nothing" is a race outcome the client renders, not an error. The
+        // response is authoritative — a client splices only what came back.
+        .delete("/v1/turns/:submission_id", |conn: Conn| async move {
+            let Some(shared) = shared_of(&conn) else {
+                return missing_state(conn);
+            };
+            let Some(id) = conn.param("submission_id").map(str::to_string) else {
+                return fail(conn, ErrorCode::BadRequest, "missing submission id");
+            };
+            let withdrawn: Vec<Value> = shared
+                .withdraw_turns(&id)
+                .into_iter()
+                .map(|t| serde_json::json!({ "submission_id": t.submission_id, "text": t.text }))
+                .collect();
+            let body = serde_json::json!({ "withdrawn": withdrawn });
+            conn.with_status(200).with_body(body.to_string()).halt()
         })
         // Resolve the pending approval gate, addressed by the call awaiting it. A
         // `PUT` with the id as a real precondition: the decision applies only to

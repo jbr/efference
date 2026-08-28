@@ -52,7 +52,10 @@ pub(crate) struct Screenplay<'a> {
     _event_tx: Sender<TuiEvent>,
     /// Held un-underscored so a scenario can assert what a submit put on the wire —
     /// or, for a read-only view, that nothing did ([`took_turn`](Screenplay::took_turn)).
-    submit_rx: UnboundedReceiver<String>,
+    submit_rx: UnboundedReceiver<crate::frontend::SubmittedTurn>,
+    /// Held un-underscored so a scenario can assert a recall addressed the right
+    /// submission ([`took_recall`](Screenplay::took_recall)).
+    recall_rx: UnboundedReceiver<String>,
     /// Held un-underscored so a scenario can assert the empty-composer `⏎` fired the
     /// zero-token continue ([`took_continue`](Screenplay::took_continue)).
     continue_rx: UnboundedReceiver<()>,
@@ -88,6 +91,7 @@ impl Screenplay<'static> {
         let theme = InteractiveTheme::from_render_context(&rc);
         let (event_tx, event_rx) = unbounded();
         let (submit_tx, submit_rx) = unbounded_channel();
+        let (recall_tx, recall_rx) = unbounded_channel();
         let (continue_tx, continue_rx) = unbounded_channel();
         let (approve_tx, approve_rx) = unbounded_channel();
         let (pace_tx, pace_rx) = unbounded_channel();
@@ -99,6 +103,7 @@ impl Screenplay<'static> {
         let state = InteractiveState::new(
             event_rx,
             submit_tx,
+            recall_tx,
             continue_tx,
             approve_tx,
             pace_tx,
@@ -116,6 +121,7 @@ impl Screenplay<'static> {
             sidebar_rx,
             _event_tx: event_tx,
             submit_rx,
+            recall_rx,
             continue_rx,
             approve_rx,
             pace_rx,
@@ -244,7 +250,14 @@ impl Screenplay<'_> {
     /// The user turn a submit sent since the last check, if any — drains the channel
     /// the UI would `POST /turns` over. `None` means nothing was sent.
     pub(crate) fn took_turn(&mut self) -> Option<String> {
-        self.submit_rx.try_recv().ok()
+        self.submit_rx.try_recv().ok().map(|turn| turn.text)
+    }
+
+    /// The submission id a recall asked to withdraw since the last check, if any —
+    /// drains the channel the UI would `DELETE /turns/:id` over.
+    #[allow(dead_code)]
+    pub(crate) fn took_recall(&mut self) -> Option<String> {
+        self.recall_rx.try_recv().ok()
     }
 
     /// Whether the empty-composer `⏎` fired the zero-token continue since the last
