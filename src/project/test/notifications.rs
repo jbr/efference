@@ -56,6 +56,7 @@ fn pinned_notification_projects_at_triage_position() {
                 inbox: vec![(1, Disposition::Pin), (2, Disposition::Dismiss)],
                 surfaced: Vec::new(),
                 retries: Vec::new(),
+                thinking: Vec::new(),
             }),
         ),
     ];
@@ -142,6 +143,7 @@ fn surfaced_context_item_projects_at_triage_position() {
                 // "unknown" isn't in the listing → drops; only ferritin renders.
                 surfaced: vec!["ferritin".into(), "unknown".into()],
                 retries: Vec::new(),
+                thinking: Vec::new(),
             }),
         ),
     ];
@@ -172,5 +174,72 @@ fn unpinned_ambient_projects_to_nothing() {
         !serde_json::to_string(&messages)
             .unwrap()
             .contains("left notice")
+    );
+}
+
+/// The fork's recorded reasoning (`Triage.thinking`, docs/redaction-fork.md) is invisible
+/// to the wire: a log whose gate recorded thinking projects **byte-identically** to the
+/// same log without it. Recording it is an audit move, so it must not be able to move the
+/// cached prefix — this is the pin that says so, in the same spirit as the three envelope
+/// pins.
+#[test]
+fn recorded_triage_thinking_projects_to_identical_bytes() {
+    let gate = |thinking: Vec<String>| {
+        vec![
+            entry(
+                0,
+                0,
+                Payload::Assistant {
+                    thinking: vec![],
+                    text: vec![],
+                    calls: vec![ToolCall {
+                        id: CallId("t".into()),
+                        name: "bash".into(),
+                        input: json!({}),
+                    }],
+                    upstream_failure: None,
+                },
+            ),
+            entry(1, 0, notification("test-watch", "3 failures")),
+            entry(
+                2,
+                0,
+                Payload::ToolResult {
+                    call_id: CallId("t".into()),
+                    raw: RawResult {
+                        images: Vec::new(),
+                        content: "out".into(),
+                        is_error: false,
+                    },
+                    wire: WireState::Raw,
+                },
+            ),
+            entry(
+                3,
+                0,
+                Payload::Triage(Triage {
+                    for_result: Some(2),
+                    origin: Origin::Model,
+                    raw_keep: "all".into(),
+                    inbox: vec![(1, Disposition::Pin)],
+                    surfaced: Vec::new(),
+                    retries: Vec::new(),
+                    thinking,
+                }),
+            ),
+        ]
+    };
+    let without = serde_json::to_string(&project(&gate(Vec::new()))).unwrap();
+    let with = serde_json::to_string(&project(&gate(vec![
+        "the first 40 lines are the build log; only the failure matters".into(),
+    ])))
+    .unwrap();
+    assert_eq!(
+        with, without,
+        "recorded fork thinking must not reach the wire"
+    );
+    assert!(
+        !with.contains("the first 40 lines"),
+        "the thinking text is audit-only: {with}"
     );
 }

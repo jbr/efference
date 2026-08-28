@@ -307,6 +307,15 @@ caching. But the fork's *decision* is logged as a `Triage` entry (in `src/log.rs
 | `raw_keep` | the model's exact `keep` string, pre-parse — the audit breadcrumb |
 | `inbox` | per-notification dispositions chosen in this peek, by arrival `seq` |
 | `retries` | one attempt-stamped breadcrumb per non-compliant peek attempt, recovered or not — the durable compliance record (gate-scoped; rides the last `Triage` of a batch, like `inbox`) |
+| `thinking` | the text of the peek's thinking blocks, one entry per attempt that thought (gate-scoped, like `retries`) |
+
+The fork runs under the same thinking policy as an agent turn (the shared envelope above),
+so most gates think. That thinking is recorded on the `Triage` entry and **never
+projected** — it is what answers "why did *that* verdict happen", where replay
+(`efference peek`) answers "how does the fork reason about this class of result". Text
+only: a thinking block's `signature` is what the API needs to replay it, and the fork's
+tail is discarded rather than replayed. It is operator/developer observability, with no
+client surface.
 
 A failed peek is not erased — its withheld-output error is visible on the wire — but
 `origin` still classifies *what kind* of failure it was, which the rendered artifact

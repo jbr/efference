@@ -554,6 +554,7 @@ fn roster_excludes_already_surfaced_names() {
                 inbox: Vec::new(),
                 surfaced: vec!["ferritin".into()],
                 retries: Vec::new(),
+                thinking: Vec::new(),
             }),
         ),
     ];
@@ -1156,5 +1157,47 @@ fn a_bypassed_result_reaches_the_wire_verbatim() {
     assert!(
         result.ends_with(HANDLE_RESULT),
         "and so does the rest of the refusal, byte for byte: {result}"
+    );
+}
+
+/// What the gate records as the peek's reasoning (docs/redaction-fork.md): every thinking
+/// block's text, joined — prose and redacted blocks excluded (a redacted block carries no
+/// text), and `None` when the attempt thought nothing, so a gate that didn't think records
+/// nothing rather than an empty entry. Signatures are dropped: this is a record, not a
+/// replay input.
+#[test]
+fn peek_thinking_joins_thinking_text_only() {
+    use crate::log::ContentBlock;
+
+    let assistant = |thinking: Vec<ContentBlock>| Payload::Assistant {
+        thinking,
+        text: vec![ContentBlock::Text("prose the gate never reads".into())],
+        calls: Vec::new(),
+        upstream_failure: None,
+    };
+
+    assert_eq!(peek_thinking(&assistant(Vec::new())), None);
+    assert_eq!(
+        peek_thinking(&assistant(vec![
+            ContentBlock::Thinking {
+                text: "the head is boilerplate".into(),
+                signature: "sig-a".into(),
+            },
+            ContentBlock::RedactedThinking {
+                data: "opaque".into(),
+            },
+            ContentBlock::Thinking {
+                text: "keep 40-52".into(),
+                signature: "sig-b".into(),
+            },
+        ])),
+        Some("the head is boilerplate\nkeep 40-52".to_string())
+    );
+    assert_eq!(
+        peek_thinking(&assistant(vec![ContentBlock::RedactedThinking {
+            data: "opaque".into(),
+        }])),
+        None,
+        "a redacted-only attempt has no text to record"
     );
 }

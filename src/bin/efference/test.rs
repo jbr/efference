@@ -275,6 +275,7 @@ fn triage(seq: u64, for_result: u64, retries: Vec<String>) -> LogEntry {
             inbox: Vec::new(),
             surfaced: Vec::new(),
             retries,
+            thinking: Vec::new(),
         }),
     )
 }

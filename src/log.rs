@@ -314,6 +314,18 @@ pub struct Triage {
     /// `Triage` of a batch, like `inbox`. `#[serde(default)]`: old logs read empty.
     #[serde(default)]
     pub retries: Vec<String>,
+    /// The peek's own reasoning — the text of every thinking block the fork emitted,
+    /// one entry per attempt that produced any, in attempt order (docs/redaction-fork.md).
+    /// The fork runs under the same thinking policy as an agent turn (the shared
+    /// envelope), so most gates think; without this the log records *what* was decided
+    /// and never *why*. Signatures are not kept: this is a record, not a replay input —
+    /// the fork's transcript stays throwaway. Operator/developer observability only;
+    /// [`project`] never reads it, so recording it cannot move the wire.
+    /// `#[serde(default)]`: old logs read empty.
+    ///
+    /// [`project`]: crate::project::project
+    #[serde(default)]
+    pub thinking: Vec<String>,
 }
 
 /// Where a [`Triage`] verdict came from (docs/redaction-fork.md).

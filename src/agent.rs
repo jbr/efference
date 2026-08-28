@@ -539,6 +539,13 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                 .as_mut()
                 .map(|g| std::mem::take(&mut g.retries))
                 .unwrap_or_default();
+            // Gate-scoped for the same reason: one peek reasoned about the whole batch,
+            // so its thinking rides the last `Triage` rather than being copied per
+            // result (docs/redaction-fork.md).
+            let mut thinking = gate
+                .as_mut()
+                .map(|g| std::mem::take(&mut g.thinking))
+                .unwrap_or_default();
             let last_ran = steps
                 .iter()
                 .rposition(|s| matches!(s, Step::Ran { .. }))
@@ -582,6 +589,11 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                                 surfaced: if last { surfaced.clone() } else { Vec::new() },
                                 retries: if last {
                                     std::mem::take(&mut retries)
+                                } else {
+                                    Vec::new()
+                                },
+                                thinking: if last {
+                                    std::mem::take(&mut thinking)
                                 } else {
                                     Vec::new()
                                 },

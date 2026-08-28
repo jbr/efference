@@ -94,6 +94,7 @@ pub(super) async fn run_idle_triage<D: Distiller>(
             // nudge is powered by proximity to work in flight (docs/redaction-fork.md).
             surfaced: Vec::new(),
             retries: triage.retries,
+            thinking: triage.thinking,
         }),
     )?;
     Ok(escalate)

@@ -30,6 +30,7 @@ fn triage(seq: Seq, inbox: Vec<(Seq, Disposition)>) -> LogEntry {
             inbox,
             surfaced: Vec::new(),
             retries: Vec::new(),
+            thinking: Vec::new(),
         }),
     )
 }

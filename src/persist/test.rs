@@ -177,3 +177,43 @@ fn load_tolerates_blank_lines() {
     assert_eq!(loaded.len(), 1);
     std::fs::remove_file(&path).unwrap();
 }
+
+/// The fork's recorded reasoning (`Triage.thinking`, docs/redaction-fork.md) survives the
+/// jsonl round-trip, one entry per peek attempt that thought.
+#[test]
+fn triage_thinking_round_trips() {
+    let thinking = vec![
+        "attempt 1: the ask wants a verdict, not a work tool".into(),
+        "attempt 2: keep the failing assertion, drop the build noise".into(),
+    ];
+    let line = serde_json::to_string(&Payload::Triage(crate::log::Triage {
+        for_result: Some(7),
+        origin: crate::log::Origin::Model,
+        raw_keep: "40-52".into(),
+        inbox: Vec::new(),
+        surfaced: Vec::new(),
+        retries: Vec::new(),
+        thinking: thinking.clone(),
+    }))
+    .unwrap();
+
+    match serde_json::from_str::<Payload>(&line).unwrap() {
+        Payload::Triage(t) => assert_eq!(t.thinking, thinking),
+        other => panic!("expected a Triage, got {other:?}"),
+    }
+}
+
+/// A `Triage` line predating the field still loads — `#[serde(default)]` reads it back as
+/// no recorded reasoning, never a parse error. Old logs must remain replayable.
+#[test]
+fn legacy_triage_without_thinking_reads_back_empty() {
+    let legacy = r#"{"Triage":{"for_result":7,"origin":"Model","raw_keep":"all","inbox":[]}}"#;
+    match serde_json::from_str::<Payload>(legacy).unwrap() {
+        Payload::Triage(t) => {
+            assert_eq!(t.raw_keep, "all");
+            assert!(t.thinking.is_empty());
+            assert!(t.retries.is_empty());
+        }
+        other => panic!("expected a Triage, got {other:?}"),
+    }
+}

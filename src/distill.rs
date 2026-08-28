@@ -67,6 +67,22 @@ pub fn is_peek_tool(name: &str) -> bool {
 /// the agent recover.
 const PEEK_ATTEMPTS: usize = 3;
 
+/// What one gate accumulates across its attempts, whatever the verdict turns out to be:
+/// the billing record, the compliance breadcrumbs, and the peek's reasoning
+/// (docs/redaction-fork.md). The three travel together because every attempt appends to
+/// all of them and the outcome carries all of them onto the gate's `Triage`.
+#[derive(Default)]
+struct PeekRecord {
+    /// One [`RequestUsage`] per request the gate made, in-fork retries and aborted
+    /// streams included — the request happened and slid the prefix's cache TTL.
+    usage: Vec<RequestUsage>,
+    /// One attempt-stamped breadcrumb per attempt that had to be retried, recovered or
+    /// not.
+    retries: Vec<String>,
+    /// The thinking text of each attempt that thought, in attempt order.
+    thinking: Vec<String>,
+}
+
 /// A live-process triage disposition (docs/supervisor.md) — distinct from the seq-keyed
 /// notification [`Disposition`] because a running process is addressed by its live
 /// `p#<n>` handle, not a frozen arrival seq, and its "dismiss" is **mute** (stop
@@ -194,6 +210,11 @@ pub struct GateOutcome {
     /// these on the gate's `Triage` (`retries`), the durable record; a runtime triage
     /// failure is never accepted silently, recovered or not.
     pub retries: Vec<String>,
+    /// The reasoning behind the verdict — one entry per peek attempt that emitted
+    /// thinking, in attempt order (docs/redaction-fork.md). The loop lands these on the
+    /// gate's `Triage` (`thinking`), which is the only record of why a verdict came out
+    /// the way it did; the fork's transcript is still discarded.
+    pub thinking: Vec<String>,
 }
 
 impl GateOutcome {
@@ -227,6 +248,7 @@ impl GateOutcome {
             surfaced: Vec::new(),
             usage,
             retries: Vec::new(),
+            thinking: Vec::new(),
         }
     }
 }
@@ -244,6 +266,8 @@ pub struct InboxTriage {
     pub usage: Vec<RequestUsage>,
     /// Non-compliant-attempt breadcrumbs, like [`GateOutcome::retries`].
     pub retries: Vec<String>,
+    /// Per-attempt peek reasoning, like [`GateOutcome::thinking`].
+    pub thinking: Vec<String>,
 }
 
 /// Decide the wire form of the results a completion produced, and triage the inbox +
@@ -287,6 +311,7 @@ pub trait Distiller {
             origin: Origin::Fallback,
             usage: Vec::new(),
             retries: Vec::new(),
+            thinking: Vec::new(),
         }
     }
 }
@@ -304,8 +329,8 @@ pub struct ForkPeek {
 /// (docs/redaction-fork.md). `tool` is the asked-for tool (`retain` or `triage`);
 /// `parse` decodes a usable verdict out of a completion, or says why it couldn't —
 /// the `Err` doubles as the retry nudge and, on exhaustion, the failure breadcrumb.
-/// Every request's [`RequestUsage`] is pushed onto `usage` whether or not its verdict
-/// was usable (the request happened and slid the prefix's TTL; only a transport error
+/// Every request's [`RequestUsage`] is pushed onto `record.usage` whether or not its
+/// verdict was usable (the request happened and slid the prefix's TTL; only a transport error
 /// yields none).
 ///
 /// A usable response carrying an unusable verdict — the wrong tool, no tool, a
@@ -320,17 +345,23 @@ pub struct ForkPeek {
 /// above, because an aborted stream produced no verdict to be non-compliant with. A
 /// failed request (nothing streamed) is still not retried here: the `Client` has
 /// already exhausted the transient family for it (docs/transport.md).
+///
+/// Each attempt's thinking is pushed onto `record.thinking` before its verdict is judged, so a
+/// gate that took two attempts records the reasoning of both — the retried attempt's
+/// reasoning is what says whether the nudge landed. Text only: the fork's transcript,
+/// signatures included, stays throwaway, and this is a record rather than a replay input
+/// (docs/redaction-fork.md).
 async fn peek_with_retries<T>(
     client: &Client,
     mut messages: Vec<ApiMessage>,
     tools: &[Value],
     tool: &str,
     parse: impl Fn(&Completion) -> Result<T, String>,
-    usage: &mut Vec<RequestUsage>,
-    retries: &mut Vec<String>,
+    record: &mut PeekRecord,
 ) -> Result<T, String> {
     for attempt in 1..=PEEK_ATTEMPTS {
-        let completion = peek_completion(client, &messages, tools, usage, retries).await?;
+        let completion = peek_completion(client, &messages, tools, record).await?;
+        record.thinking.extend(peek_thinking(&completion.assistant));
         let parsed = parse(&completion);
         match parsed {
             Ok(verdict) => return Ok(verdict),
@@ -338,7 +369,9 @@ async fn peek_with_retries<T>(
                 // Durable even when the next attempt recovers: a runtime triage
                 // failure is a harness defect signal (docs/redaction-fork.md), so
                 // it lands on the gate's `Triage`, not just the daemon's stderr.
-                retries.push(format!("attempt {attempt} of {PEEK_ATTEMPTS}: {why}"));
+                record
+                    .retries
+                    .push(format!("attempt {attempt} of {PEEK_ATTEMPTS}: {why}"));
                 if attempt == PEEK_ATTEMPTS
                     || !extend_with_retry(&mut messages, &completion.assistant, &why, tool)
                 {
@@ -373,14 +406,13 @@ async fn peek_with_retries<T>(
 ///
 /// Every attempt's [`RequestUsage`] is pushed — the request happened and slid the
 /// prefix's TTL whether or not it finalized — and every abort leaves an
-/// attempt-stamped breadcrumb in `retries`, so a recovered abort is still visible in
+/// attempt-stamped breadcrumb in `record.retries`, so a recovered abort is still visible in
 /// the corpus rather than silently absorbed.
 async fn peek_completion(
     client: &Client,
     messages: &[ApiMessage],
     tools: &[Value],
-    usage: &mut Vec<RequestUsage>,
-    retries: &mut Vec<String>,
+    record: &mut PeekRecord,
 ) -> Result<Completion, String> {
     let mut aborted: u32 = 0;
     loop {
@@ -393,12 +425,12 @@ async fn peek_completion(
             Ok(completion) => completion,
             Err(e) => return Err(format!("peek request failed: {e}")),
         };
-        usage.push(completion.request_usage());
+        record.usage.push(completion.request_usage());
         let Some(why) = completion.upstream_failure().map(str::to_string) else {
             return Ok(completion);
         };
         aborted += 1;
-        retries.push(format!(
+        record.retries.push(format!(
             "stream aborted upstream (attempt {aborted} of {STREAM_ABORT_ATTEMPTS}): {why}"
         ));
         let Some(pause) = stream_abort_backoff(aborted) else {
@@ -572,6 +604,31 @@ fn require_in_bounds(
         }
     }
     Ok(verdict)
+}
+
+/// The text of every thinking block one peek attempt emitted, joined — the reasoning
+/// behind that attempt's verdict, recorded on the gate's `Triage`
+/// (docs/redaction-fork.md). `None` when the attempt thought nothing (or thought only in
+/// redacted blocks, which carry no text), so a gate that didn't think records nothing
+/// rather than an empty string.
+///
+/// Only the text: a `signature` is what the API requires to *replay* a thinking block,
+/// and nothing replays the fork's tail — it is discarded with the fork.
+fn peek_thinking(assistant: &Payload) -> Option<String> {
+    let Payload::Assistant { thinking, .. } = assistant else {
+        return None;
+    };
+    let text = thinking
+        .iter()
+        .filter_map(|b| match b {
+            crate::log::ContentBlock::Thinking { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string();
+    (!text.is_empty()).then_some(text)
 }
 
 /// Describe a completion that produced no usable verdict, for the `Triage` breadcrumb.
@@ -841,8 +898,7 @@ impl Distiller for ForkPeek {
             self.image_placement,
         );
 
-        let mut usage = Vec::new();
-        let mut retries = Vec::new();
+        let mut record = PeekRecord::default();
         let parsed = peek_with_retries(
             client,
             messages,
@@ -853,8 +909,7 @@ impl Distiller for ForkPeek {
                 let verdict = require_coverage(verdict, &offered)?;
                 require_in_bounds(verdict, &shown_lines)
             },
-            &mut usage,
-            &mut retries,
+            &mut record,
         )
         .await;
 
@@ -872,8 +927,10 @@ impl Distiller for ForkPeek {
                      output as a hard error — {why}",
                     offered.len()
                 );
-                let mut outcome = GateOutcome::failed(pending.len(), usage, &why);
-                outcome.retries = retries;
+                let mut outcome = GateOutcome::failed(pending.len(), record.usage, &why);
+                outcome.retries = record.retries;
+                // A gate that failed is the one whose reasoning most needs reading.
+                outcome.thinking = record.thinking;
                 return outcome;
             }
         };
@@ -940,8 +997,9 @@ impl Distiller for ForkPeek {
             inbox: dispositions,
             background: bg,
             surfaced,
-            usage,
-            retries,
+            usage: record.usage,
+            retries: record.retries,
+            thinking: record.thinking,
         }
     }
 
@@ -974,16 +1032,14 @@ impl Distiller for ForkPeek {
             }],
         });
 
-        let mut usage = Vec::new();
-        let mut retries = Vec::new();
+        let mut record = PeekRecord::default();
         let parsed = peek_with_retries(
             client,
             messages,
             tools,
             TRIAGE,
             |c| parse_dispositions(c, TRIAGE).ok_or_else(|| unusable(c, TRIAGE)),
-            &mut usage,
-            &mut retries,
+            &mut record,
         )
         .await;
 
@@ -999,8 +1055,9 @@ impl Distiller for ForkPeek {
                         .filter(|(h, _)| shown_bg.contains(h.as_str()))
                         .collect(),
                     origin: Origin::Model,
-                    usage,
-                    retries,
+                    usage: record.usage,
+                    retries: record.retries,
+                    thinking: record.thinking,
                 }
             }
             Err(why) => {
@@ -1009,8 +1066,9 @@ impl Distiller for ForkPeek {
                     inbox: Vec::new(),
                     background: Vec::new(),
                     origin: Origin::Fallback,
-                    usage,
-                    retries,
+                    usage: record.usage,
+                    retries: record.retries,
+                    thinking: record.thinking,
                 }
             }
         }
