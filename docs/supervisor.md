@@ -48,12 +48,14 @@ the supervisor doesn't model what it needs. It cannot be the identity because pi
 are recycled and the log is durable — a logged pid stops resolving after reuse,
 resumption, or a reboot.
 
-The mint counter **seeds from the resumed log at boot** (`max_handle_mention` over
-each serialized entry): handles land in prose (tool results, notification
-sources), not in a typed field, so the scan is textual and deliberately
-over-matches — a false hit skips an ordinal, which costs nothing, while an
-under-match would let a restarted daemon re-mint an id the durable record already
-refers to.
+The mint counter **seeds from the log at boot** (`max_handle_mention` over each
+serialized entry). Today that scan always runs over an empty log — `serve` mints
+a fresh session dir and refuses an existing one ([control-channel](control-channel.md)),
+so no boot ever starts from a prior session's entries; the seeding is what would
+keep a resumed daemon from re-minting an id the durable record already refers to.
+Handles land in prose (tool results, notification sources), not in a typed field,
+so the scan is textual and deliberately over-matches — a false hit skips an
+ordinal, which costs nothing, while an under-match would collide.
 
 ## Process-group ownership
 

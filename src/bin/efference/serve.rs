@@ -77,6 +77,39 @@ fn resolve_bind(
     }))
 }
 
+/// Create the session dir, refusing a name that already has one (docs/control-channel.md).
+///
+/// A session does not outlive its process: `Log::create` opens the log for append with an
+/// empty in-memory `entries`, so a second run over the same file restarts `seq` at 0 and the
+/// file ends up with a duplicated seq space — which every offline reader (`view`, `wire`, the
+/// TUI fold) reads as a single sequence. Refusing an occupied dir is what keeps that
+/// unreachable until resumption is designed; when it is, this guard changes with it rather
+/// than gaining exceptions.
+///
+/// `create_dir` rather than `create_dir_all` on the leaf: the leaf creation is the exclusive
+/// one, so two `serve`s racing the same name cannot both pass the check. The parent
+/// (`.efference/`) is still created recursively — it is shared by every session.
+pub(crate) fn mint_session_dir(session_dir: &Path) -> Result<(), CliError> {
+    if let Some(parent) = session_dir.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match std::fs::create_dir(session_dir) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(format!(
+            "session dir {} already exists — `serve` mints a new session and does not resume one. \
+             Pick another --name; the existing session's log is intact at {}.",
+            session_dir.display(),
+            session_dir.join(LOG_NAME).display()
+        )
+        .into()),
+        Err(e) => Err(format!(
+            "could not create session dir {}: {e}",
+            session_dir.display()
+        )
+        .into()),
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
 pub(crate) async fn serve(
     session_dir: PathBuf,
@@ -139,15 +172,18 @@ pub(crate) async fn serve(
     );
 
     // Everything for this session is colocated in its own dir (gitignored), standard-named since
-    // the dir is the unique unit (docs/permissions.md).
-    // Create it first; a re-`serve` of an existing `--name` reuses it.
-    std::fs::create_dir_all(&session_dir)?;
+    // the dir is the unique unit (docs/permissions.md). Minting it is also the guard against
+    // re-serving a name: an existing dir is refused here, before the log is opened and before
+    // the socket is unlinked, so neither the sequential nor the concurrent corruption path is
+    // reachable (docs/control-channel.md).
+    mint_session_dir(&session_dir)?;
 
     // Snapshot the origin config into the session's own `config.toml` *once* (a fresh session). The
     // origin (`--config`/the `efference.toml` probe) is a template consumed at boot; thereafter the
     // per-session snapshot is the live, editable, watched policy — so two sessions sharing an origin
     // diverge freely, and the session can `cat` its config to see its perimeter and edit it to
-    // request changes. On resume the snapshot already exists and is kept verbatim.
+    // request changes. The `else` branch (a snapshot that already exists) is unreachable while
+    // `mint_session_dir` refuses an existing dir; it is what a resumption design would re-enter.
     let session_config = session_dir.join(CONFIG_NAME);
     if !session_config.exists() {
         // Validate the origin first (fail fast on a malformed template, before binding anything),
@@ -230,6 +266,8 @@ pub(crate) async fn serve(
     eprintln!("session dir: {}", session_dir.display());
     eprintln!("logging to {}", log_path.display());
     let socket = session_dir.join(SOCKET_NAME);
+    // The dir was just minted, so there is no socket to unlink and no live daemon whose socket
+    // this could take away — `mint_session_dir` refused before reaching here if the dir existed.
     let _ = std::fs::remove_file(&socket); // ignore if absent.
 
     // Build the system prompt once, here at startup, and freeze it into the cached
