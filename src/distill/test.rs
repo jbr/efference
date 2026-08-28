@@ -944,15 +944,30 @@ fn the_roster_gives_each_item_a_path_but_not_its_summary() {
 /// schedule** as the main loop's own aborted turns (docs/transport.md) — one policy for
 /// one failure, whichever surface it lands on. Before this, an aborted peek withheld on
 /// the first abort while an aborted turn got four attempts; a controlled run caught the
-/// asymmetry costing nine turns and a spurious conformance failure
-/// (docs/transport.md).
+/// asymmetry costing nine turns and a spurious conformance failure (docs/transport.md).
+///
+/// The cap is the part worth pinning: it is what lets the attempt count be large enough
+/// to wait a flaky provider out without the tail of the schedule becoming a hang.
 #[test]
 fn an_aborted_peek_stream_backs_off_on_the_main_loops_budget() {
+    use crate::agent::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff};
     use std::time::Duration;
-    assert_eq!(abort_backoff(1), Some(Duration::from_secs(1)));
-    assert_eq!(abort_backoff(2), Some(Duration::from_secs(2)));
-    assert_eq!(abort_backoff(3), Some(Duration::from_secs(4)));
-    // The fourth abort exhausts the budget: no pause, withhold.
-    assert_eq!(abort_backoff(STREAM_ABORT_ATTEMPTS), None);
-    assert_eq!(abort_backoff(STREAM_ABORT_ATTEMPTS + 1), None);
+    assert_eq!(stream_abort_backoff(1), Some(Duration::from_secs(1)));
+    assert_eq!(stream_abort_backoff(2), Some(Duration::from_secs(2)));
+    assert_eq!(stream_abort_backoff(3), Some(Duration::from_secs(4)));
+    // Capped, so a long budget does not end in one enormous sleep.
+    assert_eq!(stream_abort_backoff(6), Some(Duration::from_secs(30)));
+    assert_eq!(
+        stream_abort_backoff(STREAM_ABORT_ATTEMPTS - 1),
+        Some(Duration::from_secs(30))
+    );
+    // The last attempt exhausts the budget: no pause, withhold.
+    assert_eq!(stream_abort_backoff(STREAM_ABORT_ATTEMPTS), None);
+    assert_eq!(stream_abort_backoff(STREAM_ABORT_ATTEMPTS + 1), None);
+    // The whole schedule is minutes, not hours.
+    let total: u64 = (1..STREAM_ABORT_ATTEMPTS)
+        .filter_map(stream_abort_backoff)
+        .map(|d| d.as_secs())
+        .sum();
+    assert!((120..400).contains(&total), "whole schedule was {total}s");
 }

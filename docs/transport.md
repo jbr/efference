@@ -153,18 +153,23 @@ has yielded any deltas. A connection that has returned 200 and then dies
 mid-stream is not resumed — it may already have published live deltas — but it
 is not lost either: the partial assembles as a record-only completion
 (finalized-or-marked, above), and the **agent loop retries the whole request**.
-The loop makes up to `STREAM_ABORT_ATTEMPTS` (4) attempts per model call with a
-doubling pause (1s/2s/4s); each aborted attempt's partial is appended to the log
-first. Because a marked entry projects to nothing, every retry re-sends
+The loop makes up to `STREAM_ABORT_ATTEMPTS` (12) attempts per model call with a
+doubling pause capped at 30s — about three and a half minutes of waiting in all;
+each aborted attempt's partial is appended to the log first. The budget is sized
+to **wait the failure out**, because a mid-stream abort is an ephemeral upstream
+condition and the alternative on exhaustion is worse than waiting: idling with
+"send a turn to retry" needs an operator, and an autonomous run has none. The cap
+is what lets the count be large without the tail becoming a hang — uncapped
+doubling over twelve attempts would sleep for over an hour. Because a marked entry projects to nothing, every retry re-sends
 byte-identical messages and rides the still-warm cached prefix. On exhaustion
 the loop posts a notification naming the failure (the same pattern as the
 output-token-cap notification) and returns to idle — the operator's view and
 the agent's next triage gate both see that the turn was not completed, rather
 than a silence indistinguishable from the model producing nothing.
 
-The **fork peek** now takes the same treatment on the same budget: an aborted
-peek stream is retried up to `STREAM_ABORT_ATTEMPTS` times with the same
-doubling pause, re-sending byte-identical messages over the warm prefix (its
+The **fork peek** takes the same treatment on the same budget: an aborted peek
+stream is retried up to `STREAM_ABORT_ATTEMPTS` times on the same capped
+schedule, re-sending byte-identical messages over the warm prefix (its
 tail is throwaway, so nothing has to be committed to arrange the replay). Only
 on exhaustion does the gate withhold. The surfaces used to disagree — an
 aborted turn got four attempts while an aborted peek withheld on the first —

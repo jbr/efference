@@ -33,7 +33,7 @@ use std::collections::HashSet;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::agent::STREAM_ABORT_ATTEMPTS;
+use crate::agent::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff};
 use crate::api::{Client, Completion, RequestUsage, ToolChoice};
 use crate::context::Item;
 use crate::inbox::ShownNotification;
@@ -302,8 +302,8 @@ async fn peek_with_retries<T>(
 
 /// One peek round-trip, retried while its **stream dies before finalizing**
 /// (docs/transport.md) — the same treatment, on the same budget
-/// ([`STREAM_ABORT_ATTEMPTS`]) and the same doubling pause (1s/2s/4s), that the main
-/// loop gives an aborted turn.
+/// ([`STREAM_ABORT_ATTEMPTS`]) and the same [`stream_abort_backoff`] schedule that the
+/// main loop gives an aborted turn.
 ///
 /// The partial is discarded rather than replayed: whatever arrived is untrusted, and
 /// the in-fork compliance retry's trick of replaying the assistant turn does not apply
@@ -350,7 +350,7 @@ async fn peek_completion(
         retries.push(format!(
             "stream aborted upstream (attempt {aborted} of {STREAM_ABORT_ATTEMPTS}): {why}"
         ));
-        let Some(pause) = abort_backoff(aborted) else {
+        let Some(pause) = stream_abort_backoff(aborted) else {
             return Err(format!(
                 "peek stream aborted upstream, {aborted} attempts exhausted: {why}"
             ));
@@ -361,15 +361,6 @@ async fn peek_completion(
         );
         tokio::time::sleep(pause).await;
     }
-}
-
-/// The policy half of [`peek_completion`]'s abort loop, split out so it can be
-/// asserted without a live upstream: given how many attempts have now aborted, the
-/// pause before the next one, or `None` when the budget ([`STREAM_ABORT_ATTEMPTS`]) is
-/// spent and the gate must withhold. Doubling from one second — the same schedule the
-/// main loop uses for its own aborted turns.
-fn abort_backoff(aborted: u32) -> Option<std::time::Duration> {
-    (aborted < STREAM_ABORT_ATTEMPTS).then(|| std::time::Duration::from_secs(1 << (aborted - 1)))
 }
 
 /// Extend the fork's throwaway tail past a non-compliant response, keeping the

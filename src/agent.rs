@@ -84,13 +84,33 @@ const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 /// Attempts per model call when the stream dies before finalizing
 /// (docs/transport.md): each aborted attempt's partial is appended record-only
 /// (it projects to nothing, so the replay re-sends byte-identical messages over
-/// the still-warm prefix), then the request goes again after a doubling pause
-/// (1s/2s/4s). Sized to match the transport's own transient family
-/// (`RETRY_MAX_ATTEMPTS`); observed live 2026-08-21, three consecutive aborts
-/// with a success interleaved — provider flakiness, not a hard fault. The fork
-/// peek reaches for this same constant (`distill.rs`): one stated policy for a
-/// stream that dies before finalizing, whichever surface it lands on.
-pub(crate) const STREAM_ABORT_ATTEMPTS: u32 = 4;
+/// the still-warm prefix), then the request goes again after a
+/// [`stream_abort_backoff`] pause. The fork peek reaches for the same constant
+/// and the same schedule (`distill.rs`): one stated policy for a stream that
+/// dies before finalizing, whichever surface it lands on.
+///
+/// Sized to **wait the failure out**. A mid-stream abort is an ephemeral
+/// upstream condition, and the alternative on exhaustion — idling with "send a
+/// turn to retry" — is not clearly better than waiting another few minutes, and
+/// is strictly worse when nobody is at the keyboard to read it
+/// (backlog/autonomous-has-no-one-to-retry.md). It was 4, from a corpus in which
+/// every abort recovered on the first retry; a single run on 2026-08-28 then
+/// produced two streaks reaching attempt 3 and one exhausting all four, against
+/// an endpoint whose p99 latency sat near the client's timeout. Twelve attempts
+/// on the capped schedule spends about three and a half minutes before giving
+/// up.
+pub(crate) const STREAM_ABORT_ATTEMPTS: u32 = 12;
+
+/// The pause before the next attempt after `aborted` of them have died, or
+/// `None` when the budget is spent. Doubling from one second, **capped** — the
+/// cap is what lets the attempt count grow without the wait becoming a hang:
+/// uncapped doubling over twelve attempts would sleep for over an hour, with a
+/// single pause longer than the whole schedule is now.
+pub(crate) fn stream_abort_backoff(aborted: u32) -> Option<std::time::Duration> {
+    const CAP: u64 = 30;
+    (aborted < STREAM_ABORT_ATTEMPTS)
+        .then(|| std::time::Duration::from_secs((1u64 << (aborted - 1).min(20)).min(CAP)))
+}
 
 /// Drive the loop until input ends. The log lives in [`Shared`]; the loop appends
 /// through it.
@@ -255,10 +275,9 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                              {aborted_attempts} of {STREAM_ABORT_ATTEMPTS}): {why} — \
                              retrying]"
                         );
-                        tokio::time::sleep(std::time::Duration::from_secs(
-                            1 << (aborted_attempts - 1),
-                        ))
-                        .await;
+                        if let Some(pause) = stream_abort_backoff(aborted_attempts) {
+                            tokio::time::sleep(pause).await;
+                        }
                     }
                     // The request itself failed — nothing streamed, and the transport's
                     // own retry handler already exhausted the transient family
