@@ -30,9 +30,8 @@ use crate::tui::{
 use crossbeam_channel::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 
-/// The idle status-bar line (also restored when an approval gate resolves). After
-/// the bind purge (docs/tui.md) the status bar stops enumerating
-/// verb keys — the strip is the legend — and just points there.
+/// The idle status-bar line (also restored when an approval gate resolves). It does
+/// not enumerate verb keys: the strip is the legend (docs/tui.md), so this points there.
 const IDLE_STATUS: &str = "efference — ↑ controls";
 
 /// The status-bar line for a read-only view of a recorded log (docs/tui.md): it
@@ -42,15 +41,14 @@ pub(super) fn view_status(label: &str) -> String {
     format!("viewing {label} · read-only — ↑ controls")
 }
 
-/// Cap on a process-panel row's live tail between `/state` polls (TUI-bg-2). The
-/// panel only renders the last line, and a poll reconciles to the authoritative
-/// snapshot every ~400ms, so this just bounds the gap-filling append.
+/// Cap on a process-panel row's live tail. The panel only renders the last line, and
+/// the `processes` topic's next replacement reconciles to the authoritative snapshot,
+/// so this just bounds the gap-filling append.
 const BG_TAIL_CAP: usize = 4096;
 
 /// The between-turns speed rungs the `+`/`-` keys step through (ms)
 /// (docs/tui.md). `0` is as-fast-as-possible; the ladder is coarse on
-/// purpose — a felt "slower/faster," not a precise slider. Tunable in the end-of-sequence ergonomics
-/// pass.
+/// purpose — a felt "slower/faster," not a precise slider.
 const PACE_LADDER: &[u64] = &[0, 500, 1_000, 2_000, 5_000, 10_000, 30_000];
 
 /// The pace rung one step from `cur` along [`PACE_LADDER`]: `slower` climbs toward
@@ -125,7 +123,7 @@ pub(super) fn stall_indicator(stall: Option<&StallView>) -> Option<String> {
 }
 
 /// UI mode — the modal structure of the interface. ferritin's `DevLog` and
-/// `Input` (go-to/search) modes are dropped for the read-only M1 viewer.
+/// `Input` (go-to/search) modes are dropped.
 #[derive(Debug)]
 pub(super) enum UiMode {
     /// Normal browsing mode
@@ -258,14 +256,10 @@ pub(super) struct ViewportState {
     /// The document height as of the last completed walk, kept **after**
     /// [`cached_layout`](Self::cached_layout) is invalidated.
     ///
-    /// A re-projection drops the layout cache, so between a streamed fragment and
-    /// the next paint the current height is genuinely unknown — and during a stream
-    /// that is most of the time. `max_scroll` answering "0" there made every scroll
-    /// event evaluate `offset >= max_scroll` as true, i.e. "the user is at the
-    /// bottom", which silently re-armed stream-following and snapped the viewport
-    /// down from wherever they were reading. The previous frame's height is the last
-    /// thing actually measured, and it errs the safe way: content only ever arrives
-    /// *below*, so it under-estimates the bottom rather than claiming to be at it.
+    /// A re-projection drops the layout cache, so during a stream the current height
+    /// is usually unknown when a scroll event arrives; this backs `max_scroll` there
+    /// instead of a `0` that would read as "at the bottom" and re-arm stream-following
+    /// (docs/tui.md).
     pub last_document_height: u16,
     /// Last known viewport height for scroll clamping
     pub last_viewport_height: u16,
@@ -286,9 +280,9 @@ pub(super) struct ViewportState {
     /// Height (rows) the composer occupied last frame, so mouse hit-testing and
     /// scroll clamping agree with `render_frame` on where the transcript ends.
     pub input_height: u16,
-    /// Retired: the approval gate moved inline into the transcript (docs/tui.md),
-    /// so it no longer reserves a bottom-chrome row. Kept (always 0) so the mouse
-    /// hit-testing math reads uniformly as `1 + input_height + gate_height`.
+    /// Always 0: the approval gate renders inline in the transcript (docs/tui.md)
+    /// and reserves no bottom-chrome row. Kept so the mouse hit-testing math reads
+    /// uniformly as `1 + input_height + gate_height`.
     pub gate_height: u16,
     /// The right-docked sidebar's rectangle as of the last frame, or `None` when it's
     /// hidden (narrow terminal). Remembered so the sidebar-only dev screenshot can
@@ -447,13 +441,13 @@ pub(super) struct InteractiveState<'a> {
     /// `None` is the normal case and costs nothing.
     pub frame_cost: Option<super::frame_cost::FrameCost>,
 
-    /// The input composer (M2). The swappable input interface (docs/tui.md).
+    /// The input composer — the swappable input interface (docs/tui.md).
     pub composer: Composer,
     /// System plain-text clipboard plus an in-process fallback. Kept outside the
     /// composer so editor state stays deterministic.
     pub clipboard: TextClipboard,
     /// Focus model: true = composing (keys go to the composer), false = command
-    /// mode (M1's single-key transcript commands). Esc toggles; a printable key in
+    /// mode (the single-key transcript commands). Esc toggles; a printable key in
     /// command mode returns to composing. Starts focused.
     pub composing: bool,
     /// Control-strip focus (docs/tui.md): the focused **verb**, not its position —
@@ -467,8 +461,8 @@ pub(super) struct InteractiveState<'a> {
     pub strip_focus: Option<StripVerb>,
     /// The item list pinned while the strip is engaged (docs/tui.md), or `None`
     /// when it is free to re-rank. Holds the *order*; each slot's label is re-read
-    /// from the live list per frame, and a slot whose verb no longer applies greys
-    /// in place rather than being removed.
+    /// from the live list per frame, and a slot whose verb stops applying greys in
+    /// place rather than being removed.
     pub strip_pinned: Option<Vec<StripItem>>,
     /// An in-progress stager activation (docs/tui.md): the composer is editing a
     /// strip verb's argument, with the operator's draft parked for restoration on
@@ -510,23 +504,20 @@ pub(super) struct InteractiveState<'a> {
     /// threshold is written here and described by the daemon's watcher (docs/inbox.md); the TUI
     /// never announces an attachment itself, so paste and drag-in are one path.
     pub attachments_dir: Option<std::path::PathBuf>,
-    /// Optimistic echoes of just-submitted user turns, in submission order, not yet
-    /// confirmed by a committed `User` log entry (docs/tui.md).
-    /// `project` renders them dimmed after the live tail; each is dropped when the `User` entry
-    /// carrying its `submission_id` arrives via `/events`. The delivery indicator: a message never
-    /// vanishes into the void while a trajectory runs, and the pending→committed flip *is* "now on
-    /// the wire."
+    /// Optimistic echoes of just-submitted user turns, in submission order, awaiting
+    /// the committed `User` log entry that confirms them (docs/tui.md).
     ///
     /// Keyed by `submission_id`, not by text: recall hands a queued turn back to be edited and
     /// re-sent, at which point a content match would settle the wrong echo.
     pub pending_turns: Vec<SubmittedTurn>,
-    /// The pending tool-approval gate, if any (polled from `GET /state`, M3).
+    /// The pending tool-approval gate, if any — the `gate` state topic
+    /// (docs/control-api.md).
     pub pending_gate: Option<PendingGate>,
     /// Sends an approval decision (`call_id`, decision) to the tokio side, which
     /// resolves it via `PUT /approvals/:call_id`.
     pub approve_tx: UnboundedSender<(String, Approval)>,
-    /// Sends a pace command (`speed_ms`, `held`) to the tokio side, which `POST`s it to
-    /// `/pace` (docs/tui.md).
+    /// Sends a pace command (`speed_ms`, `held`) to the tokio side, which issues
+    /// `PATCH /loop {pace}` (docs/tui.md).
     pub pace_tx: UnboundedSender<PaceCmd>,
     /// Fires the operator's interrupt intent at the in-flight tool: `Kill` →
     /// `POST /loop/interrupt` (the hard rung of graduated Esc, docs/tui.md), `Detach` →
@@ -562,27 +553,27 @@ pub(super) struct InteractiveState<'a> {
     /// resolves into row focus (`sidebar_verb_hits` likewise for verbs).
     pub sidebar_hits: Vec<(Rect, SidebarRow)>,
     pub sidebar_verb_hits: Vec<(Rect, SidebarRow, usize)>,
-    /// Whether the loop is executing a turn, polled from `GET /state`'s `running` (docs/tui.md).
+    /// Whether the loop is executing a turn, from the `running` state topic (docs/tui.md).
     /// Graduated Esc reads it (via [`is_loop_active`](Self::is_loop_active)) to choose
     /// pause-vs-swallow — reliable through a *silent* long tool, where streaming
     /// (`pending_request`) reads false.
     pub loop_running: bool,
-    /// The operator's pace dial / hold overlay, polled from `GET /state`'s `pace`
-    /// (docs/tui.md). `None` until the first poll. Ephemeral chrome —
+    /// The operator's pace dial / hold overlay, from the `pace` state topic
+    /// (docs/tui.md). `None` until the connect snapshot lands. Ephemeral chrome —
     /// surfaced in the status bar (loud to the operator), never in the transcript, and never
     /// projected (a held/slowed loop is byte-identical on the wire to a fast one).
     pub pace: Option<PaceView>,
-    /// The live background processes (docs/supervisor.md), polled from `GET /state`. Rendered
+    /// The live background processes (docs/supervisor.md), from the `processes` topic. Rendered
     /// as a persistent panel above the composer; empty hides it. Ephemeral chrome —
     /// never part of the transcript document, so it never triggers a reproject.
     pub processes: Vec<BgProc>,
-    /// The cumulative usage statistics (polled from `GET /state`). Rendered in the
+    /// The cumulative usage statistics, from the `usage` topic. Rendered in the
     /// status bar. Ephemeral chrome — reflects API telemetry from the daemon.
     pub usage: Option<UsageStats>,
-    /// The last non-success upstream response, polled from `GET /state`. The daemon
+    /// The last non-success upstream response, from the `upstream_failure` topic. The daemon
     /// clears it on recovery; never transcript content.
     pub upstream_failure: Option<UpstreamFailureView>,
-    /// The retry in flight, polled from `GET /state`'s `upstream_retry`. Level-triggered:
+    /// The retry in flight, from the `upstream_retry` topic. Level-triggered:
     /// `None` while nothing is being retried. Status-bar chrome, never transcript content.
     pub upstream_retry: Option<UpstreamRetryView>,
     /// The trajectory-stalled condition, from the `stall` topic
@@ -595,7 +586,7 @@ pub(super) struct InteractiveState<'a> {
     /// snapshot lands, and in views that never connect. Sidebar chrome.
     pub session_identity: Option<SessionIdentityView>,
 
-    /// The effective policy + pending proposals (polled from `GET /state`). Drives the
+    /// The effective policy + pending proposals, from the policy topics. Drives the
     /// sidebar's POLICY section (docs/permissions.md). Ephemeral chrome.
     pub policy: Option<super::PolicyView>,
 

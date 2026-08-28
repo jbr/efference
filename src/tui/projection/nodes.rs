@@ -26,19 +26,13 @@ pub(in crate::tui) fn pending_turn(text: &str) -> DocumentNode<'static> {
     )
 }
 
-/// One in-flight tool call, rendered **in full** — the point is to watch the work happen, so
-/// nothing here truncates. The call renders as its arguments, with the one value still arriving
-/// shown as content.
+/// One in-flight tool call, rendered in full (docs/tui.md): its settled arguments as
+/// arguments, the one value still arriving as content.
 ///
-/// One entry per call, keyed by the `call_id` the call's result will key on: that binds the live
-/// block to its call before commit, which is what any per-entry view state (docs/tui.md) needs to
-/// survive the next streamed fragment.
-///
-/// The input is a partial slice of a JSON document, so the display must not assert structure the
-/// arrived bytes don't support (docs/tui.md). It is parsed as a *prefix*, and what may be claimed
-/// from that is decided positionally — see [`calling_tool_blocks`] and `projection/partial.rs`.
-/// Before any pair has arrived there is nothing to claim and the raw characters are shown, which
-/// claim nothing.
+/// Keyed by the `call_id` the call's result will key on, which binds the live block to
+/// its call before commit — what any per-entry view state needs to survive the next
+/// streamed fragment. What may be claimed from a prefix is decided positionally; see
+/// [`calling_tool_blocks`] and `projection/partial.rs`.
 pub(in crate::tui) fn live_call_entry(call: &LiveCall) -> DocumentNode<'static> {
     let blocks = calling_tool_blocks(&call.name, &call.input).unwrap_or_else(|| {
         // Nothing structural has arrived yet (`{"pa`). Dimmed lines, not a `code_block`:
@@ -58,17 +52,15 @@ pub(in crate::tui) fn live_call_entry(call: &LiveCall) -> DocumentNode<'static> 
     DocumentNode::entry(EntryKind::AssistantMessage, blocks).keyed(call.call_id.clone())
 }
 
-/// A tool call rendered from the part of its input that has arrived (docs/tui.md):
-/// the settled arguments as arguments, and the one value still in flight as
-/// content. `None` before anything structural has arrived, so the caller falls back
-/// to the raw characters.
+/// A tool call rendered from the part of its input that has arrived (docs/tui.md).
+/// `None` before anything structural has arrived, so the caller falls back to the raw
+/// characters.
 ///
-/// The settled half goes through [`call_args`] — the same function a *committed*
-/// call renders through — so the header fills in as bytes land rather than changing
-/// shape when the call commits. The in-flight value never reaches it: what
-/// [`call_args`] produces is an identity claim (`write src/api.rs`), and only a
-/// value whose closing quote has arrived may back one
-/// (`projection/partial.rs`).
+/// The settled half goes through [`call_args`], the same function a *committed* call
+/// renders through, so the header fills in as bytes land rather than changing shape at
+/// commit. The in-flight value never reaches it: [`call_args`] produces an identity
+/// claim (`write src/api.rs`), and only a value whose closing quote has arrived may
+/// back one (`projection/partial.rs`).
 fn calling_tool_blocks(name: &str, input: &str) -> Option<Vec<DocumentNode<'static>>> {
     let parsed = PartialInput::parse(input)?;
     if parsed.settled.is_empty() && parsed.arriving.is_none() {
@@ -150,17 +142,8 @@ pub(in crate::tui) fn dim_line(text: &str) -> DocumentNode<'static> {
 }
 
 /// A turn's extended thinking, as an entry that stays in the transcript
-/// (docs/tui.md). `None` when the turn did no thinking.
-///
-/// **Shown in full.** Thinking streams past far too fast to read at generation
-/// speed, so the streamed copy is only a "something is happening" signal and this is
-/// the copy a human actually reads, at their own pace, afterwards — which it can
-/// only be if all of it is here. Whether some of it is reliably worth hiding is a
-/// question to answer from reading real sessions, not to assume up front
-/// (docs/positions.md).
-///
-/// Rendered in the dimmed register, like the live tail it succeeds: thinking is not
-/// the assistant's answer and must never be mistaken for it.
+/// (docs/tui.md). `None` when the turn did no thinking. Shown in full, in the dimmed
+/// register, like the live tail it succeeds.
 pub(in crate::tui) fn thinking_entry(thinking: &[ContentBlock]) -> Option<DocumentNode<'static>> {
     if thinking.is_empty() {
         return None;
@@ -278,23 +261,13 @@ pub(in crate::tui) fn annotation_line(marker: &str, text: &str) -> DocumentNode<
     )
 }
 
-/// The spotter's verdict on a call (docs/permissions.md), as one muted line. Before the
-/// decision it is *why* the call is held; after, it is a gloss on what the call was taken
-/// to be — so it stays in the dim register either way and never competes with the call or
-/// its result for attention.
+/// The spotter's verdict on a call (docs/permissions.md, docs/tui.md), as one muted
+/// line, emitted as its own [`Annotation`](EntryKind::Annotation) entry beside the
+/// call it judges.
 ///
 /// `stance` is `None` only for a gate whose `Spot` entry hasn't reached this client yet
-/// (the live `/state` path, which carries the reason but not the stance); the committed
-/// entry supplies it in every other case. It leads the line because it is the part that is
-/// scannable — a `cleared` gloss and a `gated` one are read very differently, and without
-/// it every verdict looks alike. [`Origin`](crate::log::Origin) is deliberately not drawn:
-/// a fail-closed verdict's own reason says "spotter unavailable", so surfacing it again
-/// would cost a glyph to repeat what the line already reads.
-///
-/// Emitted as its own [`Annotation`](EntryKind::Annotation) entry beside the call it
-/// judges, never inside it: it is a separate rung's judgment *about* the call rather
-/// than part of the call's content. It is not a focus stop — it is read beside the
-/// call, not visited.
+/// (the `gate` state topic carries the reason but not the stance); the committed entry
+/// supplies it in every other case.
 pub(in crate::tui) fn spotter_line(
     stance: Option<crate::log::Stance>,
     reason: &str,

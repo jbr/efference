@@ -50,18 +50,15 @@ pub(super) struct HighlightMemo {
 /// Highlighting for a block that is still being **appended to** — a tool call's
 /// contents arriving mid-stream (docs/tui.md).
 ///
-/// [`HighlightMemo`] is keyed on the block's text, so a block that grows misses it
-/// on every frame and re-parses from line 1 — the exact cost the memo exists to
-/// avoid, reached by a door it can't see. The text is append-only though, and
-/// syntect exposes its per-line state (`HighlightLines::state` /
-/// `from_state`), so the previous frame's work is reusable: only the lines that
-/// arrived since it need parsing.
+/// [`HighlightMemo`] is keyed on the block's text, so a growing block misses it every
+/// frame and re-parses from line 1. The text is append-only, and syntect exposes its
+/// per-line state (`HighlightLines::state` / `from_state`), so only the lines that
+/// arrived since the last frame need parsing.
 ///
-/// The saved state is the state after the last **complete** line. A block's final
-/// line is usually still arriving, and highlighting it can mis-lex (an unterminated
-/// string literal colours the rest of the line as a string) — so it is recomputed
-/// each frame from the saved state and never committed to it. It corrects itself
-/// when its newline lands.
+/// The saved state is the state after the last **complete** line. A block's final line
+/// is usually still arriving and can mis-lex (an unterminated string literal colours
+/// the rest of the line as a string), so it is recomputed each frame from the saved
+/// state and never committed to it.
 #[derive(Debug)]
 struct GrowingHighlight {
     /// Identity of what is being highlighted — theme and language, not text. A
@@ -229,10 +226,9 @@ impl<'a> InteractiveState<'a> {
     /// language is known**. An untagged block (`lang: None`) is plain text with a
     /// bare border: no highlighting, no `❬…❭` tag.
     ///
-    /// It used to default to `rust`, which was correct in ferritin — fenced blocks
-    /// in rustdoc are Rust unless they say otherwise — and wrong here, where the
-    /// commonest untagged block is a tool result. `ls` output was being labelled
-    /// `❬rust❭` and highlighted as Rust.
+    /// Defaulting to `rust` is correct in ferritin — a fenced block in rustdoc is
+    /// Rust unless it says otherwise — and wrong here, where the commonest untagged
+    /// block is a tool result: `ls` output labelled `❬rust❭` and coloured as Rust.
     pub(super) fn render_code_block(&mut self, lang: Option<&str>, code: &str, buf: &mut Buffer) {
         self.render_code_frame(lang, code, None, buf);
     }
@@ -387,7 +383,7 @@ impl<'a> InteractiveState<'a> {
 
         // Columns available *inside* the box: the border eats "│ " on the left and
         // " │" on the right. Content wraps to this rather than running past the
-        // border, which is what used to clip the tail of every long line.
+        // border, where the tail of a long line would be clipped.
         let inner_width = (border_width as usize)
             .saturating_sub(4 + gutter_width)
             .max(1);

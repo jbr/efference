@@ -1,42 +1,15 @@
 //! The control strip (docs/tui.md): a one-row, always-present surface between the
-//! transcript and the composer, showing the currently relevant loop verbs as
-//! focusable, clickable, button-like items. It is the discoverable slow path and
-//! the keybinding legend in one place — each item carries the key that would fire
-//! the same verb without visiting the strip.
+//! transcript and the composer, carrying the loop verbs the state ranks as focusable,
+//! clickable, button-like items. It is chrome — never projected, never logged — built
+//! from the `state` topics plus the committed log.
 //!
-//! Contents are **one relevance-ordered list per state**, most-relevant leftmost,
-//! filled to the available width and **cut from the right** — so `↑ ⏎` from the
-//! composer is always "do the most relevant thing," and what a narrow terminal
-//! loses is always the least relevant verb. The list is the state's context verbs
-//! followed by the omnipresent tail (`pace · theme · help · detach`), which is
-//! therefore what gets cut first; every tail verb has a keyboard fallback, and
-//! `pace` sits leftmost in the tail because it is a control, not a setting.
-//!
-//! Only verbs that apply in the state are shown — the strip flashing between
-//! states is preferred to carrying an affordance that would do nothing. The strip
-//! is chrome, not transcript: its contents come from the polled `/state` fields
-//! the status bar reads plus the committed log, and it never projects.
-//!
-//! Focus model: the strip is one stop on the single vertical axis
-//! (transcript → strip → composer). The focused item fills a reserved marker
-//! cell with `▸` (a space when unfocused), so focus movement never shifts text
-//! and stays visible in the colorless snapshot grid; the surface-color change is
-//! asserted via `cell()`, not the grid.
-//!
-//! **Focus is a [`StripVerb`], never an index** (docs/tui.md). The list is rebuilt
-//! per frame and the context verbs are *prepended* to the tail, so every position
-//! shifts when the state flips: an index-held focus silently becomes a different
-//! verb, and an operator reaching for `pace` at index 0 interrupted a running
-//! command instead. The index is re-derived from the verb each frame, and a
-//! focused verb that stops applying resolves visibly rather than by substitution.
-//!
-//! **Engaging the strip pins the list.** While it holds keyboard focus or the
-//! mouse is over its row, the item *order* is frozen: verbs that stop applying
-//! grey in place instead of being removed, so nothing moves under the operator's
-//! hands or their cursor. Labels still track the live state (a held loop's
-//! `pause` reads `resume` in the same slot), because a frozen label would be the
-//! stale information the freeze exists to prevent. The list re-ranks when focus
-//! and hover both leave.
+//! Two things shape everything below. The item list is **one relevance-ordered
+//! sequence per state** — the state's context verbs, then the omnipresent tail —
+//! filled to the available width and cut from the right. And **focus, the click
+//! hit-map, and the pin all hold a [`StripVerb`], never an index**: the list is
+//! rebuilt per frame with the context verbs *prepended*, so every position shifts
+//! when the state flips, and an index-held focus would become a different verb
+//! between the aim and the press.
 
 use ratatui::{buffer::Buffer, layout::Rect};
 
@@ -282,10 +255,8 @@ impl InteractiveState<'_> {
     /// `Detach` raises [`quit_requested`](super::state::UiState) for the caller
     /// (key handler or UI loop) to act on.
     ///
-    /// A verb the current state no longer ranks fires **nothing** and says so. That
-    /// is the explicit resolution the identity model buys: under an index, the
-    /// press landed on whatever verb had moved into the slot — which is how a reach
-    /// for `pace` interrupted a running command.
+    /// A verb the state has stopped ranking fires **nothing** and says so, rather
+    /// than falling through to whatever verb occupies its slot.
     pub(super) fn activate_strip_verb(&mut self, verb: StripVerb) {
         if !self.strip_verb_applies(verb) {
             self.ui.debug_message = "that verb no longer applies here".into();
@@ -500,10 +471,9 @@ impl InteractiveState<'_> {
         } else if self.staging.is_some() {
             Some("draft saved · ⏎ commit · ⎋ cancel")
         } else if self.strip_list_is_stale() {
-            // Leads the gate's own note deliberately: a pinned row that no longer
-            // matches the state is the one thing the operator must not act on
-            // unknowingly, and a silently frozen strip is the same defect class as
-            // the shifting one it replaced (docs/tui.md).
+            // Leads the gate's own note deliberately: a pinned row that has diverged
+            // from the state is the one thing the operator must not act on
+            // unknowingly (docs/tui.md).
             Some("pinned · leave to re-rank")
         } else if self.pending_gate.is_some() {
             Some("type below to redirect")

@@ -1,17 +1,11 @@
 //! What has arrived of a tool call's JSON input, mid-stream (docs/tui.md).
 //!
-//! A tool call's arguments arrive as fragments of a JSON document, so at any moment
-//! the accumulated buffer is a *prefix* of one — `{"path":"src/api.rs","contents":"use st`.
-//! Rendering that prefix as fields rather than as characters is what lets the TUI
-//! show a file being written while it is being written, instead of a wall of
-//! escaped JSON.
-//!
-//! The rule that keeps it honest is **positional**: within an object, only the
-//! **last** key can be incomplete, because the bytes for the earlier ones already
-//! arrived and closed. So the settled pairs may be rendered as identity — this call
-//! *is* a write to `src/api.rs` — while the last pair is still arriving and may only
-//! be rendered as content. Rendering a half-arrived `"src/api.r` as a path would be
-//! a well-formed, plausible, false claim, which is worse than showing raw bytes.
+//! The rule that keeps a prefix render honest is **positional**: within an object,
+//! only the **last** key can be incomplete, because the bytes for the earlier ones
+//! already arrived and closed. So the settled pairs may back an identity claim — this
+//! call *is* a write to `src/api.rs` — while the last pair may only be rendered as
+//! content, since a half-arrived `"src/api.r` would be a well-formed, plausible,
+//! false claim.
 //!
 //! The split is read off the parser rather than guessed: jiter's
 //! [`PartialMode::On`] drops an incomplete trailing value, and

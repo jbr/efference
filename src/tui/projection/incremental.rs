@@ -1,25 +1,18 @@
 //! The transcript as a **materialized view** of the log, updated in place
 //! (docs/tui.md).
 //!
-//! [`project`](super::project) rebuilds the whole document from the whole log. That
-//! stays the reference definition — and stays what the daemon-side wire projection
-//! does, where byte-determinism is the point (docs/log-and-projection.md) — but
-//! running it on every streamed token is linear in the whole log, on a client that
-//! repaints ~33 times a second.
-//!
-//! This type keeps the document between repaints and touches only what changed. It
-//! rests on one property of [`entry_nodes`](super::entry_nodes): a committed entry's
-//! nodes are a pure function of that entry, the annotations indexed against the calls
-//! it makes, and the human's per-call view toggles — never of its neighbours. So the
-//! invalidation rule is a single sentence:
+//! [`project`](super::project) rebuilds the whole document from the whole log and
+//! stays the reference definition; this type keeps the document between repaints and
+//! touches only what changed. It rests on one property of
+//! [`entry_nodes`](super::entry_nodes): a committed entry's nodes are a pure function
+//! of that entry, the annotations indexed against the calls it makes, and the human's
+//! per-call view toggles — never of its neighbours. So the invalidation rule is a
+//! single sentence:
 //!
 //! > **A committed entry is re-projected only when a call it owns changes.**
 //!
-//! Everything that can change about an already-committed entry arrives keyed by
-//! `call_id` — a tool result, a spotter verdict, the approval gate moving, the human
-//! flipping expand or raw — so each of those marks one owner dirty. A payload that
-//! annotates a call in some new way joins that list; a payload that renders on its
-//! own needs nothing. When in doubt [`invalidate_all`](Transcript::invalidate_all) is
+//! A payload that annotates a call in some new way joins the list of things that mark
+//! an owner dirty. When in doubt [`invalidate_all`](Transcript::invalidate_all) is
 //! always correct, just slower.
 
 use std::collections::{BTreeSet, HashMap};

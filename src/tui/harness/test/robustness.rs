@@ -1,4 +1,4 @@
-//! Inputs that used to panic or livelock the renderer.
+//! Inputs that can panic or livelock the renderer.
 
 use super::*;
 

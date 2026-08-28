@@ -89,8 +89,8 @@ fn scrolling_costs_the_viewport_not_the_log() {
 /// so without the memo, syntect re-parses the whole block ~33 times a second while
 /// the operator scrolls past it. Worse, parse state has to be carried from the
 /// block's first line each time, so the cost peaks exactly where the operator has
-/// scrolled furthest into it: the observed symptom was a long highlighted block
-/// scrolling more slowly than anything else.
+/// scrolled furthest into it — a long highlighted block scrolls more slowly than
+/// anything else.
 #[test]
 fn a_block_is_highlighted_once_not_once_a_frame() {
     let mut play = Screenplay::new(100, 30);

@@ -1,23 +1,12 @@
 //! The block menu (docs/tui.md): the *entry verbs* of the focused transcript
 //! unit, rendered trailing that unit's header line and travelling with `↑`/`↓`
-//! focus. Two verb families, two homes — loop verbs (pause, kill, approve…) live
-//! on the [control strip](super::control_strip), per-entry verbs (expand/collapse,
-//! raw/distilled) live here, at the entry they act on.
+//! focus. Loop verbs live on the [control strip](super::control_strip); the verbs
+//! here act on the entry itself.
 //!
-//! The menu trails the header text rather than being right-aligned or given its
-//! own row: appending never clobbers the header (a long `bash` command keeps its
-//! columns) and never reflows the transcript as focus moves, which a dedicated row
-//! would do on every `j`/`k`. It is clipped at the right edge when the header runs
-//! long, the same fit-to-width rule the strip uses.
-//!
-//! Which verbs an entry carries is a function of the entry itself, computed by
-//! [`menu_items`] from facts both the renderer (which has the node in hand) and
-//! the key/mouse dispatch (which looks the node up) can supply — one list, two
-//! callers, no drift. Most entries carry **no verbs at all**: there is nothing to
-//! expand (entries render whole — docs/tui.md), and the only per-entry mechanism
-//! that exists so far is the tool result's distilled/raw fork. A focused entry with
-//! an empty menu is the ordinary case, and `⏎` there does nothing rather than
-//! reaching for a verb it doesn't have.
+//! [`menu_items`] computes a unit's verbs from facts both the renderer (which has the
+//! node in hand) and the key/mouse dispatch (which looks the node up) can supply —
+//! one list, two callers, no drift. Most entries carry no verbs at all, and `⏎` on an
+//! empty menu does nothing.
 
 use ratatui::{buffer::Buffer, layout::Rect};
 
@@ -53,12 +42,11 @@ pub(super) struct MenuItem {
 ///   distillate/raw fork (docs/redaction-fork.md); a
 ///   [`RunningTool`](EntryKind::RunningTool) has the peek/full fork (docs/tui.md).
 /// - `key`: the entry's durable identity — the `call_id` the flip is recorded
-///   against. An entry with none carries no verbs: the toggle would not survive
-///   the next re-projection. A running tool's peek carries one now (the `call_id`
-///   arrives on `tool_call_start`, docs/control-api.md); it did not, which is why a
-///   live block toggled open re-collapsed on the next streamed fragment.
-/// - `flipped`: whether this entry's toggle is currently on, which is what the
-///   label names — labels name the *destination* state.
+///   against. An entry with none carries no verbs, because the toggle would not
+///   survive the next re-projection. A running tool's peek has one from
+///   `tool_call_start` (docs/control-api.md).
+/// - `flipped`: whether this entry's toggle is on, which is what the label names —
+///   labels name the *destination* state.
 pub(super) fn menu_items(kind: EntryKind, key: Option<&str>, flipped: bool) -> Vec<MenuItem> {
     match (kind, key) {
         (EntryKind::ToolResult, Some(_)) => vec![MenuItem {

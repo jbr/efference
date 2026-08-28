@@ -54,10 +54,8 @@ impl<'a> InteractiveState<'a> {
         key: KeyEvent,
         terminal: &mut Terminal<impl Backend + Write>,
     ) -> bool {
-        // Graduated Esc (docs/tui.md): a state machine, not a press-count — each Esc's effect is a
-        // function of the current state (focus/overlay, held, loop-active), so no counter or timer.
-        // Not-at-rest-composer → return to the composer; then held → interrupt, active → pause,
-        // idle → swallow. See [`handle_escape`](InteractiveState::handle_escape).
+        // Graduated Esc (docs/tui.md): a state machine, not a press-count, so it is handled
+        // before any mode dispatch. See [`handle_escape`](InteractiveState::handle_escape).
         if key.code == KeyCode::Esc {
             self.handle_escape();
             return false;
@@ -197,10 +195,10 @@ impl<'a> InteractiveState<'a> {
     /// Keys while the control strip is focused (docs/tui.md): `←`/`→` (and
     /// `C-b`/`C-f`) move between items, `⏎`/space activates, `↑`/`k` continues
     /// into the transcript, `↓`/`j` drops back to the composer. A plain letter
-    /// matching a *shown* item's hint is that item's **scoped mnemonic** — the
-    /// surviving letter-form after the bind purge (unit 04) — so the pace, hold,
-    /// background, and theme verbs answer to their letters only where their item is
-    /// on the strip (e.g. `p` resumes only in the held set), not as buried globals.
+    /// matching a *shown* item's hint is that item's **scoped mnemonic**, so the
+    /// pace, hold, background, and theme verbs answer to their letters only where
+    /// their item is on the strip (e.g. `p` resumes only in the held set), never as
+    /// buried globals.
     /// Anything unmatched falls through to the remaining transcript keys (scroll,
     /// help, quit).
     fn handle_strip_key(
@@ -344,7 +342,7 @@ impl<'a> InteractiveState<'a> {
             };
     }
 
-    /// Command-mode keys (composer unfocused): M1's single-key transcript commands.
+    /// Command-mode keys (composer unfocused): the single-key transcript commands.
     /// `pub(super)`: the sidebar falls unmatched keys through to it, as the strip does.
     pub(super) fn handle_command_key(
         &mut self,
@@ -358,8 +356,8 @@ impl<'a> InteractiveState<'a> {
             }
 
             // Tab toggles the sidebar (docs/tui.md) — the second column focus can
-            // move onto from command mode. It used to alias `↓` here; the arrow
-            // (and j / C-n) keep that meaning alone.
+            // move onto from command mode. It is not an alias for `↓`, which (with
+            // j / C-n) keeps down-a-unit to itself.
             (KeyCode::Tab, _) => {
                 self.toggle_sidebar();
             }

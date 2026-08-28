@@ -4,17 +4,8 @@ use super::*;
 
 impl<'a> InteractiveState<'a> {
     /// Graduated Esc (docs/tui.md): a **state machine**, not a press-count — each Esc's effect is a
-    /// function of the current state, so no counter, timer, or reset is needed. Precedence, gentlest
-    /// first:
-    ///
-    /// 1. **not at rest in the composer** (an overlay is open, or focus is in the transcript) →
-    ///    return to the composer.
-    /// 2. **at the composer, held** → interrupt the in-flight tool (`POST /loop/interrupt`).
-    /// 3. **at the composer, not held, loop active** → pause/hold.
-    /// 4. **at the composer, not held, nothing happening** → swallow (Esc has nothing to do).
-    ///
-    /// So sitting in the composer while the agent works, one Esc pauses and a second interrupts;
-    /// and jamming Esc from anywhere still walks return-to-composer → pause → interrupt.
+    /// function of the current state, so there is no counter, timer, or reset. The rungs below run
+    /// gentlest first, and the doc names what each one is for.
     pub(in crate::tui) fn handle_escape(&mut self) {
         // An active inline widget (the pace stepper) and a stager are the gentlest
         // things Esc can undo — a sub-state revert, before any return/pause/interrupt

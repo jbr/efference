@@ -1,14 +1,11 @@
 //! Sidebar focus (docs/tui.md): Tab toggles the right-docked sidebar's *actionable*
-//! rows into the focus model, so its rows can carry verbs instead of being read-only
-//! chrome. The third context on top of the vertical axis (transcript → strip →
-//! composer): mutually exclusive with `composing` and with `strip_focus`.
+//! rows into the focus model. A third context beside the vertical axis (transcript →
+//! strip → composer): mutually exclusive with `composing` and with `strip_focus`.
 //!
 //! Rows are held by identity ([`SidebarRow`]) — a process id or a proposal's `seq` —
-//! never by screen position. Every activation re-resolves the identity against the
-//! current data before firing, so a list that reordered or shrank between focus
-//! landing and `⏎` can only ever no-op with a note, never substitute a different
-//! row's verb. Verbs follow the block menu's grammar one layer over: `←`/`→` choose,
-//! `⏎` fires, the selection resets to the leading verb on a row change.
+//! never by screen position, and every activation re-resolves the identity against
+//! the current data before firing, so a list that reordered or shrank between the
+//! focus landing and the `⏎` can only no-op with a note.
 //!
 //! Like the strip, this is chrome-side state: nothing here is projected or logged.
 
@@ -76,13 +73,9 @@ impl<'a> InteractiveState<'a> {
     /// id 404); a proposal commits or cancels (`PATCH /proposals/:seq`,
     /// docs/permissions.md).
     ///
-    /// `view` leads where it exists, so the verb a bare `⏎` fires on a process row
-    /// is the one that reads rather than the one that sends SIGKILL — the block
-    /// menu's rule that the leading verb is the most relevant thing, applied to a
-    /// row where the alternative is destructive. It is offered only when the daemon
-    /// supplied a `call_id` for the process: with no entry to land on there is no
-    /// jump to make, and a verb that explains itself away on activation is worse
-    /// than one that isn't there.
+    /// `view` leads where it exists, so a bare `⏎` on a process row reads rather than
+    /// sending SIGKILL. It is offered only when the daemon supplied a `call_id` for
+    /// the process: with no entry to land on there is no jump to make.
     pub(super) fn sidebar_verbs(&self, row: SidebarRow) -> Vec<SidebarVerb> {
         match row {
             SidebarRow::Process(id) => {
@@ -314,16 +307,11 @@ impl<'a> InteractiveState<'a> {
     /// carries this process's spawning `call_id` (docs/tui.md "Focus model",
     /// docs/supervisor.md for the mapping).
     ///
-    /// The landing target is the **result** entry, which is the entry keyed by
-    /// `call_id` — for a backgrounded command that is the handoff result naming
-    /// `p#<n>`, immediately below the call that issued it, so both are on screen.
-    /// Focus is all this does: focus is itself the affordance, and from there the
-    /// unit's own block menu is one `→` away.
-    ///
-    /// A miss is a status note, never a jump somewhere else: the entry may be
-    /// outside the transcript window the client is holding (a long session, a
-    /// re-seeded view), and landing on an arbitrary unit is the same substitution
-    /// the sidebar's identity rule forbids.
+    /// The landing target is the entry keyed by `call_id`, i.e. the result. A miss is
+    /// a status note, never a jump somewhere else: the entry may be outside the
+    /// transcript window the client is holding (a long session, a re-seeded view),
+    /// and landing on an arbitrary unit is the substitution the sidebar's identity
+    /// rule forbids.
     fn view_process_entry(&mut self, id: u64) {
         let Some(call_id) = self.process_call_id(id) else {
             self.ui.debug_message = format!("p#{id} has no transcript entry to view").into();

@@ -3,7 +3,7 @@
 use super::*;
 
 /// Pace (docs/tui.md) is *loud to the operator, silent to the
-/// agent*: a held or slowed pace (polled from `/state`) surfaces a `⏸`/`⏱` indicator in the
+/// agent*: a held or slowed pace (from the `pace` topic) surfaces a `⏸`/`⏱` indicator in the
 /// status bar, and the default (fast, not held) adds no chrome. Pace never reaches the
 /// transcript — this is status-bar-only.
 #[test]

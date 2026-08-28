@@ -465,10 +465,10 @@ fn staging_renders_the_chip_and_prefill() {
 
 /// **Focus is a verb, and the state moving under it does not re-aim it.**
 ///
-/// Observed live 2026-07-27: the operator moved to activate `pace` while idle, the
-/// loop started, and `⏎` interrupted a running command — index 0 had become
-/// `interrupt`. Focus holds the `StripVerb` now, so the same sequence still fires
-/// the verb the operator aimed at.
+/// The list is rebuilt per frame with the context verbs prepended, so an index-held
+/// focus names a different verb after a state flip: aiming at `pace` on an idle loop
+/// and pressing `⏎` after the loop starts fires `interrupt`. Focus holds the
+/// `StripVerb`, so the same sequence fires the verb the operator aimed at.
 #[test]
 fn strip_focus_holds_the_verb_the_state_change_used_to_swap() {
     let mut play = Screenplay::new(80, 12);

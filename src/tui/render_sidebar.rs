@@ -1,18 +1,11 @@
-//! The right-docked sidebar (docs/tui.md): glanceable ambient widgets that used to
-//! be crammed elsewhere — `PROCESSES` (the bottom strip), `STATS` (the status bar),
-//! and `POLICY` (the live perimeter + its pending proposals) — led by `SESSION`,
-//! the model and working directory the `session_identity` topic carries
-//! (docs/control-api.md). It is chrome, not
-//! transcript: rendered directly into its `Rect` at absolute coordinates, fed by the
-//! `/state` poll. A 1-column `│` divides it from the transcript on its left edge.
+//! The right-docked sidebar (docs/tui.md): `SESSION`, `PROCESSES`, `STATS`, and
+//! `POLICY`. It is chrome, not transcript: rendered directly into its `Rect` at
+//! absolute coordinates, fed by the `state` topics (docs/control-api.md). A
+//! 1-column `│` divides it from the transcript on its left edge.
 //!
-//! Sections render top-down until they run out of room. Actionable rows — processes
-//! and proposed grants — carry the sidebar's focus: the focused row shows a left-edge
-//! `▌` bar (the transcript unit marker, one column in from the divider) and its verb
-//! menu trailing the row's text (`▸ kill`, `▸ commit · cancel`), in the block menu's
-//! grammar. Row and verb rects are recorded per frame for click dispatch
-//! (`sidebar_hits` / `sidebar_verb_hits`); the verbs themselves dispatch by identity
-//! through `tui/sidebar.rs`.
+//! Sections render top-down until they run out of room. Row and verb rects are
+//! recorded per frame for click dispatch (`sidebar_hits` / `sidebar_verb_hits`); the
+//! verbs themselves dispatch by identity through `tui/sidebar.rs`.
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 

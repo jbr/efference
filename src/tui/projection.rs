@@ -18,25 +18,15 @@ use crate::tui::markdown::MarkdownRenderer;
 
 /// Fold the log + live tail into a flat sequence of transcript
 /// [`Entry`](DocumentNode::Entry) nodes — one per top-level thing on the wire,
-/// decorated for presentation (docs/tui.md). A tool call and its result are
-/// **separate entries**, as they are separate blocks on the wire; they read as one
-/// unit because a result opens no new group, not because they share a node.
-/// `view` carries the human's per-result raw-vs-distilled flips across this
-/// rebuild.
+/// decorated for presentation (docs/tui.md). `view` carries the human's per-result
+/// raw-vs-distilled flips across this rebuild.
 ///
-/// `pending_call` is the `call_id` the agent is *blocked on for approval* (docs/tui.md).
-/// The loop appends the assistant `tool_use` **before** it gates (so the
-/// call is already in the log), and one tool call runs per turn (docs/README.md) — so the
-/// pending call is always the tail call with no result. It renders *as if invoked*,
-/// with an inline affordance carrying the `⏸` where the result will land, so the
-/// gate reads as "after the call, before the result" rather than a banner divorced
-/// from the call it's gating.
+/// `pending_call` is the `call_id` the agent is blocked on for approval. The loop
+/// appends the assistant `tool_use` **before** it gates and one tool call runs per
+/// turn (docs/README.md), so the pending call is always the tail call with no result.
 ///
-/// `pending_turns` are just-submitted user messages not yet echoed back as committed
-/// `User` log entries (docs/tui.md). They render **after** the
-/// committed log and live tail, dimmed with a `⋯` marker — the optimistic "handed to the
-/// daemon, not yet on the wire" echo — and are dropped as their matching `User` entry
-/// arrives via `/events`.
+/// `pending_turns` are just-submitted user messages awaiting the committed `User` log
+/// entry that confirms them; they render after the committed log and live tail.
 pub(crate) fn project(
     log: &[LogEntry],
     live: &LiveTail,
@@ -243,8 +233,8 @@ pub(crate) fn entry_nodes(
             // it judged, not at its own log position — it is indexed by `call_id` above
             // and emitted beside that call, so nothing is drawn here.
             Payload::Spot(_) => {}
-            // A grant (docs/permissions.md) — audit-only on the transcript
-            // for now; surfacing scope changes to the human lands with the construction sites.
+            // A grant (docs/permissions.md) — audit-only on the transcript, so it
+            // draws nothing here.
             Payload::ConfigEdit(_) => {}
             // Per-call telemetry (docs/tools.md) is a measurement of the call
             // beside it, for offline analysis — it says nothing the transcript
@@ -351,10 +341,10 @@ fn call_entry(call: &ToolCall) -> DocumentNode<'static> {
 /// through a summary of it (docs/positions.md).
 ///
 /// The header is a quiet status row: `✓`/`✗` and the size of what came back, plus
-/// the `· raw` flag when the distilled default is being overridden. It earns its
-/// row three times over — it is where the error marker lives now that the call no
-/// longer carries it, it is the focus target the raw/distilled verb hangs off, and
-/// it says how much output follows before the reader scrolls it.
+/// the `· raw` flag when the distilled default is being overridden. It carries the
+/// status marker (the entry that failed is the result, not the call, which is a call
+/// regardless of how it went), it is the focus target the raw/distilled verb hangs
+/// off, and it says how much output follows before the reader scrolls it.
 ///
 /// Keyed by `call_id`, which is what carries the raw flip across the re-projection
 /// every streamed token triggers.
@@ -505,13 +495,8 @@ fn result_entry(
 /// beside the result (docs/tui.md).
 ///
 /// The wire has to fold these into the result text, because a tool result is one
-/// string there. The transcript doesn't: the note is the *distiller's* account of
-/// the output, a rung above it, and reads as one — so it sits beside the result in
-/// the dim register rather than inside its box, where it looked like a line the
-/// tool had printed.
-///
-/// Empty while the result is flipped to raw: raw is what the tool actually
-/// returned, and the note is not part of that.
+/// string there; the transcript does not. Empty while the result is flipped to raw:
+/// raw is what the tool actually returned, and the note is not part of that.
 fn distillate_note(
     call: &ToolCall,
     raw: &RawResult,

@@ -112,8 +112,7 @@ fn projects_a_flat_sequence_of_entries() {
 #[test]
 fn a_long_result_renders_whole() {
     // The position this unit exists for: the operator sees what the agent sees, so
-    // no line budget reaches a tool result (docs/positions.md). Previously a body
-    // over 8 lines was clipped to its first 8 by default.
+    // no line budget reaches a tool result (docs/positions.md).
     let body: String = (1..=400).map(|n| format!("line {n}\n")).collect();
     let log = vec![
         entry(

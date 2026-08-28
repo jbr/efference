@@ -220,7 +220,7 @@ impl Screenplay<'_> {
     }
 
     /// Mark the agent blocked on approval for `call_id` — the pending gate the
-    /// daemon's `/state` poll surfaces, driven through the real `Gate` event so the
+    /// daemon's `gate` topic carries, driven through the real `Gate` event so the
     /// inline gate renders exactly as in the app (docs/tui.md).
     pub(crate) fn pending_gate(
         &mut self,

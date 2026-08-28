@@ -127,8 +127,8 @@ fn transcript_write_call() {
 
 /// A `read_image` call shows what it asked for and at what resolution: the path
 /// inline, `long_edge` beside it when present — image tokens scale with area
-/// (docs/tools.md), so the requested size is part of what the call did. It used to
-/// fall through to the JSON envelope while the image below it rendered fine.
+/// (docs/tools.md), so the requested size is part of what the call did. Without its
+/// own arm the call falls through to the JSON envelope.
 #[test]
 fn transcript_read_image_call() {
     let mut play = Screenplay::new(80, 22);

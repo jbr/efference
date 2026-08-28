@@ -1,14 +1,11 @@
 //! The input composer — a minimal, dependency-free multiline text editor with
-//! emacs-style key bindings (docs/tui.md, M2).
+//! emacs-style key bindings (docs/tui.md).
 //!
-//! This is deliberately self-contained behind a small interface
-//! ([`handle_key`](Composer::handle_key) / [`render`](Composer::render) /
-//! [`take`](Composer::take)) so it is the **swappable input interface**: a later
-//! version can grow spellcheck, typeahead, or integrated transcript-focus (arrow
-//! at the top edge spills into scroll), or be replaced wholesale, without
-//! touching the rest of the TUI. `tui-textarea` was the intended first cut but is
-//! pinned to the older ratatui/unicode-width ecosystem and won't resolve against
-//! ratatui 0.30 — hence this small hand-rolled editor.
+//! Self-contained behind a small interface ([`handle_key`](Composer::handle_key) /
+//! [`render`](Composer::render) / [`take`](Composer::take)), so it can be replaced
+//! wholesale without touching the rest of the TUI. `tui-textarea` is pinned to the
+//! older ratatui/unicode-width ecosystem and does not resolve against ratatui 0.30 —
+//! hence this hand-rolled editor.
 //!
 //! The buffer is one UTF-8 string. Cursor and layout positions are byte offsets
 //! constrained to extended-grapheme boundaries, so edits cannot split a

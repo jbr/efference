@@ -306,9 +306,9 @@ fn build_picker(mode: ImageMode) -> Option<ratatui_image::picker::Picker> {
         // iTerm2 answers the capability queries above its own protocol's weight
         // class — DA1 advertises sixel, and 3.5+ answers the kitty query with a
         // partial implementation — so query-ranked detection lands on a protocol
-        // iTerm2 then renders as garbage (observed live, 2026-08-23: sixel
-        // control characters as red text). OSC 1337 is its native, 24-bit
-        // protocol; on auto, an iTerm2-identified terminal always gets it.
+        // iTerm2 then renders as garbage (sixel control characters print as red
+        // text). OSC 1337 is its native, 24-bit protocol; on auto, an
+        // iTerm2-identified terminal always gets it.
         picker.set_protocol_type(ProtocolType::Iterm2);
     }
     Some(picker)

@@ -23,8 +23,8 @@ pub(crate) struct LiveTail {
     /// them (docs/tui.md). A **collection**, not a slot: a response may open more
     /// than one call, and every model-stream delta names the content block it
     /// belongs to (docs/control-api.md), so each call's fragments can be bound to
-    /// it. Held one call at a time, the second `tool_call_start` overwrote the
-    /// first and the arguments the operator was watching arrive disappeared.
+    /// it. Held one call at a time, a second `tool_call_start` would overwrite the
+    /// first, taking with it the arguments the operator is watching arrive.
     /// Empty between turns and while prose streams — prose is its own evidence of
     /// progress, so it needs no calling line.
     pub(super) calls: Vec<LiveCall>,
@@ -141,14 +141,9 @@ impl LiveTail {
 /// so this can't live in the rebuilt [`Document`] — it lives here, keyed by the
 /// result's `call_id`, and the projection applies it when building each result.
 ///
-/// Two toggles, one per fork that really exists. The raw fork is a choice between
-/// two real forms of a committed result's content; the peek fork is a choice about
-/// how much of a *running* tool's unbounded output to show, which is the one place
-/// the transcript does not render whole (docs/tui.md).
-///
-/// Both are keyed by `call_id` for the same reason: it is the only identity that
-/// survives a rebuild. A live block that carried no `call_id` had nowhere to record
-/// a toggle, so the next streamed fragment re-projected it back to its default.
+/// Both toggles are keyed by `call_id` because it is the only identity that survives
+/// a rebuild: a live block with no `call_id` has nowhere to record a toggle, so the
+/// next streamed fragment re-projects it back to its default.
 #[derive(Debug, Default)]
 pub(crate) struct ViewState {
     /// `call_id`s the human flipped to **raw** output — the wire distillate is the

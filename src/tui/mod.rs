@@ -192,8 +192,8 @@ pub(crate) struct PaceView {
 }
 
 /// A pace command the operator issues from the TUI (docs/tui.md), sent to
-/// the tokio side which `POST`s it to `/pace`: `(speed_ms, held)`, each optional so a key can move
-/// the speed dial, toggle the hold, or both.
+/// the tokio side, which issues `PATCH /loop {pace}`: `(speed_ms, held)`, each optional so a key
+/// can move the speed dial, toggle the hold, or both.
 pub(crate) type PaceCmd = (Option<u64>, Option<bool>);
 
 /// One live background process as the panel holds it: the wire's structural fields

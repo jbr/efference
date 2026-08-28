@@ -114,10 +114,10 @@ pub(in crate::tui) fn call_args(
         }
         name if is_diff_tool(name) => {
             // The diff result is the representation — never dump the (verbose) edit
-            // input. What the header owes the reader is *which file* changed and how:
-            // the anchor snippet that used to sit here answered neither (it is a
-            // fragment of the old text, which the diff below shows in full anyway),
-            // and at 48 characters it read as a truncated sentence.
+            // input. What the header owes the reader is *which file* changed and how,
+            // which the `anchor` answers neither of: it is a fragment of the old text
+            // the diff below shows in full anyway, and truncated to fit a header it
+            // reads as a cut-off sentence.
             let mut spans = Vec::new();
             if let Some(path) = input("file_path") {
                 spans.push(inline_code(path.to_string()));

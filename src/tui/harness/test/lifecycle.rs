@@ -38,11 +38,11 @@ fn submitted_turn_echoes_pending_then_resolves_on_commit() {
     );
 }
 
-/// **A turn with no prose is still visibly working** (docs/tui.md). Thinking
-/// and a tool call's streaming input used to reach the TUI not at all — the sink carried only
-/// `text_delta` — so the whole window between submitting a turn and the first prose token was
-/// blank, and blank is indistinguishable from hung. Each phase shows what it honestly can:
-/// thinking its *tail* (what the model is working through now), a tool call its name, then the
+/// **A turn with no prose is still visibly working** (docs/tui.md). Without thinking
+/// and tool-call input reaching the TUI as their own frames, the window between
+/// submitting a turn and the first prose token is blank, and blank is
+/// indistinguishable from hung. Each phase shows what it honestly can: thinking its
+/// *tail* (what the model is working through now), a tool call its name, then the
 /// bytes of input received.
 #[test]
 fn a_prose_less_generation_phase_is_visible() {
@@ -217,11 +217,9 @@ fn scrolling_down_mid_stream_does_not_snap_to_the_end() {
 /// has to match the live render, which renders the same text the same way —
 /// otherwise the block visibly reshapes at the moment the turn commits.
 ///
-/// Thinking renders as markdown now, so a list is a *list*: the invariant is that
-/// the items stay on separate rows, not that the source's `- ` prefix survives
-/// verbatim. The regression this guards — `- a\n- b` reflowed to `- a - b` — is
-/// what refusing to reflow used to prevent and what rendering the list properly
-/// prevents instead.
+/// Thinking renders as markdown, so a list is a *list*: the invariant is that the
+/// items stay on separate rows, not that the source's `- ` prefix survives verbatim.
+/// The regression this guards is `- a\n- b` reflowed to `- a - b`.
 #[test]
 fn committed_thinking_keeps_the_lines_the_model_emitted() {
     let mut play = Screenplay::new(80, 24);
@@ -279,10 +277,9 @@ fn thinking_renders_a_fenced_code_block_as_code() {
 
 /// **Streamed thinking persists, and the commit does not reshape it.**
 ///
-/// It used to be a [`Phase`](crate::tui::projection::Phase) — one slot — so
-/// `tool_call_start` replaced it and a turn that thought briefly then acted showed
-/// its reasoning for a few frames and then lost it until the turn committed. It is
-/// accumulated live-tail content now, rendered by the same builder as the committed
+/// Streamed thinking is accumulated live-tail content, not a single-slot phase that
+/// `tool_call_start` would replace — a turn that thinks briefly and then acts keeps
+/// its reasoning on screen. The same builder renders the live and the committed
 /// block, so the handoff is invisible (docs/tui.md).
 #[test]
 fn streamed_thinking_persists_and_does_not_reshape_on_commit() {
@@ -296,7 +293,7 @@ fn streamed_thinking_persists_and_does_not_reshape_on_commit() {
     play.pin_to_bottom();
     let live = transcript_rows(&play.render());
 
-    // Acting no longer wipes it.
+    // Acting does not wipe it.
     play.calling(0, "toolu_write", "write");
     assert!(
         play.find("keep the lines").is_some(),
@@ -319,11 +316,10 @@ fn streamed_thinking_persists_and_does_not_reshape_on_commit() {
 /// **A live block's toggle survives the next stream event.**
 ///
 /// A running tool's output shows a peek by default (docs/tui.md), and the operator
-/// can open it to read the whole thing. That choice used to last exactly one frame:
-/// the peek entry carried no `call_id`, so it had no durable key, so nothing could
-/// be recorded against it — the arriving fragment re-projected the block and it
-/// snapped shut. The `call_id` is on the tail already (`tool_output` is demuxed by
-/// it), and the entry now carries it as its key.
+/// can open it to read the whole thing. The choice is held against the entry's
+/// `call_id`: an unkeyed peek entry has nothing durable to record it against, so
+/// the next arriving fragment re-projects the block and snaps it shut. The
+/// `call_id` is on the tail already (`tool_output` is demuxed by it).
 #[test]
 fn a_streaming_block_opened_full_stays_open_across_stream_events() {
     let mut play = Screenplay::new(80, 30);
@@ -357,7 +353,7 @@ fn a_streaming_block_opened_full_stays_open_across_stream_events() {
         "the verb opened the whole output"
     );
 
-    // The event that used to close it.
+    // The next streamed fragment, which re-projects the block.
     play.tool_output("toolu_run", "line 15\n");
     assert!(
         play.find("line 1").is_some(),

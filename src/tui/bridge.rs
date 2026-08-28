@@ -5,10 +5,9 @@ use super::*;
 
 /// Decode the unified control stream into [`TuiEvent`]s. One connection, all three
 /// durability classes — `log` frames become [`TuiEvent::Entry`], `output` frames the
-/// live-tail deltas, and `state` frames the sidebar/status chrome that a 400 ms
-/// `GET /state` poll used to feed. The stream delivers a snapshot of every topic on
-/// connect and a whole-topic replacement on each change, coherent with the log frames
-/// around it, so there is nothing left to poll.
+/// live-tail deltas, and `state` frames the sidebar/status chrome. The stream delivers
+/// a snapshot of every topic on connect and a whole-topic replacement on each change,
+/// coherent with the log frames around it, so there is nothing to poll.
 pub(super) async fn bridge(client: Client, tx: Sender<TuiEvent>) -> Result<()> {
     let mut events = client.events(Some(0), Some("log,output,state")).await?;
     // The three policy-shaped topics are merged into one PolicyView for the sidebar's
@@ -129,8 +128,8 @@ fn decode_frame(
         Some("state") => match kind {
             "gate" => Some(send(TuiEvent::Gate(parse::parse_pending_gate(data)))),
             "processes" => Some(send(TuiEvent::Processes(parse::parse_processes(data)))),
-            // A null `usage` topic (no requests yet) has nothing to render — as under
-            // the poll, the status bar keeps its absent state.
+            // A null `usage` topic (no requests yet) has nothing to render; the status
+            // bar keeps its absent state.
             "usage" => parse::parse_usage(data).map(|usage| send(TuiEvent::Usage(usage))),
             "upstream_failure" => Some(send(TuiEvent::UpstreamFailure(
                 parse::parse_upstream_failure(data),

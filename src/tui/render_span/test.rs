@@ -84,9 +84,9 @@ fn a_bounded_width_agrees_with_the_full_one_below_its_cap() {
 ///
 /// `wrap_points` emits a row at a time and each row's decision compares against
 /// something no wider than the row, so a row costs the row — not the rest of the
-/// line. It formerly measured the whole remainder per row, which is quadratic: a
-/// 16k-column line (a tool call's JSON input mid-stream, a minified file, a base64
-/// blob) took ~300 ms per wrap in release, repeated every frame while it streamed.
+/// line. Measuring the whole remainder per row is quadratic instead: a 16k-column
+/// line (a tool call's JSON input mid-stream, a minified file, a base64 blob) costs
+/// ~300 ms per wrap in release that way, repeated every frame while it streams.
 ///
 /// A ratio rather than a duration, so it says the same thing on any machine. The
 /// margin is wide because the defect it guards against is not: eight times the

@@ -67,9 +67,10 @@ impl<'a> InteractiveState<'a> {
         // and composer share the remaining left column. Processes move *into* the sidebar,
         // so the bottom process strip only appears in the narrow (no-sidebar) fallback
         // until the drawer lands.
-        // Every sidebar section (processes, stats, policy) is fed by the `/state`
-        // poll, which a read-only view has no daemon to run — so there the sidebar
-        // would be a column of empty headings, and the transcript takes the width.
+        // Every sidebar section (processes, stats, policy) is fed by a control
+        // stream's `state` frames, which a read-only view has no daemon to serve — so
+        // there the sidebar would be a column of empty headings, and the transcript
+        // takes the width.
         let sidebar_width: u16 = if full.width >= SIDEBAR_MIN_TOTAL && !self.read_only() {
             SIDEBAR_WIDTH
         } else {

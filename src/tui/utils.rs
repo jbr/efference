@@ -94,8 +94,8 @@ pub(super) fn find_paragraph_truncation_point(
     _max_lines: u16,
     _screen_width: u16,
 ) -> Option<usize> {
-    // Paragraph break detection was removed since Span nodes no longer exist
-    // All inline content is now in Paragraph nodes
+    // There are no Span nodes to detect a paragraph break between: all inline
+    // content sits in Paragraph nodes.
     None
 }
 

@@ -32,7 +32,7 @@ fn replay_real_session_tail() {
 /// identical transcript rendering, with the composer row gone, the strip reduced to
 /// the client-only verbs, and the status bar naming the session it is reading. Wide
 /// enough to dock the sidebar in a live session — which a read-only view drops,
-/// since every section of it is fed by the `/state` poll.
+/// since every section of it is fed by a live control stream's `state` frames.
 #[test]
 fn view_of_a_recorded_session_is_inert() {
     let entries = replay_fixture();

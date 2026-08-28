@@ -1,17 +1,12 @@
 //! Result-image state for the TUI (docs/tui.md): decoded pixels and their
 //! per-terminal encodings, held beside the transcript rather than in it.
 //!
-//! A [`DocumentNode::Image`](crate::tui::document::DocumentNode::Image) carries
-//! only the log address and pixel dimensions; everything stateful — the fetch
-//! lifecycle, the decoded [`DynamicImage`], the protocol encodings — lives here,
-//! keyed by that address. The split keeps the projection pure of the terminal's
-//! graphics capability, and keeps `DocumentNode`'s `Debug`/`Clone` derives (a
-//! [`Protocol`] implements neither `Debug` nor `PartialEq`).
-//!
-//! Encoding is exactly-once per (image, footprint): the native protocol for the
-//! fully-visible paint, and a halfblocks scratch buffer — ordinary cells — that
-//! the renderer blits row-wise for a partially scrolled image, which the pixel
-//! protocols cannot do (they paint from the image's top edge only).
+//! A [`DocumentNode::Image`](crate::tui::document::DocumentNode::Image) carries only
+//! the log address and pixel dimensions; everything stateful — the fetch lifecycle,
+//! the decoded [`DynamicImage`], the protocol encodings — lives here, keyed by that
+//! address. Beyond keeping the projection pure of the terminal's graphics capability,
+//! the split is what keeps `DocumentNode`'s `Debug`/`Clone` derives: a [`Protocol`]
+//! implements neither `Debug` nor `PartialEq`.
 
 use std::collections::HashMap;
 use std::fmt;

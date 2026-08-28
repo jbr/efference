@@ -412,8 +412,8 @@ fn sidebar_docks_only_above_the_width_threshold() {
 
 /// The live background-process panel (docs/supervisor.md): a `Processes` event renders a
 /// persistent strip above the composer — one row per running process with handle,
-/// command, running/idle timing, and the last output line. Fed by the `/state`
-/// poll, it is chrome, not transcript (no reproject).
+/// command, running/idle timing, and the last output line. Fed by the `processes`
+/// topic, it is chrome, not transcript (no reproject).
 #[test]
 fn background_process_panel() {
     use crate::tui::{BgProc, TuiEvent};

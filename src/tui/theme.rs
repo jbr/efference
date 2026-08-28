@@ -52,7 +52,7 @@ pub(super) struct InteractiveTheme {
     pub strip_hint_focused_style: Style,
     /// Control strip — the omnipresent tail (dimmer than the context verbs)
     pub strip_tail_style: Style,
-    /// Control strip — a pinned item whose verb the state no longer ranks
+    /// Control strip — a pinned item whose verb the state stopped ranking
     /// (docs/tui.md). It keeps the button surface, because the *position* is what
     /// the freeze holds, and drops to the muted foreground plus `DIM` so it reads
     /// as inert rather than as a tail verb.

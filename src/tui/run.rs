@@ -38,7 +38,7 @@ pub async fn run(
     // every topic up front.
     let bridge = tokio::spawn(bridge(client.clone(), tx.clone()));
 
-    // Turn sender: each composer submission is POSTed as a user turn (M2 write path).
+    // Turn sender: each composer submission is POSTed as a user turn.
     let turn_client = client.clone();
     let sender = tokio::spawn(async move {
         while let Some(turn) = submit_rx.recv().await {
@@ -86,7 +86,7 @@ pub async fn run(
         }
     });
 
-    // Approval sender: resolve a gate via `PUT /approvals/:call_id` (M3).
+    // Approval sender: resolve a gate via `PUT /approvals/:call_id`.
     let approve_client = client.clone();
     let approver = tokio::spawn(async move {
         while let Some((call_id, decision)) = approve_rx.recv().await {
