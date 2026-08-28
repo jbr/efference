@@ -298,7 +298,6 @@ function applyOutput(
   }
 }
 
-/** A subscribable holder for the fold — the seam useSyncExternalStore binds to. */
 /**
  * Fold a process's retained output under the deltas already buffered for it.
  * The read is a snapshot taken when the request went out, and the caller marks
@@ -331,9 +330,44 @@ export function seedProcessOutput(
   };
 }
 
+/**
+ * When a batch of folds becomes one notification. The default asks for an
+ * animation frame, falling back to a timer where there is none (the suite's
+ * node environment, a worker). A frame is the right unit because a
+ * notification's only consumer is a render, and a render's only product is a
+ * paint: more than one per frame is work whose result is overwritten before it
+ * is seen.
+ */
+export type Scheduler = (flush: () => void) => void;
+
+const frameScheduler: Scheduler = (flush) => {
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(flush);
+  else setTimeout(flush, 16);
+};
+
+/** A subscribable holder for the fold — the seam useSyncExternalStore binds to.
+ *
+ * Folding and notifying are separate steps, and only the notify is batched
+ * (docs/web-client.md, "Coalescing the fold"). The fold stays synchronous, so
+ * `snapshot()` is current the instant `update` returns and every caller that
+ * reads it back — the connector's resume cursor, the scrubber's refold, the
+ * process seeder — is unaffected. What batching removes is the render per SSE
+ * frame: a long block arrives as thousands of deltas, each of which re-parsed
+ * the whole growing block as markdown, and that cost is linear in block length,
+ * so the total is quadratic. Past the point where a delta costs more than a
+ * delta's arrival interval, the main thread never catches up and the deltas
+ * still buffered in the fetch stream keep it saturated after the stream itself
+ * has gone quiet — which is why the page did not recover on its own. Coalescing
+ * collapses a backlog of any size into one render at the current length, so the
+ * outstanding work is bounded by the frame rate rather than by the delta count.
+ */
 export class Store {
   private session: Session = emptySession;
   private listeners = new Set<() => void>();
+  /** A notification is owed: at least one fold landed since the last flush. */
+  private pending = false;
+
+  constructor(private readonly schedule: Scheduler = frameScheduler) {}
 
   snapshot = (): Session => this.session;
 
@@ -346,6 +380,17 @@ export class Store {
     const next = f(this.session);
     if (next === this.session) return;
     this.session = next;
-    for (const listener of this.listeners) listener();
+    if (this.pending) return;
+    this.pending = true;
+    this.schedule(this.flush);
   }
+
+  /** Notify now if anything is owed. The scheduled flush calls this; so does
+   * anything that needs the render to have happened before it continues — the
+   * scrubber stepping one frame at a time, and tests. */
+  flush = (): void => {
+    if (!this.pending) return;
+    this.pending = false;
+    for (const listener of this.listeners) listener();
+  };
 }

@@ -6,6 +6,7 @@ import {
   pushPendingTurn,
   seed,
   seedProcessOutput,
+  Store,
   type Session,
 } from "./store.ts";
 
@@ -440,5 +441,97 @@ describe("pending turns", () => {
     const queued = pushPendingTurn(emptySession, "sub-s", "reseeded");
     const s = seed(queued, [submitted(1, "sub-s", "reseeded")]);
     expect(s.pendingTurns).toEqual([]);
+  });
+});
+
+// The defect these pin: a long block arrives as thousands of deltas, and a
+// notification per delta is a render per delta. The render re-parses the whole
+// growing block as markdown — linear in block length, so quadratic over the
+// block — and once a delta costs more than the interval between deltas the
+// backlog outlives the stream: the frames already buffered in the fetch body
+// keep folding at full length after the producer has gone quiet, which is why
+// the page never recovered on its own (backlog/web/streaming-hot-loop.md).
+describe("coalescing the fold", () => {
+  /** A scheduler under the test's control: nothing flushes until it says so. */
+  function manual() {
+    const queued: (() => void)[] = [];
+    return {
+      schedule: (flush: () => void) => queued.push(flush),
+      /** How many flushes were asked for — one per batch, not one per fold. */
+      get scheduled() {
+        return queued.length;
+      },
+      run() {
+        for (const flush of queued.splice(0)) flush();
+      },
+    };
+  }
+
+  const delta = (index: number, text: string): Frame => ({
+    class: "output",
+    kind: "assistant_delta",
+    data: { index, text },
+  });
+
+  it("turns a run of deltas into one notification", () => {
+    const clock = manual();
+    const store = new Store(clock.schedule);
+    let notified = 0;
+    store.subscribe(() => notified++);
+    for (let i = 0; i < 2000; i++)
+      store.update((s) => applyFrame(s, delta(0, "x ")));
+    // The fold is synchronous — everything is already in the snapshot — but
+    // nothing has re-rendered yet.
+    expect(store.snapshot().streaming.blocks[0].text).toHaveLength(4000);
+    expect(notified).toBe(0);
+    expect(clock.scheduled).toBe(1);
+    clock.run();
+    expect(notified).toBe(1);
+  });
+
+  it("schedules again for the next batch, and only for a fold that changed", () => {
+    const clock = manual();
+    const store = new Store(clock.schedule);
+    let notified = 0;
+    store.subscribe(() => notified++);
+    store.update((s) => applyFrame(s, delta(0, "a")));
+    clock.run();
+    store.update((s) => applyFrame(s, delta(0, "b")));
+    clock.run();
+    expect(notified).toBe(2);
+    // A fold that returns the same session is not a change and owes nothing.
+    store.update((s) => s);
+    expect(clock.scheduled).toBe(0);
+    clock.run();
+    expect(notified).toBe(2);
+  });
+
+  it("flushes on demand for a caller that needs the render to have happened", () => {
+    // The dev scrubber steps to one position and looks at it; waiting a frame
+    // would make `step()` from the console land after the command returned.
+    const clock = manual();
+    const store = new Store(clock.schedule);
+    let notified = 0;
+    store.subscribe(() => notified++);
+    store.update((s) => applyFrame(s, delta(0, "a")));
+    store.flush();
+    expect(notified).toBe(1);
+    // The scheduled flush finds nothing owed rather than notifying twice.
+    clock.run();
+    expect(notified).toBe(1);
+  });
+
+  it("folds a long block's deltas well inside one frame's budget", () => {
+    // The fold itself is string append and a shallow copy; the cost the defect
+    // was about lives in the render the notification triggers. If this bound
+    // ever fails, the fold grew a per-delta pass over the block.
+    const store = new Store(() => {});
+    const started = performance.now();
+    for (let i = 0; i < 4000; i++) {
+      store.update((s) => applyFrame(s, delta(0, "some prose ")));
+    }
+    const elapsed = performance.now() - started;
+    expect(store.snapshot().streaming.blocks[0].text).toHaveLength(44000);
+    expect(elapsed).toBeLessThan(150);
   });
 });

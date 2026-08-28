@@ -79,6 +79,48 @@ events — a client would register one listener per known kind and silently drop
 frames from a newer daemon. Reconnection resumes by `?since=` (the daemon does not
 read `Last-Event-ID`), replaying the durable subset exactly.
 
+### Coalescing the fold
+
+A long block arrives as thousands of `output` deltas, and the pre-commit tail
+that displays it re-parses the whole block as markdown when it renders. That
+cost is linear in block length while the delta rate is roughly constant, so the
+work over one block is quadratic: measured at ~8 ms per render of a 10 kB block
+in the suite's environment, past a delta's arrival interval well before a block
+of that size finishes. Once the folding thread is behind, the deltas already
+buffered in the fetch body keep it saturated after the producer has gone quiet —
+so the page did not recover when the stream ended, only when it was reloaded
+([../backlog/web/streaming-hot-loop.md](../backlog/web/streaming-hot-loop.md)).
+
+Two mechanisms bound that, both below `ui/`:
+
+- **`Store` separates folding from notifying.** The fold stays synchronous —
+  `snapshot()` is current the instant `update` returns, which is what the resume
+  cursor, the scrubber's refold, and the process seeder read back — but
+  subscribers are told at most once per animation frame. A backlog of any size
+  collapses into one render at the current length, so outstanding work is bounded
+  by the frame rate rather than by the delta count. `flush()` notifies
+  immediately for a caller that needs the render to have happened: the scrubber
+  uses it while held, so `step()` from the console lands before the call returns,
+  and stays batched while following.
+- **The dispatch loop yields to the task queue.** Every step of `openStream`'s
+  `for await` is a promise continuation, and `sseData` yields each event parsed
+  out of one read without awaiting anything else, so a producer faster than the
+  consumer holds the thread against timers, input, paint — and against the
+  animation frame the coalescing flushes on, which would make the batching
+  unobservable. The loop gives the task queue a turn whenever 8 ms of wall clock
+  have passed since the last one, via a `MessageChannel` round trip rather than
+  `setTimeout` (whose nested-timer clamp would floor each yield near 4 ms).
+
+Follow-tail (`ui/useFollowTail.ts`) scrolls after every render, so batching moves
+it from once per delta to once per frame — the scroll now lands on the frame that
+painted the growth rather than repeatedly within it.
+
+Two costs the batching bounds but does not remove: the growing block's markdown
+is still re-parsed whole on each of those frames, and a fenced block inside
+still-streaming prose is re-tokenized whole (`Code`, not `StreamingCode`).
+Memoizing the parsed prefix and deferring highlight for streaming content are the
+remaining reductions.
+
 ## The phone breakpoint
 
 An interim usability pass (2026-08-22), not the mobile design pass the backlog

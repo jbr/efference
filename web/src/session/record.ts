@@ -169,6 +169,11 @@ class Recorder implements FrameTap, ScrubHandle {
         this.cursor += 1;
       }
     }
+    // While held, a scrub is a deliberate move to one position and the render
+    // is what is being looked at, so the store notifies now rather than on the
+    // next animation frame. While following, the coalescing is the point
+    // (`store.ts`): the live path must not render per delta.
+    if (!this.following) this.store.flush();
     this.badge.render(this);
   }
 
