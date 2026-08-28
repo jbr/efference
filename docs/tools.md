@@ -178,6 +178,13 @@ nowhere, an `edit` whose exact change the file already contains, a
 `retarget_edit` already aimed where it was asked to aim. The line is whether the
 state the call asked for holds afterward — not whether the tool wrote anything.
 
+The governing heuristic (jbr, 2026-08-27): unlike a POSIX return status, the flag
+reports whether the tool was **wielded** successfully — was the request cogent.
+Not finding results is not an error when the query was well-formed; the same
+query malformed is. Overwriting without the documented overwrite flag is tool
+misuse (or unexamined disk state — either way the wielding, not the world), so it
+errors. A well-formed search that finds nothing is an empty success.
+
 ### Schema translation
 
 `McpServer::from_state` translates `mcplease`'s `ToolSchema` (MCP
