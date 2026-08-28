@@ -88,6 +88,17 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     } else {
         match policy::classify(&role, call) {
             Verdict::Clear => Approval::Approve,
+            // A `[commands]` deny (docs/permissions.md): the operator already wrote the answer
+            // for this prefix, so the spotter is not asked — the move goes straight to whoever
+            // gates. Autonomous has no synchronous human, so it takes the same redirect a
+            // spotter `Gate` takes there, carrying the reason the config gave it.
+            Verdict::Deny => {
+                if shared.autonomous() {
+                    Approval::Redirect(denied_gate_message(shared.config_path()))
+                } else {
+                    frontend.approve(call).await
+                }
+            }
             // HumanOnly (docs/permissions.md): the human takes the spotter's role
             // *entirely* — skip the spotter (pay no tokens, log no `Spot`) and gate
             // straight to the human, who both decides this call and grows the allowlist by

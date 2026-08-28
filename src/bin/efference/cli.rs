@@ -25,7 +25,10 @@ pub(crate) const CONFIG_SCAFFOLD: &str = "\
 #   watch-for = [\"...\"]                 # hazards the permission spotter should watch for
 #   trust-threshold = 0.5               # where the watch-window/gate cutoffs sit (optional float)
 #   tools = [\"read\", \"list\", \"search\"]  # structured tools you may use
-#   [commands]                          # bash prefixes that auto-clear, e.g. cargo = true or \"git diff\" = true
+#   [commands]                          # bash prefixes → clear/watch/gate/deny (true = clear, false = deny),
+#                                       #   e.g. cargo = true, \"git diff\" = true, \"git push\" = \"deny\".
+#                                       #   The longest matching prefix governs, so a broad grant can carry
+#                                       #   carve-outs: git = true with \"git push\" = \"deny\".
 #   [paths]                             # filesystem grants, e.g. \".\" = true or \"/refs\" = { read = true }
 #   [context]                           # knowledge the session boots with (docs/context.md), e.g.
 #                                       #   \"CLAUDE.md\" = true or Label = { exec = \"...\" } (stdout at boot)

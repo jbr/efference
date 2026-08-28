@@ -22,11 +22,20 @@ pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {
     {
         out.push(ConfigChange::Scope { text: text.clone() });
     }
-    // Commands / tools: additive set membership — emit each key the file has that effective lacks.
-    for command in to.commands.difference(&from.commands) {
-        out.push(ConfigChange::Command {
-            command: command.clone(),
-        });
+    // Commands: additive membership — emit each key the file clears that effective doesn't
+    // already clear. A key carrying a non-clear stance (`watch`/`gate`/`deny`) is **skipped**,
+    // because [`ConfigChange::Command`] can only say "clear" and applying it would invert the
+    // author's meaning. So a carve-out added by file edit takes effect on the next boot (which
+    // reloads the file as the base), exactly like a deleted key — the same honest frontier of
+    // the additive fold, now reached by a tightening that is written rather than removed.
+    for (command, stance) in &to.commands {
+        if *stance == crate::config::CommandStance::Clear
+            && from.commands.get(command) != Some(stance)
+        {
+            out.push(ConfigChange::Command {
+                command: command.clone(),
+            });
+        }
     }
     for name in to.tools.difference(&from.tools) {
         out.push(ConfigChange::Tool { name: name.clone() });
@@ -50,7 +59,9 @@ pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {
 pub(super) fn apply_to_document(doc: &mut DocumentMut, change: &ConfigChange) {
     match change {
         // A command-prefix grant: set `[commands][key] = true`. The key is the command string
-        // itself (already re-lexable), so there is no token-join to undo.
+        // itself (already re-lexable), so there is no token-join to undo. `true` rather than
+        // `"clear"` because the sugar is what every hand-written config uses and what the two
+        // spellings agree on at load; the round-trip is therefore stance-preserving.
         ConfigChange::Command { command } => {
             doc["commands"][command.as_str()] = value(true);
         }

@@ -49,8 +49,8 @@ fn persist_command_sets_key_preserves_comments_and_round_trips() {
 
     // Round-trips back through the loader into the command set.
     let role = parse(&path, &text).unwrap();
-    assert!(role.commands.contains("git diff"));
-    assert!(role.commands.contains("cargo"));
+    assert!(role.commands.contains_key("git diff"));
+    assert!(role.commands.contains_key("cargo"));
 
     // Re-persisting the same change is a no-op — no duplicate key.
     persist_config_change(&path, &change).unwrap();
@@ -60,6 +60,42 @@ fn persist_command_sets_key_preserves_comments_and_round_trips() {
         1,
         "idempotent: {after}"
     );
+
+    std::fs::remove_file(&path).unwrap();
+}
+
+/// Write-back into a file that already spells stances (docs/permissions.md): the harness's own
+/// edit is a **clear** grant, written as the `true` sugar, and it leaves every other entry —
+/// including a `deny` carve-out — exactly as the author wrote it. Reloading gives back the same
+/// stances, so the round-trip is stance-preserving and the promotion path still means what it
+/// meant before the vocabulary existed.
+#[test]
+fn persisting_a_grant_preserves_neighbouring_stances() {
+    let path = std::env::temp_dir().join(format!("efference-stance-{}.toml", std::process::id()));
+    std::fs::write(
+        &path,
+        "[commands]\ngit = \"clear\"\n\"git push\" = \"deny\"  # never from a session\n",
+    )
+    .unwrap();
+
+    persist_config_change(
+        &path,
+        &ConfigChange::Command {
+            command: "cargo".into(),
+        },
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("cargo = true"), "the grant is sugar: {text}");
+    assert!(
+        text.contains("\"git push\" = \"deny\"  # never from a session"),
+        "the carve-out and its comment are untouched: {text}"
+    );
+
+    let role = parse(&path, &text).unwrap();
+    assert_eq!(role.commands["cargo"], CommandStance::Clear);
+    assert_eq!(role.commands["git"], CommandStance::Clear);
+    assert_eq!(role.commands["git push"], CommandStance::Deny);
 
     std::fs::remove_file(&path).unwrap();
 }

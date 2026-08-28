@@ -25,8 +25,10 @@
 //! watch-for = ["network egress to non-registry hosts"]
 //!
 //! [commands]
-//! cargo = true          # blanket — key lexes to ["cargo"]
-//! "git diff" = true     # sub-verb — key lexes to ["git", "diff"]
+//! cargo = true            # blanket — key lexes to ["cargo"]
+//! "git diff" = true       # sub-verb — key lexes to ["git", "diff"]
+//! git = "clear"           # the stance vocabulary; `true` is sugar for this
+//! "git push" = "deny"     # a carve-out: the longer key governs its subtree
 //!
 //! [paths]
 //! "." = true            # sugar for { read = true, write = true }
@@ -44,9 +46,8 @@
 //!   doesn't carry peripheral hazards; the spotter does). Consumed by the spotter
 //!   rung ([`crate::spotter`]).
 //! - [`Config::commands`] — the bash prefix-allowlist the deterministic fast-path matches
-//!   against (docs/permissions.md). A **set** of command-prefix keys;
-//!   membership *is* "clear" (the value will grow into a graded stance later — see
-//!   docs/permissions.md). Consumed by that rung.
+//!   against (docs/permissions.md). A **map** from command-prefix key to [`CommandStance`],
+//!   resolved longest-prefix-wins. Consumed by that rung.
 //! - [`Config::tools`] — structured tools the fast-path clears by name (also a set).
 //! - [`Config::paths`] — filesystem subtree grants, the one genuine value-bearing map.
 //! - [`Config::trust_threshold`] — where the watch-window/gate cutoffs sit. Consumed by
@@ -69,7 +70,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value, value};
 
@@ -99,6 +100,48 @@ impl Default for BashLimits {
     }
 }
 
+/// What a `[commands]` key says about the prefix it addresses (docs/permissions.md) — the
+/// spotter's stance vocabulary, spelled the same way at the fast path so one word means one
+/// thing at both rungs. A `bool` value is sugar: `true` = [`Clear`], `false` = [`Deny`].
+///
+/// The declaration order is the **restrictiveness order** (`Clear < Watch < Gate < Deny`), and
+/// the derived `Ord` is what breaks a tie between two keys of equal token depth: the more
+/// restrictive one governs. Equal depth is only reachable through two spellings of the same
+/// prefix (`"git diff"` and `"git  diff"` lex alike), so the tie-break decides a case that is
+/// otherwise a coin flip, in the safe direction.
+///
+/// [`Clear`]: CommandStance::Clear
+/// [`Deny`]: CommandStance::Deny
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CommandStance {
+    /// Auto-approve at the fast path: no human, no spotter round-trip.
+    Clear,
+    /// Send the move to the rung that gates it. Distinct from [`CommandStance::Gate`] as a
+    /// parsed value, identical in effect until the watch-window lands and gives `watch` its own
+    /// intervention latency (docs/permissions.md) — the same collapse `Stance::Watch` has at the
+    /// spotter rung.
+    Watch,
+    /// Send the move to the rung that gates it — the spotter, then the human.
+    Gate,
+    /// Refuse without consulting the spotter: the move skips the model rung entirely and goes
+    /// to whoever gates (the human, or the autonomous redirect). No stance below it, so nothing
+    /// a spotter could say would change the outcome — which is why the call is not made.
+    Deny,
+}
+
+impl CommandStance {
+    /// The token the config and `GET /state` spell it with.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CommandStance::Clear => "clear",
+            CommandStance::Watch => "watch",
+            CommandStance::Gate => "gate",
+            CommandStance::Deny => "deny",
+        }
+    }
+}
+
 /// The materialized policy table (docs/permissions.md). Built from the TOML
 /// file by [`validate`]-ing a [`RawConfig`]; every field is optional/empty so a minimal — or
 /// absent — file yields [`Config::default`]. This is what the cascade consults; the config-edit
@@ -120,12 +163,14 @@ pub struct Config {
     /// `trust-threshold = 0.5`. Consumed by the watch-window rung.
     pub trust_threshold: Option<f64>,
 
-    /// The bash prefix-allowlist as a **set** of command-prefix keys
-    /// (docs/permissions.md). Membership is the grant — `cargo` blanket-
-    /// trusts the program, `git diff` trusts only that sub-verb. Each key is guaranteed (at
-    /// [`validate`] time) to lex to a single simple-command token vector; [`crate::policy`]
-    /// re-lexes at match time to compare token-prefixes. TOML `[commands]` table, all `true`.
-    pub commands: BTreeSet<String>,
+    /// The bash prefix-allowlist as a **map** from command-prefix key to the [`CommandStance`]
+    /// it carries (docs/permissions.md). `cargo` addresses the whole program, `git diff` only
+    /// that sub-verb, and resolution is **longest-prefix-wins**, so a longer key carves its
+    /// subtree out of a broader one (`git = "clear"`, `"git push" = "deny"`). Each key is
+    /// guaranteed (at [`validate`] time) to lex to a single simple-command token vector;
+    /// [`crate::policy`] re-lexes at match time to compare token-prefixes. TOML `[commands]`
+    /// table; a `bool` value is sugar (`true` = `clear`, `false` = `deny`).
+    pub commands: BTreeMap<String, CommandStance>,
 
     /// Structured tools the fast-path clears by name, as a **set**. The path-bearing ones
     /// (`read`/`write`/`search`/edit) additionally require their target under a
@@ -281,6 +326,14 @@ impl Config {
             .filter(|b| !b.is_empty())?;
         Some(format!("Your role for this session:\n\n{scope}"))
     }
+}
+
+/// Parse config text the way the load path does, without touching the filesystem — for tests
+/// in other modules that need a [`Config`] as a real file would produce it (the `[commands]`
+/// stance sugar, the path sugar) rather than one hand-constructed past validation.
+#[cfg(test)]
+pub(crate) fn parse_text(text: &str) -> Config {
+    parse(Path::new("test.toml"), text).expect("test config parses")
 }
 
 #[cfg(test)]

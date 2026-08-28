@@ -42,9 +42,9 @@ fn parses_blanket_and_sub_verb_command_keys() {
             "git status" = true
             "#,
     );
-    assert!(role.commands.contains("cargo"));
-    assert!(role.commands.contains("git diff"));
-    assert!(role.commands.contains("git status"));
+    assert!(role.commands.contains_key("cargo"));
+    assert!(role.commands.contains_key("git diff"));
+    assert!(role.commands.contains_key("git status"));
     assert_eq!(role.commands.len(), 3);
 }
 
@@ -384,14 +384,52 @@ fn non_simple_command_key_fails_the_file() {
     ));
 }
 
-/// A `false` command value is rejected (additive-only can't deny).
+/// The `[commands]` value vocabulary (docs/permissions.md): the four stance words parse, and
+/// the `bool` sugar keeps parsing as the two ends of it — `true` = `clear` (what every config
+/// written before the vocabulary means) and `false` = `deny` (the carve-out spelling).
 #[test]
-fn command_deny_is_rejected() {
-    let err = super::parse(Path::new("bad.toml"), "[commands]\ncargo = false\n").unwrap_err();
-    assert!(matches!(
-        err,
-        LoadError::Validate(_, ValidationError::CommandDeny(_))
-    ));
+fn command_values_parse_as_stances_and_bool_sugar() {
+    let role = parse_str(
+        r#"
+            [commands]
+            cargo = true
+            npm = false
+            git = "clear"
+            "git push" = "deny"
+            "git rebase" = "watch"
+            "git reset" = "gate"
+        "#,
+    );
+    assert_eq!(role.commands["cargo"], CommandStance::Clear);
+    assert_eq!(role.commands["npm"], CommandStance::Deny);
+    assert_eq!(role.commands["git"], CommandStance::Clear);
+    assert_eq!(role.commands["git push"], CommandStance::Deny);
+    assert_eq!(role.commands["git rebase"], CommandStance::Watch);
+    assert_eq!(role.commands["git reset"], CommandStance::Gate);
+}
+
+/// A value that is neither a bool nor one of the four stance words fails the file, like any
+/// other malformed entry — the vocabulary is closed, so a typo is loud rather than ignored.
+#[test]
+fn unknown_command_stance_fails_the_file() {
+    let err = super::parse(Path::new("bad.toml"), "[commands]\ncargo = \"maybe\"\n").unwrap_err();
+    assert!(matches!(err, LoadError::Parse(..)));
+}
+
+/// A multi-token carve-out key lexes like any other key, so the soundness requirement (a key
+/// lexes to the same token vector the command is checked against) already admits carve-outs.
+#[test]
+fn carve_out_keys_pass_the_lexing_gate() {
+    let role = parse_str("[commands]\ngit = true\n\"git push --force\" = \"deny\"\n");
+    assert_eq!(
+        crate::policy::simple_command_tokens("git push --force"),
+        Some(vec![
+            "git".to_string(),
+            "push".to_string(),
+            "--force".to_string()
+        ])
+    );
+    assert_eq!(role.commands["git push --force"], CommandStance::Deny);
 }
 
 #[test]

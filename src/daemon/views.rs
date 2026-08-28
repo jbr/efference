@@ -242,11 +242,19 @@ impl Shared {
                 )
             })
             .collect();
+        // `commands` is an **object** (key → stance word), not a list of keys: a `[commands]`
+        // entry can carry `watch`/`gate`/`deny` as well as `clear` (docs/permissions.md), and a
+        // reader that saw only the keys would read a carve-out as a grant.
+        let commands: serde_json::Map<String, Value> = role
+            .commands
+            .iter()
+            .map(|(key, stance)| (key.clone(), Value::String(stance.as_str().to_string())))
+            .collect();
         serde_json::json!({
             "source": source,
             "scope": role.scope,
             "watch_for": role.watch_for,
-            "commands": role.commands,
+            "commands": commands,
             "tools": role.tools,
             "paths": paths,
         })

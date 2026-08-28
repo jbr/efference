@@ -79,8 +79,10 @@ scope = "Work only inside this repo."
 watch-for = ["network egress to non-registry hosts"]
 
 [commands]
-cargo = true          # blanket — key lexes to ["cargo"]
-"git diff" = true     # sub-verb — key lexes to ["git", "diff"]
+cargo = true            # blanket — key lexes to ["cargo"]
+"git diff" = true       # sub-verb — key lexes to ["git", "diff"]
+git = "clear"           # the stance vocabulary; `true` is sugar for this
+"git push" = "deny"     # a carve-out: the longest matching key governs
 
 [paths]
 "." = true            # sugar for { read = true, write = true }
@@ -104,7 +106,7 @@ the config holds:
   preamble for **attention-division** (not anti-gaming — the threat model is error, not
   deception, so there's no test to game): the focused session shouldn't carry low-probability
   peripheral hazards in working memory; the spotter holds them. Consumed by the spotter rung.
-- **`[commands]`** — the bash prefix-allowlist, a **set** of command-prefix keys (below).
+- **`[commands]`** — the bash prefix policy, a **map** from command-prefix key to stance (below).
 - **`tools`** and **`[paths]`** — the structured-tool name set and the filesystem-grant map
   the fast-path reads (below).
 - **`[env]`** — per-variable `strip` (does a spawned child see it?) and `mask` (does the
@@ -118,17 +120,22 @@ the config holds:
 `Config`: every `[commands]` key is **lexed with the fast-path's own lexer**
 (`policy::simple_command_tokens`) so the stored key and the command it's matched against
 agree token-for-token, and a key that isn't a single simple command (`"git | rm"`) **fails
-the whole file** — no silent skip. A `false` command value is rejected too: the fold is
-additive and can't deny, so a deny would silently do nothing.
+the whole file** — no silent skip. A carve-out key is a multi-token prefix (`"git push"` lexes
+to `["git", "push"]`), so the same check that admits a sub-verb grant admits a sub-verb deny.
+The value vocabulary is closed — the four stance words plus the `bool` sugar — so a misspelled
+stance is a parse error rather than a silently-ignored entry.
 
 ## The fast-path (`src/policy.rs`)
 
 `classify(&Config, &ToolCall) -> Verdict` is a **pure function** — no I/O, no model —
-returning `Clear` (auto-approve: no human gate, no model round-trip) or `Gate` (fall
-through to the spotter rung, then the human gate). The loop consults it just before the
-gate: `Clear` becomes an immediate approve; `Gate` hands the call to the spotter (below).
-It is the cheapest rung of the cascade, and it only ever *accepts what it is certain about*,
-erring toward `Gate` on any doubt.
+returning `Clear` (auto-approve: no human gate, no model round-trip), `Gate` (fall
+through to the spotter rung, then the human gate), or `Deny` (skip the spotter and go
+straight to whoever gates). The loop consults it just before the gate: `Clear` becomes an
+immediate approve; `Gate` hands the call to the spotter (below); `Deny` routes to the human
+gate, or, autonomous, to the same redirect a spotter `Gate` takes there — `agent::denied_gate_message`
+names the config rather than a spotter verdict nobody gave. `Deny` is reachable only from a
+`[commands]` stance (below); everything else the fast-path is unsure of is a `Gate`, and it
+only ever *accepts what it is certain about*.
 
 ### bash: a two-stage check; the order matters
 
@@ -162,10 +169,52 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
   spotter round-trip whatever `[commands]` granted. The tolerance is in the bash-call lexer
   only; the `[commands]`-key lexer stays single-simple-command, so a `cd …` compound can never
   be stored as a grant.
-- **Stage 2** matches the lexed `[program, args…]` against the `[commands]` set: each key
+- **Stage 2** matches the lexed `[program, args…]` against the `[commands]` map: each key
   is **re-lexed with the same lexer** and compared token-wise (so `"git diff"` matches as
-  `["git", "diff"]`, not by string), an empty-args key (`cargo`) blanket-trusting the
-  program. Re-lexing a handful of keys is free next to parsing the command itself.
+  `["git", "diff"]`, not by string), an empty-args key (`cargo`) addressing the whole
+  program. Re-lexing a handful of keys is free next to parsing the command itself. The
+  stance of the **longest** matching key is the answer (below).
+
+### `[commands]`: the stance vocabulary, resolved longest-prefix-wins
+
+A `[commands]` value is a **stance**, spelled with the same four words the spotter's verdict
+uses, so one word means one thing at both rungs. `true` and `false` are sugar (`true` = `clear`,
+`false` = `deny`), which is why every config written before the vocabulary keeps parsing and
+keeps meaning what it meant.
+
+- **`clear`** — auto-approve at the fast path: no human, no spotter round-trip.
+- **`watch`** and **`gate`** — send the move to the rung that gates it. They are distinct
+  parsed values with identical behavior today: `Stance::Watch` collapses to the human gate
+  until the watch-window lands (see below), and the config words inherit that collapse. When
+  `watch` gets its own intervention latency, these diverge without a config migration.
+- **`deny`** — refuse *without consulting the spotter*: the move goes to whoever gates (the
+  human, or the autonomous redirect) with no model call. Nothing the spotter could answer
+  would resolve below the human gate, so the round-trip would be spent for nothing.
+
+**Resolution is longest-prefix-wins**, the way `[paths]` already resolves a filesystem grant:
+among the keys whose tokens are a prefix of the command's, the *most specific* (longest) one
+governs. So `git = true` plus `"git push" = "deny"` clears `git log` and stops `git push
+origin main`, and the inverse (`git = "deny"`, `"git log" = true`) works the same way —
+trust-broad-then-carve-exceptions, without deleting the broad grant and re-listing every safe
+sub-verb. Nesting is unbounded: an allow can sit inside a deny inside an allow. Two keys at
+equal token depth (only reachable through two spellings of one prefix) resolve to the more
+restrictive stance.
+
+The resolution reads the token vector stage 1 produced, so a carve-out governs whether or not
+the move arrived with a tolerated `cd <granted dir> &&` in front of it: the `cd` is stripped
+before stage 2, and `cd /work && git push` hits the same deny `git push` does. An *ungranted*
+`cd` target still fails stage 1, which gates rather than denies — stage 1 has no opinion about
+the remainder.
+
+Prefix-promotion (below) files **clear** grants only: `ConfigChange::Command` spells the grant
+an approval hands out, and no initiator hands out a restriction. Two consequences. The
+write-back writes the `true` sugar, so a promoted grant round-trips through the file as `clear`
+and leaves neighbouring stances untouched. And a promotion is dropped when *any* key already
+governs its prefix — under a governing `clear` it would be a no-op, and under a `watch`/`gate`/
+`deny` it would punch a hole in a carve-out the operator wrote. A non-clear stance is written
+in the file and read at load; because `ConfigChange::Command` cannot carry one, a carve-out
+*added* by an external file edit takes effect on the next boot (which reloads the file as the
+base) rather than live — the same frontier of the additive fold that a deleted key sits behind.
 
 **Why a POSIX parser is the right choice for a security gate.** yash is POSIX-strict, not
 bash-complete, which costs only *coverage* (a few bash-only forms — `[[ ]]`, `<(…)`,
@@ -182,7 +231,10 @@ want — we parse, bash executes.
 The allowlist is curated along the reversibility axis: blanket `cargo = true` only for
 programs whose *whole* arg-space is recoverable; sub-verb prefixes (`"git diff" = true`,
 `"git status" = true`) for programs with an irreversible sub-space, letting the dangerous
-verbs (`git push`, `git reset`) fall through. Memoization (the prefix-promotion growth of this
+verbs (`git push`, `git reset`) fall through. Longest-prefix resolution gives the same
+curation a second shape — `git = true` with `"git push" = "deny"` names the exceptions
+instead of the exceptions' complement — and which shape is honest depends on whether the
+irreversible sub-space is enumerable. Memoization (the prefix-promotion growth of this
 list, below) keeps the list sound through **exact token-prefix matching (never fuzzy) +
 recurrence + judge-consensus**, not a granularity cap. Earlier this doc said "program-prefix
 granularity, never command granularity"; prefix-promotion revises that deliberately. The two
@@ -240,7 +292,10 @@ the deny layers are also rendered into the **spotter context** (`spotter.rs`), s
 --unix-socket .efference/…/control.sock` or `echo >> …/log.jsonl` gates on scope grounds there
 too. Path matching is lexical (`..`/`.` collapsed without touching the filesystem, so it works
 for not-yet-existing write targets), which means a symlink inside a grant pointing outside is
-treated as inside — acceptable under the error-not-deception model.
+treated as inside — acceptable under the error-not-deception model. For the same reason a path
+carve-out is a **mistake-guardrail, not access control**: a symlink or a `cat ./sec*` through
+bash reaches around it, so a deny here keeps a well-intentioned session out of a directory and
+claims nothing more.
 
 **No privileged client, enforced by reachability.** A session must never hand-roll
 control-channel HTTP from bash; every legitimate control interaction is a tool. The deny

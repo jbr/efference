@@ -11,7 +11,31 @@ use super::*;
 /// still requires an operator: the model only gets to *ask*. The spotter's `reason` carries why the
 /// call was out of scope so the model can judge whether it's worth requesting at all.
 pub(super) fn autonomous_gate_message(config_path: Option<&Path>, reason: &str) -> String {
-    let request = match config_path {
+    let request = config_request_sentence(config_path);
+    format!(
+        "Gated, and no synchronous reviewer is available (autonomous mode), so this call did not \
+         run.\n\nSpotter: {reason}\n\n{request} Otherwise, find another approach within your \
+         current scope."
+    )
+}
+
+/// The redirect a **denied** call gets in autonomous mode (docs/permissions.md). Same shape as
+/// [`autonomous_gate_message`] and the same request paragraph, but it names the config as the
+/// author of the refusal rather than the spotter — a `[commands]` key carrying `deny` decided
+/// this without a spotter call, so quoting a verdict nobody gave would misdescribe the gate.
+pub(super) fn denied_gate_message(config_path: Option<&Path>) -> String {
+    let request = config_request_sentence(config_path);
+    format!(
+        "Denied by a `[commands]` entry in this session's policy, and no synchronous reviewer is \
+         available (autonomous mode), so this call did not run.\n\n{request} Otherwise, find \
+         another approach within your current scope."
+    )
+}
+
+/// The shared "you may ask for this" paragraph both redirects end with — the session's one
+/// policy interface, and the reminder that editing it is a request, not an enactment.
+fn config_request_sentence(config_path: Option<&Path>) -> String {
+    match config_path {
         Some(p) => format!(
             "If it's essential to your task, edit your config at `{}` to request the access you \
              need — a `[commands]`/`[paths]`/`tools` entry, or a wider `scope`. That edit is held \
@@ -22,12 +46,7 @@ pub(super) fn autonomous_gate_message(config_path: Option<&Path>, reason: &str) 
             "If it's essential to your task, request the access you need from the orchestrator."
                 .to_string()
         }
-    };
-    format!(
-        "Gated, and no synchronous reviewer is available (autonomous mode), so this call did not \
-         run.\n\nSpotter: {reason}\n\n{request} Otherwise, find another approach within your \
-         current scope."
-    )
+    }
 }
 
 /// Decide what an approved config write actually *did*

@@ -116,8 +116,26 @@ pub(super) fn parse_policy(
             })
             .unwrap_or_default()
     };
-    let mut commands = str_entries("commands", |s| s.to_string());
     let mut tools = str_entries("tools", crate::mcp::display_name);
+    // `commands` arrives as key → stance (docs/control-api.md). A `clear` entry renders as the
+    // bare key — the common case, and what the operator wrote — while any other stance is
+    // tagged, the same way a path carries its perms: an untagged carve-out would read as a grant.
+    let mut commands: Vec<PolicyEntry> = role
+        .get("commands")
+        .and_then(|c| c.as_object())
+        .map(|m| {
+            m.iter()
+                .map(|(key, stance)| PolicyEntry {
+                    label: match stance.as_str() {
+                        Some("clear") | None => key.clone(),
+                        Some(other) => format!("{key}  {other}"),
+                    },
+                    proposed: false,
+                    seq: None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let mut paths: Vec<PolicyEntry> = role
         .get("paths")
         .and_then(|p| p.as_object())

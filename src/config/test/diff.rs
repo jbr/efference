@@ -57,3 +57,22 @@ fn diff_emits_perm_changes_but_not_removals() {
         }],
     );
 }
+
+/// A non-clear stance the file adds is **not** propagated live: [`ConfigChange::Command`] can
+/// only say "clear", so emitting one for a `deny` would invert the author's meaning. It reaches
+/// effective policy on the next boot, which reloads the file as the base — the same frontier a
+/// deleted key sits behind (docs/permissions.md). A key that *becomes* clear is emitted.
+#[test]
+fn diff_skips_non_clear_command_stances() {
+    let from = parse_str("[commands]\ngit = true\n");
+    let to = parse_str("[commands]\ngit = true\n\"git push\" = \"deny\"\nnpm = \"gate\"\n");
+    assert!(diff_changes(&from, &to).is_empty());
+
+    let relaxed = parse_str("[commands]\ngit = true\n\"git push\" = true\nnpm = \"gate\"\n");
+    assert_eq!(
+        diff_changes(&to, &relaxed),
+        vec![ConfigChange::Command {
+            command: "git push".into()
+        }],
+    );
+}

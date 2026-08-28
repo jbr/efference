@@ -225,6 +225,151 @@ fn promotable_command_rejects_unlexable_or_redundant_prefixes() {
     assert_eq!(promotable_command(&role, "git"), Some("git".to_string()));
 }
 
+/// A role whose `[commands]` table is given as explicit `(key, stance)` pairs, with the same
+/// `[paths]` grants as [`cd_role`] so the `cd` tolerance can be exercised against it.
+fn stance_role(entries: &[(&str, CommandStance)]) -> Config {
+    Config {
+        commands: stances(entries),
+        ..cd_role()
+    }
+}
+
+fn stance_verdict(role: &Config, command: &str) -> Verdict {
+    classify_in(role, &bash_call(command), Path::new(CWD))
+}
+
+/// Each stance's fast-path behavior (docs/permissions.md): `clear` auto-approves; `watch` and
+/// `gate` are distinct parsed values that both fall to the rung that gates (identical in effect
+/// until the watch-window lands); `deny` refuses here, without a spotter call.
+#[test]
+fn each_stance_decides_the_fast_path() {
+    let role = stance_role(&[
+        ("cargo", CommandStance::Clear),
+        ("npm", CommandStance::Watch),
+        ("rg", CommandStance::Gate),
+        ("git", CommandStance::Deny),
+    ]);
+    assert_eq!(stance_verdict(&role, "cargo build"), Verdict::Clear);
+    assert_eq!(stance_verdict(&role, "npm install"), Verdict::Gate);
+    assert_eq!(stance_verdict(&role, "rg needle"), Verdict::Gate);
+    assert_eq!(stance_verdict(&role, "git push"), Verdict::Deny);
+    // An unlisted program is still the plain residual, not a deny.
+    assert_eq!(stance_verdict(&role, "make all"), Verdict::Gate);
+}
+
+/// The `bool` sugar keeps parsing and means what it meant: `true` = `clear` (every config
+/// written before the vocabulary), `false` = `deny`. Parsed from TOML rather than constructed,
+/// so this covers the load path an existing config takes.
+#[test]
+fn bool_values_parse_as_clear_and_deny() {
+    let role = crate::config::parse_text("[commands]\ncargo = true\nnpm = false\n");
+    assert_eq!(role.commands["cargo"], CommandStance::Clear);
+    assert_eq!(role.commands["npm"], CommandStance::Deny);
+    let call = bash_call("cargo build");
+    assert_eq!(classify_in(&role, &call, Path::new(CWD)), Verdict::Clear);
+    let call = bash_call("npm install");
+    assert_eq!(classify_in(&role, &call, Path::new(CWD)), Verdict::Deny);
+}
+
+/// **Longest-prefix-wins**, the way `[paths]` already resolves: a broad grant plus a specific
+/// carve-out clears the broad subtree and stops the carve-out — and the reverse (a broad deny
+/// with a specific clear) works too, which is what makes the resolution a resolution rather
+/// than a deny-always-wins rule.
+#[test]
+fn the_longest_matching_key_governs() {
+    let carve_out = stance_role(&[
+        ("git", CommandStance::Clear),
+        ("git push", CommandStance::Deny),
+    ]);
+    assert_eq!(
+        stance_verdict(&carve_out, "git log --oneline"),
+        Verdict::Clear
+    );
+    assert_eq!(stance_verdict(&carve_out, "git push"), Verdict::Deny);
+    assert_eq!(
+        stance_verdict(&carve_out, "git push origin main"),
+        Verdict::Deny
+    );
+    // `git pushed-branch` is a different token, not a longer `git push` — token-wise, never
+    // by string prefix.
+    assert_eq!(stance_verdict(&carve_out, "git pushx"), Verdict::Clear);
+
+    let inverse = stance_role(&[
+        ("git", CommandStance::Deny),
+        ("git log", CommandStance::Clear),
+    ]);
+    assert_eq!(stance_verdict(&inverse, "git log"), Verdict::Clear);
+    assert_eq!(stance_verdict(&inverse, "git push"), Verdict::Deny);
+}
+
+/// Three levels: each key governs its own subtree, and depth — not stance — decides which one
+/// applies, so an allow can sit inside a deny inside an allow.
+#[test]
+fn nested_keys_resolve_at_three_levels() {
+    let role = stance_role(&[
+        ("git", CommandStance::Clear),
+        ("git push", CommandStance::Deny),
+        ("git push --dry-run", CommandStance::Clear),
+    ]);
+    assert_eq!(stance_verdict(&role, "git status"), Verdict::Clear);
+    assert_eq!(stance_verdict(&role, "git push origin"), Verdict::Deny);
+    assert_eq!(
+        stance_verdict(&role, "git push --dry-run origin"),
+        Verdict::Clear
+    );
+}
+
+/// The `cd` tolerance composes with a carve-out: stage 1 strips a leading `cd <granted dir> &&`
+/// and stage 2 resolves the **remainder**, so the carve-out governs whether or not the move
+/// arrived with a `cd` in front of it. Without this, `cd <granted> && git push` would slip past
+/// a deny that `git push` alone hits.
+#[test]
+fn a_carve_out_governs_through_the_cd_tolerance() {
+    let role = stance_role(&[
+        ("git", CommandStance::Clear),
+        ("git push", CommandStance::Deny),
+    ]);
+    assert_eq!(
+        stance_verdict(&role, "cd /work/src && git log"),
+        Verdict::Clear
+    );
+    assert_eq!(
+        stance_verdict(&role, "cd /work/src && git push"),
+        Verdict::Deny
+    );
+    // An ungranted `cd` target still fails stage 1 — the deny is never even reached, and the
+    // call gates rather than denying, because stage 1 has no opinion about the remainder.
+    assert_eq!(
+        stance_verdict(&role, "cd /elsewhere && git push"),
+        Verdict::Gate
+    );
+}
+
+/// Promotion stops at any governing key, whatever its stance: a `clear` above the prefix makes
+/// the proposal a no-op, and a `watch`/`gate`/`deny` above it makes the proposal a hole punched
+/// in an operator's carve-out. Neither is queued.
+#[test]
+fn promotion_stops_at_a_governing_carve_out() {
+    let role = stance_role(&[
+        ("git", CommandStance::Clear),
+        ("git push", CommandStance::Deny),
+    ]);
+    assert_eq!(promotable_command(&role, "git push --tags"), None);
+    assert_eq!(promotable_command(&role, "git log"), None); // governed by the `clear`
+    assert_eq!(promotable_command(&role, "npm"), Some("npm".to_string()));
+}
+
+/// Two keys at equal token depth (two spellings of one prefix) resolve to the more restrictive
+/// stance — the tie is otherwise a coin flip, and the safe side is the one to land on.
+#[test]
+fn equal_depth_keys_resolve_to_the_more_restrictive_stance() {
+    let role = stance_role(&[
+        ("git push", CommandStance::Clear),
+        ("git  push", CommandStance::Deny), // lexes to the same two tokens
+    ]);
+    assert_eq!(stance_verdict(&role, "git push origin"), Verdict::Deny);
+}
+
 #[test]
 fn expansions_and_globs_are_not_simple() {
     for complex in [

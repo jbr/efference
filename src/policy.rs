@@ -36,8 +36,10 @@
 //!   bash-only syntax either fails to parse (→ gate) or surfaces as inert literal words
 //!   we still filter. yash parses (does not expand), so `git diff HEAD~1` is fine — we
 //!   do the expansion-metacharacter filtering ourselves.
-//! - **Stage 2** matches the lexed `[program, args…]` against the role's
-//!   `(program, safe-arg-prefix)` allowlist (token-wise prefix; empty prefix = blanket).
+//! - **Stage 2** matches the lexed `[program, args…]` against the role's `[commands]` keys
+//!   (token-wise prefix; a bare program key is blanket) and reads the stance of the
+//!   **longest** matching key, so a carve-out (`git = "clear"`, `"git push" = "deny"`) governs
+//!   its own subtree ([`commands::command_stance`]).
 //!
 //! ## Structured tools
 //!
@@ -61,18 +63,23 @@ use std::path::{Component, Path, PathBuf};
 use serde_json::Value;
 
 use crate::bash;
-use crate::config::{Config, Perms};
+use crate::config::{CommandStance, Config, Perms};
 use crate::log::{ConfigChange, LogEntry, Origin, Payload, Stance, ToolCall};
 
-/// The fast-path's decision for one tool call. Binary; the extension point for the
-/// spotter rung, which splits `Gate` into a graded `{clear, watch, gate}` stance
-/// (docs/permissions.md, [`crate::spotter`]).
+/// The fast-path's decision for one tool call. `Gate` is the extension point for the
+/// spotter rung, which splits it into a graded `{clear, watch, gate}` stance
+/// (docs/permissions.md, [`crate::spotter`]); `Deny` is the decision that skips that rung.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
     /// Certain-enough to auto-approve: no human, no model round-trip.
     Clear,
     /// Not cleared — fall through to the spotter rung, then the human gate.
     Gate,
+    /// Refused by a `[commands]` key carrying [`CommandStance::Deny`]: the move goes to whoever
+    /// gates (the human, or the autonomous redirect) **without** a spotter call. The spotter's
+    /// most restrictive answer already resolves there, so there is no answer it could give that
+    /// would change this outcome — the round-trip is spent for nothing (docs/permissions.md).
+    Deny,
 }
 
 /// The operator's **review level** (docs/permissions.md): who reviews a

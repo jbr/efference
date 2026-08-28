@@ -36,8 +36,13 @@ pub fn effective_config(base: &Config, log: &[LogEntry]) -> Config {
 /// Replace-at-key: each variant sets the addressed key in the matching set/map.
 pub fn apply_config_change(role: &mut Config, change: &ConfigChange) {
     match change {
+        // A `Command` change is a **clear** grant: the change vocabulary spells the grant an
+        // approval hands out (a human's approve-always, a promoted prefix), and there is no
+        // initiator that hands out a restriction. A non-clear stance is written in the file and
+        // read at load (docs/permissions.md).
         ConfigChange::Command { command } => {
-            role.commands.insert(command.clone());
+            role.commands
+                .insert(command.clone(), crate::config::CommandStance::Clear);
         }
         ConfigChange::Path { path, read, write } => {
             role.paths.insert(

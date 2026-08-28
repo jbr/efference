@@ -264,7 +264,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "source": "/path/efference.toml",   // or null for the built-in default
     "scope": "…",
     "watch_for": [ … ],
-    "commands": [ … ],
+    "commands": { "<prefix>": "clear|watch|gate|deny" },
     "tools": { … },
     "paths": { "<path>": { "read": true, "write": false } }
   },

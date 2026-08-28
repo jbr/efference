@@ -3,24 +3,49 @@
 use super::*;
 
 /// Stage 1 + stage 2 for a bash command string. `Clear` only if it is structurally
-/// simple *and* its program/args match an allowlist entry. Stage 1 runs through
-/// [`bash_tokens_in`], so a leading `cd <granted dir> &&` is admitted and the remainder is what
-/// stage 2 matches.
+/// simple *and* the `[commands]` key governing its program/args carries
+/// [`CommandStance::Clear`]. Stage 1 runs through [`bash_tokens_in`], so a leading
+/// `cd <granted dir> &&` is admitted and the remainder is what stage 2 matches — which means a
+/// carve-out governs the same way whether or not the move arrived with a `cd` in front of it.
 pub(super) fn classify_bash(role: &Config, command: &str, cwd: &Path) -> Verdict {
     let Some(tokens) = bash_tokens_in(role, command, cwd) else {
         return Verdict::Gate; // stage 1 rejected (complex, expanded, or unparseable)
     };
-    // Stage 2: token-wise prefix match against the command-prefix set. Each key is re-lexed with
-    // the *same* lexer as the command, so `"git diff"` compares as `["git", "diff"]`, not by
-    // string — and a key that fails to lex (can't happen post-validation) is simply skipped.
-    // Re-lexing a handful of keys is free next to parsing the command itself.
-    if role.commands.iter().any(|key| {
-        simple_command_tokens(key).is_some_and(|key_tokens| tokens.starts_with(&key_tokens))
-    }) {
-        Verdict::Clear
-    } else {
-        Verdict::Gate
+    match command_stance(role, &tokens) {
+        Some(CommandStance::Clear) => Verdict::Clear,
+        // `deny` refuses without a spotter call; `watch`/`gate` spend one to re-decide. Both
+        // route to whoever gates in the end, which is why they are distinguishable here and
+        // not yet distinguishable in outcome (docs/permissions.md).
+        Some(CommandStance::Deny) => Verdict::Deny,
+        Some(CommandStance::Watch | CommandStance::Gate) | None => Verdict::Gate,
     }
+}
+
+/// The stance governing a lexed command, or `None` if no `[commands]` key covers it.
+///
+/// **Stage 2 — the prefix match, resolved longest-prefix-wins** (docs/permissions.md), the same
+/// way `[paths]` resolves a filesystem grant: among the keys whose tokens are a prefix of the
+/// command's, the *most specific* (longest) one governs, so `git = "clear"` plus
+/// `"git push" = "deny"` clears `git log` and denies `git push origin main`. Trust-broad-then-
+/// carve-exceptions is the shape this exists for; without it a broad grant could only be
+/// narrowed by deleting it and re-listing every safe sub-verb.
+///
+/// Each key is re-lexed with the *same* lexer as the command, so `"git diff"` compares as
+/// `["git", "diff"]`, not by string — and a key that fails to lex (can't happen
+/// post-validation) is simply skipped. Re-lexing a handful of keys is free next to parsing the
+/// command itself. Ties at equal token depth go to the more restrictive stance
+/// ([`CommandStance`]'s `Ord`).
+pub(super) fn command_stance(role: &Config, tokens: &[String]) -> Option<CommandStance> {
+    role.commands
+        .iter()
+        .filter_map(|(key, stance)| {
+            let key_tokens = simple_command_tokens(key)?;
+            tokens
+                .starts_with(&key_tokens)
+                .then_some((key_tokens.len(), *stance))
+        })
+        .max()
+        .map(|(_, stance)| stance)
 }
 
 /// Validate a spotter-proposed command prefix for **promotion** into the `[commands]` allowlist
@@ -34,18 +59,18 @@ pub(super) fn classify_bash(role: &Config, command: &str, cwd: &Path) -> Verdict
 ///   is rejected, never queued. This is what holds the **program-prefix-granularity** invariant
 ///   (safety is discontinuous in the command string, so only program-prefixes are soundly
 ///   memoizable, never exact commands).
-/// - It must not be **already covered** by an existing key — if some current key's tokens are a
-///   prefix of the proposed prefix's tokens, any command it would clear already clears, so the
-///   promotion is redundant and dropped (keeps the proposal queue free of no-ops; the spotter is
-///   blind to the allowlist, so it can't dedup itself).
+/// - It must not be **already governed** by an existing key — if some current key's tokens are a
+///   prefix of the proposed prefix's tokens, that key already decides every command the promotion
+///   would address, so the promotion is dropped (keeps the proposal queue free of no-ops; the
+///   spotter is blind to the allowlist, so it can't dedup itself). This covers both directions of
+///   redundancy now that a key can carry any stance: under a governing `clear` the promotion is a
+///   no-op, and under a governing `watch`/`gate`/`deny` it would punch a hole in a carve-out the
+///   operator wrote — a change only the operator should make, in the file.
 ///
 /// Returns the normalized key (the trimmed prefix) to store, or `None` if it fails either check.
 pub fn promotable_command(role: &Config, prefix: &str) -> Option<String> {
     let tokens = simple_command_tokens(prefix)?;
-    let already_covered = role.commands.iter().any(|key| {
-        simple_command_tokens(key).is_some_and(|key_tokens| tokens.starts_with(&key_tokens))
-    });
-    if already_covered {
+    if command_stance(role, &tokens).is_some() {
         return None;
     }
     Some(prefix.trim().to_string())

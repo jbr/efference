@@ -29,9 +29,17 @@ fn review_level_round_trips_and_fails_safe() {
     assert_eq!(ReviewLevel::parse("nonsense"), None);
 }
 
-/// Build a [`Config`] whose `commands` set holds the given command-prefix keys.
-fn commands(keys: &[&str]) -> std::collections::BTreeSet<String> {
-    keys.iter().map(|s| s.to_string()).collect()
+/// Build a `commands` table whose keys all carry [`CommandStance::Clear`] — the `true` sugar,
+/// which is what every config written before the stance vocabulary spells.
+fn commands(keys: &[&str]) -> std::collections::BTreeMap<String, CommandStance> {
+    keys.iter()
+        .map(|s| (s.to_string(), CommandStance::Clear))
+        .collect()
+}
+
+/// Build a `commands` table from explicit `(key, stance)` pairs.
+fn stances(entries: &[(&str, CommandStance)]) -> std::collections::BTreeMap<String, CommandStance> {
+    entries.iter().map(|(k, s)| (k.to_string(), *s)).collect()
 }
 
 /// A config whose command-allowlist mirrors the curation rule: blanket for whole-arg-space-

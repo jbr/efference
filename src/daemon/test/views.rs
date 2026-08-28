@@ -361,17 +361,21 @@ fn state_reports_effective_role_contents() {
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["role"]["source"].is_null());
     assert!(v["role"]["scope"].is_null());
-    assert_eq!(v["role"]["commands"], serde_json::json!([]));
+    assert_eq!(v["role"]["commands"], serde_json::json!({}));
 
     // A loaded config surfaces its resolved path and full contents (sorted, by BTree order).
     let loaded = LoadedConfig {
         role: crate::config::Config {
             scope: Some("stay in the repo".into()),
             watch_for: vec!["network egress".into()],
-            commands: ["cargo", "git diff"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            commands: [
+                ("cargo", crate::config::CommandStance::Clear),
+                ("git diff", crate::config::CommandStance::Clear),
+                ("git push", crate::config::CommandStance::Deny),
+            ]
+            .into_iter()
+            .map(|(k, s)| (k.to_string(), s))
+            .collect(),
             tools: ["read"].iter().map(|s| s.to_string()).collect(),
             paths: [(
                 ".".to_string(),
@@ -394,9 +398,10 @@ fn state_reports_effective_role_contents() {
         v["role"]["watch_for"],
         serde_json::json!(["network egress"])
     );
+    // key → stance, so a carve-out is legible as one rather than reading as a grant.
     assert_eq!(
         v["role"]["commands"],
-        serde_json::json!(["cargo", "git diff"])
+        serde_json::json!({ "cargo": "clear", "git diff": "clear", "git push": "deny" })
     );
     assert_eq!(v["role"]["tools"], serde_json::json!(["read"]));
     assert_eq!(
@@ -410,7 +415,12 @@ fn state_reports_effective_role_contents() {
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(
         v["role"]["commands"],
-        serde_json::json!(["cargo", "git diff", "npm"])
+        serde_json::json!({
+            "cargo": "clear",
+            "git diff": "clear",
+            "git push": "deny",
+            "npm": "clear",
+        })
     );
 }
 

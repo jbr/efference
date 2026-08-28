@@ -13,10 +13,10 @@ pub(super) struct RawConfig {
     watch_for: Vec<String>,
     #[serde(rename = "trust-threshold", default)]
     trust_threshold: Option<f64>,
-    /// `[commands]` table: each value is `true` (clear). `false` is rejected in [`validate`]
-    /// (deny is unimplemented and the fold is additive-only — it can't subtract).
+    /// `[commands]` table: each value is a [`CommandStance`] or the `bool` sugar
+    /// ([`RawCommandValue`]).
     #[serde(default)]
-    commands: BTreeMap<String, bool>,
+    commands: BTreeMap<String, RawCommandValue>,
     #[serde(default)]
     tools: Vec<String>,
     #[serde(default)]
@@ -127,6 +127,29 @@ pub(super) struct RawContextEntry {
     description: Option<String>,
 }
 
+/// A `[commands]` value: the stance word (`"clear"` / `"watch"` / `"gate"` / `"deny"`) or the
+/// `bool` sugar. Booleans keep parsing because every config written before the vocabulary
+/// existed spells its grants that way; `true` = [`CommandStance::Clear`] is what those files
+/// already meant, and `false` = [`CommandStance::Deny`] is the carve-out spelling
+/// (`git = true` + `"git push" = false`) the longest-prefix resolution reads
+/// (docs/permissions.md).
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(super) enum RawCommandValue {
+    Sugar(bool),
+    Stance(CommandStance),
+}
+
+impl RawCommandValue {
+    fn into_stance(self) -> CommandStance {
+        match self {
+            RawCommandValue::Sugar(true) => CommandStance::Clear,
+            RawCommandValue::Sugar(false) => CommandStance::Deny,
+            RawCommandValue::Stance(stance) => stance,
+        }
+    }
+}
+
 /// A `[paths]` value: either the `true`/`false` sugar (`true` = read+write) or an explicit
 /// `{ read = …, write = … }` inline table.
 #[derive(Deserialize)]
@@ -163,9 +186,6 @@ impl RawPathValue {
 /// syntactically. Carried by [`LoadError::Validate`].
 #[derive(Debug)]
 pub enum ValidationError {
-    /// A `[commands]` key set to `false`. Additive-only policy can't subtract, so a deny would
-    /// silently do nothing — we reject it instead of surprising the author.
-    CommandDeny(String),
     /// A `[commands]` key that does not lex to a single simple command (it has operators,
     /// redirections, expansions, or an env-assignment prefix). The fast-path can only soundly
     /// prefix-match simple commands, so an un-lexable key fails the whole file — no silent skip.
@@ -195,11 +215,6 @@ pub enum ValidationError {
 impl std::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValidationError::CommandDeny(key) => write!(
-                f,
-                "command `{key}` is set to false, but command-deny is not implemented \
-                 (config is additive-only); remove the entry instead"
-            ),
             ValidationError::CommandNotSimple(key) => write!(
                 f,
                 "command key `{key}` is not a single simple command (no operators, \
@@ -251,19 +266,17 @@ pub(super) fn parse(path: &Path, text: &str) -> Result<Config, LoadError> {
 }
 
 /// Fold a [`RawConfig`] into the materialized [`Config`], failing closed on any unsound entry.
-/// The two soundness gates live here: every `[commands]` key must lex to a simple command
-/// (reusing the fast-path's own lexer so the key and the checked command agree token-for-token),
-/// and a `false` command value is rejected (additive-only can't deny).
+/// The `[commands]` soundness gate lives here: every key must lex to a simple command (reusing
+/// the fast-path's own lexer so the key and the checked command agree token-for-token). A
+/// multi-token key is exactly what a carve-out needs (`"git push"` lexes to `["git", "push"]`),
+/// so the same check that admits a sub-verb grant admits a sub-verb deny.
 pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
-    let mut commands = BTreeSet::new();
-    for (key, granted) in raw.commands {
-        if !granted {
-            return Err(ValidationError::CommandDeny(key));
-        }
+    let mut commands = BTreeMap::new();
+    for (key, raw_value) in raw.commands {
         if crate::policy::simple_command_tokens(&key).is_none() {
             return Err(ValidationError::CommandNotSimple(key));
         }
-        commands.insert(key);
+        commands.insert(key, raw_value.into_stance());
     }
     let paths = raw
         .paths

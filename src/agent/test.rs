@@ -149,13 +149,13 @@ pub(super) fn a_committed_grant_is_written_to_the_config_file() {
         "the operator's formatting survives: {text}"
     );
     // The file and effective policy agree — no divergence between the two live records.
-    assert!(shared.effective_config().commands.contains("npm"));
+    assert!(shared.effective_config().commands.contains_key("npm"));
     assert!(
         crate::config::ConfigFile::load(&path)
             .unwrap()
             .config()
             .commands
-            .contains("npm")
+            .contains_key("npm")
     );
 
     std::fs::remove_file(&path).unwrap();
