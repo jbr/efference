@@ -738,7 +738,30 @@ call", while a file read from disk is the file *now*, and serving the
 historical reading would mean snapshotting every file at every edit. The
 division held instead is that the inspector shows what a call did — from the
 log, which holds it — and the file viewer shows what a file is
-([backlog/web/file-view/](../backlog/web/file-view/README.md)). Below the tabs,
+([backlog/web/file-view/](../backlog/web/file-view/README.md)). The `result` and `raw` tabs also carry **the command's own output**, under
+whatever the committed result showed, for the two cases where a `ToolResult` is
+not the output ([supervisor.md](supervisor.md)):
+
+- **A call still running** has no committed result at all. Its live tail is
+  already in the store as `streaming.toolOutput[callId]` — the transcript's
+  inline peek renders it — and the drawer reads the same buffer instead of
+  saying "no result yet".
+- **A backgrounded call**'s committed result is the *handoff* result naming
+  `p#<n>`, not the output; the output lives in the supervisor's retained
+  capture. The drawer reaches it through the call↔process mapping: the daemon
+  carries the spawning `call_id` on each process, and `store.ts` folds every
+  pair it has seen into `session.processCalls` — kept after the process leaves
+  the level-triggered `processes` topic, since the capture outlives the exit and
+  the id is how it is read. While the process is live the store's own
+  `processOutput` buffer is used; once it has exited the drawer reads
+  `GET /processes/:id/output` directly. A client that connected after the exit
+  never saw the row and has no mapping — the registry is ephemeral either way.
+
+A capture that hit the retention cap says so — "output incomplete; N bytes
+dropped at the retention cap", from the route's `lost` — rather than presenting a
+truncated capture as the whole output.
+
+Below the tabs,
 **what the fork returned**: the raw line count, the surfaced count computed
 from the keep, the keep itself (`All` / `None` / `Ranges(a..b, …)`), the
 wire state, and the distiller's note — the audit view of

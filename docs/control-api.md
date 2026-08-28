@@ -217,11 +217,18 @@ The running processes, as a JSON array of the same representation the
 ```jsonc
 [ { "id": 1,                     // spawn-minted ordinal; rendered "p#1" in prose
     "command": "cargo watch -x test",
+    "call_id": "toolu_01ab",     // the tool_use that spawned it, or null (supervisor.md); survives the handoff
     "pid": 4242,                 // OS pid — an attribute for direct interaction, never the identifier
     "spawned_at": 1754300000000, // absolute Unix millis; clients compute elapsed
     "background": true,          // false = the loop's in-flight foreground tool
     "muted": false } ]           // dismissed-from-view; still running, still notifies on exit
 ```
+
+`call_id` is the call↔process mapping ([supervisor.md](supervisor.md)): a client
+holding a transcript entry finds the process that answers it, and a client holding
+a process row finds the entry to jump to. Because the listing carries only
+*running* processes, a client that wants the mapping after an exit keeps what it
+saw while the process was live — the registry is ephemeral either way.
 
 #### `GET /processes/:id`
 One running process's representation, or `404 not_found` (exited processes
@@ -308,6 +315,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
   "processes": [                   // every running tool-spawned process: STRUCTURE ONLY
     { "id": 1,                     // spawn-minted ordinal; rendered "p#1" in prose
       "command": "cargo watch -x test",
+      "call_id": "toolu_01ab",     // the tool_use that spawned it, or null (supervisor.md)
       "pid": 4242,                 // OS pid — an attribute for direct interaction, never the identifier
       "spawned_at": 1754300000000, // no tail, no last-chunk: both would re-emit per chunk
       "background": true,          // false = the in-flight foreground tool (flagged, not filtered)

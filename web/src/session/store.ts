@@ -10,6 +10,7 @@ import type {
   Frame,
   LogEntry,
   OutputData,
+  Process,
   Seq,
   Spot,
   StateTopics,
@@ -70,6 +71,16 @@ export interface Session {
    * the resulting `User` entry, so settling is an exact lookup rather than a
    * content match. */
   pendingTurns: PendingTurn[];
+  /** Process id by the `tool_use` id that spawned it (docs/supervisor.md) —
+   * accumulated from the `processes` topic and **never removed**.
+   *
+   * The topic carries only *running* processes, so an exited one leaves it; its
+   * retained output stays readable at `GET /processes/:id/output`, and this is
+   * what still knows the `:id` to ask for. A client that connects after the
+   * process exited never saw the row and has no mapping — the registry is
+   * ephemeral either way, so that gap is the daemon's, not a fold this could
+   * fix. */
+  processCalls: Record<CallId, number>;
 }
 
 /** One queued delivery echo: the submitted text (for display) under the
@@ -94,6 +105,7 @@ export const emptySession: Session = {
   topics: {},
   streaming: emptyStreaming,
   pendingTurns: [],
+  processCalls: {},
 };
 
 /** Cap per streaming buffer; the committed entry is the authoritative copy. */
@@ -148,6 +160,24 @@ export function seed(session: Session, entries: LogEntry[]): Session {
   };
 }
 
+/** Fold a `processes` topic value into the call→process mapping, keeping every
+ * pair ever seen. A level-triggered replacement that drops an exited process
+ * must not drop what it taught us. */
+function learnProcessCalls(
+  known: Record<CallId, number>,
+  data: unknown,
+): Record<CallId, number> {
+  if (!Array.isArray(data)) return known;
+  let next = known;
+  for (const proc of data as Process[]) {
+    const callId = proc.call_id;
+    if (typeof callId !== "string" || next[callId] === proc.id) continue;
+    if (next === known) next = { ...known };
+    next[callId] = proc.id;
+  }
+  return next;
+}
+
 export function applyFrame(session: Session, frame: Frame): Session {
   switch (frame.class) {
     case "log":
@@ -156,6 +186,10 @@ export function applyFrame(session: Session, frame: Frame): Session {
       return {
         ...session,
         topics: { ...session.topics, [frame.kind]: frame.data },
+        processCalls:
+          frame.kind === "processes"
+            ? learnProcessCalls(session.processCalls, frame.data)
+            : session.processCalls,
       };
     case "output":
       return {

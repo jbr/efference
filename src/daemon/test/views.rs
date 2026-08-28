@@ -479,7 +479,9 @@ fn state_reports_the_review_level_dial() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn state_json_surfaces_running_processes() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
-    shared.spawn_background("sleep 5".into()).expect("spawn");
+    shared
+        .spawn_background("sleep 5".into(), None)
+        .expect("spawn");
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     let procs = v["processes"]
         .as_array()

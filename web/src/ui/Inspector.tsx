@@ -4,7 +4,7 @@
 // view over the same CallNode the transcript renders, so it re-uses the
 // cordon's renderers rather than growing its own.
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Keep, RawResult, WireState } from "../api/types.ts";
 import type { CallNode } from "../session/tree.ts";
 import { Code } from "./Code.tsx";
@@ -17,6 +17,7 @@ import {
   type ArgField,
 } from "../render/parse.ts";
 import { openablePaths } from "../session/touchedFiles.ts";
+import { fetchProcessOutput } from "../api/http.ts";
 
 /** Drag-to-resize, persisted. The drawer floats over the content (the
  * content column never moves for it — index.css), so resizing is purely the
@@ -152,12 +153,101 @@ function ForkPanel({ raw, wire }: { raw: RawResult; wire: WireState }) {
   );
 }
 
+/** What the command itself printed, for the two cases where the call's
+ * `ToolResult` is not it (docs/supervisor.md):
+ *
+ * - **running**: no result has committed yet, and the live tail is already in the
+ *   store as `streaming.toolOutput[callId]` — the transcript's inline peek renders
+ *   it, and this reads the same buffer.
+ * - **backgrounded**: the committed `ToolResult` is the *handoff* result ("moved to
+ *   the background as p#3"), not the output. The output lives in the supervisor's
+ *   retained capture, reached through the call↔process mapping the daemon carries
+ *   on each process row.
+ *
+ * A capture that hit the retention cap is genuinely incomplete, and says so: `lost`
+ * is rendered as a count of dropped bytes rather than letting a truncated capture
+ * present as the whole output. */
+interface OutputRead {
+  output: string;
+  lost: number;
+}
+
+/** The supervisor's capture for a process, if we can reach it.
+ *
+ * While the process is live the store already holds its tail (seeded cold from the
+ * same route by `ProcessSeeder`, then extended by `process_output` deltas), so that
+ * buffer is used as-is. Once it has exited it leaves the `processes` topic and the
+ * deltas stop, and there is nothing buffered — then this reads the retained capture
+ * directly, which the daemon keeps serving after the exit. */
+function useRetainedOutput(
+  processId: number | undefined,
+  buffered: string | undefined,
+  bufferedLost: number | undefined,
+): OutputRead | null {
+  // Keyed by the id it was read for, so a drawer that switches to another call
+  // discards the previous capture at render time rather than clearing it from
+  // inside the effect (a synchronous setState there cascades renders).
+  const [fetched, setFetched] = useState<{
+    id: number;
+    read: OutputRead;
+  } | null>(null);
+  // The dependency is *whether* a live buffer exists, not its contents: the
+  // buffer grows with every delta, and depending on the string would re-read
+  // the retained capture per chunk.
+  const buffering = buffered !== undefined;
+  useEffect(() => {
+    if (processId === undefined || buffering) return;
+    let live = true;
+    void fetchProcessOutput(processId)
+      .then((read) => {
+        if (live) setFetched({ id: processId, read });
+      })
+      // A capture the daemon no longer has (restarted, never registered) is a
+      // drawer with no output section, not an error to surface here.
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [processId, buffering]);
+  if (processId === undefined) return null;
+  if (buffered !== undefined)
+    return { output: buffered, lost: bufferedLost ?? 0 };
+  return fetched !== null && fetched.id === processId ? fetched.read : null;
+}
+
+function OutputSection({
+  label,
+  read,
+}: {
+  label: string;
+  read: OutputRead;
+}) {
+  return (
+    <div className="inspector-output">
+      <div className="dim">{label}</div>
+      {read.lost > 0 && (
+        <div className="note">
+          <span className="note-glyph">✧</span>
+          <span className="note-text">
+            output incomplete; {read.lost} bytes dropped at the retention cap
+          </span>
+        </div>
+      )}
+      <pre>{read.output === "" ? "(no output yet)" : read.output}</pre>
+    </div>
+  );
+}
+
 export function Inspector({
   node,
   closing,
   onSlideOut,
   onClose,
   onOpenFile,
+  liveOutput,
+  processId,
+  processOutput,
+  processLost,
 }: {
   node: CallNode;
   /** The exit transition is running; `onSlideOut` unmounts when it lands. */
@@ -165,6 +255,13 @@ export function Inspector({
   onSlideOut: () => void;
   onClose: () => void;
   onOpenFile: (path: string) => void;
+  /** `streaming.toolOutput[callId]`: the live tail of a call still running. */
+  liveOutput: string | undefined;
+  /** The process this call spawned, from the call↔process mapping. */
+  processId: number | undefined;
+  /** `streaming.processOutput[processId]`, while the process is still live. */
+  processOutput: string | undefined;
+  processLost: number | undefined;
 }) {
   const [tab, setTab] = useState<Tab>("result");
   const call = useMemo(() => {
@@ -193,6 +290,15 @@ export function Inspector({
       result !== null ? resultRender(node.name, result.raw, result.wire) : null,
     [node.name, result],
   );
+  const retained = useRetainedOutput(processId, processOutput, processLost);
+  // The live tail wins where both exist: for a foreground call it is the buffer
+  // that is still growing, while the capture read is a point-in-time snapshot.
+  const output: { label: string; read: OutputRead } | null =
+    liveOutput !== undefined
+      ? { label: "live output · running", read: { output: liveOutput, lost: 0 } }
+      : retained !== null
+        ? { label: `p#${processId} output`, read: retained }
+        : null;
   const { width, grip } = useDrawerWidth();
   return (
     <div
@@ -238,12 +344,18 @@ export function Inspector({
         ))}
       </div>
       <div className="inspector-body">
-        {tab === "result" &&
-          (rendered !== null ? (
-            <ResultBody body={rendered.body} />
-          ) : (
-            <div className="dim">no result yet</div>
-          ))}
+        {tab === "result" && (
+          <>
+            {rendered !== null ? (
+              <ResultBody body={rendered.body} />
+            ) : (
+              output === null && <div className="dim">no result yet</div>
+            )}
+            {output !== null && (
+              <OutputSection label={output.label} read={output.read} />
+            )}
+          </>
+        )}
         {tab === "args" && view !== null && (
           <>
             {view.intent !== null && (
@@ -260,12 +372,18 @@ export function Inspector({
             )}
           </>
         )}
-        {tab === "raw" &&
-          (result !== null ? (
-            <pre>{result.raw.content}</pre>
-          ) : (
-            <div className="dim">no result yet</div>
-          ))}
+        {tab === "raw" && (
+          <>
+            {result !== null ? (
+              <pre>{result.raw.content}</pre>
+            ) : (
+              output === null && <div className="dim">no result yet</div>
+            )}
+            {output !== null && (
+              <OutputSection label={output.label} read={output.read} />
+            )}
+          </>
+        )}
         {tab === "spot" &&
           (node.spot !== null ? (
             <div className="inspector-spot">

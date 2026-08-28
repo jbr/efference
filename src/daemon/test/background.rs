@@ -11,7 +11,7 @@ use super::*;
 async fn background_process_drains_and_notifies_on_exit() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
     let handle = shared
-        .spawn_background("echo hello; echo world 1>&2".into())
+        .spawn_background("echo hello; echo world 1>&2".into(), None)
         .expect("spawn");
     assert_eq!(handle, "p#1");
 
@@ -65,9 +65,11 @@ async fn adopt_background_continues_the_drain_and_notifies_on_exit() {
             &serde_json::json!({ "command": "echo early; sleep 0.6; echo late" }),
             detach,
             |pgid| {
-                *fg_id.lock().unwrap() = Some(
-                    shared.register_foreground("echo early; sleep 0.6; echo late".into(), pgid),
-                );
+                *fg_id.lock().unwrap() = Some(shared.register_foreground(
+                    "echo early; sleep 0.6; echo late".into(),
+                    pgid,
+                    None,
+                ));
             },
             |chunk| {
                 if let Some(id) = *fg_id.lock().unwrap() {
@@ -121,7 +123,7 @@ async fn background_spawn_exports_the_scratch_tmpdir() {
         Some(PathBuf::from("/scratch/efference-test")),
     );
     let handle = shared
-        .spawn_background("echo $TMPDIR".into())
+        .spawn_background("echo $TMPDIR".into(), None)
         .expect("spawn");
     let mut tries = 0;
     loop {
@@ -155,7 +157,9 @@ async fn kill_bg_and_inbox_summary() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
     assert!(!shared.kill_bg("p#1"), "unknown handle → false");
 
-    let h = shared.spawn_background("sleep 30".into()).expect("spawn");
+    let h = shared
+        .spawn_background("sleep 30".into(), None)
+        .expect("spawn");
     assert!(shared.kill_bg(&h), "kills a running process");
 
     // Inbox read: empty, then surfaces a posted notification.

@@ -12,10 +12,9 @@ This is strictly better than a blocking `wait(until=…)` call. A blocked wait m
 the agent inert: it cannot react to a *different* process failing while it waits,
 and it holds an open turn for nothing. "Wait for exit" is simply the idle agent
 being woken by the exit notification (the idle-triggered triage gate, below). "Wait
-for a pattern" is a future non-blocking `watch(handle, pattern)` — the drain task
+for a pattern" is the non-blocking `watch_process(handle, pattern)` — the drain task
 matches output and fires a notification — which composes with wake-on-notification
-instead of fighting it. `watch(handle, pattern)` for pattern-waking is a deferred
-refinement tracked in the backlog.
+instead of fighting it (see [watches](#watches), below).
 
 ## Process identity — one namespace, background as a property
 
@@ -41,6 +40,32 @@ The id has two faces:
   the `/processes` routes ([control-api](control-api.md)) — it is the bare
   integer. The route path is already the namespace there, and `#` is the URL
   fragment delimiter, so the rendered form must never reach a path.
+
+## The call↔process mapping
+
+A process also carries the **`tool_use` id of the call that spawned it**
+(`ProcessState.call_id`, on `GET /processes` and the `processes` topic). It is
+stamped at the mint, alongside the ordinal, so it survives the
+foreground→background flip like every other property: the entry that says
+"backgrounded as p#3" is the same entry a client resolves the process from after
+the flip.
+
+The mapping is read in both directions, and each direction answers a question the
+other cannot:
+
+- **call → process.** A backgrounded command's `ToolResult` is the *handoff*
+  result, not the command's output ("Foreground → background handoff", below), so a
+  client holding the transcript entry has nothing to show for what the command
+  actually printed. With the mapping it reads `GET /processes/:id/output` — which
+  works after exit too, since the capture outlives it — and renders the `lost`
+  count with it, because a capture that hit the retention cap is genuinely
+  incomplete.
+- **process → call.** A client showing a live process row (the TUI sidebar's
+  `PROCESSES`, the web tasks pane) can jump to the transcript entry the process came
+  from, rather than leaving the operator to find it by reading commands.
+
+`call_id` is optional in the type because the registry does not require a call to
+register a process; every process the harness spawns today has one.
 
 The **OS pid is an attribute, not the identifier**: the `processes` topic carries
 it so a client or the agent can reach the process directly (signals, `lsof`) when
@@ -272,11 +297,51 @@ same, the approval gate is the same; the loop registers the child in the `Superv
 instead of awaiting it and returns the `p#<id>` handle immediately.
 
 The supervisor verbs: `list_processes`, `read_process(handle, cursor)`,
-`kill_process(handle)`, and `check_inbox` (surface pending inbox notifications on
+`kill_process(handle)`, `watch_process(handle, pattern)` ([watches](#watches)),
+and `check_inbox` (surface pending inbox notifications on
 demand, so the model need not wait for them to ride its next action). Tool
 definitions are constant `json!` values with sorted keys so the `tools[]` array
 stays byte-stable across turns (see [transport](transport.md) for why this matters
 for prefix caching).
+
+## Watches
+
+`watch_process(handle, pattern)` registers a pattern against a running process and
+returns immediately. Nothing blocks: the drain scan matches the process's output as
+it arrives and posts a hit to the [inbox](inbox.md), where it reaches the model the
+same way an exit does — at the next gate, or by waking an idle agent. It is the
+pattern half of wake-on-notification; the exit half needs no tool at all.
+
+Four decisions define what a watch is:
+
+- **The pattern is a plain substring, matched per line, case-sensitively.** The
+  question a watch answers is "wake me when this stream prints X", and X is almost
+  always a literal the model just read in the command's own output (`Compiled`,
+  `Listening on`, `test result:`). A regex would add an expression the model can get
+  subtly wrong — and get wrong *silently*, since a watch that never fires looks
+  exactly like a process that never printed. Substring has one failure mode and it
+  is the obvious one.
+- **A watch fires once, then it is gone.** The wake case is "tell me when this
+  happens", not "tell me every time". A repeating watch on a chatty stream would
+  wake the idle triage fork per matching line, which is the thrash idle-triage's
+  debounce exists to prevent. Re-arming is one tool call, and the notification body
+  says so.
+- **Only output printed after registration matches.** The scan mark advances on
+  every chunk whether or not anything is watching, so a pattern already sitting in
+  the retained capture — which the model has usually just read, since reading is
+  what prompted the watch — cannot fire an immediate stale hit. A complete line is
+  scanned once; the trailing partial line is scanned without advancing the mark, so
+  a command that prints a prompt and waits is still watchable.
+- **The notification carries the handle, the pattern, and the matching line**, on
+  the plain `p#<n>` source the exit notification also uses — one `⟢ p#3: …` shape
+  for everything about a process. It carries **no slot**: a once-firing hit has
+  nothing to supersede, and the `p#<n>` slot belongs to the exit notification, which
+  a hit must neither replace nor be replaced by.
+
+A watch on an unknown or already-exited process is refused rather than accepted:
+there will be no more output to match, so an accepted watch would never fire. A
+watch that is still armed when the process exits dies with it — the exit
+notification is what arrives instead.
 
 ## Buffering
 

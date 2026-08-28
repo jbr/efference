@@ -15,6 +15,10 @@ use super::*;
 struct WireProcess {
     id: u64,
     command: String,
+    /// The `tool_use` that spawned it — the call-to-process mapping the sidebar's
+    /// `view` verb jumps by (docs/supervisor.md). Absent on an older daemon.
+    #[serde(default)]
+    call_id: Option<String>, // the tool_use id; see the mapping in docs/supervisor.md
     spawned_at: u64,
     background: bool,
     muted: bool,
@@ -40,6 +44,7 @@ pub(super) fn parse_processes(value: &serde_json::Value) -> Vec<BgProc> {
             let mut proc = BgProc {
                 id: w.id,
                 command: w.command,
+                call_id: w.call_id,
                 spawned_at: w.spawned_at,
                 last_chunk_at: None,
                 tail: String::new(),

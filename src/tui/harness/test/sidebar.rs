@@ -14,6 +14,7 @@ fn sidebar_shows_processes_and_stats() {
     play.event(TuiEvent::Processes(vec![BgProc {
         id: 1,
         command: "cargo watch -x test".into(),
+        call_id: None,
         spawned_at: 0,
         last_chunk_at: None,
         tail: "test result: ok. 12 passed".into(),
@@ -369,6 +370,7 @@ fn background_process_panel() {
         BgProc {
             id: 1,
             command: "cargo watch -x test".into(),
+            call_id: None,
             spawned_at: 0,
             last_chunk_at: None,
             tail: "Compiling efference\nrunning 12 tests\ntest result: ok. 12 passed".into(),
@@ -378,6 +380,7 @@ fn background_process_panel() {
         BgProc {
             id: 2,
             command: "npm run dev".into(),
+            call_id: None,
             spawned_at: 0,
             last_chunk_at: None,
             tail: "ready - started server on 0.0.0.0:3000".into(),
@@ -401,6 +404,7 @@ fn sidebar_play() -> Screenplay<'static> {
     play.event(TuiEvent::Processes(vec![BgProc {
         id: 3,
         command: "cargo watch -x test".into(),
+        call_id: None,
         spawned_at: 0,
         last_chunk_at: None,
         tail: "ok".into(),
@@ -685,4 +689,90 @@ fn tab_leaves_an_open_unselected_sidebar() {
     assert_eq!(play.state.strip_focus, Some(0));
     play.route_key(KeyCode::Tab, KeyModifiers::NONE);
     assert!(play.state.sidebar_open, "Tab re-entered");
+}
+
+/// The `view` verb (docs/supervisor.md's call↔process mapping): a process row whose
+/// daemon representation carries a `call_id` leads with `view`, and `⏎` there leaves
+/// the sidebar and lands transcript focus on that call's entry — no daemon command
+/// is sent, because the jump is this client's focus and nothing else.
+///
+/// `view` leading is deliberate: a bare `⏎` on a process row reads rather than
+/// sending SIGKILL.
+#[test]
+fn view_jumps_transcript_focus_to_the_processs_entry() {
+    use crate::tui::state::KeyboardCursor;
+    use serde_json::json;
+
+    let mut play = Screenplay::new(110, 24);
+    play.user("start the dev server");
+    play.assistant(
+        "Backgrounding it.",
+        vec![crate::tui::harness::test::tool_call(
+            "bash",
+            "toolu_bg",
+            json!({ "command": "npm run dev", "background": true }),
+        )],
+    );
+    play.tool_result(
+        "toolu_bg",
+        "backgrounded as p#3.",
+        false,
+        crate::log::WireState::Raw,
+    );
+    play.event(TuiEvent::Processes(vec![BgProc {
+        id: 3,
+        command: "npm run dev".into(),
+        call_id: Some("toolu_bg".into()),
+        spawned_at: 0,
+        last_chunk_at: None,
+        tail: "ready".into(),
+        running_secs: 12,
+        idle_secs: 3,
+    }]));
+
+    play.route_key(KeyCode::Up, KeyModifiers::NONE); // → strip
+    play.route_key(KeyCode::Tab, KeyModifiers::NONE); // → sidebar, the process row
+    assert_eq!(play.state.sidebar_focus, Some(SidebarRow::Process(3)));
+    assert!(
+        play.find("▸ view").is_some(),
+        "view is the leading verb on a mapped process row:\n{}",
+        play.render()
+    );
+
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(
+        play.took_sidebar_cmd(),
+        None,
+        "view is chrome-only — nothing goes to the daemon"
+    );
+    assert_eq!(
+        play.state.sidebar_focus, None,
+        "the jump leaves the sidebar for the transcript"
+    );
+    assert!(!play.state.composing);
+    let KeyboardCursor::Focused { action_index } = play.state.viewport.keyboard_cursor else {
+        panic!("view did not land transcript focus");
+    };
+    assert_eq!(
+        play.state.entry_action_index("toolu_bg"),
+        Some(action_index),
+        "and it landed on the spawning call's own entry"
+    );
+}
+
+/// A process the daemon reported with no `call_id` — an older daemon, or a process
+/// registered outside a tool call — carries no `view` verb at all, rather than one
+/// that explains itself away when pressed.
+#[test]
+fn an_unmapped_process_row_offers_no_view_verb() {
+    let mut play = sidebar_play();
+    play.route_key(KeyCode::Up, KeyModifiers::NONE);
+    play.route_key(KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(play.state.sidebar_focus, Some(SidebarRow::Process(3)));
+    assert!(play.find("▸ kill").is_some(), "kill is still there");
+    assert!(
+        play.find("▸ view").is_none(),
+        "no entry to land on → no verb:\n{}",
+        play.render()
+    );
 }

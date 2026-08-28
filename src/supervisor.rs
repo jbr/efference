@@ -32,6 +32,10 @@ pub const LIST: &str = "list_processes";
 pub const READ: &str = "read_process";
 /// `kill_process` — terminate a background process's group (docs/supervisor.md).
 pub const KILL: &str = "kill_process";
+/// `watch_process` — register a one-shot output pattern that notifies on a hit
+/// (docs/supervisor.md). Named beside `read_process`/`kill_process`; a bare `watch`
+/// would read as a filesystem watcher.
+pub const WATCH: &str = "watch_process";
 /// `check_inbox` — surface pending notifications on demand (the directed inbox read,
 /// docs/inbox.md) so the model needn't wait for them to ride its next action.
 pub const CHECK_INBOX: &str = "check_inbox";
@@ -108,6 +112,36 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
         ..Default::default()
     });
 
+    let mut watch = ToolDefinition::new(
+        WATCH,
+        json!({
+            "type": "object",
+            "properties": {
+                "handle": { "type": "string", "description": "The process handle, e.g. \"p#3\"." },
+                "pattern": { "type": "string", "description": "Plain text to look for in a line of the process's output. Matched as a substring, case-sensitively — not a regular expression." }
+            },
+            "required": ["handle", "pattern"]
+        }),
+    );
+    watch.description = Some(
+        "Ask to be notified the next time a background process prints a line containing \
+         `pattern`. Returns immediately — it does not wait. Only output printed after this \
+         call is matched, and the watch fires once and is then done; register it again if \
+         you want the next occurrence too. Use this instead of polling read_process in a \
+         loop: end your turn, and the match arrives in your inbox."
+            .into(),
+    );
+    watch.annotations = Some(ToolAnnotations {
+        // Registers a subscription in the ephemeral registry — nothing in the world,
+        // nothing in the log, and no process state the other tools can observe. Not
+        // `read_only`, because it does leave something behind that later fires.
+        read_only_hint: Some(false),
+        destructive_hint: Some(false),
+        idempotent_hint: Some(false),
+        open_world_hint: Some(false),
+        ..Default::default()
+    });
+
     let mut inbox = ToolDefinition::new(CHECK_INBOX, json!({ "type": "object", "properties": {} }));
     inbox.description = Some(
         "Show your pending notifications now — background-process exits, operator nudges, \
@@ -117,7 +151,7 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
     );
     inbox.annotations = Some(read_only);
 
-    vec![list, read, kill, inbox]
+    vec![list, read, kill, watch, inbox]
 });
 
 /// The harness-level supervisor/inbox tools (docs/supervisor.md). Like `consolidate`, these
@@ -196,6 +230,12 @@ struct Process {
     /// [`handle`]; carried bare in routes and frames.
     id: u64,
     command: String,
+    /// The `tool_use` id of the transcript call that spawned this process — the
+    /// call↔process mapping (docs/supervisor.md). Stamped at the mint, so it
+    /// survives the handoff flip like every other property. `None` for a process
+    /// registered outside a tool call (nothing does today; the type doesn't claim
+    /// otherwise).
+    call_id: Option<String>,
     /// Whether the process runs detached under the supervisor (`true`) or is the
     /// loop's in-flight foreground tool (`false`). A **property, not an identity**:
     /// the foreground→background handoff flips it in place
@@ -220,6 +260,14 @@ struct Process {
     /// notifies, but the running tail stops surfacing in the peek.
     muted: bool,
     running: bool,
+    /// Registered output patterns awaiting a hit (docs/supervisor.md). Each fires
+    /// once and is removed; an entry that never matches dies with the process.
+    watches: Vec<String>,
+    /// How far into the *logical* stream (total bytes ever received, dropped
+    /// included) the watches have been scanned. Advanced by [`push_chunk`] whether
+    /// or not any watch is registered, which is what makes a watch forward-only:
+    /// output already printed when the model registers is already behind this mark.
+    scanned: u64,
 }
 
 /// A live snapshot of one running process for the peek's ambient `background`
@@ -260,6 +308,13 @@ pub struct ProcessState {
     /// The spawn-minted ordinal (rendered `p#<n>` in prose; bare here and in routes).
     pub id: u64,
     pub command: String,
+    /// The `tool_use` id of the transcript call this process came from — the
+    /// call↔process mapping (docs/supervisor.md). A client holding a transcript
+    /// entry finds its process here (and its output at
+    /// `GET /processes/:id/output`); a client holding a process row finds the
+    /// entry to jump to. Stamped at the mint, so a call that was backgrounded
+    /// mid-run carries the same id it did in the foreground.
+    pub call_id: Option<String>,
     /// The OS pid — an *attribute*, never the identifier (pids are recycled; the log
     /// is durable, docs/supervisor.md). Carried so a client or the
     /// agent can interact with the process directly (signals, `lsof`) when the
@@ -275,6 +330,105 @@ pub struct ProcessState {
     /// than filtered so the listing is the whole truth; clients that hide muted rows
     /// do so themselves.
     pub muted: bool,
+}
+
+/// One fired watch (docs/supervisor.md), ready to become a
+/// [`Notification`](crate::log::Notification). Produced under the registry lock by
+/// [`Supervisor::push_chunk`] and posted by the caller once the lock is gone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WatchHit {
+    /// The prose handle of the process that printed the line (`p#3`).
+    pub handle: String,
+    /// The pattern that matched — echoed back so the model can tell two watches on
+    /// one process apart, and so a `⟢` block that outlives the tool call still says
+    /// what was being waited for.
+    pub pattern: String,
+    /// The matching line, trimmed of its line ending. Truncated at
+    /// [`WATCH_LINE_CAP`] with a breadcrumb: a notification body is prose the model
+    /// reads whole, and one pathological line must not become the turn.
+    pub line: String,
+}
+
+impl WatchHit {
+    /// The `(source, body)` pair the notification carries. `source` is the plain
+    /// handle, as the exit notification's is, so the pinned `⟢ p#3: …` block reads
+    /// the same for both kinds of event; the body says which kind it is.
+    pub fn notification(&self) -> (String, String) {
+        (
+            self.handle.clone(),
+            format!(
+                "matched the watch on `{}`:\n{}\n(that watch has now fired and is done; \
+                 watch_process again if you want the next occurrence)",
+                self.pattern, self.line
+            ),
+        )
+    }
+}
+
+/// Longest matching line a [`WatchHit`] carries verbatim.
+const WATCH_LINE_CAP: usize = 2000;
+
+/// Fire and remove every watch whose pattern appears in output this process has not
+/// been scanned for yet (docs/supervisor.md).
+///
+/// Complete lines are scanned once each; the trailing partial line is scanned too
+/// but does **not** advance the mark, so a command whose output has no line ending
+/// (a prompt, a progress bar) still matches, and re-scanning it costs nothing
+/// because a watch fires at most once. The scan runs whether or not a watch is
+/// registered — advancing the mark is what makes a later `watch_process` see only
+/// output printed after it was asked for.
+fn scan_watches(p: &mut Process) -> Vec<WatchHit> {
+    let dropped = p.dropped as u64;
+    // Bytes dropped at the cap were scanned before they were dropped; if the cap bit
+    // hard enough to pass the mark, they are gone either way.
+    let from = p.scanned.max(dropped);
+    let watching = !p.watches.is_empty();
+    let (complete, text) = {
+        let unscanned = &p.buffer[(from - dropped) as usize..];
+        let complete = unscanned
+            .iter()
+            .rposition(|b| *b == b'\n')
+            .map_or(0, |i| i + 1);
+        // Only decoded when something is waiting on it: this runs per chunk of
+        // every process, watched or not.
+        let text = match watching {
+            true => String::from_utf8_lossy(unscanned).into_owned(),
+            false => String::new(),
+        };
+        (complete, text)
+    };
+    p.scanned = from + complete as u64;
+    if !watching {
+        return Vec::new();
+    }
+    let pid = p.id;
+    let mut hits = Vec::new();
+    p.watches.retain(
+        |pattern| match text.lines().find(|line| line.contains(pattern.as_str())) {
+            Some(line) => {
+                hits.push(WatchHit {
+                    handle: handle(pid),
+                    pattern: pattern.clone(),
+                    line: cap_line(line),
+                });
+                false
+            }
+            None => true,
+        },
+    );
+    hits
+}
+
+/// A matching line, bounded at [`WATCH_LINE_CAP`] on a char boundary.
+fn cap_line(line: &str) -> String {
+    if line.len() <= WATCH_LINE_CAP {
+        return line.to_string();
+    }
+    let mut end = WATCH_LINE_CAP;
+    while !line.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}… [line truncated]", &line[..end])
 }
 
 /// One cursor read of a process's retained output — the structured core shared by the
@@ -323,8 +477,13 @@ impl Supervisor {
     /// Register a freshly-spawned *background* child and mint its id. The caller (the
     /// daemon) spawns the drain task that feeds [`push_chunk`](Self::push_chunk) and
     /// ends in [`finish`](Self::finish).
-    pub fn register_background(&mut self, command: String, pgid: Option<u32>) -> u64 {
-        self.mint(command, pgid, true)
+    pub fn register_background(
+        &mut self,
+        command: String,
+        pgid: Option<u32>,
+        call_id: Option<String>,
+    ) -> u64 {
+        self.mint(command, pgid, call_id, true)
     }
 
     /// Register the loop's freshly-spawned *foreground* command. Same namespace, same
@@ -335,17 +494,29 @@ impl Supervisor {
     /// [`remove`](Self::remove)s the entry when the call completes (the `tool_result`
     /// is the canonical output) or [`make_background`](Self::make_background)s it on
     /// detach.
-    pub fn register_foreground(&mut self, command: String, pgid: Option<u32>) -> u64 {
-        self.mint(command, pgid, false)
+    pub fn register_foreground(
+        &mut self,
+        command: String,
+        pgid: Option<u32>,
+        call_id: Option<String>,
+    ) -> u64 {
+        self.mint(command, pgid, call_id, false)
     }
 
-    fn mint(&mut self, command: String, pgid: Option<u32>, background: bool) -> u64 {
+    fn mint(
+        &mut self,
+        command: String,
+        pgid: Option<u32>,
+        call_id: Option<String>,
+        background: bool,
+    ) -> u64 {
         self.next += 1;
         let id = self.next;
         let now = Instant::now();
         self.procs.push(Process {
             id,
             command,
+            call_id,
             background,
             pgid,
             buffer: Vec::new(),
@@ -355,6 +526,8 @@ impl Supervisor {
             spawned_wall: crate::log::Timestamp::now(),
             muted: false,
             running: true,
+            watches: Vec::new(),
+            scanned: 0,
         });
         id
     }
@@ -381,18 +554,46 @@ impl Supervisor {
         self.procs.retain(|p| p.id != id);
     }
 
-    /// Append a freshly-read output chunk to a process's bounded capture and stamp
-    /// its activity clock (the source of the peek's `idle` figure).
-    pub fn push_chunk(&mut self, id: u64, chunk: &[u8]) {
-        if let Some(p) = self.find_mut(id) {
-            p.buffer.extend_from_slice(chunk);
-            if p.buffer.len() > BUFFER_CAP {
-                let excess = p.buffer.len() - BUFFER_CAP;
-                p.buffer.drain(..excess);
-                p.dropped += excess;
-            }
-            p.last_chunk_at = Instant::now();
+    /// Append a freshly-read output chunk to a process's bounded capture, stamp its
+    /// activity clock (the source of the peek's `idle` figure), and scan the new
+    /// output against any registered watches (docs/supervisor.md).
+    ///
+    /// Returns the hits, which the caller turns into notifications *after* dropping
+    /// the registry lock — the notify path takes the inbox lock and wakes the loop,
+    /// and neither belongs under this one.
+    pub fn push_chunk(&mut self, id: u64, chunk: &[u8]) -> Vec<WatchHit> {
+        let Some(p) = self.find_mut(id) else {
+            return Vec::new();
+        };
+        p.buffer.extend_from_slice(chunk);
+        if p.buffer.len() > BUFFER_CAP {
+            let excess = p.buffer.len() - BUFFER_CAP;
+            p.buffer.drain(..excess);
+            p.dropped += excess;
         }
+        p.last_chunk_at = Instant::now();
+        scan_watches(p)
+    }
+
+    /// Register a one-shot output watch on a running process (docs/supervisor.md):
+    /// the drain scan fires a notification the next time a line of its output
+    /// contains `pattern`, and the watch is then removed. `false` if the id is
+    /// unknown or the process has already exited — there will be no more output to
+    /// match, so an accepted watch would never fire.
+    pub fn watch(&mut self, id: u64, pattern: String) -> bool {
+        match self.procs.iter_mut().find(|p| p.id == id && p.running) {
+            Some(p) => {
+                p.watches.push(pattern);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// How many watches a process currently has pending — the count the tool result
+    /// reports back so the model knows what it is now waiting on.
+    pub fn watch_count(&self, id: u64) -> usize {
+        self.find(id).map_or(0, |p| p.watches.len())
     }
 
     /// Set a process's muted flag (the supervisor's `dismiss` for a live process,
@@ -619,6 +820,7 @@ fn state_of(p: &Process) -> ProcessState {
     ProcessState {
         id: p.id,
         command: p.command.clone(),
+        call_id: p.call_id.clone(),
         pid: p.pgid,
         spawned_at: p.spawned_wall,
         background: p.background,

@@ -20,7 +20,17 @@ pub(crate) async fn drain_background(
         &mut stderr,
         std::future::pending::<()>(),
         |chunk| {
-            shared.supervisor.lock().unwrap().push_chunk(id, chunk);
+            let hits = shared.supervisor.lock().unwrap().push_chunk(id, chunk);
+            // A watch that matched in this chunk (docs/supervisor.md) — posted to the
+            // inbox like any ambient event, which is what wakes an idle agent. The
+            // registry lock is already gone; `notify` takes the inbox's.
+            // No slot: a watch fires once, so it has nothing to supersede — and the
+            // process's `p#<id>` slot belongs to its exit notification, which a hit
+            // must neither replace nor be replaced by (docs/inbox.md).
+            for hit in hits {
+                let (source, body) = hit.notification();
+                shared.notify(source, body, None, None);
+            }
             // The live process tail on the stream's ephemeral `output` class — lossy
             // and best-effort; a client seeds itself from the process resource and
             // layers these on top (docs/control-api.md).
@@ -46,7 +56,14 @@ impl Shared {
     /// into the registry (re-surfaced live at each triage gate) and fires an exit
     /// notification when it ends. The child leads a fresh process group, so one
     /// `killpg` reaps it and any grandchildren on teardown.
-    pub fn spawn_background(self: &Arc<Self>, command: String) -> io::Result<String> {
+    /// `call_id` is the `tool_use` this spawn answers — the call↔process mapping
+    /// (docs/supervisor.md), stamped at the mint so a client holding either half
+    /// can find the other.
+    pub fn spawn_background(
+        self: &Arc<Self>,
+        command: String,
+        call_id: Option<String>,
+    ) -> io::Result<String> {
         let mut cmd = Command::new("bash");
         cmd.arg("-c")
             .arg(&command)
@@ -73,7 +90,7 @@ impl Shared {
             .supervisor
             .lock()
             .unwrap()
-            .register_background(command, pgid);
+            .register_background(command, pgid, call_id);
         self.touch_state();
         tokio::spawn(drain_background(
             Arc::clone(self),
@@ -89,12 +106,17 @@ impl Shared {
     /// namespace (docs/supervisor.md): addressable — and listed on the `processes`
     /// topic — from spawn, so the handoff is a property change on a resource that
     /// already exists. Returns the spawn-minted id.
-    pub fn register_foreground(&self, command: String, pgid: Option<u32>) -> u64 {
+    pub fn register_foreground(
+        &self,
+        command: String,
+        pgid: Option<u32>,
+        call_id: Option<String>,
+    ) -> u64 {
         let id = self
             .supervisor
             .lock()
             .unwrap()
-            .register_foreground(command, pgid);
+            .register_foreground(command, pgid, call_id);
         self.touch_state();
         id
     }
@@ -102,8 +124,25 @@ impl Shared {
     /// Feed one raw foreground output chunk into the process's capture, so
     /// `GET /processes/:id/output` can seed a cold-opened client mid-run
     /// (docs/control-api.md). No state touch: buffer content is not topic state.
+    /// Watches are scanned here as they are on the background drain — one path, so
+    /// a watch registered before a detach keeps matching across the handoff.
     pub fn push_process_chunk(&self, id: u64, chunk: &[u8]) {
-        self.supervisor.lock().unwrap().push_chunk(id, chunk);
+        let hits = self.supervisor.lock().unwrap().push_chunk(id, chunk);
+        for hit in hits {
+            let (source, body) = hit.notification();
+            self.notify(source, body, None, None);
+        }
+    }
+
+    /// Register a one-shot output watch by the model's `p#<n>` vocabulary
+    /// (`watch_process`, docs/supervisor.md). `false` if the handle is unparseable,
+    /// unknown, or already exited; the count is what the process is now waiting on.
+    pub fn watch_bg(&self, handle: &str, pattern: String) -> Option<usize> {
+        let id = crate::supervisor::parse_handle(handle)?;
+        let mut supervisor = self.supervisor.lock().unwrap();
+        supervisor
+            .watch(id, pattern)
+            .then(|| supervisor.watch_count(id))
     }
 
     /// Drop a completed foreground command from the registry: its canonical output

@@ -233,22 +233,26 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             let mut handoff = None;
             let result = if bash::is_background_call(call) {
                 match background_command(call) {
-                    Some(command) => match shared.spawn_background(command) {
-                        Ok(handle) => RawResult {
-                            images: Vec::new(),
-                            content: format!(
-                                "backgrounded as {handle}. its recent output will surface in \
+                    // The spawning `tool_use` id rides along, so the process and the
+                    // transcript entry can each find the other (docs/supervisor.md).
+                    Some(command) => {
+                        match shared.spawn_background(command, Some(call.id.0.clone())) {
+                            Ok(handle) => RawResult {
+                                images: Vec::new(),
+                                content: format!(
+                                    "backgrounded as {handle}. its recent output will surface in \
                                  your inbox at each step, and you'll get a notification when \
                                  it exits."
-                            ),
-                            is_error: false,
-                        },
-                        Err(e) => RawResult {
-                            images: Vec::new(),
-                            content: format!("failed to background: {e}"),
-                            is_error: true,
-                        },
-                    },
+                                ),
+                                is_error: false,
+                            },
+                            Err(e) => RawResult {
+                                images: Vec::new(),
+                                content: format!("failed to background: {e}"),
+                                is_error: true,
+                            },
+                        }
+                    }
                     None => RawResult {
                         images: Vec::new(),
                         content: "background bash requires a `command`".into(),
@@ -279,13 +283,17 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string();
+                let spawning_call = call.id.0.clone();
                 let outcome = toolbox
                     .run(
                         call,
                         frontend.interrupted(),
                         |pgid| {
-                            *fg_id.lock().unwrap() =
-                                Some(shared.register_foreground(command, pgid));
+                            *fg_id.lock().unwrap() = Some(shared.register_foreground(
+                                command,
+                                pgid,
+                                Some(spawning_call),
+                            ));
                         },
                         |chunk| {
                             if let Some(id) = *fg_id.lock().unwrap() {

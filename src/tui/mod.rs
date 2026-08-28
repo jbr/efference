@@ -200,6 +200,11 @@ pub(crate) struct BgProc {
     /// The spawn-minted process id (bare on the wire; rendered `p#<n>` for display).
     pub id: u64,
     pub command: String,
+    /// The `tool_use` id of the call that spawned this process, from the wire
+    /// (docs/supervisor.md). `None` on a daemon that predates the mapping; the
+    /// sidebar's `view` verb is the one thing that needs it, and says so when it
+    /// is missing rather than jumping somewhere arbitrary.
+    pub call_id: Option<String>,
     /// Absolute Unix millis, from the wire.
     pub spawned_at: u64,
     /// Absolute Unix millis, stamped locally on each `process_output` delta. `None` until

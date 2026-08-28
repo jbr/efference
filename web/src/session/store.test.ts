@@ -535,3 +535,47 @@ describe("coalescing the fold", () => {
     expect(elapsed).toBeLessThan(150);
   });
 });
+
+describe("the call↔process mapping", () => {
+  const processesFrame = (procs: unknown[]): Frame =>
+    ({
+      class: "state",
+      kind: "processes",
+      data: procs,
+    }) as unknown as Frame;
+
+  it("learns which process answers a call from the processes topic", () => {
+    const s = applyFrame(
+      emptySession,
+      processesFrame([
+        { id: 3, command: "npm run dev", call_id: "toolu_a", background: true },
+        { id: 4, command: "cargo build", call_id: null, background: false },
+      ]),
+    );
+    expect(s.processCalls).toEqual({ toolu_a: 3 });
+  });
+
+  // The topic is level-triggered and drops a process the moment it exits, but the
+  // retained output stays readable at `GET /processes/:id/output` — so the mapping
+  // has to outlive the row that taught it, or a finished backgrounded command's
+  // output becomes unreachable from its transcript entry.
+  it("keeps a pair after the process leaves the topic", () => {
+    const s = fold(emptySession, [
+      processesFrame([{ id: 3, command: "npm run dev", call_id: "toolu_a" }]),
+      processesFrame([]),
+    ]);
+    expect(s.processCalls).toEqual({ toolu_a: 3 });
+  });
+
+  it("returns the same object when a topic frame teaches it nothing", () => {
+    const first = applyFrame(
+      emptySession,
+      processesFrame([{ id: 3, command: "x", call_id: "toolu_a" }]),
+    );
+    const second = applyFrame(
+      first,
+      processesFrame([{ id: 3, command: "x", call_id: "toolu_a" }]),
+    );
+    expect(second.processCalls).toBe(first.processCalls);
+  });
+});

@@ -171,6 +171,10 @@ export interface Proposal {
 export interface Process {
   id: number;
   command: string;
+  /** The `tool_use` id of the call that spawned it — the call↔process mapping
+   * (docs/supervisor.md). `null` for a process registered outside a tool call,
+   * and absent from a daemon that predates the mapping. */
+  call_id?: string | null;
   pid: number;
   spawned_at: number;
   background: boolean;

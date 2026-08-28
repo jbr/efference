@@ -94,6 +94,7 @@ fn process_output_smooths_the_matching_process_tail() {
     s.processes = vec![BgProc {
         id: 1,
         command: "cargo watch".into(),
+        call_id: None,
         spawned_at: 0,
         last_chunk_at: None,
         tail: "tick 1\n".into(),
@@ -121,6 +122,7 @@ fn process_output_bounds_the_tail_on_a_char_boundary() {
     s.processes = vec![BgProc {
         id: 1,
         command: "chatty".into(),
+        call_id: None,
         spawned_at: 0,
         last_chunk_at: None,
         tail: String::new(),

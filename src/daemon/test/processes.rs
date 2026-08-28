@@ -10,7 +10,7 @@ use super::*;
 async fn processes_listing_and_output_read() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
     shared
-        .spawn_background("echo seeded; sleep 5".into())
+        .spawn_background("echo seeded; sleep 5".into(), None)
         .expect("spawn");
     let app = test_server(&shared).await;
 
@@ -64,7 +64,9 @@ async fn processes_listing_and_output_read() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn patch_mutes_and_unmutes() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
-    shared.spawn_background("sleep 5".into()).expect("spawn");
+    shared
+        .spawn_background("sleep 5".into(), None)
+        .expect("spawn");
     let app = test_server(&shared).await;
 
     let muted = app
@@ -97,7 +99,7 @@ async fn patch_mutes_and_unmutes() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn patch_background_requests_the_handoff() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
-    let fg = shared.register_foreground("cargo build".into(), Some(1234));
+    let fg = shared.register_foreground("cargo build".into(), Some(1234), None);
     let app = test_server(&shared).await;
 
     let listing: Value = serde_json::from_str(app.get("/v1/processes").await.body()).unwrap();
@@ -119,7 +121,9 @@ async fn patch_background_requests_the_handoff() {
     );
 
     // Already-background: nothing to do, and saying so is a success.
-    shared.spawn_background("sleep 5".into()).expect("spawn");
+    shared
+        .spawn_background("sleep 5".into(), None)
+        .expect("spawn");
     let idempotent = app
         .patch("/v1/processes/2")
         .with_body(r#"{"background":true}"#)
@@ -135,7 +139,9 @@ async fn patch_background_requests_the_handoff() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn patch_rejections() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
-    shared.spawn_background("sleep 5".into()).expect("spawn");
+    shared
+        .spawn_background("sleep 5".into(), None)
+        .expect("spawn");
     let app = test_server(&shared).await;
 
     let foregrounded = app
@@ -164,7 +170,9 @@ async fn patch_rejections() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delete_kills_a_running_process() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
-    shared.spawn_background("sleep 30".into()).expect("spawn");
+    shared
+        .spawn_background("sleep 30".into(), None)
+        .expect("spawn");
     let app = test_server(&shared).await;
 
     let killed = app.delete("/v1/processes/1").await;
@@ -198,10 +206,76 @@ async fn client_background_resolves_the_foreground_process() {
         "nothing mid-tool → no-op"
     );
 
-    let fg = shared.register_foreground("cargo build".into(), Some(1234));
+    let fg = shared.register_foreground("cargo build".into(), Some(1234), None);
     assert_eq!(
         client.background(Some("keep going")).await.unwrap(),
         Some(fg)
     );
     assert_eq!(shared.take_detach_note().as_deref(), Some("keep going"));
+}
+
+/// The call↔process mapping reaches the wire (docs/control-api.md): the `tool_use`
+/// id that spawned a process is on its `/processes` representation, so a client
+/// holding the transcript entry can read `GET /processes/:id/output` for a
+/// backgrounded command, and a client holding the process row can jump to the entry.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_process_carries_the_call_that_spawned_it() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    shared
+        .spawn_background("sleep 5".into(), Some("toolu_abc".into()))
+        .expect("spawn");
+    let fg = shared.register_foreground("cargo build".into(), Some(1234), None);
+    let app = test_server(&shared).await;
+
+    let listing: Value = serde_json::from_str(app.get("/v1/processes").await.body()).unwrap();
+    let procs = listing.as_array().expect("a JSON array");
+    assert_eq!(procs[0]["call_id"], "toolu_abc");
+    assert_eq!(
+        procs[1]["call_id"],
+        Value::Null,
+        "a process registered outside a call says so rather than inventing an id"
+    );
+    let _ = fg;
+    shared.kill_all_bg();
+}
+
+/// A watch fires into the inbox (docs/supervisor.md): the drain scan matches a line
+/// of a live background process and posts an ambient notification, which is what
+/// wakes an idle agent. No slot — a hit must not supersede, or be superseded by, the
+/// process's exit notification on the `p#<n>` slot.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_watch_hit_reaches_the_inbox_as_a_notification() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    shared
+        .spawn_background("sleep 0.2; echo ready to serve; sleep 5".into(), None)
+        .expect("spawn");
+    assert_eq!(
+        shared.watch_bg("p#1", "ready".into()),
+        Some(1),
+        "registration is immediate and non-blocking"
+    );
+    assert_eq!(
+        shared.watch_bg("p#99", "ready".into()),
+        None,
+        "an unknown handle is refused rather than silently armed"
+    );
+
+    let mut tries = 0;
+    let body = loop {
+        let pending = shared.pending_notifications();
+        if let Some(n) = pending
+            .iter()
+            .find(|n| n.body.contains("matched the watch"))
+        {
+            assert_eq!(n.source, "p#1");
+            assert_eq!(n.slot, None, "a once-firing hit supersedes nothing");
+            break n.body.clone();
+        }
+        tries += 1;
+        assert!(tries < 200, "the watch never fired: {pending:?}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert!(body.contains("ready to serve"), "{body}");
+
+    shared.kill_all_bg();
 }

@@ -24,6 +24,11 @@ use super::{InteractiveState, SidebarCmd, SidebarReturn, SidebarRow};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SidebarVerb {
     Kill,
+    /// Jump the transcript focus to the entry whose call spawned this process
+    /// (docs/supervisor.md, the call↔process mapping). Chrome-only: it moves this
+    /// client's focus and touches no daemon state, so unlike `kill` it never
+    /// travels over [`SidebarCmd`](super::SidebarCmd).
+    View,
     Commit,
     Cancel,
 }
@@ -33,6 +38,7 @@ impl SidebarVerb {
     pub(super) fn label(self) -> &'static str {
         match self {
             SidebarVerb::Kill => "kill",
+            SidebarVerb::View => "view",
             SidebarVerb::Commit => "commit",
             SidebarVerb::Cancel => "cancel",
         }
@@ -66,13 +72,38 @@ impl<'a> InteractiveState<'a> {
         rows
     }
 
-    /// The verbs of one row. A process kills (the daemon answers a stale id 404);
-    /// a proposal commits or cancels (`PATCH /proposals/:seq`, docs/permissions.md).
+    /// The verbs of one row. A process views and kills (the daemon answers a stale
+    /// id 404); a proposal commits or cancels (`PATCH /proposals/:seq`,
+    /// docs/permissions.md).
+    ///
+    /// `view` leads where it exists, so the verb a bare `⏎` fires on a process row
+    /// is the one that reads rather than the one that sends SIGKILL — the block
+    /// menu's rule that the leading verb is the most relevant thing, applied to a
+    /// row where the alternative is destructive. It is offered only when the daemon
+    /// supplied a `call_id` for the process: with no entry to land on there is no
+    /// jump to make, and a verb that explains itself away on activation is worse
+    /// than one that isn't there.
     pub(super) fn sidebar_verbs(&self, row: SidebarRow) -> Vec<SidebarVerb> {
         match row {
-            SidebarRow::Process(_) => vec![SidebarVerb::Kill],
+            SidebarRow::Process(id) => {
+                let mut verbs = Vec::new();
+                if self.process_call_id(id).is_some() {
+                    verbs.push(SidebarVerb::View);
+                }
+                verbs.push(SidebarVerb::Kill);
+                verbs
+            }
             SidebarRow::Proposal(_) => vec![SidebarVerb::Commit, SidebarVerb::Cancel],
         }
+    }
+
+    /// The `tool_use` id of the call that spawned a listed process, if the daemon
+    /// carried one (docs/supervisor.md).
+    fn process_call_id(&self, id: u64) -> Option<String> {
+        self.processes
+            .iter()
+            .find(|p| p.id == id)
+            .and_then(|p| p.call_id.clone())
     }
 
     /// Resolve a row's identity against the current data — its position among the
@@ -255,6 +286,12 @@ impl<'a> InteractiveState<'a> {
         }
         let verbs = self.sidebar_verbs(focus);
         let idx = self.sidebar_verb_focus.min(verbs.len() - 1);
+        // `view` is chrome-only — it moves this client's focus and nothing else — so
+        // it resolves here instead of travelling over the command channel.
+        if let (SidebarRow::Process(id), SidebarVerb::View) = (focus, verbs[idx]) {
+            self.view_process_entry(id);
+            return;
+        }
         let cmd = match (focus, verbs[idx]) {
             (SidebarRow::Process(id), SidebarVerb::Kill) => {
                 self.ui.debug_message = format!("killing p#{id}…").into();
@@ -271,5 +308,63 @@ impl<'a> InteractiveState<'a> {
             _ => return,
         };
         let _ = self.sidebar_tx.send(cmd);
+    }
+
+    /// The `view` verb: leave the sidebar and focus the transcript unit whose entry
+    /// carries this process's spawning `call_id` (docs/tui.md "Focus model",
+    /// docs/supervisor.md for the mapping).
+    ///
+    /// The landing target is the **result** entry, which is the entry keyed by
+    /// `call_id` — for a backgrounded command that is the handoff result naming
+    /// `p#<n>`, immediately below the call that issued it, so both are on screen.
+    /// Focus is all this does: focus is itself the affordance, and from there the
+    /// unit's own block menu is one `→` away.
+    ///
+    /// A miss is a status note, never a jump somewhere else: the entry may be
+    /// outside the transcript window the client is holding (a long session, a
+    /// re-seeded view), and landing on an arbitrary unit is the same substitution
+    /// the sidebar's identity rule forbids.
+    fn view_process_entry(&mut self, id: u64) {
+        let Some(call_id) = self.process_call_id(id) else {
+            self.ui.debug_message = format!("p#{id} has no transcript entry to view").into();
+            return;
+        };
+        let Some(action_index) = self.entry_action_index(&call_id) else {
+            self.ui.debug_message =
+                format!("p#{id}'s entry is not in view — scroll back to find it").into();
+            return;
+        };
+        self.leave_sidebar();
+        self.composing = false;
+        self.strip_focus = None;
+        self.viewport.keyboard_cursor = crate::tui::state::KeyboardCursor::Focused { action_index };
+        self.block_menu_focus = 0;
+        // Bring the landed unit into the viewport, a couple of rows down from the
+        // top edge so the call above it is visible too.
+        if let Some((rect, _)) = self.render_cache.actions.get(action_index) {
+            let target = rect.y.saturating_sub(2);
+            self.set_scroll_offset(target);
+        }
+        self.dirty = true;
+        self.ui.debug_message = format!("p#{id} — navigate · ←/→ verb · ⏎ act").into();
+    }
+
+    /// The `action_index` of the transcript unit whose entry carries `key` — the
+    /// index space [`KeyboardCursor`](crate::tui::state::KeyboardCursor) is
+    /// expressed in. `None` when no rendered entry has that key.
+    pub(in crate::tui) fn entry_action_index(&self, key: &str) -> Option<usize> {
+        self.render_cache
+            .actions
+            .iter()
+            .position(|(_, action)| match action {
+                super::document::TuiAction::FocusEntry(path) => matches!(
+                    super::utils::find_node_at_path(
+                        &self.document.document.nodes,
+                        path.indices()
+                    ),
+                    Some(super::document::DocumentNode::Entry { key: Some(k), .. }) if k == key
+                ),
+                _ => false,
+            })
     }
 }

@@ -66,6 +66,26 @@ pub(super) fn supervisor_tool_result(shared: &Arc<Shared>, call: &ToolCall) -> O
             }
             None => err("read_process requires a `handle`".into()),
         }),
+        // `watch_process` registers and returns (docs/supervisor.md) — it never waits.
+        // The hit arrives as an inbox notification, which is what wakes an idle agent;
+        // the result here only confirms the registration.
+        supervisor::WATCH => Some(
+            match (handle(), call.input.get("pattern").and_then(Value::as_str)) {
+                (Some(h), Some(pattern)) if !pattern.is_empty() => {
+                    match shared.watch_bg(h, pattern.to_string()) {
+                        Some(count) => ok(format!(
+                            "watching {h} for `{pattern}` ({count} watch(es) pending on it). \
+                             Only output printed from now on is matched. You'll be notified \
+                             once, the first time a line contains it — end your turn rather \
+                             than polling."
+                        )),
+                        None => err(format!("no running background process {h}")),
+                    }
+                }
+                (None, _) => err("watch_process requires a `handle`".into()),
+                _ => err("watch_process requires a non-empty `pattern`".into()),
+            },
+        ),
         supervisor::KILL => Some(match handle() {
             Some(h) if shared.kill_bg(h) => ok(format!(
                 "killed {h} (SIGKILL to its process group); its exit will be confirmed in your inbox."
