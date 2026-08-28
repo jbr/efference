@@ -1,20 +1,14 @@
 //! The control channel — the daemon and its HTTP-over-Unix-socket interface
 //! (docs/control-channel.md).
 //!
-//! This closes the interface-parity gap with a stance stronger than parity:
-//! **the HTTP interface is the singular, authoritative input source.** The loop's
-//! only [`Frontend`] is [`RemoteFrontend`], fed by the handlers here; there is no
-//! privileged in-process path. Human (TUI), driver, and subagent are all clients
-//! of the same socket.
+//! The HTTP interface is the singular input source: the loop's only [`Frontend`]
+//! is [`RemoteFrontend`], fed by the handlers here, so there is no privileged
+//! in-process path. Human (TUI), driver, and subagent are all clients of the same
+//! socket.
 //!
-//! The thesis pays off (docs/README.md): the append-only log *is* the event store the
-//! channel needs. `GET /log?since=<seq>` replays durably; ephemeral control state
-//! (a pending approval) lives in [`Shared`] and is reported by `GET /state`. The
-//! client's view is just another projection over the same log.
-//!
-//! Slice 1 (this file) is the daemon + write verbs + polled reads, drivable
-//! headless over the socket. A pushed `GET /events` (SSE) and the in-process
-//! client (`attach` + scriptable verbs) are the next slice.
+//! The append-only log is the event store the channel needs (docs/README.md).
+//! `GET /log?since=<seq>` replays durably; ephemeral control state (a pending
+//! approval) lives in [`Shared`] and is reported by `GET /state`.
 
 use std::collections::HashMap;
 use std::io;
@@ -63,8 +57,8 @@ use crate::tools::Toolbox;
 /// `ToolCallStart` additionally the `tool_use` id: a fragment is partial delivery *of a
 /// specific item*, and a client that cannot tell which holds one slot per kind and loses the
 /// first tool call's arriving input the moment a second opens. [`ToolOutput`](Self::ToolOutput)
-/// and [`ProcessOutput`](Self::ProcessOutput) were always keyed this way; these variants now
-/// match them (docs/control-api.md).
+/// and [`ProcessOutput`](Self::ProcessOutput) key on their own ids for the same reason
+/// (docs/control-api.md).
 #[derive(Clone)]
 pub enum StreamDelta {
     /// A fragment of assistant prose as the model streams it from the upstream SSE.
@@ -75,9 +69,8 @@ pub enum StreamDelta {
     ThinkingText { index: usize, text: String },
     /// The model began emitting a tool call, named before its arguments stream. Together with
     /// [`ThinkingText`](Self::ThinkingText) this is what makes a generation phase visible at all:
-    /// before these existed only prose reached the stream, so a turn spent thinking or emitting a
-    /// large tool input published nothing and read as a hung harness
-    /// (docs/transport.md).
+    /// without them only prose reaches the stream, so a turn spent thinking or emitting a large
+    /// tool input publishes nothing and reads as a hung harness (docs/transport.md).
     ToolCallStart {
         index: usize,
         call_id: String,
@@ -93,8 +86,8 @@ pub enum StreamDelta {
     /// A chunk of a running tool's combined output, tagged by its `tool_use` id.
     ToolOutput { call_id: String, chunk: String },
     /// A chunk of a running background process's output, tagged by the process's
-    /// spawn-minted id (docs/supervisor.md; rendered `p#<n>` in prose, bare here —
-    /// docs/supervisor.md). Demuxed by id exactly like
+    /// spawn-minted id — rendered `p#<n>` in prose, bare here (docs/supervisor.md).
+    /// Demuxed by id exactly like
     /// [`ToolOutput`](Self::ToolOutput) is by `call_id`. Lossy: a cold-opened client
     /// seeds its tail from the process resource and layers these on top.
     ProcessOutput { id: u64, chunk: String },
@@ -182,11 +175,11 @@ pub struct ConfigRepair {
 
 /// Daemon state shared between the loop task and the HTTP handlers. Held as
 /// `Arc<Shared>` in both the loop and trillium's server-global `shared_state`
-/// (read in handlers via `conn.shared_state::<Arc<Shared>>()`). Per-conn state is
-/// reserved for later multi-agent routing; one server-global `Shared` for now.
+/// (read in handlers via `conn.shared_state::<Arc<Shared>>()`). One server-global
+/// `Shared`; per-conn state is reserved for later multi-agent routing.
 pub struct Shared {
-    /// The loop appends under this lock (it no longer owns `Log` by value);
-    /// handlers snapshot it for `GET /log`. The lock is only ever held across the
+    /// The loop appends under this lock; handlers snapshot it for `GET /log`.
+    /// The lock is only ever held across the
     /// synchronous `project`/append — never an `await`.
     log: Mutex<Log>,
     /// Where tool-result images land on the wire (docs/log-and-projection.md):
@@ -220,7 +213,7 @@ pub struct Shared {
     /// starts so a request that never found a running tool can't mislabel a
     /// later handoff.
     detach_note: Mutex<Option<String>>,
-    /// Pinged on each log append; the SSE tail (next slice) will wake on it.
+    /// Pinged on each log append; the `GET /events` tail wakes on it.
     appended: Notify,
     /// Whether the loop is **executing a turn** (vs. parked awaiting one). Together with
     /// `queued`, this drives the `/settle` long-poll's "at a decision point?" predicate
@@ -263,8 +256,8 @@ pub struct Shared {
     /// each control-stream connection wanting `output` frames subscribes. Lossy by
     /// design — see [`StreamDelta`].
     stream_tx: broadcast::Sender<StreamDelta>,
-    /// Pinged when a state topic may have moved (docs/control-api.md). One notify for all
-    /// ten topics, not one each: the reader recomputes everything and diffs, so a missed
+    /// Pinged when a state topic may have moved (docs/control-api.md). One notify for
+    /// every topic, not one each: the reader recomputes everything and diffs, so a missed
     /// ping is repaired by the next one from any source rather than leaving a topic stale
     /// forever. See `topics.rs`.
     state_changed: Notify,
@@ -339,7 +332,7 @@ pub struct Shared {
     /// The ephemeral inbox of pending ambient notifications (docs/inbox.md): out-of-band
     /// events awaiting their first triage gate. Control state, *not* a log payload —
     /// a notification only becomes a durable `Ambient` entry when a fork peek first
-    /// shows it (Slice C). Superseded/dismissed-while-pending entries are dropped here
+    /// shows it. Superseded/dismissed-while-pending entries are dropped here
     /// (the "never-happened" case); only shown ones reach the audit log.
     inbox: Mutex<Inbox>,
     /// The pending-proposals queue: async `ConfigEdit`s (the session's `propose_scope`, the
@@ -901,18 +894,16 @@ mod attachments;
 mod background;
 mod config_edits;
 mod continuation;
-// The typed error envelope (docs/control-api.md) — every non-2xx body the router
-// answers with. `GateMoved` is still unconstructed: it belongs to the
-// resource-renamed gate.
-#[allow(dead_code)]
 mod entry_view;
+// The typed error envelope (docs/control-api.md) — every non-2xx body the router
+// answers with.
 pub(crate) mod errors;
 // The file viewer's read surface (docs/web-bind.md), mounted on the TCP spawn only.
 mod files;
-// The control-stream frame envelope (docs/control-api.md), defined ahead of its
-// construction sites, like `WireState`'s variants were: pinning the contract first is
-// what keeps adding the unified endpoint from also reshaping it. `dead_code` until the
-// stream emits frames.
+// The control-stream frame envelope (docs/control-api.md). `dead_code` covers
+// `Frame::with_render` and `Frame::state`, which the emitter does not reach:
+// nothing annotates a frame with a render yet, and the state path builds from
+// pre-serialized topic JSON (`Frame::state_raw`).
 #[allow(dead_code)]
 mod frames;
 mod http;

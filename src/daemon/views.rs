@@ -109,7 +109,7 @@ impl Shared {
         // writes; `input_tokens` alone is only the uncached remainder — against
         // the boot-fetched limit. Deliberately `last_turn_usage`, not
         // `last_usage`: the side channels each carry their own, much smaller
-        // prefix, so folding them here made occupancy fall mid-turn and correct
+        // prefix, so folding them here makes occupancy fall mid-turn and correct
         // itself afterwards. `used` is null until the first *turn*; `context` is
         // null entirely when no capabilities were fetched (tests, offline verbs).
         let context = self.capabilities.lock().unwrap().as_ref().map(|caps| {
@@ -258,8 +258,8 @@ impl Shared {
             ConfigSource::Default => Value::Null,
             ConfigSource::Path(p) => Value::String(p.display().to_string()),
         };
-        // The live policy, not the frozen base — this is the fix for `/state` reporting the boot
-        // config while a session grant / fs-watch edit had already moved the real perimeter.
+        // The live policy, not the frozen base: a session grant or an fs-watch edit moves the
+        // real perimeter, and reading `self.role` here would report the boot config instead.
         let role = self.effective_config();
         let paths: serde_json::Map<String, Value> = role
             .paths

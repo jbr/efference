@@ -28,9 +28,8 @@ pub(crate) enum NotContinuable {
     Gated,
     /// The log projects to nothing — there is no wire to re-prompt.
     Empty,
-    /// The wire ends in a final assistant response. Whether re-prompting
-    /// identical bytes produces anything but "I'm done" has not been measured, so
-    /// this declines rather than spending a round-trip on it
+    /// The wire ends in a final assistant response: re-prompting identical bytes
+    /// would spend a round-trip on a wire the model has already answered
     /// (docs/control-api.md).
     Completed,
     /// The wire ends in an assistant `tool_use` with no paired result — a shape

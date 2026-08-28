@@ -172,9 +172,9 @@ fn cold_streak_counts_only_unexplained_main_loop_reads() {
 /// finalized with no content and no usage. That zero says nothing about whether
 /// the prefix moved, so a run of aborted attempts must not accumulate as
 /// unexplained cold-read evidence the way a run of real cold turns does.
-/// Regression for the failure mode observed live 2026-08-28: two aborted
-/// attempts on one turn drove the streak to 2 and, on a longer bad stretch,
-/// could cross `COLD_STREAK_WARN` for a prefix that never moved.
+/// Counting them drives the streak up per aborted attempt — two on one turn
+/// reach 2, and a longer bad stretch crosses `COLD_STREAK_WARN` for a prefix
+/// that never moved.
 #[test]
 fn aborted_attempts_do_not_count_as_cold_prefix_evidence() {
     let mut streak = ColdStreak::default();

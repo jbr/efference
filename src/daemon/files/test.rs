@@ -269,8 +269,8 @@ async fn a_nested_gitignore_governs_its_own_subtree() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_git_excluded_path_is_absent_from_listings_but_still_served() {
-    // The case the ignore set is known to bite (jbr, 2026-08-21): a directory
-    // hidden through `.git/info/exclude`. Naming is the permission, so it stays
+    // The case the ignore set is known to bite: a directory hidden through
+    // `.git/info/exclude`. Naming is the permission, so it stays
     // readable — and followable — while being undiscoverable.
     let scratch = Scratch::new("excluded");
     scratch.write(".git/info/exclude", "plans/\n");
@@ -605,9 +605,8 @@ async fn a_stream_outside_the_root_is_not_found() {
 
 /// On case-insensitive APFS, a wrong-case URL resolves and reads fine, but
 /// notify reports the on-disk spelling — the filter must adopt the canonical
-/// final segment at open or the stream never fires (found in review,
-/// 2026-08-21). macOS-only: on a case-sensitive fs the wrong-case path simply
-/// doesn't exist.
+/// final segment at open or the stream never fires. macOS-only: on a
+/// case-sensitive fs the wrong-case path simply doesn't exist.
 #[cfg(target_os = "macos")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_wrong_case_stream_still_fires_where_the_fs_is_case_insensitive() {

@@ -15,11 +15,10 @@ use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
 /// The mounted-table entries for the supervisor/inbox tools — the same
 /// [`ToolDefinition`] shape a provider's mount snapshots, so the spotter's brief
 /// (docs/permissions.md) can read them like any other tool's. The loop dispatches
-/// this family structurally, outside the `Toolbox`, and a brief lookup that
-/// consulted only the providers judged these as a bare name plus a JSON input —
-/// a session's worth of "opaque tool" false watches on `check_inbox` and
-/// `list_processes` was that gap, not the descriptions, which existed and never
-/// reached the rung.
+/// this family structurally, outside the `Toolbox`, so a brief lookup that
+/// consulted only the mounted providers would judge these as a bare name plus an
+/// opaque JSON input — the descriptions exist, and this is what carries them to
+/// that rung.
 ///
 /// The annotations are the harness's claims about its own tools, so they carry
 /// none of the untrusted-server caveat: everything here is session-local

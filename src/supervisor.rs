@@ -86,7 +86,9 @@ const TAIL_LINES: usize = 12;
 const BUFFER_CAP: usize = 256 * 1024;
 
 /// One backgrounded process. `buffer` is the single bounded capture both read
-/// projections derive from (the tail view, and the cursor `read_since` of Slice 2).
+/// projections derive from — the tail view and the cursor [`read_since`].
+///
+/// [`read_since`]: Supervisor::read_since
 struct Process {
     /// The spawn-minted ordinal — the durable identity that survives every property
     /// change (docs/supervisor.md). Rendered `p#<n>` in prose by
@@ -142,12 +144,9 @@ struct Process {
 /// section (docs/supervisor.md). Owned (it borrows nothing of the registry) so the loop can
 /// build it under the lock and hand it to the fork distiller, which then awaits.
 ///
-/// **Model-facing, and that is why it looks like this.** A peek is synchronous and
-/// point-in-time — the model has no connection to subscribe to — so the tail must be
-/// inline or it does not exist, and the times are humanized elapsed counts because
-/// absolute Unix millis are unreadable in a prompt. The control API's view of the same
-/// processes is [`ProcessState`], which diverges on both fields for the opposite reason
-/// (docs/control-api.md). One registry, two genuinely different consumers.
+/// Model-facing: the tail is inline and the times are humanized elapsed counts.
+/// [`ProcessState`] is the control API's view of the same registry and diverges on
+/// both fields for the mirror-image reason (docs/supervisor.md).
 #[derive(Clone, Debug)]
 pub struct BgView {
     pub handle: String,
@@ -161,16 +160,11 @@ pub struct BgView {
 /// one representation for both, so the level-triggered topic and the resource listing
 /// cannot drift (docs/control-api.md).
 ///
-/// **What is absent is the design.** No `tail` and no last-chunk stamp: both change with
-/// every output chunk, and a level-triggered topic that changes per chunk re-emits a
-/// whole-topic replacement per chunk — worse than the poll it replaces. That content
-/// rides the ephemeral `output` class as `process_output` deltas instead, where
-/// high-rate and lossy is the contract; a client opening cold seeds itself from
-/// `GET /processes/:id/output` rather than from this topic.
-///
-/// What remains changes only when a process spawns, exits, is muted, or is
-/// backgrounded, which is what makes `?include=state:processes` viable on a
-/// battery-powered client.
+/// No `tail` and no last-chunk stamp: both change with every output chunk, and this
+/// topic is level-triggered, so carrying them would emit a whole-topic replacement per
+/// chunk. That content rides the ephemeral `output` class as `process_output` deltas
+/// instead (docs/supervisor.md). What remains changes only on spawn, exit, mute, or the
+/// handoff flip.
 #[derive(Clone, Debug, Serialize)]
 pub struct ProcessState {
     /// The spawn-minted ordinal (rendered `p#<n>` in prose; bare here and in routes).
@@ -592,8 +586,8 @@ impl Supervisor {
     }
 
     /// Mark a process exited, stamp its durable exit record, and produce its exit
-    /// notification — status + duration + final tail (docs/supervisor.md,
-    /// requirement #4). `None` if the id is unknown.
+    /// notification — status + duration + final tail (docs/supervisor.md).
+    /// `None` if the id is unknown.
     pub fn finish(&mut self, id: u64, status: Option<ExitStatus>) -> Option<Finished> {
         let ran = {
             let p = self.find(id)?;

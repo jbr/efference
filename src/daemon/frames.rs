@@ -19,7 +19,7 @@
 //!   cursor.
 //! - **`render` rides beside `data`, never inside it.** A log frame's `data` is
 //!   byte-identical to the corresponding `GET /log` element (see `sse.rs`), so the
-//!   human-wire render document (docs/tool-contract) is an annotation *of the frame*.
+//!   human-wire render document is an annotation *of the frame*.
 //!   Folding it into `data` would fork the two representations of one entry.
 //!
 //! The frame ≡ window byte-identity holds **below the result-size threshold**, which
@@ -191,8 +191,9 @@ pub(crate) struct Frame {
     /// element byte for byte (see [`raw`]). `null` on a `state` frame means the topic
     /// is cleared.
     pub(crate) data: Box<RawValue>,
-    /// The human-wire render document for a `tool_result` (docs/tool-contract).
-    /// Beside `data`, never inside it — see the module docs.
+    /// The human-wire render document for a `tool_result`. Beside `data`, never
+    /// inside it — see the module docs. Nothing emits one yet; the field is here so
+    /// that adding emission does not reshape the envelope.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) render: Option<Box<RawValue>>,
 }
@@ -212,9 +213,8 @@ impl Frame {
         }
     }
 
-    /// Attach a render document to a log frame (docs/tool-contract). Separate from
-    /// [`Frame::log`] because emission is a later unit; the field exists now so adding
-    /// it doesn't reshape the envelope.
+    /// Attach a render document to a log frame — separate from [`Frame::log`], which
+    /// never sets one. Unreached (see [`Frame::render`]).
     pub(crate) fn with_render(mut self, render: &impl Serialize) -> Self {
         self.render = Some(raw(render));
         self

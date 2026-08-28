@@ -18,10 +18,10 @@ async fn review_level_over_the_router() {
     );
     let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
     assert_eq!(state["review_level"], "human_only");
-    // `autonomous` used to be mirrored here as a derived bool. It is gone: it was
-    // exactly `review_level == "autonomous"`, so no client lost anything it cannot
-    // compute, and a state topic must be one value rather than a value plus a
-    // restatement of part of it (docs/control-api.md).
+    // `autonomous` is not mirrored here as a derived bool: it is exactly
+    // `review_level == "autonomous"`, which a client can compute, and a state topic
+    // carries one value rather than a value plus a restatement of part of it
+    // (docs/control-api.md).
     assert!(state.get("autonomous").is_none(), "not restated as a bool");
 
     // An unknown level is rejected in the typed envelope (docs/control-api.md) and does

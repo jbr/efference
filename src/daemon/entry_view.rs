@@ -140,9 +140,9 @@ impl Serialize for RawResultView<'_> {
         let raw = self.0;
         let content = ContentView::of(&raw.content, self.1);
         // The tagging field is *added* when a result is oversized rather than always
-        // present: a result under the threshold serializes exactly as it did before
-        // the field existed, which is what keeps the frame ≡ window ≡ entry identity
-        // true below the threshold (frames.rs).
+        // present, which is what keeps the frame ≡ window ≡ entry identity true
+        // below the threshold (frames.rs): under it, all three views agree field
+        // for field.
         let elided = matches!(content, ContentView::Elided(..));
         let fields = 2 + usize::from(elided) + usize::from(!raw.images.is_empty());
         let mut s = serializer.serialize_struct("RawResult", fields)?;

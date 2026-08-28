@@ -5,8 +5,8 @@
 //! `state_changed` ping and **one** task that recomputes every topic and diffs it against
 //! what it last published. Three consequences, and they are the reason for the shape:
 //!
-//! - It computes **once for all clients** — strictly less work than the per-client 400 ms
-//!   `GET /state` round-trip it replaces, and only when something moved.
+//! - It computes **once for all clients**, and only when something moved — not once per
+//!   connected client per poll interval.
 //! - A **missed ping degrades to "late", not to "stale forever and silently"**: the task
 //!   recomputes *all* topics on any wake, so the next ping from any source repairs a topic
 //!   whose own mutation site forgot to signal. That matters because three topics are

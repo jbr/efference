@@ -21,11 +21,10 @@ pub(super) struct Metrics {
     /// alone. Context-window occupancy is a fact about the trajectory's own
     /// prefix, and the side channels do not share it: a fork peek, a triage, or a
     /// spotter assessment carries its own much smaller prompt, so reading
-    /// occupancy off [`Metrics::last_usage`] made the reported context *drop*
-    /// mid-turn — observed live 2026-08-23 falling from ~27k to 6.8k and
-    /// correcting when the turn completed. Side-channel usage still belongs in
-    /// the cumulative totals and the cost, which is why this is a second field
-    /// rather than a filter on the first.
+    /// occupancy off [`Metrics::last_usage`] makes the reported context *drop*
+    /// mid-turn and correct when the turn completes. Side-channel usage still
+    /// belongs in the cumulative totals and the cost, which is why this is a
+    /// second field rather than a filter on the first.
     pub(super) last_turn_usage: Option<Usage>,
     /// Stamped by **any** request — real turn, fork peek, or keepalive ping. The
     /// cache-touch clock: decides when to ping.
@@ -98,8 +97,8 @@ const CACHE_TTL: Duration = Duration::from_secs(300);
 
 /// How many consecutive unexplained cold main-loop requests before the streak is
 /// worth surfacing (docs/log-and-projection.md). Four, from a fold over this repo's
-/// own corpus (77 `usage.jsonl` files, 44 with turns, 1371 `turn` requests,
-/// 2026-08-27): 155 of those turns read nothing from the cache, and this
+/// own corpus (77 `usage.jsonl` files, 44 with turns, 1371 `turn` requests):
+/// 155 of those turns read nothing from the cache, and this
 /// classifier explains 54 of them (38 session boot, 9 idle past the TTL, 7 a model
 /// change). The remaining 101 fall into 28 runs — 24 of length 1, two of length 3,
 /// and two of length 28 and 43, each of which was a whole session that never once

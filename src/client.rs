@@ -1,11 +1,9 @@
-//! The control-channel client (docs/control-channel.md, slice 2).
+//! The control-channel client (docs/control-channel.md).
 //!
 //! Every non-loop interaction with a running daemon goes through here: the
 //! scriptable verbs (`efference turn`/`approve`/`interrupt`/`state`/`log`) and the
-//! `attach` REPL are all clients of the same socket (docs/control-channel.md — interface parity,
-//! there is no privileged in-process path). This is the consumer of
-//! `trillium-tokio`'s [`UnixClientConfig`], the client-side Unix-socket connector
-//! that unblocked this slice.
+//! `attach` REPL are all clients of the same socket, with no privileged in-process
+//! path. Built on `trillium-tokio`'s [`UnixClientConfig`].
 //!
 //! The connector dials a *fixed* socket path, so the request URL's host/port are
 //! ignored (only the path + metadata matter) — we mount a placeholder base and
@@ -43,8 +41,8 @@ impl Client {
     /// type-erases its connector, so this adds no type parameter to [`Client`] or to
     /// anything holding one.
     ///
-    /// The same seam is what a non-UDS binding (TCP + TLS, docs/control-api.md) would
-    /// use: the API surface is identical across bindings, and only the connector differs.
+    /// The same seam carries a non-UDS binding (TCP + TLS, docs/web-bind.md): the API
+    /// surface is identical across bindings, and only the connector differs.
     pub fn with_connector(connector: impl Connector) -> Self {
         // The connector targets a fixed endpoint, so the URL host is irrelevant — but a
         // base is still needed to form request URLs. `localhost` is a placeholder that
@@ -92,11 +90,10 @@ impl Client {
         self.post("/turns?wait", body).await
     }
 
-    /// Resolve the pending approval gate (`PUT /approvals/{call_id}`). The decision
-    /// maps the same three-valued [`Approval`] the loop consumes: empty/approve,
-    /// abort, or redirect-with-message. The id is a precondition: if that call is no
-    /// longer the pending gate the daemon answers 409 `gate_moved`, with the current
-    /// gate in the error's `detail`.
+    /// Resolve the pending approval gate (`PUT /approvals/{call_id}`), carrying the
+    /// same four-valued [`Approval`] the loop consumes (docs/control-channel.md).
+    /// The id is a precondition: addressing anything but the pending gate answers
+    /// 409 `gate_moved`, with the current gate in the error's `detail`.
     pub async fn approve(&self, call_id: &str, decision: &Approval) -> Result<()> {
         self.put(&format!("/approvals/{call_id}"), approval_body(decision))
             .await
@@ -287,8 +284,8 @@ impl Client {
         self.delete(&format!("/notifications/{id}")).await.map(drop)
     }
 
-    /// Current ephemeral control state (`GET /state`): the last `seq` and the one
-    /// pending approval, if any. Returned as the raw JSON body.
+    /// Current ephemeral control state (`GET /state`, docs/control-api.md): the last
+    /// `seq` plus one field per state topic. Returned as the raw JSON body.
     pub async fn state(&self) -> Result<String> {
         self.get("/state").await
     }
@@ -532,9 +529,8 @@ fn versioned(path: &str) -> String {
     format!("/v1{path}")
 }
 
-/// The JSON body for an approval decision — the same three-valued [`Approval`] the loop consumes
-/// (empty/approve, abort, redirect-with-message) plus the config-edit transaction. Shared by the
-/// blocking and non-blocking `approve` verbs.
+/// The JSON body for an approval decision — the four-valued [`Approval`] the loop consumes
+/// (docs/control-channel.md). Shared by the blocking and non-blocking `approve` verbs.
 fn approval_body(decision: &Approval) -> String {
     match decision {
         Approval::Approve => serde_json::json!({ "decision": "approve" }),

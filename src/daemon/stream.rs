@@ -1,12 +1,7 @@
 //! The unified control stream — `GET /events` (docs/control-api.md).
 //!
-//! One connection carrying three **durability classes**, in one total order:
-//!
-//! | class | durability | resume |
-//! | --- | --- | --- |
-//! | `log` | durable, monotonic `seq` | replay by `?since`, never dropped |
-//! | `output` | ephemeral, lossy | none — live tail |
-//! | `state` | level-triggered | snapshot on subscribe, then whole-topic replacements |
+//! One connection carrying the three **durability classes** (`frames.rs` defines them)
+//! in one total order.
 //!
 //! The model, named so it doesn't have to be re-derived: **`state` is a map of per-topic
 //! LWW-registers, delivered causally with respect to the totally-ordered log.** The log is

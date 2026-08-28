@@ -4,7 +4,7 @@ use super::*;
 
 /// The pending-notification queue + its id counter (docs/inbox.md). Ids are
 /// **queue-local**: an un-shown notification has no log `seq` yet, so it's addressed
-/// by this id until Slice C's first-show append gives it a durable `seq`.
+/// by this id until the first-show append gives it a durable `seq`.
 #[derive(Default)]
 pub(super) struct Inbox {
     pub(super) next_id: u64,

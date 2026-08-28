@@ -16,7 +16,7 @@ fn user(text: &str) -> Payload {
 /// byte-identical to the corresponding `GET /log` element — the property `sse.rs`
 /// relies on so the tail and the catch-up read agree per entry.
 ///
-/// **Pin, relaxed deliberately (2026-08-27):** identity holds *below*
+/// **The pin is bounded:** identity holds *below*
 /// [`MAX_INLINE_RESULT_BYTES`]. Above it a frame and a window element still agree
 /// with each other — both are `EntryView::new` — but both diverge from
 /// `GET /log/:seq`, which serves the whole result. See the module docs; the two

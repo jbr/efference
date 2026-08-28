@@ -9,9 +9,8 @@
 //! The code set is deliberately small and derived from the errors the router already
 //! returns, plus the one the gate's precondition needs ([`ErrorCode::GateMoved`]).
 //! Resist growing it per-route: a code earns its place when a client would *act*
-//! differently on it, not when the prose differs. (A `cursor_out_of_range` code was
-//! reserved here once; it left when `?since` past the head was settled as a wait, not
-//! an error — under wait-semantics no client acts on it, because it is not one.)
+//! differently on it, not when the prose differs. There is no code for `?since` past
+//! the head, for instance, because that is served as a wait rather than an error.
 
 use super::*;
 
@@ -31,9 +30,8 @@ pub(crate) enum ErrorCode {
     NotFound,
     /// The addressed approval is no longer the pending gate: it was already resolved,
     /// or the loop moved on. **409**, with the *current* pending gate in `detail` so a
-    /// client re-renders without a second round-trip. This is the precondition that
-    /// closes the "approved a gate that already moved on" race, which today is an
-    /// ambiguous 404.
+    /// client re-renders without a second round-trip. Its own code rather than a 404,
+    /// which cannot distinguish "that gate moved" from "there is no such call".
     GateMoved,
     /// `POST /loop/continue` was asked for at a moment that has no continue in it:
     /// the loop is running or gated, or the wire ends where re-prompting it means

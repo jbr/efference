@@ -219,8 +219,8 @@ impl TcpAuth {
         // h2/h3 client splits one line per cookie (RFC 9113 §8.2.3), and
         // because cookies ignore ports, any other service's cookie on this
         // host rides along and forces the split — `get_str` reads none of a
-        // multi-valued header, which presented as browsers (with company on
-        // the host) failing auth that curl (one cookie, one line) passed.
+        // multi-valued header, so a browser sharing the host with any other
+        // service fails auth that curl (one cookie, one line) passes.
         if let Some(value) = conn.cookies().get(auth::COOKIE_NAME).map(Cookie::value)
             && auth::cookie_is_valid(&self.cookie_key, value, SystemTime::now())
         {
@@ -346,9 +346,8 @@ impl Surface {
         match method {
             // `trillium_head::head()` runs ahead of the gate, so a HEAD arrives here
             // already rewritten to GET. Anonymous surface: every GET outside the
-            // guarded prefixes — the web client's shell and hashed assets, same
-            // posture as the inline bootstrap page before it (docs/web-client.md) —
-            // plus the credential mint.
+            // guarded prefixes — the web client's shell and hashed assets
+            // (docs/web-client.md) — plus the credential mint.
             Method::Get if !guarded => Zone::Anonymous,
             Method::Post if path == "/auth/session" => Zone::Anonymous,
             _ => Zone::Credential,
@@ -539,11 +538,7 @@ impl trillium::Handler for SecurityHeaders {
 ///   a file (docs/web-client.md "Navigating the working directory").
 const SPA_ROUTES: [&str; 2] = ["/", "/tree"];
 
-/// The client route inside a `/sessions/<id>` prefix, if the path carries one:
-/// `/sessions/work/tree` → `/tree`, and both `/sessions/work` and `/sessions/work/`
-/// → `/`. `None` when the path is not session-prefixed, or when the id is not a
-/// single plain segment — the same rule the host resolves ids by, so the shell is
-/// offered for exactly the ids the proxy would accept.
+/// [`Surface::spa_route`] as the fn pointer [`frontend`] takes, one per surface.
 fn session_spa_route(conn: &Conn) -> bool {
     Surface::Session.spa_route(conn.path())
 }
@@ -552,6 +547,11 @@ fn host_spa_route(conn: &Conn) -> bool {
     Surface::Host.spa_route(conn.path())
 }
 
+/// The client route inside a `/sessions/<id>` prefix, if the path carries one:
+/// `/sessions/work/tree` → `/tree`, and both `/sessions/work` and `/sessions/work/`
+/// → `/`. `None` when the path is not session-prefixed, or when the id is not a
+/// single plain segment — the same rule the host resolves ids by, so the shell is
+/// offered for exactly the ids the proxy would accept.
 fn session_scoped(path: &str) -> Option<&str> {
     let after = path.strip_prefix("/sessions/")?;
     let (id, rest) = after.split_at(after.find('/').unwrap_or(after.len()));
@@ -587,7 +587,7 @@ pub(crate) fn public_router(auth: Arc<TcpAuth>) -> Router {
         // Trade a current TOTP code for the session cookie. The one credential mint;
         // rate-limited, and every accepted code burns. The login view that reads
         // `#token=` from the fragment and POSTs here is the web client's
-        // (web/src/ui/Login.tsx), successor to the inline bootstrap page.
+        // (web/src/ui/Login.tsx).
         .post("/auth/session", move |mut conn: Conn| {
             let auth = Arc::clone(&auth);
             async move {

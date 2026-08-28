@@ -35,8 +35,8 @@ pub async fn serve<S: Spotter>(
         env_policy,
     );
 
-    // Set before the loop spawns: the gate reads it on the loop's thread (backlog/permissions/
-    // session-dir-and-config-as-reviewed-file.md — the autonomous flip).
+    // The boot review level (docs/permissions.md), set before the loop spawns
+    // because the gate reads it on the loop's thread.
     shared.set_autonomous(autonomous);
     // Whether this model has a prompt cache to keep warm at all
     // (docs/transport.md) — read before the capabilities move into `Shared`.

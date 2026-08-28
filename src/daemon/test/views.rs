@@ -261,10 +261,9 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
 
 /// **A side-channel request must not move reported occupancy.** The fork peek,
 /// the idle triage, and the spotter each carry their own much smaller prefix, so
-/// folding them into the context readout made it *drop* mid-turn and correct
-/// itself afterwards — observed live 2026-08-23 falling ~27k → 6.8k. Their
-/// tokens still belong in the cumulative totals, which is what this pins on both
-/// sides.
+/// folding them into the context readout makes it *drop* mid-turn and correct
+/// itself afterwards. Their tokens still belong in the cumulative totals, which
+/// is what this pins on both sides.
 #[test]
 fn context_occupancy_ignores_side_channel_requests() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
@@ -434,7 +433,7 @@ fn state_reports_effective_role_contents() {
 
 /// Autonomous mode defaults off, and `set_autonomous` moves the *dial* — the
 /// orchestrator-above reads `review_level` to know whether a subordinate runs unsupervised.
-/// `/state` no longer restates it as a separate `autonomous` bool: a state topic carries one
+/// `/state` does not restate it as a separate `autonomous` bool: a state topic carries one
 /// value, not a value plus a partial mirror of it (docs/control-api.md).
 #[test]
 fn state_reports_autonomous_mode() {

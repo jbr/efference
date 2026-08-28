@@ -138,8 +138,8 @@ const EVENTS_HEARTBEAT: Duration = Duration::from_secs(15);
 
 /// The HTTP surface — a `trillium-router` over the verb set (docs/control-channel.md). Each
 /// handler reads `Shared` from the server-global state; JSON in, JSON out. The
-/// router gives method-aware dispatch (and a clean `:call_id` capture) in place
-/// of the earlier hand-rolled `(method, path)` match.
+/// router supplies method-aware dispatch and the path captures (`:call_id`,
+/// `:id`, `:seq`).
 ///
 /// `heartbeat` is the `/events` idle-comment interval — [`EVENTS_HEARTBEAT`] via
 /// [`router`] everywhere real; a parameter so a test can shrink it and watch a quiet
@@ -275,8 +275,8 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 // The precondition failed: that id is not the pending gate — already
                 // resolved, or the loop moved on. 409 with the *current* gate as
                 // corrective detail (`null` = none pending), so a client re-renders
-                // without a second round-trip. This closes the "approved a gate that
-                // already moved on" race the old ambiguous 404 left open.
+                // without a second round-trip — an unqualified 404 could not tell
+                // "that gate moved" from "there is no such call".
                 respond(
                     conn,
                     ErrorBody::new(
@@ -326,9 +326,8 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             };
             conn.with_status(200).with_body(shared.loop_json()).halt()
         })
-        // Move the dials — either or both in one call, which the two verb-routes
-        // this replaces could not do. Validated whole before anything is applied,
-        // so a request that is part-bad moves nothing.
+        // Move the dials — either or both in one call. Validated whole before
+        // anything is applied, so a request that is part-bad moves nothing.
         .patch("/v1/loop", |mut conn: Conn| async move {
             let Some(shared) = shared_of(&conn) else {
                 return missing_state(conn);
@@ -468,8 +467,8 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
             if let Some(muted) = patch.muted {
                 shared.set_process_muted(id, muted);
             }
-            // Only a foreground entry has anywhere to move; the id addressing what
-            // to detach is what the blind verb-route this replaced couldn't say.
+            // Only a foreground entry has anywhere to move, and the id in the path
+            // is what says which entry.
             let detach = patch.background == Some(true) && !current.background;
             if detach {
                 shared.request_detach(patch.note);

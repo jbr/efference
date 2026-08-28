@@ -67,7 +67,7 @@ mod list;
 /// project's own convention keeps files near 500 lines (~20 kB). Anything past
 /// this ceiling wants the client fetching only the line ranges on screen, which is
 /// a different design — so the ceiling is where that argument starts, not a limit
-/// the viewer is expected to meet (jbr, 2026-08-20).
+/// the viewer is expected to meet.
 pub(crate) const MAX_BYTES: u64 = 500 * 1024;
 
 /// The viewer's read surface, rooted at one canonical directory. A root that could
@@ -240,7 +240,7 @@ impl Files {
         // symlink resolving into a nested directory of the root, each otherwise
         // open a stream that never fires — the events either carry the disk
         // spelling or land under a directory the given parent's non-recursive
-        // watch cannot see (both found in review, 2026-08-21). Containment is
+        // watch cannot see. Containment is
         // re-checked as the read route's `resolve` does it: a link out of the
         // root is refused, never served-but-deaf. A not-yet-existing file keeps
         // the given spelling and parent — its eventual creator is usually the
@@ -321,7 +321,7 @@ impl Files {
 /// SSE field values cannot carry raw line terminators: trillium-sse renders LF
 /// as a legal multi-line data field, but a lone CR in a file name (legal on
 /// disk) would reach the wire intact and browsers split fields on it — a
-/// workspace file name forging pokes for arbitrary paths (review, 2026-08-21).
+/// workspace file name forging pokes for arbitrary paths.
 fn rel_path(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
@@ -534,8 +534,7 @@ async fn read(conn: Conn, path: &Path, meta: &std::fs::Metadata) -> Conn {
     };
     // The stat-based ceiling above refuses cheaply without touching the file;
     // this re-check closes the stat→read window a racing local writer could
-    // grow the file through (review, 2026-08-21) — the one gap in "refuse
-    // rather than degrade".
+    // grow the file through — the one gap in "refuse rather than degrade".
     if bytes.len() as u64 > MAX_BYTES {
         return fail(
             conn,

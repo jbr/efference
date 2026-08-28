@@ -211,16 +211,17 @@ impl Shared {
         self.detach_note.lock().unwrap().take()
     }
 
-    /// The peek's ambient `background` section (docs/supervisor.md) — a snapshot of running,
-    /// un-muted processes, taken under the lock so the loop can hand it to the fork.
-    /// The control API's `processes` topic (docs/control-api.md) — structure only, no
-    /// tail. Distinct from [`bg_snapshot`](Self::bg_snapshot), which is the model-facing
-    /// peek view; see [`ProcessState`](crate::supervisor::ProcessState) for why they
-    /// diverge.
+    /// What `GET /processes` and the `processes` state topic carry — structure only,
+    /// no tail (docs/control-api.md). Distinct from
+    /// [`bg_snapshot`](Self::bg_snapshot), the model-facing peek view; see
+    /// [`ProcessState`](crate::supervisor::ProcessState) for why they diverge.
     pub(super) fn process_states(&self) -> Vec<crate::supervisor::ProcessState> {
         self.supervisor.lock().unwrap().process_states()
     }
 
+    /// The peek's ambient `background` section (docs/supervisor.md) — a snapshot of
+    /// running, un-muted processes, taken under the lock so the loop can hand it to
+    /// the fork, which then awaits.
     pub fn bg_snapshot(&self) -> Vec<BgView> {
         self.supervisor.lock().unwrap().views()
     }
@@ -265,8 +266,8 @@ impl Shared {
     /// ever minted into the background**, running or exited (docs/supervisor.md).
     /// The live registry answers first (it is the richer source and holds the
     /// capture the sibling output route reads); a log fold answers for a recorded
-    /// session or a daemon that outlived neither the process nor its own restart.
-    /// `None` only when nothing anywhere names the id.
+    /// session, or for a handle this daemon minted before a restart dropped the
+    /// registry. `None` only when nothing anywhere names the id.
     pub fn process_record(&self, id: u64) -> Option<crate::supervisor::ProcessRecord> {
         let live = self.supervisor.lock().unwrap().record(id);
         if live.is_some() {

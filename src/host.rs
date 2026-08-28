@@ -9,8 +9,7 @@
 //!
 //! The host starts nothing and owns nothing: sessions are separate `efference serve`
 //! processes, discovered by the same liveness scan the CLI verbs run, and their
-//! sockets stay UDS-only. Adding, stopping, and adopting sessions are not built
-//! (docs/host.md).
+//! sockets stay UDS-only.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -173,19 +172,16 @@ impl Sessions {
         }
     }
 
-    /// The control socket for `id`, or `None` when the id is not a single plain path
-    /// segment. Validated here rather than trusted: the id arrives from a URL and is
-    /// joined onto a filesystem path, so anything that could name a directory other
-    /// than one session's is refused before the join.
+    /// The control socket for `id`, or `None` when [`plain_id`] rejects it — the
+    /// one place a URL-supplied id is joined onto a filesystem path.
     pub(crate) fn socket(&self, id: &str) -> Option<PathBuf> {
         plain_id(id).then(|| self.base.join(id).join(SOCKET_NAME))
     }
 
-    /// The live sessions, sorted by id. **Liveness, not existence** — the same scan
-    /// the CLI verbs run (docs/control-channel.md): a successful connect means a
-    /// daemon is listening, while a stale dir from a dead one refuses and is left
-    /// out. A dead session's log stays on disk and readable by the offline verbs;
-    /// what this endpoint answers is which sessions can be talked to now.
+    /// The live sessions, sorted by id (docs/host.md). **Liveness, not existence** —
+    /// the same scan the CLI verbs run (docs/control-channel.md): a successful connect
+    /// means a daemon is listening, while a stale dir from a dead one refuses and is
+    /// left out. Sorted so two reads of an unchanged set are the same bytes.
     pub(crate) async fn live(&self) -> Vec<SessionEntry> {
         let mut live = Vec::new();
         let Ok(entries) = std::fs::read_dir(&*self.base) else {

@@ -68,8 +68,9 @@ impl Shared {
     /// the effective config (and notifies the session for `scope`/`paths`); **cancel** appends a
     /// `Cancelled` entry (audit-only). Both reference the proposal by `seq`, so the fold drops it
     /// from the pending queue. Returns `false` if no pending proposal has that `seq`. The commit is
-    /// session-effective — not written back to the config file (that persistence is a later
-    /// refinement, like the gate's persist option).
+    /// session-effective only: unlike the synchronous gate path
+    /// ([`apply_config_change`](Self::apply_config_change)), it is not written back to the
+    /// config file.
     pub(super) fn resolve_proposal_decision(
         &self,
         seq: Seq,
@@ -159,8 +160,8 @@ impl Shared {
     }
 
     /// The role config file path, if the role resolved from one (`None` for the built-in
-    /// default — nothing to persist to). Where a `Lifetime::Persist` grant is appended
-    /// (docs/permissions.md).
+    /// default — nothing to persist to). The file every committed grant is written
+    /// back to (docs/permissions.md).
     pub fn config_path(&self) -> Option<&std::path::Path> {
         match &self.role.source {
             ConfigSource::Path(p) => Some(p),
@@ -184,8 +185,9 @@ impl Shared {
     }
 
     /// Whether no synchronous human sits at the gate — derived from the review level
-    /// (`Autonomous`). Kept for the `GET /state` `autonomous` field and callers that only care
-    /// about the redirect-vs-block distinction.
+    /// (`Autonomous`). For the loop's callers that only care about the
+    /// redirect-vs-block distinction; `GET /state` carries `review_level` itself
+    /// rather than restating this as a second field.
     pub fn autonomous(&self) -> bool {
         self.review_level() == crate::policy::ReviewLevel::Autonomous
     }
