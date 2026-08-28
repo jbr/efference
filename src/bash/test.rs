@@ -393,7 +393,10 @@ async fn an_operator_detach_is_not_labelled_automatic() {
 /// rather than hang forever.
 #[tokio::test]
 async fn a_shell_backgrounded_grandchild_no_longer_hangs_the_call() {
-    let outcome = impatient(Duration::from_millis(150), Duration::from_secs(60))
+    // The deadline is generous because the seed assertion below needs the shell
+    // to have been scheduled and printed before it fires: at 150ms this failed
+    // under full-suite load with the output legitimately not yet produced.
+    let outcome = impatient(Duration::from_millis(1000), Duration::from_secs(60))
         .run(
             &json!({ "command": "sleep 30 & echo started; wait" }),
             never(),
