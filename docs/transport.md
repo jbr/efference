@@ -205,9 +205,53 @@ Every non-2xx response also updates one shared diagnostic: its numeric status an
 how many consecutive responses carried that status. `RetryHandler` is outermost
 and the observer is inside it, so reverse response handling records each failed
 attempt before the retry handler queues its follow-up. The daemon exposes this
-optional value as `upstream_failure` on `GET /state`; the TUI polls it and shows
-`upstream 429 ×2` in its status bar. It remains after a later success: there is
-no transport lifecycle boundary chosen as an all-clear event.
+optional value as `upstream_failure` on `GET /state`; the TUI shows
+`upstream 429 ×2` in its status bar. It is **cleared by the next 2xx**: a
+response that arrives is the all-clear, which also covers the retrying case,
+since an attempt cannot finalize without one. The chip therefore reports a
+failure that is current rather than one that happened once and was survived —
+a chip that persists through a full recovery teaches an operator to ignore the
+one surface meant to carry signal. It stays content-free: the status and the
+count are all it carries, and the bodies live in the log (below).
+
+### The retry in flight
+
+While either loop is waiting out an aborted stream, that wait is its own
+level-triggered state topic, `upstream_retry` on `GET /state`
+(docs/control-api.md). It names the **surface** (`turn` or `peek`), the attempt
+that just failed, the budget it is spending, the absolute instant the next
+attempt fires, a lead line — *stream aborted, retrying (2 of 12)* — and the
+upstream's own error text as `detail`. Both retry loops publish it (`agent.rs`
+for a turn, `distill.rs` for a fork peek) through one shared constructor, so the
+surfaces differ only in the name they carry; the distinction is kept because an
+exhausted peek withholds a verdict where an exhausted turn ends the trajectory.
+It is set when an abort begins a pause, replaced per attempt, and cleared by the
+attempt that finalizes or by exhaustion — exhaustion is visible on its own
+through the turn-not-completed notification and the record-only entries, so the
+topic does not double as a gravestone. Without it, a generation on its third
+attempt is indistinguishable from one that is taking a while, and an operator
+watching a live autonomous run cannot tell "the provider is flaky and the
+harness is absorbing it" from "the model is thinking hard" — which call for
+different responses. The retry cell carries its own change signal rather than
+relying on the daemon's wake-on-append fallback: a pause has no append to ride
+on and lasts up to thirty seconds, so a late topic would be wrong for the entire
+time the state is true. Rendering it is the clients' half; the API carries it
+either way.
+
+### A transient failure's record is not transient
+
+Each **failed HTTP attempt** is recorded durably, bearing its status and body, as
+a record-only assistant entry that projects to nothing — the same class as an
+aborted attempt's partial. That covers the attempts the retry handler absorbs: a
+429 that recovers on the next try used to leave nothing behind but a status and a
+count, so the chip could not be inspected for what actually went wrong. The
+handler sits below the loop and cannot append, so the body crosses that boundary
+through an in-memory queue beside the failure cell: the observer reads the
+non-2xx body once, stashes it on the conn for whoever asks next (the SSE open
+error, the keepalive), and queues a copy; the agent loop drains the queue into
+log appends after each model call. The queue is bounded and drops its oldest
+entries, so an outage against a daemon that is not draining cannot grow the
+process without bound — the durable record is the log, not the queue.
 
 ---
 

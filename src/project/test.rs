@@ -307,6 +307,49 @@ fn record_only_partial_projects_to_nothing() {
     assert_eq!(clean, with_partials);
 }
 
+/// A failed HTTP attempt the retry handler absorbed gets the same treatment
+/// (docs/transport.md): the loop drains the body out of the client's queue, appends
+/// it as a record-only entry, and the wire is byte-identical to a log without it —
+/// so recording a 429 that recovered cannot move the cached prefix. Round-trips the
+/// entry through the log's own serialization first, since the record's whole point
+/// is being readable back out of the jsonl.
+#[test]
+fn an_absorbed_attempt_record_round_trips_and_projects_to_nothing() {
+    let clean = serde_json::to_string(&project(&sample_log())).unwrap();
+
+    let failure = crate::api::UpstreamAttemptFailure {
+        status: 429,
+        body: r#"{"error":{"message":"rate limited"}}"#.into(),
+    };
+    let appended = entry(
+        3,
+        2,
+        Payload::Assistant {
+            thinking: vec![],
+            text: vec![],
+            calls: vec![],
+            upstream_failure: Some(failure.record_text()),
+        },
+    );
+
+    let line = serde_json::to_string(&appended).unwrap();
+    let read_back: crate::log::LogEntry = serde_json::from_str(&line).unwrap();
+    match &read_back.payload {
+        Payload::Assistant {
+            upstream_failure: Some(why),
+            ..
+        } => {
+            assert!(why.contains("HTTP 429"), "{why}");
+            assert!(why.contains("rate limited"), "{why}");
+        }
+        other => panic!("expected a record-only assistant entry, got {other:?}"),
+    }
+
+    let mut log = sample_log();
+    log.push(read_back);
+    assert_eq!(clean, serde_json::to_string(&project(&log)).unwrap());
+}
+
 /// Pins the exact wire encoding of a thinking-bearing assistant turn
 /// (docs/transport.md): thinking leads (before text, before `tool_use`), the
 /// `signature` rides verbatim, and `redacted_thinking` renders its opaque `data`. This is

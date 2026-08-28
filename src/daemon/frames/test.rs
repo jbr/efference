@@ -157,6 +157,7 @@ fn topic_wire_names_are_pinned() {
         Topic::ReviewLevel,
         Topic::Running,
         Topic::UpstreamFailure,
+        Topic::UpstreamRetry,
     ]
     .iter()
     .map(|t| t.as_str())
@@ -174,6 +175,7 @@ fn topic_wire_names_are_pinned() {
             "review_level",
             "running",
             "upstream_failure",
+            "upstream_retry",
         ]
     );
 }

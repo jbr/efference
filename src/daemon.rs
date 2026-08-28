@@ -38,7 +38,8 @@ use trillium_sse::{Eventable, sse};
 
 use crate::agent;
 use crate::api::{
-    Client, Error, RequestUsage, ToolChoice, UpstreamFailureState, Usage, upstream_failure_state,
+    Client, Error, RequestUsage, ToolChoice, UpstreamFailureState, UpstreamRetryState, Usage,
+    upstream_failure_state, upstream_retry_state,
 };
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
@@ -189,6 +190,14 @@ pub struct Shared {
     /// surfaced by `GET /state`. Transport-only: never touches the log or projection
     /// (docs/transport.md).
     upstream_failure: UpstreamFailureState,
+    /// The retry in flight, shared with the HTTP client and with both retry loops
+    /// (the turn loop and the fork peek), and surfaced by `GET /state` as its own
+    /// level-triggered topic. Unlike the failure cell above it carries its own
+    /// change signal — a retry pause is *not* followed by an append, so
+    /// `watch_topics`'s wake-on-`appended` fallback would leave the topic late for
+    /// the whole pause (docs/transport.md). Transport-only: never logged or
+    /// projected.
+    upstream_retry: UpstreamRetryState,
     /// Cumulative triage retention (docs/redaction-fork.md), folded lazily from the
     /// log behind a cursor rather than accumulated at the append sites. Unlike the
     /// transport telemetry above this is **derived from the canonical record**, so a
@@ -330,6 +339,7 @@ impl Shared {
             role,
             scratch,
             upstream_failure,
+            upstream_retry_state(),
             ImagePlacement::default(),
         )
     }
@@ -342,6 +352,7 @@ impl Shared {
         role: LoadedConfig,
         scratch: Option<PathBuf>,
         upstream_failure: UpstreamFailureState,
+        upstream_retry: UpstreamRetryState,
         image_placement: ImagePlacement,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
         let (turns_tx, turns_rx) = mpsc::unbounded_channel();
@@ -412,6 +423,7 @@ impl Shared {
             metrics: Mutex::new(Metrics::default()),
             usage_log: Mutex::new(None),
             upstream_failure,
+            upstream_retry,
             retention: Mutex::new((0, Retention::default())),
             capabilities: Mutex::new(None),
             cost: Arc::new(Mutex::new(CostCell::default())),

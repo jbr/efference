@@ -89,6 +89,9 @@ pub(crate) enum Topic {
     Running,
     /// The last non-success upstream response (docs/transport.md).
     UpstreamFailure,
+    /// A retry in flight — which surface, which attempt, of what budget
+    /// (docs/transport.md). `null` when nothing is being retried.
+    UpstreamRetry,
 }
 
 impl Topic {
@@ -97,7 +100,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 10] = [
+    pub(crate) const ALL: [Topic; 11] = [
         Self::Gate,
         Self::Processes,
         Self::Usage,
@@ -108,6 +111,7 @@ impl Topic {
         Self::ReviewLevel,
         Self::Running,
         Self::UpstreamFailure,
+        Self::UpstreamRetry,
     ];
 
     /// The topic named by a `?include=state:<topic>` token, or `None` if there is no such
@@ -130,6 +134,7 @@ impl Topic {
             Self::ReviewLevel => "review_level",
             Self::Running => "running",
             Self::UpstreamFailure => "upstream_failure",
+            Self::UpstreamRetry => "upstream_retry",
         }
     }
 }

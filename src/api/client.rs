@@ -30,19 +30,62 @@ pub(super) fn record_upstream_failure(failure: &UpstreamFailureState, status: u1
     }
 }
 
-/// Records non-success upstream responses before the outer retry handler queues
-/// another attempt. The cell retains the most recent status and counts repeated
-/// occurrences; it deliberately does not clear on success because recovery has
-/// no single transport lifecycle boundary (docs/transport.md).
+/// The all-clear: a 2xx means the upstream is answering, so the chip stops
+/// reporting a failure that is over (docs/transport.md). This is the non-retry
+/// half of the boundary — a retry that finalizes arrives here too, because
+/// finalizing required a 2xx.
+pub(super) fn clear_upstream_failure(failure: &UpstreamFailureState) {
+    *failure.lock().unwrap() = None;
+}
+
+/// A non-2xx response body, read in the reverse pass and stashed on the conn.
+///
+/// Reading a body consumes it, and the caller that would otherwise read it — the
+/// `into_sse` open error, or `keepalive` — runs *after* this handler. Parking the
+/// bytes in the conn's state is what lets both the durable per-attempt record and
+/// the caller's own error message quote the upstream, instead of one of them
+/// finding an empty body.
+struct CapturedErrorBody(String);
+
+/// The stashed non-2xx body, if this conn's response carried one.
+pub(super) fn captured_error_body(conn: &mut Conn) -> Option<String> {
+    conn.take_state::<CapturedErrorBody>().map(|b| b.0)
+}
+
+/// Observes every upstream response in the reverse pass, before the outer retry
+/// handler queues another attempt (docs/transport.md).
+///
+/// Three things happen here, all of them below the agent loop:
+///
+/// - a non-2xx updates the status/count diagnostic; a 2xx clears it, which is the
+///   chip's all-clear boundary;
+/// - a non-2xx body is read once and stashed, both for the caller and for the record;
+/// - the failed attempt is queued for the loop to drain into a durable record-only
+///   log entry — the handler cannot append, so the body crosses that boundary
+///   through the queue.
 struct UpstreamStatusHandler {
     failure: UpstreamFailureState,
+    attempts: UpstreamAttemptQueue,
 }
 
 impl ClientHandler for UpstreamStatusHandler {
     async fn after_response(&self, conn: &mut Conn) -> trillium_client::Result<()> {
-        if let Some(status) = conn.status().filter(|status| !status.is_success()) {
-            record_upstream_failure(&self.failure, u16::from(status));
+        let Some(status) = conn.status() else {
+            return Ok(());
+        };
+        if status.is_success() {
+            clear_upstream_failure(&self.failure);
+            return Ok(());
         }
+        let status = u16::from(status);
+        record_upstream_failure(&self.failure, status);
+        let body = conn
+            .response_body()
+            .read_string()
+            .await
+            .unwrap_or_else(|read_err| format!("(could not read error body: {read_err})"));
+        conn.insert_state(CapturedErrorBody(body.clone()));
+        push_upstream_attempt(&self.attempts, UpstreamAttemptFailure { status, body });
         Ok(())
     }
 }
@@ -73,6 +116,13 @@ pub struct Client {
     /// Which upstream serves this session, when pinned (docs/transport.md).
     upstream: Option<Upstream>,
     upstream_failure: UpstreamFailureState,
+    /// A retry in flight, written by both retry loops (docs/transport.md). It
+    /// rides on the client because the fork peek retries with a `Client` and no
+    /// `Shared` in scope.
+    upstream_retry: UpstreamRetryState,
+    /// Failed HTTP attempts the retry handler absorbed, waiting for the agent
+    /// loop to drain them into record-only log entries (docs/transport.md).
+    upstream_attempts: UpstreamAttemptQueue,
 }
 
 impl Client {
@@ -89,6 +139,7 @@ impl Client {
         temperature: Option<u8>,
     ) -> Self {
         let upstream_failure = upstream_failure_state();
+        let upstream_attempts = upstream_attempt_queue();
         let retry = RetryHandler::default()
             // Messages POSTs are replay-safe: an unsuccessful open produced no
             // assistant entry or provider-side completion.
@@ -114,6 +165,7 @@ impl Client {
                 retry,
                 UpstreamStatusHandler {
                     failure: Arc::clone(&upstream_failure),
+                    attempts: Arc::clone(&upstream_attempts),
                 },
             )),
             endpoint,
@@ -124,12 +176,27 @@ impl Client {
             max_tokens: MAX_TOKENS,
             upstream: None,
             upstream_failure,
+            upstream_retry: upstream_retry_state(),
+            upstream_attempts,
         }
     }
 
     /// Clone the transport diagnostic cell the daemon exposes through `GET /state`.
     pub fn upstream_failure(&self) -> UpstreamFailureState {
         Arc::clone(&self.upstream_failure)
+    }
+
+    /// Clone the retry-in-flight cell (docs/transport.md). The daemon publishes it
+    /// as a state topic; the turn loop and the fork peek write it.
+    pub fn upstream_retry(&self) -> UpstreamRetryState {
+        Arc::clone(&self.upstream_retry)
+    }
+
+    /// Take every failed HTTP attempt recorded since the last drain, oldest first.
+    /// The agent loop appends each as a record-only log entry, which is what makes
+    /// a transient failure's *record* non-transient (docs/transport.md).
+    pub fn drain_upstream_attempts(&self) -> Vec<UpstreamAttemptFailure> {
+        drain_upstream_attempts(&self.upstream_attempts)
     }
 
     /// The resolved endpoint this client posts to. The daemon reads it for
@@ -281,11 +348,16 @@ impl Client {
         // convertible into its `Conn`.
         let message = if let SseErrorKind::Status(status) = e.kind {
             let mut conn: Conn = e.into();
-            let body = conn
-                .response_body()
-                .read_string()
-                .await
-                .unwrap_or_else(|read_err| format!("(could not read error body: {read_err})"));
+            // The observing handler already read this body in the reverse pass and
+            // stashed it on the conn; reading again would find it consumed.
+            let body = match captured_error_body(&mut conn) {
+                Some(body) => body,
+                None => conn
+                    .response_body()
+                    .read_string()
+                    .await
+                    .unwrap_or_else(|read_err| format!("(could not read error body: {read_err})")),
+            };
             format!("upstream API returned {status}: {body}")
         } else {
             format!("upstream SSE request failed: {}", e.kind)
@@ -338,10 +410,15 @@ impl Client {
         let conn = self.with_session_id(conn);
         let mut conn = conn.with_body(body).await?;
         let ok = conn.status().is_some_and(|s| s.is_success());
-        let text = conn.response_body().read_string().await?;
         if !ok {
+            // Same stash as the SSE open error: the handler consumed the body already.
+            let text = match captured_error_body(&mut conn) {
+                Some(text) => text,
+                None => conn.response_body().read_string().await?,
+            };
             return Err(format!("keepalive returned non-2xx: {text}").into());
         }
+        let text = conn.response_body().read_string().await?;
         #[derive(Deserialize)]
         struct KeepaliveResponse {
             #[serde(default)]

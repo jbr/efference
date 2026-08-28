@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::api::{Client, Error, Streamed, ToolChoice};
+use crate::api::{Client, Error, RetrySurface, Streamed, ToolChoice, UpstreamRetry};
 use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
@@ -110,6 +110,58 @@ pub(crate) fn stream_abort_backoff(aborted: u32) -> Option<std::time::Duration> 
     const CAP: u64 = 30;
     (aborted < STREAM_ABORT_ATTEMPTS)
         .then(|| std::time::Duration::from_secs((1u64 << (aborted - 1).min(20)).min(CAP)))
+}
+
+/// The retry-in-flight state one aborted attempt publishes (docs/transport.md).
+///
+/// Both retry loops build their value here, so `turn` and `peek` differ only in
+/// the surface they name — the attempt count, the budget, and the lead line stay
+/// the one policy. `next_attempt_at` is absolute, so nothing has to re-emit a
+/// countdown; the client subtracts.
+pub(crate) fn stream_abort_retry(
+    surface: RetrySurface,
+    attempt: u32,
+    pause: std::time::Duration,
+    why: &str,
+) -> UpstreamRetry {
+    UpstreamRetry {
+        surface,
+        attempt,
+        budget: STREAM_ABORT_ATTEMPTS,
+        next_attempt_at: crate::log::Timestamp::now()
+            .0
+            .saturating_add(pause.as_millis() as u64),
+        message: format!("stream aborted, retrying ({attempt} of {STREAM_ABORT_ATTEMPTS})"),
+        detail: why.to_string(),
+    }
+}
+
+/// Append one record-only entry per failed HTTP attempt the transport absorbed
+/// since the last drain (docs/transport.md).
+///
+/// The retry handler sits below the loop and cannot append, so the bodies arrive
+/// through the client's queue and land here — including the ones a later attempt
+/// recovered from, which previously left nothing behind but a status and a count.
+/// Each entry carries `upstream_failure`, so it projects to nothing and the next
+/// request re-sends byte-identical messages (docs/log-and-projection.md).
+fn record_absorbed_attempts(
+    shared: &Shared,
+    client: &Client,
+    turn: &mut Turn,
+) -> std::io::Result<()> {
+    for failure in client.drain_upstream_attempts() {
+        *turn += 1;
+        shared.append(
+            *turn,
+            Payload::Assistant {
+                thinking: Vec::new(),
+                text: Vec::new(),
+                calls: Vec::new(),
+                upstream_failure: Some(failure.record_text()),
+            },
+        )?;
+    }
+    Ok(())
 }
 
 /// Drive the loop until input ends. The log lives in [`Shared`]; the loop appends
@@ -242,6 +294,10 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         });
                     })
                     .await;
+                // Whatever the outcome, the transport may have absorbed one or more
+                // failed HTTP attempts on the way here; each gets its own durable
+                // record before the outcome is judged (docs/transport.md).
+                record_absorbed_attempts(&shared, client, &mut turn)?;
                 match outcome {
                     Ok(completion) => {
                         let Some(why) = completion.upstream_failure().map(str::to_string) else {
@@ -275,6 +331,15 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                              {STREAM_ABORT_ATTEMPTS}): {why} — retrying]"
                         );
                         if let Some(pause) = stream_abort_backoff(aborted_attempts) {
+                            // The wait is the state: publish it before sleeping, so a
+                            // client can tell "retrying, attempt 3 of 12" from "the
+                            // model is thinking hard" (docs/transport.md).
+                            client.upstream_retry().set(stream_abort_retry(
+                                RetrySurface::Turn,
+                                aborted_attempts,
+                                pause,
+                                &why,
+                            ));
                             tokio::time::sleep(pause).await;
                         }
                     }
@@ -309,6 +374,10 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                     }
                 }
             };
+            // The all-clear, on every exit from the loop: the attempt that finalized,
+            // the exhausted budget (its own visible outcome, via the notification and
+            // the record-only entries), or a failed request (docs/transport.md).
+            client.upstream_retry().clear(RetrySurface::Turn);
             let Some(completion) = completion else {
                 break;
             };

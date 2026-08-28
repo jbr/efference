@@ -33,8 +33,8 @@ use std::collections::HashSet;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::agent::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff};
-use crate::api::{Client, Completion, RequestUsage, ToolChoice};
+use crate::agent::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff, stream_abort_retry};
+use crate::api::{Client, Completion, RequestUsage, RetrySurface, ToolChoice};
 use crate::context::Item;
 use crate::inbox::ShownNotification;
 use crate::log::{
@@ -423,10 +423,15 @@ async fn peek_completion(
             .await
         {
             Ok(completion) => completion,
-            Err(e) => return Err(format!("peek request failed: {e}")),
+            Err(e) => {
+                client.upstream_retry().clear(RetrySurface::Peek);
+                return Err(format!("peek request failed: {e}"));
+            }
         };
         record.usage.push(completion.request_usage());
         let Some(why) = completion.upstream_failure().map(str::to_string) else {
+            // The attempt that finalizes is the all-clear (docs/transport.md).
+            client.upstream_retry().clear(RetrySurface::Peek);
             return Ok(completion);
         };
         aborted += 1;
@@ -434,6 +439,7 @@ async fn peek_completion(
             "stream aborted upstream (attempt {aborted} of {STREAM_ABORT_ATTEMPTS}): {why}"
         ));
         let Some(pause) = stream_abort_backoff(aborted) else {
+            client.upstream_retry().clear(RetrySurface::Peek);
             return Err(format!(
                 "peek stream aborted upstream, {aborted} attempts exhausted: {why}"
             ));
@@ -442,6 +448,12 @@ async fn peek_completion(
             "fork peek stream aborted (attempt {aborted} of \
              {STREAM_ABORT_ATTEMPTS}): {why}; retrying"
         );
+        // Published on the same topic the turn loop uses, distinguished by its
+        // surface: a peek that exhausts withholds a verdict, where a turn that
+        // exhausts ends the trajectory (docs/transport.md).
+        client
+            .upstream_retry()
+            .set(stream_abort_retry(RetrySurface::Peek, aborted, pause, &why));
         tokio::time::sleep(pause).await;
     }
 }

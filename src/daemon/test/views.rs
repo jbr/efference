@@ -28,6 +28,53 @@ fn state_reports_upstream_failure() {
     );
 }
 
+/// `GET /state` carries the retry in flight as its own topic — surface, attempt,
+/// budget, and when the next attempt fires — and reports `null` once the attempt
+/// that finalizes clears it (docs/transport.md).
+#[test]
+fn state_reports_the_retry_in_flight() {
+    let retry = crate::api::upstream_retry_state();
+    let (shared, _turns_rx) = Shared::full(
+        Log::in_memory(),
+        LoadedConfig::default(),
+        None,
+        crate::api::upstream_failure_state(),
+        Arc::clone(&retry),
+        Default::default(),
+    );
+
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert!(v["upstream_retry"].is_null());
+
+    retry.set(crate::api::UpstreamRetry {
+        surface: crate::api::RetrySurface::Peek,
+        attempt: 2,
+        budget: 12,
+        next_attempt_at: 1_754_300_000_000,
+        message: "stream aborted, retrying (2 of 12)".into(),
+        detail: "upstream SSE stream failed mid-stream".into(),
+    });
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(
+        v["upstream_retry"],
+        serde_json::json!({
+            "surface": "peek",
+            "attempt": 2,
+            "budget": 12,
+            "next_attempt_at": 1_754_300_000_000u64,
+            "message": "stream aborted, retrying (2 of 12)",
+            "detail": "upstream SSE stream failed mid-stream",
+        })
+    );
+
+    retry.clear(crate::api::RetrySurface::Peek);
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert!(
+        v["upstream_retry"].is_null(),
+        "the all-clear is the topic's cleared value, not a residual chip"
+    );
+}
+
 /// `GET /state` reports cache telemetry: the latest `usage`, running totals,
 /// and a seconds-since stamp. Drives the cache gate signature through it (docs/README.md) —
 /// a cold first request (all creation) then a hot one (reads climb, creation

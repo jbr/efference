@@ -9,11 +9,14 @@
 //!   `GET /state` round-trip it replaces, and only when something moved.
 //! - A **missed ping degrades to "late", not to "stale forever and silently"**: the task
 //!   recomputes *all* topics on any wake, so the next ping from any source repairs a topic
-//!   whose own mutation site forgot to signal. That matters because two topics are mutated
-//!   through `Arc`s the mutating code holds *without* a [`Shared`] — the upstream-failure
-//!   cell (the HTTP client) and the cost cell (a spawned fetch) — so they cannot ping.
-//!   Both move in lockstep with requests, and a request is followed by an append, so
-//!   waking on `appended` as well as on `state_changed` covers them.
+//!   whose own mutation site forgot to signal. That matters because three topics are
+//!   mutated through `Arc`s the mutating code holds *without* a [`Shared`] — the
+//!   upstream-failure cell (the HTTP client), the cost cell (a spawned fetch), and the
+//!   retry cell (either retry loop) — so they cannot ping `state_changed`. The first two
+//!   move in lockstep with requests, and a request is followed by an append, so waking on
+//!   `appended` covers them. The retry cell is the exception that carries its own signal:
+//!   a retry pause has no append to ride on and lasts up to thirty seconds, so "late"
+//!   would mean "wrong for the entire time the state is true".
 //! - `GET /state` and the `state` frames come from the **same per-topic functions**
 //!   ([`Shared::topic_json`]), so the fold-equals-snapshot invariant holds by
 //!   construction rather than by two implementations agreeing.
@@ -103,6 +106,11 @@ pub(crate) async fn watch_topics(shared: Arc<Shared>) {
         let changed = shared.state_changed.notified();
         let appended = shared.appended.notified();
         let settled = shared.settle_changed.notified();
+        // The fourth signal, and the one that is not a `Shared` field's own: the
+        // retry cell is written from the fork peek, which holds a `Client` and no
+        // `Shared`, and a retry pause is not followed by an append — so neither
+        // fallback above would repair it before the pause ended.
+        let retried = shared.upstream_retry.changed();
 
         for update in shared.topic_snapshot() {
             if published
@@ -122,6 +130,7 @@ pub(crate) async fn watch_topics(shared: Arc<Shared>) {
             _ = changed => {}
             _ = appended => {}
             _ = settled => {}
+            _ = retried => {}
         }
     }
 }

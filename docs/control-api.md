@@ -291,6 +291,20 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "usd": 0.0421,                        // billed session total from the provider's accounting endpoint
       "unpriced": 0                         // requests the fetch couldn't price (total is an undercount if > 0)
     }
+  },
+  "upstream_failure": {            // null once a 2xx arrives — the all-clear (transport.md)
+    "status": 429,                 // the last non-success status; content-free by design
+    "count": 2                     // consecutive responses carrying it
+  },
+  "upstream_retry": {              // null when nothing is being retried (transport.md)
+    "surface": "turn",             // "turn" | "peek" — an exhausted peek withholds a
+                                   //   verdict; an exhausted turn ends the trajectory
+    "attempt": 2,                  // the attempt that just failed, 1-based
+    "budget": 12,                  // attempts before the loop gives up
+    "next_attempt_at": 1754300002000,  // absolute Unix millis; the client subtracts,
+                                   //   so the daemon never re-emits a ticking field
+    "message": "stream aborted, retrying (2 of 12)",  // leads with what is happening
+    "detail": "upstream SSE stream failed mid-stream: connection reset"
   }
 }
 ```

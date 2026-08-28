@@ -27,6 +27,7 @@ impl Shared {
             Topic::ReviewLevel => self.review_level_json(),
             Topic::Running => self.running_json(),
             Topic::UpstreamFailure => self.upstream_failure_json(),
+            Topic::UpstreamRetry => self.upstream_retry_json(),
         }
     }
 
@@ -182,9 +183,19 @@ impl Shared {
         Value::from(self.running.load(Ordering::SeqCst))
     }
 
-    /// The last non-success upstream response (docs/transport.md).
+    /// The last non-success upstream response (docs/transport.md). Cleared by the
+    /// next 2xx, which is the recovery boundary the retry topic below shares.
     fn upstream_failure_json(&self) -> Value {
         serde_json::to_value(*self.upstream_failure.lock().unwrap()).unwrap_or(Value::Null)
+    }
+
+    /// The retry in flight (docs/transport.md): which surface is retrying, which
+    /// attempt of what budget, when the next attempt fires, and a lead line that
+    /// says what is happening rather than a bare status code. `null` — the whole
+    /// value, as every topic's cleared state is — once an attempt finalizes or the
+    /// budget is exhausted.
+    fn upstream_retry_json(&self) -> Value {
+        serde_json::to_value(self.upstream_retry.get()).unwrap_or(Value::Null)
     }
 
     /// The **effective** policy report — the base config plus every committed config edit folded

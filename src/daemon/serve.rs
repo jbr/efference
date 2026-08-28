@@ -25,6 +25,7 @@ pub async fn serve<D: Distiller, S: Spotter>(
         role,
         toolbox.scratch_dir().map(std::path::Path::to_path_buf),
         client.upstream_failure(),
+        client.upstream_retry(),
         client.image_placement(),
     );
 

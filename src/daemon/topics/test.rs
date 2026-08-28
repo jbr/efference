@@ -148,3 +148,53 @@ async fn an_append_alone_wakes_the_diff() {
         "the append repaired a topic that never pinged: {changed:?}"
     );
 }
+
+/// A retry pause has no append to ride on, so the retry cell carries its own change
+/// signal — the topic must publish while the loop is sleeping, not after it wakes
+/// (docs/transport.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_retry_publishes_without_an_append() {
+    let retry = crate::api::upstream_retry_state();
+    let (shared, _turns_rx) = Shared::full(
+        Log::in_memory(),
+        LoadedConfig::default(),
+        None,
+        crate::api::upstream_failure_state(),
+        Arc::clone(&retry),
+        Default::default(),
+    );
+    let mut rx = shared.subscribe_state();
+    tokio::spawn(watch_topics(Arc::clone(&shared)));
+    drain(&mut rx).await; // the startup snapshot
+
+    // Exactly what the turn loop does before sleeping: no log append anywhere.
+    retry.set(crate::agent::stream_abort_retry(
+        crate::api::RetrySurface::Turn,
+        2,
+        std::time::Duration::from_secs(2),
+        "upstream SSE stream failed mid-stream",
+    ));
+
+    let changed = drain(&mut rx).await;
+    let published = changed
+        .get(&Topic::UpstreamRetry)
+        .expect("the retry cell pinged on its own")
+        .json
+        .to_string();
+    assert!(published.contains(r#""surface":"turn""#), "{published}");
+    assert!(
+        published.contains("stream aborted, retrying (2 of 12)"),
+        "{published}"
+    );
+
+    retry.clear(crate::api::RetrySurface::Turn);
+    let changed = drain(&mut rx).await;
+    assert_eq!(
+        changed
+            .get(&Topic::UpstreamRetry)
+            .map(|update| update.json.to_string())
+            .as_deref(),
+        Some("null"),
+        "the all-clear publishes the cleared topic"
+    );
+}
