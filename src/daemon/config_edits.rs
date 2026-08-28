@@ -127,10 +127,20 @@ impl Shared {
     /// Fold a newly-adopted config's `[env]` table into the session masker
     /// (docs/env.md). Additive only: a variable that stops being masked keeps its
     /// needles for the rest of the session, because a rotated-out secret is still
-    /// a secret and still sits in files the session may read. Strip is *not*
-    /// re-derived — it is fixed at boot with the spawn sites that hold it.
-    pub fn absorb_env_table(&self, config: &crate::config::Config) {
-        self.env_policy.absorb_config(&config.env);
+    /// a secret and still sits in files the session may read. The child-env
+    /// policy (strip, and the values spawns inject) is *not* re-derived — it is
+    /// fixed at boot with the spawn sites that hold it.
+    ///
+    /// Any reference the edited table names is re-resolved here, through the
+    /// session's cached resolver, so an unchanged reference costs nothing and a
+    /// newly-written one resolves while the operator who wrote it is present.
+    /// Returns whatever failed to resolve, for the caller to hand back to the
+    /// edit's author.
+    pub fn absorb_env_table(
+        &self,
+        config: &crate::config::Config,
+    ) -> Vec<crate::env_table::ResolveError> {
+        self.env_policy.absorb_config(&config.env)
     }
 
     /// The resolved role's policy, for the loop's fast-path classifier

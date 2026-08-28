@@ -4,10 +4,15 @@
 //! questions asked at two different points:
 //!
 //! - **`strip`** — at subprocess spawn: does the child environment include this
-//!   variable? Applied by [`StripList`] at every spawn site.
+//!   variable? Applied by [`ChildEnv`] at every spawn site.
 //! - **`mask`** — at log append: does the log ever store this variable's value?
 //!   Applied by [`Masker`] (see [`mask`]), which every text-bearing payload
 //!   passes through on its way into [`crate::persist::Log`].
+//!
+//! An entry may also say where its value **comes from** — a literal, or a
+//! reference resolved by running a command ([`resolve`]). A resolved value is
+//! injected into every child environment by the same [`ChildEnv`] that strips,
+//! and a value that came out of a command is masked by construction.
 //!
 //! The two are a 2×2, not a scale: strip-without-mask is the hygiene cell
 //! (`COLORTERM`, harness self-vars), and mask-without-strip is the ordinary
@@ -26,26 +31,91 @@ use serde::Deserialize;
 mod mask;
 pub use mask::{MARKER_PREFIX_CHARS, MASKABILITY_FLOOR, Masker, marker};
 
+mod resolve;
+pub use resolve::{RESOLVE_TIMEOUT, ResolveError, ResolvedValue, Resolver, SCHEMES, Source};
+
 #[cfg(test)]
 mod test;
 
-/// One `[env]` entry as the operator wrote it. Both fields are `Option` because
-/// **omission means inherit**: a user entry at a key that also has a built-in
-/// default keeps the built-in's answer for whatever it does not name, so
-/// `"*_KEY" = { strip = true }` composes with the inherited `mask = true`
+/// One `[env]` entry as the operator wrote it. `mask` and `strip` are `Option`
+/// because **omission means inherit**: a user entry at a key that also has a
+/// built-in default keeps the built-in's answer for whatever it does not name,
+/// so `"*_KEY" = { strip = true }` composes with the inherited `mask = true`
 /// rather than disabling it. Disabling is possible, but only by saying so
 /// (`mask = false`).
 ///
-/// Only the inline-table form parses. A bare `"*_KEY" = false` shorthand was
-/// considered and rejected: it cannot say which of the two questions it is
-/// answering.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// Two spellings parse: the inline table (`{ mask = true }`, `{ value = "…" }`,
+/// `{ cmd = "…" }`) and a **bare string**, which names the value and is
+/// scheme-sniffed (`NAME = "op://Vault/Item/field"`). A bare *boolean*
+/// (`"*_KEY" = false`) remains a parse error: it cannot say which of the two
+/// questions it is answering.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EnvEntry {
-    #[serde(default)]
     pub mask: Option<bool>,
-    #[serde(default)]
     pub strip: Option<bool>,
+    /// `{ value = "…" }` — a literal, used verbatim. Never scheme-sniffed, which
+    /// makes it the escape hatch for a literal that happens to look like a
+    /// registered reference.
+    pub value: Option<String>,
+    /// `{ cmd = "…" }` — the value is this command's stdout. The primitive every
+    /// registered scheme is sugar over ([`resolve::SCHEMES`]).
+    pub cmd: Option<String>,
+    /// The bare-string form, before sniffing. Not a TOML key — an entry written
+    /// as an inline table can only reach the two explicit fields above, so the
+    /// sniffed and the forced-literal spellings stay distinguishable.
+    pub bare: Option<String>,
+}
+
+/// The inline-table spelling of [`EnvEntry`], kept separate so
+/// `deny_unknown_fields` still names a typo'd key (`{ msak = true }`) instead of
+/// falling through to the bare-string arm.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EnvEntryFields {
+    #[serde(default)]
+    mask: Option<bool>,
+    #[serde(default)]
+    strip: Option<bool>,
+    #[serde(default)]
+    value: Option<String>,
+    #[serde(default)]
+    cmd: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for EnvEntry {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct EntryVisitor;
+        impl<'de> serde::de::Visitor<'de> for EntryVisitor {
+            type Value = EnvEntry;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(
+                    "an inline table (`{ mask = true, strip = false }`, `{ value = \"…\" }`, \
+                     `{ cmd = \"…\" }`) or a value string (`\"op://Vault/Item/field\"`)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<EnvEntry, E> {
+                Ok(EnvEntry {
+                    bare: Some(v.to_string()),
+                    ..EnvEntry::default()
+                })
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<EnvEntry, A::Error> {
+                let fields =
+                    EnvEntryFields::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(EnvEntry {
+                    mask: fields.mask,
+                    strip: fields.strip,
+                    value: fields.value,
+                    cmd: fields.cmd,
+                    bare: None,
+                })
+            }
+        }
+        deserializer.deserialize_any(EntryVisitor)
+    }
 }
 
 /// A resolved entry: both questions answered for one variable name.
@@ -101,7 +171,11 @@ pub const BUILT_IN: &[(&str, EnvRule)] = &[
 /// already covers both names, but an operator who overrides that glob should
 /// not silently unmask the key this process authenticates with. An exact entry
 /// naming one of these still wins for *strip*; masking is unconditional here.
-/// (The resolver in the secret-references unit subsumes this once it lands.)
+///
+/// The reference resolver does not retire this. A key supplied by an `[env]`
+/// reference is masked by construction, but the key can still arrive as a plain
+/// process variable (`op run`, direnv, an exported shell variable), and on that
+/// path this list is the only thing that masks it.
 pub const HARNESS_KEY_VARS: &[&str] = &["EFFERENCE_API_KEY", "ANTHROPIC_API_KEY"];
 
 /// The merged table — built-ins first, then the operator's entries folded in at
@@ -249,67 +323,123 @@ pub fn glob_match(pattern: &str, name: &str) -> bool {
     true
 }
 
-/// The variable names removed from a child environment at spawn. Cloned into
-/// each spawn site (`Arc`-backed), so a new site costs one `apply` call rather
-/// than a re-derivation of policy.
+/// The `[env]` table's effect on a child environment at spawn: names removed
+/// (`strip`), then values set (an entry that names a `value`, a `cmd`, or a
+/// reference). Cloned into each spawn site (`Arc`-backed), so a new site costs
+/// one `apply` call rather than a re-derivation of policy.
+///
+/// Removals run before sets, so a name that is both stripped and injected ends
+/// up with the injected value — injecting it is the point of writing a value.
 #[derive(Debug, Clone, Default)]
-pub struct StripList(Arc<Vec<String>>);
+pub struct ChildEnv {
+    strip: Arc<Vec<String>>,
+    inject: Arc<BTreeMap<String, String>>,
+}
 
-impl StripList {
-    pub fn new(names: Vec<String>) -> Self {
-        Self(Arc::new(names))
+impl ChildEnv {
+    pub fn new(strip: Vec<String>) -> Self {
+        Self {
+            strip: Arc::new(strip),
+            inject: Arc::new(BTreeMap::new()),
+        }
+    }
+
+    pub fn with_inject(mut self, inject: BTreeMap<String, String>) -> Self {
+        self.inject = Arc::new(inject);
+        self
     }
 
     pub fn names(&self) -> &[String] {
-        &self.0
+        &self.strip
     }
 
-    /// Remove every stripped name from a `std::process::Command`'s environment.
+    /// The names this spawn *sets*, without their values — what a display or a
+    /// diagnostic can say out loud.
+    pub fn injected_names(&self) -> impl Iterator<Item = &str> {
+        self.inject.keys().map(String::as_str)
+    }
+
+    /// Apply the policy to a `std::process::Command`'s environment.
     pub fn apply(&self, cmd: &mut std::process::Command) {
-        for name in self.0.iter() {
+        for name in self.strip.iter() {
             cmd.env_remove(name);
+        }
+        for (name, value) in self.inject.iter() {
+            cmd.env(name, value);
         }
     }
 
     /// The `tokio::process::Command` half of [`apply`](Self::apply).
     pub fn apply_tokio(&self, cmd: &mut tokio::process::Command) {
-        for name in self.0.iter() {
+        for name in self.strip.iter() {
             cmd.env_remove(name);
+        }
+        for (name, value) in self.inject.iter() {
+            cmd.env(name, value);
         }
     }
 }
 
-/// The resolved `[env]` policy for a session: the effective table, the strip
-/// list derived from it against this process's environment, and the session's
-/// [`Masker`].
+/// The resolved `[env]` policy for a session: the effective table, the child
+/// environment derived from it against this process's environment, the session's
+/// [`Masker`], and the [`Resolver`] whose cache a later config edit re-reads.
 #[derive(Debug, Clone, Default)]
 pub struct EnvPolicy {
     table: Table,
-    strip: StripList,
+    child_env: ChildEnv,
     masker: Arc<Masker>,
+    resolver: Arc<Resolver>,
 }
 
 /// What [`EnvPolicy::build`] found while resolving. `conflicts` is a startup
 /// config error; `below_floor` is a startup warning naming the variable (name
-/// only — printing the short value would be the leak the floor exists to avoid).
+/// only — printing the short value would be the leak the floor exists to avoid);
+/// `forced_mask` names entries whose `mask = false` was overruled because the
+/// value came out of a command.
 pub struct EnvReport {
     pub policy: EnvPolicy,
     pub conflicts: Vec<Conflict>,
     pub below_floor: Vec<String>,
+    pub forced_mask: Vec<String>,
 }
 
 impl EnvPolicy {
-    /// Resolve the table against this process's environment.
+    /// Resolve the table against this process's environment, with no reference
+    /// resolution — the shape callers that never spawn a vault command use
+    /// (the daemon's convenience constructors, the dev views). `serve` uses
+    /// [`build_with_values`](Self::build_with_values).
     pub fn build(user: &BTreeMap<String, EnvEntry>) -> EnvReport {
+        Self::build_with_values(user, &[], Arc::new(Resolver::default()))
+    }
+
+    /// [`build`](Self::build) with the table's values already resolved
+    /// ([`Resolver::resolve_table`]) — what `serve` calls, and where injection
+    /// and masking-by-construction enter the policy.
+    pub fn build_with_values(
+        user: &BTreeMap<String, EnvEntry>,
+        resolved: &[ResolvedValue],
+        resolver: Arc<Resolver>,
+    ) -> EnvReport {
         let mut vars: Vec<(String, String)> = std::env::vars().collect();
         vars.sort();
-        Self::build_from(user, &vars)
+        Self::build_from_with(user, &vars, resolved, resolver)
     }
 
     /// [`build`](Self::build) over an explicit environment snapshot — the seam
     /// the tests drive, and what keeps resolution a pure function of
-    /// `(table, environment)`.
+    /// `(table, environment, resolved values)`.
     pub fn build_from(user: &BTreeMap<String, EnvEntry>, vars: &[(String, String)]) -> EnvReport {
+        Self::build_from_with(user, vars, &[], Arc::new(Resolver::default()))
+    }
+
+    /// The core: table precedence over `vars`, then the resolved values folded
+    /// in as injections and (for a value that came out of a command) needles.
+    pub fn build_from_with(
+        user: &BTreeMap<String, EnvEntry>,
+        vars: &[(String, String)],
+        resolved: &[ResolvedValue],
+        resolver: Arc<Resolver>,
+    ) -> EnvReport {
         let table = Table::merge(user);
         let mut conflicts = Vec::new();
         let mut below_floor = Vec::new();
@@ -332,6 +462,35 @@ impl EnvPolicy {
                 }
             }
         }
+        // The values the table names (docs/env.md): injected into every child,
+        // and — when the value came out of a command — masked by construction,
+        // because the harness *knows* it is a secret without any `*_KEY` glob.
+        // `mask = false` on such an entry does not disable it; it is reported.
+        let mut forced_mask = Vec::new();
+        let mut inject: BTreeMap<String, String> = BTreeMap::new();
+        for value in resolved {
+            // The machine root is not injectable for the same reason it is
+            // always stripped (docs/web-bind.md): a child holding it can drive
+            // this session's approval gates.
+            if value.name == crate::auth::ROOT_ENV {
+                continue;
+            }
+            let rule = table.resolve(&value.name).0;
+            let masked = value.secret || rule.mask || HARNESS_KEY_VARS.contains(&&*value.name);
+            // Overruling is only worth saying out loud when the operator asked
+            // for the opposite in as many words.
+            if value.secret && user.get(&value.name).and_then(|e| e.mask) == Some(false) {
+                forced_mask.push(value.name.clone());
+            }
+            if masked {
+                if value.value.chars().count() < MASKABILITY_FLOOR {
+                    below_floor.push(value.name.clone());
+                } else {
+                    to_mask.push((value.name.clone(), value.value.clone()));
+                }
+            }
+            inject.insert(value.name.clone(), value.value.clone());
+        }
         // The machine root's strip is hardcoded self-surface protection
         // (docs/web-bind.md), not a table entry: a `strip = false` on it would
         // be a hole in the harness's own perimeter, so the table cannot
@@ -346,23 +505,36 @@ impl EnvPolicy {
         EnvReport {
             policy: Self {
                 table,
-                strip: StripList::new(strip),
+                child_env: ChildEnv::new(strip).with_inject(inject),
                 masker,
+                resolver,
             },
             conflicts,
             below_floor,
+            forced_mask,
         }
     }
 
     /// Re-resolve against a fresh environment snapshot after a config edit and
-    /// **add** whatever is newly maskable. The needle set is append-only for
+    /// **add** whatever is newly maskable, including the values of any
+    /// references the edited table names. The needle set is append-only for
     /// the session: a value that has since rotated out is still a secret, and
     /// still sits in files the session may read.
-    pub fn absorb_config(&self, user: &BTreeMap<String, EnvEntry>) {
+    ///
+    /// References resolve through the session's cached [`Resolver`], so an
+    /// unchanged reference costs nothing and a vault does not re-prompt. A
+    /// reference that fails to resolve is returned for the caller to hand back
+    /// to whoever made the edit — never swallowed, and never left to surface as
+    /// a tool's opaque auth error later.
+    ///
+    /// Injection is *not* re-derived here, for the same reason strip is not: the
+    /// child environment is fixed at boot with the spawn sites that hold it, so
+    /// a value added by an edit reaches children on the next `serve`.
+    pub fn absorb_config(&self, user: &BTreeMap<String, EnvEntry>) -> Vec<ResolveError> {
         let mut vars: Vec<(String, String)> = std::env::vars().collect();
         vars.sort();
         let table = Table::merge(user);
-        let to_mask: Vec<(String, String)> = vars
+        let mut to_mask: Vec<(String, String)> = vars
             .into_iter()
             .filter(|(name, value)| {
                 let masked =
@@ -370,15 +542,30 @@ impl EnvPolicy {
                 masked && value.chars().count() >= MASKABILITY_FLOOR
             })
             .collect();
+        let (resolved, errors) = self.resolver.resolve_table(user);
+        for value in resolved {
+            let masked = value.secret || table.resolve(&value.name).0.mask;
+            if masked && value.value.chars().count() >= MASKABILITY_FLOOR {
+                to_mask.push((value.name, value.value));
+            }
+        }
         self.masker.absorb(&to_mask);
+        errors
     }
 
     pub fn table(&self) -> &Table {
         &self.table
     }
 
-    pub fn strip(&self) -> StripList {
-        self.strip.clone()
+    /// The strip + inject policy every spawn site applies (docs/env.md).
+    pub fn child_env(&self) -> ChildEnv {
+        self.child_env.clone()
+    }
+
+    /// The session's reference resolver, shared so a re-resolution hits the
+    /// cache rather than a vault.
+    pub fn resolver(&self) -> Arc<Resolver> {
+        Arc::clone(&self.resolver)
     }
 
     pub fn masker(&self) -> Arc<Masker> {

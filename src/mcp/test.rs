@@ -412,7 +412,7 @@ async fn live_ferritin_mount_and_call() {
         },
         std::path::Path::new("."),
         None,
-        &crate::env_table::StripList::default(),
+        &crate::env_table::ChildEnv::default(),
     )
     .await
     .unwrap();
@@ -465,7 +465,7 @@ async fn live_cargo_mcp_stdio_mount_and_call() {
         },
         std::path::Path::new("."),
         None,
-        &crate::env_table::StripList::default(),
+        &crate::env_table::ChildEnv::default(),
     )
     .await
     .unwrap();

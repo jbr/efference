@@ -21,13 +21,19 @@ The two are a **2×2, not a scale**. Strip-without-mask is the hygiene cell
 hygiene values and shred output that has nothing secret in it. Mask-without-strip
 is the ordinary case for a credential a tool genuinely needs.
 
+An entry may also answer a third question — **where the value comes from** — in
+which case it is set into every child environment as well
+([Values and references](#values-and-references)).
+
 Keys are exact variable names or `*` globs (`*` matches any run of characters;
-that is the whole syntax). Only the inline-table form parses — a bare
-`"*_KEY" = false` cannot say which of the two questions it is answering, so it
+that is the whole syntax). Two spellings parse: the inline table, and a bare
+string, which names the value (`SOME_KEY = "op://Vault/Item/field"`). A bare
+*boolean* — `"*_KEY" = false` — cannot say which question it is answering, so it
 is a parse error rather than a guess.
 
-Implemented in `src/env_table.rs` (the table, precedence, the strip list) and
-`src/env_table/mask.rs` (needles, the marker, the scan).
+Implemented in `src/env_table.rs` (the table, precedence, the child-env policy),
+`src/env_table/mask.rs` (needles, the marker, the scan), and
+`src/env_table/resolve.rs` (the scheme registry, the runner, the cache).
 
 ## Threat model: accidental capture
 
@@ -187,10 +193,82 @@ session-dir path deny: with it, a tool child could derive the bearer and drive
 its own approval gates. If it ever appears in an effective-table display for
 visibility, it must not be overridable downward.
 
+## Values and references
+
+An `[env]` entry can name the variable's **value**, in two forms:
+
+```toml
+[env]
+RUST_LOG = { value = "debug" }                                # literal
+SOME_KEY = "op://Private/Something/credential"                # reference
+OTHER = { cmd = "security find-generic-password -s foo -w" }  # the primitive
+```
+
+A **literal** is a convenience value, not a secret store: it sits in the config
+file, in `ConfigEdit` entries, and in any diff of either, so it answers the
+table's ordinary `mask` rules like any other variable. A **reference** stores
+only a pointer in all of those places; the value lives in harness memory alone.
+
+`cmd` is the primitive — one exec-for-a-secret indirection (the shape restic's
+`--password-command`, `BORG_PASSCOMMAND`, git askpass, and docker credential
+helpers all take) — and a scheme is sugar over it. A registry maps a scheme to a
+command template, `op://` → `op read {ref}`, with the reference shell-quoted into
+the template. Adding a vault is one registry entry.
+
+Sniffing applies to **bare strings and registered schemes only**, so
+`DATABASE_URL = "postgres://localhost/db"` passes through as a literal: nothing
+runs for a scheme no one registered. The escape hatch for a literal that *does*
+look like a registered reference is `{ value = "op://…" }`, which is never
+sniffed.
+
+**Masked by construction.** A value that came out of a command joins the needle
+set automatically — the harness knows it is a secret, with no `*_KEY` glob
+involved — and `mask = false` on such an entry does not disable it: masking
+stays on and the entry is named in a startup warning. Defaults are the opposite
+corner from a plain variable: `strip = false`, because injecting it is the point.
+A name that is somehow both stripped and valued gets the value (removals run
+before sets).
+
+**Resolution is eager and cached.** Every reference resolves at boot, before the
+daemon serves, and again whenever a config edit is adopted; the cache is keyed by
+command string and lives for the session. That makes a vault prompt (1Password's
+Touch ID) one predictable interaction at session open rather than a block inside
+a turn, and it means `serve` — which resolves the origin table to find its own
+credential and then the identical session snapshot — prompts once, not twice.
+
+**Failure is loud.** At boot, an unresolvable reference fails `serve` with the
+reference string in the error (a pointer is safe to print). At config-edit time
+the failure is announced to the session on its own notification slot, with the
+rest of the edit adopted. What it is never allowed to be is silent: a value that
+quietly failed to arrive surfaces later as a tool's opaque auth error, with
+nothing connecting the two.
+
+Injection, like strip, is **fixed at boot** with the spawn sites that hold it, so
+a reference added by a config edit is resolved (and masked) immediately but
+reaches children on the next `serve`. The machine root is not injectable for the
+same reason it is always stripped.
+
+The harness's own credential rides this resolver: `EFFERENCE_API_KEY` /
+`ANTHROPIC_API_KEY` / `EFFERENCE_PROVIDER` are read from the resolved table
+first and from the process environment second, so the key can be an `op://`
+reference in the config instead of a variable the process was launched with. It
+does **not** retire the unconditional own-key masking below — the key can still
+arrive as a plain variable (`op run`, direnv, an exported shell variable), and on
+that path the `HARNESS_KEY_VARS` list is the only thing that masks it.
+
+### Deliberately not done: memory hardening
+
+No zeroize, no `mlock`, no core-dump scrubbing. A resolved value is needed for
+the session's whole runtime — every spawn injects it, every append scans for it,
+and the needle set is append-only — so there is no window in which to wipe it,
+and adversary-grade hardening is outside the posture this guards
+([Threat model](#threat-model-accidental-capture)). The guarantee is exactly:
+*never written to disk, always masked at append*.
+
 ## The spawn sites
 
-The strip set is fixed at boot and applied at every place the harness starts a
-subprocess:
+The child-env policy — strip, then the values the table names — is fixed at boot
+and applied at every place the harness starts a subprocess:
 
 | Site | Module |
 | --- | --- |
@@ -199,16 +277,16 @@ subprocess:
 | a stdio MCP server | `src/mcp/stdio.rs` |
 | a `[context]` `exec` entry at boot | `src/context.rs` |
 
-At the MCP site the strip is applied *before* the stanza's own `env` map: a
+At the MCP site the table is applied *before* the stanza's own `env` map: a
 server explicitly handed a variable in its own config is being given it
-deliberately, and a blanket strip should not silently undo that. The machine
-root is removed unconditionally at all four.
+deliberately, and neither a blanket strip nor a table-wide value should silently
+undo that. The machine root is removed unconditionally at all four.
 
 ## Deliberately not built
 
-- **`value = "…"` / file sources** — setting or overriding a child's environment
-  from the config. That is the secret-references unit's shape (a literal or a
-  vault reference); the table's `strip`/`mask` pair leaves room for it.
+- **File sources** (`{ file = ".env" }`) — naming a value the harness process
+  does not have. The conditional extension to the invisible-values gap above; a
+  `cmd` entry already covers the case where a command can print it.
 - **Shape-based detection of *unregistered* secrets** (Gitleaks/detect-secrets
   rules). If ever, it would be a flag raised to the human, never silent masking:
   a heuristic that shreds output the operator did not declare is worse than the

@@ -124,7 +124,31 @@ pub(crate) fn refresh_and_emit(shared: &Shared) -> Option<Refreshed> {
     // may still sit in files this session goes on to read. `ConfigChange` has no
     // `env` variant, so the file itself is the only way the table moves — which is
     // why the absorb hangs here rather than off the edit fold.
-    shared.absorb_env_table(&file_config);
+    // A reference in the edited table resolves here too (docs/env.md) — at the
+    // one moment an operator is demonstrably present, so a vault prompt has
+    // someone to answer it. A failure is announced on its own stable slot rather
+    // than left to surface as a tool's opaque auth error later; the value in
+    // force is unchanged, because injection is fixed at boot.
+    let unresolved = shared.absorb_env_table(&file_config);
+    if !unresolved.is_empty() {
+        let detail = unresolved
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        eprintln!("[config: unresolved [env] reference: {detail}]");
+        shared.notify(
+            "config".to_string(),
+            format!(
+                "An `[env]` reference in your config did not resolve, so no value was fetched \
+                 for it: {detail}. The rest of the edit took effect. Values are injected into \
+                 tool subprocesses at session start, so a reference added now takes effect on \
+                 the next session either way."
+            ),
+            Some("config-env-resolve".to_string()),
+            None,
+        );
+    }
     let changes = crate::config::diff_changes(&shared.effective_config(), &file_config);
     if changes.is_empty() {
         return Some(Refreshed::Adopted(file_config));

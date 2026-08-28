@@ -2,11 +2,18 @@ use super::*;
 use crate::log::{ContentBlock, Payload, RawResult, WireState};
 
 fn entry(mask: Option<bool>, strip: Option<bool>) -> EnvEntry {
-    EnvEntry { mask, strip }
+    EnvEntry {
+        mask,
+        strip,
+        ..EnvEntry::default()
+    }
 }
 
 fn user(pairs: &[(&str, EnvEntry)]) -> BTreeMap<String, EnvEntry> {
-    pairs.iter().map(|(k, v)| ((*k).to_string(), *v)).collect()
+    pairs
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), v.clone()))
+        .collect()
 }
 
 fn env(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
@@ -130,7 +137,7 @@ fn strip_and_mask_are_two_independent_questions() {
         ]),
     );
     let policy = report.policy;
-    let stripped = policy.strip();
+    let stripped = policy.child_env();
     let names: Vec<&str> = stripped.names().iter().map(String::as_str).collect();
     assert!(names.contains(&"COLORTERM"));
     assert!(names.contains(&"BUILD_SECRET"));
@@ -182,7 +189,7 @@ fn the_root_secret_strip_is_not_overridable_downward() {
     assert!(
         report
             .policy
-            .strip()
+            .child_env()
             .names()
             .iter()
             .any(|n| n == crate::auth::ROOT_ENV),
@@ -340,6 +347,141 @@ fn a_config_edit_adds_needles_for_a_newly_masked_variable() {
     )]));
     assert!(!policy.mask("late-secret-value").contains("late-secret"));
     unsafe { std::env::remove_var("EFFERENCE_TEST_LATE_VALUE") };
+}
+
+// ------------------------------------------------------------------- values
+
+/// A resolver that answers one command from a fixed table — no test ever invokes
+/// a real vault binary.
+fn stub_resolver(answers: &'static [(&'static str, &'static str)]) -> Arc<Resolver> {
+    Arc::new(Resolver::new(Box::new(move |command: &str| {
+        answers
+            .iter()
+            .find(|(c, _)| *c == command)
+            .map(|(_, v)| (*v).to_string())
+            .ok_or_else(|| format!("stub has no answer for `{command}`"))
+    })))
+}
+
+fn reference(value: &str) -> EnvEntry {
+    EnvEntry {
+        bare: Some(value.to_string()),
+        ..EnvEntry::default()
+    }
+}
+
+fn resolved(name: &str, value: &str, secret: bool) -> ResolvedValue {
+    ResolvedValue {
+        name: name.to_string(),
+        value: value.to_string(),
+        secret,
+    }
+}
+
+#[test]
+fn a_resolved_reference_is_injected_and_masked_by_construction() {
+    // No table entry says `mask`, and the name matches no built-in glob — the
+    // masking comes from the value having been fetched by the harness.
+    let report = EnvPolicy::build_from_with(
+        &user(&[("VAULT_CREDENTIAL", reference("op://V/I/f"))]),
+        &[],
+        &[resolved("VAULT_CREDENTIAL", "resolved-secret-value", true)],
+        Arc::new(Resolver::default()),
+    );
+    let policy = report.policy;
+    assert!(!policy.mask("resolved-secret-value").contains("resolved-s"));
+    let child = policy.child_env();
+    assert_eq!(
+        child.injected_names().collect::<Vec<_>>(),
+        vec!["VAULT_CREDENTIAL"]
+    );
+    // Injecting it is the point, so it is not stripped.
+    assert!(!child.names().iter().any(|n| n == "VAULT_CREDENTIAL"));
+}
+
+#[test]
+fn a_literal_value_is_injected_but_answers_the_ordinary_table_rules() {
+    let report = EnvPolicy::build_from_with(
+        &user(&[("RUST_LOG", reference("debug,efference=trace"))]),
+        &[],
+        &[resolved("RUST_LOG", "debug,efference=trace", false)],
+        Arc::new(Resolver::default()),
+    );
+    let policy = report.policy;
+    // A convenience literal is not a secret store: masking it would shred every
+    // occurrence of the value in unrelated output.
+    assert_eq!(
+        policy.mask("debug,efference=trace"),
+        "debug,efference=trace"
+    );
+    assert_eq!(
+        policy.child_env().injected_names().collect::<Vec<_>>(),
+        vec!["RUST_LOG"]
+    );
+}
+
+#[test]
+fn mask_false_on_a_reference_is_overruled_and_reported() {
+    let report = EnvPolicy::build_from_with(
+        &user(&[(
+            "VAULT_CREDENTIAL",
+            EnvEntry {
+                mask: Some(false),
+                bare: Some("op://V/I/f".into()),
+                ..EnvEntry::default()
+            },
+        )]),
+        &[],
+        &[resolved("VAULT_CREDENTIAL", "resolved-secret-value", true)],
+        Arc::new(Resolver::default()),
+    );
+    assert_eq!(report.forced_mask, vec!["VAULT_CREDENTIAL".to_string()]);
+    assert!(
+        !report
+            .policy
+            .mask("resolved-secret-value")
+            .contains("resolved-s")
+    );
+}
+
+#[test]
+fn the_machine_root_is_never_injected_and_stays_stripped() {
+    let report = EnvPolicy::build_from_with(
+        &BTreeMap::new(),
+        &[],
+        &[resolved(
+            crate::auth::ROOT_ENV,
+            "root-secret-material",
+            true,
+        )],
+        Arc::new(Resolver::default()),
+    );
+    let child = report.policy.child_env();
+    assert!(child.injected_names().next().is_none());
+    assert!(child.names().iter().any(|n| n == crate::auth::ROOT_ENV));
+}
+
+#[test]
+fn a_config_edit_needles_a_newly_named_reference() {
+    let policy = EnvPolicy::build_from_with(
+        &BTreeMap::new(),
+        &[],
+        &[],
+        stub_resolver(&[("op read 'op://V/I/f'", "edit-time-secret-value")]),
+    )
+    .policy;
+    assert!(policy.mask("edit-time-secret-value").contains("edit-time"));
+    let errors = policy.absorb_config(&user(&[("LATE_CREDENTIAL", reference("op://V/I/f"))]));
+    assert!(errors.is_empty(), "{errors:?}");
+    assert!(!policy.mask("edit-time-secret-value").contains("edit-time"));
+}
+
+#[test]
+fn a_config_edit_reports_a_reference_it_could_not_resolve() {
+    let policy = EnvPolicy::build_from_with(&BTreeMap::new(), &[], &[], stub_resolver(&[])).policy;
+    let errors = policy.absorb_config(&user(&[("LATE_CREDENTIAL", reference("op://V/Gone/f"))]));
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].to_string().contains("op://V/Gone/f"));
 }
 
 // ------------------------------------------------------------ payload coverage

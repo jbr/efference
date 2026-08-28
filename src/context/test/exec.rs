@@ -97,7 +97,7 @@ fn exec_timeout_fails_closed() {
         "sleep 30",
         &dir,
         std::time::Duration::from_millis(100),
-        &crate::env_table::StripList::default(),
+        &crate::env_table::ChildEnv::default(),
     )
     .unwrap_err();
     assert!(err.to_string().contains("timed out"), "{err}");

@@ -38,7 +38,7 @@ impl StdioTransport {
         args: &[String],
         env: &BTreeMap<String, String>,
         cwd: &Path,
-        strip: &crate::env_table::StripList,
+        child_env: &crate::env_table::ChildEnv,
     ) -> anyhow::Result<Self> {
         let mut cmd = Command::new(command);
         cmd.args(args)
@@ -50,12 +50,12 @@ impl StdioTransport {
             // reach the server (mirrors bash.rs).
             .process_group(0)
             .kill_on_drop(true);
-        // Strip first, then apply the stanza's own `env` — a server explicitly
+        // The table first, then the stanza's own `env` — a server explicitly
         // handed a variable in its own config is being given it deliberately, and
         // the table's blanket strip should not silently undo that (docs/env.md).
         // The machine root is the exception the table cannot reach: it is removed
         // unconditionally, exactly as at the bash spawns (docs/web-bind.md).
-        strip.apply_tokio(&mut cmd);
+        child_env.apply_tokio(&mut cmd);
         cmd.envs(env);
         cmd.env_remove(crate::auth::ROOT_ENV);
         let mut child = cmd

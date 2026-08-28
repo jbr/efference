@@ -87,10 +87,11 @@ pub struct Bash {
     /// property — no foreground call may park the turn indefinitely — so it is
     /// deliberately not something a call can raise (docs/supervisor.md).
     pub background_after_max: Duration,
-    /// The `[env]` table's strip set (docs/env.md): variables removed from this
-    /// child's environment. Empty by default, so a toolbox built for a dev view
-    /// (which never runs a command) needs no policy.
-    pub strip: crate::env_table::StripList,
+    /// The `[env]` table's spawn-time answer (docs/env.md): variables removed
+    /// from this child's environment, and the values the table names set into
+    /// it. Empty by default, so a toolbox built for a dev view (which never runs
+    /// a command) needs no policy.
+    pub child_env: crate::env_table::ChildEnv,
 }
 
 /// The shipped defaults, used when no `[bash]` config section says otherwise.
@@ -107,7 +108,7 @@ impl Default for Bash {
             tmpdir: None,
             background_after: DEFAULT_BACKGROUND_AFTER,
             background_after_max: DEFAULT_BACKGROUND_AFTER_MAX,
-            strip: crate::env_table::StripList::default(),
+            child_env: crate::env_table::ChildEnv::default(),
         }
     }
 }
@@ -231,8 +232,10 @@ impl Bash {
         // child derives the bearer and drives its own approval gates. Hardcoded
         // self-surface protection, deliberately not an `[env]`-style policy knob.
         cmd.env_remove(crate::auth::ROOT_ENV);
-        // Everything the `[env]` table marks `strip = true` (docs/env.md).
-        self.strip.apply_tokio(&mut cmd);
+        // Everything the `[env]` table marks `strip = true`, then the values it
+        // names — a literal, or a reference the harness resolved at boot
+        // (docs/env.md).
+        self.child_env.apply_tokio(&mut cmd);
         let mut child = match cmd.spawn() {
             Ok(child) => child,
             Err(e) => return error(format!("failed to spawn bash: {e}")).into(),

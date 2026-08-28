@@ -2,8 +2,8 @@
 //!
 //! **This is a shim.** [`FileStore`] writes tokens as plaintext JSON, which is
 //! not a viable long-term answer and is not meant to be one — the intended
-//! replacement is the pluggable secret storage that
-//! backlog/secret-references.md also needs for the stdio `env` passthrough.
+//! replacement is pluggable secret storage, the machine-written counterpart to
+//! the human-managed `[env]` references (docs/env.md).
 //! [`TokenStore`] exists so that replacement is one new impl rather than a hunt
 //! through call sites.
 //!

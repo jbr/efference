@@ -168,7 +168,7 @@ async fn stripped_variables_do_not_reach_the_child() {
         std::env::set_var("EFFERENCE_TEST_KEPT", "here");
     }
     let bash = Bash {
-        strip: crate::env_table::StripList::new(vec!["EFFERENCE_TEST_STRIPPED".to_string()]),
+        child_env: crate::env_table::ChildEnv::new(vec!["EFFERENCE_TEST_STRIPPED".to_string()]),
         ..Bash::default()
     };
     let result = done(
@@ -185,6 +185,37 @@ async fn stripped_variables_do_not_reach_the_child() {
         std::env::remove_var("EFFERENCE_TEST_STRIPPED");
         std::env::remove_var("EFFERENCE_TEST_KEPT");
     }
+}
+
+/// A value the `[env]` table names — a literal, or a reference the harness
+/// resolved at boot — is set into the child's environment (docs/env.md). The
+/// other half of the spawn-time question: strip removes, a value injects, and a
+/// name that is somehow both ends up with the value.
+#[tokio::test]
+async fn named_values_are_injected_into_the_child() {
+    let child_env = crate::env_table::ChildEnv::new(vec!["EFFERENCE_TEST_INJECTED".to_string()])
+        .with_inject(
+            [(
+                "EFFERENCE_TEST_INJECTED".to_string(),
+                "resolved-value".to_string(),
+            )]
+            .into_iter()
+            .collect(),
+        );
+    let bash = Bash {
+        child_env,
+        ..Bash::default()
+    };
+    let result = done(
+        bash.run(
+            &json!({ "command": "echo \"[${EFFERENCE_TEST_INJECTED-unset}]\"" }),
+            never(),
+            no_spawn(),
+            sink(),
+        )
+        .await,
+    );
+    assert_eq!(result.content.trim(), "[resolved-value]");
 }
 
 /// A detach surrenders the live child instead of killing it: the outcome
@@ -271,7 +302,7 @@ fn definition_matches_expected_wire_bytes() {
 /// A `Bash` whose deadline fires almost immediately, for the timer tests.
 fn impatient(after: Duration, max: Duration) -> Bash {
     Bash {
-        strip: crate::env_table::StripList::default(),
+        child_env: crate::env_table::ChildEnv::default(),
         tmpdir: None,
         background_after: after,
         background_after_max: max,

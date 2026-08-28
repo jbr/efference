@@ -36,6 +36,9 @@ pub(crate) const CONFIG_SCAFFOLD: &str = "\
 #                                       #   spawned children, mask = never store its value in the log.
 #                                       #   e.g. \"*_KEY\" = { mask = true } or \"CI_*\" = { strip = true }.
 #                                       #   *_KEY/*_SECRET/*_TOKEN/*_PASSWORD/*_CREDENTIALS mask by default.
+#                                       #   An entry may also name the value: RUST_LOG = { value = \"debug\" }
+#                                       #   (literal), SOME_KEY = \"op://Vault/Item/field\" (resolved at boot
+#                                       #   and always masked), or { cmd = \"...\" } for any other vault.
 
 # Orientation as config: this section's stdout is frozen into the session preamble at boot.
 [context]

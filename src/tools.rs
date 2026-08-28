@@ -369,18 +369,18 @@ pub(crate) fn anthropic_def(schema: &ToolDefinition) -> Value {
 /// routes each `tool_use` to the backend that handles it.
 pub struct Toolbox {
     providers: Vec<Provider>,
-    /// The `[env]` strip set applied to every subprocess this toolbox spawns —
-    /// the `bash` child and each stdio MCP server (docs/env.md). Held here as
-    /// well as on the bash provider so a server mounted *after* the toolbox was
-    /// built still gets it.
-    env_strip: crate::env_table::StripList,
+    /// The `[env]` spawn policy — strip, then inject — applied to every
+    /// subprocess this toolbox spawns: the `bash` child and each stdio MCP
+    /// server (docs/env.md). Held here as well as on the bash provider so a
+    /// server mounted *after* the toolbox was built still gets it.
+    child_env: crate::env_table::ChildEnv,
 }
 
 impl Toolbox {
     pub fn new(providers: Vec<Provider>) -> Self {
         Self {
             providers,
-            env_strip: crate::env_table::StripList::default(),
+            child_env: crate::env_table::ChildEnv::default(),
         }
     }
 
@@ -401,17 +401,17 @@ impl Toolbox {
     /// (docs/supervisor.md). Separate from construction because only a served session
     /// has a config — the dev views (`wire`, `spotter`, `peek`) build a toolbox to read
     /// tool *definitions* and never run a command, so they keep the defaults.
-    /// Apply the `[env]` table's strip set to the mounted `bash` provider
+    /// Apply the `[env]` table's spawn policy to the mounted `bash` provider
     /// (docs/env.md). Separate from construction for the same reason as
     /// [`with_bash_limits`](Self::with_bash_limits): only a served session has a
     /// config, and the dev views never spawn anything.
-    pub fn with_env_strip(mut self, strip: crate::env_table::StripList) -> Self {
+    pub fn with_child_env(mut self, child_env: crate::env_table::ChildEnv) -> Self {
         for provider in &mut self.providers {
             if let Provider::Bash(bash) = provider {
-                bash.strip = strip.clone();
+                bash.child_env = child_env.clone();
             }
         }
-        self.env_strip = strip;
+        self.child_env = child_env;
         self
     }
 
@@ -466,7 +466,7 @@ impl Toolbox {
         authorization: Option<&str>,
     ) -> anyhow::Result<()> {
         let provider =
-            crate::mcp::ConnectedProvider::mount(name, config, cwd, authorization, &self.env_strip)
+            crate::mcp::ConnectedProvider::mount(name, config, cwd, authorization, &self.child_env)
                 .await?;
         self.providers.push(Provider::Connected(Box::new(provider)));
         Ok(())

@@ -612,9 +612,9 @@ fn a_star_outside_the_terminal_position_fails_validation() {
     }
 }
 
-/// The `[env]` table parses only the inline-table form (docs/env.md). Omission is
-/// inherit, not "false", which is what lets a user entry compose with a built-in
-/// default instead of replacing it wholesale.
+/// The `[env]` table's inline-table form (docs/env.md). Omission is inherit, not
+/// "false", which is what lets a user entry compose with a built-in default
+/// instead of replacing it wholesale.
 #[test]
 fn the_env_table_parses_the_inline_table_form() {
     let config = super::parse(
@@ -629,20 +629,56 @@ fn the_env_table_parses_the_inline_table_form() {
         config.env["*_KEY"],
         crate::env_table::EnvEntry {
             mask: Some(true),
-            strip: Some(false)
+            strip: Some(false),
+            ..Default::default()
         }
     );
     assert_eq!(
         config.env["EFFERENCE_*"],
         crate::env_table::EnvEntry {
             mask: None,
-            strip: Some(true)
+            strip: Some(true),
+            ..Default::default()
         }
     );
     assert_eq!(
         config.env["RUST_LOG"],
         crate::env_table::EnvEntry::default()
     );
+}
+
+/// The value forms (docs/env.md): a bare string names the value and is
+/// scheme-sniffed, `{ value = … }` forces a literal, `{ cmd = … }` is the
+/// resolution primitive. Parsing keeps the three distinguishable; nothing runs
+/// here.
+#[test]
+fn the_env_table_parses_the_value_forms() {
+    let config = super::parse(
+        Path::new("ok.toml"),
+        "[env]\n\
+         SOME_KEY = \"op://Private/Thing/credential\"\n\
+         NOTE = { value = \"op://Private/Thing/credential\" }\n\
+         OTHER = { cmd = \"security find-generic-password -s foo -w\" }\n",
+    )
+    .unwrap();
+    assert_eq!(
+        config.env["SOME_KEY"].source(),
+        Some(crate::env_table::Source::Command {
+            command: "op read 'op://Private/Thing/credential'".into(),
+            reference: "op://Private/Thing/credential".into(),
+        })
+    );
+    // `{ value = … }` is the escape hatch: a literal even for a registered scheme.
+    assert_eq!(
+        config.env["NOTE"].source(),
+        Some(crate::env_table::Source::Literal(
+            "op://Private/Thing/credential".into()
+        ))
+    );
+    assert!(matches!(
+        config.env["OTHER"].source(),
+        Some(crate::env_table::Source::Command { .. })
+    ));
 }
 
 /// A bare `= false` shorthand cannot say *which* of the two questions it answers

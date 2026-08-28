@@ -110,6 +110,37 @@ pub(crate) fn mint_session_dir(session_dir: &Path) -> Result<(), CliError> {
     }
 }
 
+/// Resolve every value the `[env]` table names, failing the boot on the first
+/// unresolvable reference (docs/env.md). Loud rather than silent: a reference
+/// that does not resolve would otherwise surface much later as a tool's opaque
+/// auth error, with nothing connecting the two. The error names the *reference*,
+/// which is a pointer and safe to print.
+fn resolve_env_table(
+    resolver: &efference::env_table::Resolver,
+    table: &std::collections::BTreeMap<String, efference::env_table::EnvEntry>,
+) -> Result<Vec<efference::env_table::ResolvedValue>, Box<dyn std::error::Error + Send + Sync>> {
+    let (values, errors) = resolver.resolve_table(table);
+    for error in &errors {
+        eprintln!("error: [env] {error}");
+    }
+    if !errors.is_empty() {
+        return Err("could not resolve [env] references".into());
+    }
+    Ok(values)
+}
+
+/// [`resolve_env_table`] as a name → value map, for the credential lookup that
+/// runs before the session's policy exists.
+fn resolve_env_values(
+    resolver: &efference::env_table::Resolver,
+    table: &std::collections::BTreeMap<String, efference::env_table::EnvEntry>,
+) -> Result<std::collections::BTreeMap<String, String>, Box<dyn std::error::Error + Send + Sync>> {
+    Ok(resolve_env_table(resolver, table)?
+        .into_iter()
+        .map(|v| (v.name, v.value))
+        .collect())
+}
+
 #[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
 pub(crate) async fn serve(
     session_dir: PathBuf,
@@ -135,11 +166,30 @@ pub(crate) async fn serve(
     )
     .try_init();
 
+    // The origin config is read here — before the session dir is minted — because
+    // its `[env]` table may supply the harness's own credential as a reference
+    // (docs/env.md), and because a malformed template or an unresolvable
+    // reference should fail before anything is minted or bound.
+    let origin = match efference::config::load(config.as_deref()) {
+        Ok(l) => l,
+        Err(e) => {
+            e.eprint();
+            return Err("could not load role config".into());
+        }
+    };
+    // `[env]` reference resolution (docs/env.md), eagerly and once: a vault that
+    // prompts (1Password's Touch ID) does it here, at session open, never inside
+    // a turn. The resolver's cache is shared with the session policy below and
+    // with every later config edit, so an unchanged reference never re-prompts.
+    let resolver = std::sync::Arc::new(efference::env_table::Resolver::default());
+    let injected = resolve_env_values(&resolver, &origin.role.env)?;
+
     // Provider resolution (docs/transport.md): the declared EFFERENCE_PROVIDER
     // (default anthropic) implies the messages URL and auth shape; the secret arrives
     // alone via EFFERENCE_API_KEY (or the ANTHROPIC_API_KEY fallback) so it can be a
-    // whole-value `op://…` reference under `op run`.
-    let mut endpoint = efference::api::Endpoint::from_env()?;
+    // whole-value `op://…` reference — either resolved from `[env]` above, or
+    // substituted by `op run` into the process environment.
+    let mut endpoint = efference::api::Endpoint::from_env_with(&injected)?;
 
     // The sticky-routing key (docs/transport.md): derived once here, from the session
     // dir, which is fixed for the session's life. It pins the session to one upstream
@@ -186,15 +236,9 @@ pub(crate) async fn serve(
     // `mint_session_dir` refuses an existing dir; it is what a resumption design would re-enter.
     let session_config = session_dir.join(CONFIG_NAME);
     if !session_config.exists() {
-        // Validate the origin first (fail fast on a malformed template, before binding anything),
-        // then copy it verbatim (comments intact) — or scaffold an empty config when there's none.
-        let origin = match efference::config::load(config.as_deref()) {
-            Ok(l) => l,
-            Err(e) => {
-                e.eprint();
-                return Err("could not load role config".into());
-            }
-        };
+        // The origin was validated above (fail fast on a malformed template, before binding
+        // anything); copy it verbatim (comments intact) — or scaffold an empty config when
+        // there's none.
         match &origin.source {
             efference::config::ConfigSource::Path(p) => {
                 std::fs::copy(p, &session_config)?;
@@ -262,10 +306,25 @@ pub(crate) async fn serve(
     );
 
     // The `[env]` table (docs/env.md), resolved once against this process's
-    // environment: the strip set every spawn site applies, and the session's
-    // masker. An unresolvable precedence tie is a startup config error; a value
-    // under the maskability floor is a warning naming the variable only.
-    let env_report = efference::env_table::EnvPolicy::build(&loaded.role.env);
+    // environment: the child-env policy every spawn site applies (strip, and the
+    // values the table names), and the session's masker. An unresolvable
+    // precedence tie is a startup config error; a value under the maskability
+    // floor is a warning naming the variable only. The session snapshot is a copy
+    // of the origin, so its references are already in the resolver's cache — no
+    // second vault prompt.
+    let session_values = resolve_env_table(&resolver, &loaded.role.env)?;
+    let env_report = efference::env_table::EnvPolicy::build_with_values(
+        &loaded.role.env,
+        &session_values,
+        resolver.clone(),
+    );
+    for name in &env_report.forced_mask {
+        eprintln!(
+            "[env: `{name}` resolves from a command, so its value is masked despite \
+             `mask = false` — a value the harness fetched for the session is known to be \
+             a secret]"
+        );
+    }
     for conflict in &env_report.conflicts {
         eprintln!("error: [env] {conflict}");
     }
@@ -310,7 +369,7 @@ pub(crate) async fn serve(
     // (docs/mcp-auth.md).
     let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))?
         .with_bash_limits(loaded.role.bash)
-        .with_env_strip(env_policy.strip());
+        .with_child_env(env_policy.child_env());
     // Credentials live in the base dir, not the session dir: an authorization
     // belongs to the operator and the server, not to one session.
     let store = efference::mcp::auth::store::FileStore::new(Path::new(BASE_DIR));
@@ -328,10 +387,10 @@ pub(crate) async fn serve(
     // The [context] preamble builder (docs/context.md): resolve the operator's listed
     // files from cwd and fold the rendered block into the frozen prefix. Fail closed — configured
     // context that can't be read aborts startup rather than silently vanishing.
-    let mut resolved = match efference::context::resolve_with_strip(
+    let mut resolved = match efference::context::resolve_with_child_env(
         &loaded.role.context,
         &cwd,
-        &env_policy.strip(),
+        &env_policy.child_env(),
     ) {
         Ok(resolved) => resolved,
         Err(e) => {

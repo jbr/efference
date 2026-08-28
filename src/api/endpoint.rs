@@ -150,8 +150,27 @@ impl Endpoint {
     /// covers the Anthropic provider only — an Anthropic key is the wrong
     /// secret for any other provider, so failing early beats a confusing 401.
     pub fn from_env() -> Result<Self, Error> {
+        Self::from_env_with(&std::collections::BTreeMap::new())
+    }
+
+    /// [`from_env`](Self::from_env) with the config's resolved `[env]` values
+    /// consulted **first** (docs/env.md): the harness's own credential can be an
+    /// `op://…` reference in `efference.toml` rather than a variable the process
+    /// was launched with, and an explicit config entry beats an ambient
+    /// variable. The value is masked either way — by construction for a resolved
+    /// reference, and by `env_table::HARNESS_KEY_VARS` for the plain-variable
+    /// path, which this does not retire.
+    pub fn from_env_with(
+        resolved: &std::collections::BTreeMap<String, String>,
+    ) -> Result<Self, Error> {
+        let read = |name: &str| {
+            resolved
+                .get(name)
+                .cloned()
+                .or_else(|| std::env::var(name).ok())
+        };
         for knob in RETIRED_KNOBS {
-            if std::env::var_os(knob).is_some() {
+            if read(knob).is_some() {
                 return Err(format!(
                     "{knob} is no longer read: the provider is declared, not assembled — \
                      set EFFERENCE_PROVIDER=anthropic|openrouter and unset {knob} \
@@ -161,9 +180,9 @@ impl Endpoint {
             }
         }
         Self::resolve(
-            std::env::var("EFFERENCE_PROVIDER").ok(),
-            std::env::var("EFFERENCE_API_KEY").ok(),
-            std::env::var("ANTHROPIC_API_KEY").ok(),
+            read("EFFERENCE_PROVIDER"),
+            read("EFFERENCE_API_KEY"),
+            read("ANTHROPIC_API_KEY"),
         )
     }
 

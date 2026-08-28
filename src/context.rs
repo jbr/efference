@@ -182,18 +182,18 @@ impl std::error::Error for ResolveError {}
 /// tag, no wrapper), and it fails closed like a file would: a command that can't run is a config
 /// error, never a silently dropped section.
 pub fn resolve(entries: &[ContextEntry], base: &Path) -> Result<Resolved, ResolveError> {
-    resolve_with_strip(entries, base, &crate::env_table::StripList::default())
+    resolve_with_child_env(entries, base, &crate::env_table::ChildEnv::default())
 }
 
-/// [`resolve`] with the `[env]` table's strip set applied to every `exec`
+/// [`resolve`] with the `[env]` table's spawn policy applied to every `exec`
 /// entry's child (docs/env.md). A `[context]` exec is a subprocess like any
 /// other, and its stdout lands in the cached preamble, so it answers the same
 /// spawn-time question the `bash` tool does. `resolve` itself keeps the
 /// two-argument shape the dev views and tests use.
-pub fn resolve_with_strip(
+pub fn resolve_with_child_env(
     entries: &[ContextEntry],
     base: &Path,
-    strip: &crate::env_table::StripList,
+    child_env: &crate::env_table::ChildEnv,
 ) -> Result<Resolved, ResolveError> {
     let mut sections = Vec::new();
     for entry in entries {
@@ -204,7 +204,7 @@ pub fn resolve_with_strip(
                     .heading
                     .clone()
                     .expect("validate gives every exec entry a heading");
-                let body = run_exec(command, base, EXEC_TIMEOUT, strip)?;
+                let body = run_exec(command, base, EXEC_TIMEOUT, child_env)?;
                 sections.push(Section {
                     heading: None,
                     description: entry.description.clone(),
@@ -374,7 +374,7 @@ fn run_exec(
     command: &str,
     base: &Path,
     timeout: std::time::Duration,
-    strip: &crate::env_table::StripList,
+    child_env: &crate::env_table::ChildEnv,
 ) -> Result<String, ResolveError> {
     use std::os::unix::process::CommandExt;
     let err = |detail: String| ResolveError::Exec {
@@ -390,9 +390,10 @@ fn run_exec(
         .stderr(std::process::Stdio::piped())
         .process_group(0);
     // The machine root never reaches a spawned child (docs/web-bind.md), and the
-    // `[env]` table's strip set applies here as at every other spawn (docs/env.md).
+    // `[env]` table's spawn policy applies here as at every other spawn
+    // (docs/env.md).
     cmd.env_remove(crate::auth::ROOT_ENV);
-    strip.apply(&mut cmd);
+    child_env.apply(&mut cmd);
     let child = cmd
         .spawn()
         .map_err(|e| err(format!("failed to spawn bash: {e}")))?;
