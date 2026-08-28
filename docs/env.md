@@ -81,7 +81,9 @@ every downstream surface reads the log, one choke point secures all of them: the
 wire, the jsonl on disk, the TUI, and the `log`/`attach` views.
 
 The payload paths it filters, exhaustively: `User` text blocks; `Assistant` text
-blocks, tool-call `input` strings, and `upstream_failure`; `ToolResult`'s
+blocks, tool-call `input` strings, and `upstream_failure` (its `why` and, when
+the empty-stream path attached them, its captured header values, `message_start`
+body, and frames); `ToolResult`'s
 `raw.content`; `Mark.note`; `Triage`'s `raw_keep` / `surfaced` / `retries` /
 `thinking`; `Ambient`'s `source` / `body` / `slot`; `Spot`'s `reason` and
 `probed_prefix`; `ConfigEdit`'s `note` and its change payload; `Preamble`'s

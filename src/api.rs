@@ -275,7 +275,7 @@ impl Completion {
             Payload::Assistant {
                 upstream_failure: Some(why),
                 ..
-            } => Some(why),
+            } => Some(why.why()),
             _ => None,
         }
     }

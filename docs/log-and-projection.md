@@ -31,7 +31,7 @@ pre-existing logs read back unchanged.
 enum Payload {
     User(Vec<ContentBlock>),
     Assistant { thinking: Vec<ContentBlock>, text: Vec<ContentBlock>, calls: Vec<ToolCall>,
-                upstream_failure: Option<String> },
+                upstream_failure: Option<UpstreamFailureRecord> },
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
     Mark(Mark),        // a salience annotation
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
@@ -49,12 +49,19 @@ enum Payload {
 it slots in here without touching any other type.
 
 `Assistant.upstream_failure` is the assistant-side analogue of a `WireState`
-verdict: `Some(why)` marks a **record-only** entry — the stream that produced it
-died before finalizing (or, with no content at all, the request itself failed;
+verdict: `Some(record)` marks a **record-only** entry — the stream that produced
+it died before finalizing (or, with no content at all, the request itself failed;
 [transport.md](transport.md)) — and `project` skips the entry entirely. The mark
 lives in the entry because projection is a pure function of the log and cannot
 consult ephemeral transport state. `None` is the default and is skipped when
 serializing, so finalized entries and pre-existing logs are byte-identical.
+
+The record is a `why` plus, on the one path where nothing else survives — a
+stream that finalizes empty — the transport evidence captured with it
+(`StreamDiagnostics`, [transport.md](transport.md)). With no diagnostics it
+serializes as a bare string, the shape every earlier log wrote, and both
+spellings deserialize. Growing it cannot move the wire: the entry projects to
+nothing either way.
 
 `Preamble` records the full rendered `system` string once at boot, exactly as
 this session's requests carry it. It exists because the `[context]` preamble

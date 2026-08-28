@@ -162,7 +162,7 @@ pub(crate) fn entry_nodes(
                 if let Some(why) = upstream_failure {
                     nodes.push(annotation_line(
                         "⚠ stream aborted — recorded, not in context · ",
-                        why,
+                        why.why(),
                     ));
                 }
                 // Thinking leads, as it does on the wire (`thinking` → `text` →

@@ -250,16 +250,48 @@ mistaken for this and retried into exhaustion. Observed 2026-08-22 and again
 times in a controlled run later that day — those three all recovered on the next
 attempt.
 
-**Which leg produces it is not currently answerable.** The event survives as one
-prose string on a record-only entry, and the generation ids it carries 404
-permanently at OpenRouter on both `GET /generation` and `GET /generation/content`
-(the latter is what would carry `previous_errors[]` with each upstream attempt's
-provider and raw body). So an empty stream cannot be attributed between the
-gateway and the provider behind it after the fact. The status, the response
-headers, and the raw frames are all discarded at a seam that keeps them for a
-non-2xx — `UpstreamStatusHandler::after_response` returns early on success, and
-an empty stream is a 200. What to capture instead is
-backlog/empty-stream-diagnostics.md.
+### What an empty stream leaves behind
+
+The generation ids these carry 404 permanently at OpenRouter, on both
+`GET /generation` and `GET /generation/content` (the latter is what would carry
+`previous_errors[]` with each upstream attempt's provider and raw body). Nothing
+is retrievable after the fact, so the log is the only place an answer can come
+from, and this one path keeps evidence with the mark. The mark itself is
+`UpstreamFailureRecord` (`src/log/upstream.rs`): a `why` and, on this path only,
+`StreamDiagnostics` —
+
+- **status and response headers**, restricted to a named allowlist
+  (`CAPTURED_HEADERS`): `x-generation-id` above all, the id every after-the-fact
+  query is keyed by, plus `content-type`, `date`, `server`, `cf-ray`,
+  request-id spellings, and OpenRouter's cache-status. A response header can
+  carry account-scoped values, so what may reach the log is a named set rather
+  than whatever the edge attached, and the values still pass the `[env]` masker
+  at append like every other stored string ([env.md](env.md)).
+- **the `message_start` body as received**, kept whole rather than reduced to
+  the fields the assembler models. OpenRouter's Chat Completions chunks carry a
+  `provider` naming the serving leg; whether the Messages skin does is
+  unverified, and keeping the body means the answer survives either way.
+- **the frames**, re-rendered from the decoded events in arrival order. Not the
+  socket's bytes — the SSE decoder hands over decoded events, so comments and
+  line folding are already gone by then.
+
+Frames buffer for every stream (the emptiness verdict is only available at
+`finish`) up to `FRAME_CAPTURE_CAP`, 8 KiB, past which the head is kept and
+`frames_truncated` says so. An empty stream is a few hundred bytes by definition,
+so the cap guards the invariant rather than bounding this path's capture.
+
+The capture reads the executed conn in `Client::complete`, not
+`UpstreamStatusHandler::after_response`: an empty stream is a 200, the handler
+takes its success early-return, and at that point nothing yet knows the stream
+will arrive empty. Delivery does use the existing flow — the marked completion is
+appended by the retry loop as the record-only entry it already was.
+
+A record with no diagnostics serializes as a bare string, which is what every log
+before this wrote, and either spelling deserializes — so old entries still parse
+and the ordinary failure paths write unchanged bytes. None of this reaches the
+wire: an entry with an `upstream_failure` projects to nothing
+([log-and-projection.md](log-and-projection.md)), so the shape cannot move the
+cached prefix.
 
 An exhausted *open* failure (a non-2xx after the retry handler gives up) still
 fails the current trajectory rather than the daemon, but no longer only to

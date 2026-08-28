@@ -330,7 +330,7 @@ fn an_absorbed_attempt_record_round_trips_and_projects_to_nothing() {
             thinking: vec![],
             text: vec![],
             calls: vec![],
-            upstream_failure: Some(failure.record_text()),
+            upstream_failure: Some(failure.record_text().into()),
         },
     );
 
@@ -341,8 +341,8 @@ fn an_absorbed_attempt_record_round_trips_and_projects_to_nothing() {
             upstream_failure: Some(why),
             ..
         } => {
-            assert!(why.contains("HTTP 429"), "{why}");
-            assert!(why.contains("rate limited"), "{why}");
+            assert!(why.why().contains("HTTP 429"), "{why}");
+            assert!(why.why().contains("rate limited"), "{why}");
         }
         other => panic!("expected a record-only assistant entry, got {other:?}"),
     }

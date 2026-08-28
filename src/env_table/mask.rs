@@ -15,7 +15,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use serde_json::Value;
 
-use crate::log::{ConfigChange, ContentBlock, Payload};
+use crate::log::{ConfigChange, ContentBlock, Payload, UpstreamFailureRecord};
 
 /// Values shorter than this are not masked (GitLab's "maskability" precedent):
 /// `SESSION_KEY=dev` would otherwise shred every occurrence of "dev" in every
@@ -141,6 +141,21 @@ impl Masker {
         }
     }
 
+    /// The record-only mark and, when the empty-stream path attached them, its
+    /// captured diagnostics: the header values, the `message_start` body, and the
+    /// frames. All three are upstream text that a request's own bytes can echo
+    /// back, so all three are scanned (docs/env.md, docs/transport.md).
+    fn mask_failure(&self, failure: &mut UpstreamFailureRecord) {
+        self.mask_in_place(&mut failure.why);
+        if let Some(stream) = &mut failure.stream {
+            for value in stream.headers.values_mut() {
+                self.mask_in_place(value);
+            }
+            self.mask_opt(&mut stream.message_start);
+            self.mask_in_place(&mut stream.frames);
+        }
+    }
+
     fn mask_blocks(&self, blocks: &mut [ContentBlock]) {
         for block in blocks {
             // `Thinking` / `RedactedThinking` are deliberately untouched: the
@@ -166,7 +181,8 @@ impl Masker {
 
     /// Filter every text-bearing field of a payload about to be appended. The
     /// paths, exhaustively: `User` text blocks; `Assistant` text blocks, tool-call
-    /// `input` strings, and `upstream_failure`; `ToolResult`'s `raw.content`;
+    /// `input` strings, and `upstream_failure` (its `why` and, when present, its
+    /// captured stream diagnostics); `ToolResult`'s `raw.content`;
     /// `Mark.note`; `Triage`'s `raw_keep`, `surfaced`, `retries`, and `thinking`;
     /// `Ambient`'s `source`/`body`/`slot`; `Spot`'s `reason` and `probed_prefix`;
     /// `ConfigEdit`'s `note` and its change payload; `Preamble`'s `system` and
@@ -191,7 +207,9 @@ impl Masker {
                 for call in calls {
                     self.mask_json(&mut call.input);
                 }
-                self.mask_opt(upstream_failure);
+                if let Some(failure) = upstream_failure {
+                    self.mask_failure(failure);
+                }
             }
             Payload::ToolResult { raw, .. } => self.mask_in_place(&mut raw.content),
             Payload::Mark(mark) => self.mask_in_place(&mut mark.note),

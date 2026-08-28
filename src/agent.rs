@@ -194,7 +194,7 @@ fn record_absorbed_attempts(
                 thinking: Vec::new(),
                 text: Vec::new(),
                 calls: Vec::new(),
-                upstream_failure: Some(failure.record_text()),
+                upstream_failure: Some(failure.record_text().into()),
             },
         )?;
     }
@@ -439,7 +439,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                                 thinking: Vec::new(),
                                 text: Vec::new(),
                                 calls: Vec::new(),
-                                upstream_failure: Some(error.to_string()),
+                                upstream_failure: Some(error.to_string().into()),
                             },
                         )?;
                         shared.notify(

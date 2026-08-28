@@ -530,7 +530,7 @@ fn every_text_bearing_payload_path_is_masked() {
             name: "bash".into(),
             input: serde_json::json!({ "command": leak() }),
         }],
-        upstream_failure: Some(leak()),
+        upstream_failure: Some(leak().into()),
     };
     masker.mask_payload(&mut assistant);
     let Payload::Assistant {
@@ -556,6 +556,7 @@ fn every_text_bearing_payload_path_is_masked() {
         !upstream_failure
             .as_ref()
             .unwrap()
+            .why()
             .contains("leaked-secret-value")
     );
     // The documented exception: a thinking block carries a provider signature over
@@ -585,6 +586,52 @@ fn every_text_bearing_payload_path_is_masked() {
         unreachable!()
     };
     assert!(!system.contains("leaked-secret-value"));
+}
+
+/// The empty-stream capture is upstream text like any other, and a request's own
+/// bytes can come back inside it — an edge that echoes a header, a `message_start`
+/// that quotes the request. So the diagnostics pass the same scan the prose does:
+/// header values, the `message_start` body, and the frames (docs/transport.md).
+#[test]
+fn captured_stream_diagnostics_are_masked() {
+    let policy =
+        EnvPolicy::build_from(&BTreeMap::new(), &env(&[("A_KEY", "leaked-secret-value")])).policy;
+    let masker = policy.masker();
+    let leak = || "before leaked-secret-value after".to_string();
+
+    let mut payload = Payload::Assistant {
+        thinking: Vec::new(),
+        text: Vec::new(),
+        calls: Vec::new(),
+        upstream_failure: Some(crate::log::UpstreamFailureRecord {
+            why: "stream finalized with no content and no usage".into(),
+            stream: Some(crate::log::StreamDiagnostics {
+                status: 200,
+                headers: BTreeMap::from([("x-generation-id".to_string(), leak())]),
+                message_start: Some(leak()),
+                frames: leak(),
+                frames_truncated: false,
+            }),
+        }),
+    };
+    masker.mask_payload(&mut payload);
+    let Payload::Assistant {
+        upstream_failure: Some(failure),
+        ..
+    } = &payload
+    else {
+        unreachable!()
+    };
+    let stream = failure.stream.as_ref().unwrap();
+    assert!(!stream.headers["x-generation-id"].contains("leaked-secret-value"));
+    assert!(
+        !stream
+            .message_start
+            .as_deref()
+            .unwrap()
+            .contains("leaked-secret-value")
+    );
+    assert!(!stream.frames.contains("leaked-secret-value"));
 }
 
 #[test]

@@ -9,6 +9,9 @@ use trillium::Status;
 use trillium_client::ClientHandler;
 use trillium_client_retry::RetryHandler;
 
+use crate::api::assembler::ResponseMeta;
+use crate::log::is_captured_header;
+
 /// Retry policy for requests that did not receive a successful response
 /// (docs/transport.md). Every upstream request is a replay-safe POST carrying
 /// an owned `String` body. The elapsed ceiling bounds an outage from the
@@ -102,6 +105,29 @@ impl ClientHandler for UpstreamStatusHandler {
         conn.insert_state(CapturedErrorBody(body.clone()));
         push_upstream_attempt(&self.attempts, UpstreamAttemptFailure { status, body });
         Ok(())
+    }
+}
+
+/// The status and allowlisted response headers of an executed conn
+/// (docs/transport.md).
+///
+/// The allowlist is [`is_captured_header`]: a response header can carry
+/// account-scoped values, so what may reach the log is a named set rather than
+/// whatever the edge attached (docs/env.md). Values still pass the `[env]` masker
+/// at append, like every other stored string.
+pub(super) fn response_meta(conn: &Conn) -> ResponseMeta {
+    let headers = conn
+        .response_headers()
+        .into_iter()
+        .filter_map(|(name, values)| {
+            let name = name.to_string();
+            let value = values.one()?.as_str()?;
+            is_captured_header(&name).then(|| (name.to_ascii_lowercase(), value.to_string()))
+        })
+        .collect();
+    ResponseMeta {
+        status: conn.status().map_or(0, u16::from),
+        headers,
     }
 }
 
@@ -349,6 +375,14 @@ impl Client {
         };
 
         let mut assembler = Assembler::new();
+        // The response the stream opened on, read off the executed conn before the
+        // first event. Only the empty-finalized path keeps it (docs/transport.md) —
+        // that path's whole record is otherwise one prose string, and the edge's
+        // `x-generation-id` is the join key every after-the-fact query needs.
+        // The `UpstreamStatusHandler` below cannot do this: an empty stream is a
+        // 200, so the handler takes its success early-return, and at that point
+        // nothing yet knows the stream will arrive empty.
+        assembler.observed_response(response_meta(events.conn()));
         // A mid-stream death — a transport error, an in-stream `error` event, an
         // unparseable event — stops the read but never discards the partial: the
         // failure is recorded on the assembler and `finish` folds it into the

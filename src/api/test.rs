@@ -1,6 +1,10 @@
+use std::collections::BTreeMap;
+
+use super::assembler::ResponseMeta;
 use super::client::record_upstream_failure;
 use super::thinking::is_recognized_adaptive_claude;
 use super::*;
+use crate::log::{FRAME_CAPTURE_CAP, is_captured_header};
 
 /// A bare `ANTHROPIC_API_KEY` and no `EFFERENCE_PROVIDER` resolves to the
 /// Anthropic provider: its endpoint, `x-api-key` auth, key verbatim.
@@ -1540,6 +1544,118 @@ fn a_stream_that_finalizes_empty_is_marked_retryable() {
     assert!(why.contains("no content"), "{why}");
 }
 
+/// The empty stream is the one path that keeps evidence (docs/transport.md).
+/// Nothing else survives it — the generation id it allocates 404s at OpenRouter
+/// on both `GET /generation` and `GET /generation/content` — so the record-only
+/// entry carries the response status, the allowlisted response headers (the
+/// edge's own `x-generation-id`), the `message_start` body as received, and the
+/// frames that arrived.
+#[test]
+fn an_empty_stream_records_status_headers_and_frames() {
+    let mut a = Assembler::new();
+    a.observed_response(ResponseMeta {
+        status: 200,
+        headers: BTreeMap::from([
+            ("x-generation-id".to_string(), "gen-abc123".to_string()),
+            ("content-type".to_string(), "text/event-stream".to_string()),
+        ]),
+    });
+    let message_start = r#"{"message":{"id":"gen-abc123","model":"m","provider":"Google AI Studio","usage":{"input_tokens":0,"output_tokens":0}}}"#;
+    a.apply(Some("message_start"), message_start).unwrap();
+    a.apply(Some("data"), "[DONE]").unwrap();
+    let completion = a.finish().unwrap();
+
+    let Payload::Assistant {
+        upstream_failure: Some(failure),
+        ..
+    } = &completion.assistant
+    else {
+        panic!("an empty stream is a record-only entry")
+    };
+    let stream = failure.stream.as_ref().expect("diagnostics are attached");
+    assert_eq!(stream.status, 200);
+    assert_eq!(
+        stream.headers.get("x-generation-id").map(String::as_str),
+        Some("gen-abc123")
+    );
+    // Kept whole, so a field the assembler does not model — OpenRouter's
+    // `provider`, naming the serving leg — reaches the log anyway.
+    assert_eq!(stream.message_start.as_deref(), Some(message_start));
+    assert!(stream.frames.contains("event: message_start"), "{stream:?}");
+    assert!(stream.frames.contains("data: [DONE]"), "{stream:?}");
+    assert!(!stream.frames_truncated);
+}
+
+/// A response header outside [`CAPTURED_HEADERS`] never enters the record. The
+/// allowlist is the guard against an edge attaching an account-scoped header the
+/// log then starts keeping (docs/env.md).
+#[test]
+fn captured_headers_are_an_allowlist() {
+    assert!(is_captured_header("X-Generation-Id"));
+    assert!(is_captured_header("content-type"));
+    assert!(!is_captured_header("set-cookie"));
+    assert!(!is_captured_header("authorization"));
+}
+
+/// The capture is bounded. An empty stream is a few hundred bytes by definition,
+/// so the cap only ever fires on a stream this record is not for: the head is
+/// kept, the rest dropped, and the entry says which.
+#[test]
+fn frame_capture_stops_at_the_cap() {
+    let mut a = Assembler::new();
+    let filler = "x".repeat(512);
+    for _ in 0..64 {
+        a.apply(Some("ping"), &format!("{{\"pad\":\"{filler}\"}}"))
+            .unwrap();
+    }
+    a.apply(
+        Some("message_start"),
+        r#"{"message":{"model":"m","usage":{"input_tokens":0,"output_tokens":0}}}"#,
+    )
+    .unwrap();
+    a.apply(Some("data"), "[DONE]").unwrap();
+    let completion = a.finish().unwrap();
+
+    let Payload::Assistant {
+        upstream_failure: Some(failure),
+        ..
+    } = &completion.assistant
+    else {
+        panic!("an empty stream is a record-only entry")
+    };
+    let stream = failure.stream.as_ref().expect("diagnostics are attached");
+    assert!(stream.frames_truncated);
+    assert!(
+        stream.frames.len() <= FRAME_CAPTURE_CAP,
+        "{}",
+        stream.frames.len()
+    );
+}
+
+/// Every other failure path stays the bare prose it was: a stream that dies
+/// before finalizing has its partial, which the diagnostics do not add to, and
+/// the entry serializes to the same bytes older logs wrote.
+#[test]
+fn a_death_before_finalizing_carries_no_diagnostics() {
+    let completion = feed(&[(
+        "message_start",
+        r#"{"message":{"model":"m","usage":{"input_tokens":3,"output_tokens":0}}}"#,
+    )])
+    .unwrap();
+    let Payload::Assistant {
+        upstream_failure: Some(failure),
+        ..
+    } = &completion.assistant
+    else {
+        panic!("an unfinalized stream is a record-only entry")
+    };
+    assert!(failure.stream.is_none());
+    assert_eq!(
+        serde_json::to_value(failure).unwrap(),
+        serde_json::json!("stream ended before finalizing (no message_stop)")
+    );
+}
+
 /// …but **only** with zero usage to corroborate. A turn billed for output that
 /// nonetheless carries no blocks is the model's own answer, not a gateway
 /// swallowing one; marking it would retry a real response into exhaustion.
@@ -1623,6 +1739,69 @@ async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
     assert!(why.contains("ceiling"), "{why}");
     assert!(why.contains("stream-ceiling"), "names the knob: {why}");
     server.join().unwrap();
+}
+
+/// End to end over a socket: the diagnostics come off the *response*, so the
+/// hook is in `complete` — the status handler cannot serve this path, an empty
+/// stream being a 200 it early-returns on. The server here answers exactly as the
+/// gateway did on 2026-08-28: 200, an `x-generation-id`, a `message_start` with
+/// all-zero usage, `[DONE]`, nothing else.
+#[tokio::test]
+async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut sock, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 8192];
+        let _ = sock.read(&mut buf);
+        let body = "event: message_start\ndata: {\"message\":{\"id\":\"gen-abc123\",\
+                    \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
+                    event: data\ndata: [DONE]\n\n";
+        sock.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                 x-generation-id: gen-abc123\r\nset-cookie: session=nope\r\n\
+                 content-length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        sock.flush().unwrap();
+    });
+
+    let endpoint = Endpoint {
+        provider: Provider::OpenRouter,
+        url: format!("http://{addr}/api/v1/messages"),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer k".into(),
+        session_id: None,
+    };
+    let client = Client::new(endpoint, "m", "sys", None);
+    let completion = client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .expect("an empty stream assembles a record-only entry, not an error");
+    server.join().unwrap();
+
+    let Payload::Assistant {
+        upstream_failure: Some(failure),
+        ..
+    } = &completion.assistant
+    else {
+        panic!("an empty stream is a record-only entry")
+    };
+    let stream = failure.stream.as_ref().expect("diagnostics are attached");
+    assert_eq!(stream.status, 200);
+    assert_eq!(
+        stream.headers.get("x-generation-id").map(String::as_str),
+        Some("gen-abc123")
+    );
+    // Off the allowlist, so it never reaches the log (docs/env.md).
+    assert!(!stream.headers.contains_key("set-cookie"));
+    assert!(stream.frames.contains("data: [DONE]"), "{stream:?}");
 }
 
 /// The ceiling is a `[transport]` knob with a generous default, not a hardcoded

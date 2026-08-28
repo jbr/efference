@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Changed
+- An empty finalized stream records the evidence it used to discard: response status, an allowlist of diagnostic response headers (OpenRouter's `x-generation-id`), the `message_start` body as received, and the stream's frames — `upstream_failure` is now a record carrying them, serialized as the bare string it was when there are none.
 - Aborted stream attempts persist to `usage.jsonl` under their own `aborted_attempt` origin instead of `turn`, so they no longer get priced, no longer count as unpriced, and no longer inflate the cold-prefix streak or `efference cache`'s cold-read count — the report now states an abort rate instead.
 - Web: a call's **`ToolTelemetry` joins the call** rather than rendering as an `unknown entry` — the client's payload union predated the variant, so every call grew a stray raw-JSON block. The inspector now states outcome, dispatch duration, and pre-distillation result bytes (plus bash exit/background and edit operation/anchor/content sizes) in a "what the call cost" panel above the fork panel.
 - A `[context]` file with no frontmatter `name` is tagged by its **full basename** (`<CLAUDE.md>`, not `<CLAUDE>`), so the tag names a file the model can `read`. Moves the rendered preamble for any config listing a nameless file; the render pin moved with it.
