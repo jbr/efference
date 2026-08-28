@@ -1543,9 +1543,9 @@ fn a_stream_that_finalizes_empty_is_marked_retryable() {
 
 /// A stream that finalizes carrying a tool input the fragments do not spell as
 /// valid JSON is marked retryable too (docs/transport.md), not returned as an
-/// error. Observed 2026-08-28: a foreign model sent `message_stop` after
-/// `input_json_delta` fragments that ended mid-string. As an error it left the
-/// abort-retry budget unspent and put the serde message where the model could
+/// error — a foreign model can send `message_stop` after `input_json_delta`
+/// fragments that end mid-string. As an error it leaves the
+/// abort-retry budget unspent and puts the serde message where the model could
 /// read it; marked, it is a record-only partial the loop retries, and the raw
 /// fragment survives as a string — the entry is never projected or dispatched,
 /// and may be the only copy of it.

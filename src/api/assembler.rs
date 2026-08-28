@@ -375,16 +375,15 @@ impl Assembler {
                         match serde_json::from_str(&partial_json) {
                             Ok(input) => input,
                             // A tool input that does not parse is not a dispatchable
-                            // call, however the stream ended. An aborted stream cuts one
-                            // mid-fragment; a *finalized* stream can deliver one too
-                            // (observed 2026-08-28, GLM through OpenRouter: `message_stop`
-                            // arrived after fragments that ended mid-string). Both become
-                            // the same record-only partial, marked here for the same
-                            // reason the empty-finalized stream below is: the mark *is*
-                            // the retryable signal, so the turn loop and the fork peek
-                            // each retry it on the budget they already have. Erroring
-                            // instead sent the raw serde message out through the
-                            // request-failed path, which retries nothing.
+                            // call, however the stream ended: an aborted stream cuts one
+                            // mid-fragment, and a *finalized* stream can deliver
+                            // `message_stop` after fragments that end mid-string. Both
+                            // become the same record-only partial, marked here for the
+                            // same reason the empty-finalized stream below is: the mark
+                            // *is* the retryable signal, so the turn loop and the fork
+                            // peek each retry it on the budget they already have. An
+                            // error here instead takes the request-failed path, which
+                            // retries nothing (docs/transport.md).
                             //
                             // The raw bytes are kept either way: the entry is never
                             // projected or dispatched, and may be the only copy of what

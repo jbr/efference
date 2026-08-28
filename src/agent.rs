@@ -444,8 +444,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                             // something it reasons about mid-task. The topic is
                             // addressed to a supervising *client*, which otherwise sees
                             // an idle daemon indistinguishable from a finished run; it
-                            // carries the attempt count and the upstream's own words, so
-                            // nothing an inbox notice used to say is lost.
+                            // carries the attempt count and the upstream's own words.
                             shared.set_stall(stalled(
                                 StallReason::RetriesExhausted,
                                 Some(aborted_attempts),
