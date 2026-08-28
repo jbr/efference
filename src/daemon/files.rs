@@ -50,12 +50,17 @@
 use super::*;
 use crate::fswatch::{FsChange, FsWatch, WatchGuard};
 use crate::log::Timestamp;
+use ignores::{Ignores, Scope};
+use list::{Options, listing, modified_at};
 use percent_encoding::percent_decode_str;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
 use trillium::{KnownHeaderName, Method};
 use trillium_sse::SseConnExt;
+
+pub(crate) mod ignores;
+mod list;
 
 /// The largest file served. Chosen against real source files rather than a round
 /// number: a 5k-line single-file C implementation runs about 200 kB, and this
@@ -64,13 +69,6 @@ use trillium_sse::SseConnExt;
 /// a different design — so the ceiling is where that argument starts, not a limit
 /// the viewer is expected to meet (jbr, 2026-08-20).
 pub(crate) const MAX_BYTES: u64 = 500 * 1024;
-
-/// Names a listing never reports. Neither the read route nor the change streams
-/// consult this: anything you can name, you can read and watch; the listing only
-/// keeps the tree from drowning in build output. The settled direction is
-/// gitignore-derived, arriving with the tree's directory streams
-/// (docs/web-bind.md).
-const IGNORED: [&str; 3] = [".git", "target", "node_modules"];
 
 /// The viewer's read surface, rooted at one canonical directory. A root that could
 /// not be canonicalized at boot serves nothing rather than falling back to a wider
@@ -82,6 +80,9 @@ pub(crate) struct Files {
     /// the watcher could not start, in which case streams are refused while
     /// reads keep working.
     watch: Option<Arc<FsWatch>>,
+    /// The discovery ignore set (`ignores`): listings and directory streams
+    /// consult it, the read route and single-file streams never do.
+    ignores: Option<Arc<Ignores>>,
 }
 
 impl Files {
@@ -92,6 +93,7 @@ impl Files {
             Err(_) => Self {
                 root: None,
                 watch: None,
+                ignores: None,
             },
         }
     }
@@ -99,10 +101,18 @@ impl Files {
     /// Rooted at an explicit directory — the injection point for tests, which
     /// serve a scratch directory rather than whatever the test process's cwd is.
     pub(crate) fn rooted_at(root: impl AsRef<Path>) -> Self {
+        let root = root.as_ref().canonicalize().ok().map(Arc::new);
         Self {
-            root: root.as_ref().canonicalize().ok().map(Arc::new),
+            ignores: root.as_ref().map(|root| Arc::new(Ignores::at(&***root))),
+            root,
             watch: FsWatch::new().ok(),
         }
+    }
+
+    /// The ignore chain governing one directory. Discovery surfaces only —
+    /// see `ignores`.
+    fn scope(&self, dir: &Path) -> Scope {
+        self.ignores.as_ref().expect("root checked").scope(dir)
     }
 
     /// The filesystem path a URL path names, or `None` if it names nothing servable.
@@ -150,8 +160,14 @@ impl Files {
     /// watch is directory-level (editors save via rename-replace, and notify
     /// cannot watch a missing path), which is also what lets a held stream
     /// report a deleted file's restoration, and a stream opened on a refusal
-    /// screen report the file's arrival. Directory streams are the navigation
-    /// unit's, not served yet.
+    /// screen report the file's arrival.
+    ///
+    /// A URL naming a **directory** streams that directory's own entries
+    /// instead: the tree holds one per expanded directory, so the annotations
+    /// on it update themselves (docs/web-bind.md). Non-recursive, like the
+    /// file case — a tree that has not expanded a directory has no use for its
+    /// contents' churn — and filtered by the discovery ignore set, so a build
+    /// directory cannot flood a stream nobody can see the results of.
     async fn stream(&self, conn: Conn, rest: &str) -> Conn {
         let Some(watch) = self.watch.as_ref() else {
             return fail(
@@ -167,11 +183,14 @@ impl Files {
             return fail(conn, ErrorCode::BadRequest, "stream a file path");
         };
         if name.is_empty() {
-            return fail(
-                conn,
-                ErrorCode::BadRequest,
-                "directory streams are not served yet; stream a file path",
-            );
+            let Some(dir) = self.resolve(parent) else {
+                return fail(
+                    conn,
+                    ErrorCode::NotFound,
+                    "no such path under the working directory",
+                );
+            };
+            return self.stream_dir(conn, dir).await;
         }
         let Ok(name) = percent_decode_str(name).decode_utf8() else {
             return fail(
@@ -203,11 +222,17 @@ impl Files {
         }
         let mut file = dir.join(name.as_ref());
         if tokio::fs::metadata(&file).await.is_ok_and(|m| m.is_dir()) {
-            return fail(
-                conn,
-                ErrorCode::BadRequest,
-                "directory streams are not served yet; stream a file path",
-            );
+            // The slashless directory spelling. The read route redirects it;
+            // a stream has no redirect an `EventSource` would follow usefully,
+            // so it is served directly.
+            let Some(resolved) = self.resolve(rest) else {
+                return fail(
+                    conn,
+                    ErrorCode::NotFound,
+                    "no such path under the working directory",
+                );
+            };
+            return self.stream_dir(conn, resolved).await;
         }
         // The poke filter compares byte-wise against notify's reported (disk)
         // spelling, so when the path resolves, adopt its canonical form *and
@@ -238,17 +263,7 @@ impl Files {
             }
             Err(_) => dir,
         };
-        // SSE field values cannot carry raw line terminators: trillium-sse
-        // renders LF as a legal multi-line data field, but a lone CR in a file
-        // name (legal on disk) would reach the wire intact and browsers split
-        // fields on it — a workspace file name forging pokes for arbitrary
-        // paths (review, 2026-08-21). Percent-encode both.
-        let rel = file
-            .strip_prefix(root.as_path())
-            .unwrap_or(&file)
-            .to_string_lossy()
-            .replace('\r', "%0D")
-            .replace('\n', "%0A");
+        let rel = rel_path(&root, &file);
         let guard = match watch.watch_dir(&watched_dir) {
             Ok(guard) => guard,
             Err(e) => return fail(conn, ErrorCode::Internal, format!("cannot watch: {e}")),
@@ -265,6 +280,54 @@ impl Files {
         conn.with_sse_stream_and_heartbeat(Box::pin(changes(rx, guard, file, rel)), HEARTBEAT)
             .halt()
     }
+
+    /// A directory-scope stream: one poke per changed entry *of this
+    /// directory*, ignored entries filtered out. The path is already resolved
+    /// and contained; canonicalizing again is what makes the byte-wise event
+    /// comparison work, for the same reason the file case adopts the canonical
+    /// spelling.
+    async fn stream_dir(&self, conn: Conn, dir: PathBuf) -> Conn {
+        let Some(watch) = self.watch.as_ref() else {
+            return fail(
+                conn,
+                ErrorCode::Internal,
+                "the change watcher is not running",
+            );
+        };
+        let root = self.root.as_ref().expect("root checked").clone();
+        if !tokio::fs::metadata(&dir).await.is_ok_and(|m| m.is_dir()) {
+            return fail(
+                conn,
+                ErrorCode::NotFound,
+                "no such path under the working directory",
+            );
+        }
+        let scope = self.scope(&dir);
+        let guard = match watch.watch_dir(&dir) {
+            Ok(guard) => guard,
+            Err(e) => return fail(conn, ErrorCode::Internal, format!("cannot watch: {e}")),
+        };
+        // Subscribe after registering, as the file case does, and for the same
+        // reason: the consumer answers stream *open* with the listing it would
+        // otherwise poll for, so nothing that landed during setup is lost.
+        let rx = watch.subscribe();
+        let stream = dir_changes(rx, guard, dir, root, scope);
+        conn.with_sse_stream_and_heartbeat(Box::pin(stream), HEARTBEAT)
+            .halt()
+    }
+}
+
+/// A path as the wire spells it: root-relative, with CR/LF percent-encoded.
+/// SSE field values cannot carry raw line terminators: trillium-sse renders LF
+/// as a legal multi-line data field, but a lone CR in a file name (legal on
+/// disk) would reach the wire intact and browsers split fields on it — a
+/// workspace file name forging pokes for arbitrary paths (review, 2026-08-21).
+fn rel_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
 }
 
 /// The idle-comment interval, as `/v1/events` uses: proxies and keepalive
@@ -317,45 +380,43 @@ fn changes(
     )
 }
 
-/// One entry of a directory listing. `kind` follows symlinks (a link to a directory
-/// lists as a directory) while `symlink` records that the entry itself is one, so a
-/// client can show the indirection without a second request.
-#[derive(Serialize, Debug, PartialEq, Eq)]
-struct Entry {
-    name: String,
-    kind: Kind,
-    /// Bytes on disk. Reported for directories too, where it is the directory's own
-    /// size and means nothing to a reader — kept only because omitting it per-kind
-    /// would make the shape conditional.
-    size: u64,
-    modified_at: Option<Timestamp>,
-    symlink: bool,
-}
-
-#[derive(Serialize, Debug, PartialEq, Eq, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-enum Kind {
-    File,
-    Dir,
-    /// A device, socket, fifo — or a symlink whose target does not resolve.
-    Other,
-}
-
-/// A directory's listing. `path` is the directory's own path relative to the root,
-/// empty at the root itself, so a client can render a breadcrumb without
-/// reconstructing it from the URL.
-#[derive(Serialize, Debug)]
-struct Listing {
-    path: String,
-    entries: Vec<Entry>,
-}
-
-fn modified_at(meta: &std::fs::Metadata) -> Option<Timestamp> {
-    meta.modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()
-        .map(|since| Timestamp(since.as_millis() as u64))
+/// The per-connection poke stream for a directory: the broadcast filtered to
+/// this directory's own entries, minus the ones discovery hides. `is_dir` at
+/// poke time is best-effort — a deleted entry cannot be stat'd — which only
+/// affects whether a directory-only pattern (`target/`) suppresses the poke
+/// for a path that no longer exists; the cost of getting it wrong is one
+/// spurious poke.
+fn dir_changes(
+    rx: tokio::sync::broadcast::Receiver<FsChange>,
+    guard: WatchGuard,
+    dir: PathBuf,
+    root: Arc<PathBuf>,
+    scope: Scope,
+) -> impl Stream<Item = ChangeEvent> + Send + Sync + 'static {
+    futures_lite::stream::unfold(
+        (rx, guard, dir, root, scope),
+        |(mut rx, guard, dir, root, scope)| async move {
+            loop {
+                let data = match rx.recv().await {
+                    Ok(FsChange { path }) => {
+                        if path.parent() != Some(dir.as_path()) {
+                            continue;
+                        }
+                        if scope.is_ignored(&path, path.is_dir()) {
+                            continue;
+                        }
+                        rel_path(&root, &path)
+                    }
+                    // A lagged receiver pokes with the directory itself: the
+                    // consumer's answer is to re-list, which is what it would
+                    // do for any entry of it.
+                    Err(RecvError::Lagged(_)) => rel_path(&root, &dir),
+                    Err(RecvError::Closed) => return None,
+                };
+                return Some((ChangeEvent { data }, (rx, guard, dir, root, scope)));
+            }
+        },
+    )
 }
 
 /// The validator for a file's bytes: length and mtime, which together change on
@@ -415,61 +476,33 @@ impl trillium::Handler for Files {
             // A listing's relative links only compose under a trailing slash, so the
             // slashless spelling is a redirect rather than a second served shape.
             if !rest.ends_with('/') {
-                let location = format!("{}/", conn.path());
+                // The query carries the listing's shape (`?recursive=1`), so
+                // the redirect must keep it or the client's options vanish on
+                // a spelling correction.
+                let query = conn.querystring();
+                let location = match query.is_empty() {
+                    true => format!("{}/", conn.path()),
+                    false => format!("{}/?{query}", conn.path()),
+                };
                 return conn
                     .with_status(301)
                     .with_response_header(KnownHeaderName::Location, location)
                     .halt();
             }
-            return list(conn, &path, self.root.as_ref().expect("root checked")).await;
+            let options = Options::from_query(conn.querystring());
+            let scope = self.scope(&path);
+            let root = self.root.as_ref().expect("root checked").clone();
+            let Some(listing) = listing(&path, &root, scope, options).await else {
+                return fail(conn, ErrorCode::NotFound, "cannot list this directory");
+            };
+            return conn
+                .with_status(200)
+                .with_response_header(KnownHeaderName::ContentType, "application/json")
+                .with_body(serde_json::to_string(&listing).unwrap_or_default())
+                .halt();
         }
         read(conn, &path, &meta).await
     }
-}
-
-async fn list(conn: Conn, dir: &Path, root: &Path) -> Conn {
-    let Ok(mut read_dir) = tokio::fs::read_dir(dir).await else {
-        return fail(conn, ErrorCode::NotFound, "cannot list this directory");
-    };
-    let mut entries = Vec::new();
-    while let Ok(Some(item)) = read_dir.next_entry().await {
-        let name = item.file_name().to_string_lossy().into_owned();
-        if IGNORED.contains(&name.as_str()) {
-            continue;
-        }
-        // `metadata` follows the link; `file_type` on the DirEntry does not, which is
-        // how an entry can be both a symlink and a dir.
-        let symlink = item.file_type().await.is_ok_and(|t| t.is_symlink());
-        let (kind, size, modified) = match tokio::fs::metadata(item.path()).await {
-            Ok(meta) if meta.is_dir() => (Kind::Dir, meta.len(), modified_at(&meta)),
-            Ok(meta) if meta.is_file() => (Kind::File, meta.len(), modified_at(&meta)),
-            Ok(meta) => (Kind::Other, meta.len(), modified_at(&meta)),
-            // A dangling symlink: listed, since hiding it would misreport the
-            // directory, but nothing can be said about its target.
-            Err(_) => (Kind::Other, 0, None),
-        };
-        entries.push(Entry {
-            name,
-            kind,
-            size,
-            modified_at: modified,
-            symlink,
-        });
-    }
-    // Sorted so a listing is stable across reads and two clients agree on order.
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
-    let listing = Listing {
-        path: dir
-            .strip_prefix(root)
-            .unwrap_or(Path::new(""))
-            .to_string_lossy()
-            .into_owned(),
-        entries,
-    };
-    conn.with_status(200)
-        .with_response_header(KnownHeaderName::ContentType, "application/json")
-        .with_body(serde_json::to_string(&listing).unwrap_or_default())
-        .halt()
 }
 
 async fn read(conn: Conn, path: &Path, meta: &std::fs::Metadata) -> Conn {

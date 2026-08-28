@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CallId } from "../api/types.ts";
 import { spotFor } from "../session/store.ts";
-import { lastEdit } from "../session/touchedFiles.ts";
+import {
+  anchorForCall,
+  fileActivity,
+  lastEdit,
+} from "../session/touchedFiles.ts";
 import { buildTree, type CallNode } from "../session/tree.ts";
 import { useSession } from "../session/useSession.ts";
 import { Composer } from "./Composer.tsx";
@@ -15,6 +19,23 @@ import { Panel } from "./Panel.tsx";
 import { TopBar } from "./TopBar.tsx";
 import { Transcript } from "./Transcript.tsx";
 import { useNarrow } from "./useNarrow.ts";
+
+/** One request to show a file: what to show, which call asked (the anchor's
+ * source), and a key that changes per request. */
+interface OpenRequest {
+  path: string | null;
+  callId: CallId | null;
+  key: number;
+}
+
+/** The client's routing, such as it is: the paths the server's SPA index
+ * answers (`SPA_ROUTES`, src/daemon/tcp.rs). `/tree` opens the viewer on the
+ * working directory with no file chosen — the entry point for reaching a file
+ * no call has named, and the one worth a link of its own. Read once at mount;
+ * the overlays own history from there (ui/overlayHistory.ts). */
+function bootRoute(): "session" | "tree" {
+  return window.location.pathname === "/tree" ? "tree" : "session";
+}
 
 export function App() {
   const { session, connector, actions } = useSession();
@@ -70,8 +91,15 @@ export function App() {
   const narrow = useNarrow();
   const [chromeOpen, setChromeOpen] = useState(false);
 
-  const [viewingFile, setViewingFile] = useState<string | null>(null);
-  const [shownFile, setShownFile] = useState<string | null>(null);
+  // One open request: the path, the call that asked (which is where the edit's
+  // anchor comes from — session/editAnchor.ts), and a key that changes even
+  // when the path does not, so a second call's `open ⤢` on the same file still
+  // lands on *its* edit. A `null` path is the tree with nothing chosen, which
+  // is what `/tree` opens.
+  const [viewingFile, setViewingFile] = useState<OpenRequest | null>(
+    bootRoute() === "tree" ? { path: null, callId: null, key: 0 } : null,
+  );
+  const [shownFile, setShownFile] = useState<OpenRequest | null>(viewingFile);
   if (viewingFile !== null && viewingFile !== shownFile)
     setShownFile(viewingFile);
   const fileClosing = viewingFile === null && shownFile !== null;
@@ -81,8 +109,20 @@ export function App() {
     const id = setTimeout(fileDone, 350);
     return () => clearTimeout(id);
   }, [fileClosing, fileDone]);
-  const onOpenFile = useCallback((path: string) => setViewingFile(path), []);
+  const onOpenFile = useCallback(
+    (path: string, callId: CallId | null = null) =>
+      setViewingFile((prev) => ({ path, callId, key: (prev?.key ?? 0) + 1 })),
+    [],
+  );
   const closeFile = useCallback(() => setViewingFile(null), []);
+  const openAnchor = useMemo(
+    () => anchorForCall(session.entries, shownFile?.callId ?? null),
+    [session.entries, shownFile],
+  );
+  const activity = useMemo(
+    () => fileActivity(session.entries),
+    [session.entries],
+  );
 
   // Back/edge-swipe dismisses overlays (ui/overlayHistory.ts). The file
   // viewer closes first: it renders over the transcript the inspector's
@@ -155,8 +195,11 @@ export function App() {
       )}
       {shownFile !== null && (
         <FileView
-          path={shownFile}
+          path={shownFile.path}
+          openKey={shownFile.key}
+          openAnchor={openAnchor}
           lastEdit={newestEdit}
+          activity={activity}
           closing={fileClosing}
           onSlideOut={fileDone}
           onClose={closeFile}

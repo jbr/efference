@@ -1428,11 +1428,186 @@ select {
   color: var(--accent);
 }
 
+/* The tree beside the file, both scrolling independently. On narrow the tree
+   takes the whole band when it is open — a phone has no second column, and
+   choosing a file is a whole moment there rather than a sidebar glance. */
+.file-view-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .file-view-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: 1rem 0 4rem;
+}
+
+.file-tree {
+  flex: none;
+  width: 18rem;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-inline-end: 1px solid var(--border);
+  background: var(--bg-surface);
+  position: relative;
+}
+
+.file-tree-head {
+  flex: none;
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.file-tree-head .spacer {
+  flex: 1;
+}
+
+.file-tree-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.3rem 0 2rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.file-tree-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  width: 100%;
+  padding-block: 0.1rem;
+  padding-inline-end: 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.file-tree-row:hover {
+  background: var(--bg-raised);
+  color: var(--fg-bright);
+}
+
+.file-tree-row.current {
+  color: var(--fg-bright);
+  background: var(--bg-inset);
+}
+
+/* The agent's working set: files this session has read read bold, files it has
+   changed take the accent (session/touchedFiles.ts). Reads deliberately do not
+   move the viewer, so this is where a read registers at all. */
+.file-tree-row.touched .file-tree-name,
+.file-finder-hit.touched {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.file-tree-row.edited .file-tree-name,
+.file-finder-hit.edited {
+  color: var(--accent);
+}
+
+.file-tree-mark {
+  flex: none;
+  width: 0.8em;
+  color: var(--fg-faint);
+}
+
+.file-tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-tree-note {
+  padding: 0.3rem 0.9rem;
+  font-size: 0.75rem;
+}
+
+/* The path palette, over the tree it was opened from. */
+.file-finder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border-inline-end: 1px solid var(--border);
+}
+
+.file-finder-input {
+  flex: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--fg-bright);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.file-finder-input:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.file-finder-hits {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 2rem;
+}
+
+.file-finder-hit {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  text-align: start;
+  padding: 0.2rem 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-finder-hit.at {
+  background: var(--bg-raised);
+  color: var(--fg-bright);
+}
+
+/* Said when the viewer could not place an edit confidently — honest
+   approximation over a confident highlight in the wrong place
+   (session/editAnchor.ts). */
+.anchor-note {
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.6rem;
+  border-inline-start: 2px solid var(--warn);
+  background: var(--bg-inset);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 700px) {
+  .file-tree {
+    width: 100%;
+    border-inline-end: 0;
+  }
+
+  /* One column: the tree replaces the file rather than crowding it. */
+  .file-tree ~ .file-view-body {
+    display: none;
+  }
 }
 
 /* Wider than the transcript's column: this is a code-reading surface. */

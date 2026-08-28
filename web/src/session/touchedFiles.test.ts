@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { LogEntry } from "../api/types.ts";
 import {
+  anchorForCall,
   editedPath,
+  fileActivity,
   lastEdit,
   openablePaths,
   viewablePath,
@@ -68,14 +70,18 @@ const entry = (payload: LogEntry["payload"]): LogEntry => ({
 const assistant = (
   calls: { id: string; name: string; input: unknown }[],
 ): LogEntry => entry({ Assistant: { thinking: [], text: [], calls } });
-const result = (callId: string, isError = false): LogEntry =>
+const result = (callId: string, isError = false, content = ""): LogEntry =>
   entry({
     ToolResult: {
       call_id: callId,
-      raw: { content: "", is_error: isError },
+      raw: { content, is_error: isError },
       wire: "Raw",
     },
   });
+
+/** An edit result carrying the `===DIFF===` payload the anchor comes from. */
+const diffResult = (callId: string, added: string) =>
+  result(callId, false, `edited\n\n===DIFF===\n\n ctx\n+${added}\n ctx2`);
 
 describe("lastEdit", () => {
   it("finds the newest committed edit's path and seq", () => {
@@ -115,5 +121,73 @@ describe("lastEdit", () => {
       result("c1"),
     ];
     expect(lastEdit(entries)).toBeNull();
+  });
+});
+
+describe("lastEdit anchors", () => {
+  it("carries the edit's own diff anchor, so follow can land on it", () => {
+    const entries = [
+      assistant([{ id: "c1", name: "edit", input: { file_path: "b.rs" } }]),
+      diffResult("c1", "    fresh();"),
+    ];
+    expect(lastEdit(entries)?.anchor).toEqual({
+      added: ["    fresh();"],
+      before: ["ctx"],
+      after: ["ctx2"],
+    });
+  });
+
+  it("is null when the result carried no diff", () => {
+    const entries = [
+      assistant([{ id: "c1", name: "write", input: { path: "a.md" } }]),
+      result("c1"),
+    ];
+    expect(lastEdit(entries)?.anchor).toBeNull();
+  });
+});
+
+describe("anchorForCall", () => {
+  it("finds a historical call's anchor, not just the newest", () => {
+    const entries = [
+      assistant([{ id: "c1", name: "edit", input: { file_path: "b.rs" } }]),
+      diffResult("c1", "    early();"),
+      assistant([{ id: "c2", name: "edit", input: { file_path: "b.rs" } }]),
+      diffResult("c2", "    later();"),
+    ];
+    expect(anchorForCall(entries, "c1")?.added).toEqual(["    early();"]);
+  });
+
+  it("is null for an errored call, a missing one, and no call at all", () => {
+    const entries = [
+      assistant([{ id: "c1", name: "edit", input: { file_path: "b.rs" } }]),
+      result("c1", true, "boom\n\n===DIFF===\n\n+x"),
+    ];
+    expect(anchorForCall(entries, "c1")).toBeNull();
+    expect(anchorForCall(entries, "nope")).toBeNull();
+    expect(anchorForCall(entries, null)).toBeNull();
+  });
+});
+
+describe("fileActivity", () => {
+  it("separates what was read from what was changed", () => {
+    const entries = [
+      assistant([
+        { id: "c1", name: "read", input: { paths: ["a.md", "b.rs"] } },
+      ]),
+      result("c1"),
+      assistant([{ id: "c2", name: "edit", input: { file_path: "b.rs" } }]),
+      result("c2"),
+    ];
+    const activity = fileActivity(entries);
+    expect(activity.get("a.md")).toMatchObject({ read: true, edited: false });
+    expect(activity.get("b.rs")).toMatchObject({ read: true, edited: true });
+  });
+
+  it("counts nothing an errored call touched", () => {
+    const entries = [
+      assistant([{ id: "c1", name: "read", input: { paths: ["a.md"] } }]),
+      result("c1", true),
+    ];
+    expect(fileActivity(entries).size).toBe(0);
   });
 });

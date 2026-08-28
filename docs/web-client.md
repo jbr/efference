@@ -847,12 +847,40 @@ replaced only the old 2 s poll's timer when it landed. A refusal drops the
 held validator, because a file restored with its old mtime would otherwise
 revalidate 304 against the refusal screen.
 
+**The edit itself is the second source of "where to look."** The
+since-you-last-looked diff is empty on a file's *first* open — which is every
+file follow switches to — so on its own it landed the reader at the top of the
+file with nothing highlighted. `session/editAnchor.ts` answers from the edit's
+own result instead: an edit tool's `===DIFF===` payload
+([tools.md](tools.md)), parsed by the cordon's `diffRows`, yields the lines it
+inserted and the context they sat between. That anchor is located **by
+content**, not by line number, because the payload carries no hunk headers —
+there are no post-edit line numbers in it to trust, in the live case either.
+Locating is verbatim first, then with each line trimmed (the structured editors
+reformat around an edit, and a re-indented block is the same block):
+
+- a unique match is **exact** — jump and highlight, which is what the live case
+  always is, since the edit that just landed is the newest change;
+- an ambiguous match, or one found only through the surrounding context — the
+  historical case, where later edits moved or removed those lines — is
+  **approximate**: the viewer jumps and says *position approximate — the file
+  has changed since this edit*, rather than highlighting confidently in the
+  wrong place;
+- nothing found at all says so and does not jump.
+
+`App` carries an open request (path, the call that asked, and a key that
+changes per request) so a second call's `open ⤢` on the file already shown
+re-runs with *its* anchor; `anchorForCall` reads that call's result.
+Anchor-driven loads are unconditional — a `304` would carry no bytes to locate
+against.
+
 **Following the agent** is the same signal steering the view: an edit
-landing on the open path re-fetches now; one landing elsewhere switches the
-view to that file and scrolls to the first change. Edits and writes move
-the view; a bare `read` never does — reads are the coming tree's
-working-set annotation instead. The `following ⇢` toggle suppresses the
-switch and the scroll while keeping the live reload and the highlights.
+landing on the open path re-reads it now; one landing elsewhere switches the
+view to that file and lands on the edit. Edits and writes move the view; a
+bare `read` never does — reads are the tree's working-set annotation instead.
+The `following ⇢` toggle suppresses the switch and any jump the reader did not
+ask for, while keeping the live reload and the highlights; a jump the reader
+*did* ask for (an `open ⤢`, a tree click) happens either way.
 
 **Refusals render legibly against the path** — "not a text file",
 "too large to view", "no such file under the working directory" — never a
@@ -862,6 +890,66 @@ virtualization here. Markdown files default to rendered with a
 `source`/`rendered` toggle; other files are highlighted source with
 absolute line numbers. `api/files.ts` is the fetch (refusals as values, not
 thrown errors, because the viewer renders them).
+
+## Navigating the working directory
+
+Without this the viewer reaches only files a call already named, which is the
+set the reader already knows about. The motivating case is the opposite one:
+the agent is working, a file you have not seen probably holds the answer, and
+you want to look before steering it wrong — including from away from the
+machine.
+
+The **tree** (`session/useFileTree.ts` + `ui/FileTree.tsx`) is lazy: one flat
+listing per expanded directory, no recursive walk, and each expanded directory
+holds a directory-scope change stream ([web-bind.md](web-bind.md)) so what is
+on screen stays current. As with the viewer, the answer to stream *open* is the
+same re-list as the answer to a poke, which is what covers a change landing
+during stream setup. The root is expanded at mount.
+
+The **finder** (`session/pathMatch.ts`) is a palette over one recursive
+listing, fetched the first time it opens. Subsequence matching with smart case;
+three things earn points — a hit inside the basename, consecutive matched
+characters, and a match at a segment boundary — and shorter paths break ties, so
+the file beats the vendored copy of it. Searching file *contents* is not built:
+path matching is a listing the client already has, where content search is a
+server-side scan with its own cost, ranking, and result-rendering questions.
+
+The **annotations are derived client-side** from the transcript the store
+already holds (`fileActivity`, `session/touchedFiles.ts`); the endpoint
+contributes nothing and knows nothing about the session. Files the session has
+read are the agent's working set and read bold; files it has changed take the
+accent. This is where a read registers at all, since reads deliberately do not
+move the viewer.
+
+Entry is the viewer's `files ⌸` toggle, or the `/tree` route — the one client
+route besides `/`, which opens the viewer on the working directory with no file
+chosen. Both routes are named in `SPA_ROUTES` (`src/daemon/tcp.rs`), which is
+also what the service worker's offline fallback mirrors.
+
+The listing's ignore set is gitignore-derived and lives on the server
+([web-bind.md](web-bind.md)); a file git cannot see is not discoverable here,
+while remaining readable and followable by name.
+
+## Installability
+
+`public/manifest.webmanifest`, `public/sw.js`, and the icons: the app installs
+to a home screen and runs in `standalone` display. The icon is the wordmark's
+own glyph — the `e` from Newsreader, the face the top bar speaks in — on the
+After Dark page background, as an SVG (`public/icon.svg`, the source) and the
+PNG sizes derived from it. `theme-color` starts at After Dark's page background
+and follows the resolved theme (`ui/theme.ts`), since the standalone window's
+chrome takes it.
+
+The service worker does two things and no third: make the app installable, and
+let the shell paint from cache on a cold start or a lost network. **Nothing
+session-shaped is cached** — `/v1`, `/files` and `/auth` always reach the
+daemon. A transcript or a file's bytes served from cache would be a stale claim
+about what the agent did, and saying what the agent did is what this page is
+for. What is cached is the build's own hashed assets (cache-first, because the
+hash is the version) and the shell routes. Registration is production-only
+(`src/pwa.ts`); on the dev path it unregisters instead, since a cached asset is
+what HMR must not get. Push is the other half and needs a durable home for
+subscriptions, which is the host's.
 
 ## The gate surface
 

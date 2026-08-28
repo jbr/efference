@@ -5,7 +5,7 @@
 // cordon's renderers rather than growing its own.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Keep, RawResult, WireState } from "../api/types.ts";
+import type { CallId, Keep, RawResult, WireState } from "../api/types.ts";
 import type { CallNode } from "../session/tree.ts";
 import { Code } from "./Code.tsx";
 import { ResultBody } from "./ToolBlocks.tsx";
@@ -249,7 +249,7 @@ export function Inspector({
   closing: boolean;
   onSlideOut: () => void;
   onClose: () => void;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, callId: CallId) => void;
   /** `streaming.toolOutput[callId]`: the live tail of a call still running. */
   liveOutput: string | undefined;
   /** The process this call spawned, from the call↔process mapping. */
@@ -426,6 +426,7 @@ export function Inspector({
         <InspectorOpen
           name={call.name}
           input={call.input}
+          callId={node.callId}
           onOpenFile={onOpenFile}
         />
       )}
@@ -437,11 +438,14 @@ export function Inspector({
 function InspectorOpen({
   name,
   input,
+  callId,
   onOpenFile,
 }: {
   name: string;
   input: unknown;
-  onOpenFile: (path: string) => void;
+  /** The call whose edit the viewer should land on (session/editAnchor.ts). */
+  callId: CallId;
+  onOpenFile: (path: string, callId: CallId) => void;
 }) {
   const paths = useMemo(() => openablePaths(name, input), [name, input]);
   if (paths.length === 0) return null;
@@ -452,7 +456,7 @@ function InspectorOpen({
           key={path}
           className="linkish open-file"
           title={`view ${path} as it is now on disk`}
-          onClick={() => onOpenFile(path)}
+          onClick={() => onOpenFile(path, callId)}
         >
           open {paths.length === 1 ? "current file" : path} ⤢
         </button>

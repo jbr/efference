@@ -85,9 +85,11 @@ async fn the_web_client_is_anonymous_and_the_api_is_not() {
         .assert_status(401)
         .assert_body_contains(r#""code":"unauthorized""#);
 
-    // The SPA index answers `/` only; an unmatched anonymous GET is a 404, not a
-    // scanner-probe `200`.
+    // The SPA index answers the named client routes and nothing else; an
+    // unmatched anonymous GET is a 404, not a scanner-probe `200`.
+    server.get("/tree").await.assert_status(200);
     server.get("/nonexistent").await.assert_status(404);
+    server.get("/tree/deeper").await.assert_status(404);
 
     // A non-GET outside `/v1` fails closed at the gate.
     server

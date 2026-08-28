@@ -107,6 +107,10 @@ toml_edit = { version = "0.25.13", features = ["serde"] }
 # policy tables use. Already compiled in-tree via toml_edit; this just promotes it to direct.
 indexmap = { version = "2", features = ["serde"] }
 notify-debouncer-full = "0.7"
+# The discovery ignore set (docs/web-bind.md): `/files` listings, the recursive
+# listing behind the finder, and directory-scope change streams all hide what
+# git hides. Already compiled in-tree; this promotes it to direct.
+ignore = "0.4"
 # OAuth for connected HTTP providers (docs/mcp-auth.md). `FollowRedirects` is a
 # client handler: OAuth discovery chases `Location` across origins, and it drops
 # `Authorization`/`Cookie` on a cross-origin hop, which is exactly the leak the

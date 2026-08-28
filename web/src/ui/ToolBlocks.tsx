@@ -6,7 +6,7 @@
 // verbatim raw. `data-lang` on code bodies is the future highlighter's hook.
 
 import { useMemo } from "react";
-import type { RawResult, ToolCall, WireState } from "../api/types.ts";
+import type { CallId, RawResult, ToolCall, WireState } from "../api/types.ts";
 import { Code, NumberedCode, StreamingCode } from "./Code.tsx";
 import {
   hasStructure,
@@ -59,10 +59,14 @@ function CallHead({
  * open-the-inspector click handler ignores them (Transcript.tsx). */
 export function OpenFileLinks({
   paths,
+  callId,
   onOpenFile,
 }: {
   paths: string[];
-  onOpenFile: (path: string) => void;
+  /** The call the links belong to: an edit's own result is where the viewer
+   * gets the lines to land on (session/editAnchor.ts). */
+  callId: CallId;
+  onOpenFile: (path: string, callId: CallId) => void;
 }) {
   if (paths.length === 0) return null;
   return (
@@ -72,7 +76,7 @@ export function OpenFileLinks({
           key={path}
           className="linkish open-file"
           title={`view ${path} as it is now on disk`}
-          onClick={() => onOpenFile(path)}
+          onClick={() => onOpenFile(path, callId)}
         >
           {paths.length === 1 ? "open ⤢" : `${path.split("/").at(-1)} ⤢`}
         </button>
@@ -86,7 +90,7 @@ export function CallBlock({
   onOpenFile,
 }: {
   call: ToolCall;
-  onOpenFile?: (path: string) => void;
+  onOpenFile?: (path: string, callId: CallId) => void;
 }) {
   const view = useMemo(() => callView(call.name, call.input), [call]);
   const narrow = useNarrow();
@@ -116,7 +120,11 @@ export function CallBlock({
         summary={view.summary}
         trailing={
           onOpenFile !== undefined && (
-            <OpenFileLinks paths={paths} onOpenFile={onOpenFile} />
+            <OpenFileLinks
+              paths={paths}
+              callId={call.id}
+              onOpenFile={onOpenFile}
+            />
           )
         }
       />

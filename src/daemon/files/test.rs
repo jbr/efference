@@ -199,6 +199,7 @@ async fn an_edit_changes_the_validator() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn lists_a_directory_sorted_and_without_the_ignored_names() {
     let scratch = Scratch::new("list");
+    scratch.write(".gitignore", "target/\n");
     scratch.write("beta.md", "b");
     scratch.write("alpha.rs", "a");
     scratch.write("target/debug/junk", "j");
@@ -209,28 +210,158 @@ async fn lists_a_directory_sorted_and_without_the_ignored_names() {
     conn.assert_status(200)
         .assert_header("content-type", "application/json");
     let body: Value = serde_json::from_str(conn.body()).unwrap();
-    let names: Vec<&str> = body["entries"]
+    // Sorted, and `target/` is absent because *this project's* `.gitignore`
+    // says so — the set is gitignore-derived, not a name list the daemon
+    // carries. `.gitignore` itself is listed: nothing is hidden for being a
+    // dotfile.
+    assert_eq!(names(&body), [".gitignore", "alpha.rs", "beta.md", "sub"]);
+    assert_eq!(body["path"], "");
+    assert_eq!(body["recursive"], false);
+    assert_eq!(body["truncated"], false);
+    assert_eq!(body["entries"][1]["kind"], "file");
+    assert_eq!(body["entries"][3]["kind"], "dir");
+}
+
+/// The entry names of a listing body, in the order served.
+fn names(body: &Value) -> Vec<&str> {
+    body["entries"]
         .as_array()
         .unwrap()
         .iter()
         .map(|entry| entry["name"].as_str().unwrap())
-        .collect();
-    // Sorted, and `target/` is absent: a listing that is stable across reads and
-    // does not drown a tree in build output.
-    assert_eq!(names, ["alpha.rs", "beta.md", "sub"]);
-    assert_eq!(body["path"], "");
-    assert_eq!(body["entries"][0]["kind"], "file");
-    assert_eq!(body["entries"][2]["kind"], "dir");
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_git_directory_is_never_listed() {
+    // Unconditional, as git treats it: it appears in no `.gitignore` and no
+    // listing wants it.
+    let scratch = Scratch::new("git-dir");
+    scratch.write(".git/config", "[core]");
+    scratch.write("kept.txt", "k");
+    let server = server(&scratch).await;
+
+    let conn = server.get("/files/").await;
+    assert_eq!(
+        names(&serde_json::from_str(conn.body()).unwrap()),
+        ["kept.txt"]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_nested_gitignore_governs_its_own_subtree() {
+    // The deepest matching rule decides, git's precedence — and a `!` line
+    // re-includes below an ignore above it.
+    let scratch = Scratch::new("nested-ignore");
+    scratch.write(".gitignore", "*.log\n");
+    scratch.write("sub/.gitignore", "!keep.log\nlocal/\n");
+    scratch.write("sub/keep.log", "k");
+    scratch.write("sub/drop.log", "d");
+    scratch.write("sub/local/thing.txt", "t");
+    let server = server(&scratch).await;
+
+    let conn = server.get("/files/sub/").await;
+    assert_eq!(
+        names(&serde_json::from_str(conn.body()).unwrap()),
+        [".gitignore", "keep.log"]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_git_excluded_path_is_absent_from_listings_but_still_served() {
+    // The case the ignore set is known to bite (jbr, 2026-08-21): a directory
+    // hidden through `.git/info/exclude`. Naming is the permission, so it stays
+    // readable — and followable — while being undiscoverable.
+    let scratch = Scratch::new("excluded");
+    scratch.write(".git/info/exclude", "plans/\n");
+    scratch.write("plans/roadmap.md", "still readable");
+    let server = server(&scratch).await;
+
+    let conn = server.get("/files/").await;
+    assert_eq!(
+        names(&serde_json::from_str(conn.body()).unwrap()),
+        Vec::<&str>::new()
+    );
+    server
+        .get("/files/plans/roadmap.md")
+        .await
+        .assert_status(200)
+        .assert_body("still readable");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_recursive_listing_names_entries_by_path() {
+    let scratch = Scratch::new("recursive");
+    scratch.write(".gitignore", "target/\n");
+    scratch.write("a.rs", "a");
+    scratch.write("sub/b.rs", "b");
+    scratch.write("sub/deep/c.rs", "c");
+    scratch.write("target/junk", "j");
+    let server = server(&scratch).await;
+
+    let conn = server.get("/files/?recursive=1").await;
+    let body: Value = serde_json::from_str(conn.body()).unwrap();
+    assert_eq!(body["recursive"], true);
+    assert_eq!(
+        names(&body),
+        [
+            ".gitignore",
+            "a.rs",
+            "sub",
+            "sub/b.rs",
+            "sub/deep",
+            "sub/deep/c.rs"
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_recursive_depth_bounds_the_walk() {
+    let scratch = Scratch::new("depth");
+    scratch.write("sub/deep/c.rs", "c");
+    let server = server(&scratch).await;
+
+    let conn = server.get("/files/?recursive=1&depth=2").await;
+    let body: Value = serde_json::from_str(conn.body()).unwrap();
+    assert_eq!(names(&body), ["sub", "sub/deep"]);
+}
+
+#[test]
+fn listing_options_are_clamped_rather_than_refused() {
+    // A read surface a human pokes at from a URL bar: an absurd or unparseable
+    // value is the default, never a 400.
+    assert_eq!(
+        Options::from_query("recursive=1&depth=9999"),
+        Options {
+            recursive: true,
+            depth: super::list::MAX_DEPTH
+        }
+    );
+    assert_eq!(
+        Options::from_query(""),
+        Options {
+            recursive: false,
+            depth: 1
+        }
+    );
+    assert_eq!(
+        Options::from_query("recursive=0&depth=nonsense"),
+        Options {
+            recursive: false,
+            depth: 1
+        }
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_ignored_name_is_still_readable_by_path() {
     let scratch = Scratch::new("ignored-read");
+    scratch.write(".gitignore", "target/\n");
     scratch.write("target/note.txt", "still readable");
     let server = server(&scratch).await;
 
-    // The ignore set is the listing's, not the read route's: anything you can name,
-    // you can read.
+    // The ignore set is discovery's, not the read route's: anything you can
+    // name, you can read.
     server
         .get("/files/target/note.txt")
         .await
@@ -416,16 +547,44 @@ async fn a_default_accept_gets_the_file_never_a_stream() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn directory_streams_are_refused_for_now() {
+async fn a_directory_stream_pokes_for_its_own_entries() {
     let scratch = Scratch::new("dir-stream");
     scratch.write("sub/nested.txt", "n");
-    let server = server(&scratch).await;
+    let client = raw_client(&scratch).await;
 
-    server
+    let mut conn = client
         .get("/files/sub/")
         .with_request_header(KnownHeaderName::Accept, "text/event-stream")
         .await
-        .assert_status(400);
+        .expect("open stream");
+    assert_eq!(conn.status().map(|s| s as u16), Some(200));
+
+    scratch.write("sub/arrived.txt", "a");
+    let body = read_until(&mut conn, "event: change").await;
+    assert!(body.contains("data: sub/arrived.txt"), "{body}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_directory_stream_is_silent_about_ignored_entries() {
+    // One set governs listing, tree and watch: a build directory cannot flood a
+    // stream whose consumer could not show the result anyway.
+    let scratch = Scratch::new("dir-stream-ignored");
+    scratch.write(".gitignore", "*.tmp\n");
+    scratch.write("seen.txt", "s");
+    let client = raw_client(&scratch).await;
+
+    let mut conn = client
+        .get("/files/")
+        .with_request_header(KnownHeaderName::Accept, "text/event-stream")
+        .await
+        .expect("open stream");
+    assert_eq!(conn.status().map(|s| s as u16), Some(200));
+
+    scratch.write("noise.tmp", "ignored");
+    scratch.write("seen.txt", "changed");
+    let body = read_until(&mut conn, "event: change").await;
+    assert!(body.contains("data: seen.txt"), "{body}");
+    assert!(!body.contains("noise.tmp"), "{body}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

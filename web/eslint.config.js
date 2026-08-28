@@ -21,6 +21,20 @@ export default tseslint.config(
     rules: reactHooks.configs["recommended-latest"].rules,
   },
   reactRefresh.configs.vite,
+  // The service worker runs in a worker global scope, not the page's
+  // (public/sw.js; docs/web-client.md "Installability").
+  {
+    files: ["public/sw.js"],
+    languageOptions: {
+      globals: {
+        self: "readonly",
+        caches: "readonly",
+        fetch: "readonly",
+        URL: "readonly",
+        Promise: "readonly",
+      },
+    },
+  },
   {
     rules: {
       "@typescript-eslint/explicit-function-return-type": "off",

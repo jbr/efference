@@ -207,7 +207,7 @@ const Call = memo(function Call({
 }: {
   node: CallNode;
   onInspect: (callId: CallId) => void;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, callId: CallId) => void;
 }) {
   const call = useMemo(() => {
     const issued = node.issued.payload;
@@ -274,7 +274,7 @@ function Batch({
 }: {
   node: BatchNode;
   onInspect: (callId: CallId) => void;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, callId: CallId) => void;
 }) {
   const n = node.calls.length;
   return (
@@ -401,7 +401,7 @@ export function Transcript({
   streaming: Streaming;
   pending: PendingTurn[];
   onInspect: (callId: CallId) => void;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, callId: CallId) => void;
 }) {
   useFollowTail();
   const { thinking, ambient } = useViewSettings();

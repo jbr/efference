@@ -444,19 +444,36 @@ impl trillium::Handler for SecurityHeaders {
     }
 }
 
+/// Every path the SPA index answers — the whole of the client's routing, in one
+/// place. Anything not named here 404s, deliberately: answering every unmatched
+/// path with the index would hand scanner probes a `200`, and this bind is
+/// reachable from a tailnet.
+///
+/// The list is a list rather than a prefix rule because two things must agree on
+/// it: this predicate, and the service worker's navigation fallback
+/// (`web/public/sw.js`), which serves the cached shell for exactly these paths
+/// when offline. A route added to one and not the other is a route that works
+/// online and 404s from the home screen, or the reverse. New client routing —
+/// the session list's, when the host lands
+/// (backlog/web/session-list.md) — is added here, not by loosening the
+/// predicate.
+///
+/// - `/` — the session view, and the installed app's `start_url`.
+/// - `/tree` — the file tree and finder, reachable without a call having named
+///   a file (docs/web-client.md "Navigating the working directory").
+const SPA_ROUTES: [&str; 2] = ["/", "/tree"];
+
 /// The web client (docs/web-client.md): `web/` built and embedded at compile time,
 /// or — under the `dev-proxy` feature — proxied to a spawned Vite dev server with
 /// HMR. Mounted after both routers on the TCP spawn, so it answers exactly the GETs
-/// they don't claim; the gate has already let those through anonymously. The SPA
-/// index serves only at `/` — the client routes nothing else yet, and answering
-/// every unmatched path with the index would hand scanner probes a `200`.
+/// they don't claim; the gate has already let those through anonymously.
 fn frontend() -> impl trillium::Handler {
     trillium_frontend::frontend!("./web")
         .with_client(trillium_client::Client::new(
             trillium_tokio::ClientConfig::default(),
         ))
         .with_index_file("index.html")
-        .with_index_predicate(|conn| conn.path() == "/")
+        .with_index_predicate(|conn| SPA_ROUTES.contains(&conn.path()))
 }
 
 /// The browser-facing anonymous surface, mounted only on the TCP spawn: the

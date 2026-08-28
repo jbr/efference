@@ -18,10 +18,24 @@ export function themeChoice(): ThemeChoice {
   return stored === "after-dark" || stored === "daylight" ? stored : "system";
 }
 
+/** The standalone window's chrome takes `theme-color`, so an installed app
+ * whose title bar stays dark under Daylight looks broken in a way the page
+ * itself never does. index.html carries After Dark's value as the pre-JS
+ * default; this keeps it following the resolved theme. */
+function applyThemeColor() {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (!(meta instanceof HTMLMetaElement)) return;
+  const page = getComputedStyle(document.documentElement)
+    .getPropertyValue("--bg-page")
+    .trim();
+  if (page !== "") meta.content = page;
+}
+
 function apply() {
   const choice = themeChoice();
   document.documentElement.dataset.theme =
     choice === "system" ? systemTheme() : choice;
+  applyThemeColor();
 }
 
 export function setThemeChoice(choice: ThemeChoice) {

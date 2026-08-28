@@ -22,6 +22,61 @@ const fileUrl = (path: string): string =>
 export const fileStream = (path: string): EventSource =>
   new EventSource(fileUrl(path));
 
+/** The change-poke stream for one directory's own entries — what an expanded
+ * tree node holds so its listing stays current (docs/web-bind.md). The
+ * trailing slash is the directory spelling; `""` is the root. */
+export const dirStream = (path: string): EventSource =>
+  new EventSource(dirUrl(path));
+
+const dirUrl = (path: string): string =>
+  path === "" ? "/files/" : fileUrl(path) + "/";
+
+/** One entry of a listing. In a recursive listing `name` is the path relative
+ * to the directory listed; in a flat one it is a bare name. */
+export interface DirEntry {
+  name: string;
+  kind: "file" | "dir" | "other";
+  size: number;
+  modified_at: number | null;
+  symlink: boolean;
+}
+
+export interface Listing {
+  /** The listed directory, relative to the root; `""` at the root. */
+  path: string;
+  recursive: boolean;
+  /** A server cap was hit: this is a prefix of the tree, not the whole of it. */
+  truncated: boolean;
+  entries: DirEntry[];
+}
+
+export type ListFetch =
+  | { kind: "ok"; listing: Listing }
+  | { kind: "refused"; code: ErrorEnvelope["code"]; message: string };
+
+/** List a directory. `depth` above 1 walks below it — the recursive listing
+ * the path finder matches against — and the server clamps both it and the
+ * result size, reporting `truncated` rather than erroring. */
+export async function listDir(path: string, depth = 1): Promise<ListFetch> {
+  const query = depth > 1 ? `?recursive=1&depth=${depth}` : "";
+  const response = await fetch(dirUrl(path) + query, {
+    headers: { accept: "application/json" },
+  });
+  if (response.ok) {
+    return { kind: "ok", listing: (await response.json()) as Listing };
+  }
+  try {
+    const envelope = (await response.json()) as ErrorEnvelope;
+    return { kind: "refused", code: envelope.code, message: envelope.message };
+  } catch {
+    return {
+      kind: "refused",
+      code: "internal",
+      message: `http ${response.status}`,
+    };
+  }
+}
+
 export type FileFetch =
   | { kind: "ok"; text: string; etag: string | null }
   /** The `If-None-Match` matched — the common poll answer, no body. */

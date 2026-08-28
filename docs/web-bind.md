@@ -24,7 +24,11 @@ one `Arc<Shared>`:
   credential routes (below).
 - **TCP spawn:** `(head, gate, public_router, router(), frontend())` — every conn
   passes the gate first; the trailing frontend handler serves the embedded web client
-  ([web-client.md](web-client.md)) for the GETs neither router claims.
+  ([web-client.md](web-client.md)) for the GETs neither router claims. The SPA
+  index answers a **named list** of client routes (`SPA_ROUTES`: `/` and
+  `/tree`) rather than every unmatched path, which would hand scanner probes a
+  `200`; the service worker's offline navigation fallback mirrors that list, and
+  new client routing is added there rather than by loosening the predicate.
 
 `head` is `trillium_head::head()`, mounted ahead of everything: HEAD requests are
 rewritten to GET on the way in (so the gate and routers only ever see GET) and the
@@ -143,10 +147,18 @@ the machine. It is the server half of the file viewer
 ([../backlog/web/file-view/](../backlog/web/file-view/README.md)).
 
 - `GET /files/<path>` → the file's bytes.
-- `GET /files/<dir>/` → a JSON listing: `path` (relative to the root) and `entries`
-  of `{name, kind, size, modified_at, symlink}`, sorted by name. `kind` follows
+- `GET /files/<dir>/` → a JSON listing: `path` (relative to the root),
+  `recursive`, `truncated`, and `entries` of
+  `{name, kind, size, modified_at, symlink}`, sorted by name. `kind` follows
   symlinks while `symlink` records that the entry is one. The slashless spelling
-  `301`s to the slashed one, so a listing's relative links compose.
+  `301`s to the slashed one (query kept), so a listing's relative links compose.
+- `GET /files/<dir>/?recursive=1&depth=N` → the same shape walked below the
+  directory, with entry `name`s spelled as paths relative to it — the file
+  finder's input ([web-client.md](web-client.md)). Both the depth and the entry
+  count are capped in `files::list` rather than trusted; past either the walk
+  stops and the listing says `truncated` rather than erroring, since a finder
+  over most of the tree is useful and a partial set has to say so. Symlinked
+  directories are listed but never descended: the walk would not terminate.
 - Anything else, including any non-GET, is refused — this surface never mutates.
 
 **Not under `/v1`, and not the bearer's.** `/v1` is the control API, where every
@@ -202,9 +214,32 @@ commits to `200` with its first byte, after which "not text" could only arrive a
 replacement characters. Lifting the ceiling would mean range requests and
 prefix-only validation together, which is a different design.
 
-Listings omit `.git`, `target`, and `node_modules`. The read route does not consult
-that set — anything you can name, you can read; the listing only keeps a tree from
-drowning in build output.
+### The discovery ignore set
+
+`files::ignores`, over the `ignore` crate: what git hides here is what discovery
+hides. One set governs all three **discovery** surfaces — the flat listing, the
+recursive listing, and the directory-scope change streams — while the read route
+and single-file streams consult it not at all: **naming a path is the
+permission**, so an ignored file stays readable, watchable and followable, and is
+only absent from listings. Concealing a path from a listing while still serving
+it by name would imply a protection that is not there; this is the same posture
+stated above, now with git's answer instead of a hardcoded `target` /
+`node_modules` list that is wrong for every project that is not this one.
+
+Precedence is git's: the deepest `.gitignore` that matches decides, a `!`
+whitelist at that depth wins, the root's `.git/info/exclude` and the user's
+global ignore file participate, and `.git` itself is ignored unconditionally. A
+`Scope` is the matcher chain from the root down to one directory, built per
+request rather than cached, so an edited `.gitignore` takes effect on the next
+listing.
+
+The accepted consequence (jbr, 2026-08-21): the set is repository-aware, so
+outside a repository — or for a file git cannot see — discovery shows nothing.
+The known case is a `.git/info/exclude`-ed directory of planning documents; it
+stays viewable through an `open ⤢` and undiscoverable in the tree. The
+re-include knob when that bites is an efference.toml setting — which files a
+project wants visible is a property of the project, not the human — and waits
+until it does.
 
 ### Watching for changes
 
@@ -247,11 +282,19 @@ conditional GET; the viewer does. A known unhandled edge: if the watched
 *directory* itself is deleted and recreated, some notify backends kill the
 watch silently and nothing here detects or re-registers it — the stream stays
 open (heartbeating) but deaf. Accepted for now; the fix belongs to whatever
-teaches the watcher about watch death, not to per-stream code. Directory-scope streams are refused
-for now; they arrive with the tree
-([../backlog/web/file-view/navigation.md](../backlog/web/file-view/navigation.md)),
-and with them the gitignore-aware discovery scope — the watcher consults no
-ignore set today because every watch is an explicitly named path.
+teaches the watcher about watch death, not to per-stream code.
+
+A URL naming a **directory** streams that directory's own entries instead — the
+tree holds one per expanded directory, so what is on screen updates itself
+([web-client.md](web-client.md)). Non-recursive, like the file case: a
+directory the tree has not expanded has no consumer for its contents' churn.
+Events are filtered to direct children and through the discovery ignore set
+above, so a build directory cannot flood a stream nobody could see the results
+of; `is_dir` at poke time is best-effort, since a deleted entry cannot be
+stat'd, and the cost of getting it wrong is one spurious poke. A lagged
+receiver pokes with the directory itself, whose answer is the same re-list.
+Both spellings are served, since a stream has no redirect an `EventSource`
+would follow usefully.
 
 ## Auth routes live beside `/v1`, not under it
 
