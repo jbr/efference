@@ -48,12 +48,14 @@ pub(crate) struct CacheReport {
 
 /// The table's row order: the main loop first, then the side channels in the order
 /// they cost tokens.
-const ORIGIN_ORDER: [RequestOrigin; 5] = [
+const ORIGIN_ORDER: [RequestOrigin; 7] = [
     RequestOrigin::Turn,
     RequestOrigin::Peek,
     RequestOrigin::Spot,
     RequestOrigin::Triage,
     RequestOrigin::Keepalive,
+    RequestOrigin::AbortedAttempt,
+    RequestOrigin::Unknown,
 ];
 
 fn origin_label(origin: RequestOrigin) -> &'static str {
@@ -63,6 +65,8 @@ fn origin_label(origin: RequestOrigin) -> &'static str {
         RequestOrigin::Spot => "spot",
         RequestOrigin::Triage => "triage",
         RequestOrigin::Keepalive => "keepalive",
+        RequestOrigin::AbortedAttempt => "aborted",
+        RequestOrigin::Unknown => "unknown",
     }
 }
 
@@ -238,6 +242,26 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
         );
     }
     println!();
+    let aborted = report
+        .by_origin
+        .iter()
+        .find(|(o, _)| *o == RequestOrigin::AbortedAttempt)
+        .map(|(_, t)| t.requests)
+        .unwrap_or(0);
+    let turns = report
+        .by_origin
+        .iter()
+        .find(|(o, _)| *o == RequestOrigin::Turn)
+        .map(|(_, t)| t.requests)
+        .unwrap_or(0);
+    if aborted > 0 {
+        let attempts = aborted + turns;
+        let rate = aborted as f64 * 100.0 / attempts as f64;
+        println!(
+            "  abort rate (main loop)    {:>4}   {rate:.0}% of turn attempts ({aborted} of {attempts})",
+            aborted
+        );
+    }
     let [boot, model_change, idle] = report.cold_starts;
     println!(
         "  cold starts (main loop)   {:>4}   {boot} boot · {model_change} model change · {idle} idle past TTL",

@@ -167,6 +167,55 @@ fn cold_streak_counts_only_unexplained_main_loop_reads() {
     );
 }
 
+/// An aborted attempt is a real HTTP round-trip against the main-loop prefix, but
+/// its usage is all-zero by construction (docs/transport.md) — a stream that
+/// finalized with no content and no usage. That zero says nothing about whether
+/// the prefix moved, so a run of aborted attempts must not accumulate as
+/// unexplained cold-read evidence the way a run of real cold turns does.
+/// Regression for the failure mode observed live 2026-08-28: two aborted
+/// attempts on one turn drove the streak to 2 and, on a longer bad stretch,
+/// could cross `COLD_STREAK_WARN` for a prefix that never moved.
+#[test]
+fn aborted_attempts_do_not_count_as_cold_prefix_evidence() {
+    let mut streak = ColdStreak::default();
+    let t = 1_800_000_000_000u128;
+    let m = Some("claude-haiku-4-5");
+
+    // Boot, explained — establishes the touch clock.
+    assert_eq!(
+        streak.observe(RequestOrigin::Turn, t, m, 0),
+        Some(CacheRead::ColdStart(ColdStart::Boot))
+    );
+    assert_eq!(streak.streak(), 0);
+
+    // A run of aborted attempts, all zero-usage, riding the same prefix.
+    assert_eq!(
+        streak.observe(RequestOrigin::AbortedAttempt, t + 1_000, m, 0),
+        None
+    );
+    assert_eq!(
+        streak.observe(RequestOrigin::AbortedAttempt, t + 2_000, m, 0),
+        None
+    );
+    assert_eq!(
+        streak.observe(RequestOrigin::AbortedAttempt, t + 3_000, m, 0),
+        None
+    );
+    assert_eq!(
+        streak.streak(),
+        0,
+        "aborted attempts must not move the streak"
+    );
+
+    // The retry that finally finalizes is a genuine unexplained cold read (no
+    // eviction, no model change) — recorded as `Turn`, not `AbortedAttempt`.
+    assert_eq!(
+        streak.observe(RequestOrigin::Turn, t + 4_000, m, 0),
+        Some(CacheRead::Cold)
+    );
+    assert_eq!(streak.streak(), 1);
+}
+
 /// The streak the daemon publishes is the one `GET /state` carries and the sidebar
 /// reads (docs/control-api.md), folded as each request is recorded.
 #[test]

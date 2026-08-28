@@ -368,7 +368,10 @@ pub async fn run<F: Frontend, S: Spotter>(
                         };
                         aborted_attempts += 1;
                         turn += 1;
-                        shared.record_request(RequestOrigin::Turn, completion.request_usage());
+                        shared.record_request(
+                            RequestOrigin::AbortedAttempt,
+                            completion.request_usage(),
+                        );
                         shared.append(turn, completion.assistant)?;
                         if aborted_attempts >= STREAM_ABORT_ATTEMPTS {
                             eprintln!(

@@ -155,7 +155,11 @@ is not lost either: the partial assembles as a record-only completion
 (finalized-or-marked, above), and the **agent loop retries the whole request**.
 The loop makes up to `STREAM_ABORT_ATTEMPTS` (12) attempts per model call with a
 doubling pause capped at 30s — about three and a half minutes of waiting in all;
-each aborted attempt's partial is appended to the log first. The budget is sized
+each aborted attempt's partial is appended to the log first, and its all-zero
+usage is recorded to `usage.jsonl` under its own `aborted_attempt` origin
+(docs/log-and-projection.md) rather than `turn` — it is not a priced request and
+not evidence about the cache prefix, and tagging it separately is what keeps
+both `daemon::metrics` and `efference cache` from reading it as either. The budget is sized
 to **wait the failure out**, because a mid-stream abort is an ephemeral upstream
 condition and the alternative on exhaustion is worse than waiting: idling with
 "send a turn to retry" needs an operator, and an autonomous run has none. The cap
@@ -482,11 +486,14 @@ from, and the offline `efference cache` view are in
 [log-and-projection](log-and-projection.md).
 
 **Session cost telemetry.** Where the provider has a per-request accounting
-surface, every recorded request (all four origins — turn, peek, spot,
-keepalive — plus keepalive pings funnel through the same two record methods)
-spawns a best-effort fetch of its **billed** cost, folded into a running total
-that `GET /state` reports as `usage.cost = {usd, unpriced}` and the sidebar
-renders as `cost $0.0421`. Cost is fetched, never modeled from a rate card —
+surface, every recorded request (turn, peek, spot, triage, keepalive — plus
+keepalive pings funnel through the same two record methods) spawns a
+best-effort fetch of its **billed** cost, folded into a running total that
+`GET /state` reports as `usage.cost = {usd, unpriced}` and the sidebar renders
+as `cost $0.0421`. `aborted_attempt` is the one origin excluded: its usage is
+zero by construction, so there is nothing to price, and fetching it would only
+run the lookup to exhaustion and mark it `unpriced` — an undercount signal for
+a total that was never wrong. Cost is fetched, never modeled from a rate card —
 cache read/write/TTL multipliers and per-endpoint price variance make modeling
 brittle. OpenRouter is the one provider with such a surface today:
 `GET /api/v1/generation?id=…` returns `total_cost`, keyed by the generation id

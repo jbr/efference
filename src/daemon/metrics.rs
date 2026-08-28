@@ -75,6 +75,18 @@ pub enum RequestOrigin {
     Spot,
     /// A cache keepalive ping (docs/log-and-projection.md).
     Keepalive,
+    /// A retried attempt whose stream aborted before finalizing — record-only,
+    /// all-zero usage (docs/transport.md). Persisted as its own origin so it is not
+    /// read as a real main-loop request: it must not be priced
+    /// ([`Shared::spawn_cost_fetch`]) and must not count as prefix evidence
+    /// ([`ColdStreak::observe`]).
+    AbortedAttempt,
+    /// An origin this build does not recognize — a forward-compat catch-all so a
+    /// `usage.jsonl` line written by a newer build still parses here (and, per
+    /// serde's `#[serde(other)]` contract, round-trips as this variant's own name
+    /// rather than the original one if ever re-serialized).
+    #[serde(other)]
+    Unknown,
 }
 
 /// How long the main-loop prefix may go untouched before a cold read on the next
@@ -129,10 +141,12 @@ pub enum CacheRead {
 /// `cache` verb reads offline — live, as the daemon records each request.
 ///
 /// Only `RequestOrigin::Turn` moves the streak: the side channels carry their own
-/// prefixes at their own lineages. `Peek` and `Keepalive` ride the main-loop prefix
-/// without being main-loop requests, so they stamp the touch clock (an idle gap is
-/// measured from the last thing that could have refreshed the prefix) but never
-/// count as cold.
+/// prefixes at their own lineages. `Peek`, `Keepalive`, and `AbortedAttempt` ride
+/// the main-loop prefix without being main-loop *evidence* — they stamp the touch
+/// clock (an idle gap is measured from the last thing that could have refreshed
+/// the prefix) but never count as cold. An aborted attempt in particular carries
+/// all-zero usage by construction (docs/transport.md), so a zero `cache_read`
+/// there says nothing about whether the prefix moved.
 #[derive(Default)]
 pub struct ColdStreak {
     streak: u32,
@@ -154,7 +168,10 @@ impl ColdStreak {
     ) -> Option<CacheRead> {
         let touches_prefix = matches!(
             origin,
-            RequestOrigin::Turn | RequestOrigin::Peek | RequestOrigin::Keepalive
+            RequestOrigin::Turn
+                | RequestOrigin::Peek
+                | RequestOrigin::Keepalive
+                | RequestOrigin::AbortedAttempt
         );
         let previous_touch = self.last_touch_ms;
         if touches_prefix {
@@ -286,7 +303,12 @@ impl Shared {
     pub fn record_request(&self, origin: RequestOrigin, request: RequestUsage) {
         let at_ms = wall_millis();
         self.persist_usage(origin, at_ms, &request);
-        self.spawn_cost_fetch(&request);
+        // An aborted attempt is all-zero usage by construction (docs/transport.md):
+        // nothing to price, and fetching it would only run the generation lookup
+        // to exhaustion and misreport it as `unpriced`.
+        if origin != RequestOrigin::AbortedAttempt {
+            self.spawn_cost_fetch(&request);
+        }
         let mut m = self.metrics.lock().unwrap();
         if origin == RequestOrigin::Turn {
             m.last_turn_usage = Some(request.usage.clone());

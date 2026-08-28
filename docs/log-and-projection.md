@@ -278,16 +278,30 @@ request shape.
 
 Every upstream request appends one JSONL line to the session dir's `usage.jsonl`:
 a wall-clock stamp, the request's origin (`turn` / `peek` / `triage` / `spot` /
-`keepalive`), the upstream response id (Anthropic `msg_…`; an OpenRouter-fronted
-request's generation id), the model the response named for itself (per line, not
-per file — the session's model can change, so only a per-request record
-attributes every entry), and the four token counts. Implemented in
-`src/daemon/metrics.rs` (`record_request` / `record_keepalive`), fed by
-`Completion::request_usage`. Transport-only and **never** the canonical log —
-usage must stay out of the projection. The in-memory `Metrics` fold surfaced by
-`GET /state` is unchanged; the file is what makes spend reconciliation a query
-(joinable on the response id against provider accounting) rather than a
-reconstruction from the canonical log.
+`keepalive` / `aborted_attempt`), the upstream response id (Anthropic `msg_…`; an
+OpenRouter-fronted request's generation id), the model the response named for
+itself (per line, not per file — the session's model can change, so only a
+per-request record attributes every entry), and the four token counts.
+Implemented in `src/daemon/metrics.rs` (`record_request` / `record_keepalive`),
+fed by `Completion::request_usage`. Transport-only and **never** the canonical
+log — usage must stay out of the projection. The in-memory `Metrics` fold
+surfaced by `GET /state` is unchanged; the file is what makes spend
+reconciliation a query (joinable on the response id against provider accounting)
+rather than a reconstruction from the canonical log.
+
+`RequestOrigin` is a persisted enum, so it carries an `Unknown` fallback
+(`#[serde(other)]`) for any value a newer build might write that this one
+predates — an old reader must still parse a new file's lines instead of
+dropping them.
+
+`aborted_attempt` tags a retried attempt whose stream aborted before finalizing
+— all-zero usage by construction, one line per attempt, recorded before the
+loop retries (docs/transport.md). It is real telemetry (the record-only partial
+it accompanies in the log needed exactly this kind of durable per-attempt
+trail) but it is not a priced request and not cache evidence: `spawn_cost_fetch`
+skips it (nothing to price at zero tokens, and fetching it would only run the
+lookup to exhaustion and mark it `unpriced`), and `ColdStreak` excludes it from
+the streak while still treating it as a touch on the prefix (below).
 
 ### The cache-read oracle
 
@@ -301,9 +315,13 @@ moved). Anything else is one observation of the prefix having moved.
 One observation is noise — a retry, an eviction the TTL heuristic misses — so the
 signal is the **run**. `ColdStreak` (`src/daemon/metrics.rs`) folds each recorded
 request into a consecutive-unexplained-cold counter: only `turn` requests move it
-(the side channels carry their own prefixes at their own lineages), `peek` and
-`keepalive` stamp the touch clock the idle test reads without counting, and any
-warm read clears it. `COLD_STREAK_WARN` is 4, set against this repo's own corpus:
+(the side channels carry their own prefixes at their own lineages), `peek`,
+`keepalive`, and `aborted_attempt` stamp the touch clock the idle test reads
+without counting, and any warm read clears it. An aborted attempt's usage is
+zero by construction, so its zero `cache_read` is not evidence the prefix moved
+— counting it drove a false streak observed live 2026-08-28 (two aborted
+attempts on one turn moved the streak to 2). `COLD_STREAK_WARN` is 4, set
+against this repo's own corpus:
 across 1371 recorded turns, unexplained cold reads formed 28 runs — 24 of length
 1, two of length 3, and two of length 28 and 43, each a whole session that never
 read the cache once. The constant's doc comment carries the full fold.
@@ -313,7 +331,9 @@ Two surfaces read it. `GET /state` publishes the live count as
 crosses the threshold and drops when a warm read arrives. `efference cache`
 (docs/operating.md) replays a recorded `usage.jsonl` through the same `ColdStreak`
 offline — per-origin read rates, the explained cold starts, and the longest run —
-for one session, or `--all` for the corpus.
+for one session, or `--all` for the corpus. It also reports the abort rate (aborted
+attempts as a fraction of turn attempts): classifying `aborted_attempt` as its own
+origin means those lines no longer read as unexplained cold turns in the report.
 
 ---
 
