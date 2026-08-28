@@ -375,28 +375,15 @@ input[type="checkbox"] {
   background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
-/* The head is two flex items — the signature and the trailing slot (the open
-   links) — so the trailing affordance stays placed at the end and drops to a
-   continuation line only when it no longer fits. Everything read as one
-   sentence lives inside `.call-sig`, because flex items are blockified by the
-   CSS Display spec: as siblings, a long target wrapped as a whole box onto its
-   own line instead of flowing after the tool name. */
-.call-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-  align-items: baseline;
-}
-
-/* The one flex item the signature occupies. Its children are ordinary inline
-   spans, so the name and its arguments flow and wrap as text at every width.
-   A signature is only scannable while it holds a readable minimum width, so
-   shrink stops here and the head wraps instead. `break-word` rather than
-   `anywhere`: a multi-path argument breaks between paths and only ever
-   mid-token when one token alone is wider than the line. */
+/* The head is a plain block: it was a flex row while an affordance sat at the
+   end of it, and a chip attaches to the argument it annotates instead
+   (chips.tsx). Everything read as one sentence is one inline flow, so nothing
+   is blockified by the CSS Display spec — as flex siblings, a long target
+   wrapped as a whole box onto its own line instead of flowing after the tool
+   name. `break-word` rather than `anywhere`: a multi-path argument breaks
+   between paths and only ever mid-token when one token alone is wider than the
+   line. */
 .call-sig {
-  flex: 1 1 auto;
-  min-width: min(20ch, 100%);
   overflow-wrap: break-word;
 }
 
@@ -434,6 +421,40 @@ input[type="checkbox"] {
 .call-arg-shape {
   color: var(--fg-faint);
   font-style: italic;
+}
+
+/* An argument the chip table upgraded (chips.tsx). A chip sits inside the
+   signature's own value span, so it inherits the value's color and reads as
+   part of the sentence; only what the chip adds is toned differently. It stays
+   on one line — a chip is short by construction, and breaking one turns it into
+   two columns. */
+.arg-chip {
+  white-space: nowrap;
+}
+
+/* The trailing ⤢ of a path chip: the affordance marker, quieter than the path
+   it rides on. */
+.chip-glyph {
+  color: var(--fg-faint);
+}
+
+/* A path chip is a link-styled button, so `.linkish`'s dim color is overridden
+   back to the value color it stands in for; the accent arrives on the call's
+   hover, like the rest of the call's affordance surface. */
+.path-chip.linkish {
+  color: var(--code-path);
+}
+
+.call.clickable:hover .path-chip.linkish,
+.path-chip.linkish:hover {
+  color: var(--accent);
+}
+
+/* A resolved `p#<n>`. The exited tone is a tint, not a state claim: the record
+   is fetched once per handle, so a process that ends after it resolved keeps
+   the running tone until reload (ui/processRecord.ts). */
+.process-chip.exited {
+  color: var(--fg-muted);
 }
 
 .call-target {
@@ -1728,27 +1749,10 @@ select {
   background: var(--diff-add-bg);
 }
 
-/* A call's open ⤢ links sit at the end of its header row; dim until the
-   call's hover, like the rest of the call's affordance surface. */
-.open-file-links {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-left: 0.4rem;
-}
-
-.open-file-links .open-file {
-  font-size: 0.8em;
-  color: var(--fg-faint);
-  /* A basename plus its ⤢ is short; letting it break internally is what turned
-     four links into four one-character columns. It wraps between links now, not
-     inside one. */
+/* The inspector's own open ⤢ links (Inspector.tsx); a basename plus its glyph
+   is short, so a link wraps as a whole rather than internally. */
+.open-file {
   white-space: nowrap;
-}
-
-.call.clickable:hover .open-file-links .open-file,
-.open-file-links .open-file:hover {
-  color: var(--accent);
 }
 
 .inspector-open {

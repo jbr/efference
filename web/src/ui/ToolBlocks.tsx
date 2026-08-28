@@ -21,43 +21,11 @@ import {
   resultRender,
   type ResultView,
 } from "../render/parse.ts";
-import { openablePaths } from "../session/touchedFiles.ts";
+import { ArgValue } from "./chips.tsx";
 import { CallHead } from "./CallHead.tsx";
 import { truncateBody, truncateText } from "./truncate.ts";
 import { useNarrow } from "./useNarrow.ts";
 import { useWholeResult } from "./wholeResult.ts";
-
-/** The `open ⤢` links a call carries: one per viewable file it names —
- * within-cwd only (session/touchedFiles.ts) — opening the *current* file
- * from disk, never the file at the time of the call. Buttons, so the call's
- * open-the-inspector click handler ignores them (Transcript.tsx). */
-export function OpenFileLinks({
-  paths,
-  callId,
-  onOpenFile,
-}: {
-  paths: string[];
-  /** The call the links belong to: an edit's own result is where the viewer
-   * gets the lines to land on (session/editAnchor.ts). */
-  callId: CallId;
-  onOpenFile: (path: string, callId: CallId) => void;
-}) {
-  if (paths.length === 0) return null;
-  return (
-    <span className="open-file-links">
-      {paths.map((path) => (
-        <button
-          key={path}
-          className="linkish open-file"
-          title={`view ${path} as it is now on disk`}
-          onClick={() => onOpenFile(path, callId)}
-        >
-          {paths.length === 1 ? "open ⤢" : `${path.split("/").at(-1)} ⤢`}
-        </button>
-      ))}
-    </span>
-  );
-}
 
 export function CallBlock({
   call,
@@ -68,11 +36,6 @@ export function CallBlock({
 }) {
   const view = useMemo(() => callView(call.name, call.input), [call]);
   const narrow = useNarrow();
-  const paths = useMemo(
-    () =>
-      onOpenFile === undefined ? [] : openablePaths(call.name, call.input),
-    [call, onOpenFile],
-  );
   // A call's elided argument (a write's contents, a nested envelope) truncates
   // on the same budget a result does, at both widths — the signature already
   // states its shape, and the inspector's args tab holds the whole thing.
@@ -86,17 +49,14 @@ export function CallBlock({
   );
   return (
     <div className="block">
+      {/* The chip table decides which arguments render as more than their
+          text (chipTable.ts): the file link rides the path argument it opens,
+          and a `p#<n>` resolves to the command it stood for. */}
       <CallHead
         view={view}
-        trailing={
-          onOpenFile !== undefined && (
-            <OpenFileLinks
-              paths={paths}
-              callId={call.id}
-              onOpenFile={onOpenFile}
-            />
-          )
-        }
+        chip={(arg) => (
+          <ArgValue call={call} arg={arg} onOpenFile={onOpenFile} />
+        )}
       />
       {view.intent !== null && <div className="intent">{view.intent}</div>}
       {bodies.map((body, i) => (

@@ -12,6 +12,7 @@ import type {
   ErrorEnvelope,
   LogEntry,
   Process,
+  ProcessRecord,
   ReviewLevel,
   Seq,
   StateSnapshot,
@@ -128,6 +129,13 @@ export const patchProcess = (
   id: number,
   body: { background?: boolean; muted?: boolean; note?: string },
 ) => patch<Process | null>(`/v1/processes/${id}`, body);
+// What one handle was, running or exited (docs/control-api.md): the live
+// registry answers when it holds the process, a fold over the log's lifecycle
+// records when it does not. `404 not_found` for an id never minted into the
+// background this session — the normal answer for a foreground-only ordinal
+// and for a log written before the records existed.
+export const fetchProcessRecord = (id: number) =>
+  get<ProcessRecord>(`/v1/processes/${id}`);
 export const killProcess = (id: number) =>
   del<{ status: string }>(`/v1/processes/${id}`);
 // The cold seed for a process's tail. `output` is lossy with no replay

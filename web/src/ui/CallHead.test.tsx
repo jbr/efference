@@ -1,18 +1,15 @@
 // The head's markup is the wrapping rule (docs/web-client.md), so it is what
-// this asserts on: everything read as one sentence must sit inside the single
-// `.call-sig` flex item, with the trailing slot its sibling. Rendered to static
-// markup rather than through a DOM — no layout is being measured, only which
-// element each span is inside.
+// this asserts on: everything read as one sentence sits inside the single
+// `.call-sig` inline flow. Rendered to static markup rather than through a DOM
+// — no layout is being measured, only which element each span is inside.
 
 import { expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { callView } from "../render/parse.ts";
 import { CallHead } from "./CallHead.tsx";
 
-const head = (name: string, input: unknown, trailing?: React.ReactNode) =>
-  renderToStaticMarkup(
-    <CallHead view={callView(name, input)} trailing={trailing} />,
-  );
+const head = (name: string, input: unknown) =>
+  renderToStaticMarkup(<CallHead view={callView(name, input)} />);
 
 test("a long single-line command flows inside the signature, not beside it", () => {
   const command =
@@ -28,15 +25,14 @@ test("a long single-line command flows inside the signature, not beside it", () 
   expect(markup).toContain(`>${command}<`);
 });
 
-test("the trailing slot is the signature's sibling, after it", () => {
-  const markup = head("write", { path: "a.rs" }, <span id="t">open</span>);
-  const sig = markup.indexOf('class="call-sig"');
-  const trailing = markup.indexOf('id="t"');
-  expect(sig).toBeGreaterThan(-1);
-  expect(trailing).toBeGreaterThan(sig);
-  // Outside the signature: it is placed at the end of the row, not read as
-  // part of the sentence.
-  expect(markup.slice(sig, trailing)).toContain("</span>");
+test("the head holds the signature and nothing beside it", () => {
+  const markup = head("write", { path: "a.rs" });
+  // One flex-free block with one child: affordances ride their own argument
+  // now (chips.tsx), so there is no slot at the end of the row.
+  expect(
+    markup.startsWith('<div class="call-head"><span class="call-sig">'),
+  ).toBe(true);
+  expect(markup.endsWith("</span></div>")).toBe(true);
 });
 
 test("the server segment is its own span, so it can be dimmed", () => {

@@ -277,6 +277,24 @@ export interface Process {
   muted: boolean;
 }
 
+/** One process, running or exited — what `GET /processes/:id` answers with
+ * (docs/control-api.md, docs/supervisor.md). The listing's representation plus
+ * the two fields it has no need for, because it carries only running
+ * processes. A log-derived answer (no live registry, or a restarted daemon)
+ * reads `running: false` and `muted: false`; `exit: null` beside
+ * `running: false` says the end was never observed. */
+export interface ProcessRecord {
+  id: number;
+  command: string;
+  call_id?: string | null;
+  pid?: number | null;
+  spawned_at: number;
+  background: boolean;
+  muted: boolean;
+  running: boolean;
+  exit?: ProcessExit | null;
+}
+
 export interface TokenCounts {
   input_tokens: number;
   output_tokens: number;

@@ -1,25 +1,36 @@
 // A call's header row: the pseudocode signature the cordon computed
-// (`render/parse.ts`), plus whatever affordance rides at the end of the row.
+// (`render/parse.ts`), with any argument the chip table upgrades rendered as
+// its chip instead of its text (`chips.tsx`).
 //
-// The markup carries the wrapping rule. `.call-head` is a flex row so the
-// trailing slot stays placed at the end, and flex items are blockified by the
-// CSS Display spec — so a signature made of sibling spans wrapped as whole
-// boxes onto their own lines instead of flowing as text. Everything the reader
-// reads as one sentence therefore sits inside **one** flex item
-// (`.call-sig`), whose children are ordinary inline spans and wrap as text at
-// every width (docs/web-client.md).
+// The row is a plain block. Everything the reader reads as one sentence is one
+// inline flow — the signature and its chips alike — so it wraps as text at
+// every width; the head was a flex row only while an affordance sat at the end
+// of it, and a chip attaches to the argument it refers to instead
+// (docs/web-client.md).
 //
-// Kept apart from ToolBlocks.tsx so it imports nothing but React and the
-// cordon: the markup is what the wrapping test asserts on, and it renders
-// without a highlighter or a media query.
+// Kept apart from ToolBlocks.tsx so it imports nothing but React, the cordon,
+// and the chip renderer it is handed: the markup is what the wrapping test
+// asserts on, and it renders without a highlighter or a media query.
 
-import type { CallView } from "../render/parse.ts";
+import type { CallView, SigArg } from "../render/parse.ts";
+
+/** How a signature renders one argument's value. Absent — the streaming and
+ * inspector heads — is the plain text the cordon computed; the transcript
+ * hands in `ArgValue` (`chips.tsx`), which is that text upgraded to a chip for
+ * the few arguments the table names. */
+export type ChipRenderer = (arg: SigArg) => React.ReactNode;
 
 /** The signature itself: `ferritin.search(crate: "serde", query: "…")`, or a
  * bare `bash · ls -la`. The server segment is dimmed rather than sized —
  * built-in versus mounted-server is the `open_world_hint` distinction, i.e.
  * whether the call could have reached outside the session. */
-export function CallSignature({ view }: { view: CallView }) {
+export function CallSignature({
+  view,
+  chip,
+}: {
+  view: CallView;
+  chip?: ChipRenderer;
+}) {
   return (
     <>
       <span className="call-tool">
@@ -47,7 +58,7 @@ export function CallSignature({ view }: { view: CallView }) {
               <span
                 className={arg.elided ? "call-arg-shape" : "call-arg-value"}
               >
-                {arg.text}
+                {chip === undefined ? arg.text : chip(arg)}
               </span>
             </span>
           ))}
@@ -63,19 +74,19 @@ export function CallSignature({ view }: { view: CallView }) {
 export function CallHead({
   view,
   arriving,
-  trailing,
+  chip,
 }: {
   view: CallView;
   arriving?: boolean;
-  trailing?: React.ReactNode;
+  chip?: ChipRenderer;
 }) {
   return (
     <div className="call-head">
       <span className="call-sig">
-        <span className="prompt">›</span> <CallSignature view={view} />
+        <span className="prompt">›</span>{" "}
+        <CallSignature view={view} chip={chip} />
         {arriving === true && <span className="dim"> …</span>}
       </span>
-      {trailing}
     </div>
   );
 }

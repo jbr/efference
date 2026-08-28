@@ -441,18 +441,67 @@ in a run with 55 `ferritin.*` calls the same sentence would render 55 times,
 while the call's own model-authored `intent` — already a sibling line — says
 what *this* call was for. The inspector is where a description is paid for once.
 
-The head's markup carries the wrapping rule. `.call-head` is a flex row so the
-trailing slot (the `open ⤢` links) stays placed at the end, and flex items are
-blockified by the CSS Display spec — so a signature built of sibling spans
-wrapped as *whole boxes* onto their own lines, which is why a long single-line
-`bash` command used to read as a block. Everything read as one sentence
-therefore sits inside one flex item, `.call-sig`, whose children are ordinary
-inline spans and wrap as text at every width. The `min-width` floor and
-`overflow-wrap` live on that item.
+The head's markup carries the wrapping rule. It is a plain block holding one
+inline flow, `.call-sig`, whose children are ordinary inline spans and wrap as
+text at every width; `overflow-wrap: break-word` lives on that item, so a
+multi-path argument breaks between paths and only ever mid-token when one token
+is wider than the line. It was a flex row for as long as an affordance sat at
+the end of it, and flex items are blockified by the CSS Display spec — so a
+signature built of sibling spans wrapped as *whole boxes* onto their own lines,
+which is why a long single-line `bash` command used to read as a block. With the
+`open ⤢` slot absorbed into the argument it referred to (below) there is nothing
+to place at the end of the row, and the whole head is one sentence again.
 
 `ui/CallHead.tsx` is kept apart from `ToolBlocks.tsx` so it imports nothing but
-React and the cordon: the markup is what the wrapping test asserts on, and it
-renders with no highlighter and no media query.
+React, the cordon, and the chip renderer it is handed: the markup is what the
+wrapping test asserts on, and it renders with no highlighter and no media query.
+
+## An argument can carry a chip
+
+A **chip** upgrades one argument of a signature in place. `ui/chipTable.ts` is a
+lookup keyed by `(tool, argument)`; `ui/chips.tsx` renders what it names, and
+every other argument renders as the text the cordon computed:
+
+```
+kill_process(handle: ⟨p#4 · cargo run --release …⟩)
+write(path: "src/api.rs" ⤢, contents: 505 lines)
+```
+
+The rule the table is held to: **a chip adds an affordance or a fact the
+argument does not carry** — a link, a resolved handle. Never a re-wording. That
+is what keeps the table from growing into a per-tool prose registry, whose first
+consequence is a second rendering path for every tool this client has not heard
+of, and whose second is `Searched src for "Listening"` in place of
+`search(pattern: "Listening", path: "src")`. So `search`, `read`, and `list`
+have no entries at all: their arguments already say everything.
+
+Two renderers cover the table's seven entries.
+
+- **A path argument is the file link** — `write`'s `path`, the edit family's
+  `file_path`. Within-cwd only, as the viewer is categorically
+  (`session/touchedFiles.ts`): an absolute or `..`-leading path yields no chip.
+  A button, so the call's open-the-inspector click handler ignores it. This
+  replaced a detached `open ⤢` in a trailing slot on the head, which named the
+  file a second time to say which one it meant.
+- **A `p#<n>` handle resolves to what it was** — `handle` on `kill_process`,
+  `read_process`, `watch_process`. The handle is opaque in the transcript, and
+  `GET /v1/processes/:id` answers for any handle ever minted, running or exited
+  ([supervisor.md](supervisor.md)), so the chip states the spawning command
+  beside it, truncated to a recognizable head. One renderer serves three tools.
+
+`ui/processRecord.ts` is the fetch behind the handle chip: lazy (most calls
+carry no chip at all), one flight per handle however many chips name it, and
+memoized for the page. A `404` is memoized too — an id never minted into the
+background stays never minted — while a transport failure is not, so a chip that
+missed can resolve on a later render. The one staleness this accepts: a record
+fetched while the process runs keeps its running tone after it exits; the fact
+the chip carries is the command, which does not change.
+
+**A handle with no record degrades to the plain argument**, and that is the
+normal case rather than an edge — a foreground command that never backgrounded
+has no lifecycle entry, and every session recorded before the records existed
+answers `404` for every handle. The chip is an annotation, so having nothing to
+annotate with costs the reader nothing: the signature reads exactly as it did.
 
 ## A record-only entry is marked
 
@@ -967,13 +1016,15 @@ inspector's overlay machinery (`@starting-style` entry, `.closing` +
 `transitionend` exit with the timeout fallback, `shown`-through-the-slide in
 `App`); Escape closes. No router: the overlay is App state, like the drawer.
 
-Entry is the `open ⤢` affordance: on a call's header row in the transcript
-(one link per viewable file the call names; buttons, so the
-open-the-inspector click ignores them) and in the inspector's footer,
-labelled `open current file` — footer rather than tab, because the drawer is
-call-scoped history and the file on disk is now. Which files a call names is
-`session/touchedFiles.ts`: `write`'s `path`, the edit tools' `file_path`,
-`read`'s `paths`. **Within-cwd only, categorically** — an absolute or
+Entry is the `open ⤢` affordance: in the transcript it is the **path chip** on
+the argument that names the file (above — a button, so the open-the-inspector
+click ignores it), and in the inspector's footer it is a link per viewable file
+the call names, labelled `open current file` — footer rather than tab, because
+the drawer is call-scoped history and the file on disk is now. Which files a
+call names is `session/touchedFiles.ts`: `write`'s `path`, the edit tools'
+`file_path`, `read`'s `paths` — the inspector serves all three; the transcript
+chips only the arguments the chip table names, which is the write-and-edit
+half. **Within-cwd only, categorically** — an absolute or
 `..`-leading path yields no affordance and is never followed; the call's own
 log diff is its surface. That is a scope position (no arbitrary reads from
 elsewhere on the system), not a resolution gap. The `session_identity` topic
@@ -1029,7 +1080,7 @@ reformat around an edit, and a re-indented block is the same block):
 - nothing found at all says so and does not jump.
 
 `App` carries an open request (path, the call that asked, and a key that
-changes per request) so a second call's `open ⤢` on the file already shown
+changes per request) so a second call's path chip on the file already shown
 re-runs with *its* anchor; `anchorForCall` reads that call's result.
 Anchor-driven loads are unconditional — a `304` would carry no bytes to locate
 against.
@@ -1040,7 +1091,7 @@ view to that file and lands on the edit. Edits and writes move the view; a
 bare `read` never does — reads are the tree's working-set annotation instead.
 The `following ⇢` toggle suppresses the switch and any jump the reader did not
 ask for, while keeping the live reload and the highlights; a jump the reader
-*did* ask for (an `open ⤢`, a tree click) happens either way.
+*did* ask for (a path chip, a tree click) happens either way.
 
 **Refusals render legibly against the path** — "not a text file",
 "too large to view", "no such file under the working directory" — never a
