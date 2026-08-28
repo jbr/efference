@@ -179,6 +179,18 @@ controlled run a withheld conformance `PASS` was re-earned by re-running the
 suite against a still-live server whose counters the invisible first run had
 moved, turning the pass into a spurious failure.
 
+A stream that **finalizes with nothing** — proper termination, zero content
+blocks, zero usage, no generation id — is the complement of one that dies before
+finalizing, and is marked the same way. A gateway in front of a slow upstream can
+answer this way instead of erroring; committed as-is it reads as the model
+choosing silence, so the loop has nothing to dispatch and goes idle with the task
+unfinished. Because the mark *is* the record-only/retryable signal, marking it in
+the assembler is what makes both surfaces handle it: the turn loop and the fork
+peek each retry on the budget they already have. Zero output tokens is required
+as corroboration, so a turn billed for the thinking behind an empty answer is not
+mistaken for this and retried into exhaustion. Observed 2026-08-22 and again
+2026-08-28, the second time ending a controlled run mid-task.
+
 An exhausted *open* failure (a non-2xx after the retry handler gives up) still
 fails the current trajectory rather than the daemon, but no longer only to
 stderr: the loop appends an empty record-only assistant entry carrying the

@@ -339,6 +339,27 @@ impl Assembler {
                 }
             }
         }
+        // A stream that finalizes with **nothing** is the complement of one that
+        // dies before finalizing (docs/transport.md): proper termination, zero
+        // content blocks, zero usage, no generation id — a gateway answering for
+        // a slow upstream with a well-formed empty stream rather than an error.
+        // Committed as-is it reads as the model choosing silence, so the loop has
+        // nothing to dispatch and goes idle mid-task, which is what it did on
+        // 2026-08-22 and again on 2026-08-28.
+        //
+        // Marking it here rather than in the loop is what makes both surfaces
+        // handle it: the mark *is* the record-only/retryable signal, so the turn
+        // loop and the fork peek each retry it on the budget they already have.
+        //
+        // Zero output tokens is required as corroboration, so a model that
+        // legitimately answers with no blocks — but was billed for the thinking
+        // that got it there — is not mistaken for this and retried into
+        // exhaustion.
+        let upstream_failure = upstream_failure.or_else(|| {
+            let empty = thinking.is_empty() && text.is_empty() && calls.is_empty();
+            (empty && self.usage.output_tokens == 0)
+                .then(|| "stream finalized with no content and no usage".to_string())
+        });
         Ok(Completion {
             assistant: Payload::Assistant {
                 thinking,

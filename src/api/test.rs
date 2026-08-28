@@ -1186,3 +1186,43 @@ fn a_pinned_upstream_renders_as_the_provider_object() {
     assert!(!render(None).contains("provider"));
     assert!(render(Some(&pin)).contains(r#""provider":{"order":["google-ai-studio""#));
 }
+
+/// A stream that **finalizes with nothing** is marked retryable, the complement
+/// of one that dies before finalizing (docs/transport.md). Observed twice —
+/// 2026-08-22 (stealth/ox-alpha) and 2026-08-28 (google/gemini-3.7-flash,
+/// mid-task in a controlled run): proper termination, zero content blocks, zero
+/// usage. Unmarked it commits as the model choosing silence, so the loop has
+/// nothing to dispatch and idles with the task unfinished. Marked, the turn loop
+/// and the fork peek each retry it on the budget they already have.
+#[test]
+fn a_stream_that_finalizes_empty_is_marked_retryable() {
+    let completion = feed(&[
+        (
+            "message_start",
+            r#"{"message":{"model":"google/gemini-3.7-flash","usage":{"input_tokens":0,"output_tokens":0}}}"#,
+        ),
+        ("message_stop", "{}"),
+    ])
+    .unwrap();
+    let why = completion.upstream_failure().expect("must be marked");
+    assert!(why.contains("no content"), "{why}");
+}
+
+/// …but **only** with zero usage to corroborate. A turn billed for output that
+/// nonetheless carries no blocks is the model's own answer, not a gateway
+/// swallowing one; marking it would retry a real response into exhaustion.
+#[test]
+fn an_empty_turn_that_was_billed_is_left_alone() {
+    let completion = feed(&[
+        (
+            "message_start",
+            r#"{"message":{"model":"m","usage":{"input_tokens":12,"output_tokens":7}}}"#,
+        ),
+        ("message_stop", "{}"),
+    ])
+    .unwrap();
+    assert!(
+        completion.upstream_failure().is_none(),
+        "a billed turn is not an empty stream"
+    );
+}

@@ -253,17 +253,17 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                         shared.append(turn, completion.assistant)?;
                         if aborted_attempts >= STREAM_ABORT_ATTEMPTS {
                             eprintln!(
-                                "[stream aborted before finalizing, \
-                                 {aborted_attempts} attempts exhausted: {why}]"
+                                "[stream unusable, {aborted_attempts} attempts \
+                                 exhausted: {why}]"
                             );
                             shared.notify(
                                 "turn".to_string(),
                                 format!(
                                     "The last model turn was not completed: \
                                      {STREAM_ABORT_ATTEMPTS} attempts in a row aborted \
-                                     upstream before finalizing (last failure: {why}). \
-                                     Partial output is recorded in the log but is not \
-                                     part of the conversation. Send a turn to retry."
+                                     upstream (last failure: {why}). Any partial \
+                                     output is recorded in the log but is not part of \
+                                     the conversation. Send a turn to retry."
                                 ),
                                 Some("stream-abort".to_string()),
                                 None,
@@ -271,9 +271,8 @@ pub async fn run<F: Frontend, D: Distiller, S: Spotter>(
                             break None;
                         }
                         eprintln!(
-                            "[stream aborted before finalizing (attempt \
-                             {aborted_attempts} of {STREAM_ABORT_ATTEMPTS}): {why} — \
-                             retrying]"
+                            "[stream unusable (attempt {aborted_attempts} of \
+                             {STREAM_ABORT_ATTEMPTS}): {why} — retrying]"
                         );
                         if let Some(pause) = stream_abort_backoff(aborted_attempts) {
                             tokio::time::sleep(pause).await;
