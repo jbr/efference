@@ -66,7 +66,7 @@ The result has no `result #N` / `[seq]` label — it is obviously the response t
 
 `call_spans` takes `(name, &Value, arriving)` rather than a `ToolCall` so the live block renders through it too, from the settled half of a partly-arrived input; `arriving` puts the `…` *inside* the parentheses, so a signature never reads as closed before it is.
 
-Two divergences from the web form, both forced by the data rather than chosen. Arguments read in **sorted key order**, because a committed call's input is a `serde_json::Value` whose object keys sort (the wire's byte stability depends on it — [log-and-projection.md](log-and-projection.md)), where the web client parses JSON and keeps the model's emission order. And **call bodies are not truncated**: the web budgets them at 12 lines, and the TUI's budget for every body is the whole of it (below).
+One divergence from the web form, forced by position rather than chosen: **call bodies are not truncated** — the web budgets them at 12 lines, and the TUI's budget for every body is the whole of it (below). Arguments read in **sorted key order** on both clients alike: a committed call's input is a `serde_json::Value` whose object keys sort (the wire's byte stability depends on it — [log-and-projection.md](log-and-projection.md)), and the web parses the same sorted log text.
 
 Results get **per-tool representations** instead of a raw text dump:
 
