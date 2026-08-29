@@ -299,18 +299,15 @@ pub(crate) fn tail_nodes(
     nodes
 }
 
-/// The call the agent made, as its own entry: `❯ tool · arg`, over whatever the
-/// argument doesn't fit inline (a multi-line `bash` command, a JSON envelope).
+/// The call the agent made, as its own entry: the pseudocode signature
+/// (docs/web-client.md, "A call reads as a signature") over whatever did not fit
+/// inside it.
 ///
 /// Agent-generated content only, and never marked by what happened *to* it: the
 /// `✗` of a failed result belongs to the result, and the `⏸` of a held call belongs
 /// to the gate affordance — both are entries of their own (docs/tui.md).
 fn call_entry(call: &ToolCall) -> DocumentNode<'static> {
-    let mut header = vec![inline_code_styled(
-        crate::mcp::display_name(&call.name),
-        SpanStyle::FunctionName,
-    )];
-    let (inline, mut overflow) = call_args(&call.name, &call.input);
+    let (header, mut overflow) = call_spans(&call.name, &call.input, false);
     // The call's `intent` (docs/tools.md) leads the body: the operator reads why
     // before what, and it is the one part of a structured call that isn't inferable
     // from the arguments. Absent on calls from before the field, and on any the model
@@ -324,14 +321,6 @@ fn call_entry(call: &ToolCall) -> DocumentNode<'static> {
                 action: None,
             }]),
         );
-    }
-    if let Some(arg_spans) = inline {
-        header.push(Span {
-            text: " · ".into(),
-            style: SpanStyle::Comment,
-            action: None,
-        });
-        header.extend(arg_spans);
     }
     DocumentNode::headed_entry(EntryKind::ToolCall, Some(prompt_span()), header, overflow)
 }

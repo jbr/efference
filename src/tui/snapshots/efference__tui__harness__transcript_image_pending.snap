@@ -7,7 +7,7 @@ expression: self.render()
    ┌────────────────────────────────────────────────────────────────────────────────┐
  0 │ ┃ read the fixture image                                                       │
  1 │                                                                                │
- 2 │   ❯ read_image · earthrise.jpg                                                 │
+ 2 │   ❯ read_image(path: "earthrise.jpg")                                          │
  3 │   ✓ 1 line · 1 image                                                           │
  4 │ ╭──────────────────────────────────────╮                                       │
  5 │ │ 600×400 image/png, 900 visual tokens │                                       │

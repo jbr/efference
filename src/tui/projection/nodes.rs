@@ -56,28 +56,21 @@ pub(in crate::tui) fn live_call_entry(call: &LiveCall) -> DocumentNode<'static> 
 /// `None` before anything structural has arrived, so the caller falls back to the raw
 /// characters.
 ///
-/// The settled half goes through [`call_args`], the same function a *committed* call
+/// The settled half goes through [`call_spans`], the same function a *committed* call
 /// renders through, so the header fills in as bytes land rather than changing shape at
-/// commit. The in-flight value never reaches it: [`call_args`] produces an identity
-/// claim (`write src/api.rs`), and only a value whose closing quote has arrived may
-/// back one (`projection/partial.rs`).
+/// commit. The in-flight value never reaches it: [`call_spans`] produces an identity
+/// claim (`write(path: "src/api.rs")`), and only a value whose closing quote has
+/// arrived may back one (`projection/partial.rs`).
 fn calling_tool_blocks(name: &str, input: &str) -> Option<Vec<DocumentNode<'static>>> {
     let parsed = PartialInput::parse(input)?;
     if parsed.settled.is_empty() && parsed.arriving.is_none() {
         return None;
     }
 
-    let mut header = vec![
-        dim_span("❯ calling "),
-        inline_code_styled(crate::mcp::display_name(name), SpanStyle::FunctionName),
-    ];
+    let mut header = vec![dim_span("❯ calling ")];
     let settled = parsed.settled_value();
-    let (inline, mut blocks) = call_args(name, &settled);
-    if let Some(arg_spans) = inline {
-        header.push(dim_span(" · "));
-        header.extend(arg_spans);
-    }
-    header.push(dim_span("…"));
+    let (signature, mut blocks) = call_spans(name, &settled, true);
+    header.extend(signature);
 
     // The call's `intent` (docs/tools.md) leads the body, as it does on a committed
     // call: the operator reads why before what. It settles early — it is emitted

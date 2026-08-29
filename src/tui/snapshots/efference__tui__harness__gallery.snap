@@ -53,45 +53,45 @@ expression: self.render()
 45 │                                                                                │
 46 │   Here's a structured edit, shown as a colored diff:                           │
 47 │                                                                                │
-48 │   ❯ edit · src/tui/composer.rs · replace                                       │
-49 │   ✓ 7 lines                                                                    │
-50 │        /// True when the buffer holds no non-whitespace text.                  │
-51 │        pub(super) fn is_empty(&self) -> bool {                                 │
-52 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
-53 │   +        self.lines                                                          │
-54 │   +            .iter()                                                         │
-55 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
-56 │        }                                                                       │
-57 │                                                                                │
-58 │   A long listing collapses behind a triangle:                                  │
-59 │                                                                                │
-60 │   ❯ bash · ls src                                                              │
-61 │   ✓ 24 lines                                                                   │
-62 │ ╭──────────────────╮                                                           │
-63 │ │ src/module_01.rs │                                                           │
-64 │ │ src/module_02.rs │                                                           │
-65 │ │ src/module_03.rs │                                                           │
-66 │ │ src/module_04.rs │                                                           │
-67 │ │ src/module_05.rs │                                                           │
-68 │ │ src/module_06.rs │                                                           │
-69 │ │ src/module_07.rs │                                                           │
-70 │ │ src/module_08.rs │                                                           │
-71 │ │ src/module_09.rs │                                                           │
-72 │ │ src/module_10.rs │                                                           │
-73 │ │ src/module_11.rs │                                                           │
-74 │ │ src/module_12.rs │                                                           │
-75 │ │ src/module_13.rs │                                                           │
-76 │ │ src/module_14.rs │                                                           │
-77 │ │ src/module_15.rs │                                                           │
-78 │ │ src/module_16.rs │                                                           │
-79 │ │ src/module_17.rs │                                                           │
-80 │ │ src/module_18.rs │                                                           │
-81 │ │ src/module_19.rs │                                                           │
-82 │ │ src/module_20.rs │                                                           │
-83 │ │ src/module_21.rs │                                                           │
-84 │ │ src/module_22.rs │                                                           │
-85 │ │ src/module_23.rs │                                                           │
-86 │ │ src/module_24.rs │                                                           │
+48 │   ❯ edit(anchor: "fn is_empty", file_path: "src/tui/composer.rs", operation:   │
+49 │   "replace")                                                                   │
+50 │   ✓ 7 lines                                                                    │
+51 │        /// True when the buffer holds no non-whitespace text.                  │
+52 │        pub(super) fn is_empty(&self) -> bool {                                 │
+53 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
+54 │   +        self.lines                                                          │
+55 │   +            .iter()                                                         │
+56 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
+57 │        }                                                                       │
+58 │                                                                                │
+59 │   A long listing collapses behind a triangle:                                  │
+60 │                                                                                │
+61 │   ❯ bash · ls src                                                              │
+62 │   ✓ 24 lines                                                                   │
+63 │ ╭──────────────────╮                                                           │
+64 │ │ src/module_01.rs │                                                           │
+65 │ │ src/module_02.rs │                                                           │
+66 │ │ src/module_03.rs │                                                           │
+67 │ │ src/module_04.rs │                                                           │
+68 │ │ src/module_05.rs │                                                           │
+69 │ │ src/module_06.rs │                                                           │
+70 │ │ src/module_07.rs │                                                           │
+71 │ │ src/module_08.rs │                                                           │
+72 │ │ src/module_09.rs │                                                           │
+73 │ │ src/module_10.rs │                                                           │
+74 │ │ src/module_11.rs │                                                           │
+75 │ │ src/module_12.rs │                                                           │
+76 │ │ src/module_13.rs │                                                           │
+77 │ │ src/module_14.rs │                                                           │
+78 │ │ src/module_15.rs │                                                           │
+79 │ │ src/module_16.rs │                                                           │
+80 │ │ src/module_17.rs │                                                           │
+81 │ │ src/module_18.rs │                                                           │
+82 │ │ src/module_19.rs │                                                           │
+83 │ │ src/module_20.rs │                                                           │
+84 │ │ src/module_21.rs │                                                           │
+85 │ │ src/module_22.rs │                                                           │
+86 │ │ src/module_23.rs │                                                           │
 87 │   pace fast     theme t     help ?     detach q                                │
 88 │›                                                                               │
    │  ^                                                                             │

@@ -160,15 +160,15 @@ fn transcript_read_image_call() {
     let frame = play.render();
     play.snapshot("transcript_read_image_call");
     assert!(
-        !frame.contains("\"path\""),
-        "the call renders as a one-line header, not a JSON envelope:\n{frame}"
+        !frame.contains("\"path\":"),
+        "the call renders as a signature, not a JSON envelope:\n{frame}"
     );
     assert!(
-        frame.contains("· mock.png") && frame.contains("· mock-header.png"),
-        "each path inline on its call header:\n{frame}"
+        frame.contains("path: \"mock.png\"") && frame.contains("path: \"mock-header.png\""),
+        "each path inline on its call signature:\n{frame}"
     );
     assert!(
-        frame.contains("· long_edge 2576"),
+        frame.contains("long_edge: 2576"),
         "requested resolution beside the path when present:\n{frame}"
     );
 }
@@ -381,10 +381,10 @@ fn a_complete_distillate_keeps_its_per_tool_rendering() {
         frame.contains("+- `read` tool line-range support"),
         "the added line renders as a diff line:\n{frame}"
     );
-    // The call header names the file and what was done to it — not a fragment of
-    // the anchor, which the diff below shows in full anyway.
+    // The call signature names the file and what was done to it; the anchor is a
+    // shape, not a fragment of text the diff below shows in full anyway.
     assert!(
-        frame.contains("edit · CHANGELOG.md · insert_after"),
+        frame.contains(r#"edit(file_path: "CHANGELOG.md", operation: "insert_after""#),
         "the header names the file and the operation:\n{frame}"
     );
 }

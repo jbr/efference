@@ -8,7 +8,7 @@ expression: self.render()
  0 │                                                                               ╻│
  1 │   Reading the file:                                                           ┃│
  2 │                                                                               ┃│
- 3 │   ❯ read · src/tui/state.rs                                                   ┃│
+ 3 │   ❯ read(paths: ["src/tui/state.rs"])                                         ┃│
  4 │   ✓ 4 lines                                                                   ┃│
  5 │ ╭───────────────────────────────❬rust❭─╮                                      ┃│
  6 │ │ pub struct InteractiveState<'a> {    │                                      ┃│
@@ -20,7 +20,7 @@ expression: self.render()
 12 │                                                                               ┃│
 13 │   Now searching:                                                              ┃│
 14 │                                                                               ┃│
-15 │   ❯ search · fn project  in  src                                              ┃│
+15 │   ❯ search(path: "src", pattern: "fn project")                                ┃│
 16 │   ✓ 3 lines                                                                   ┃│
 17 │ ╭──────────────────────────────────────────────────────────────────────────╮  ┃│
 18 │ │ Found 1 match for pattern "fn project":                                  │  ┃│
@@ -31,7 +31,7 @@ expression: self.render()
 23 │                                                                               ┃│
 24 │   And listing:                                                                ┃│
 25 │                                                                               ┃│
-26 │   ❯ list · src/tui                                                            ┃│
+26 │   ❯ list(path: "src/tui")                                                     ┃│
 27 │   ✓ 6 lines                                                                   ┃│
 28 │ ╭────────────────────────────────╮                                            ┃│
 29 │ │ All paths relative to src/tui: │                                            ┃│

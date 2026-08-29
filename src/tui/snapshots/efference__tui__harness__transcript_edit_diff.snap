@@ -9,16 +9,16 @@ expression: self.render()
  1 │                                                                                │
  2 │   Here's the reformatted version.                                              │
  3 │                                                                                │
- 4 │   ❯ edit · src/tui/composer.rs · replace                                       │
- 5 │   ✓ 7 lines                                                                    │
- 6 │        /// True when the buffer holds no non-whitespace text.                  │
- 7 │        pub(super) fn is_empty(&self) -> bool {                                 │
- 8 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
- 9 │   +        self.lines                                                          │
-10 │   +            .iter()                                                         │
-11 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
-12 │        }                                                                       │
-13 │                                                                                │
+ 4 │   ❯ edit(anchor: "fn is_empty", content: "…", file_path: "src/tui/composer.rs" │
+ 5 │   , operation: "replace")                                                      │
+ 6 │   ✓ 7 lines                                                                    │
+ 7 │        /// True when the buffer holds no non-whitespace text.                  │
+ 8 │        pub(super) fn is_empty(&self) -> bool {                                 │
+ 9 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
+10 │   +        self.lines                                                          │
+11 │   +            .iter()                                                         │
+12 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
+13 │        }                                                                       │
 14 │                                                                                │
 15 │                                                                                │
 16 │                                                                                │

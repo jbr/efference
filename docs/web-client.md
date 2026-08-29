@@ -436,6 +436,16 @@ args tab (`callArgs`, a separate computation) is where the whole input is asked
 for. The cases the signature *replaced* — `read`, `search`, `list`,
 `read_image`, `write` — were each an inline gloss the generic rule now produces.
 
+**The TUI renders the same form** (`src/tui/projection/tools.rs`'s `call_view` /
+`call_spans`; [tui.md](tui.md)), so the two clients agree about how a call reads;
+this section is the shared statement of the shape, and the Rust does not restate
+the rules. Two things differ, both from the data rather than by choice: the TUI's
+arguments read in **sorted key order**, because a committed call's input is a
+`serde_json::Value` whose object keys sort for the wire's byte stability, where
+this client parses JSON and keeps the model's emission order; and the TUI does
+**not** truncate call bodies, because it truncates nothing — the budget below is
+the web's, matching what it does to results.
+
 Tool **descriptions** stay out of the transcript. They are static per tool, so
 in a run with 55 `ferritin.*` calls the same sentence would render 55 times,
 while the call's own model-authored `intent` — already a sibling line — says

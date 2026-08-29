@@ -9,13 +9,13 @@ expression: self.render()
  1 │                                                                                │
  2 │   Editing.                                                                     │
  3 │                                                                                │
- 4 │   ❯ edit · CHANGELOG.md · insert_after                                         │
- 5 │   ✓ 4 lines                                                                    │
- 6 │   @@ -12,3 +12,4 @@                                                            │
- 7 │    - In-process MCP tools (fs-mcp, semantic-edit-mcp).                         │
- 8 │   +- `read` tool line-range support in `fs-mcp`.                               │
- 9 │    - Interactive TUI (`efference tui`).                                        │
-10 │                                                                                │
+ 4 │   ❯ edit(file_path: "CHANGELOG.md", operation: "insert_after", anchor: 69      │
+ 5 │   chars)                                                                       │
+ 6 │   ✓ 4 lines                                                                    │
+ 7 │   @@ -12,3 +12,4 @@                                                            │
+ 8 │    - In-process MCP tools (fs-mcp, semantic-edit-mcp).                         │
+ 9 │   +- `read` tool line-range support in `fs-mcp`.                               │
+10 │    - Interactive TUI (`efference tui`).                                        │
 11 │                                                                                │
 12 │                                                                                │
 13 │                                                                                │

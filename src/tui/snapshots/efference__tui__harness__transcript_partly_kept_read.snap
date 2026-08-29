@@ -9,7 +9,7 @@ expression: self.render()
  1 │                                                                                │
  2 │   Reading the file:                                                            │
  3 │                                                                                │
- 4 │   ❯ read · src/tui/state.rs                                                    │
+ 4 │   ❯ read(paths: ["src/tui/state.rs"])                                          │
  5 │   ✓ kept 2 of 6 lines                                                          │
  6 │ ╭─────────────────────────────────❬rust❭─╮                                     │
  7 │ │ 2 pub struct InteractiveState<'a> {    │                                     │

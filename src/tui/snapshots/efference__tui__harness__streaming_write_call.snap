@@ -7,7 +7,7 @@ expression: self.render()
    ┌────────────────────────────────────────────────────────────────────────────────┐
  0 │ ┃ Write the renderer.                                                          │
  1 │                                                                                │
- 2 │   ❯ calling write · src/render.rs…                                             │
+ 2 │   ❯ calling write(path: "src/render.rs", …)                                    │
  3 │                                                                                │
  4 │   write the renderer                                                           │
  5 │                                                                                │
