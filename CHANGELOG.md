@@ -7,6 +7,9 @@ behind a change, see [`journal/`](journal/).
 
 ## [Unreleased]
 
+### Changed
+- **The bash fast-path parses with `brush-parser`** (docs/permissions.md), replacing a `yash-syntax` pinned to its last standalone version — same admitted shapes, same fail-closed posture, on a parser that tracks bash and still receives updates.
+
 ### Added
 - **A boot-time effort level** (docs/transport.md): `serve --effort low|medium|high|xhigh|max` or `[transport] effort` sends `output_config.effort` on the turn and fork-peek envelope — unset sends nothing and is byte-identical to before; `xhigh`/`max` on a session whose turns send thinking disabled (the `EFFERENCE_THINKING=off` override, or a Claude model without adaptive thinking) is refused at boot instead of 400ing on the first turn.
 

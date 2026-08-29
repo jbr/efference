@@ -9,7 +9,7 @@
 //! prefix — gates, so being incomplete costs coverage and never soundness.
 //!
 //! Bash runs the two stages of docs/permissions.md in the order that doc fixes: stage 1
-//! (structural simplicity, [`yash_syntax`]) *before* stage 2 (prefix match,
+//! (structural simplicity, [`brush_parser`]) *before* stage 2 (prefix match,
 //! [`commands::command_stance`]), so a trusted `git diff` prefix can never clear
 //! `git diff > /etc/hosts`. The narrow shapes that survive a stage-1 rejection are
 //! [`is_safe_fd_dup`], the leading `cd <dir> &&` ([`commands::bash_tokens_in`]), and the

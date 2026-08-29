@@ -8,7 +8,7 @@ fn simple_commands_lex_to_their_tokens() {
         simple_command_tokens("cargo test --workspace"),
         Some(vec!["cargo".into(), "test".into(), "--workspace".into()])
     );
-    // yash parses, does not expand: `HEAD~1`'s non-leading `~` is literal.
+    // brush parses, does not expand: `HEAD~1`'s non-leading `~` is literal.
     assert_eq!(
         simple_command_tokens("git diff HEAD~1"),
         Some(vec!["git".into(), "diff".into(), "HEAD~1".into()])

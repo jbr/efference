@@ -101,7 +101,11 @@ unicode-segmentation = "1.13"
 # the clipboard's raw RGBA is re-encoded as a PNG into the store. It costs the
 # image/tiff/zune-jpeg stack, most of which `image` (below) already pulls in.
 arboard = { version = "3.6.1", default-features = false, features = ["image-data"] }
-yash-syntax = "=0.14.1"
+# Bash parsing for the `[commands]` fast path (docs/permissions.md). brush-parser is the
+# parser of the actively-maintained brush shell, so it tracks bash syntax and keeps
+# receiving updates — the reason it replaced a pinned-old yash-syntax (whose later
+# versions pull in the whole yash runtime). We parse, bash executes.
+brush-parser = "0.4.0"
 # Config (docs/permissions.md): the file is TOML, decoded via `toml_edit`'s
 # serde layer and edited in place via its format-preserving `DocumentMut` — the same crate both
 # reads the config and writes the harness's auto-persisted edits back, comments intact. A parse

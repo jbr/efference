@@ -163,7 +163,7 @@ Stage 1 (structural simplicity) runs **before** stage 2 (prefix match), so a tru
 in stage 1, before any prefix is consulted. This ordering is what makes a blanket
 `git = true` survivable in principle and a sub-verb `"git diff" = true` sound.
 
-- **Stage 1** parses the command with `yash-syntax` — a real POSIX parser, not a regex —
+- **Stage 1** parses the command with `brush-parser` — a real bash parser, not a regex —
   and accepts only a *single simple command*: no operators (`| & ; && ||`), no *file*
   redirection, no command/arithmetic substitution, no parameter/tilde expansion, no
   env-assignment prefix, no unquoted glob/brace. The one redirection it tolerates is a pure
@@ -173,7 +173,7 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
   as a dogfood session found). A `>&` whose operand is a *filename* or an expansion is not a
   pure dup and still gates. The parser is needed (not a regex)
   because safety is quote-sensitive: the `|` in `rg 'a|b' src/` is one literal argument,
-  not a pipe. yash *parses* without *expanding*, so we inspect word units ourselves for
+  not a pipe. brush *parses* without *expanding*, so we inspect word pieces ourselves for
   the expansion metacharacters bash would act on at runtime (`* ? [ {` anywhere; a leading
   `~`) — which is why `git diff HEAD~1` clears but `~/x` and `cp {a,b}` gate.
   The one operator it tolerates is a single leading **`cd <dir> &&`**, whose remainder becomes
@@ -213,8 +213,8 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
   The admitted shapes are exhaustive and everything else fails closed to the spotter as
   before: an expansion or glob in the target, more than one file redirection, an input
   redirection or here-string, a non-stdout fd (`2> file`), a here-doc whose content contains
-  any expansion or substitution (an unquoted here-doc *runs* `$(…)`, which yash surfaces as a
-  substitution unit), pipes, process substitution, lists, backgrounding, negation, assignment
+  any expansion or substitution (an unquoted here-doc *runs* `$(…)`, which brush surfaces as
+  a substitution piece), pipes, process substitution, lists, backgrounding, negation, assignment
   prefixes, and anything that does not parse. It is a governed exception, not a general
   loosening of stage 1's rejection of file redirections.
 - **Stage 2** matches the lexed `[program, args…]` against the `[commands]` map: each key
@@ -264,15 +264,17 @@ in the file and read at load; because `ConfigChange::Command` cannot carry one, 
 *added* by an external file edit takes effect on the next boot (which reloads the file as the
 base) rather than live — the same frontier of the additive fold that a deleted key sits behind.
 
-**Why a POSIX parser is the right choice for a security gate.** yash is POSIX-strict, not
-bash-complete, which costs only *coverage* (a few bash-only forms — `[[ ]]`, `<(…)`,
-`for…do` — gate to the spotter), never *soundness*: bash's dangerous operators are
-POSIX too, so they parse as operators and gate; bash-only syntax either fails to parse
-(→ gate) or surfaces as inert literal words that match no allowlist entry. A young
-bash-complete parser would improve coverage but put a broad, immature surface on the
-security-critical path — the wrong risk trade. yash is pinned to the last standalone
-version (`0.14.1`); later versions pull in the yash *runtime* (`yash-env`), which we don't
-want — we parse, bash executes.
+**Why a bash parser, and which one.** The gate's soundness never rests on parser
+*coverage*: any shape outside the admitted list — including anything that fails to parse —
+gates, so an incomplete parser costs spotter round-trips, not safety. What it does rest on
+is *fidelity where the gate says yes*: the parser must not read something bash would expand
+or execute as an inert literal word. A parser of the same dialect bash speaks (`[[ ]]`,
+`<(…)`, `&>`, `$'…'` all surface as typed nodes to reject rather than as words) keeps that
+gap small. `brush-parser` is the parser of the actively-maintained brush shell, so it
+tracks bash and keeps receiving updates. It replaced `yash-syntax`, which was POSIX-strict
+and had to be pinned to the last standalone version (later versions pull in the whole yash
+runtime, `yash-env`) — a pinned 0.x parser on a security-critical path gets no security
+updates, the worse trade. Only the parser is used — we parse, bash executes.
 
 ### the curation rule (config, not code)
 

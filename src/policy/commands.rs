@@ -129,7 +129,7 @@ fn classify_redirect_write(role: &Config, command: &str, cwd: &Path) -> Verdict 
 }
 
 /// The admitted write shapes, and nothing else (docs/permissions.md). Everything here is
-/// decided by the same yash parse and the same literal-word inspection stage 1 uses, so
+/// decided by the same brush parse and the same literal-word inspection stage 1 uses, so
 /// "strictly parseable" means the same thing it means there.
 ///
 /// Admitted:
@@ -144,9 +144,9 @@ fn classify_redirect_write(role: &Config, command: &str, cwd: &Path) -> Verdict 
 /// - whose **operand is a literal path** ([`literal_word`]) — an expansion or a glob in the
 ///   target means the destination isn't decidable here, so it gates;
 /// - optionally a **here-doc on stdin** (`<<EOF`, `<<'EOF'`, `<<-EOF`), whose *content* must
-///   be wholly literal. An unquoted here-doc expands, and `$(…)` inside one executes — yash
-///   surfaces that as a `CommandSubst` unit, so requiring literal content rejects it while
-///   still admitting the quoted form and the unquoted-but-literal one;
+///   be wholly literal. An unquoted here-doc expands, and `$(…)` inside one executes —
+///   requiring literal content ([`literal_heredoc`]) rejects it while still admitting the
+///   quoted form and the unquoted-but-literal one;
 /// - alongside any number of the fd duplications stage 1 already tolerates ([`is_safe_fd_dup`]);
 /// - optionally behind the same single leading `cd <read-granted literal dir> &&`. The write
 ///   target then resolves against **that** directory, not the process cwd, because that is
@@ -157,21 +157,14 @@ fn classify_redirect_write(role: &Config, command: &str, cwd: &Path) -> Verdict 
 /// expands or globs, a here-doc containing any expansion or substitution, a negated or
 /// compound command, an assignment prefix, and anything that does not parse.
 fn redirect_write_in(role: &Config, command: &str, cwd: &Path) -> Option<RedirectWrite> {
-    use yash_syntax::syntax::{AndOr, Command, List, RedirBody, RedirOp, TextUnit};
+    use brush_parser::ast::{AndOr, Command, IoFileRedirectKind, IoFileRedirectTarget, IoRedirect};
 
-    let list: List = command.parse().ok()?;
-    let [item] = list.0.as_slice() else {
-        return None;
-    };
-    if item.async_flag.is_some() {
-        return None;
-    }
-    let and_or = &item.and_or;
+    let and_or = single_and_or_list(command)?;
     // The `cd` tolerance, and what it does to the target: after `cd sub`, `> out` names
     // `sub/out`. Resolving against the process cwd would check the grant on the wrong file.
-    let (pipeline, run_dir) = match and_or.rest.as_slice() {
+    let (pipeline, run_dir) = match and_or.additional.as_slice() {
         [] => (&and_or.first, cwd.to_path_buf()),
-        [(AndOr::AndThen, remainder)] => {
+        [AndOr::And(remainder)] => {
             let head = pipeline_tokens(&and_or.first)?;
             let [program, target] = head.as_slice() else {
                 return None;
@@ -183,56 +176,51 @@ fn redirect_write_in(role: &Config, command: &str, cwd: &Path) -> Option<Redirec
         }
         _ => return None,
     };
-    if pipeline.negation {
+    if pipeline.bang || pipeline.timed.is_some() {
         return None;
     }
-    let [command] = pipeline.commands.as_slice() else {
+    let [command] = pipeline.seq.as_slice() else {
         return None; // no `|`
     };
-    let Command::Simple(simple) = &**command else {
+    let Command::Simple(simple) = command else {
         return None;
     };
-    if !simple.assigns.is_empty() {
-        return None;
-    }
     let mut target = None;
-    for redir in simple.redirs.iter() {
+    let tokens = simple_tokens(simple, |redir| {
         if is_safe_fd_dup(redir) {
-            continue;
+            return true;
         }
-        match &redir.body {
-            RedirBody::Normal { operator, operand }
+        match redir {
+            IoRedirect::File(fd, kind, IoFileRedirectTarget::Filename(operand))
                 if matches!(
-                    operator,
-                    RedirOp::FileOut | RedirOp::FileAppend | RedirOp::FileClobber
-                ) && redir.fd.is_none_or(|fd| fd.0 == 1) =>
+                    kind,
+                    IoFileRedirectKind::Write
+                        | IoFileRedirectKind::Append
+                        | IoFileRedirectKind::Clobber
+                ) && fd.is_none_or(|fd| fd == 1) =>
             {
                 if target.is_some() {
-                    return None; // exactly one file write, so one path decides
+                    return false; // exactly one file write, so one path decides
                 }
-                target = Some(literal_word(operand)?);
+                match literal_word(operand) {
+                    Some(path) => {
+                        target = Some(path);
+                        true
+                    }
+                    None => false,
+                }
             }
-            RedirBody::HereDoc(here) if redir.fd.is_none_or(|fd| fd.0 == 0) => {
+            IoRedirect::HereDocument(fd, here) if fd.is_none_or(|fd| fd == 0) => {
                 // Data, not a file — but only if it is *only* data: an expansion or a
-                // command substitution in the content runs.
-                let content = here.content.get()?;
-                if !content
-                    .0
-                    .iter()
-                    .all(|unit| matches!(unit, TextUnit::Literal(_) | TextUnit::Backslashed(_)))
-                {
-                    return None;
-                }
+                // command substitution in the content runs. A quoted delimiter
+                // (`<<'EOF'`) makes the body literal by construction.
+                !here.requires_expansion || literal_heredoc(&here.doc.value)
             }
-            _ => return None,
+            _ => false,
         }
-    }
+    })?;
     let target = target?;
-    let mut tokens = Vec::with_capacity(simple.words.len());
-    for (word, _mode) in &simple.words {
-        tokens.push(literal_word(word)?);
-    }
-    if tokens.is_empty() || tokens.first().is_some_and(|t| t == "cd") {
+    if tokens.first().is_none_or(|t| t == "cd") {
         return None;
     }
     Some(RedirectWrite {
@@ -241,30 +229,58 @@ fn redirect_write_in(role: &Config, command: &str, cwd: &Path) -> Option<Redirec
     })
 }
 
+/// Whether an *unquoted* here-doc body is wholly literal: no parameter expansion, no
+/// command or arithmetic substitution (`$(…)` in an unquoted here-doc *executes*). An
+/// escape counts as data — inside a here-doc a backslash only quotes `$`, `` ` ``, `\`,
+/// and newline.
+fn literal_heredoc(content: &str) -> bool {
+    use brush_parser::word::WordPiece;
+    brush_parser::word::parse_heredoc(content, &parser_options()).is_ok_and(|pieces| {
+        pieces.iter().all(|piece| {
+            matches!(
+                piece.piece,
+                WordPiece::Text(_) | WordPiece::EscapeSequence(_)
+            )
+        })
+    })
+}
+
 /// Whether a redirection is a pure file-descriptor **duplication or closure** (`2>&1`, `>&2`,
 /// `2>&-`, `<&3`) — the one redirection class stage 1 tolerates. Sound because it never names or
-/// touches a file: `>&`/`<&` (yash's [`RedirOp::FdOut`]/[`RedirOp::FdIn`]) only copy or close an
-/// already-open descriptor, so there is no filesystem write, read, or exfiltration to gate on.
+/// touches a file: `>&`/`<&` ([`IoFileRedirectKind::DuplicateOutput`]/[`DuplicateInput`]) only
+/// copy or close an already-open descriptor, so there is no filesystem write, read, or
+/// exfiltration to gate on.
 ///
-/// The operand must reduce (via [`literal_word`]) to a descriptor: an all-digits fd number or `-`
-/// (close). A `>&` whose operand is a filename (`>& out.log`) or an expansion (`2>&$FD`) is *not* a
-/// pure dup — it can reach the filesystem — so it returns `false` and the command gates. Here-docs
-/// and here-strings are file/data redirections and are rejected here too.
+/// The operand must be a descriptor: a bare fd number, or a word that reduces (via
+/// [`literal_word`]) to an all-digits number or `-` (close). A `>&` whose operand is a filename
+/// (`>& out.log`) or an expansion (`2>&$FD`) is *not* a pure dup — it can reach the filesystem —
+/// so it returns `false` and the command gates. Here-docs, here-strings, and `&>` are file/data
+/// redirections and are rejected here too.
 ///
-/// [`RedirOp::FdOut`]: yash_syntax::syntax::RedirOp::FdOut
-/// [`RedirOp::FdIn`]: yash_syntax::syntax::RedirOp::FdIn
-pub(super) fn is_safe_fd_dup(redir: &yash_syntax::syntax::Redir) -> bool {
-    use yash_syntax::syntax::{RedirBody, RedirOp};
-    let RedirBody::Normal { operator, operand } = &redir.body else {
-        return false; // here-doc: data redirection, not an fd dup
+/// [`IoFileRedirectKind::DuplicateOutput`]: brush_parser::ast::IoFileRedirectKind::DuplicateOutput
+/// [`DuplicateInput`]: brush_parser::ast::IoFileRedirectKind::DuplicateInput
+pub(super) fn is_safe_fd_dup(redir: &brush_parser::ast::IoRedirect) -> bool {
+    use brush_parser::ast::{IoFileRedirectKind, IoFileRedirectTarget, IoRedirect};
+    let IoRedirect::File(
+        _,
+        IoFileRedirectKind::DuplicateInput | IoFileRedirectKind::DuplicateOutput,
+        target,
+    ) = redir
+    else {
+        // A file redirection (`>`, `>>`, `<`, `<>`, `>|`, `&>`), here-doc, or here-string.
+        return false;
     };
-    if !matches!(operator, RedirOp::FdOut | RedirOp::FdIn) {
-        return false; // a file redirection (`>`, `>>`, `<`, `<>`, `>|`, here-string)
-    }
-    match literal_word(operand) {
+    match target {
+        IoFileRedirectTarget::Fd(_) => true,
         // `-` closes the fd; otherwise the operand must be a bare descriptor number.
-        Some(word) => word == "-" || (!word.is_empty() && word.bytes().all(|b| b.is_ascii_digit())),
-        None => false, // expanded/globbed operand → not a decidable fd
+        IoFileRedirectTarget::Duplicate(word) => match literal_word(word) {
+            Some(word) => {
+                word == "-" || (!word.is_empty() && word.bytes().all(|b| b.is_ascii_digit()))
+            }
+            None => false, // expanded/globbed operand → not a decidable fd
+        },
+        // A filename (`>& out.log`) or process substitution reaches the filesystem.
+        _ => false,
     }
 }
 
@@ -288,20 +304,12 @@ pub(super) fn is_safe_fd_dup(redir: &yash_syntax::syntax::Redir) -> bool {
 /// every such call pays a spotter round-trip. Recording the **remainder** (not the whole string) is
 /// what makes the promotion generalize across run directories.
 pub(crate) fn bash_tokens_in(role: &Config, command: &str, cwd: &Path) -> Option<Vec<String>> {
-    use yash_syntax::syntax::{AndOr, List};
+    use brush_parser::ast::AndOr;
 
-    let list: List = command.parse().ok()?;
-    // Exactly one item (no `;`-separated list), not backgrounded (`&`).
-    let [item] = list.0.as_slice() else {
-        return None;
-    };
-    if item.async_flag.is_some() {
-        return None;
-    }
-    let and_or = &item.and_or;
-    match and_or.rest.as_slice() {
+    let and_or = single_and_or_list(command)?;
+    match and_or.additional.as_slice() {
         [] => pipeline_tokens(&and_or.first),
-        [(AndOr::AndThen, remainder)] => {
+        [AndOr::And(remainder)] => {
             // A leading `cd <literal dir>` into a read-granted directory, and nothing else.
             let head = pipeline_tokens(&and_or.first)?;
             let [program, target] = head.as_slice() else {
@@ -329,103 +337,141 @@ pub(crate) fn bash_tokens_in(role: &Config, command: &str, cwd: &Path) -> Option
 /// requirement that a key lexes to the same token vector the command is checked against). That
 /// use is why this stays strict about operators: a `[commands]` key is never a `cd …` compound.
 pub(crate) fn simple_command_tokens(command: &str) -> Option<Vec<String>> {
-    use yash_syntax::syntax::List;
-
-    let list: List = command.parse().ok()?;
-    // Exactly one item (no `;`-separated list), not backgrounded (`&`).
-    let [item] = list.0.as_slice() else {
-        return None;
-    };
-    if item.async_flag.is_some() {
-        return None;
-    }
-    let and_or = &item.and_or;
-    if !and_or.rest.is_empty() {
+    let and_or = single_and_or_list(command)?;
+    if !and_or.additional.is_empty() {
         return None; // no `&&` / `||`
     }
     pipeline_tokens(&and_or.first)
 }
 
-/// The single-simple-command core of stage 1: one pipeline reduced to its literal token vector, or
-/// `None` if it is negated, piped, compound, assignment-prefixed, file-redirected, or holds a word
-/// bash would expand.
-fn pipeline_tokens(pipeline: &yash_syntax::syntax::Pipeline) -> Option<Vec<String>> {
-    use yash_syntax::syntax::Command;
-
-    if pipeline.negation {
-        return None; // no leading `!`
+/// One parser configuration for every parse in this module: bash dialect (no POSIX/`sh`
+/// compatibility modes — the command will run under bash, so bash is what to parse),
+/// extended globbing off (bash's own default, so `@(…)` fails to parse and gates), and
+/// tilde recognition at word start only — the position where bash expands a tilde in an
+/// argument, so `~/x` gates while `HEAD~1` and `a:~/b` stay literal.
+fn parser_options() -> brush_parser::ParserOptions {
+    brush_parser::ParserOptions {
+        enable_extended_globbing: false,
+        posix_mode: false,
+        sh_mode: false,
+        tilde_expansion_at_word_start: true,
+        tilde_expansion_after_colon: false,
+        ..Default::default()
     }
-    let [command] = pipeline.commands.as_slice() else {
+}
+
+/// Parse `command` and return its single and-or list, or `None` if it is empty, holds
+/// more than one statement (`;`, a newline between commands), is backgrounded (`&`), or
+/// does not parse.
+fn single_and_or_list(command: &str) -> Option<brush_parser::ast::AndOrList> {
+    use brush_parser::ast::{CompoundListItem, SeparatorOperator};
+
+    let mut parser = brush_parser::Parser::new(command.as_bytes(), &parser_options());
+    let program = parser.parse_program().ok()?;
+    let [list] = <[_; 1]>::try_from(program.complete_commands).ok()?;
+    let [CompoundListItem(and_or, separator)] = <[_; 1]>::try_from(list.0).ok()?;
+    match separator {
+        SeparatorOperator::Async => None, // backgrounded
+        SeparatorOperator::Sequence => Some(and_or),
+    }
+}
+
+/// The single-simple-command core of stage 1: one pipeline reduced to its literal token vector, or
+/// `None` if it is negated, timed, piped, compound, assignment-prefixed, file-redirected, or holds
+/// a word bash would expand.
+fn pipeline_tokens(pipeline: &brush_parser::ast::Pipeline) -> Option<Vec<String>> {
+    use brush_parser::ast::Command;
+
+    if pipeline.bang || pipeline.timed.is_some() {
+        return None; // no leading `!` or `time`
+    }
+    let [command] = pipeline.seq.as_slice() else {
         return None; // no `|` — exactly one command
     };
-    let Command::Simple(simple) = &**command else {
+    let Command::Simple(simple) = command else {
         return None; // not a compound command / function definition
     };
-    if !simple.assigns.is_empty() {
-        return None; // no `FOO=bar cmd` env-assignment prefix
-    }
     // Redirections gate — *except* a file-descriptor duplication/closure (`2>&1`, `>&2`, `2>&-`,
     // `<&3`), which touches no filesystem: it only rewires the process's own descriptors among
     // already-open fds. That's sound under the error-not-deception model, and it's the habitual
     // `cmd 2>&1` the model appends; without this a trailing `2>&1` knocks a blanket-allowlisted
     // program off the fast path (docs/permissions.md). A file redirection, here-doc, or expanded
     // operand still gates via [`is_safe_fd_dup`].
-    if !simple.redirs.iter().all(is_safe_fd_dup) {
-        return None;
+    simple_tokens(simple, is_safe_fd_dup)
+}
+
+/// A simple command reduced to its literal token vector — the program word plus each
+/// argument, every one through [`literal_word`] — with each redirection referred to
+/// `redirect` (`false` rejects the whole command). Rejects an env-assignment prefix
+/// (`FOO=bar cmd` mutates the command's environment) and a process substitution. An
+/// assignment-*shaped* argument (`make FOO=1`) is a plain token: after the program word,
+/// bash passes it through like any other.
+fn simple_tokens(
+    simple: &brush_parser::ast::SimpleCommand,
+    mut redirect: impl FnMut(&brush_parser::ast::IoRedirect) -> bool,
+) -> Option<Vec<String>> {
+    use brush_parser::ast::CommandPrefixOrSuffixItem;
+
+    for item in simple.prefix.iter().flat_map(|prefix| &prefix.0) {
+        match item {
+            CommandPrefixOrSuffixItem::IoRedirect(redir) if redirect(redir) => {}
+            _ => return None, // an assignment prefix, or a rejected redirection
+        }
     }
-    let mut tokens = Vec::with_capacity(simple.words.len());
-    // `words` pairs each word with its expansion mode; we only need the word.
-    for (word, _mode) in &simple.words {
-        tokens.push(literal_word(word)?);
-    }
-    // Defensive: a simple command with no words shouldn't reach here, but never return
-    // an empty token vector (the caller assumes a program word exists).
-    if tokens.is_empty() {
-        return None;
+    let mut tokens = vec![literal_word(simple.word_or_name.as_ref()?)?];
+    for item in simple.suffix.iter().flat_map(|suffix| &suffix.0) {
+        match item {
+            CommandPrefixOrSuffixItem::Word(word) => tokens.push(literal_word(word)?),
+            CommandPrefixOrSuffixItem::AssignmentWord(_, word) => tokens.push(literal_word(word)?),
+            CommandPrefixOrSuffixItem::IoRedirect(redir) if redirect(redir) => {}
+            _ => return None,
+        }
     }
     Some(tokens)
 }
 
-/// Reduce a [`Word`] to its literal string, or `None` if any unit would be **expanded**
-/// or **globbed** by bash at runtime. yash parses without expanding, so we inspect the
-/// units ourselves:
+/// Reduce a [`Word`] to its literal string, or `None` if any piece would be **expanded**
+/// or **globbed** by bash at runtime. brush parses without expanding, so we inspect the
+/// word pieces ourselves:
 ///
 /// - single-quoted text is literal (a `|` or `*` inside `'…'` is just text — this is why
 ///   a regex would be wrong and a real lexer is needed);
-/// - double-quoted text is literal only if it contains no `$…`/`` `…` `` expansion;
-/// - unquoted literal chars are fine *except* the glob/brace metacharacters `* ? [ {`
-///   (bash globs them anywhere) and a leading `~` (bash tilde-expands only at word
-///   start, so `HEAD~1` is fine but `~/x` is not);
-/// - anything else (unquoted parameter/command substitution, a tilde unit, `$'…'`) →
-///   `None`.
+/// - double-quoted text is literal only if every piece inside it is;
+/// - unquoted text is literal *except* the glob/brace metacharacters `* ? [ {` (bash
+///   globs or brace-expands them anywhere in a word);
+/// - an escape (`\x`) contributes the escaped character;
+/// - anything else — a tilde the parser recognized as expandable (leading only, per
+///   [`parser_options`], so `HEAD~1` stays literal), a parameter/command/arithmetic
+///   substitution, `$'…'` — → `None`.
 ///
-/// [`Word`]: yash_syntax::syntax::Word
-pub(super) fn literal_word(word: &yash_syntax::syntax::Word) -> Option<String> {
-    use yash_syntax::syntax::{TextUnit, WordUnit};
+/// [`Word`]: brush_parser::ast::Word
+pub(super) fn literal_word(word: &brush_parser::ast::Word) -> Option<String> {
+    let pieces = brush_parser::word::parse(&word.value, &parser_options()).ok()?;
+    literal_pieces(&pieces, false)
+}
+
+/// The piece walk under [`literal_word`]; `quoted` is true inside double quotes, where
+/// the glob metacharacters are just text.
+fn literal_pieces(
+    pieces: &[brush_parser::word::WordPieceWithSource],
+    quoted: bool,
+) -> Option<String> {
+    use brush_parser::word::WordPiece;
 
     let mut out = String::new();
-    for (index, unit) in word.units.iter().enumerate() {
-        match unit {
-            WordUnit::SingleQuote(text) => out.push_str(text),
-            WordUnit::DoubleQuote(text) => {
-                for tu in &text.0 {
-                    match tu {
-                        TextUnit::Literal(c) | TextUnit::Backslashed(c) => out.push(*c),
-                        _ => return None, // $param / $(...) / `...` / $((...)) inside "…"
-                    }
-                }
-            }
-            WordUnit::Unquoted(TextUnit::Literal(c)) => {
-                if matches!(c, '*' | '?' | '[' | '{') {
+    for piece in pieces {
+        match &piece.piece {
+            WordPiece::Text(text) => {
+                if !quoted && text.contains(['*', '?', '[', '{']) {
                     return None; // unquoted glob / brace-expansion metacharacter
                 }
-                if *c == '~' && index == 0 {
-                    return None; // leading unquoted tilde → tilde expansion
-                }
-                out.push(*c);
+                out.push_str(text);
             }
-            WordUnit::Unquoted(TextUnit::Backslashed(c)) => out.push(*c), // escaped literal
-            _ => return None, // unquoted expansion, tilde unit, $'…', etc.
+            WordPiece::SingleQuotedText(text) => out.push_str(text),
+            // The sequence is the backslash plus the character it escapes.
+            WordPiece::EscapeSequence(sequence) => out.push_str(sequence.strip_prefix('\\')?),
+            WordPiece::DoubleQuotedSequence(inner) => out.push_str(&literal_pieces(inner, true)?),
+            _ => return None, // expansion, substitution, tilde, $'…'
         }
     }
     Some(out)
