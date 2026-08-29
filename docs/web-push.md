@@ -99,5 +99,59 @@ as "blocked in browser settings" (JS cannot re-prompt); iOS outside the
 home-screen-installed app explains itself (iOS delivers push only to the installed
 app); a browser without `PushManager` shows nothing.
 
-Suppressing push while the session is actively watched is its own unit
-([../backlog/presence.md](../backlog/presence.md)).
+## No push while someone is watching
+
+A notification about a session the operator is already looking at is noise, so
+`Shared::push` returns without sending when the session is **watched**: the count of
+live `GET /events` connections is nonzero (`src/daemon/presence.rs`). The check sits
+in `push` rather than at either call site, so a gate and a settle suppress
+identically — they are one notification setting, enabled and disabled together — and
+it is an atomic load, so it runs before the root and runtime checks above.
+
+The count is connection lifetime, nothing else. It is incremented when a stream is
+built and decremented by an RAII guard the stream holds, so it moves only with
+connections and cannot drift: there is no presence report to send, no connection id
+to name, and no per-connection visibility state to reconcile if a client dies
+holding it.
+
+The daemon learns a connection died only when a **write** to it fails — the next
+event or heartbeat, up to one `/events` heartbeat interval after the client closed
+(trillium-sse's write loop never polls the read half;
+[../backlog/sse-close-detection.md](../backlog/sse-close-detection.md)). So an event
+can be suppressed on the strength of a connection whose client already left, and the
+event's own frame is what reaps it — one write too late, every time. The backstop:
+a suppressed push is **stashed** rather than discarded, and the guard whose drop
+takes the count to zero sends the stash after all if the suppression was recent
+(`REPLAY_WINDOW`, sized to the client's hidden-tab linger plus one heartbeat).
+Within that window, "the operator watched it happen" and "it fired into a dead
+connection" are indistinguishable from the daemon, and a possible duplicate
+notification beats a gate nobody was told about. Past the window, the suppressing
+connection demonstrably outlived the daemon's blindness — a person had the event on
+screen — and an event already seen is not re-notified.
+
+What makes the count mean *watched* rather than merely *connected* is that clients
+who are not being looked at drop their connections:
+
+- **The web client** (`web/src/session/connect.ts`) drops its stream on
+  `visibilitychange` to hidden, after a few seconds' linger that debounces a tab
+  flip; becoming visible cancels a pending linger, or else reconnects through the
+  same `?since=<cursor>` resume path a network loss already uses — hidden and
+  offline repair identically, with no second reconnect. A tab restored in the
+  background reads its initial visibility the same way, since no event fires for it.
+- **The TUI** never drops its stream, so a connected TUI is always watched. Terminal
+  focus is knowable, but occlusion is not, and an unfocused-but-visible terminal is
+  a normal watching posture.
+- **A non-human consumer** — an observer agent, a logging pipe — opens with
+  `?presence=off` ([control-api.md](control-api.md)) and is excluded from the count.
+  Static and open-time only: a stream does not become a human mid-connection.
+
+**The service worker skips a notification a visible window would duplicate.** At
+push-receive, `web/public/sw.js` reads `clients.matchAll()` and shows nothing when a
+visible window is on the payload's path or under it (a prefix match, so any route
+inside the session counts and a different session on the same host does not). That
+covers the races the sender cannot see — the linger window, and a tab that has just
+become visible and not yet reconnected. Chrome exempts this case from the penalty
+for a push that shows nothing.
+
+Watched is internal state, not a client-visible topic: any stream client that could
+render it is itself a watcher, so it would read true by construction.

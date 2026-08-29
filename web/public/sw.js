@@ -154,10 +154,36 @@ self.addEventListener("push", (event) => {
     // keep the default
   }
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
-      data: { path: payload.path },
-    }),
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clients) => {
+        // The sender already suppresses push while a stream connection is open
+        // (docs/web-push.md), but it cannot see the races: the few seconds a
+        // hidden tab lingers before dropping its stream, and a tab that has just
+        // become visible and not yet reconnected. A visible window is a person
+        // looking at the page, so the notification would be noise. Chrome exempts
+        // this case from the penalty for a push that shows nothing.
+        //
+        // "Showing the session" is judged by path prefix rather than equality,
+        // since the payload names the session's root (`/`, or `/sessions/<id>`
+        // under a host) while the window may be on any route inside it. That is
+        // also what keeps one session's notification from being swallowed by a
+        // visible window on a different session of the same host.
+        const root = new URL(payload.path, self.location.origin).pathname;
+        const inSession = (pathname) =>
+          pathname === root ||
+          pathname.startsWith(root.endsWith("/") ? root : root + "/");
+        const watching = clients.some(
+          (client) =>
+            client.visibilityState === "visible" &&
+            inSession(new URL(client.url).pathname),
+        );
+        if (watching) return;
+        return self.registration.showNotification(payload.title, {
+          body: payload.body,
+          data: { path: payload.path },
+        });
+      }),
   );
 });
 

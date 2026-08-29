@@ -166,3 +166,24 @@ async fn the_output_class_carries_ephemeral_deltas() {
 
     let _ = std::fs::remove_file(&log_path);
 }
+
+/// `?presence=off` is how a non-human consumer keeps its connection out of the
+/// watched count (docs/web-push.md). A value that is neither spelling is a typed 400,
+/// on the same rule as an unknown `?include=` token: a client that meant to opt out
+/// and misspelled it would otherwise be counted as a watcher and suppress the very
+/// notifications it connected to observe.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unspelled_presence_value_is_a_typed_error() {
+    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let app = test_server(&shared).await;
+
+    let conn = app.get("/v1/events?presence=maybe").await;
+    conn.assert_status(400);
+    conn.assert_json_body_with(|body: &Value| {
+        assert_eq!(body["code"], "bad_request");
+        assert!(
+            body["message"].as_str().unwrap().contains("presence"),
+            "names the parameter: {body}"
+        );
+    });
+}

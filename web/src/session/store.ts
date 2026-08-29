@@ -56,7 +56,14 @@ export interface Streaming {
 }
 
 export type Connection =
-  "connecting" | "live" | "reconnecting" | "unauthenticated";
+  | "connecting"
+  | "live"
+  | "reconnecting"
+  /** The tab went hidden and the stream was dropped on purpose, so the daemon
+   * stops counting this client as watching (docs/web-push.md). Becoming visible
+   * resumes from the cursor. */
+  | "hidden"
+  | "unauthenticated";
 
 export interface Session {
   connection: Connection;

@@ -655,7 +655,7 @@ A client renders them as plain text, never markdown, and attributes them to
 
 ### Reads (streamed, SSE)
 
-#### `GET /events?include=<spec>&since=<seq>`
+#### `GET /events?include=<spec>&since=<seq>&presence=<on|off>`
 The control stream: **one** connection carrying everything that changes, as a
 discriminated envelope so a client writes one frame parser rather than one per
 stream.
@@ -690,6 +690,15 @@ gets neither the token firehose nor the whole effective config.
   `state:gaet` would yield a stream that never delivers a gate — indistinguishable
   from a daemon that never gated. The cost is that an old daemon rejects a newer
   client, which is the right direction: the client learns.
+
+**`?presence=`** is `on` (the default) or `off`. A live connection is what tells
+the daemon someone is watching the session, which suppresses push
+([web-push.md](web-push.md)); `off` excludes this connection from that count, for a
+consumer that is not a person — an observer agent, a logging pipe. It is read at
+open and never changes for the life of the connection. Any other value is a
+`400 bad_request`, on the same rule as an unknown `include` token: a client that
+meant to opt out and misspelled it would be counted as a watcher and would suppress
+the notifications it connected to observe.
 
 **`state` is level-triggered, and a frame is a whole-topic replacement — never a
 patch.** Every subscribed topic is sent on connect, then a topic's entire value is

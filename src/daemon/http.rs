@@ -832,8 +832,17 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                     let Some(shared) = shared_of(&conn) else {
                         return missing_state(conn);
                     };
-                    match Include::parse(parse_param(conn.querystring(), "include")) {
-                        Ok(include) => {
+                    let parsed = Include::parse(parse_param(conn.querystring(), "include"))
+                        .and_then(|include| {
+                            // A non-human consumer opts out of the watched count
+                            // (docs/web-push.md); an unspelled value is rejected the
+                            // same way an unknown `include` token is.
+                            let presence =
+                                Presence::parse(parse_param(conn.querystring(), "presence"))?;
+                            Ok((include, presence))
+                        });
+                    match parsed {
+                        Ok((include, presence)) => {
                             // `?since` past the head is a *wait*, not an error — the
                             // natural reading of a cursor on an append-only log, and
                             // the heartbeat is what keeps that wait distinguishable
@@ -843,6 +852,7 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                                 shared,
                                 include,
                                 since,
+                                presence,
                             })
                         }
                         Err(message) => fail(conn, ErrorCode::BadRequest, message),
@@ -853,7 +863,8 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                         shared,
                         include,
                         since,
-                    }) => control_stream(shared, include, since),
+                        presence,
+                    }) => control_stream(shared, include, since, presence),
                     // Unreachable: the validating half halts before this runs.
                     None => Box::pin(futures_lite::stream::empty()),
                 })
@@ -868,6 +879,7 @@ struct EventsRequest {
     shared: Arc<Shared>,
     include: Include,
     since: u64,
+    presence: Presence,
 }
 
 /// [`router_with_heartbeat`] at the real [`EVENTS_HEARTBEAT`] interval.
