@@ -128,6 +128,7 @@ mod config_edits;
 mod continuation;
 mod events;
 mod http;
+mod keepalive;
 mod log_reads;
 mod metrics;
 mod notifications;

@@ -13,6 +13,7 @@ behind a change, see [`journal/`](journal/).
 - **No push while the session is watched** (docs/web-push.md): a live `/events` connection suppresses gate and settle notifications; the web client drops its stream a few seconds after the tab goes hidden and resumes from its cursor when it returns, `?presence=off` opts a non-human consumer out of the count, and the service worker skips a notification a visible window would duplicate.
 
 ### Fixed
+- **The keepalive survives an idle session** (docs/transport.md): the ping drops trailing model turns so it ends on a user message (Google-backed endpoints reject a model-turn tail, which is the shape every settled or gate-parked log has), an invalid-request 4xx ends the session's keepalive instead of retrying identically every few seconds, and the output tripwire is now a ratio against the refreshed prefix rather than one offense — so a mandatory-reasoning endpoint keeps its cache warm instead of losing keepalive on the first ping.
 - **Image tool results work on Gemini through OpenRouter** — a third `ImagePlacement` (`AfterInterposedTurn`) moves the images out of the function-response turn, behind a projected assistant turn naming the result's `[seq]` handle. Gemini rejects a replayed thought signature whenever an image sits between the signed `tool_use` and the next assistant turn; every placement within that turn fails alike, on the provider's OpenAI-shaped endpoint as well as its Anthropic skin. The session that wedged now projects to a request the provider accepts.
 
 ### Changed

@@ -431,6 +431,13 @@ resumed one. Capped at 256 characters (OpenRouter's limit) by truncating the
 *name* — `--name` is arbitrary user input, and a cap that ate the hash instead
 would defeat the disambiguation.
 
+The pin expires after five minutes of inactivity and is refreshed only by a
+*successful* request; an errored one does not refresh it (OpenRouter's "Provider
+Sticky Routing"). So a keepalive that fails also lets the pin lapse across any idle
+over five minutes, after which the next real turn may route to an upstream that
+never saw the cache — the ping keeps both the prompt cache and the routing pin
+alive, and loses both together.
+
 Which requests carry it is the **provider's** call: `Provider::session_header`
 returns the header name, or `None` where the concept doesn't exist. Anthropic
 returns `None` — nothing in Messages selects an upstream, because there is only
@@ -739,19 +746,65 @@ This call is non-streaming by design: `max_tokens: 0` is rejected by the API
 when paired with `stream: true`.
 
 That contract is not universal, so the loop carries a **read-only tripwire**:
-a keepalive whose usage reports `output_tokens > 0` ends the keepalive for the
-session (`daemon/keepalive.rs`). Observed live (2026-08-21): a
-mandatory-reasoning endpoint reasons on a `max_tokens: 0` ping — ~4k thinking
-tokens per ping, billed as output — turning the free refresh into a recurring
-charge. A runtime observation rather than a provider gate, so it also catches
-any future endpoint that stops honoring the contract; the offending ping's
-usage is still recorded.
+a keepalive whose discarded output is large relative to the prefix it refreshed
+ends the keepalive for the session (`daemon/keepalive.rs`). Observed live
+(2026-08-21): a mandatory-reasoning endpoint reasons on a `max_tokens: 0` ping —
+~4k thinking tokens per ping, billed as output — turning the free refresh into a
+recurring charge. A runtime observation rather than a provider gate, so it also
+catches any future endpoint that stops honoring the contract; the offending
+ping's usage is still recorded.
+
+The test is a ratio, not an offense count: output is tolerated while
+`discard_tokens × 100 < prefix_tokens`, where prefix is the ping's own reported
+prompt total (input + cache read + cache creation, however the endpoint split
+it). The constant is the price comparison with the prices cancelled out — an
+output token costs roughly 50× a cache-read token on Anthropic and 25–100× across
+providers, times a margin factor of 2. Order of magnitude is the intended
+precision; a dollar computation is not available at the decision point, since
+prices are only known retrospectively and subscription sessions have no dollar
+surface at all. The ratio self-scales, so a 500k prefix absorbs a few thousand
+reasoning tokens while a small prefix absorbs none and a runaway generation fails
+at any size — which is what keeps a mandatory-reasoning endpoint usable instead of
+disabling keepalive on its first ping. Pinging with thinking disabled is not an
+escape: changing thinking parameters invalidates message-level cache on Anthropic,
+so that ping would refresh nothing.
+
+A failed ping is classified by HTTP status (`api::KeepaliveError`, which carries
+the status structurally rather than in its message). An invalid-request-class 4xx
+is **terminal for the session's keepalive** — the upstream rejected the request
+itself, so the next tick would be rejected identically, and retrying only reprints
+the same line for the life of the pause. 408 and 429 describe the moment rather
+than the request; they, 5xx, and network failures keep the print-and-retry
+behavior.
 
 The prefix bytes sent by a keepalive must be byte-identical to what a real turn
 sends, or the ping writes a new cache entry instead of refreshing the live one.
 `Client::keepalive` takes the same `messages`, `tools`, and `tool_choice` the
 loop uses, and reuses the same `system` prompt from the client, so identity is
 structural rather than a fragile string comparison.
+
+### The ping ends on a user turn
+
+Before placing the breakpoint, the loop drops trailing assistant messages until
+the tail is a user-role message (tool results project as user role), on every
+dialect. A session idles in exactly the state that produces a model-turn tail: a
+settled session's log ends with the closing prose, and a session parked at an
+approval gate ends with the `Assistant` entry carrying the awaiting `tool_use`,
+its result not yet in the log. Anthropic accepts a request ending with a model
+turn; Google-backed endpoints reject it ("Requests ending with a model turn are
+not supported"), so an unlopped ping fails on those endpoints during precisely
+the idle it exists to cover.
+
+Lopping loses no cache: the trailing model turn was the last response's *output*
+and has never been sent as input, so the live cache entry already ends at the
+previous trailing breakpoint, and the lopped ping is a full read of it. The only
+forgone benefit is on Anthropic, where an unlopped ping also *wrote* an extension
+covering the model turn — lopping moves that write to the next real turn, which
+was going to pay it anyway. A log that lops empty (nothing but model turns, or
+nothing at all) skips the ping rather than sending an empty `messages` array.
+
+This is a transport-side transform on the ping only. The projection is untouched
+and its byte-stability pins do not move.
 
 ### Metrics cell
 

@@ -8,6 +8,21 @@ use super::*;
 /// nowhere.
 pub const DEFAULT_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(240);
 
+/// How many prefix tokens must stand behind each token the ping discards for the
+/// ping to still be worth sending (docs/transport.md). A `max_tokens: 0` ping is
+/// supposed to generate nothing, but a mandatory-reasoning endpoint reasons anyway
+/// and bills it as output, so the question is a cost comparison: the ping buys a
+/// cache read that scales with the prefix and pays for whatever output it
+/// generated.
+///
+/// Derivation: an output token costs about 50× a cache-read token on Anthropic,
+/// and the factor drifts roughly 25–100× across providers; 100 is that 50 with a
+/// margin factor of 2, which covers the drift. Order of magnitude is the intended
+/// precision — the decision separates a ping worth ~cents from one worth dollars,
+/// and exact prices are only available retrospectively (and not at all on
+/// subscription endpoints).
+const PREFIX_TOKENS_PER_DISCARDED_TOKEN: u64 = 100;
+
 /// The cache keepalive (docs/transport.md): fire a `max_tokens: 0` ping when the
 /// canonical prefix nears eviction during idle, so the next real turn resumes hot.
 /// Pure transport — it reads the prefix and records the usage; the log is never
@@ -39,6 +54,12 @@ pub(crate) async fn keepalive_loop(
         // Same prefix a real turn would send (byte-identical, or it writes a new
         // entry instead of refreshing the live one); `max_tokens: 0` reads it.
         let mut messages = shared.project_messages();
+        lop_trailing_model_turns(&mut messages);
+        if messages.is_empty() {
+            // Nothing but model turns in the log (or nothing at all): there is no
+            // valid ping to send, and no prefix a real turn would reuse either.
+            continue;
+        }
         place_trailing_cache_breakpoint(&mut messages, client.breakpoint_placement());
         match client
             .keepalive(&messages, &tools, ToolChoice::auto())
@@ -47,24 +68,74 @@ pub(crate) async fn keepalive_loop(
             Ok(request) => {
                 // The read-only tripwire (docs/transport.md): `max_tokens: 0` is
                 // supposed to generate nothing, but a mandatory-reasoning endpoint
-                // reasons anyway and bills it as output. One offense ends the
-                // keepalive for the session — a runtime check rather than a
-                // provider gate, so it also catches an endpoint that stops
-                // honoring the contract.
-                let generated = request.usage.output_tokens;
+                // reasons anyway and bills it as output. Tolerated while the prefix
+                // the ping keeps warm is large enough to dominate the discarded
+                // output; past that the ping costs more than the cold read it
+                // avoids, and keepalive ends for the session. A runtime check
+                // rather than a provider gate, so it also catches an endpoint that
+                // stops honoring the contract.
+                let discarded = request.usage.output_tokens;
+                let prefix = prefix_tokens(&request.usage);
                 let cache_read = request.usage.cache_read_input_tokens;
                 shared.record_keepalive(request);
-                if generated > 0 {
+                if !discard_is_affordable(discarded, prefix) {
                     eprintln!(
-                        "[keepalive generated {generated} output tokens on a max_tokens:0 \
-                         ping — not a read-only refresh on this endpoint; keepalive off \
-                         for this session]"
+                        "[keepalive generated {discarded} output tokens on a max_tokens:0 \
+                         ping against a {prefix}-token prefix — too much discarded output \
+                         to be worth the refresh; keepalive off for this session]"
                     );
                     return;
                 }
                 eprintln!("[keepalive: cache read {cache_read} — TTL refreshed]");
             }
+            // A rejected *request* is rejected identically next tick, so retrying it
+            // at the check cadence only reprints the same line for the life of the
+            // pause. Terminal for the session, same shape as the output tripwire;
+            // transient failures (5xx, network, timeouts, rate limits) keep retrying.
+            Err(e) if e.is_permanent() => {
+                eprintln!(
+                    "[keepalive rejected by the upstream: {e}; keepalive off for this session]"
+                );
+                return;
+            }
             Err(e) => eprintln!("[keepalive failed: {e}]"),
         }
     }
+}
+
+/// Drop trailing assistant messages so the ping ends on a user-role message
+/// (docs/transport.md). Tool results project as user role, so this removes exactly
+/// the model output that has never been sent as input: a settled session's closing
+/// prose, or the `tool_use` turn a pending approval gate is parked on. Some
+/// providers reject a request that ends with a model turn outright, and the lopped
+/// prefix is the one the last request already cached, so the ping is still a read
+/// of the live entry.
+///
+/// Transport-side only: the projection itself is untouched, and its byte-stability
+/// pins do not move.
+pub(super) fn lop_trailing_model_turns(messages: &mut Vec<ApiMessage>) {
+    while messages.last().is_some_and(|m| m.role == Role::Assistant) {
+        messages.pop();
+    }
+}
+
+/// The prompt tokens the ping read, however the endpoint accounted for them —
+/// fresh input, cache read, and cache write are all "prefix this ping paid to
+/// send", and providers split the same prefix across these three fields
+/// differently.
+pub(super) fn prefix_tokens(usage: &Usage) -> u64 {
+    usage
+        .input_tokens
+        .saturating_add(usage.cache_read_input_tokens)
+        .saturating_add(usage.cache_creation_input_tokens)
+}
+
+/// Whether a ping that discarded `discarded` output tokens over a `prefix`-token
+/// prefix was still worth sending, per [`PREFIX_TOKENS_PER_DISCARDED_TOKEN`]. The
+/// ratio self-scales: a large prefix absorbs a few thousand reasoning tokens, a
+/// small one absorbs none, and a runaway generation fails it at any prefix size.
+/// A ping that generated nothing is affordable whatever the reported prefix,
+/// including an endpoint that reports no usage at all.
+pub(super) fn discard_is_affordable(discarded: u64, prefix: u64) -> bool {
+    discarded == 0 || discarded.saturating_mul(PREFIX_TOKENS_PER_DISCARDED_TOKEN) < prefix
 }

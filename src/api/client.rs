@@ -67,6 +67,58 @@ pub(super) fn captured_error_body(conn: &mut Conn) -> Option<String> {
     conn.take_state::<CapturedErrorBody>().map(|b| b.0)
 }
 
+/// Why a keepalive ping failed (docs/transport.md). A distinct type from the
+/// transport's boxed [`Error`] because the keepalive loop's retry decision is a
+/// function of the HTTP status: a request the upstream rejects as malformed will
+/// be rejected identically on the next tick, so the loop must be able to read the
+/// status structurally rather than parse an error string.
+#[derive(Debug)]
+pub enum KeepaliveError {
+    /// The upstream answered with a non-2xx. `status` is `None` when the response
+    /// carried no status line at all; `body` is the upstream's text.
+    Status { status: Option<u16>, body: String },
+    /// Anything before or after the status: connection failure, unreadable body,
+    /// a response that did not parse.
+    Other(Error),
+}
+
+impl KeepaliveError {
+    pub fn other(e: impl Into<Error>) -> Self {
+        Self::Other(e.into())
+    }
+
+    /// Whether this failure will recur identically on the next ping — the upstream
+    /// rejected the request itself, not the moment. True for the 4xx range except
+    /// 408 (request timeout) and 429 (rate limit), which describe the moment. 401
+    /// and 403 count as permanent here because the client's credential is fixed at
+    /// boot, so a rejected credential stays rejected for the life of the session.
+    pub fn is_permanent(&self) -> bool {
+        match self {
+            Self::Status {
+                status: Some(s), ..
+            } => (400..500).contains(s) && *s != 408 && *s != 429,
+            _ => false,
+        }
+    }
+}
+
+impl std::fmt::Display for KeepaliveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Status {
+                status: Some(status),
+                body,
+            } => write!(f, "keepalive returned {status}: {body}"),
+            Self::Status { status: None, body } => {
+                write!(f, "keepalive returned no status: {body}")
+            }
+            Self::Other(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for KeepaliveError {}
+
 /// Observes every upstream response in the reverse pass, before the outer retry
 /// handler queues another attempt (docs/transport.md).
 ///
@@ -482,7 +534,7 @@ impl Client {
         messages: &[ApiMessage],
         tools: &[Value],
         tool_choice: ToolChoice,
-    ) -> Result<RequestUsage, Error> {
+    ) -> Result<RequestUsage, KeepaliveError> {
         let request = Request {
             model: &self.model,
             max_tokens: 0,
@@ -498,7 +550,7 @@ impl Client {
             messages,
             stream: false,
         };
-        let body = serde_json::to_string(&request)?;
+        let body = serde_json::to_string(&request).map_err(KeepaliveError::other)?;
         let conn = self
             .http
             .post(self.endpoint.url.as_str())
@@ -509,17 +561,25 @@ impl Client {
             .with_request_header("anthropic-version", ANTHROPIC_VERSION)
             .with_request_header("content-type", "application/json");
         let conn = self.with_session_id(conn);
-        let mut conn = conn.with_body(body).await?;
-        let ok = conn.status().is_some_and(|s| s.is_success());
-        if !ok {
+        let mut conn = conn.with_body(body).await.map_err(KeepaliveError::other)?;
+        let status = conn.status().map(|s| s as u16);
+        if !status.is_some_and(|s| (200..300).contains(&s)) {
             // Same stash as the SSE open error: the handler consumed the body already.
-            let text = match captured_error_body(&mut conn) {
+            let body = match captured_error_body(&mut conn) {
                 Some(text) => text,
-                None => conn.response_body().read_string().await?,
+                None => conn
+                    .response_body()
+                    .read_string()
+                    .await
+                    .map_err(KeepaliveError::other)?,
             };
-            return Err(format!("keepalive returned non-2xx: {text}").into());
+            return Err(KeepaliveError::Status { status, body });
         }
-        let text = conn.response_body().read_string().await?;
+        let text = conn
+            .response_body()
+            .read_string()
+            .await
+            .map_err(KeepaliveError::other)?;
         #[derive(Deserialize)]
         struct KeepaliveResponse {
             #[serde(default)]
@@ -528,7 +588,8 @@ impl Client {
             model: Option<String>,
             usage: Usage,
         }
-        let parsed: KeepaliveResponse = serde_json::from_str(&text)?;
+        let parsed: KeepaliveResponse =
+            serde_json::from_str(&text).map_err(KeepaliveError::other)?;
         Ok(RequestUsage {
             id: parsed.id,
             model: parsed.model,

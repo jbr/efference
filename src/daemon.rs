@@ -41,7 +41,7 @@ use crate::frontend::{Approval, Frontend, Interrupt, SubmittedTurn};
 use crate::log::{CallId, EditState, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{
-    ApiMessage, ImagePlacement, Retention, place_trailing_cache_breakpoint, project_with,
+    ApiMessage, ImagePlacement, Retention, Role, place_trailing_cache_breakpoint, project_with,
 };
 use crate::spotter::Spotter;
 use crate::supervisor::{BgView, Supervisor};
