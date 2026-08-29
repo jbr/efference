@@ -133,10 +133,16 @@ background-after-max = 600   # ceiling on what one call may ask for
 [transport]
 stream-ceiling = 300         # seconds one response's stream may stay open
 keepalive-interval = 240     # seconds the prompt cache may go untouched at idle; 0 = no ping
+effort = "high"              # low | medium | high | xhigh | max; omit for the provider default
 ```
 
 The keepalive only runs at all if the model's provider metadata reports a prompt
 cache behind it; the interval says how often to touch it, and `0` turns it off.
+
+`effort` is how much effort the model spends per turn, a separate axis from
+whether it thinks. It is read once at session start (`serve --effort` overrides
+it) and cannot change mid-session. `xhigh` and `max` require thinking, so pairing
+either with `EFFERENCE_THINKING=off` is refused at startup.
 
 ## `[mcp.servers.<name>]` — connected providers
 

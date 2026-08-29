@@ -39,8 +39,7 @@ impl Thinking {
         tool_choice: &ToolChoice,
         model_reasoning: bool,
     ) -> Self {
-        let adaptive = THINKING_OVERRIDE
-            .unwrap_or_else(|| is_recognized_adaptive_claude(model) || model_reasoning);
+        let adaptive = adaptive_on_auto(model, model_reasoning);
         match tool_choice.kind {
             "auto" if adaptive => THINKING_ADAPTIVE,
             _ if is_claude_family(model) => THINKING_DISABLED,
@@ -58,6 +57,126 @@ impl Thinking {
             Thinking::Omit
         }
     }
+}
+
+/// The `output_config` object (docs/transport.md) — present on the request only
+/// when the session set an effort, so a session that sets none sends the same
+/// bytes it always did. One field today; the wrapper exists because the API
+/// nests `effort` inside it.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OutputConfig {
+    pub effort: Effort,
+}
+
+/// How much effort the model spends on a turn (docs/transport.md) — the *level*
+/// axis, orthogonal to [`Thinking`]'s *type* axis. Set once at boot from
+/// `--effort` or `[transport] effort`, never mutated for the life of the session,
+/// so it cannot move a live cached prefix.
+///
+/// One coupling with the other axis: `Xhigh` and `Max` require thinking enabled,
+/// and Anthropic answers the pairing with a 400 — [`check_effort_thinking`]
+/// rejects it at boot instead.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Effort {
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+}
+
+impl Effort {
+    /// The five spellings, in ascending order — the vocabulary the flag, the
+    /// config key, and the rejection message all read from.
+    pub const ALL: [Effort; 5] = [
+        Effort::Low,
+        Effort::Medium,
+        Effort::High,
+        Effort::Xhigh,
+        Effort::Max,
+    ];
+
+    /// The token the wire, the config, and the flag spell it with.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Effort::Low => "low",
+            Effort::Medium => "medium",
+            Effort::High => "high",
+            Effort::Xhigh => "xhigh",
+            Effort::Max => "max",
+        }
+    }
+
+    /// Whether this level is legal only with thinking enabled. The top two are:
+    /// they describe how far a think may run, so there is nothing for them to
+    /// scale when thinking is off.
+    pub fn requires_thinking(self) -> bool {
+        matches!(self, Effort::Xhigh | Effort::Max)
+    }
+}
+
+impl std::fmt::Display for Effort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for Effort {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|e| e.as_str() == s.trim())
+            .ok_or_else(|| {
+                format!(
+                    "unknown effort {s:?} — expected one of {}",
+                    Self::ALL.map(Effort::as_str).join(", ")
+                )
+            })
+    }
+}
+
+/// The boot check for the one coupling between the two axes (docs/transport.md):
+/// `xhigh`/`max` with thinking off is a 400 from Anthropic, so a session
+/// configured that way is refused at startup with a message naming both halves
+/// rather than failing on its first turn. Pure in `thinking_off` so the caller
+/// supplies the session's effective answer — which is
+/// [`auto_turns_disable_thinking`], covering both routes to disabled: the
+/// `EFFERENCE_THINKING=off` override, and a Claude-family model whose turns fall
+/// through to explicit `disabled` (Haiku, or any model the capability lookup
+/// denies reasoning).
+pub fn check_effort_thinking(effort: Option<Effort>, thinking_off: bool) -> Result<(), String> {
+    match effort {
+        Some(effort) if thinking_off && effort.requires_thinking() => Err(format!(
+            "effort `{effort}` requires thinking, but this session's turns send thinking \
+             disabled (EFFERENCE_THINKING=off, or a model that doesn't get adaptive thinking) \
+             — the provider answers that pairing with a 400. Use `high` or lower, or enable \
+             thinking."
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Whether the session's turns will carry thinking **disabled** — the effective
+/// answer [`check_effort_thinking`] needs, mirroring [`Thinking::for_request`]'s
+/// `auto` arm through the shared [`adaptive_on_auto`]: not adaptive, on a
+/// Claude-family model (the fall-through to explicit `disabled`). A foreign model
+/// without adaptive gets the field *omitted*, not disabled — the endpoint decides,
+/// so effort there is the unverified-translation watch-item (docs/transport.md),
+/// not this check's business.
+pub fn auto_turns_disable_thinking(model: &str, model_reasoning: bool) -> bool {
+    !adaptive_on_auto(model, model_reasoning) && is_claude_family(model)
+}
+
+/// Whether an `auto`-choice turn thinks: the `EFFERENCE_THINKING` override when
+/// set, else the recognized-adaptive-Claude rule or the capability lookup's
+/// reasoning grant. The one place this is decided — [`Thinking::for_request`] and
+/// [`auto_turns_disable_thinking`] both read it, so the boot check cannot drift
+/// from what the turns actually send.
+fn adaptive_on_auto(model: &str, model_reasoning: bool) -> bool {
+    THINKING_OVERRIDE.unwrap_or_else(|| is_recognized_adaptive_claude(model) || model_reasoning)
 }
 
 /// A Claude-family model id — direct (`claude-…`) or provider-scoped

@@ -734,3 +734,30 @@ fn parses_the_transport_keepalive_interval() {
             .is_zero()
     );
 }
+
+/// `[transport] effort` is the third transport knob and the only one that reaches
+/// the request body: the level the model spends per turn (docs/transport.md).
+/// Absent means the field is left off the wire entirely, which is the provider's
+/// own default — distinct from any level this could name. An unrecognized level
+/// fails the whole file, naming the five it could have been, rather than becoming
+/// a 400 on the session's first turn.
+#[test]
+fn parses_the_transport_effort() {
+    let role = parse_str(
+        r#"
+            [transport]
+            effort = "xhigh"
+            "#,
+    );
+    assert_eq!(role.transport.effort, Some(crate::api::Effort::Xhigh));
+    assert_eq!(parse_str("").transport.effort, None);
+
+    let error = super::parse(Path::new("bad.toml"), "[transport]\neffort = \"extreme\"\n")
+        .expect_err("an unknown level fails the file");
+    let message = error.to_string();
+    assert!(message.contains("extreme"), "names the input: {message}");
+    assert!(
+        message.contains("low, medium, high, xhigh, max"),
+        "names the vocabulary: {message}"
+    );
+}

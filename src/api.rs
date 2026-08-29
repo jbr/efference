@@ -85,6 +85,13 @@ struct Request<'a> {
     /// cached prefix's way.
     #[serde(skip_serializing_if = "Thinking::is_omit")]
     thinking: Thinking,
+    /// How much effort the model spends on the turn (docs/transport.md) — the
+    /// level axis beside `thinking`'s type axis. `None` (no `--effort`, no
+    /// `[transport] effort`) skips serialization entirely, so a session that
+    /// sets no effort sends the bytes it always did. Set once at boot and never
+    /// flipped, so a session that does set one still never moves its own prefix.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_config: Option<OutputConfig>,
     /// Sampling temperature, in the provider's native float range. Omits when
     /// `None` (the session didn't set `--temperature`), letting the API default
     /// (1.0). When set, the value is the provider's mapped float — a per-session
@@ -317,7 +324,7 @@ pub use provider::{ModelCapabilities, Provider};
 pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,
 };
-pub use thinking::ToolChoice;
+pub use thinking::{Effort, ToolChoice, auto_turns_disable_thinking, check_effort_thinking};
 
 use assembler::Assembler;
-use thinking::Thinking;
+use thinking::{OutputConfig, Thinking};

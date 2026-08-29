@@ -8,6 +8,8 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **A boot-time effort level** (docs/transport.md): `serve --effort low|medium|high|xhigh|max` or `[transport] effort` sends `output_config.effort` on the turn and fork-peek envelope — unset sends nothing and is byte-identical to before; `xhigh`/`max` on a session whose turns send thinking disabled (the `EFFERENCE_THINKING=off` override, or a Claude model without adaptive thinking) is refused at boot instead of 400ing on the first turn.
+
 - **Web push on gate and settle** (docs/web-push.md): each live daemon notifies subscribed devices when an approval gate opens (body: the call's `intent`) or a turn settles (body: the turn's closing prose) — VAPID key derived from the machine root, subscriptions in one machine-scoped store, opt-in checkbox in the web client's Interface tab.
 
 - **No push while the session is watched** (docs/web-push.md): a live `/events` connection suppresses gate and settle notifications; the web client drops its stream a few seconds after the tab goes hidden and resumes from its cursor when it returns, `?presence=off` opts a non-human consumer out of the count, and the service worker skips a notification a visible window would duplicate.

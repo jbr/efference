@@ -27,6 +27,9 @@ pub fn render_request_pretty(
         tools,
         tool_choice,
         thinking: Thinking::for_request(model, &tool_choice, false),
+        // The dev views render the shape a turn sends; the session's effort is a
+        // boot-time value these helpers are not given, so they show none.
+        output_config: None,
         temperature: None,
         upstream: None,
         prompt_cache_key: None,
@@ -107,6 +110,9 @@ pub(super) fn request_value(
         tools,
         tool_choice,
         thinking: Thinking::for_request(model, &tool_choice, false),
+        // The dev views render the shape a turn sends; the session's effort is a
+        // boot-time value these helpers are not given, so they show none.
+        output_config: None,
         temperature: None,
         upstream: None,
         prompt_cache_key: None,

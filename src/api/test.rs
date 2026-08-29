@@ -1117,6 +1117,7 @@ fn request_omits_temperature_when_none() {
         tools: &[],
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Disabled,
+        output_config: None,
         temperature: None,
         upstream: None,
         prompt_cache_key: None,
@@ -1142,6 +1143,7 @@ fn request_includes_temperature_when_set() {
         tools: &[],
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Disabled,
+        output_config: None,
         temperature: Some(0.7),
         upstream: None,
         prompt_cache_key: None,
@@ -1193,6 +1195,7 @@ fn request_envelope_matches_expected_wire_bytes() {
         tools: &tools,
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Disabled,
+        output_config: None,
         temperature: Some(0.7),
         upstream: None,
         prompt_cache_key: None,
@@ -1208,6 +1211,131 @@ fn request_envelope_matches_expected_wire_bytes() {
         r#""stream":true}"#,
     );
     assert_eq!(serde_json::to_string(&request).unwrap(), expected);
+}
+
+/// The same envelope with an effort set — the other side of the pin above, which
+/// holds because `output_config` is absent when the session sets none. This fixes
+/// the with-effort bytes: the object is `{"effort":"<level>"}` nested under
+/// `output_config`, and it sits **between `thinking` and `temperature`**, so the
+/// two reasoning knobs are adjacent (docs/transport.md).
+///
+/// Same rule as the pin above: a session's effort is boot-time and frozen, so
+/// these bytes never change under a live cache — but if this test fails, the
+/// change moves the prefix of every session that sets an effort, so update it
+/// deliberately.
+#[test]
+fn with_effort_envelope_matches_expected_wire_bytes() {
+    use crate::project::{ApiBlock, ApiMessage, CacheControl, Role};
+
+    let tools = [serde_json::json!({
+        "name": "bash",
+        "description": "run a command",
+        "input_schema": {"type": "object"},
+    })];
+    let messages = [ApiMessage {
+        role: Role::User,
+        content: vec![ApiBlock::Text {
+            text: "hello".into(),
+            cache_control: Some(CacheControl::Ephemeral),
+        }],
+    }];
+    let request = Request {
+        model: "claude-opus-5",
+        max_tokens: 4096,
+        system: "you are a harness",
+        tools: &tools,
+        tool_choice: ToolChoice::auto(),
+        thinking: THINKING_ADAPTIVE,
+        output_config: Some(OutputConfig {
+            effort: Effort::Xhigh,
+        }),
+        temperature: Some(0.7),
+        upstream: None,
+        prompt_cache_key: None,
+        messages: &messages,
+        stream: true,
+    };
+    let expected = concat!(
+        r#"{"model":"claude-opus-5","max_tokens":4096,"system":"you are a harness","#,
+        r#""tools":[{"description":"run a command","input_schema":{"type":"object"},"name":"bash"}],"#,
+        r#""tool_choice":{"type":"auto","disable_parallel_tool_use":true},"#,
+        r#""thinking":{"type":"adaptive","display":"summarized"},"#,
+        r#""output_config":{"effort":"xhigh"},"temperature":0.7,"#,
+        r#""messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral"}}]}],"#,
+        r#""stream":true}"#,
+    );
+    assert_eq!(serde_json::to_string(&request).unwrap(), expected);
+}
+
+/// Each level's wire token, and the parse in both directions. The vocabulary is
+/// the API's, so a typo'd level is rejected here rather than as a provider 400 —
+/// with a message naming the five it could have been.
+#[test]
+fn effort_levels_round_trip_and_reject_anything_else() {
+    for (effort, token) in [
+        (Effort::Low, "low"),
+        (Effort::Medium, "medium"),
+        (Effort::High, "high"),
+        (Effort::Xhigh, "xhigh"),
+        (Effort::Max, "max"),
+    ] {
+        assert_eq!(effort.as_str(), token);
+        assert_eq!(
+            serde_json::to_string(&effort).unwrap(),
+            format!("\"{token}\"")
+        );
+        assert_eq!(token.parse::<Effort>(), Ok(effort));
+    }
+    let why = "very-high".parse::<Effort>().unwrap_err();
+    assert!(why.contains("very-high"), "names the input: {why}");
+    assert!(
+        why.contains("low, medium, high, xhigh, max"),
+        "names the vocabulary: {why}"
+    );
+    // `xhigh` and `max` are the two that need thinking on.
+    assert!(!Effort::High.requires_thinking());
+    assert!(Effort::Xhigh.requires_thinking());
+    assert!(Effort::Max.requires_thinking());
+}
+
+/// The one coupling between the level axis and the type axis, checked at boot:
+/// `xhigh`/`max` with thinking off is a 400 from the provider, so the session is
+/// refused at startup with a message naming both halves (docs/transport.md).
+/// Every other pairing — including a session that sets no effort at all — passes.
+#[test]
+fn thinking_off_rejects_the_two_levels_that_need_thinking() {
+    let why = crate::api::check_effort_thinking(Some(Effort::Max), true).unwrap_err();
+    assert!(why.contains("max"), "names the level: {why}");
+    assert!(
+        why.contains("EFFERENCE_THINKING"),
+        "names one route to thinking-off: {why}"
+    );
+    assert!(crate::api::check_effort_thinking(Some(Effort::Xhigh), true).is_err());
+    assert!(crate::api::check_effort_thinking(Some(Effort::High), true).is_ok());
+    assert!(crate::api::check_effort_thinking(None, true).is_ok());
+    for effort in Effort::ALL {
+        assert!(crate::api::check_effort_thinking(Some(effort), false).is_ok());
+    }
+}
+
+/// The boot check's `thinking_off` input covers *both* routes to disabled, not
+/// just the env override: a Claude model outside the adaptive rule whose
+/// capability lookup denies reasoning (Haiku is the concrete case) falls through
+/// to explicit `disabled` on every auto turn, so `--effort max` there must refuse
+/// at boot rather than 400 on the first turn. Assumes `EFFERENCE_THINKING` is
+/// unset in the test environment, like every other test of the thinking matrix.
+#[test]
+fn the_capability_route_to_thinking_off_is_covered() {
+    use crate::api::auto_turns_disable_thinking as off;
+    // Haiku: Claude family, not recognized-adaptive, no reasoning grant → disabled.
+    assert!(off("claude-haiku-4-5", false));
+    assert!(off("anthropic/claude-haiku-4.5", false));
+    // Adaptive Claude thinks; a reasoning grant rescues an unrecognized Claude.
+    assert!(!off("claude-opus-4-8", false));
+    assert!(!off("claude-haiku-4-5", true));
+    // A foreign model without reasoning gets `Omit`, not `disabled` — the
+    // endpoint decides, so the boot check stays out of it.
+    assert!(!off("deepseek/deepseek-v4-flash", false));
 }
 
 /// The pinned envelope above is what an **Anthropic** session sends, and adding
@@ -1227,6 +1355,7 @@ fn openrouter_envelope_carries_the_prompt_cache_key() {
         tools: &[],
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Omit,
+        output_config: None,
         temperature: None,
         upstream: Some(&pin),
         prompt_cache_key: Some("work-0123456789abcdef"),
@@ -1393,6 +1522,7 @@ fn request_envelope_omits_unset_fields_entirely() {
         tools: &[],
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Omit,
+        output_config: None,
         temperature: None,
         upstream: None,
         prompt_cache_key: None,
@@ -1509,6 +1639,7 @@ fn a_pinned_upstream_renders_as_the_provider_object() {
             tools: &tools,
             tool_choice: ToolChoice::auto(),
             thinking: Thinking::Omit,
+            output_config: None,
             temperature: None,
             upstream,
             prompt_cache_key: None,
@@ -1854,4 +1985,116 @@ fn the_stream_ceiling_defaults_generously_and_is_operator_settable() {
     );
     // Comfortably past the widest model call in this repo's corpus (363s).
     assert!(DEFAULT_STREAM_CEILING >= std::time::Duration::from_secs(3600));
+}
+
+/// Which envelopes carry the effort, over a real socket: the turn (and the fork
+/// peek, which is the same `complete` on the same client) sends it; the keepalive
+/// on that same client does not (docs/transport.md). The keepalive sends thinking
+/// disabled — `max_tokens: 0` rejects thinking-on — and `xhigh`/`max` are illegal
+/// with thinking off, so the ping cannot carry the field the turns do. Its
+/// envelope therefore differs from a turn's by exactly this key whenever a session
+/// sets an effort; whether that splits the provider's cache key is the watch-item
+/// in docs/transport.md, read off `usage.jsonl`.
+///
+/// A client that was never given an effort — the spotter's, built by
+/// `spotter::ForkSpot` with a bare `Client::new` — sends the field on neither
+/// path, which the second half asserts.
+#[tokio::test]
+async fn only_the_shared_turn_envelope_carries_the_effort() {
+    use std::io::{Read, Write};
+
+    /// One request/response over a fresh socket; returns the request bytes the
+    /// client sent. `sse` picks the canned reply: an empty stream for `complete`,
+    /// a usage-only JSON body for `keepalive`.
+    async fn round_trip(effort: Option<Effort>, sse: bool) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            // Read until the whole POST body has arrived: one `read` can return the
+            // headers alone, and the assertion below is about the body.
+            let mut request = String::new();
+            let mut buf = [0u8; 16384];
+            loop {
+                let read = sock.read(&mut buf).unwrap();
+                request.push_str(&String::from_utf8_lossy(&buf[..read]));
+                let complete = request.split_once("\r\n\r\n").is_some_and(|(head, body)| {
+                    head.to_ascii_lowercase()
+                        .split("\r\n")
+                        .find_map(|line| line.strip_prefix("content-length: ").map(str::to_string))
+                        .and_then(|n| n.trim().parse::<usize>().ok())
+                        .is_some_and(|n| body.len() >= n)
+                });
+                if read == 0 || complete {
+                    break;
+                }
+            }
+            let (content_type, body) = if sse {
+                (
+                    "text/event-stream",
+                    "event: message_start\ndata: {\"message\":{\"id\":\"gen-1\",\
+                     \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
+                     event: data\ndata: [DONE]\n\n"
+                        .to_string(),
+                )
+            } else {
+                (
+                    "application/json",
+                    "{\"id\":\"msg-1\",\"model\":\"m\",\"usage\":{\"input_tokens\":1,\
+                     \"output_tokens\":0}}"
+                        .to_string(),
+                )
+            };
+            sock.write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: {content_type}\r\n\
+                     content-length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            sock.flush().unwrap();
+            request
+        });
+
+        let endpoint = Endpoint {
+            provider: Provider::Anthropic,
+            url: format!("http://{addr}/v1/messages"),
+            auth_header: "x-api-key".into(),
+            auth_value: "k".into(),
+            session_id: None,
+        };
+        let client = Client::new(endpoint, "claude-opus-5", "sys", None).with_effort(effort);
+        if sse {
+            client
+                .complete(&[], &[], ToolChoice::auto(), |_| {})
+                .await
+                .expect("the canned stream assembles");
+        } else {
+            client
+                .keepalive(&[], &[], ToolChoice::auto())
+                .await
+                .expect("the canned body parses");
+        }
+        server.join().unwrap()
+    }
+
+    let turn = round_trip(Some(Effort::Max), true).await;
+    assert!(
+        turn.contains(r#""output_config":{"effort":"max"}"#),
+        "the turn envelope carries it: {turn}"
+    );
+    let ping = round_trip(Some(Effort::Max), false).await;
+    assert!(
+        !ping.contains("output_config"),
+        "the keepalive does not: {ping}"
+    );
+
+    // The shape of the spotter's client: never given an effort, so neither path
+    // carries one — including with the forced tool choice that disables thinking.
+    let turn = round_trip(None, true).await;
+    assert!(!turn.contains("output_config"), "{turn}");
+    let ping = round_trip(None, false).await;
+    assert!(!ping.contains("output_config"), "{ping}");
 }

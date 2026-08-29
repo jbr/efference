@@ -137,6 +137,53 @@ prefix's way. The wire encoding is pinned by
 never elided today — that's a deferred generalization of the redaction model
 (the log holds them all verbatim).
 
+### Effort: the level axis
+
+`output_config: { effort }` is the second reasoning knob, orthogonal to
+`thinking`: `thinking` is the **type** (whether and when the model thinks),
+`effort` is the **level** — `low | medium | high | xhigh | max` (`api::Effort`).
+It is set at boot from `serve --effort` or `[transport] effort` (the flag wins),
+and there is no runtime mutation path: changing a thinking parameter mid-session
+invalidates the message-tier cache on Anthropic, and a replayed thinking block's
+signature under a changed config is its own unanswered question. Unset, the field
+is omitted entirely and the provider's own default stands — which is why every
+session that sets nothing sends the bytes it always did
+(`request_envelope_matches_expected_wire_bytes` is unmoved;
+`with_effort_envelope_matches_expected_wire_bytes` pins the other side, with
+`output_config` sitting between `thinking` and `temperature`).
+
+**The one coupling between the axes**: `xhigh` and `max` require thinking
+enabled, and the pairing is a 400 from Anthropic. `EFFERENCE_THINKING=off` is
+what can take thinking away for a whole session, so that combination is refused
+at boot (`api::check_effort_thinking`, called from `serve`) rather than forwarded
+as a provider error on the first turn.
+
+**Which envelopes carry it.** The effort rides the agent `Client`, so it reaches
+`Client::complete` only — the main turn and the fork peek, which is the shared
+envelope ([redaction-fork.md](redaction-fork.md)): if one carried it and the
+other didn't, the peek would stop reading the agent lineage's cache. The spotter
+forces its tool, disables thinking, and runs on its own client, which is never
+given an effort. The keepalive omits it by construction — `max_tokens: 0` rejects
+thinking-on, so the ping sends thinking disabled/omitted, and `xhigh`/`max` with
+thinking off is the 400 above.
+
+**Watch-item (keepalive).** That last omission means a session with an effort set
+sends a keepalive envelope that differs from its turns' by exactly this key.
+Whether that splits the cache key on Anthropic — so that the ping refreshes a
+different entry than the turns read — is unverified. The symptom is readable in
+`usage.jsonl`: a keepalive's `cache_read_input_tokens` dropping to only the
+tools+system tier while the turns keep reading the full prefix. Not solved here;
+watched.
+
+**Foreign slugs, unverified.** OpenRouter's docs show `output_config.effort`
+honored on the Messages skin for Anthropic models. Whether the skin *translates*
+it to OpenRouter's normalized `reasoning.effort` for a foreign slug is
+**unverified** — no live probe has been run. First use on a foreign model should
+watch behavior and `usage.jsonl` (a level that changes nothing about output token
+counts is the null result). OpenRouter's own `reasoning.effort` maps Gemini 3 to
+Google's `thinkingLevel` (with `xhigh` mapped down to `high`) and other models to
+the nearest supported level; token consumption per level is provider-internal.
+
 ---
 
 ## HTTP/2 over trillium-rustls

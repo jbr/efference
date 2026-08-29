@@ -207,6 +207,13 @@ pub struct Client {
     /// so it cannot move the cached prefix. Both stream surfaces ride it: the
     /// turn loop and the fork peek call the same [`Self::complete`].
     stream_ceiling: Duration,
+    /// The session's effort level, when one is set (docs/transport.md). Rides
+    /// the shared envelope only — [`Self::complete`], which both the turn loop
+    /// and the fork peek call, so the peek's prefix still matches the agent
+    /// lineage's (docs/redaction-fork.md). The keepalive deliberately omits it
+    /// (`max_tokens: 0` sends thinking disabled), and the spotter's client never
+    /// sets it.
+    effort: Option<Effort>,
     /// Which upstream serves this session, when pinned (docs/transport.md).
     upstream: Option<Upstream>,
     upstream_failure: UpstreamFailureState,
@@ -276,6 +283,7 @@ impl Client {
             model_reasoning: false,
             max_tokens: MAX_TOKENS,
             stream_ceiling: DEFAULT_STREAM_CEILING,
+            effort: None,
             upstream: None,
             upstream_failure,
             upstream_retry: upstream_retry_state(),
@@ -342,6 +350,16 @@ impl Client {
         self
     }
 
+    /// Set the session's effort level (`--effort`, `[transport] effort` —
+    /// docs/transport.md). Boot-time only: it is set before the first turn and
+    /// never changed, since a mid-session change would move the cached prefix.
+    /// Applies to every [`Self::complete`] this client makes, so the turn and
+    /// the fork peek carry the same envelope; the keepalive is not built from it.
+    pub fn with_effort(mut self, effort: Option<Effort>) -> Self {
+        self.effort = effort;
+        self
+    }
+
     /// Record the capability lookup's reasoning answer
     /// (`ModelCapabilities::supports_reasoning`) — an input to the thinking matrix
     /// ([`Thinking::for_request`]).
@@ -395,6 +413,7 @@ impl Client {
             tools,
             tool_choice,
             thinking: Thinking::for_request(&self.model, &tool_choice, self.model_reasoning),
+            output_config: self.effort.map(|effort| OutputConfig { effort }),
             temperature: self
                 .temperature
                 .map(|t| self.endpoint.provider.map_temperature(t)),
@@ -542,6 +561,11 @@ impl Client {
             tools,
             tool_choice,
             thinking: Thinking::for_keepalive(&self.model),
+            // No effort: this ping sends thinking disabled/omitted (`max_tokens: 0`
+            // rejects thinking-on), and `xhigh`/`max` with thinking off is a 400.
+            // Its envelope therefore differs from a turn's by this field whenever a
+            // session sets one — the watch-item in docs/transport.md.
+            output_config: None,
             temperature: self
                 .temperature
                 .map(|t| self.endpoint.provider.map_temperature(t)),

@@ -148,6 +148,7 @@ pub(crate) async fn serve(
     spotter_model: &str,
     config: Option<PathBuf>,
     temperature: Option<u8>,
+    effort: Option<efference::api::Effort>,
     upstream: Vec<String>,
     autonomous: bool,
     reauth: Vec<String>,
@@ -270,6 +271,24 @@ pub(crate) async fn serve(
             return Err("could not load session config".into());
         }
     };
+
+    // The session's effort level (docs/transport.md): the flag if given, else the
+    // session config's `[transport] effort`, else nothing on the wire at all. Boot-time
+    // and frozen — no runtime toggle, because a mid-session change would move the cached
+    // prefix. The one cross-axis coupling is checked here rather than forwarded as the
+    // provider's 400: `xhigh`/`max` need thinking, which either `EFFERENCE_THINKING=off`
+    // or a model whose turns fall through to explicit `disabled` takes away — the
+    // capability lookup above is what makes the effective answer computable here.
+    let effort = effort.or(loaded.role.transport.effort);
+    if let Err(why) = efference::api::check_effort_thinking(
+        effort,
+        efference::api::auto_turns_disable_thinking(model, capabilities.supports_reasoning),
+    ) {
+        return Err(why.into());
+    }
+    if let Some(effort) = effort {
+        eprintln!("effort: {effort}");
+    }
 
     // Layer the harness's self-surface protection over the operator's grants (docs/permissions.md).
     // The session dir holds this session's control socket, its append-only log, and — under the same
@@ -446,6 +465,10 @@ pub(crate) async fn serve(
         // that stays open without finalizing. It rides the agent client, which
         // the fork peek shares, so both stream surfaces are bounded alike.
         .with_stream_ceiling(loaded.role.transport.stream_ceiling)
+        // The effort level rides the agent client, so the turn and the fork peek send
+        // one envelope (docs/redaction-fork.md). The spotter's client is built
+        // separately and never carries it; the keepalive omits it by construction.
+        .with_effort(effort)
         .with_model_reasoning(capabilities.supports_reasoning);
     // The output budget follows the model's reported cap (a reasoning model's
     // thinking bills against it; the 4096 default starves a long think). No

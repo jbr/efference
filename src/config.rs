@@ -106,8 +106,11 @@ impl Default for BashLimits {
 /// how long a provider's prompt cache lives is a provider fact the harness does
 /// not read anywhere.
 ///
-/// Transport-only: nothing here reaches the request body, so no value of it can
-/// move the cached prefix (docs/log-and-projection.md).
+/// The two duration knobs are transport-only — nothing about them reaches the
+/// request body, so no value of them can move the cached prefix
+/// (docs/log-and-projection.md). `effort` is the exception: it *is* a request
+/// field. It is read once at boot and frozen for the session, so it moves the
+/// prefix no more than `model` does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransportLimits {
     /// How long a single response's SSE stream may stay open before the read
@@ -120,6 +123,13 @@ pub struct TransportLimits {
     /// needs. **Zero turns the keepalive off** — the honest spelling for "do not
     /// ping", rather than a separate boolean that could disagree with it.
     pub keepalive_interval: Duration,
+    /// How much effort the model spends per turn (docs/transport.md) — the level
+    /// axis beside the thinking type. `None` leaves the field off the request
+    /// entirely, which is the provider's own default. `serve --effort` overrides
+    /// whatever this says; both are boot-time, and there is no runtime mutation
+    /// path, because changing a thinking parameter mid-session invalidates the
+    /// message-tier cache on Anthropic.
+    pub effort: Option<crate::api::Effort>,
 }
 
 impl Default for TransportLimits {
@@ -127,6 +137,7 @@ impl Default for TransportLimits {
         Self {
             stream_ceiling: crate::api::DEFAULT_STREAM_CEILING,
             keepalive_interval: crate::daemon::DEFAULT_KEEPALIVE_INTERVAL,
+            effort: None,
         }
     }
 }
