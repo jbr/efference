@@ -911,6 +911,7 @@ mod keepalive;
 mod metrics;
 mod notifications;
 mod pace;
+mod push;
 mod stream;
 pub(crate) mod tcp;
 mod topics;

@@ -133,5 +133,6 @@ mod metrics;
 mod notifications;
 mod pace;
 mod processes;
+mod push;
 mod tools;
 mod views;

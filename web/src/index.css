@@ -1162,6 +1162,24 @@ select {
   font-size: 0.85em;
 }
 
+/* The push opt-in (docs/web-push.md), a row in the interface pane: the checkbox
+   and its label, then whatever the browser makes impossible or the last attempt
+   said, on the same line. */
+.push-toggle {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+  color: var(--fg-dim);
+}
+
+.push-toggle label {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 /* Tool-result views (docs/web-client.md, the cordon's display half). */
 .diff-added {
   color: var(--diff-add);

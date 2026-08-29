@@ -1197,8 +1197,10 @@ PNG sizes derived from it. `theme-color` starts at After Dark's page background
 and follows the resolved theme (`ui/theme.ts`), since the standalone window's
 chrome takes it.
 
-The service worker does two things and no third: make the app installable, and
-let the shell paint from cache on a cold start or a lost network. **Nothing
+The service worker does three things: make the app installable, let the shell
+paint from cache on a cold start or a lost network, and receive push
+([web-push.md](web-push.md)) — handlers at the bottom of the file that touch
+none of the caching rules. **Nothing
 session-shaped is cached** — `/v1`, `/files` and `/auth` always reach the
 daemon, matched with any session prefix removed so the rule covers both
 bindings; the shell routes are matched the same way, so a session-prefixed
@@ -1207,8 +1209,8 @@ about what the agent did, and saying what the agent did is what this page is
 for. What is cached is the build's own hashed assets (cache-first, because the
 hash is the version) and the shell routes. Registration is production-only
 (`src/pwa.ts`); on the dev path it unregisters instead, since a cached asset is
-what HMR must not get. Push is the other half and needs a durable home for
-subscriptions, which is the host's.
+what HMR must not get. Push — the worker's third job, and the "receive
+notifications" opt-in in the Interface tab — is [web-push.md](web-push.md).
 
 ## The gate surface
 

@@ -7,6 +7,9 @@ behind a change, see [`journal/`](journal/).
 
 ## [Unreleased]
 
+### Added
+- **Web push on gate and settle** (docs/web-push.md): each live daemon notifies subscribed devices when an approval gate opens (body: the call's `intent`) or a turn settles (body: the turn's closing prose) — VAPID key derived from the machine root, subscriptions in one machine-scoped store, opt-in checkbox in the web client's Interface tab.
+
 ### Fixed
 - **Image tool results work on Gemini through OpenRouter** — a third `ImagePlacement` (`AfterInterposedTurn`) moves the images out of the function-response turn, behind a projected assistant turn naming the result's `[seq]` handle. Gemini rejects a replayed thought signature whenever an image sits between the signed `tool_use` and the next assistant turn; every placement within that turn fails alike, on the provider's OpenAI-shaped endpoint as well as its Anthropic skin. The session that wedged now projects to a request the provider accepts.
 

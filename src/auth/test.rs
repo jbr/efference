@@ -49,6 +49,34 @@ fn bearer_matches_accepts_the_derived_token_and_nothing_else() {
     assert!(!root.bearer_matches(&off_by_one));
 }
 
+/// The VAPID keypair is a derivation like the others: same root in, same key out,
+/// every call and every construction. Push subscriptions are created against this
+/// key, so a key that moved between two daemons on one machine would strand them.
+#[test]
+fn vapid_key_is_stable_across_constructions() {
+    let a = Root::new("correct horse battery staple");
+    let b = Root::new("correct horse battery staple");
+    assert_eq!(a.vapid_key().to_bytes(), b.vapid_key().to_bytes());
+    assert_eq!(a.vapid_key().to_bytes(), a.vapid_key().to_bytes());
+    assert_ne!(
+        a.vapid_key().to_bytes(),
+        Root::new("another root").vapid_key().to_bytes()
+    );
+}
+
+/// One known root's public key, pinned. This is the value browsers subscribed
+/// against, so a change to the context string or the reject-and-retry loop moves
+/// it and strands every subscription on the machine — it must break a test first.
+#[test]
+fn a_known_root_derives_a_fixed_public_key() {
+    use p256::elliptic_curve::sec1::ToSec1Point;
+    let key = Root::new("correct horse battery staple").vapid_key();
+    assert_eq!(
+        URL_SAFE_NO_PAD.encode(key.public_key().to_uncompressed_point()),
+        "BNZc0T9OXhsNgF0IrSEkFk817b_bd8xg-oEsUGiyC00dAkhVEDijHxfwQo88W2cOiftt-kWMGcWD3XU3bBZalkI"
+    );
+}
+
 // ---- cookie ----
 
 #[test]

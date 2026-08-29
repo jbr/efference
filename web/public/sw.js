@@ -1,6 +1,7 @@
-// The service worker (docs/web-client.md "Installability"). Two jobs, and no
-// third: make the app installable, and let the shell paint from cache on a
-// cold start or a lost network.
+// The service worker (docs/web-client.md "Installability"). Three jobs: make
+// the app installable, let the shell paint from cache on a cold start or a lost
+// network, and receive push (docs/web-push.md) — the handlers at the bottom of
+// this file, which touch none of the caching rules above them.
 //
 // **Nothing session-shaped is ever cached.** `/v1`, `/files` and `/auth` go
 // straight to the network, always — a transcript, a file's bytes, or a
@@ -130,3 +131,51 @@ async function store(request, response) {
   const cache = await caches.open(CACHE);
   await cache.put(request, response);
 }
+
+// ---- push (docs/web-push.md) ----
+//
+// The daemon sends when a gate pends or a turn settles. The payload is
+// `{title, body, path}`; `path` is where a click goes, named by the sender
+// rather than assumed here, so a host serving sessions under a prefix only
+// changes the sender.
+
+self.addEventListener("push", (event) => {
+  // A push with no readable payload still shows something: the platforms
+  // require a visible notification for every delivery (`userVisibleOnly`), and
+  // a silent drop spends the browser's budget for showing one later.
+  let payload = {
+    title: "efference",
+    body: "the session wants you",
+    path: "/",
+  };
+  try {
+    payload = { ...payload, ...event.data.json() };
+  } catch {
+    // keep the default
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      data: { path: payload.path },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const path = event.notification.data?.path ?? "/";
+  const target = new URL(path, self.location.origin);
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clients) => {
+        // A window already on that path is focused rather than duplicated —
+        // the notification is a summons back to a page that is probably still
+        // open, not a request for a second copy of it.
+        const open = clients.find(
+          (client) => new URL(client.url).pathname === target.pathname,
+        );
+        return open ? open.focus() : self.clients.openWindow(target.href);
+      }),
+  );
+});

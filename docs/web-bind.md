@@ -69,6 +69,7 @@ derives everything else by HKDF-SHA256 with per-purpose context strings:
 | cookie-HMAC key | `cookie-hmac v1` | signs the browser session cookie |
 | TOTP secret | `totp v1` | the bootstrap credential (RFC 6238, SHA-1/6-digit/30 s) |
 | bearer | `bearer v1` | `Authorization: Bearer` for programs |
+| VAPID keypair | `vapid v1 attempt-<n>` | the web-push sender identity ([web-push.md](web-push.md)); the counter increments until the bytes are a valid P-256 scalar |
 
 Same root in, same credentials out, every boot: enrollments and cookies survive
 restarts with nothing secret on disk, and revocation is root rotation (a mass logout —

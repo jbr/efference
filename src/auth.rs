@@ -3,7 +3,8 @@
 //! One machine-scoped root secret is injected at daemon start (`EFFERENCE_ROOT_SECRET`,
 //! the same op env-file pattern as provider keys) and held only in memory; HKDF with
 //! per-purpose context strings derives everything else — the cookie-HMAC key, the TOTP
-//! secret, the program bearer. Same root in, same credentials out, every boot:
+//! secret, the program bearer, the VAPID push-signing keypair (docs/web-push.md). Same
+//! root in, same credentials out, every boot:
 //! enrollments and cookies survive restarts with nothing secret on disk, and revocation
 //! is root rotation. The only stored state is the burn ledger of accepted TOTP
 //! timesteps, which are counters, not secrets.
@@ -81,6 +82,29 @@ impl Root {
     /// set a header). Never stored; re-derived on demand.
     pub fn bearer(&self) -> String {
         URL_SAFE_NO_PAD.encode(self.derive::<32>(b"bearer v1"))
+    }
+
+    /// The VAPID signing keypair (docs/web-push.md) — the identity a push service sees
+    /// across every message this machine sends. Derived, never stored: each daemon on
+    /// the machine re-derives the identical key, so there is no file and no
+    /// coordination, and rotating the root strands existing subscriptions the same way
+    /// it invalidates cookies and the bearer.
+    ///
+    /// P-256 needs a scalar below the group order, and HKDF hands back a uniform 32-byte
+    /// string, which exceeds that order with probability ~2⁻³². So the context string
+    /// carries an attempt counter and the loop retries until `SecretKey` accepts one:
+    /// deterministic per root, so a given machine always takes the same path to the same
+    /// key.
+    pub fn vapid_key(&self) -> p256::SecretKey {
+        let mut attempt = 0u32;
+        loop {
+            let context = format!("vapid v1 attempt-{attempt}");
+            let candidate = self.derive::<32>(context.as_bytes());
+            if let Ok(key) = p256::SecretKey::from_slice(&candidate) {
+                return key;
+            }
+            attempt += 1;
+        }
     }
 
     /// Constant-time check of a presented bearer: both sides are HMAC'd under a

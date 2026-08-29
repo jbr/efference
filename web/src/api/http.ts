@@ -69,7 +69,11 @@ export const put = <T>(path: string, body: unknown) =>
   request<T>("PUT", path, body);
 export const patch = <T>(path: string, body: unknown) =>
   request<T>("PATCH", path, body);
-export const del = <T>(path: string) => request<T>("DELETE", path);
+// A body on DELETE is unusual and deliberate in the one place it is used: the
+// push unsubscribe names its subscription by an absolute endpoint URL, which is
+// not a path segment.
+export const del = <T>(path: string, body?: unknown) =>
+  request<T>("DELETE", path, body);
 
 // ---- the routes the client uses today; grows with the ui ----
 
@@ -172,6 +176,20 @@ export const resolveProposal = (
   seq: number,
   state: "committed" | "cancelled",
 ) => patch<{ state: string }>(`/v1/proposals/${seq}`, { state });
+
+// Web push (docs/web-push.md). The key is the daemon's derived VAPID public
+// key, base64url of an uncompressed P-256 point — `applicationServerKey` wants
+// the raw bytes, so the caller decodes it before subscribing.
+export const fetchPushKey = () => get<{ key: string }>("/v1/push");
+// The browser's `PushSubscription.toJSON()` shape is what the daemon accepts,
+// so this forwards it unreshaped. An upsert on the endpoint: a page that
+// re-registers leaves one entry.
+export const subscribePush = (subscription: PushSubscriptionJSON) =>
+  post<{ status: string }>("/v1/push/subscriptions", subscription);
+// Forget one subscription. Always 200 — an unsubscribe names an end state, and
+// the browser may have already dropped it.
+export const unsubscribePush = (endpoint: string) =>
+  del<{ status: string }>("/v1/push/subscriptions", { endpoint });
 
 // Trade a TOTP code for the session cookie (docs/web-bind.md). Outside /v1 and
 // outside the base: auth is the *listener's* surface, so it is at the root under

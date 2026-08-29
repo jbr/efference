@@ -169,8 +169,16 @@ impl Shared {
     ///
     /// [`claim_turn`]: Shared::claim_turn
     pub(super) fn parking(&self) {
-        self.running.store(false, Ordering::SeqCst);
+        // The swap is what distinguishes the two ways the loop arrives here: a turn
+        // just ended (`running` was true) or the daemon booted and has never run one.
+        // Only the first is worth a push (docs/web-push.md) — a settle notification on
+        // boot idle would fire every time a session starts, saying nothing happened.
+        let a_turn_just_ended = self.running.swap(false, Ordering::SeqCst);
         self.settle_changed.notify_waiters();
+        if a_turn_just_ended {
+            let body = super::push::settle_body(self.log.lock().unwrap().entries());
+            self.push("Message", body);
+        }
     }
 
     /// Whether the daemon is at a **decision point** a client can act on: a gate is pending, or the

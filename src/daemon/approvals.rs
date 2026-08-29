@@ -41,6 +41,8 @@ impl Shared {
         let (tx, rx) = oneshot::channel();
         self.approvals.lock().unwrap().insert(call.id.clone(), tx);
         let reason = self.latest_spot_reason(&call.id);
+        // Composed before the `Pending` takes ownership of the two fields.
+        let push_body = super::push::gate_body(&call.name, call.intent(), reason.as_deref());
         *self.pending.lock().unwrap() = Some(Pending {
             call_id: call.id.0.clone(),
             name: call.name.clone(),
@@ -49,6 +51,9 @@ impl Shared {
         });
         // A gate is a settled state — wake any `/settle` waiter (the `?wait` on `/turn` returns here).
         self.settle_changed.notify_waiters();
+        // …and one of the two moments worth a push (docs/web-push.md). Spawned, so
+        // the loop reaches its `rx.await` without waiting on a push service.
+        self.push("Gate", push_body);
         rx
     }
 

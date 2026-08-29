@@ -160,6 +160,7 @@ Read top-down; open the subsystem doc you need.
 | The TCP bind — the web client's front door (root-derived credentials, TOTP bootstrap, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/daemon/tcp.rs` |
 | The host — one authenticated front door for every session on a machine (discovery + the per-session proxy) | [host.md](host.md) | `src/host.rs` (+ `src/host/`), `src/daemon/tcp.rs` |
 | The web client | [web-client.md](web-client.md) | `web/`, `src/daemon/tcp.rs` |
+| Web push — the daemon notifies a pocketed phone | [web-push.md](web-push.md) | `src/push.rs` (+ `src/push/`), `src/daemon/push.rs` |
 | The TUI client | [tui.md](tui.md) | `src/tui/` |
 
 Where a module has grown a directory beside it (`src/api/`, `src/config/`, `src/policy/`,

@@ -226,6 +226,15 @@ only *file* a proposal, never resolve its own.
 - `404 not_found` (no pending proposal with that `seq`) · `400 bad_request` (bad body) ·
   `400 invalid_decision` (a `state` that is neither) · `500 internal` (append failed)
 
+#### `GET /push` · `POST /push/subscriptions` · `DELETE /push/subscriptions`
+Web push ([web-push.md](web-push.md)). The GET answers the machine's VAPID public key
+(`{"key": "<base64url uncompressed P-256 point>"}` — `applicationServerKey` verbatim);
+the POST records a browser subscription in its `PushSubscription.toJSON()` shape,
+upserting on the endpoint (`201`); the DELETE forgets one by `{"endpoint": ...}`,
+always `200` — an unsubscribe names an end state. The store the writes land in is
+machine-scoped, not per-session. All three answer `500 internal` when no root secret
+is injected, a state unreachable through a bind that requires one.
+
 ### The processes resource
 
 Every running tool-spawned process — **foreground and background share one

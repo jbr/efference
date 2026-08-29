@@ -154,6 +154,13 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 # off: they re-enable all of `image`'s decoders (the slim set above is the
 # decode surface) and add a pkg-config dependency on libchafa.
 ratatui-image = { version = "11", default-features = false, features = ["crossterm"] }
+# Web push (docs/web-push.md). Both halves of the protocol are P-256: `ecdh` is
+# RFC 8291 payload encryption (the sender's ephemeral key against the
+# subscription's), `ecdsa` is the RFC 8292 VAPID token. The 0.14/0.11 line is the
+# RustCrypto generation the in-tree hkdf 0.13 / hmac 0.13 / sha2 0.11 belong to,
+# so there is one digest stack rather than two.
+p256 = { version = "0.14", features = ["ecdh", "ecdsa"] }
+aes-gcm = "0.11"
 
 [features]
 # Serve the web client from a spawned Vite dev server (with HMR) instead of the
