@@ -152,7 +152,9 @@ pub(crate) async fn peek(
     let provider = efference::api::Endpoint::from_env()
         .map(|e| e.provider)
         .ok();
-    let placement = provider.map(|p| p.image_placement()).unwrap_or_default();
+    let placement = provider
+        .map(|p| p.image_placement(model))
+        .unwrap_or_default();
     let breakpoint = provider
         .map(|p| p.breakpoint_placement())
         .unwrap_or_default();

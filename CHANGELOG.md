@@ -7,7 +7,11 @@ behind a change, see [`journal/`](journal/).
 
 ## [Unreleased]
 
+### Fixed
+- **Image tool results work on Gemini through OpenRouter** — a third `ImagePlacement` (`AfterInterposedTurn`) moves the images out of the function-response turn, behind a projected assistant turn naming the result's `[seq]` handle. Gemini rejects a replayed thought signature whenever an image sits between the signed `tool_use` and the next assistant turn; every placement within that turn fails alike, on the provider's OpenAI-shaped endpoint as well as its Anthropic skin. The session that wedged now projects to a request the provider accepts.
+
 ### Changed
+- `efference wire` shapes its projection with the env-declared provider and `--model` slug (image and cache-breakpoint placement), matching `peek_replay` — it printed the Anthropic-native shape for every session before.
 - The backgrounding result states the async pattern (register a `watch_process`, end the turn) at the moment the shape gets chosen — the `watch_process` result's own copy arrives only after a compressed start→watch→kill turn has been attempted.
 - **The first whole-repo comment pass** (process/comments.md): four cold-reader subsystem sweeps — net ~-430 comment lines, marker-bearing lines 232 → 89 (survivors legitimate), every stale claim found along the way corrected (a removed poll still described, inverted fork/tool_choice claims, retired Phase/Slice vocabulary, six migrated doc blocks re-paired, all backlog-path citations repointed at docs).
 - Web: the inspector's **args tab destructures a call against the tool's schema** — the tool's name and description lead it, each argument is glossed by its schema description and marked `required`, a key the schema does not declare is flagged (the `crate` vs `crate_name` failure shape), and declared-but-absent properties are listed with required-missing flagged; server prose renders as plain text, attributed. With no definition (offline session, 404) the tab is exactly what it was.

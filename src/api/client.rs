@@ -171,7 +171,7 @@ impl Client {
     /// The provider-derived image placement this session's projections must use
     /// (docs/log-and-projection.md).
     pub fn image_placement(&self) -> crate::project::ImagePlacement {
-        self.endpoint.provider.image_placement()
+        self.endpoint.provider.image_placement(&self.model)
     }
 
     /// The provider-derived cache-breakpoint placement this session must use

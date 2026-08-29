@@ -153,11 +153,26 @@ fn placements_are_derived_from_the_declared_provider() {
         BreakpointPlacement::LastTextBlock
     );
     assert_eq!(
-        Provider::Anthropic.image_placement(),
+        Provider::Anthropic.image_placement("claude-sonnet-5"),
         ImagePlacement::InToolResult
     );
     assert_eq!(
-        Provider::OpenRouter.image_placement(),
+        Provider::OpenRouter.image_placement("stealth/ox-alpha"),
+        ImagePlacement::FollowingUserBlock
+    );
+    // A Gemini slug takes the interposed-turn shape; the same slug on the native
+    // API does not, since the rejection is the upstream's, not the skin's.
+    assert_eq!(
+        Provider::OpenRouter.image_placement("google/gemini-3.7-flash"),
+        ImagePlacement::AfterInterposedTurn
+    );
+    assert_eq!(
+        Provider::Anthropic.image_placement("google/gemini-3.7-flash"),
+        ImagePlacement::InToolResult
+    );
+    // The author prefix alone does not sweep a non-Gemini slug in.
+    assert_eq!(
+        Provider::OpenRouter.image_placement("google/gemma-3-27b"),
         ImagePlacement::FollowingUserBlock
     );
 }

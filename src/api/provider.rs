@@ -42,14 +42,25 @@ impl Provider {
         }
     }
 
-    /// Where projection places a tool result's images for this provider
-    /// (docs/log-and-projection.md): the Anthropic-native in-`tool_result`
-    /// shape on the native API; the portable following-user-block shape on
-    /// OpenRouter, whose bridge drops `tool_result` images for some upstreams
-    /// (its docs cover images as user content only on the Anthropic skin).
-    pub fn image_placement(&self) -> crate::project::ImagePlacement {
+    /// Where projection places a tool result's images for this provider and model
+    /// (docs/log-and-projection.md): the Anthropic-native in-`tool_result` shape
+    /// on the native API; the portable following-user-block shape on OpenRouter,
+    /// whose bridge drops `tool_result` images for some upstreams (its docs cover
+    /// images as user content only on the Anthropic skin).
+    ///
+    /// Gemini slugs take the third shape. An image anywhere between a signed
+    /// `tool_use` and the next assistant turn makes Gemini reject the replayed
+    /// thought signature, so its images need the interposed turn
+    /// ([`ImagePlacement::AfterInterposedTurn`], docs/transport.md). The model is
+    /// part of the choice because the failure is the upstream's, not the skin's —
+    /// it reproduces on the provider's OpenAI-shaped endpoint too — so it follows
+    /// the slug rather than the provider.
+    pub fn image_placement(&self, model: &str) -> crate::project::ImagePlacement {
         match self {
             Self::Anthropic => crate::project::ImagePlacement::InToolResult,
+            Self::OpenRouter if is_gemini(model) => {
+                crate::project::ImagePlacement::AfterInterposedTurn
+            }
             Self::OpenRouter => crate::project::ImagePlacement::FollowingUserBlock,
         }
     }
@@ -71,6 +82,7 @@ impl Provider {
 
     /// The lowercase name, as `EFFERENCE_PROVIDER` spells it — for error
     /// messages and boot output.
+    ///
     pub fn name(&self) -> &'static str {
         match self {
             Self::Anthropic => "anthropic",
@@ -514,4 +526,14 @@ pub(super) fn parse_generation_cost(body: &str) -> Result<f64, Error> {
         .data
         .total_cost
         .ok_or_else(|| "generation record carried no total_cost".into())
+}
+
+/// Whether an OpenRouter slug names a Gemini model — `google/gemini-3.7-flash`
+/// and the like. Matched on the author prefix plus the family, so a
+/// `google/`-authored non-Gemini slug is not swept in
+/// (docs/transport.md).
+fn is_gemini(model: &str) -> bool {
+    let model = model.trim().to_ascii_lowercase();
+    let slug = model.strip_prefix("google/").unwrap_or(&model);
+    slug.starts_with("gemini")
 }

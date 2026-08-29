@@ -79,6 +79,35 @@ pub enum ImagePlacement {
     /// Anthropic skin documents images as user content only, and its Gemini
     /// bridge 400s on `tool_result` images (docs/transport.md).
     FollowingUserBlock,
+    /// The `tool_result` stays text-only and each image rides a *separate* user
+    /// message, preceded by a one-line assistant turn naming the result the
+    /// images answer.
+    ///
+    /// Gemini rejects a replayed thought signature whenever an image sits
+    /// between the signed `tool_use` and the next assistant turn — 400
+    /// "Corrupted thought signature" (docs/transport.md). Placement *within* the
+    /// function-response turn does not move it: image-in-`tool_result`,
+    /// image-as-following-block, and a bare second user message all fail
+    /// identically, and the failure is the same on the provider's OpenAI-shaped
+    /// endpoint, so it is not the Anthropic skin's translation. An interposed
+    /// assistant turn is the only shape that clears it, which is why this arm
+    /// writes wire content no log entry produced.
+    AfterInterposedTurn,
+}
+
+/// The assistant turn [`ImagePlacement::AfterInterposedTurn`] interposes ahead of
+/// its images. Written from the deferred images' own `seq` handles, so it stays a
+/// pure function of the log — and so the handle is what binds image to result,
+/// which their adjacency does not do in this placement
+/// (docs/log-and-projection.md).
+fn interposed_turn(seqs: &[u64], images: usize) -> String {
+    let handles: Vec<String> = seqs.iter().map(|seq| format!("[{seq}]")).collect();
+    let noun = if images == 1 {
+        "the image"
+    } else {
+        "the images"
+    };
+    format!("…receiving {noun} from {}…", handles.join(", "))
 }
 
 /// [`project_with`] at the default (Anthropic-native) image placement.
@@ -146,6 +175,12 @@ pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessa
     // `[tool_result…, text]`, preserving role-alternation and byte-stability. We
     // accumulate and flush at the next assistant / boundary / end.
     let mut pending_user_content: Vec<ApiBlock> = Vec::new();
+    // Images held out of the user message under `AfterInterposedTurn`, with the
+    // `seq` of each result they came from for the interposed turn's text. Empty
+    // under every other placement, so those wires are byte-identical to before
+    // this arm existed.
+    let mut pending_images: Vec<ApiBlock> = Vec::new();
+    let mut pending_image_seqs: Vec<u64> = Vec::new();
 
     for entry in log {
         // Inject the summary just before the first non-elided entry that follows
@@ -157,7 +192,12 @@ pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessa
             && entry.seq > boundaries[boundary_cursor].upto
         {
             let b = &boundaries[boundary_cursor];
-            flush_pending_user(&mut pending_user_content, &mut messages);
+            flush_pending_user(
+                &mut pending_user_content,
+                &mut pending_images,
+                &mut pending_image_seqs,
+                &mut messages,
+            );
             messages.push(ApiMessage {
                 role: Role::User,
                 content: vec![ApiBlock::Text {
@@ -198,7 +238,12 @@ pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessa
                 calls,
                 upstream_failure: None,
             } => {
-                flush_pending_user(&mut pending_user_content, &mut messages);
+                flush_pending_user(
+                    &mut pending_user_content,
+                    &mut pending_images,
+                    &mut pending_image_seqs,
+                    &mut messages,
+                );
                 // Wire order: thinking → text → tool_use (docs/transport.md). Thinking blocks
                 // lead so the replayed signatures sit exactly where the API expects them.
                 let mut content: Vec<ApiBlock> = thinking
@@ -219,8 +264,15 @@ pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessa
                     content,
                 });
             }
-            Payload::ToolResult { call_id, raw, wire } => pending_user_content
-                .extend(tool_result_blocks(entry.seq, call_id, raw, wire, placement)),
+            Payload::ToolResult { call_id, raw, wire } => {
+                let (blocks, deferred) =
+                    tool_result_blocks(entry.seq, call_id, raw, wire, placement);
+                pending_user_content.extend(blocks);
+                if !deferred.is_empty() {
+                    pending_image_seqs.push(entry.seq);
+                    pending_images.extend(deferred);
+                }
+            }
             // Marks are in the elided set (extract_boundaries inserts every
             // Boundary mark's own seq); this arm is only reachable for future
             // non-Boundary mark kinds, which can be added here when they land.
@@ -279,7 +331,12 @@ pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessa
                     })
                 }));
                 if !blocks.is_empty() {
-                    flush_pending_user(&mut pending_user_content, &mut messages);
+                    flush_pending_user(
+                        &mut pending_user_content,
+                        &mut pending_images,
+                        &mut pending_image_seqs,
+                        &mut messages,
+                    );
                     messages.push(ApiMessage {
                         role: Role::User,
                         content: vec![ApiBlock::Text {
@@ -297,7 +354,12 @@ pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessa
 
     while boundary_cursor < boundaries.len() {
         let b = &boundaries[boundary_cursor];
-        flush_pending_user(&mut pending_user_content, &mut messages);
+        flush_pending_user(
+            &mut pending_user_content,
+            &mut pending_images,
+            &mut pending_image_seqs,
+            &mut messages,
+        );
         messages.push(ApiMessage {
             role: Role::User,
             content: vec![ApiBlock::Text {
@@ -308,15 +370,42 @@ pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessa
         boundary_cursor += 1;
     }
 
-    flush_pending_user(&mut pending_user_content, &mut messages);
+    flush_pending_user(
+        &mut pending_user_content,
+        &mut pending_images,
+        &mut pending_image_seqs,
+        &mut messages,
+    );
     messages
 }
 
-fn flush_pending_user(pending: &mut Vec<ApiBlock>, messages: &mut Vec<ApiMessage>) {
+fn flush_pending_user(
+    pending: &mut Vec<ApiBlock>,
+    images: &mut Vec<ApiBlock>,
+    image_seqs: &mut Vec<u64>,
+    messages: &mut Vec<ApiMessage>,
+) {
     if !pending.is_empty() {
         messages.push(ApiMessage {
             role: Role::User,
             content: std::mem::take(pending),
+        });
+    }
+    // Deferred images close the turn as `assistant` + `user`, never alone: the
+    // interposed turn is what the placement exists for, and a user message
+    // following it keeps role alternation intact.
+    if !images.is_empty() {
+        messages.push(ApiMessage {
+            role: Role::Assistant,
+            content: vec![ApiBlock::Text {
+                text: interposed_turn(image_seqs, images.len()),
+                cache_control: None,
+            }],
+        });
+        image_seqs.clear();
+        messages.push(ApiMessage {
+            role: Role::User,
+            content: std::mem::take(images),
         });
     }
 }
@@ -347,7 +436,7 @@ fn tool_result_blocks(
     raw: &RawResult,
     wire: &WireState,
     placement: ImagePlacement,
-) -> Vec<ApiBlock> {
+) -> (Vec<ApiBlock>, Vec<ApiBlock>) {
     let (content, is_error) = match wire {
         WireState::Raw => (raw.content.clone(), raw.is_error),
         // Re-render the distillate from `raw` + the stored verdict each turn
@@ -396,12 +485,15 @@ fn tool_result_blocks(
                 }));
                 ToolResultContent::Blocks(blocks)
             };
-            vec![ApiBlock::ToolResult {
-                tool_use_id: call_id.0.clone(),
-                content,
-                is_error,
-                cache_control: None,
-            }]
+            (
+                vec![ApiBlock::ToolResult {
+                    tool_use_id: call_id.0.clone(),
+                    content,
+                    is_error,
+                    cache_control: None,
+                }],
+                Vec::new(),
+            )
         }
         // The tool_result stays in the bare-string form regardless of images —
         // byte-identical to a text-only result — and each image trails it as a
@@ -418,8 +510,25 @@ fn tool_result_blocks(
                 source: source(image),
                 cache_control: None,
             }));
-            blocks
+            (blocks, Vec::new())
         }
+        // The images leave the turn entirely — the caller holds them for its own
+        // user message behind an interposed assistant turn.
+        ImagePlacement::AfterInterposedTurn => (
+            vec![ApiBlock::ToolResult {
+                tool_use_id: call_id.0.clone(),
+                content: ToolResultContent::Text(prefixed),
+                is_error,
+                cache_control: None,
+            }],
+            images
+                .iter()
+                .map(|image| ApiBlock::Image {
+                    source: source(image),
+                    cache_control: None,
+                })
+                .collect(),
+        ),
     }
 }
 

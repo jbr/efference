@@ -118,19 +118,32 @@ and stream views truncated, carried on the shared type so a Rust client parses a
 view with the log's own types (the mirror of `ResultImage::data`, which those
 same views omit). Defaulted and skipped, so every logged line and every existing
 log is unchanged.
-On the wire, image placement is provider-conditional (`ImagePlacement`, chosen
-from the provider once at boot and fixed for the session — `project_with`
-takes it as its second input, so projection stays deterministic: same log +
-same placement → same bytes). On Anthropic (`InToolResult`), a `tool_result`
+On the wire, image placement is provider- and model-conditional
+(`ImagePlacement`, chosen from the provider and the model slug once at boot and
+fixed for the session — `project_with` takes it as its second input, so
+projection stays deterministic: same log + same placement → same bytes). On Anthropic (`InToolResult`), a `tool_result`
 whose entry has images takes the block-array content form (`[{text},
 {image}…]`, the `[seq]`-prefixed text first). On OpenRouter
 (`FollowingUserBlock`), the `tool_result` keeps the bare-string form and each
 image trails it as a top-level `image` block in the same user message — the
 portable shape, because OpenRouter's bridge drops `tool_result` images for
 some upstreams (its Anthropic skin documents images as user content only; a
-Gemini upstream 400s). In either placement a text-only result projects the
-bare-string form it always had, so adding images moved no existing bytes, and
-the two placements are byte-identical on any image-free log. Images ride `Raw`
+Gemini upstream 400s). On a Gemini slug through OpenRouter
+(`AfterInterposedTurn`), the `tool_result` keeps the bare-string form and the
+images leave the turn entirely: an assistant turn naming the result's `[seq]`
+handle is projected next, then the images ride a user message of their own.
+Gemini rejects a replayed thought signature whenever an image sits between the
+signed `tool_use` and the next assistant turn — 400 "Corrupted thought
+signature", sometimes surfaced as "Requests ending with a model turn are not
+supported" — and no placement *within* the function-response turn avoids it
+(image-in-`tool_result`, image-as-following-block, and a bare second user
+message fail alike, on the provider's OpenAI-shaped endpoint as well as its
+Anthropic skin). The interposed turn is the only shape that clears it, which
+makes this the one arm that writes wire content no log entry produced; the
+`[seq]` handle in its text is what binds image to result now that adjacency
+does not. In every placement a text-only result projects the bare-string form
+it always had, so adding images moved no existing bytes, and the placements are
+byte-identical on any image-free log. Images ride `Raw`
 and `Distilled` states — a distill verdict addresses text lines, and must not
 silently eat an image the model pulled deliberately — and are shed by `Elided`
 and `TriageFailed`, which is what makes elision the cost-recovery lever for
@@ -280,8 +293,8 @@ The two placements are the same seam `ImagePlacement` uses, and for the same
 reason: a projection-shaping choice that varies by provider has to be *fixed at
 boot* rather than re-derived, or a session's cached prefix could move under it.
 The consequence for the byte pins is that the pinned bytes are pinned **per
-placement** — `project/test/cache.rs` covers both arms and asserts the marker
-count stays one either way.
+placement** — `project/test/cache.rs` covers the arms and asserts the marker
+count stays one for each.
 
 One request shape rides this marker everywhere: agent turns, fork peeks, and
 keepalive pings send the same `tools[]`, `tool_choice: auto`, and thinking policy

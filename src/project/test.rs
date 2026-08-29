@@ -229,6 +229,70 @@ fn following_user_block_sheds_on_elision_and_is_identity_for_text() {
     );
 }
 
+/// Pins the `AfterInterposedTurn` placement's exact wire bytes: the `tool_result`
+/// keeps the bare-string form, then an assistant turn naming the result's `seq`
+/// handle, then the images in their own user message. Gemini rejects a replayed
+/// thought signature when an image sits between the signed `tool_use` and the next
+/// assistant turn, and this is the only shape that clears it
+/// (docs/log-and-projection.md).
+#[test]
+fn after_interposed_turn_matches_expected_wire_bytes() {
+    let wire = serde_json::to_string(&project_with(
+        &image_log(WireState::Raw),
+        ImagePlacement::AfterInterposedTurn,
+    ))
+    .unwrap();
+    let expected = r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] 1456×819 image/webp, 1560 visual tokens"}]},{"role":"assistant","content":[{"type":"text","text":"…receiving the image from [2]…"}]},{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/webp","data":"UklGRg=="}}]}]"#;
+    assert_eq!(wire, expected);
+}
+
+/// The interposed turn exists only when images survive to the wire: a state that
+/// sheds them (elision, a failed gate) leaves no fabricated assistant turn behind,
+/// and a text-only log projects byte-identically under this placement too — so
+/// sessions that never pull an image see the same bytes as before the arm existed.
+#[test]
+fn after_interposed_turn_is_absent_without_images() {
+    let projected = |state: WireState| {
+        serde_json::to_string(&project_with(
+            &image_log(state),
+            ImagePlacement::AfterInterposedTurn,
+        ))
+        .unwrap()
+    };
+    assert!(projected(WireState::Raw).contains("…receiving the image from [2]…"));
+    for shed in [
+        WireState::Elided,
+        WireState::TriageFailed {
+            why: "peek died".into(),
+        },
+    ] {
+        let wire = projected(shed);
+        assert!(!wire.contains(r#""type":"image""#));
+        assert!(!wire.contains("…receiving"));
+    }
+    let log = sample_log();
+    assert_eq!(
+        serde_json::to_string(&project(&log)).unwrap(),
+        serde_json::to_string(&project_with(&log, ImagePlacement::AfterInterposedTurn)).unwrap(),
+    );
+}
+
+/// Role alternation holds under `AfterInterposedTurn`: the projected wire never
+/// puts two same-role messages back to back. A bare second user message is one of
+/// the shapes Gemini rejects, so this is the invariant the interposed turn buys.
+#[test]
+fn after_interposed_turn_keeps_roles_alternating() {
+    let wire = project_with(
+        &image_log(WireState::Raw),
+        ImagePlacement::AfterInterposedTurn,
+    );
+    assert!(
+        wire.windows(2).all(|pair| pair[0].role != pair[1].role),
+        "consecutive same-role messages: {:?}",
+        wire.iter().map(|m| m.role).collect::<Vec<_>>()
+    );
+}
+
 /// Images ride `Raw` and `Distilled` (a distill verdict addresses text lines,
 /// not the image the model pulled on purpose) and are shed by `Elided` and
 /// `TriageFailed` — whose results project in the bare-string form, byte-identical

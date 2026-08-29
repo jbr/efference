@@ -17,10 +17,18 @@ pub(crate) async fn wire(
     config: Option<PathBuf>,
 ) -> CliResult {
     let entries = efference::persist::load(&path)?;
-    let mut messages = efference::project::project(&entries);
+    let provider = efference::api::Endpoint::from_env()
+        .map(|e| e.provider)
+        .ok();
+    let placement = provider
+        .map(|p| p.image_placement(model))
+        .unwrap_or_default();
+    let mut messages = efference::project::project_with(&entries, placement);
     efference::project::place_trailing_cache_breakpoint(
         &mut messages,
-        efference::project::BreakpointPlacement::default(),
+        provider
+            .map(|p| p.breakpoint_placement())
+            .unwrap_or_default(),
     );
 
     // `--messages` prints just the projected array and returns before touching
