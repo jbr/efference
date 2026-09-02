@@ -64,6 +64,26 @@ point, each consolidation costs exactly one re-cache of everything after `upto` 
 deliberate cache write. The prefix before `upto` remains stable and continues to be
 served from cache.
 
+## A warm-cache instrument
+
+Consolidation only pays while the prefix is cached. The call spends a turn against the
+current context — a full read of everything before `upto` — to buy a smaller context for
+every turn after it. Served from cache that read is the discounted rate and the trade is
+the one described above. With a cold cache it is the *full* uncached read of the whole
+window, which is exactly the cost the fold exists to avoid paying repeatedly: the summary
+arrives having already spent what it was meant to save, and continuing unfolded is
+strictly cheaper.
+
+So the instrument is unavailable precisely when the context is coldest, which is also when
+a fold is most wanted. That gap is what the trajectory digest addresses — a summary folded
+from `log.jsonl` by a separate model, with no warm cache and no turn required (tracked in
+the backlog, not built). The two are the same operation under opposite cache states.
+
+The consequence for the tool: `consolidate` is agent-called, so it also requires a model
+that can complete a turn. Neither condition holds after an upstream failure that stalls a
+trajectory (transport.md), which is why recovery from that state cannot route through this
+tool.
+
 ## Branch-from-seq
 
 Replay-and-branch from any `seq` (running a task again from any prior point to try a
