@@ -54,10 +54,11 @@ use ignores::{Ignores, Scope};
 use list::{Options, listing, modified_at};
 use percent_encoding::percent_decode_str;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
-use trillium::{KnownHeaderName, Method};
-use trillium_sse::SseConnExt;
+use trillium::{Handler, KnownHeaderName, Method};
+use trillium_sse::{Sse, SseHandler, sse};
 
 pub(crate) mod ignores;
 mod list;
@@ -150,6 +151,15 @@ impl Files {
         resolved.starts_with(root.as_path()).then_some(resolved)
     }
 
+    /// The one refusal every path check shares: a path that does not resolve
+    /// under the root, whichever check found it out.
+    fn not_found() -> (ErrorCode, String) {
+        (
+            ErrorCode::NotFound,
+            "no such path under the working directory".into(),
+        )
+    }
+
     /// `GET` with an Accept that names `text/event-stream`: change pokes for one
     /// file, over the core watcher (`crate::fswatch`; docs/web-bind.md). Each
     /// event is the file's root-relative path and nothing else — the client
@@ -168,71 +178,42 @@ impl Files {
     /// file case — a tree that has not expanded a directory has no use for its
     /// contents' churn — and filtered by the discovery ignore set, so a build
     /// directory cannot flood a stream nobody can see the results of.
-    async fn stream(&self, conn: Conn, rest: &str) -> Conn {
-        let Some(watch) = self.watch.as_ref() else {
-            return fail(
-                conn,
+    ///
+    /// Every refusal is an `Err` here so the caller answers with `fail` in one
+    /// place; the `Ok` is the watch and subscription the `Sse` stage turns into
+    /// a stream.
+    async fn prepare_stream(&self, rest: &str) -> Result<StreamTarget, (ErrorCode, String)> {
+        let watch = self.watch.as_ref().ok_or_else(|| {
+            (
                 ErrorCode::Internal,
-                "the change watcher is not running",
-            );
-        };
+                "the change watcher is not running".into(),
+            )
+        })?;
         let root = self.root.as_ref().expect("root checked").clone();
-        let Some((parent, name)) = rest.rsplit_once('/') else {
-            // Unreachable in practice: run() guarantees `rest` is empty or
-            // '/'-led, and empty is a directory spelling.
-            return fail(conn, ErrorCode::BadRequest, "stream a file path");
-        };
+        let (parent, name) = rest
+            .rsplit_once('/')
+            .ok_or_else(|| (ErrorCode::BadRequest, "stream a file path".into()))?;
         if name.is_empty() {
-            let Some(dir) = self.resolve(parent) else {
-                return fail(
-                    conn,
-                    ErrorCode::NotFound,
-                    "no such path under the working directory",
-                );
-            };
-            return self.stream_dir(conn, dir).await;
+            let dir = self.resolve(parent).ok_or_else(Self::not_found)?;
+            return self.prepare_dir_stream(watch, root, dir).await;
         }
-        let Ok(name) = percent_decode_str(name).decode_utf8() else {
-            return fail(
-                conn,
-                ErrorCode::NotFound,
-                "no such path under the working directory",
-            );
-        };
+        let name = percent_decode_str(name)
+            .decode_utf8()
+            .map_err(|_| Self::not_found())?;
         if name == "." || name == ".." || name.contains('/') || name.contains('\0') {
-            return fail(
-                conn,
-                ErrorCode::NotFound,
-                "no such path under the working directory",
-            );
+            return Err(Self::not_found());
         }
-        let Some(dir) = self.resolve(parent) else {
-            return fail(
-                conn,
-                ErrorCode::NotFound,
-                "no such path under the working directory",
-            );
-        };
+        let dir = self.resolve(parent).ok_or_else(Self::not_found)?;
         if !tokio::fs::metadata(&dir).await.is_ok_and(|m| m.is_dir()) {
-            return fail(
-                conn,
-                ErrorCode::NotFound,
-                "no such path under the working directory",
-            );
+            return Err(Self::not_found());
         }
         let mut file = dir.join(name.as_ref());
         if tokio::fs::metadata(&file).await.is_ok_and(|m| m.is_dir()) {
             // The slashless directory spelling. The read route redirects it;
             // a stream has no redirect an `EventSource` would follow usefully,
             // so it is served directly.
-            let Some(resolved) = self.resolve(rest) else {
-                return fail(
-                    conn,
-                    ErrorCode::NotFound,
-                    "no such path under the working directory",
-                );
-            };
-            return self.stream_dir(conn, resolved).await;
+            let resolved = self.resolve(rest).ok_or_else(Self::not_found)?;
+            return self.prepare_dir_stream(watch, root, resolved).await;
         }
         // The poke filter compares byte-wise against notify's reported (disk)
         // spelling, so when the path resolves, adopt its canonical form *and
@@ -251,11 +232,7 @@ impl Files {
         let watched_dir = match tokio::fs::canonicalize(&file).await {
             Ok(canonical) => {
                 if !canonical.starts_with(root.as_path()) {
-                    return fail(
-                        conn,
-                        ErrorCode::NotFound,
-                        "no such path under the working directory",
-                    );
+                    return Err(Self::not_found());
                 }
                 let parent = canonical.parent().unwrap_or(&dir).to_path_buf();
                 file = canonical;
@@ -264,10 +241,9 @@ impl Files {
             Err(_) => dir,
         };
         let rel = rel_path(&root, &file);
-        let guard = match watch.watch_dir(&watched_dir) {
-            Ok(guard) => guard,
-            Err(e) => return fail(conn, ErrorCode::Internal, format!("cannot watch: {e}")),
-        };
+        let guard = watch
+            .watch_dir(&watched_dir)
+            .map_err(|e| (ErrorCode::Internal, format!("cannot watch: {e}")))?;
         // Subscribe after registering the watch. Neither order is airtight on
         // its own — a change between registration and subscription is seen by
         // notify but dropped by the broadcast (no receiver yet); the reverse
@@ -277,8 +253,12 @@ impl Files {
         // subscription is picked up by that fetch, and anything after it
         // pokes.
         let rx = watch.subscribe();
-        conn.with_sse_stream_and_heartbeat(Box::pin(changes(rx, guard, file, rel)), HEARTBEAT)
-            .halt()
+        Ok(StreamTarget::File {
+            rx,
+            guard,
+            file,
+            rel,
+        })
     }
 
     /// A directory-scope stream: one poke per changed entry *of this
@@ -286,34 +266,30 @@ impl Files {
     /// and contained; canonicalizing again is what makes the byte-wise event
     /// comparison work, for the same reason the file case adopts the canonical
     /// spelling.
-    async fn stream_dir(&self, conn: Conn, dir: PathBuf) -> Conn {
-        let Some(watch) = self.watch.as_ref() else {
-            return fail(
-                conn,
-                ErrorCode::Internal,
-                "the change watcher is not running",
-            );
-        };
-        let root = self.root.as_ref().expect("root checked").clone();
+    async fn prepare_dir_stream(
+        &self,
+        watch: &Arc<FsWatch>,
+        root: Arc<PathBuf>,
+        dir: PathBuf,
+    ) -> Result<StreamTarget, (ErrorCode, String)> {
         if !tokio::fs::metadata(&dir).await.is_ok_and(|m| m.is_dir()) {
-            return fail(
-                conn,
-                ErrorCode::NotFound,
-                "no such path under the working directory",
-            );
+            return Err(Self::not_found());
         }
         let scope = self.scope(&dir);
-        let guard = match watch.watch_dir(&dir) {
-            Ok(guard) => guard,
-            Err(e) => return fail(conn, ErrorCode::Internal, format!("cannot watch: {e}")),
-        };
+        let guard = watch
+            .watch_dir(&dir)
+            .map_err(|e| (ErrorCode::Internal, format!("cannot watch: {e}")))?;
         // Subscribe after registering, as the file case does, and for the same
         // reason: the consumer answers stream *open* with the listing it would
         // otherwise poll for, so nothing that landed during setup is lost.
         let rx = watch.subscribe();
-        let stream = dir_changes(rx, guard, dir, root, scope);
-        conn.with_sse_stream_and_heartbeat(Box::pin(stream), HEARTBEAT)
-            .halt()
+        Ok(StreamTarget::Dir {
+            rx,
+            guard,
+            dir,
+            root,
+            scope,
+        })
     }
 }
 
@@ -427,81 +403,193 @@ fn etag(meta: &std::fs::Metadata) -> String {
     format!("\"{:x}-{:x}\"", meta.len(), modified)
 }
 
-impl trillium::Handler for Files {
+/// A prepared stream: the watch and subscription for one file or directory,
+/// handed from the validating stage to the `Sse` stage through conn state.
+enum StreamTarget {
+    File {
+        rx: tokio::sync::broadcast::Receiver<FsChange>,
+        guard: WatchGuard,
+        file: PathBuf,
+        rel: String,
+    },
+    Dir {
+        rx: tokio::sync::broadcast::Receiver<FsChange>,
+        guard: WatchGuard,
+        dir: PathBuf,
+        root: Arc<PathBuf>,
+        scope: Scope,
+    },
+}
+
+/// The request path with `/files` stripped — empty or `/`-led — set by the
+/// validating stage once it has claimed the request, so the later stages need
+/// no prefix check of their own: absent, the request was never ours.
+struct FilesPath(String);
+
+type ChangeStream = Pin<Box<dyn Stream<Item = ChangeEvent> + Send + Sync + 'static>>;
+
+/// The `Sse` stage's event source: the prepared target becomes the poke stream.
+struct Connect;
+
+impl SseHandler for Connect {
+    type Event = ChangeEvent;
+    type EventStream = ChangeStream;
+
+    async fn connect(&self, conn: &mut Conn) -> ChangeStream {
+        match conn.take_state::<StreamTarget>() {
+            Some(StreamTarget::File {
+                rx,
+                guard,
+                file,
+                rel,
+            }) => Box::pin(changes(rx, guard, file, rel)),
+            Some(StreamTarget::Dir {
+                rx,
+                guard,
+                dir,
+                root,
+                scope,
+            }) => Box::pin(dir_changes(rx, guard, dir, root, scope)),
+            // Unreachable: the stage below only runs with a target in state.
+            None => Box::pin(futures_lite::stream::empty()),
+        }
+    }
+}
+
+/// The `Sse` handler, run only when the validating stage prepared a stream.
+/// `Sse` negotiates on `Accept` alone, and this handler sits in a stack that
+/// serves every path the router did not claim — unguarded, any such request
+/// naming `text/event-stream` would be answered with an empty stream instead
+/// of falling through. Everything but `run` (init's runtime capture for the
+/// heartbeat, and the post-header upgrade that drives the stream) is
+/// delegated whole.
+#[derive(trillium_macros::Handler)]
+struct StreamStage {
+    #[handler(except = run)]
+    sse: Sse<Connect>,
+}
+
+impl StreamStage {
     async fn run(&self, conn: Conn) -> Conn {
-        // Claim `/files` and `/files/...`, but not `/filesomething`.
-        let Some(rest) = conn.path().strip_prefix("/files") else {
-            return conn;
-        };
-        if !(rest.is_empty() || rest.starts_with('/')) {
+        if conn.state::<StreamTarget>().is_none() {
             return conn;
         }
-        let rest = rest.to_owned();
-        if conn.method() != Method::Get {
-            return fail(
-                conn,
-                ErrorCode::BadRequest,
-                "/files is read-only; GET a path or a directory",
-            );
-        }
-        if self.root.is_none() {
-            return fail(
-                conn,
-                ErrorCode::Internal,
-                "no working directory to serve files from",
-            );
-        }
-        // Content negotiation (docs/web-bind.md): a request whose Accept
-        // *explicitly* names `text/event-stream` gets a stream of change pokes
-        // instead of the body. Explicit-only — `*/*` (a fetch's default) gets
-        // the file, so only a client that asked to stream ever streams.
-        if conn
-            .request_headers()
-            .get_str(KnownHeaderName::Accept)
-            .is_some_and(|accept| accept.contains("text/event-stream"))
-        {
-            return self.stream(conn, &rest).await;
-        }
-        let Some(path) = self.resolve(&rest) else {
-            return fail(
-                conn,
-                ErrorCode::NotFound,
-                "no such path under the working directory",
-            );
-        };
-        let Ok(meta) = tokio::fs::metadata(&path).await else {
-            return fail(conn, ErrorCode::NotFound, "no such path");
-        };
-        if meta.is_dir() {
-            // A listing's relative links only compose under a trailing slash, so the
-            // slashless spelling is a redirect rather than a second served shape.
-            if !rest.ends_with('/') {
-                // The query carries the listing's shape (`?recursive=1`), so
-                // the redirect must keep it or the client's options vanish on
-                // a spelling correction.
-                let query = conn.querystring();
-                let location = match query.is_empty() {
-                    true => format!("{}/", conn.path()),
-                    false => format!("{}/?{query}", conn.path()),
-                };
-                return conn
-                    .with_status(301)
-                    .with_response_header(KnownHeaderName::Location, location)
-                    .halt();
-            }
-            let options = Options::from_query(conn.querystring());
-            let scope = self.scope(&path);
-            let root = self.root.as_ref().expect("root checked").clone();
-            let Some(listing) = listing(&path, &root, scope, options).await else {
-                return fail(conn, ErrorCode::NotFound, "cannot list this directory");
-            };
-            return conn
-                .with_status(200)
-                .with_response_header(KnownHeaderName::ContentType, "application/json")
-                .with_body(serde_json::to_string(&listing).unwrap_or_default())
-                .halt();
-        }
-        read(conn, &path, &meta).await
+        self.sse.run(conn).await
+    }
+}
+
+impl Files {
+    /// The `/files` surface as a handler: three stages in a tuple.
+    ///
+    /// 1. **Validate** — claims `/files` and `/files/...` (never `/filesomething`),
+    ///    refuses non-GET and a missing root, and for a request negotiating a
+    ///    stream prepares the watch, refusing here so the `Sse` stage never sees
+    ///    a request it cannot serve.
+    /// 2. **Stream** — the `Sse` handler over that prepared target.
+    /// 3. **Read** — the body: a file, a listing, or the directory redirect.
+    ///
+    /// Trillium's `Sse` drives the stream through the handler's upgrade hook,
+    /// so it is mounted as a handler of its own rather than called from inside
+    /// one — delegating `run` alone would leave the stream undriven.
+    pub(crate) fn handler(self) -> impl trillium::Handler {
+        let validate = self.clone();
+        let reader = self;
+        (
+            move |conn: Conn| {
+                let files = validate.clone();
+                async move {
+                    // Claim `/files` and `/files/...`, but not `/filesomething`.
+                    let Some(rest) = conn.path().strip_prefix("/files") else {
+                        return conn;
+                    };
+                    if !(rest.is_empty() || rest.starts_with('/')) {
+                        return conn;
+                    }
+                    let rest = rest.to_owned();
+                    if conn.method() != Method::Get {
+                        return fail(
+                            conn,
+                            ErrorCode::BadRequest,
+                            "/files is read-only; GET a path or a directory",
+                        );
+                    }
+                    if files.root.is_none() {
+                        return fail(
+                            conn,
+                            ErrorCode::Internal,
+                            "no working directory to serve files from",
+                        );
+                    }
+                    // Content negotiation (docs/web-bind.md): a request whose Accept
+                    // *explicitly* names `text/event-stream` gets a stream of change pokes
+                    // instead of the body. Explicit-only — `*/*` (a fetch's default) gets
+                    // the file, so only a client that asked to stream ever streams. The
+                    // `Sse` stage applies the same rule to the same header.
+                    let streams = conn
+                        .request_headers()
+                        .get_str(KnownHeaderName::Accept)
+                        .is_some_and(|accept| accept.contains("text/event-stream"));
+                    if !streams {
+                        return conn.with_state(FilesPath(rest));
+                    }
+                    match files.prepare_stream(&rest).await {
+                        Ok(target) => conn.with_state(FilesPath(rest)).with_state(target),
+                        Err((code, message)) => fail(conn, code, message),
+                    }
+                }
+            },
+            StreamStage {
+                sse: sse(Connect).with_heartbeat(HEARTBEAT),
+            },
+            move |mut conn: Conn| {
+                let files = reader.clone();
+                async move {
+                    let Some(FilesPath(rest)) = conn.take_state::<FilesPath>() else {
+                        return conn;
+                    };
+                    let Some(path) = files.resolve(&rest) else {
+                        return fail(
+                            conn,
+                            ErrorCode::NotFound,
+                            "no such path under the working directory",
+                        );
+                    };
+                    let Ok(meta) = tokio::fs::metadata(&path).await else {
+                        return fail(conn, ErrorCode::NotFound, "no such path");
+                    };
+                    if meta.is_dir() {
+                        // A listing's relative links only compose under a trailing slash, so the
+                        // slashless spelling is a redirect rather than a second served shape.
+                        if !rest.ends_with('/') {
+                            // The query carries the listing's shape (`?recursive=1`), so
+                            // the redirect must keep it or the client's options vanish on
+                            // a spelling correction.
+                            let query = conn.querystring();
+                            let location = match query.is_empty() {
+                                true => format!("{}/", conn.path()),
+                                false => format!("{}/?{query}", conn.path()),
+                            };
+                            return conn
+                                .with_status(301)
+                                .with_response_header(KnownHeaderName::Location, location)
+                                .halt();
+                        }
+                        let options = Options::from_query(conn.querystring());
+                        let scope = files.scope(&path);
+                        let root = files.root.as_ref().expect("root checked").clone();
+                        let Some(listing) = listing(&path, &root, scope, options).await else {
+                            return fail(conn, ErrorCode::NotFound, "cannot list this directory");
+                        };
+                        return conn
+                            .with_status(200)
+                            .with_response_header(KnownHeaderName::ContentType, "application/json")
+                            .with_body(serde_json::to_string(&listing).unwrap_or_default())
+                            .halt();
+                    }
+                    read(conn, &path, &meta).await
+                }
+            },
+        )
     }
 }
 

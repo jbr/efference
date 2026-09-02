@@ -49,9 +49,10 @@ const FELL_THROUGH: u16 = 418;
 /// The handler with a marker behind it, standing in for the web client's surface,
 /// which is mounted after it on the real stack.
 async fn server(scratch: &Scratch) -> TestServer<impl trillium::Handler> {
-    TestServer::new((Files::rooted_at(scratch.path()), |conn: Conn| async move {
-        conn.with_status(FELL_THROUGH).halt()
-    }))
+    TestServer::new((
+        Files::rooted_at(scratch.path()).handler(),
+        |conn: Conn| async move { conn.with_status(FELL_THROUGH).halt() },
+    ))
     .await
 }
 
@@ -450,9 +451,10 @@ async fn writes_are_refused() {
 /// `TestServer`'s assertions buffer the whole body, which an event stream never
 /// ends.
 async fn raw_client(scratch: &Scratch) -> trillium_client::Client {
-    let mut handler = (Files::rooted_at(scratch.path()), |conn: Conn| async move {
-        conn.with_status(FELL_THROUGH).halt()
-    });
+    let mut handler = (
+        Files::rooted_at(scratch.path()).handler(),
+        |conn: Conn| async move { conn.with_status(FELL_THROUGH).halt() },
+    );
     let context = trillium_testing::init(&mut handler).await;
     trillium_client::Client::new(
         trillium_testing::ServerConnector::new(handler).with_context(context),
@@ -582,8 +584,10 @@ async fn a_directory_stream_is_silent_about_ignored_entries() {
 
     scratch.write("noise.tmp", "ignored");
     scratch.write("seen.txt", "changed");
-    let body = read_until(&mut conn, "event: change").await;
-    assert!(body.contains("data: seen.txt"), "{body}");
+    // Read through to the expected poke rather than the first one: the setup
+    // writes above can still be in flight at open, and a poke for `.gitignore`
+    // arriving first is not the silence under test.
+    let body = read_until(&mut conn, "data: seen.txt").await;
     assert!(!body.contains("noise.tmp"), "{body}");
 }
 
@@ -638,7 +642,7 @@ async fn a_closed_stream_releases_its_watch() {
     scratch.write("sub/held.txt", "h");
     let files = Files::rooted_at(scratch.path());
     let watch = files.watch.clone().expect("watcher");
-    let mut handler = (files, |conn: Conn| async move {
+    let mut handler = (files.handler(), |conn: Conn| async move {
         conn.with_status(FELL_THROUGH).halt()
     });
     let context = trillium_testing::init(&mut handler).await;

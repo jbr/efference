@@ -824,10 +824,10 @@ pub(crate) fn router_with_heartbeat(heartbeat: Duration) -> Router {
                 // The route is a tuple because the `Sse` handler cannot answer with the
                 // typed envelope: its `connect` must return a stream, so rejection
                 // happens *before* it, and a failure halts so the SSE half never runs.
-                // The `Sse` handler brings what the plain `with_sse_stream` conn method
-                // cannot: `Accept` negotiation (a request excluding `text/event-stream`
-                // passes through untouched) and the heartbeat, which needs the runtime
-                // the handler obtains at server init.
+                // The `Sse` handler negotiates on `Accept` (a request not naming
+                // `text/event-stream` passes through untouched), drives the stream
+                // through its upgrade hook, and sends the heartbeat, which needs the
+                // runtime the handler obtains at server init.
                 |conn: Conn| async move {
                     let Some(shared) = shared_of(&conn) else {
                         return missing_state(conn);

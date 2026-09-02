@@ -467,7 +467,7 @@ pub(crate) fn stack_with_files(
         // The operator's read surface over the working directory (docs/web-bind.md),
         // mounted only here so the UDS never serves it. It claims `/files` and
         // passes everything else through.
-        files,
+        files.handler(),
         // Last: any GET neither router nor `/files` claimed is the web client's surface
         // (docs/web-client.md) — an asset, or the SPA index.
         frontend(Surface::Session),

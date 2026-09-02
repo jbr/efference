@@ -32,12 +32,12 @@ tokio = { version = "1.53.1", features = [
 libc = "0.2.189"
 clap = { version = "4", features = ["derive", "env"] }
 # Core trillium types (Conn/Handler/Method) for the control-channel HTTP server.
-trillium = "1.3.0"
+trillium = "1.4.0"
 # Already in-tree under trillium; direct only to name the inner conn type the TCP
 # gate reads `authority()` from — h2's `:authority` is not consulted by
 # `trillium::Conn::host()` (docs/web-bind.md).
-trillium-http = "1.6"
-trillium-client = { version = "0.9.14", features = ["sse"] }
+trillium-http = "1.7"
+trillium-client = { version = "0.9.17", features = ["sse"] }
 trillium-client-retry = "0.0.1"
 trillium-rustls = "0.11.3"
 # 0.6.4 adds `UnixClientConfig` — the client-side Unix-socket connector the
@@ -45,7 +45,7 @@ trillium-rustls = "0.11.3"
 trillium-tokio = "0.6.4"
 # StreamExt for consuming the SSE EventStream; already in-tree via trillium.
 futures-lite = "2.6.1"
-trillium-router = "0.5.2"
+trillium-router = "0.5.3"
 # The host's session proxy (docs/host.md): `/sessions/<id>/…` forwarded to that
 # session's Unix socket. Chosen over a hand-rolled forward for the two properties
 # the control API needs — a streamed response body (so SSE flushes through instead
@@ -56,11 +56,15 @@ trillium-proxy = "0.8.5"
 trillium-server-common = "0.7"
 # HTTP/3 for the TLS bind (docs/web-bind.md): a QUIC listener on the same port,
 # auto-paired with the TLS listener and advertised via alt-svc.
-trillium-quinn = "0.1.6"
+trillium-quinn = "0.1.7"
 # HEAD requests: rewritten to GET going in, body stripped (content-length kept)
 # coming out — the router itself has no HEAD story.
 trillium-head = "0.3"
-trillium-sse = "0.3.0"
+trillium-sse = "0.4.0"
+# `#[derive(Handler)]`: whole-trait delegation for the wrapper that gates the
+# `/files` Sse stage on conn state — delegating `run` alone would drop the
+# upgrade hook the stream is driven through. Already in-tree under trillium.
+trillium-macros = "0.1"
 # The web client (docs/web-client.md): builds `web/` at compile time and embeds
 # the dist assets in the binary; the `dev-proxy` feature below proxies to a
 # spawned Vite dev server instead (HMR). Build mode needs pnpm on PATH.
@@ -185,7 +189,7 @@ insta = "1.48.0"
 # (`trillium-tokio`); without it the harness approximates a runtime by spawning
 # threads, and any handler touching tokio primitives (`tokio::time::timeout` in
 # the settle wait) panics off-runtime.
-trillium-testing = { version = "0.10.0", features = ["tokio"] }
+trillium-testing = { version = "0.10.2", features = ["tokio"] }
 
 [build-dependencies]
 # The theme set is baked at build time from assets/themes/*/*.tmTheme into OUT_DIR

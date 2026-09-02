@@ -78,8 +78,11 @@ async fn an_idle_stream_heartbeats_with_comments() {
     )
     .with_base("http://localhost/");
 
+    // `Accept` names the stream by name, as `into_sse` does for the real client:
+    // the `Sse` handler passes anything else through to the router's 404.
     let mut conn = raw
         .get("/v1/events?include=state:gate")
+        .with_request_header(trillium::KnownHeaderName::Accept, "text/event-stream")
         .await
         .expect("open events");
     let mut body = Vec::new();

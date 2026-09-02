@@ -206,6 +206,7 @@ async fn a_session_stream_is_flushed_not_buffered() {
     let mut conn =
         trillium_testing::TestConn::build(Method::Get, "/sessions/streaming/v1/events", ())
             .with_request_header(KnownHeaderName::Host, "localhost")
+            .with_request_header(KnownHeaderName::Accept, "text/event-stream")
             .with_request_header(KnownHeaderName::Authorization, bearer(&auth))
             .run_async(&handler)
             .await;
