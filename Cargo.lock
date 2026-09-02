@@ -2847,9 +2847,9 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30d65c71f1ce40ab09135ce117d742b9f8a19ff91a41a8b57ed50bc2de59c427"
+checksum = "4b18443e9c262bfe8fa82f51666e2642c53393f7e5c27b3e1aeab922cff5b9d8"
 dependencies = [
  "libc",
  "log",
@@ -5375,9 +5375,9 @@ dependencies = [
 
 [[package]]
 name = "trillium-client"
-version = "0.9.17"
+version = "0.9.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5e252e8a2f97aae239aa54701e65fd5efbd9bcc7484f1db42c21aa3e045bed1"
+checksum = "6e186b5d60931896fd6222e898d28a3200c3a57eceb46bb9d6756db1a890b3b8"
 dependencies = [
  "async-lock",
  "crossbeam-queue",
