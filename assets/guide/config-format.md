@@ -66,8 +66,10 @@ exclusion out of a broader one, and `write` implies `read`. Matching is lexical 
 treated as inside it: these are guardrails against a mistake, not access control.
 
 A path-bearing tool clears only when its name is in `tools` **and** its target is granted
-here. The session's own directory is denied by the harness regardless of what this table
-says, with a read-only re-allow on its `config.toml`.
+here. `bash` is never judged by this table — a shell command answers to `[commands]` and
+the spotter — so a deny here guards the structured tools against a mistaken call and
+nothing else. `.efference/` is denied by the harness underneath this table, with the
+session's own `config.toml` re-allowed read-only; a template needs no entry for it.
 
 ## `[context]` — what the session boots knowing
 

@@ -41,6 +41,11 @@ pub(crate) const CONFIG_SCAFFOLD: &str = "\
 #                                       #   (literal), SOME_KEY = \"op://Vault/Item/field\" (resolved at boot
 #                                       #   and always masked), or { cmd = \"...\" } for any other vault.
 
+# The one command a session with no project config needs cleared: validating the template it
+# is about to write (docs/operating.md). Everything else goes through the spotter until granted.
+[commands]
+\"efference check\" = true
+
 # Orientation as config: this section's stdout is frozen into the session preamble at boot.
 [context]
 \"Environment at boot\" = { exec = 'echo \"working directory: $PWD\"; echo \"platform: $(uname -sm)\"; echo \"top-level entries:\"; ls' }
@@ -611,6 +616,15 @@ pub(crate) enum Command {
         /// which is where a rate is worth comparing against.
         #[arg(long, conflicts_with = "session")]
         all: bool,
+    },
+    /// Validate a config template offline: parse it, apply the same checks
+    /// `serve` applies at boot, and resolve its `[context]` entries from the
+    /// current directory (`exec` entries run). Prints what the file grants and
+    /// how many preamble bytes it costs; exits non-zero with the boot-time error
+    /// otherwise. No daemon, no network — the terminus for setting a project up.
+    Check {
+        /// The file to check. Defaults to `efference.toml` in the current directory.
+        path: Option<PathBuf>,
     },
     /// Print the daemon's ephemeral control state (`GET /state`).
     State,

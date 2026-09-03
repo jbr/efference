@@ -334,11 +334,15 @@ impl Provider {
                 // `max_tokens`, and OpenRouter routes only to endpoints that
                 // support a response that long. So **min** — a max would pin
                 // routing to the single widest endpoint, changing price and
-                // availability as a side effect of a display value.
-                let max_output_tokens = endpoints
-                    .iter()
-                    .filter_map(|e| e.max_completion_tokens)
-                    .min();
+                // availability as a side effect of a display value — but the
+                // min over endpoints that clear [`OUTPUT_FLOOR`]: an outlier
+                // below it would otherwise cap every turn of the session at
+                // its number (observed 2026-09-02: one of twenty-two
+                // endpoints at 2048 held a thinking model to 2048 output
+                // tokens per turn, docs/transport.md). Only when no endpoint
+                // clears the floor is the plain min kept.
+                let max_output_tokens =
+                    output_ceiling(endpoints.iter().filter_map(|e| e.max_completion_tokens));
                 // Conservative like `max_output_tokens`, and for the same
                 // reason: routing is unpinned and a `thinking` block is not a
                 // routing filter, so it is sent only if *every* endpoint
@@ -379,6 +383,28 @@ impl Provider {
             }
         }
     }
+}
+
+/// The smallest per-turn output budget worth routing to (docs/transport.md).
+/// OpenRouter's `max_completion_tokens` aggregates by **min** across the
+/// endpoints serving a model, and the min is sent as `max_tokens`; an endpoint
+/// far below its peers therefore caps the whole session at its number, and on
+/// a model whose thinking counts against the cap that is a turn cut off
+/// mid-deliberation. Endpoints below this line are left out of the min — the
+/// request excludes them from routing, which is the intended effect.
+pub const OUTPUT_FLOOR: u64 = 32_768;
+
+/// Fold per-endpoint output caps into the one that is sent: the min over caps
+/// at or above [`OUTPUT_FLOOR`], else the plain min (a model none of whose
+/// endpoints clears the floor is a short-output model, and narrowing its
+/// routing would buy nothing). `None` when no endpoint reports a cap.
+pub(super) fn output_ceiling(caps: impl Iterator<Item = u64>) -> Option<u64> {
+    let caps: Vec<u64> = caps.collect();
+    caps.iter()
+        .copied()
+        .filter(|&c| c >= OUTPUT_FLOOR)
+        .min()
+        .or_else(|| caps.iter().copied().min())
 }
 
 /// What the provider's model-metadata endpoint reports about the selected

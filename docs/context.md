@@ -225,6 +225,8 @@ unknown fields, so a renamed key fails there), every tool name a document declar
   frontmatter block, fails startup — silently booting without configured context would be
   the model running with knowledge it was told it had.
 
+`efference check` runs the same resolution offline against a template, so a config can be tried without minting a session (docs/operating.md).
+
 ## Deferred
 
 Live mid-session discovery of context files (`backlog/live-context-update.md`) and glob

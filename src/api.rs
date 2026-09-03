@@ -320,7 +320,7 @@ pub use diagnostics::{
     upstream_retry_state,
 };
 pub use endpoint::{Endpoint, sticky_session_id};
-pub use provider::{ModelCapabilities, Provider};
+pub use provider::{ModelCapabilities, OUTPUT_FLOOR, Provider};
 pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,
 };

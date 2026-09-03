@@ -69,7 +69,14 @@ spent none of that budget and put a serde message where the model could read it.
 The dividing line from the max-tokens case is deliberate: a
 cap-terminated response is *finalized* — it carries a `stop_reason` and usage
 and the loop rightly commits it — where an unfinalized stream carries neither.
-Finalized → commit; unfinalized → record-but-retry. A failure observed *after*
+Finalized → commit; unfinalized → record-but-retry. One exception rides the
+stop reason alone: a `tool_use` block in a `max_tokens` completion was cut
+mid-arguments (a model stops at `tool_use` after a call it finished, never at
+the cap), and whether the fragments parse is the upstream's doing — observed
+2026-09-02, a cap-cut `write` arrived as a valid object with its `contents`
+split across nonsense keys and no `path`, and was dispatched. So a finalized
+completion carrying both `stop_reason: max_tokens` and a call is marked the
+same record-only partial, whatever its input parsed to. A failure observed *after*
 finalization (draining the already-closed stream) does not unmake the
 completion. Before this existed, an aborted stream committed as a clean turn —
 empty or thinking-only, zero usage — indistinguishable from the agent choosing
@@ -552,7 +559,16 @@ regress (serve already requires the live messages endpoint). Per provider:
   `max_completion_tokens` takes the **min**: it is sent as the request's
   `max_tokens`, and routing skips endpoints that cannot produce a response that
   long, so a max would silently pin routing to the single widest endpoint and
-  change price and availability as a side effect of a display value. The
+  change price and availability as a side effect of a display value. The min
+  is taken over the endpoints at or above `OUTPUT_FLOOR` (32k, `api/provider.rs`):
+  an outlier far below its peers would otherwise cap every turn of the session
+  at its number, which on a model whose thinking counts against `max_tokens`
+  is a turn cut off before its first tool call (`z-ai/glm-5.3-flash`,
+  2026-09-02: twenty-one endpoints at 128k or more, one at 2048; three of the
+  session's turns ended at 2048 with thinking only). Excluding the outlier
+  from routing is the intended effect. Only when no endpoint clears the floor
+  does the plain min stand — a short-output model gains nothing from narrowed
+  routing. The
   model-level fields are not used: `context_length` there is the max across
   endpoints, while `top_provider` describes one designated endpoint (not the
   originating lab, and not necessarily the cheapest), and the two disagree.

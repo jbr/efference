@@ -7,10 +7,16 @@ behind a change, see [`journal/`](journal/).
 
 ## [Unreleased]
 
+### Fixed
+- **A tool call cut at the output-token cap is no longer dispatched** (docs/transport.md): a `max_tokens` completion carrying a `tool_use` block is a record-only partial whether or not its arguments happen to parse — the upstream had been repairing a truncated `write` into a valid object with no `path`.
+- **An OpenRouter endpoint far below its peers no longer caps the session's output** (docs/transport.md): the `max_completion_tokens` min is taken over endpoints at or above a 32k floor, so one 2048-token outlier excludes itself from routing instead of holding every turn to 2048.
+
 ### Changed
 - **The bash fast-path parses with `brush-parser`** (docs/permissions.md), replacing a `yash-syntax` pinned to its last standalone version — same admitted shapes, same fail-closed posture, on a parser that tracks bash and still receives updates.
 
 ### Added
+- **`efference check [path]`** (docs/operating.md): validate a config template offline — the boot-time parse and soundness checks plus `[context]` resolution — and print its grants and preamble size; the new-project guide names it as the terminus of a "set this project up" task, and the scaffolded no-config session grants it.
+- **The new-project guide asks before it writes** (`efference://guide/new-project`): survey the workspace, then end the turn on a draft and the decisions that are the operator's — grant breadth, withheld built-ins, MCP servers, preamble contents, `scope`; the starter template grants `"efference.*"` and the guide enumerates what that covers; it drafts an `AGENTS.md` for the preamble rather than listing the README; the session preamble now says that a decision the workspace cannot answer is asked by ending the turn on it.
 - **A boot-time effort level** (docs/transport.md): `serve --effort low|medium|high|xhigh|max` or `[transport] effort` sends `output_config.effort` on the turn and fork-peek envelope — unset sends nothing and is byte-identical to before; `xhigh`/`max` on a session whose turns send thinking disabled (the `EFFERENCE_THINKING=off` override, or a Claude model without adaptive thinking) is refused at boot instead of 400ing on the first turn.
 
 - **Web push on gate and settle** (docs/web-push.md): each live daemon notifies subscribed devices when an approval gate opens (body: the call's `intent`) or a turn settles (body: the turn's closing prose) — VAPID key derived from the machine root, subscriptions in one machine-scoped store, opt-in checkbox in the web client's Interface tab.

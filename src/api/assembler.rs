@@ -411,6 +411,25 @@ impl Assembler {
                 }
             }
         }
+        // A tool call in a completion that stopped at the output-token cap was cut
+        // mid-arguments — the model stops at `tool_use`, never at the cap, after a
+        // call it finished. Whether the fragments happen to parse is the
+        // upstream's doing, not the model's (observed 2026-09-02: a cap-cut
+        // `write` came back as a valid object with its `contents` split across
+        // several nonsense keys and no `path`, and was dispatched), so the call
+        // is marked undispatchable here on the stop reason alone, the same
+        // record-only partial an unparseable input becomes (docs/transport.md).
+        if upstream_failure.is_none()
+            && !calls.is_empty()
+            && self.stop_reason.as_deref() == Some("max_tokens")
+        {
+            log::warn!("tool call cut at the output-token cap kept undispatched");
+            upstream_failure = Some(
+                "stream stopped at the output-token cap mid-tool-call"
+                    .to_string()
+                    .into(),
+            );
+        }
         // A stream that finalizes with **nothing** is the complement of one that
         // dies before finalizing (docs/transport.md), and is marked the same way.
         // Marking it here rather than in the loop is what makes both surfaces

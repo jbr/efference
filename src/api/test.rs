@@ -106,8 +106,9 @@ fn anthropic_capabilities_missing_context_is_an_error() {
 /// The OpenRouter endpoints shape: both ceilings are per serving endpoint, and
 /// they aggregate in opposite directions. `context_length` takes the **max** —
 /// routing filters to endpoints that fit, so the widest is reachable.
-/// `max_completion_tokens` takes the **min** — it is sent as `max_tokens`, and a
-/// max there would pin routing to one endpoint. Trimmed from a live
+/// `max_completion_tokens` takes the **min** (over the endpoints at or above
+/// `OUTPUT_FLOOR`, see the next test) — it is sent as `max_tokens`, and a max
+/// there would pin routing to one endpoint. Trimmed from a live
 /// `GET /api/v1/models/anthropic/claude-haiku-4.5/endpoints` response.
 #[test]
 fn openrouter_capabilities_aggregate_ceilings_in_opposite_directions() {
@@ -119,7 +120,7 @@ fn openrouter_capabilities_aggregate_ceilings_in_opposite_directions() {
                 {"provider_name": "Google", "context_length": 200000,
                  "max_completion_tokens": 64000, "supports_implicit_caching": false},
                 {"provider_name": "Anthropic", "context_length": 195000,
-                 "max_completion_tokens": 32000, "supports_implicit_caching": false},
+                 "max_completion_tokens": 48000, "supports_implicit_caching": false},
                 {"provider_name": "Azure", "context_length": null,
                  "max_completion_tokens": null, "supports_implicit_caching": false}
             ]
@@ -127,9 +128,52 @@ fn openrouter_capabilities_aggregate_ceilings_in_opposite_directions() {
     }"#;
     let caps = Provider::OpenRouter.parse_capabilities(body, &[]).unwrap();
     assert_eq!(caps.context_length, 200000);
-    assert_eq!(caps.max_output_tokens, Some(32000));
+    assert_eq!(caps.max_output_tokens, Some(48000));
     // No endpoint above lists `supported_parameters` at all → not granted.
     assert!(!caps.supports_reasoning);
+}
+
+/// The output-cap min skips endpoints below `OUTPUT_FLOOR` (docs/transport.md):
+/// the live case was `z-ai/glm-5.3-flash` with twenty-one endpoints at 128k or
+/// more and one at 2048, which held every turn to 2048 output tokens — on a
+/// thinking model, a turn cut off before its first tool call. The plain min
+/// survives only when nothing clears the floor.
+#[test]
+fn openrouter_output_cap_skips_endpoints_below_the_floor() {
+    let body = |caps: &[Option<u64>]| {
+        let endpoints: Vec<String> = caps
+            .iter()
+            .map(|c| {
+                let cap = c.map_or("null".to_string(), |c| c.to_string());
+                format!(
+                    r#"{{"provider_name": "p", "context_length": 200000,
+                        "max_completion_tokens": {cap}}}"#
+                )
+            })
+            .collect();
+        format!(
+            r#"{{"data": {{"architecture": {{"input_modalities": ["text"]}},
+                "endpoints": [{}]}}}}"#,
+            endpoints.join(",")
+        )
+    };
+    let cap = |caps: &[Option<u64>]| {
+        Provider::OpenRouter
+            .parse_capabilities(&body(caps), &[])
+            .unwrap()
+            .max_output_tokens
+    };
+    // The outlier is skipped; the min among the rest is sent.
+    assert_eq!(
+        cap(&[Some(131_072), Some(2_048), Some(128_000), None]),
+        Some(128_000)
+    );
+    // Exactly at the floor counts as clearing it.
+    assert_eq!(cap(&[Some(OUTPUT_FLOOR), Some(64_000)]), Some(OUTPUT_FLOOR));
+    // Nothing clears the floor: the plain min, so routing stays open.
+    assert_eq!(cap(&[Some(4_096), Some(8_192)]), Some(4_096));
+    // No endpoint reports a cap at all.
+    assert_eq!(cap(&[None, None]), None);
 }
 
 /// `supports_reasoning` is min-style like the ceilings: granted only when every
@@ -656,6 +700,52 @@ fn assembles_text_and_split_tool_use() {
         }
         other => panic!("expected Payload::Assistant, got {other:?}"),
     }
+}
+
+/// A completion that stops at `max_tokens` with a tool call in it is a
+/// record-only partial, whether or not the call's arguments parse
+/// (docs/transport.md). Live case, 2026-09-02: a `write` cut at the cap arrived
+/// as a *valid* JSON object — `contents` truncated, the remainder of the file
+/// split across nonsense keys, no `path` — and only the tool's own "missing
+/// field `path`" error stopped it. The parse succeeding was the upstream's
+/// repair, not the model's call.
+#[test]
+fn tool_call_cut_at_the_output_cap_is_a_record_only_partial() {
+    let completion = feed(&[
+        ("message_start", r#"{"type":"message_start","message":{"id":"gen-cap","model":"z-ai/glm-5.3-flash","usage":{"input_tokens":10,"output_tokens":0}}}"#),
+        ("content_block_start", r#"{"index":0,"content_block":{"type":"tool_use","id":"call_1","name":"write","input":{}}}"#),
+        ("content_block_delta", r#"{"index":0,"delta":{"type":"input_json_delta","partial_json":"{\"contents\": \"scope = \", \"read\": \"x\"}"}}"#),
+        ("content_block_stop", r#"{"index":0}"#),
+        ("message_delta", r#"{"delta":{"stop_reason":"max_tokens"},"usage":{"input_tokens":10,"output_tokens":2048}}"#),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+    ])
+    .unwrap();
+    assert_eq!(completion.stop_reason.as_deref(), Some("max_tokens"));
+    let why = completion
+        .upstream_failure()
+        .expect("marked undispatchable");
+    assert!(why.contains("output-token cap"), "{why}");
+    // The raw call is kept for audit, parsed as it arrived.
+    match &completion.assistant {
+        Payload::Assistant { calls, .. } => {
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].name, "write");
+        }
+        other => panic!("expected Payload::Assistant, got {other:?}"),
+    }
+
+    // The same cap with no call in flight is a finalized, committable turn:
+    // thinking-only or text-only output that ran long is the model's own.
+    let plain = feed(&[
+        ("message_start", r#"{"type":"message_start","message":{"id":"gen-cap2","model":"z-ai/glm-5.3-flash","usage":{"input_tokens":10,"output_tokens":0}}}"#),
+        ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
+        ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"long"}}"#),
+        ("content_block_stop", r#"{"index":0}"#),
+        ("message_delta", r#"{"delta":{"stop_reason":"max_tokens"},"usage":{"input_tokens":10,"output_tokens":2048}}"#),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+    ])
+    .unwrap();
+    assert!(plain.upstream_failure().is_none());
 }
 
 /// OpenRouter's `/api/v1/messages` skin sends the `cache_*` token counts as an
@@ -1413,7 +1503,8 @@ fn upstream_pin_narrows_the_capability_aggregation() {
     };
     let unpinned = caps(&[]);
     assert_eq!(unpinned.context_length, 1_000_000);
-    assert_eq!(unpinned.max_output_tokens, Some(8_000));
+    // 8_000 is below `OUTPUT_FLOOR`, so the unpinned min skips it.
+    assert_eq!(unpinned.max_output_tokens, Some(64_000));
 
     let pinned = caps(&["google-ai-studio".to_string()]);
     assert_eq!(pinned.context_length, 200_000);
