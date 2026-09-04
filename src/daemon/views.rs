@@ -107,14 +107,18 @@ impl Shared {
         // Context-window occupancy (docs/transport.md): the last **main-loop**
         // request's total prompt tokens — uncached input + cache reads + cache
         // writes; `input_tokens` alone is only the uncached remainder — against
-        // the boot-fetched limit. Deliberately `last_turn_usage`, not
+        // the limit the prompt can actually reach: the boot-fetched window less
+        // what the last request reserved for output (`api/reservation.rs`),
+        // since the provider refuses a prompt that leaves the reservation no
+        // room. Before any request, the full window. Deliberately `last_turn_usage`, not
         // `last_usage`: the side channels each carry their own, much smaller
         // prefix, so folding them here makes occupancy fall mid-turn and correct
         // itself afterwards. `used` is null until the first *turn*; `context` is
         // null entirely when no capabilities were fetched (tests, offline verbs).
+        let reserved = self.reserved_output().unwrap_or(0);
         let context = self.capabilities.lock().unwrap().as_ref().map(|caps| {
             serde_json::json!({
-                "limit": caps.context_length,
+                "limit": caps.context_length.saturating_sub(reserved),
                 "used": metrics.last_turn_usage.as_ref().map(|u| {
                     u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
                 }),

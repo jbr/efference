@@ -585,14 +585,41 @@ The parsed `ModelCapabilities` (`context_length`, `max_output_tokens`,
 `supports_reasoning`, `supports_image_input`, `supports_prompt_caching`; grown
 one field per consumer) is transport-only — held
 in `Shared`, never logged or projected. `max_output_tokens` sets the
-per-turn output budget (`Client::with_max_output`): a reasoning model's
+per-turn output cap (`Client::with_max_output`): a reasoning model's
 thinking bills against `max_tokens`, and the pre-reasoning 4096 default —
 which stands only when the provider reports no cap — starves a long think,
 terminating the turn at the cap before any text or call arrives (observed
 live, 2026-08-21; the committed turn was thinking alone). A cap-terminated
 turn commits whatever arrived and posts a notification naming the cap
 (`agent.rs` on `stop_reason: "max_tokens"`) — before that existed, the
-session just sat idle, reading as a hang. `GET /state` surfaces it as `usage.context = {limit, used}`, where
+session just sat idle, reading as a hang.
+
+**`max_tokens` is a reservation, not a prediction** (`api/reservation.rs`).
+The provider sets the tokens aside before generating and rejects a request
+whose prompt plus `max_tokens` exceeds `context_length` — Anthropic as
+"input length and `max_tokens` exceed context limit", OpenRouter as "maximum
+context length is N tokens. However, you requested about M tokens". So a
+model whose advertised output cap is most of its window (`meta/muse-spark-1.3`:
+943,718 of 1,048,576) walls the session at a tenth of the window if the cap is
+sent verbatim, and a 200k model with a 128k cap walls at 72k. Each request
+therefore sends the cap shrunk to what the window spares:
+`min(cap, context_length − estimated_prompt − 2048)`, never below 1024. The
+prompt is estimated from the last response's exact prompt count (`input` +
+cache read + cache write, recorded against the byte size of the body that
+produced it) plus the bytes the body has grown or shrunk since, at three bytes
+per token — the conservative side of the 3.5–4.4 measured across the corpus's
+models, so the estimate errs toward reserving less. Until a response has been
+counted, the whole body is estimated at that ratio. Far from the wall the
+value sent is the cap; near it, the reservation shrinks each turn. A 400 in
+either provider's overflow phrasing is the backstop: the reservation is halved
+and the request retried, once per halving down to the floor, and any other
+open failure stays terminal. Turns, fork peeks, and triage all share the one
+client and so the one calibration; the keepalive's `max_tokens: 0` ping and
+the spotter's own client (no window set) are outside it.
+
+`GET /state` surfaces the window as `usage.context = {limit, used}`, where
+`limit` is `context_length` less what the last request reserved — the wall the
+prompt actually hits, the full window before any request — and
 `used` is the last request's total prompt tokens (`input_tokens` +
 `cache_read_input_tokens` + `cache_creation_input_tokens` — `input_tokens`
 alone is only the uncached remainder; null until the first request). The TUI

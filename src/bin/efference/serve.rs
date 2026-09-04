@@ -476,6 +476,9 @@ pub(crate) async fn serve(
     if let Some(cap) = capabilities.max_output_tokens {
         client = client.with_max_output(cap);
     }
+    // The window the cap is reserved against: each request sends the cap
+    // shrunk to what the window spares after the prompt (`api/reservation.rs`).
+    client = client.with_context_window(capabilities.context_length);
     let client = client;
 
     // The independent permission rung (docs/permissions.md): a fresh-context spotter

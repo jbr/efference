@@ -310,6 +310,7 @@ mod diagnostics;
 mod endpoint;
 mod provider;
 mod render;
+mod reservation;
 mod thinking;
 
 pub use client::{Client, DEFAULT_STREAM_CEILING, KeepaliveError};
@@ -324,6 +325,7 @@ pub use provider::{ModelCapabilities, OUTPUT_FLOOR, Provider};
 pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,
 };
+pub use reservation::{Reservation, ReservationState, is_window_overflow, reservation_state};
 pub use thinking::{Effort, ToolChoice, auto_turns_disable_thinking, check_effort_thinking};
 
 use assembler::Assembler;

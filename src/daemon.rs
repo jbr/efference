@@ -32,8 +32,8 @@ use trillium_sse::{Eventable, sse};
 
 use crate::agent;
 use crate::api::{
-    Client, Error, RequestUsage, ToolChoice, UpstreamFailureState, UpstreamRetryState, Usage,
-    upstream_failure_state, upstream_retry_state,
+    Client, Error, RequestUsage, ReservationState, ToolChoice, UpstreamFailureState,
+    UpstreamRetryState, Usage, reservation_state, upstream_failure_state, upstream_retry_state,
 };
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
@@ -313,6 +313,11 @@ pub struct Shared {
     /// that never fetched; `GET /state` then reports `context: null`.
     /// Transport-only: never logged or projected.
     capabilities: Mutex<Option<crate::api::ModelCapabilities>>,
+    /// The client's output reservation (`api/reservation.rs`): what the last
+    /// request sent as `max_tokens`, subtracted from the window for `GET
+    /// /state`'s context limit. A fresh cell until [`Shared::set_reservation`]
+    /// hands over the client's — then the limit tracks what is reserved.
+    reservation: Mutex<ReservationState>,
     /// Session cost telemetry (docs/transport.md): the running sum of
     /// per-generation **billed** costs fetched from the provider's accounting
     /// endpoint — authoritative, never modeled from a rate card. Behind its own
@@ -582,6 +587,7 @@ impl Shared {
             upstream_retry,
             retention: Mutex::new((0, Retention::default())),
             capabilities: Mutex::new(None),
+            reservation: Mutex::new(reservation_state()),
             cost: Arc::new(Mutex::new(CostCell::default())),
             identity: Mutex::new(None),
             stall: Mutex::new(None),
@@ -636,6 +642,19 @@ impl Shared {
     /// thereafter and read by `GET /state`'s context readout.
     pub fn set_capabilities(&self, capabilities: crate::api::ModelCapabilities) {
         *self.capabilities.lock().unwrap() = Some(capabilities);
+    }
+
+    /// Share the client's output-reservation cell (`api/reservation.rs`), so the
+    /// context limit `GET /state` reports is the window less what the last
+    /// request reserved for output. Called once by `serve`, beside
+    /// [`Self::set_capabilities`].
+    pub fn set_reservation(&self, reservation: ReservationState) {
+        *self.reservation.lock().unwrap() = reservation;
+    }
+
+    /// The `max_tokens` the last request sent, if any has (`api/reservation.rs`).
+    pub(crate) fn reserved_output(&self) -> Option<u64> {
+        self.reservation.lock().unwrap().lock().unwrap().last_sent()
     }
 
     /// Store what this session is — the model it was configured with and the

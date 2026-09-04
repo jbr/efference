@@ -257,6 +257,17 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["context"]["limit"], 200_000);
     assert_eq!(v["usage"]["context"]["used"], 6 + 165 + 9407);
+
+    // Once a request has reserved output (`api/reservation.rs`), the limit is
+    // the window less that reservation: the wall the prompt actually hits.
+    let reservation = crate::api::reservation_state();
+    reservation
+        .lock()
+        .unwrap()
+        .compute(64_000, Some(200_000), 40_000);
+    shared.set_reservation(reservation);
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["context"]["limit"], 200_000 - 64_000);
 }
 
 /// **A side-channel request must not move reported occupancy.** The fork peek,

@@ -330,9 +330,10 @@ impl Provider {
                          (is the model currently served?)"
                             .into()
                     })?;
-                // Sent, not merely displayed: this becomes the request's
-                // `max_tokens`, and OpenRouter routes only to endpoints that
-                // support a response that long. So **min** — a max would pin
+                // Sent, not merely displayed: this is the cap each request's
+                // `max_tokens` is shrunk from (`api/reservation.rs`), and
+                // OpenRouter routes only to endpoints that support a response
+                // that long. So **min** — a max would pin
                 // routing to the single widest endpoint, changing price and
                 // availability as a side effect of a display value — but the
                 // min over endpoints that clear [`OUTPUT_FLOOR`]: an outlier
@@ -425,7 +426,8 @@ pub struct ModelCapabilities {
     pub context_length: u64,
     /// Maximum response tokens, where the provider reports one. OpenRouter:
     /// the **min** `max_completion_tokens` across serving endpoints — unlike
-    /// `context_length` this value is sent as `max_tokens`, and routing skips
+    /// `context_length` this value reaches the wire — as the cap each request's
+    /// `max_tokens` is shrunk from (`api/reservation.rs`) — and routing skips
     /// endpoints that cannot produce a response that long (docs/transport.md).
     pub max_output_tokens: Option<u64>,
     /// Whether every endpoint currently serving the model lists OpenRouter's

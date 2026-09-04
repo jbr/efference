@@ -196,12 +196,19 @@ pub struct Client {
     /// — one input to the thinking matrix (`Thinking::for_request`). `false` when no
     /// lookup ran (the spotter's client), which only ever omits the field.
     model_reasoning: bool,
-    /// The per-turn output budget. Defaults to the pre-reasoning-era 4096;
+    /// The per-turn output cap. Defaults to the pre-reasoning-era 4096;
     /// [`Self::with_max_output`] raises it to the model's reported cap — a
     /// reasoning model's thinking bills against this budget, and a long think
     /// against 4096 terminates at the cap before any text or call arrives.
-    /// Session-constant, so it never perturbs the cached prefix.
+    /// What goes on the wire is this cap shrunk to what the window spares
+    /// after the prompt (`api/reservation.rs`, docs/transport.md).
     max_tokens: u32,
+    /// The model's context window, from the boot capability lookup
+    /// ([`Self::with_context_window`]); `None` sends the cap unshrunk.
+    context_length: Option<u64>,
+    /// The reservation's calibration and last-sent value, shared with the
+    /// daemon's `GET /state` view (docs/transport.md).
+    reservation: ReservationState,
     /// How long one response's SSE stream may stay open (docs/transport.md).
     /// Session-constant and transport-only — it never reaches the request body,
     /// so it cannot move the cached prefix. Both stream surfaces ride it: the
@@ -282,6 +289,8 @@ impl Client {
             temperature,
             model_reasoning: false,
             max_tokens: MAX_TOKENS,
+            context_length: None,
+            reservation: reservation_state(),
             stream_ceiling: DEFAULT_STREAM_CEILING,
             effort: None,
             upstream: None,
@@ -384,6 +393,31 @@ impl Client {
         self
     }
 
+    /// Set the model's context window (`ModelCapabilities::context_length`), so
+    /// each request's `max_tokens` is shrunk to what the window spares after
+    /// the prompt (`api/reservation.rs`). Unset, the cap is sent as is.
+    pub fn with_context_window(mut self, context_length: u64) -> Self {
+        self.context_length = Some(context_length);
+        self
+    }
+
+    /// Clone the reservation cell the daemon reads for `GET /state`'s context
+    /// limit (docs/transport.md).
+    pub fn reservation(&self) -> ReservationState {
+        Arc::clone(&self.reservation)
+    }
+
+    /// The `max_tokens` for a request whose variable parts serialize to
+    /// `body_bytes` bytes (`api/reservation.rs`).
+    fn reserve(&self, body_bytes: usize) -> u32 {
+        let reserved = self.reservation.lock().unwrap().compute(
+            u64::from(self.max_tokens),
+            self.context_length,
+            body_bytes,
+        );
+        u32::try_from(reserved).unwrap_or(u32::MAX)
+    }
+
     /// One streaming round-trip: serialize `messages`, POST with `stream: true`,
     /// and fold the SSE event stream back into a [`Completion`]. Each live signal
     /// — prose, thinking, a tool call opening, its arguments arriving — is handed
@@ -395,7 +429,7 @@ impl Client {
     /// `into_sse` *is* the execution — the conn must not be awaited first (that
     /// is `SseErrorKind::AlreadyExecuted`). On a non-2xx it returns
     /// `SseErrorKind::Status` carrying the code; the failed `SseError` still owns the
-    /// `Conn` (`SseError: Into<Conn>`), so [`Self::sse_open_error`] reads the response
+    /// `Conn` (`SseError: Into<Conn>`), so [`Self::sse_open_failure`] reads the response
     /// body off it — Anthropic's 4xx carry a JSON `error.message` naming exactly what
     /// was malformed (e.g. an oversized request that exceeds the input limit), which is
     /// what makes such failures diagnosable.
@@ -406,43 +440,70 @@ impl Client {
         tool_choice: ToolChoice,
         mut on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
-        let request = Request {
-            model: &self.model,
-            max_tokens: self.max_tokens,
-            system: &self.system,
-            tools,
-            tool_choice,
-            thinking: Thinking::for_request(&self.model, &tool_choice, self.model_reasoning),
-            output_config: self.effort.map(|effort| OutputConfig { effort }),
-            temperature: self
-                .temperature
-                .map(|t| self.endpoint.provider.map_temperature(t)),
-            upstream: self.upstream.as_ref(),
-            prompt_cache_key: self.prompt_cache_key(),
-            messages,
-            stream: true,
-        };
-        let body = serde_json::to_string(&request)?;
-        log::debug!(
-            "POST {}: {} messages, {} request bytes",
-            self.endpoint.url,
-            messages.len(),
-            body.len()
-        );
+        // The prompt's variable parts, sized before `max_tokens` is chosen: the
+        // reservation is a function of how much of the window the prompt takes
+        // (`api/reservation.rs`), estimated from these bytes against the last
+        // response's exact count.
+        let body_bytes = self.system.len()
+            + serde_json::to_vec(messages)?.len()
+            + serde_json::to_vec(tools)?.len();
+        let mut max_tokens = self.reserve(body_bytes);
+        let mut events = loop {
+            let request = Request {
+                model: &self.model,
+                max_tokens,
+                system: &self.system,
+                tools,
+                tool_choice,
+                thinking: Thinking::for_request(&self.model, &tool_choice, self.model_reasoning),
+                output_config: self.effort.map(|effort| OutputConfig { effort }),
+                temperature: self
+                    .temperature
+                    .map(|t| self.endpoint.provider.map_temperature(t)),
+                upstream: self.upstream.as_ref(),
+                prompt_cache_key: self.prompt_cache_key(),
+                messages,
+                stream: true,
+            };
+            let body = serde_json::to_string(&request)?;
+            log::debug!(
+                "POST {}: {} messages, {} request bytes, max_tokens {max_tokens}",
+                self.endpoint.url,
+                messages.len(),
+                body.len()
+            );
 
-        let conn = self
-            .http
-            .post(self.endpoint.url.as_str())
-            .with_request_header(
-                self.endpoint.auth_header.clone(),
-                self.endpoint.auth_value.clone(),
-            )
-            .with_request_header("anthropic-version", ANTHROPIC_VERSION)
-            .with_request_header("content-type", "application/json");
-        let conn = self.with_session_id(conn);
-        let mut events = match conn.with_body(body).into_sse().await {
-            Ok(events) => events,
-            Err(e) => return Err(Self::sse_open_error(e).await),
+            let conn = self
+                .http
+                .post(self.endpoint.url.as_str())
+                .with_request_header(
+                    self.endpoint.auth_header.clone(),
+                    self.endpoint.auth_value.clone(),
+                )
+                .with_request_header("anthropic-version", ANTHROPIC_VERSION)
+                .with_request_header("content-type", "application/json");
+            let conn = self.with_session_id(conn);
+            match conn.with_body(body).into_sse().await {
+                Ok(events) => break events,
+                Err(e) => {
+                    let (status, detail) = Self::sse_open_failure(e).await;
+                    // The window backstop (`api/reservation.rs`): the estimate
+                    // undershot and the provider named the overrun, so halve
+                    // the reservation and go again — once per halving, down to
+                    // the floor. Any other open failure stays terminal.
+                    if status == Some(Status::BadRequest) && is_window_overflow(&detail) {
+                        if let Some(halved) = self.reservation.lock().unwrap().halve() {
+                            log::warn!(
+                                "prompt plus max_tokens {max_tokens} overran the window; \
+                                 retrying with max_tokens {halved}"
+                            );
+                            max_tokens = u32::try_from(halved).unwrap_or(u32::MAX);
+                            continue;
+                        }
+                    }
+                    return Err(Self::open_error(status, detail));
+                }
+            }
         };
 
         let mut assembler = Assembler::new();
@@ -502,7 +563,22 @@ impl Client {
                 }
             }
         }
-        assembler.finish()
+        let completion = assembler.finish();
+        // Anchor the next estimate to this response's exact prompt count
+        // (`api/reservation.rs`). An attempt that died with zero usage
+        // counted nothing and teaches nothing.
+        if let Ok(completion) = &completion {
+            let prompt_tokens = completion.usage.input_tokens
+                + completion.usage.cache_read_input_tokens
+                + completion.usage.cache_creation_input_tokens;
+            if prompt_tokens > 0 {
+                self.reservation
+                    .lock()
+                    .unwrap()
+                    .calibrate(prompt_tokens, body_bytes);
+            }
+        }
+        completion
     }
 
     /// Turn a failed `into_sse` into a legible [`Error`], reading the response body on a
@@ -515,10 +591,10 @@ impl Client {
     /// the trajectory, recording the message durably as an empty record-only
     /// assistant entry. Mid-stream deaths are the different case — they assemble
     /// as record-only partials and the loop retries them (docs/transport.md).
-    async fn sse_open_error(e: SseError) -> Error {
+    async fn sse_open_failure(e: SseError) -> (Option<Status>, String) {
         // `Status` is `Copy`, so binding it doesn't move `e.kind` — `e` stays whole and
         // convertible into its `Conn`.
-        let message = if let SseErrorKind::Status(status) = e.kind {
+        if let SseErrorKind::Status(status) = e.kind {
             let mut conn: Conn = e.into();
             // The observing handler already read this body in the reverse pass and
             // stashed it on the conn; reading again would find it consumed.
@@ -530,9 +606,18 @@ impl Client {
                     .await
                     .unwrap_or_else(|read_err| format!("(could not read error body: {read_err})")),
             };
-            format!("upstream API returned {status}: {body}")
+            (Some(status), body)
         } else {
-            format!("upstream SSE request failed: {}", e.kind)
+            (None, e.kind.to_string())
+        }
+    }
+
+    /// The [`Error`] for an open failure [`Self::sse_open_failure`] took apart:
+    /// the status and body on a non-2xx, the transport's own text otherwise.
+    fn open_error(status: Option<Status>, detail: String) -> Error {
+        let message = match status {
+            Some(status) => format!("upstream API returned {status}: {detail}"),
+            None => format!("upstream SSE request failed: {detail}"),
         };
         log::error!("{message}");
         message.into()

@@ -10,6 +10,7 @@ behind a change, see [`journal/`](journal/).
 ### Fixed
 - **A tool call cut at the output-token cap is no longer dispatched** (docs/transport.md): a `max_tokens` completion carrying a `tool_use` block is a record-only partial whether or not its arguments happen to parse — the upstream had been repairing a truncated `write` into a valid object with no `path`.
 - **An OpenRouter endpoint far below its peers no longer caps the session's output** (docs/transport.md): the `max_completion_tokens` min is taken over endpoints at or above a 32k floor, so one 2048-token outlier excludes itself from routing instead of holding every turn to 2048.
+- **`max_tokens` is shrunk to what the window spares** (docs/transport.md): each request reserves `min(cap, context_length − estimated prompt − margin)` instead of the advertised cap verbatim, and a window-overflow 400 halves and retries — a 1M model advertising a 943k cap had walled every session at ~105k of prompt; `usage.context.limit` now reports the window less the reservation.
 - **Session cost pricing backs off over minutes** (docs/transport.md): the generation lookup retries across 2s–300s instead of 2s/10s, so an upstream whose record lands late (`meta/muse-spark-1.3`, >60s) no longer leaves every request `unpriced`.
 
 ### Changed
