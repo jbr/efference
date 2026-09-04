@@ -621,10 +621,12 @@ cache read/write/TTL multipliers and per-endpoint price variance make modeling
 brittle. OpenRouter is the one provider with such a surface today:
 `GET /api/v1/generation?id=…` returns `total_cost`, keyed by the generation id
 each response carries (the same id `usage.jsonl` records — the join to the
-provider's own accounting). The record lands shortly after the response
-completes and a too-early GET 404s, so the fetch makes two delayed attempts
-(2s, 10s); exhaustion increments `unpriced`, so the total is a legible
-undercount rather than a silent one. On direct Anthropic there is no
+provider's own accounting). The record lands some time after the response
+completes and a too-early GET 404s; the lag is the upstream's (seconds for
+Anthropic-served models, over a minute observed for `meta/muse-spark-1.3`), so
+the fetch backs off across six attempts (2s through 300s, `COST_FETCH_DELAYS`
+in `daemon/metrics.rs`); exhaustion increments `unpriced`, so the total is a
+legible undercount rather than a silent one. On direct Anthropic there is no
 per-request cost surface (the Models API has no pricing; the Usage & Cost
 Admin API reports realized org costs in daily buckets under a separate admin
 key) — `usage.cost` is null there and the sidebar omits the line.

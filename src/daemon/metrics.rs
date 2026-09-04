@@ -108,6 +108,13 @@ const CACHE_TTL: Duration = Duration::from_secs(300);
 /// order of magnitude longer; 4 sits in the empty band between them.
 pub const COLD_STREAK_WARN: u32 = 4;
 
+/// Seconds to wait before each attempt at pricing a generation
+/// (`Shared::spawn_cost_fetch`, docs/transport.md). The record's arrival lag
+/// is the upstream's, not OpenRouter's, and ranges from seconds to over a
+/// minute by model; a schedule sized to the fastest prices nothing on the
+/// slowest.
+const COST_FETCH_DELAYS: [u64; 6] = [2, 10, 30, 60, 120, 300];
+
 /// Why a cold main-loop read needed no explanation from the prefix
 /// (docs/log-and-projection.md) — the three conditions under which the provider is
 /// expected to have nothing cached, derivable from the usage record alone.
@@ -350,9 +357,10 @@ impl Shared {
     /// generation id `persist_usage` just wrote. No-op unless cost tracking is
     /// armed, the request carried an id, and a tokio runtime is present (tests
     /// call the record methods synchronously). The generation record lands
-    /// shortly after the response completes and a too-early GET 404s, so two
-    /// delayed attempts; exhaustion counts the request `unpriced` — the total
-    /// stays a legible undercount instead of a silent one.
+    /// some time after the response completes and a too-early GET 404s; how
+    /// long varies by upstream, so the attempts back off across
+    /// [`COST_FETCH_DELAYS`]. Exhaustion counts the request `unpriced` — the
+    /// total stays a legible undercount instead of a silent one.
     fn spawn_cost_fetch(&self, request: &RequestUsage) {
         let (endpoint, id) = {
             let cell = self.cost.lock().unwrap();
@@ -366,8 +374,8 @@ impl Shared {
         };
         let cost = Arc::clone(&self.cost);
         handle.spawn(async move {
-            for delay in [Duration::from_secs(2), Duration::from_secs(10)] {
-                tokio::time::sleep(delay).await;
+            for delay in COST_FETCH_DELAYS {
+                tokio::time::sleep(Duration::from_secs(delay)).await;
                 match endpoint.fetch_generation_cost(&id).await {
                     Ok(usd) => {
                         cost.lock().unwrap().total_usd += usd;
