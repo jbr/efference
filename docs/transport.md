@@ -199,6 +199,67 @@ the nearest supported level; token consumption per level is provider-internal.
 negotiates HTTP/2 — Anthropic is fronted by Cloudflare, which does not
 advertise `alt-svc: h3`, so HTTP/3 is not a live option. HTTP/2 is the path.
 
+## One client per process (`src/http.rs`)
+
+Every outbound request that speaks TCP draws the same `trillium_client::Client`:
+the agent's turns and keepalive, the provider metadata and generation-cost GETs,
+MCP over HTTP, the OAuth dance, web push, and the dev-proxy. The two Unix-socket
+callers (the control client, the host's per-session proxy) build their own — a
+connector is bound at construction, and a UDS connector dials one socket path.
+
+`Client::new` allocates a fresh connection pool and spawns a background reaper;
+only **clones** share a pool, which is `Arc`-backed. So a per-subsystem client
+meant a separate TCP+TLS+ALPN handshake to an origin another subsystem already
+had open. Against OpenRouter that was the visible case: the turn stream and the
+cost lookups are the same host, and a cost pass runs thousands of GETs, which now
+multiplex onto the HTTP/2 connection the stream already holds.
+
+Two properties make one client sufficient. TLS is per-destination — `RustlsConfig`
+handshakes only for a secure destination and delegates to plain TCP otherwise, so
+`http://` callers share it. And handlers are per-clone: `with_handler` *replaces*
+rather than stacks, so the shared client installs none and each caller adds its
+own (retry and upstream-status in `api/client.rs`, redirect-following in
+`oauth.rs`). The clone keeps the pool; only the handler and the copy-on-write
+default headers differ.
+
+A pooled connection belongs to the reactor it was opened on. A process-wide client
+is safe across per-test tokio runtimes only because the pool is keyed by origin and
+each test binds a fresh ephemeral port; a test reusing a fixed port across runtimes
+could be handed a connection whose reactor is gone.
+
+## What every request carries, and what only some do
+
+The `User-Agent` is a default header on the shared client — `efference/<version>
+trillium-client/<version>`, this harness's product token first — so every host
+sees what software is calling it. Nothing else is a default.
+
+Everything that identifies *who* is asking is set per request by a caller that
+knows the destination: the credential, the sticky-routing key, and the
+attribution headers below. A default header would ride every clone to every host.
+
+**OpenRouter app attribution** (`Provider::attribution`). OpenRouter attributes
+usage by app rather than by `User-Agent`, keyed on `HTTP-Referer`; the other two
+headers only decorate an app the referer already identified.
+
+| header | value |
+| --- | --- |
+| `HTTP-Referer` | `https://efference.net` |
+| `X-OpenRouter-Title` | `efference` |
+| `X-OpenRouter-Categories` | `cli-agent,programming-app` |
+
+Provider-scoped rather than global because `Referer` already means something else:
+RFC 9110 defines it as the page that linked to the request, and hosts act on it —
+origin checks, referer-gated access, analytics. Sending it to an MCP server or to
+Anthropic would assert a referring page that does not exist. They ride the two
+inference POSTs (`complete` and `keepalive`) and not the metadata GETs, which are
+not billed usage. Being headers rather than body, they sit outside the cached
+prefix.
+
+The app is created public on the first attributed request. OpenRouter's
+`X-OpenRouter-App-Visibility: hidden` applies only at creation and is ignored
+afterward, so that choice was one-way and was made deliberately: attribution here
+is a public record of a harness that already announces itself in its `User-Agent`.
+
 ## Transient upstream failures
 
 `Client` installs `trillium-client-retry`'s `RetryHandler` around every upstream

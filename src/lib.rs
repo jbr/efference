@@ -16,6 +16,7 @@ pub mod frontend;
 pub mod fswatch;
 pub mod guide;
 pub mod host;
+pub mod http;
 pub mod inbox;
 pub mod log;
 pub mod mcp;

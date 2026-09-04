@@ -271,12 +271,14 @@ impl Client {
             .with_max_elapsed(RETRY_MAX_ELAPSED)
             .with_max_retry_after(RETRY_MAX_ELAPSED);
         Self {
-            // TLS over the tokio TCP connector; ALPN negotiates HTTP/2 —
-            // Anthropic's Cloudflare front advertises no `alt-svc: h3`, so HTTP/3
-            // is not a live option (docs/transport.md). See main.rs.
+            // The process-wide client (`http.rs`), so every `Client` in a process
+            // — the agent's, the fork's spotter, one per case in a spotter eval —
+            // shares one pool to the provider. TLS over the tokio TCP connector;
+            // ALPN negotiates HTTP/2 — Anthropic's Cloudflare front advertises no
+            // `alt-svc: h3`, so HTTP/3 is not a live option (docs/transport.md).
             // Retry remains outermost: reverse response handling records a failed
             // attempt before retry schedules the next one (docs/transport.md).
-            http: HttpClient::new(RustlsConfig::<ClientConfig>::default()).with_handler((
+            http: crate::http::client().with_handler((
                 retry,
                 UpstreamStatusHandler {
                     failure: Arc::clone(&upstream_failure),
@@ -322,6 +324,19 @@ impl Client {
     /// provider-conditional telemetry (cost tracking, docs/transport.md).
     pub fn endpoint(&self) -> &Endpoint {
         &self.endpoint
+    }
+
+    /// Carry the provider's app-attribution headers, if it has any
+    /// ([`Provider::attribution`], docs/transport.md). Constant per provider, and
+    /// headers rather than body, so they sit outside the cached prefix.
+    fn with_attribution(&self, conn: trillium_client::Conn) -> trillium_client::Conn {
+        self.endpoint
+            .provider
+            .attribution()
+            .iter()
+            .fold(conn, |conn, (name, value)| {
+                conn.with_request_header(*name, *value)
+            })
     }
 
     /// Carry this session's sticky-routing key, when there is one *and* the provider
@@ -482,7 +497,7 @@ impl Client {
                 )
                 .with_request_header("anthropic-version", ANTHROPIC_VERSION)
                 .with_request_header("content-type", "application/json");
-            let conn = self.with_session_id(conn);
+            let conn = self.with_attribution(self.with_session_id(conn));
             match conn.with_body(body).into_sse().await {
                 Ok(events) => break events,
                 Err(e) => {
@@ -669,7 +684,7 @@ impl Client {
             )
             .with_request_header("anthropic-version", ANTHROPIC_VERSION)
             .with_request_header("content-type", "application/json");
-        let conn = self.with_session_id(conn);
+        let conn = self.with_attribution(self.with_session_id(conn));
         let mut conn = conn.with_body(body).await.map_err(KeepaliveError::other)?;
         let status = conn.status().map(|s| s as u16);
         if !status.is_some_and(|s| (200..300).contains(&s)) {

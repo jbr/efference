@@ -15,9 +15,6 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use trillium_client::Client as HttpClient;
-use trillium_rustls::RustlsConfig;
-use trillium_tokio::ClientConfig;
 
 mod encrypt;
 mod vapid;
@@ -183,16 +180,6 @@ impl Store {
     }
 }
 
-/// The process-wide pooled client for push requests, mirroring the provider
-/// metadata client (`api/provider.rs`): a fresh `HttpClient` per send would hold
-/// one socket per subscription for the life of the process.
-fn client() -> HttpClient {
-    static CLIENT: std::sync::OnceLock<HttpClient> = std::sync::OnceLock::new();
-    CLIENT
-        .get_or_init(|| HttpClient::new(RustlsConfig::<ClientConfig>::default()))
-        .clone()
-}
-
 /// What a push service said about one subscription.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Outcome {
@@ -236,7 +223,7 @@ async fn send_one(
         return Outcome::Failed;
     };
 
-    let result = client()
+    let result = crate::http::client()
         .post(subscription.endpoint.as_str())
         .with_request_header("ttl", TTL_SECS.to_string())
         .with_request_header("content-encoding", "aes128gcm")

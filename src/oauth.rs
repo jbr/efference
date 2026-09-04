@@ -24,8 +24,6 @@
 
 use trillium_client::Client as HttpClient;
 use trillium_redirect::client::FollowRedirects;
-use trillium_rustls::RustlsConfig;
-use trillium_tokio::ClientConfig;
 
 /// The HTTP client every step of the dance uses.
 ///
@@ -36,7 +34,7 @@ use trillium_tokio::ClientConfig;
 /// authenticated yet, and a bearer token following one of them to an
 /// attacker-chosen origin is the leak the spec's threat model is about.
 pub fn http_client() -> HttpClient {
-    HttpClient::new(RustlsConfig::<ClientConfig>::default()).with_handler(FollowRedirects::new())
+    crate::http::client().with_handler(FollowRedirects::new())
 }
 
 pub mod authorize;

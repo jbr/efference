@@ -134,6 +134,35 @@ impl Provider {
         }
     }
 
+    /// The app-attribution headers this provider reads, empty where it has no
+    /// such concept (docs/transport.md).
+    ///
+    /// OpenRouter attributes usage by app rather than by `User-Agent`, keyed on
+    /// `HTTP-Referer`; the title and categories only decorate an app the referer
+    /// already identified. Sent on the inference POSTs alone — attribution is
+    /// about inference, and the metadata GETs in [`Endpoint::authed_get`] are not
+    /// billed usage.
+    ///
+    /// Scoped to the provider rather than made a default header on the shared
+    /// client because `Referer` means something else everywhere else: RFC 9110
+    /// defines it as the page that linked to the request, and hosts act on it —
+    /// origin checks, referer-gated access, analytics. Sending it to an MCP
+    /// server or to Anthropic would assert a referring page that does not exist.
+    pub(super) fn attribution(&self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Self::Anthropic => &[],
+            Self::OpenRouter => &[
+                // The app's identity in OpenRouter's rankings. Required: without
+                // it the other two headers do nothing.
+                ("HTTP-Referer", "https://efference.net"),
+                ("X-OpenRouter-Title", "efference"),
+                // Marketplace placement, at most two per request. `cli-agent` is
+                // the TUI and CLI verbs; `programming-app` is the web client.
+                ("X-OpenRouter-Categories", "cli-agent,programming-app"),
+            ],
+        }
+    }
+
     /// Whether this provider reads the OpenAI-style `prompt_cache_key` **body**
     /// field (docs/transport.md). OpenRouter does — it is the last fallback in
     /// its sticky-routing precedence, behind body `session_id` and the
@@ -502,14 +531,15 @@ impl Endpoint {
     }
 
     /// One authenticated GET against a provider metadata/accounting URL,
-    /// returning the body on 2xx and a status+body error otherwise. Shares
-    /// [`authed_get_client`]'s process-wide pooled client rather than dialing a
-    /// fresh connection per call — `fetch_generation_cost` alone can run
-    /// thousands of these in a spotter-eval cost pass, and a fresh
-    /// `HttpClient::new` per call holds a socket per lookup for the life of the
-    /// process (docs/transport.md).
+    /// returning the body on 2xx and a status+body error otherwise. Draws the
+    /// process-wide client (`http.rs`) rather than dialing a fresh connection per
+    /// call — `fetch_generation_cost` alone can run thousands of these in a
+    /// spotter-eval cost pass, and a fresh `Client::new` per call holds a socket
+    /// per lookup for the life of the process. Sharing it with the agent's
+    /// `Client` also means these lookups multiplex onto the HTTP/2 connection the
+    /// turn stream already holds open to the same host (docs/transport.md).
     async fn authed_get(&self, url: &str) -> Result<String, Error> {
-        let http = authed_get_client();
+        let http = crate::http::client();
         let mut conn = http
             .get(url)
             .with_request_header(self.auth_header.clone(), self.auth_value.clone())
@@ -524,17 +554,6 @@ impl Endpoint {
         }
         Ok(body)
     }
-}
-
-/// The process-wide pooled client behind [`Endpoint::authed_get`]. `HttpClient`
-/// clones share their connection pool (it's `Arc`-backed), so one instance
-/// built on first use and cloned out per call reuses live connections instead
-/// of opening one per GET.
-fn authed_get_client() -> HttpClient {
-    static CLIENT: std::sync::OnceLock<HttpClient> = std::sync::OnceLock::new();
-    CLIENT
-        .get_or_init(|| HttpClient::new(RustlsConfig::<ClientConfig>::default()))
-        .clone()
 }
 
 /// Parse OpenRouter's `GET /api/v1/generation` response down to `total_cost` —

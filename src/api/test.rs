@@ -2189,3 +2189,110 @@ async fn only_the_shared_turn_envelope_carries_the_effort() {
     let ping = round_trip(None, false).await;
     assert!(!ping.contains("output_config"), "{ping}");
 }
+
+/// The attribution headers ride an OpenRouter inference POST and no other
+/// (docs/transport.md). Asserted over a socket rather than off
+/// `Provider::attribution` alone, because the thing that can break is the wiring:
+/// `with_attribution` is applied on two conn-building paths and would be silently
+/// absent from either.
+///
+/// The negative half is the point. `HTTP-Referer` is a header hosts act on with
+/// its RFC 9110 meaning, so an Anthropic turn must carry none of these — while
+/// still carrying the `User-Agent`, which every host is meant to see.
+#[tokio::test]
+async fn attribution_rides_openrouter_turns_and_nothing_else() {
+    use std::io::{Read, Write};
+
+    /// The request head of one round trip against a canned reply. `sse` picks
+    /// the path: an empty stream for `complete`, a usage-only body for
+    /// `keepalive`.
+    async fn request_head(provider: Provider, sse: bool) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut request = String::new();
+            let mut buf = [0u8; 16384];
+            while !request.contains("\r\n\r\n") {
+                let read = sock.read(&mut buf).unwrap();
+                if read == 0 {
+                    break;
+                }
+                request.push_str(&String::from_utf8_lossy(&buf[..read]));
+            }
+            let (content_type, body) = if sse {
+                (
+                    "text/event-stream",
+                    "event: message_start\ndata: {\"message\":{\"id\":\"gen-1\",\
+                     \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
+                     event: data\ndata: [DONE]\n\n",
+                )
+            } else {
+                (
+                    "application/json",
+                    "{\"id\":\"msg-1\",\"model\":\"m\",\"usage\":{\"input_tokens\":1,\
+                     \"output_tokens\":0}}",
+                )
+            };
+            sock.write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: {content_type}\r\n\
+                     content-length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            sock.flush().unwrap();
+            request
+        });
+
+        let endpoint = Endpoint {
+            provider,
+            url: format!("http://{addr}/v1/messages"),
+            auth_header: "x-api-key".into(),
+            auth_value: "k".into(),
+            session_id: None,
+        };
+        let client = Client::new(endpoint, "m", "sys", None);
+        if sse {
+            client
+                .complete(&[], &[], ToolChoice::auto(), |_| {})
+                .await
+                .expect("the canned stream assembles");
+        } else {
+            client
+                .keepalive(&[], &[], ToolChoice::auto())
+                .await
+                .expect("the canned body parses");
+        }
+        let request = server.join().unwrap();
+        request
+            .split_once("\r\n\r\n")
+            .map_or(request.clone(), |(head, _)| head.to_string())
+            .to_ascii_lowercase()
+    }
+
+    // The `User-Agent` is the one header every request carries, on every path.
+    let expected_ua = format!("user-agent: {}", crate::http::user_agent()).to_ascii_lowercase();
+
+    for sse in [true, false] {
+        let openrouter = request_head(Provider::OpenRouter, sse).await;
+        for header in [
+            "http-referer: https://efference.net",
+            "x-openrouter-title: efference",
+            "x-openrouter-categories: cli-agent,programming-app",
+        ] {
+            assert!(
+                openrouter.contains(header),
+                "missing {header}: {openrouter}"
+            );
+        }
+        assert!(openrouter.contains(&expected_ua), "{openrouter}");
+
+        let anthropic = request_head(Provider::Anthropic, sse).await;
+        assert!(!anthropic.contains("referer"), "{anthropic}");
+        assert!(!anthropic.contains("x-openrouter"), "{anthropic}");
+        assert!(anthropic.contains(&expected_ua), "{anthropic}");
+    }
+}

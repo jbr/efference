@@ -567,9 +567,7 @@ fn session_scoped(path: &str) -> Option<&str> {
 /// a session prefix, and the session bind does not.
 pub(crate) fn frontend(surface: Surface) -> impl trillium::Handler {
     trillium_frontend::frontend!("./web")
-        .with_client(trillium_client::Client::new(
-            trillium_tokio::ClientConfig::default(),
-        ))
+        .with_client(crate::http::client())
         .with_index_file("index.html")
         // `trillium_frontend` takes a bare fn pointer, so the surface is chosen
         // between two fn items rather than captured in a closure.

@@ -13,8 +13,6 @@ use serde_json::Value;
 use trillium_client::Client as HttpClient;
 use trillium_client::Conn;
 use trillium_client::sse::{SseError, SseErrorKind};
-use trillium_rustls::RustlsConfig;
-use trillium_tokio::ClientConfig;
 
 use crate::log::{CallId, ContentBlock, Payload, ToolCall};
 use crate::project::ApiMessage;

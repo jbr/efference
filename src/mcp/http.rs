@@ -35,8 +35,6 @@ use trillium_client::sse::{EventStream, SseErrorKind};
 use trillium_client::{Client as HttpClient, Conn, HeaderValue};
 
 use crate::www_authenticate::Challenges;
-use trillium_rustls::RustlsConfig;
-use trillium_tokio::ClientConfig;
 
 pub struct HttpTransport {
     client: HttpClient,
@@ -56,7 +54,7 @@ pub struct HttpTransport {
 impl HttpTransport {
     pub fn new(url: &str) -> anyhow::Result<Self> {
         Ok(Self {
-            client: HttpClient::new(RustlsConfig::<ClientConfig>::default()),
+            client: crate::http::client(),
             url: url.to_string(),
             authorization: None,
             session_id: None,
