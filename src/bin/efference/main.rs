@@ -180,7 +180,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .await
         }
         Command::Cache { session, all } => cache(session, name.clone(), all),
-        Command::Check { path } => check(path),
+        Command::Check { path } => check(path).await,
         Command::Attach => attach(client_socket()?).await,
         Command::Tui {
             theme,

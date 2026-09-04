@@ -246,7 +246,7 @@ fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
 /// from a blanket `[commands]` grant — a bash command still passes stage 1's structural check
 /// first, and a structured call has no such pre-filter — which is why the glob is only ever an
 /// explicit config act and never a default on mount.
-pub(crate) fn tool_granted(role: &Config, wire_name: &str) -> bool {
+pub fn tool_granted(role: &Config, wire_name: &str) -> bool {
     let namespace = crate::mcp::namespace_of(wire_name);
     role.tools.contains(wire_name)
         || role.tools.contains(&crate::mcp::namespace_glob(namespace))

@@ -46,13 +46,18 @@ cache TTL) from the ones that do not, and reporting the longest run of the latte
 argument it reads the most recently written session; `--all` sweeps the corpus, which is
 where a rate is worth comparing against. It needs no daemon and no network.
 
-**`efference check [path]`** is the other offline verb, and it is about the template rather
+**`efference check [path]`** is the other no-daemon verb, and it is about the template rather
 than a session: it parses `efference.toml` (or the path given), applies the soundness
-checks `serve` applies at boot, and resolves every `[context]` entry from the current
-directory, `exec` entries included. It prints the grants and the preamble's byte count, or
-the boot-time error with a non-zero exit. It is the terminus the new-project guide names
-for a "set this project up" task, so a session asked to do that has something to run
-that is not `serve`.
+checks `serve` applies at boot, resolves every `[context]` entry from the current
+directory (`exec` entries included), and mounts every `[mcp.servers.*]` stanza to
+enumerate each server's advertised tools against the file's `tools` grants — the computed
+trust perimeter, so the grant is written with the tool table in front of it. Mounting
+reuses stored credentials and never runs the authorization dance; a server that needs
+authorization is reported, not authorized. It prints the grants and the preamble's byte
+count, or the boot-time error with a non-zero exit. A required server that does not mount
+fails the check, same as boot; an `optional = true` one is reported and tolerated
+(docs/tools.md). It is the terminus the new-project guide names for a "set this project
+up" task, so a session asked to do that has something to run that is not `serve`.
 
 Two things worth knowing about what you see. Tool output on the transcript is the **raw**
 result — the model's copy has been focused down by a triage pass, so what you read and what

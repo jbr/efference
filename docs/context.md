@@ -225,7 +225,7 @@ unknown fields, so a renamed key fails there), every tool name a document declar
   frontmatter block, fails startup — silently booting without configured context would be
   the model running with knowledge it was told it had.
 
-`efference check` runs the same resolution offline against a template, so a config can be tried without minting a session (docs/operating.md).
+`efference check` runs the same resolution against a template without minting a session, so a config can be tried before it boots anything (docs/operating.md).
 
 ## Deferred
 

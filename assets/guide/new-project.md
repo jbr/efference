@@ -195,10 +195,12 @@ count.
 
 ## Checking the result
 
-`efference check` (or `efference check <path>`) validates a template offline: the parse and
+`efference check` (or `efference check <path>`) validates a template without minting a session: the parse and
 the same soundness checks `serve` runs at boot, then every `[context]` entry resolved from
-the current directory — `exec` entries do run. It prints what the file grants and the
-preamble's size, or the boot-time error. **The task is complete when the check passes and
+the current directory — `exec` entries do run — then every `[mcp.servers.*]` stanza mounted,
+so each server's advertised tools print against the file's `tools` grants. It prints what the file grants and the
+preamble's size, or the boot-time error. Stored MCP credentials are reused; a server needing
+authorization is reported, never authorized here. **The task is complete when the check passes and
 the operator has seen the decisions.** A session started from the file then holds a
 verbatim copy at `.efference/<id>/config.toml`, and `efference state` prints the
 **effective** policy in force, which is that file plus every change approved since boot.

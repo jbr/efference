@@ -617,11 +617,15 @@ pub(crate) enum Command {
         #[arg(long, conflicts_with = "session")]
         all: bool,
     },
-    /// Validate a config template offline: parse it, apply the same checks
-    /// `serve` applies at boot, and resolve its `[context]` entries from the
-    /// current directory (`exec` entries run). Prints what the file grants and
-    /// how many preamble bytes it costs; exits non-zero with the boot-time error
-    /// otherwise. No daemon, no network — the terminus for setting a project up.
+    /// Validate a config template: parse it, apply the same checks `serve`
+    /// applies at boot, resolve its `[context]` entries from the current
+    /// directory (`exec` entries run), and mount its `[mcp.servers.*]` stanzas
+    /// to enumerate each server's advertised tools against the file's `tools`
+    /// grants. Prints what the file grants and how many preamble bytes it
+    /// costs; exits non-zero with the boot-time error otherwise. No daemon —
+    /// the terminus for setting a project up. Stored MCP credentials are
+    /// reused; a server needing authorization is reported, never authorized
+    /// here.
     Check {
         /// The file to check. Defaults to `efference.toml` in the current directory.
         path: Option<PathBuf>,
