@@ -10,7 +10,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::frontend::SubmittedTurn;
-use crate::log::{ContentBlock, LogEntry, MarkKind, Payload, RawResult, ToolCall, WireState};
+use crate::log::{
+    AssistantOutput, ContentBlock, LogEntry, MarkKind, MessagesOutputBlock, Payload, RawResult,
+    ToolCall, WireState,
+};
 use crate::tui::document::{
     DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, ListItem, Span, SpanStyle,
 };
@@ -140,9 +143,7 @@ pub(crate) fn entry_nodes(
                 ));
             }
             Payload::Assistant {
-                thinking,
-                text,
-                calls,
+                output,
                 upstream_failure,
             } => {
                 // A record-only partial (docs/transport.md): the stream died before
@@ -155,23 +156,38 @@ pub(crate) fn entry_nodes(
                         why.why(),
                     ));
                 }
-                // Thinking leads, as it does on the wire (`thinking` → `text` →
-                // `tool_use`). It is the *record* of the reasoning: watching it stream past at
-                // generation speed is not reading it, so the transcript has to keep it.
-                if let Some(node) = thinking_entry(thinking) {
+                let thinking: Vec<ContentBlock> = match output {
+                    AssistantOutput::Messages(blocks) => blocks
+                        .iter()
+                        .filter_map(|block| match block {
+                            MessagesOutputBlock::Thinking { text, signature } => {
+                                Some(ContentBlock::Thinking {
+                                    text: text.clone(),
+                                    signature: signature.clone(),
+                                })
+                            }
+                            MessagesOutputBlock::RedactedThinking { data } => {
+                                Some(ContentBlock::RedactedThinking { data: data.clone() })
+                            }
+                            _ => None,
+                        })
+                        .collect(),
+                    AssistantOutput::Responses(_) => Vec::new(),
+                };
+                if let Some(node) = thinking_entry(&thinking) {
                     nodes.push(node);
                 }
-                let prose = join_text(text);
+                let prose = output.text().join("\n");
                 if !prose.trim().is_empty() {
                     nodes.push(DocumentNode::entry(
                         EntryKind::AssistantMessage,
                         markdown(&prose),
                     ));
                 }
-                for call in calls {
+                for call in output.tool_calls().unwrap_or_default() {
                     let result = index.result(log, call.id.0.as_str());
                     let is_pending = result.is_none() && gate.call == Some(call.id.0.as_str());
-                    nodes.push(call_entry(call));
+                    nodes.push(call_entry(&call));
                     // Reading order is call → what the spotter made of it → what came
                     // back. The harness's own lines about a call are their own entries
                     // (`EntryKind::Annotation`), never children of the call: they are a
@@ -194,12 +210,12 @@ pub(crate) fn entry_nodes(
                         nodes.push(gate_affordance());
                     }
                     if let Some((seq, raw, wire)) = result {
-                        nodes.push(result_entry(call, seq, raw, wire, view));
+                        nodes.push(result_entry(&call, seq, raw, wire, view));
                         // The distiller's note is *about* the result, not part of it
                         // — the same rung distinction the spotter's verdict gets — so
                         // it is its own entry rather than a trailing line boxed in
                         // with the output (docs/redaction-fork.md).
-                        nodes.extend(distillate_note(call, raw, wire, view));
+                        nodes.extend(distillate_note(&call, raw, wire, view));
                     }
                 }
             }

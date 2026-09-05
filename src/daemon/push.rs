@@ -7,7 +7,7 @@
 //! log line rather than anything the session notices.
 
 use super::*;
-use crate::log::{ContentBlock, LogEntry, Payload};
+use crate::log::{LogEntry, Payload};
 
 /// The most a notification body carries. A lock screen shows about four lines;
 /// past that the text is truncated by the platform anyway, and the full turn is
@@ -158,25 +158,18 @@ pub(super) fn gate_body(name: &str, intent: Option<&str>, reason: Option<&str>) 
 pub(super) fn settle_body(entries: &[LogEntry]) -> String {
     let tail = entries.iter().rev().find_map(|e| match &e.payload {
         Payload::Assistant {
-            text,
+            output,
             upstream_failure,
             ..
-        } => Some((text, upstream_failure)),
+        } => Some((output, upstream_failure)),
         _ => None,
     });
     // A failed tail is an empty body, not a reach further back: an earlier
     // entry's prose would caption this turn with another one's text.
-    let Some((text, None)) = tail.map(|(text, failure)| (text, failure.as_ref())) else {
+    let Some((output, None)) = tail.map(|(output, failure)| (output, failure.as_ref())) else {
         return String::new();
     };
-    let prose: String = text
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text(t) => Some(t.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
+    let prose = output.text().join(" ");
     truncate(prose.trim())
 }
 

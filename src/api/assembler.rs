@@ -68,9 +68,9 @@ pub(super) struct Assembler {
 
 /// The response half of the evidence: what [`Client::complete`] read off the
 /// executed conn once the stream opened (docs/transport.md).
-pub(super) struct ResponseMeta {
-    pub(super) status: u16,
-    pub(super) headers: BTreeMap<String, String>,
+pub(crate) struct ResponseMeta {
+    pub(crate) status: u16,
+    pub(crate) headers: BTreeMap<String, String>,
 }
 
 impl Assembler {
@@ -352,17 +352,16 @@ impl Assembler {
                     .into(),
             )
         };
-        let mut thinking = Vec::new();
-        let mut text = Vec::new();
-        let mut calls = Vec::new();
+        let mut output = Vec::new();
+        let mut has_calls = false;
         for block in self.blocks {
             match block {
-                BlockAccum::Text(t) => text.push(ContentBlock::Text(t)),
+                BlockAccum::Text(text) => output.push(MessagesOutputBlock::Text(text)),
                 BlockAccum::Thinking { text: t, signature } => {
-                    thinking.push(ContentBlock::Thinking { text: t, signature })
+                    output.push(MessagesOutputBlock::Thinking { text: t, signature })
                 }
                 BlockAccum::Redacted { data } => {
-                    thinking.push(ContentBlock::RedactedThinking { data })
+                    output.push(MessagesOutputBlock::RedactedThinking { data })
                 }
                 BlockAccum::ToolUse {
                     id,
@@ -403,11 +402,12 @@ impl Assembler {
                             }
                         }
                     };
-                    calls.push(ToolCall {
+                    has_calls = true;
+                    output.push(MessagesOutputBlock::ToolUse(ToolCall {
                         id: CallId(id),
                         name,
                         input,
-                    });
+                    }));
                 }
             }
         }
@@ -420,7 +420,7 @@ impl Assembler {
         // is marked undispatchable here on the stop reason alone, the same
         // record-only partial an unparseable input becomes (docs/transport.md).
         if upstream_failure.is_none()
-            && !calls.is_empty()
+            && has_calls
             && self.stop_reason.as_deref() == Some("max_tokens")
         {
             log::warn!("tool call cut at the output-token cap kept undispatched");
@@ -446,7 +446,7 @@ impl Assembler {
         // carries 404s permanently, so the log is the only place a later
         // investigation can read from.
         let upstream_failure = upstream_failure.or_else(|| {
-            let empty = thinking.is_empty() && text.is_empty() && calls.is_empty();
+            let empty = output.is_empty();
             (empty && self.usage.output_tokens == 0).then(|| {
                 let (status, headers) = match self.response.take() {
                     Some(ResponseMeta { status, headers }) => (status, headers),
@@ -466,9 +466,7 @@ impl Assembler {
         });
         Ok(Completion {
             assistant: Payload::Assistant {
-                thinking,
-                text,
-                calls,
+                output: AssistantOutput::Messages(output),
                 upstream_failure,
             },
             id: self.id,

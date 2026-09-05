@@ -81,6 +81,36 @@ pub fn render_request_yaml(
 /// [`render_request_pretty`], this needs no model id, system prompt, or tool
 /// list, so it works even when a session's config won't parse (nothing here
 /// depends on it) — a lean, config-independent view of what the model sees.
+/// The Responses envelope a turn on that dialect sends (docs/transport.md), for
+/// the `wire` dev verb. Same fidelity argument as [`render_request_pretty`]: the
+/// production `ResponsesRequest` struct is what serializes.
+pub fn render_responses_request_pretty(
+    model: &str,
+    system: &str,
+    tools: &[Value],
+    tool_choice: ToolChoice,
+    turns: &[crate::project::WireTurn],
+    cache: PromptCachePolicy,
+) -> Result<String, Error> {
+    let request = responses::ResponsesRequest {
+        model,
+        input: responses::encode_responses(turns, system, cache),
+        tools: responses::tool_definitions(tools),
+        tool_choice: responses::tool_choice_value(&tool_choice),
+        parallel_tool_calls: false,
+        store: false,
+        truncation: "disabled",
+        max_output_tokens: MAX_TOKENS,
+        reasoning: None,
+        temperature: None,
+        prompt_cache_key: None,
+        prompt_cache_options: (cache == PromptCachePolicy::Explicit)
+            .then_some(responses::PromptCacheOptions { mode: "explicit" }),
+        stream: true,
+    };
+    Ok(serde_json::to_string_pretty(&request)?)
+}
+
 pub fn render_messages_pretty(messages: &[ApiMessage]) -> Result<String, Error> {
     Ok(serde_json::to_string_pretty(messages)?)
 }

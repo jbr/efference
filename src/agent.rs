@@ -24,11 +24,12 @@ use crate::distill::{BgVerdict, ForkPeek, Pending, is_peek_tool};
 use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
-    ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Mark, MarkKind, Notification,
-    Origin, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
+    AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Mark,
+    MarkKind, MessagesOutputBlock, Notification, Origin, Payload, RawResult, Spot, Stance,
+    ToolCall, Triage, Turn, WireState,
 };
 use crate::policy::{self, ReviewLevel, Verdict};
-use crate::project::place_trailing_cache_breakpoint;
+use crate::project::WireTurn;
 use crate::spotter::Spotter;
 use crate::supervisor;
 use crate::tools::Toolbox;
@@ -248,9 +249,7 @@ fn record_absorbed_attempts(
         shared.append(
             *turn,
             Payload::Assistant {
-                thinking: Vec::new(),
-                text: Vec::new(),
-                calls: Vec::new(),
+                output: AssistantOutput::Messages(Vec::new()),
                 upstream_failure: Some(failure.record_text().into()),
             },
         )?;
@@ -370,8 +369,8 @@ pub async fn run<F: Frontend, S: Spotter>(
             // Project, then place the single trailing cache breakpoint just before
             // sending — projection stays pure; the breakpoint walks the tail each
             // request (docs/log-and-projection.md).
-            let mut messages = shared.project_messages();
-            place_trailing_cache_breakpoint(&mut messages, client.breakpoint_placement());
+            let mut turns = shared.project_turns();
+            turns.push(WireTurn::Breakpoint);
             // One tool call per turn (docs/README.md) — the agent picks its next single
             // action; the fork's `retain` is the only forced call. Every live signal is
             // published to the control stream's `output` class as it arrives — prose, thinking, and the opening
@@ -395,7 +394,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             let mut aborted_attempts: u32 = 0;
             let completion = loop {
                 let outcome = client
-                    .complete(&messages, &tools, ToolChoice::auto(), |streamed| {
+                    .complete(&turns, &tools, ToolChoice::auto(), |streamed| {
                         shared.publish_delta(match streamed {
                             Streamed::Text { index, text } => {
                                 StreamDelta::AssistantText { index, text }
@@ -484,9 +483,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                         shared.append(
                             turn,
                             Payload::Assistant {
-                                thinking: Vec::new(),
-                                text: Vec::new(),
-                                calls: Vec::new(),
+                                output: AssistantOutput::Messages(Vec::new()),
                                 upstream_failure: Some(error.to_string().into()),
                             },
                         )?;
@@ -515,17 +512,27 @@ pub async fn run<F: Frontend, S: Spotter>(
 
             // Surface the model's prose, then pull its calls before the payload
             // moves into the log.
-            let calls = if let Payload::Assistant { text, calls, .. } = &completion.assistant {
-                for block in text {
-                    if let ContentBlock::Text(t) = block
-                        && !t.is_empty()
-                    {
-                        println!("\n{t}");
+            let calls = match &completion.assistant {
+                Payload::Assistant {
+                    output: AssistantOutput::Messages(blocks),
+                    ..
+                } => {
+                    for block in blocks {
+                        if let MessagesOutputBlock::Text(text) = block
+                            && !text.is_empty()
+                        {
+                            println!("\n{text}");
+                        }
                     }
+                    blocks
+                        .iter()
+                        .filter_map(|block| match block {
+                            MessagesOutputBlock::ToolUse(call) => Some(call.clone()),
+                            _ => None,
+                        })
+                        .collect()
                 }
-                calls.clone()
-            } else {
-                Vec::new()
+                _ => Vec::new(),
             };
             // Record cache/usage telemetry (surfaced on `GET /state`) and print a
             // legible live line: cache read vs creation is the hot/cold signal

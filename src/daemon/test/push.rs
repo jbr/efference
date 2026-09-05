@@ -102,12 +102,13 @@ mod settle_body {
 
     fn assistant(text: &[&str]) -> Payload {
         Payload::Assistant {
-            thinking: vec![],
-            text: text
-                .iter()
-                .map(|t| ContentBlock::Text((*t).to_string()))
-                .collect(),
-            calls: vec![],
+            output: crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                text.iter()
+                    .map(|t| ContentBlock::Text((*t).to_string()))
+                    .collect(),
+                vec![],
+            ),
             upstream_failure: None,
         }
     }
@@ -130,9 +131,11 @@ mod settle_body {
             entry(
                 1,
                 Payload::Assistant {
-                    thinking: vec![],
-                    text: vec![ContentBlock::Text("a partial".into())],
-                    calls: vec![],
+                    output: crate::log::AssistantOutput::from_legacy_messages(
+                        vec![],
+                        vec![ContentBlock::Text("a partial".into())],
+                        vec![],
+                    ),
                     upstream_failure: Some(UpstreamFailureRecord {
                         why: "stream died".into(),
                         stream: None,
@@ -149,13 +152,15 @@ mod settle_body {
         let calls_only = entry(
             0,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
-                    id: CallId("toolu_1".into()),
-                    name: "bash".into(),
-                    input: serde_json::json!({}),
-                }],
+                output: crate::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall {
+                        id: CallId("toolu_1".into()),
+                        name: "bash".into(),
+                        input: serde_json::json!({}),
+                    }],
+                ),
                 upstream_failure: None,
             },
         );

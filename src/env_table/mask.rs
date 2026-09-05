@@ -15,7 +15,10 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use serde_json::Value;
 
-use crate::log::{ConfigChange, ContentBlock, Payload, UpstreamFailureRecord};
+use crate::log::{
+    AssistantOutput, ConfigChange, ContentBlock, MessagesOutputBlock, Payload,
+    ResponsesMessageContent, ResponsesOutputItem, UpstreamFailureRecord,
+};
 
 /// Values shorter than this are not masked (GitLab's "maskability" precedent):
 /// `SESSION_KEY=dev` would otherwise shred every occurrence of "dev" in every
@@ -198,14 +201,60 @@ impl Masker {
         match payload {
             Payload::User(blocks) => self.mask_blocks(blocks),
             Payload::Assistant {
-                thinking: _,
-                text,
-                calls,
+                output,
                 upstream_failure,
             } => {
-                self.mask_blocks(text);
-                for call in calls {
-                    self.mask_json(&mut call.input);
+                match output {
+                    AssistantOutput::Messages(blocks) => {
+                        for block in blocks {
+                            match block {
+                                MessagesOutputBlock::Text(text) => self.mask_in_place(text),
+                                MessagesOutputBlock::ToolUse(call) => {
+                                    self.mask_json(&mut call.input)
+                                }
+                                MessagesOutputBlock::Thinking { .. }
+                                | MessagesOutputBlock::RedactedThinking { .. } => {}
+                            }
+                        }
+                    }
+                    AssistantOutput::Responses(items) => {
+                        for item in items {
+                            match item {
+                                ResponsesOutputItem::Reasoning {
+                                    summary, content, ..
+                                } => {
+                                    for part in summary {
+                                        self.mask_in_place(&mut part.text);
+                                    }
+                                    for part in content {
+                                        self.mask_in_place(&mut part.text);
+                                    }
+                                }
+                                ResponsesOutputItem::Message { content, .. } => {
+                                    for part in content {
+                                        match part {
+                                            ResponsesMessageContent::OutputText {
+                                                text, ..
+                                            } => self.mask_in_place(text),
+                                            ResponsesMessageContent::Refusal { refusal } => {
+                                                self.mask_in_place(refusal)
+                                            }
+                                        }
+                                    }
+                                }
+                                ResponsesOutputItem::FunctionCall { arguments, .. } => {
+                                    match serde_json::from_str(arguments) {
+                                        Ok(mut value) => {
+                                            self.mask_json(&mut value);
+                                            *arguments = value.to_string();
+                                        }
+                                        Err(_) => self.mask_in_place(arguments),
+                                    }
+                                }
+                                ResponsesOutputItem::Unsupported(value) => self.mask_json(value),
+                            }
+                        }
+                    }
                 }
                 if let Some(failure) = upstream_failure {
                     self.mask_failure(failure);

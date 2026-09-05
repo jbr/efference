@@ -11,6 +11,13 @@ fn entry(seq: u64, payload: Payload) -> LogEntry {
     }
 }
 
+fn assistant(text: Vec<ContentBlock>, calls: Vec<ToolCall>) -> Payload {
+    Payload::Assistant {
+        output: AssistantOutput::from_legacy_messages(vec![], text, calls),
+        upstream_failure: None,
+    }
+}
+
 /// A user turn, an assistant turn with markdown + a tool call, and a tool
 /// result — the three shapes the transcript is built from.
 fn sample_log() -> Vec<LogEntry> {
@@ -21,16 +28,14 @@ fn sample_log() -> Vec<LogEntry> {
         ),
         entry(
             2,
-            Payload::Assistant {
-                thinking: vec![],
-                text: vec![ContentBlock::Text("**bold** plan".into())],
-                calls: vec![ToolCall {
+            assistant(
+                vec![ContentBlock::Text("**bold** plan".into())],
+                vec![ToolCall {
                     id: CallId("toolu_1".into()),
                     name: "bash".into(),
                     input: serde_json::json!({ "command": "echo hi" }),
                 }],
-                upstream_failure: None,
-            },
+            ),
         ),
         entry(
             3,
@@ -117,16 +122,14 @@ fn a_long_result_renders_whole() {
     let log = vec![
         entry(
             1,
-            Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
+            assistant(
+                vec![],
+                vec![ToolCall {
                     id: CallId("toolu_1".into()),
                     name: "bash".into(),
                     input: serde_json::json!({ "command": "seq 400" }),
                 }],
-                upstream_failure: None,
-            },
+            ),
         ),
         entry(
             2,
@@ -162,16 +165,14 @@ fn a_failed_result_is_marked_on_the_result_not_the_call() {
     let log = vec![
         entry(
             1,
-            Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
+            assistant(
+                vec![],
+                vec![ToolCall {
                     id: CallId("toolu_1".into()),
                     name: "bash".into(),
                     input: serde_json::json!({ "command": "false" }),
                 }],
-                upstream_failure: None,
-            },
+            ),
         ),
         entry(
             2,
@@ -216,16 +217,14 @@ fn distilled_wire_supersedes_raw() {
     let log = vec![
         entry(
             4,
-            Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
+            assistant(
+                vec![],
+                vec![ToolCall {
                     id: CallId("toolu_9".into()),
                     name: "bash".into(),
                     input: serde_json::json!({ "command": "noise" }),
                 }],
-                upstream_failure: None,
-            },
+            ),
         ),
         entry(
             5,
@@ -293,16 +292,14 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
     let log = vec![
         entry(
             4,
-            Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
+            assistant(
+                vec![],
+                vec![ToolCall {
                     id: CallId("toolu_9".into()),
                     name: "bash".into(),
                     input: serde_json::json!({ "command": "noise" }),
                 }],
-                upstream_failure: None,
-            },
+            ),
         ),
         entry(
             5,
@@ -368,12 +365,7 @@ fn live_tail_renders_after_committed_entries_and_clears_on_commit() {
     // Committing the assistant entry clears the live assistant buffer.
     live.commit(&entry(
         4,
-        Payload::Assistant {
-            thinking: vec![],
-            text: vec![ContentBlock::Text("done".into())],
-            calls: vec![],
-            upstream_failure: None,
-        },
+        assistant(vec![ContentBlock::Text("done".into())], vec![]),
     ));
     assert!(
         live.assistant.is_empty(),

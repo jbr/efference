@@ -481,7 +481,10 @@ pub(crate) async fn serve(
         // one envelope (docs/redaction-fork.md). The spotter's client is built
         // separately and never carries it; the keepalive omits it by construction.
         .with_effort(effort)
-        .with_model_reasoning(capabilities.supports_reasoning);
+        .with_model_reasoning(capabilities.supports_reasoning)
+        // Who places cache-write boundaries (docs/transport.md): the Responses
+        // request reads this to decide whether to send explicit markers.
+        .with_prompt_cache(capabilities.prompt_cache);
     // The output budget follows the model's reported cap (a reasoning model's
     // thinking bills against it; the 4096 default starves a long think). No
     // report → the default stands.
@@ -501,6 +504,14 @@ pub(crate) async fn serve(
     // deterministic rung resolves them. Its own
     // sticky key (`for_spotter`): same endpoint, but a prefix the agent lineage never
     // shares, so pointing both at one model doesn't pin them to one route.
+    // The spotter shares the endpoint, so its model must be one the provider serves:
+    // the Haiku default is meaningless on OpenAI, and the catalog is the check the
+    // main model already passed (docs/transport.md).
+    if endpoint.provider == efference::api::Provider::OpenAI
+        && let Err(e) = efference::api::openai_model_capabilities(spotter_model)
+    {
+        return Err(format!("--spotter-model {spotter_model:?}: {e}").into());
+    }
     let spotter = ForkSpot::new(endpoint.for_spotter(), spotter_model)
         .with_scratch(Some(scratch.clone()))
         .with_cwd(cwd.clone());

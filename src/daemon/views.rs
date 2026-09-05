@@ -350,10 +350,11 @@ impl Shared {
     pub(super) fn tool_call_json(&self, call_id: &str) -> Option<String> {
         let log = self.log.lock().unwrap();
         let (seq, call) = log.entries().iter().find_map(|entry| {
-            let Payload::Assistant { calls, .. } = &entry.payload else {
+            let Payload::Assistant { output, .. } = &entry.payload else {
                 return None;
             };
-            let call = calls.iter().find(|c| c.id.0 == call_id)?;
+            let calls = output.tool_calls().ok()?;
+            let call = calls.into_iter().find(|c| c.id.0 == call_id)?;
             Some((entry.seq, call))
         })?;
         serde_json::to_string(&serde_json::json!({ "seq": seq, "call": call })).ok()

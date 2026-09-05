@@ -12,7 +12,7 @@ use crate::api::Error;
 const GPT_5_6_EFFORTS: &[&str] = &["none", "low", "medium", "high", "xhigh", "max"];
 
 /// Capabilities for an OpenAI model known to this build.
-pub(crate) fn model_capabilities(model: &str) -> Result<ModelCapabilities, Error> {
+pub fn model_capabilities(model: &str) -> Result<ModelCapabilities, Error> {
     match model {
         "gpt-5.6" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" => Ok(ModelCapabilities {
             context_length: 1_050_000,

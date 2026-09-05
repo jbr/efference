@@ -26,13 +26,15 @@ fn assistant_call(seq: u64, text: &str, call_id: &str, command: &str) -> LogEntr
     entry(
         seq,
         Payload::Assistant {
-            thinking: vec![],
-            text: vec![ContentBlock::Text(text.into())],
-            calls: vec![crate::tui::harness::tool_call(
-                crate::bash::NAME,
-                call_id,
-                serde_json::json!({ "command": command }),
-            )],
+            output: crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text(text.into())],
+                vec![crate::tui::harness::tool_call(
+                    crate::bash::NAME,
+                    call_id,
+                    serde_json::json!({ "command": command }),
+                )],
+            ),
             upstream_failure: None,
         },
     )

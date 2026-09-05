@@ -95,9 +95,7 @@ pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_sp
         .append(
             1,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![call.clone()],
+                output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
                 upstream_failure: None,
             },
         )
@@ -521,9 +519,11 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
         .append(
             1,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![first.clone(), second.clone()],
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![first.clone(), second.clone()],
+                ),
                 upstream_failure: None,
             },
         )

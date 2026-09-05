@@ -174,6 +174,11 @@ impl ToolChoice {
         }
     }
 
+    /// The forced tool's name, when this choice forces one.
+    pub fn forced(&self) -> Option<&'static str> {
+        self.name
+    }
+
     pub fn force(name: &'static str) -> Self {
         Self {
             kind: "tool",

@@ -14,7 +14,7 @@ use trillium_client::Client as HttpClient;
 use trillium_client::Conn;
 use trillium_client::sse::{SseError, SseErrorKind};
 
-use crate::log::{CallId, ContentBlock, Payload, ToolCall};
+use crate::log::{AssistantOutput, CallId, MessagesOutputBlock, Payload, ToolCall};
 use crate::project::ApiMessage;
 
 /// The `anthropic-version` header value. This is part of the Anthropic Messages
@@ -237,6 +237,14 @@ pub struct RequestUsage {
 }
 
 impl Completion {
+    /// The turn's output, whichever dialect produced it.
+    pub fn assistant_output(&self) -> &AssistantOutput {
+        match &self.assistant {
+            Payload::Assistant { output, .. } => output,
+            other => unreachable!("a completion always carries an assistant payload: {other:?}"),
+        }
+    }
+
     /// `Some` when the producing stream died before finalizing (docs/transport.md):
     /// `assistant` is then a record-only partial — append it for audit, never project
     /// it, and treat the request as a retryable transient. Reads the mark off the
@@ -302,13 +310,14 @@ pub enum Streamed {
 #[cfg(test)]
 mod test;
 
-mod assembler;
+pub(crate) mod assembler;
 mod client;
 mod diagnostics;
 mod endpoint;
 mod provider;
 mod render;
 mod reservation;
+pub(crate) mod responses;
 mod thinking;
 
 pub use client::{Client, DEFAULT_STREAM_CEILING, KeepaliveError};
@@ -319,11 +328,16 @@ pub use diagnostics::{
     upstream_retry_state,
 };
 pub use endpoint::{Endpoint, sticky_session_id};
-pub use provider::{ModelCapabilities, OUTPUT_FLOOR, PromptCachePolicy, Provider};
+pub use provider::{
+    ModelCapabilities, OUTPUT_FLOOR, PromptCachePolicy, Provider, WireDialect,
+    openai_model_capabilities,
+};
 pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,
+    render_responses_request_pretty,
 };
 pub use reservation::{Reservation, ReservationState, is_window_overflow, reservation_state};
+pub use responses::encode_responses;
 pub use thinking::{ToolChoice, auto_turns_disable_thinking, check_effort_thinking};
 
 use assembler::Assembler;

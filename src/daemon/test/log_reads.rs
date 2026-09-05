@@ -11,13 +11,15 @@ fn user(text: &str) -> Payload {
 /// into, since a call is embedded in an entry rather than being one.
 fn assistant_calling(call_id: &str, command: &str) -> Payload {
     Payload::Assistant {
-        thinking: vec![],
-        text: vec![],
-        calls: vec![ToolCall {
-            id: CallId(call_id.into()),
-            name: crate::bash::NAME.into(),
-            input: serde_json::json!({ "command": command }),
-        }],
+        output: crate::log::AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![],
+            vec![ToolCall {
+                id: CallId(call_id.into()),
+                name: crate::bash::NAME.into(),
+                input: serde_json::json!({ "command": command }),
+            }],
+        ),
         upstream_failure: None,
     }
 }

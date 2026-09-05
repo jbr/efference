@@ -53,18 +53,15 @@ pub(crate) async fn keepalive_loop(
         }
         // Same prefix a real turn would send (byte-identical, or it writes a new
         // entry instead of refreshing the live one); `max_tokens: 0` reads it.
-        let mut messages = shared.project_messages();
-        lop_trailing_model_turns(&mut messages);
-        if messages.is_empty() {
+        let mut turns = shared.project_turns();
+        lop_trailing_model_turns(&mut turns);
+        if turns.is_empty() {
             // Nothing but model turns in the log (or nothing at all): there is no
             // valid ping to send, and no prefix a real turn would reuse either.
             continue;
         }
-        place_trailing_cache_breakpoint(&mut messages, client.breakpoint_placement());
-        match client
-            .keepalive(&messages, &tools, ToolChoice::auto())
-            .await
-        {
+        turns.push(WireTurn::Breakpoint);
+        match client.keepalive(&turns, &tools, ToolChoice::auto()).await {
             Ok(request) => {
                 // The read-only tripwire (docs/transport.md): `max_tokens: 0` is
                 // supposed to generate nothing, but a mandatory-reasoning endpoint
@@ -113,9 +110,12 @@ pub(crate) async fn keepalive_loop(
 ///
 /// Transport-side only: the projection itself is untouched, and its byte-stability
 /// pins do not move.
-pub(super) fn lop_trailing_model_turns(messages: &mut Vec<ApiMessage>) {
-    while messages.last().is_some_and(|m| m.role == Role::Assistant) {
-        messages.pop();
+pub(super) fn lop_trailing_model_turns(turns: &mut Vec<WireTurn>) {
+    while turns
+        .last()
+        .is_some_and(|t| matches!(t, WireTurn::Assistant(_) | WireTurn::Breakpoint))
+    {
+        turns.pop();
     }
 }
 

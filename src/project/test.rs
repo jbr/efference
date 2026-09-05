@@ -1,7 +1,8 @@
 use super::*;
+use crate::context::Item;
 use crate::log::{
-    ContentBlock, Disposition, Keep, LogEntry, Mark, MarkKind, Notification, Origin, Payload,
-    RawResult, Timestamp, ToolCall, Triage, WireState,
+    AssistantOutput, CallId, ContentBlock, Disposition, Keep, LogEntry, Mark, MarkKind,
+    Notification, Origin, Payload, RawResult, Timestamp, ToolCall, Triage, WireState,
 };
 use serde_json::json;
 
@@ -28,16 +29,18 @@ fn sample_log() -> Vec<LogEntry> {
             1,
             1,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![ContentBlock::Text("let me check".into())],
-                calls: vec![ToolCall {
-                    id: CallId("toolu_1".into()),
-                    name: "bash".into(),
-                    // Insertion order == sorted order, so the expected-bytes
-                    // assertion is robust whether serde_json is BTreeMap- or
-                    // (under `preserve_order`) IndexMap-backed.
-                    input: json!({ "command": "ls", "timeout": 5 }),
-                }],
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![ContentBlock::Text("let me check".into())],
+                    vec![ToolCall {
+                        id: CallId("toolu_1".into()),
+                        name: "bash".into(),
+                        // Insertion order == sorted order, so the expected-bytes
+                        // assertion is robust whether serde_json is BTreeMap- or
+                        // (under `preserve_order`) IndexMap-backed.
+                        input: json!({ "command": "ls", "timeout": 5 }),
+                    }],
+                ),
                 upstream_failure: None,
             },
         ),
@@ -349,12 +352,14 @@ fn record_only_partial_projects_to_nothing() {
         3,
         2,
         Payload::Assistant {
-            thinking: vec![ContentBlock::Thinking {
-                text: "eleven thousand characters of thinking".into(),
-                signature: "".into(),
-            }],
-            text: vec![],
-            calls: vec![],
+            output: AssistantOutput::from_legacy_messages(
+                vec![ContentBlock::Thinking {
+                    text: "eleven thousand characters of thinking".into(),
+                    signature: "".into(),
+                }],
+                vec![],
+                vec![],
+            ),
             upstream_failure: Some("stream ended before finalizing (no message_stop)".into()),
         },
     ));
@@ -363,9 +368,7 @@ fn record_only_partial_projects_to_nothing() {
         4,
         3,
         Payload::Assistant {
-            thinking: vec![],
-            text: vec![],
-            calls: vec![],
+            output: AssistantOutput::Messages(vec![]),
             upstream_failure: Some("upstream API returned 429: rate limited".into()),
         },
     ));
@@ -391,9 +394,7 @@ fn an_absorbed_attempt_record_round_trips_and_projects_to_nothing() {
         3,
         2,
         Payload::Assistant {
-            thinking: vec![],
-            text: vec![],
-            calls: vec![],
+            output: AssistantOutput::Messages(vec![]),
             upstream_failure: Some(failure.record_text().into()),
         },
     );
@@ -429,21 +430,23 @@ fn thinking_turn_matches_expected_wire_bytes() {
             1,
             1,
             Payload::Assistant {
-                thinking: vec![
-                    ContentBlock::Thinking {
-                        text: "let me weigh it".into(),
-                        signature: "SiG==".into(),
-                    },
-                    ContentBlock::RedactedThinking {
-                        data: "ENC==".into(),
-                    },
-                ],
-                text: vec![ContentBlock::Text("running it".into())],
-                calls: vec![ToolCall {
-                    id: CallId("toolu_1".into()),
-                    name: "bash".into(),
-                    input: json!({ "command": "ls" }),
-                }],
+                output: AssistantOutput::from_legacy_messages(
+                    vec![
+                        ContentBlock::Thinking {
+                            text: "let me weigh it".into(),
+                            signature: "SiG==".into(),
+                        },
+                        ContentBlock::RedactedThinking {
+                            data: "ENC==".into(),
+                        },
+                    ],
+                    vec![ContentBlock::Text("running it".into())],
+                    vec![ToolCall {
+                        id: CallId("toolu_1".into()),
+                        name: "bash".into(),
+                        input: json!({ "command": "ls" }),
+                    }],
+                ),
                 upstream_failure: None,
             },
         ),

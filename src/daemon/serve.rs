@@ -40,7 +40,11 @@ pub async fn serve<S: Spotter>(
     shared.set_autonomous(autonomous);
     // Whether this model has a prompt cache to keep warm at all
     // (docs/transport.md) — read before the capabilities move into `Shared`.
-    let cacheable = capabilities.prompt_cache.is_supported();
+    // The keepalive is a Messages-dialect primitive (`max_tokens: 0`); Responses has
+    // no established cheap read (backlog: openai-provider/validation.md), so the
+    // loop never starts there and the boot line says so.
+    let cacheable = capabilities.prompt_cache.is_supported()
+        && client.dialect() == crate::api::WireDialect::Messages;
     // The boot-fetched model capabilities (docs/transport.md) — the caller already
     // treated a failed lookup as fatal, so by here the value always exists.
     shared.set_capabilities(capabilities);

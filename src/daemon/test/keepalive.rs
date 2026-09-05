@@ -3,20 +3,29 @@
 use super::*;
 use crate::api::KeepaliveError;
 use crate::daemon::keepalive::{discard_is_affordable, lop_trailing_model_turns, prefix_tokens};
-use crate::project::{ApiBlock, ApiMessage};
+use crate::log::{AssistantOutput, MessagesOutputBlock};
+use crate::project::{Role, WireTurn};
 
-fn message(role: Role, text: &str) -> ApiMessage {
-    ApiMessage {
-        role,
-        content: vec![ApiBlock::Text {
-            text: text.into(),
-            cache_control: None,
-        }],
+fn message(role: Role, text: &str) -> WireTurn {
+    match role {
+        Role::User => WireTurn::text(text),
+        Role::Assistant => {
+            WireTurn::Assistant(AssistantOutput::Messages(vec![MessagesOutputBlock::Text(
+                text.into(),
+            )]))
+        }
     }
 }
 
-fn roles(messages: &[ApiMessage]) -> Vec<Role> {
-    messages.iter().map(|m| m.role).collect()
+fn roles(messages: &[WireTurn]) -> Vec<Role> {
+    messages
+        .iter()
+        .map(|m| match m {
+            WireTurn::User(_) => Role::User,
+            WireTurn::Assistant(_) => Role::Assistant,
+            WireTurn::Breakpoint => unreachable!("no breakpoint in these fixtures"),
+        })
+        .collect()
 }
 
 /// A log parked at a gate (or settled) ends with the model's own output, which some
@@ -70,7 +79,7 @@ fn lopping_can_empty_the_messages() {
     lop_trailing_model_turns(&mut all_model);
     assert!(all_model.is_empty());
 
-    let mut empty: Vec<ApiMessage> = vec![];
+    let mut empty: Vec<WireTurn> = vec![];
     lop_trailing_model_turns(&mut empty);
     assert!(empty.is_empty());
 }

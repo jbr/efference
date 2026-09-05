@@ -10,7 +10,9 @@ use trillium_client::ClientHandler;
 use trillium_client_retry::RetryHandler;
 
 use crate::api::assembler::ResponseMeta;
+use crate::api::responses::assembler::ResponsesAssembler;
 use crate::log::is_captured_header;
+use crate::project::{WireTurn, encode_messages};
 
 /// Retry policy for requests that did not receive a successful response
 /// (docs/transport.md). Every upstream request is a replay-safe POST carrying
@@ -223,6 +225,11 @@ pub struct Client {
     effort: Option<String>,
     /// Which upstream serves this session, when pinned (docs/transport.md).
     upstream: Option<Upstream>,
+    /// Who places cache-write boundaries for the selected model (docs/transport.md).
+    /// Read by the Responses request: explicit policy sends
+    /// `prompt_cache_options.mode: explicit` and the trailing marker; anything else
+    /// sends neither. Messages ignores it — its marker is unconditional.
+    prompt_cache: PromptCachePolicy,
     upstream_failure: UpstreamFailureState,
     /// A retry in flight, written by both retry loops (docs/transport.md). It
     /// rides on the client because the fork peek retries with a `Client` and no
@@ -296,6 +303,7 @@ impl Client {
             stream_ceiling: DEFAULT_STREAM_CEILING,
             effort: None,
             upstream: None,
+            prompt_cache: PromptCachePolicy::None,
             upstream_failure,
             upstream_retry: upstream_retry_state(),
             upstream_attempts,
@@ -369,6 +377,16 @@ impl Client {
     /// Pin which upstream serves this session (docs/transport.md). Applies to
     /// every request the client makes, so a session's spotter and fork peeks
     /// route the same way its turns do.
+    pub fn with_prompt_cache(mut self, policy: PromptCachePolicy) -> Self {
+        self.prompt_cache = policy;
+        self
+    }
+
+    /// The wire dialect this client speaks, fixed by the provider (docs/transport.md).
+    pub fn dialect(&self) -> WireDialect {
+        self.endpoint.provider.dialect()
+    }
+
     pub fn with_upstream(mut self, upstream: Option<Upstream>) -> Self {
         self.upstream = upstream;
         self
@@ -450,54 +468,74 @@ impl Client {
     /// what makes such failures diagnosable.
     pub async fn complete(
         &self,
-        messages: &[ApiMessage],
+        turns: &[WireTurn],
         tools: &[Value],
         tool_choice: ToolChoice,
         mut on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
+        // Encode once per dialect (docs/transport.md). The encoded form is what the
+        // reservation sizes and what each retry re-sends verbatim.
+        let encoded = match self.dialect() {
+            WireDialect::Messages => Encoded::Messages(encode_messages(
+                turns,
+                self.image_placement(),
+                self.breakpoint_placement(),
+            )),
+            WireDialect::Responses => {
+                Encoded::Responses(encode_responses(turns, &self.system, self.prompt_cache))
+            }
+        };
         // The prompt's variable parts, sized before `max_tokens` is chosen: the
         // reservation is a function of how much of the window the prompt takes
         // (`api/reservation.rs`), estimated from these bytes against the last
         // response's exact count.
         let body_bytes = self.system.len()
-            + serde_json::to_vec(messages)?.len()
+            + match &encoded {
+                Encoded::Messages(messages) => serde_json::to_vec(messages)?.len(),
+                Encoded::Responses(input) => serde_json::to_vec(input)?.len(),
+            }
             + serde_json::to_vec(tools)?.len();
         let mut max_tokens = self.reserve(body_bytes);
         let mut events = loop {
-            let request = Request {
-                model: &self.model,
-                max_tokens,
-                system: &self.system,
-                tools,
-                tool_choice,
-                thinking: Thinking::for_request(&self.model, &tool_choice, self.model_reasoning),
-                output_config: self.effort.clone().map(|effort| OutputConfig { effort }),
-                temperature: self
-                    .temperature
-                    .map(|t| self.endpoint.provider.map_temperature(t)),
-                upstream: self.upstream.as_ref(),
-                prompt_cache_key: self.prompt_cache_key(),
-                messages,
-                stream: true,
+            let body = match &encoded {
+                Encoded::Messages(messages) => {
+                    let request = Request {
+                        model: &self.model,
+                        max_tokens,
+                        system: &self.system,
+                        tools,
+                        tool_choice,
+                        thinking: Thinking::for_request(
+                            &self.model,
+                            &tool_choice,
+                            self.model_reasoning,
+                        ),
+                        output_config: self.effort.clone().map(|effort| OutputConfig { effort }),
+                        temperature: self
+                            .temperature
+                            .map(|t| self.endpoint.provider.map_temperature(t)),
+                        upstream: self.upstream.as_ref(),
+                        prompt_cache_key: self.prompt_cache_key(),
+                        messages,
+                        stream: true,
+                    };
+                    serde_json::to_string(&request)?
+                }
+                Encoded::Responses(input) => serde_json::to_string(&self.responses_request(
+                    input.clone(),
+                    tools,
+                    &tool_choice,
+                    max_tokens,
+                ))?,
             };
-            let body = serde_json::to_string(&request)?;
             log::debug!(
-                "POST {}: {} messages, {} request bytes, max_tokens {max_tokens}",
+                "POST {}: {} turns, {} request bytes, max_tokens {max_tokens}",
                 self.endpoint.url,
-                messages.len(),
+                turns.len(),
                 body.len()
             );
 
-            let conn = self
-                .http
-                .post(self.endpoint.url.as_str())
-                .with_request_header(
-                    self.endpoint.auth_header.clone(),
-                    self.endpoint.auth_value.clone(),
-                )
-                .with_request_header("anthropic-version", ANTHROPIC_VERSION)
-                .with_request_header("content-type", "application/json");
-            let conn = self.with_attribution(self.with_session_id(conn));
+            let conn = self.post();
             match conn.with_body(body).into_sse().await {
                 Ok(events) => break events,
                 Err(e) => {
@@ -521,7 +559,10 @@ impl Client {
             }
         };
 
-        let mut assembler = Assembler::new();
+        let mut assembler = match self.dialect() {
+            WireDialect::Messages => AnyAssembler::Messages(Assembler::new()),
+            WireDialect::Responses => AnyAssembler::Responses(ResponsesAssembler::new()),
+        };
         // The response the stream opened on, read off the executed conn before the
         // first event. Only the empty-finalized path keeps it (docs/transport.md) —
         // that path's whole record is otherwise one prose string, and the edge's
@@ -596,7 +637,59 @@ impl Client {
         completion
     }
 
-    /// Turn a failed `into_sse` into a legible [`Error`], reading the response body on a
+    /// The authenticated POST every request starts from. The `anthropic-version`
+    /// header is part of the Messages dialect, not a provider identity, so it rides
+    /// only that dialect (docs/transport.md).
+    fn post(&self) -> trillium_client::Conn {
+        let conn = self
+            .http
+            .post(self.endpoint.url.as_str())
+            .with_request_header(
+                self.endpoint.auth_header.clone(),
+                self.endpoint.auth_value.clone(),
+            )
+            .with_request_header("content-type", "application/json");
+        let conn = match self.dialect() {
+            WireDialect::Messages => {
+                conn.with_request_header("anthropic-version", ANTHROPIC_VERSION)
+            }
+            WireDialect::Responses => conn,
+        };
+        self.with_attribution(self.with_session_id(conn))
+    }
+
+    /// The Responses envelope for one turn (docs/transport.md).
+    fn responses_request<'a>(
+        &'a self,
+        input: Vec<responses::wire::InputItem>,
+        tools: &[Value],
+        tool_choice: &ToolChoice,
+        max_output_tokens: u32,
+    ) -> responses::ResponsesRequest<'a> {
+        responses::ResponsesRequest {
+            model: &self.model,
+            input,
+            tools: responses::tool_definitions(tools),
+            tool_choice: responses::tool_choice_value(tool_choice),
+            parallel_tool_calls: false,
+            store: false,
+            truncation: "disabled",
+            max_output_tokens,
+            reasoning: self.model_reasoning.then(|| responses::Reasoning {
+                effort: self.effort.clone(),
+                summary: "auto",
+            }),
+            temperature: self
+                .temperature
+                .map(|t| self.endpoint.provider.map_temperature(t)),
+            prompt_cache_key: self.prompt_cache_key(),
+            prompt_cache_options: (self.prompt_cache == PromptCachePolicy::Explicit)
+                .then_some(responses::PromptCacheOptions { mode: "explicit" }),
+            stream: true,
+        }
+    }
+
+    /// WireTurn a failed `into_sse` into a legible [`Error`], reading the response body on a
     /// non-2xx. The `SseError` still owns the `Conn` (it `Deref`s to it and converts
     /// back via `Into<Conn>`), so on `Status` we read the body — Anthropic's error
     /// responses carry a JSON `error.message` that names the actual problem. Logged at
@@ -650,10 +743,21 @@ impl Client {
     /// any of them.
     pub async fn keepalive(
         &self,
-        messages: &[ApiMessage],
+        turns: &[WireTurn],
         tools: &[Value],
         tool_choice: ToolChoice,
     ) -> Result<RequestUsage, KeepaliveError> {
+        // Responses has no `max_tokens: 0` read primitive established
+        // (backlog: openai-provider/validation.md); the daemon does not start the
+        // loop on that dialect, so this is a guard, not a path.
+        if self.dialect() == WireDialect::Responses {
+            return Err(KeepaliveError::Status {
+                status: Some(400),
+                body: "keepalive is not supported on the Responses dialect".to_string(),
+            });
+        }
+        let messages = encode_messages(turns, self.image_placement(), self.breakpoint_placement());
+        let messages = &messages;
         let request = Request {
             model: &self.model,
             max_tokens: 0,
@@ -675,16 +779,7 @@ impl Client {
             stream: false,
         };
         let body = serde_json::to_string(&request).map_err(KeepaliveError::other)?;
-        let conn = self
-            .http
-            .post(self.endpoint.url.as_str())
-            .with_request_header(
-                self.endpoint.auth_header.clone(),
-                self.endpoint.auth_value.clone(),
-            )
-            .with_request_header("anthropic-version", ANTHROPIC_VERSION)
-            .with_request_header("content-type", "application/json");
-        let conn = self.with_attribution(self.with_session_id(conn));
+        let conn = self.post();
         let mut conn = conn.with_body(body).await.map_err(KeepaliveError::other)?;
         let status = conn.status().map(|s| s as u16);
         if !status.is_some_and(|s| (200..300).contains(&s)) {
@@ -719,5 +814,47 @@ impl Client {
             model: parsed.model,
             usage: parsed.usage,
         })
+    }
+}
+
+/// One request's encoded conversation, per dialect.
+enum Encoded {
+    Messages(Vec<ApiMessage>),
+    Responses(Vec<responses::wire::InputItem>),
+}
+
+/// The per-dialect stream folder behind one read loop.
+enum AnyAssembler {
+    Messages(Assembler),
+    Responses(ResponsesAssembler),
+}
+
+impl AnyAssembler {
+    fn observed_response(&mut self, response: ResponseMeta) {
+        match self {
+            Self::Messages(a) => a.observed_response(response),
+            Self::Responses(a) => a.observed_response(response),
+        }
+    }
+
+    fn fail(&mut self, why: String) {
+        match self {
+            Self::Messages(a) => a.fail(why),
+            Self::Responses(a) => a.fail(why),
+        }
+    }
+
+    fn apply(&mut self, event_type: Option<&str>, data: &str) -> Result<Option<Streamed>, Error> {
+        match self {
+            Self::Messages(a) => a.apply(event_type, data),
+            Self::Responses(a) => a.apply(event_type, data),
+        }
+    }
+
+    fn finish(self) -> Result<Completion, Error> {
+        match self {
+            Self::Messages(a) => a.finish(),
+            Self::Responses(a) => a.finish(),
+        }
     }
 }

@@ -42,7 +42,10 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
     // Every result, by call id, and every gate's recorded first-attempt breadcrumb.
     let mut gates = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
-        let Payload::Assistant { calls, .. } = &entry.payload else {
+        let Payload::Assistant { output, .. } = &entry.payload else {
+            continue;
+        };
+        let Ok(calls) = output.tool_calls() else {
             continue;
         };
         if calls.is_empty() {
@@ -107,16 +110,17 @@ fn one_line(s: &str, max: usize) -> String {
 
 /// The size of the peek's trailing user message — the part of the request that is fresh
 /// on every gate, as against the prefix it re-reads warm.
-fn tail_chars(messages: &[efference::project::ApiMessage]) -> usize {
-    let Some(last) = messages.last() else {
+fn tail_chars(turns: &[efference::project::WireTurn]) -> usize {
+    use efference::project::{UserPart, WireTurn};
+    let Some(WireTurn::User(parts)) = turns.last() else {
         return 0;
     };
-    last.content
+    parts
         .iter()
-        .map(|b| match b {
-            efference::project::ApiBlock::Text { text, .. } => text.len(),
-            efference::project::ApiBlock::ToolResult { content, .. } => content.text_len(),
-            _ => 0,
+        .map(|p| match p {
+            UserPart::Text(text) => text.len(),
+            UserPart::ToolResult { content, .. } => content.len(),
+            UserPart::Breakpoint => 0,
         })
         .sum()
 }
@@ -206,14 +210,7 @@ pub(crate) async fn peek(
                     .zip(&g.raws)
                     .map(|(call, raw)| Pending { call, raw })
                     .collect();
-                tail_chars(&peek_request(
-                    &entries[..g.prefix_end],
-                    &pending,
-                    &[],
-                    &[],
-                    placement,
-                    breakpoint,
-                ))
+                tail_chars(&peek_request(&entries[..g.prefix_end], &pending, &[], &[]))
             })
             .sum();
         println!(
@@ -232,19 +229,14 @@ pub(crate) async fn peek(
             .zip(&g.raws)
             .map(|(call, raw)| Pending { call, raw })
             .collect();
-        let messages = peek_request(
-            &entries[..g.prefix_end],
-            &pending,
-            &[],
-            &[],
+        let messages = peek_request(&entries[..g.prefix_end], &pending, &[], &[]);
+        eprintln!("note: gate at seq {} · {} result(s)", g.seq, pending.len());
+        let messages = efference::project::encode_messages(
+            &messages[messages.len() - 1..],
             placement,
             breakpoint,
         );
-        eprintln!("note: gate at seq {} · {} result(s)", g.seq, pending.len());
-        println!(
-            "{}",
-            efference::api::render_messages_pretty(&messages[messages.len() - 1..])?
-        );
+        println!("{}", efference::api::render_messages_pretty(&messages)?);
         return Ok(());
     }
 
@@ -275,14 +267,7 @@ pub(crate) async fn peek(
             .collect();
         // The fork tail — result blocks, roster, ask — is uncached by construction, so
         // its size is what a gate costs beyond re-reading the prefix, on every tool result.
-        uncached += tail_chars(&peek_request(
-            &entries[..g.prefix_end],
-            &pending,
-            &[],
-            &[],
-            placement,
-            breakpoint,
-        )) as u64;
+        uncached += tail_chars(&peek_request(&entries[..g.prefix_end], &pending, &[], &[])) as u64;
         let mut passes = 0usize;
         for draw in 1..=repeat {
             // A transport error is this draw's problem, not the sweep's. Propagating it

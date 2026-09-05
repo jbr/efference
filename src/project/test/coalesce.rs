@@ -13,13 +13,15 @@ fn tool_result_omits_false_is_error_but_keeps_true() {
             0,
             0,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
-                    id: CallId("x".into()),
-                    name: "bash".into(),
-                    input: json!({}),
-                }],
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall {
+                        id: CallId("x".into()),
+                        name: "bash".into(),
+                        input: json!({}),
+                    }],
+                ),
                 upstream_failure: None,
             },
         ),
@@ -53,20 +55,22 @@ fn consecutive_tool_results_coalesce_into_one_user_message() {
             0,
             0,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![
-                    ToolCall {
-                        id: CallId("a".into()),
-                        name: "bash".into(),
-                        input: json!({}),
-                    },
-                    ToolCall {
-                        id: CallId("b".into()),
-                        name: "bash".into(),
-                        input: json!({}),
-                    },
-                ],
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![
+                        ToolCall {
+                            id: CallId("a".into()),
+                            name: "bash".into(),
+                            input: json!({}),
+                        },
+                        ToolCall {
+                            id: CallId("b".into()),
+                            name: "bash".into(),
+                            input: json!({}),
+                        },
+                    ],
+                ),
                 upstream_failure: None,
             },
         ),
@@ -126,13 +130,15 @@ fn user_turn_after_tool_result_merges_into_one_message() {
             0,
             0,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
-                    id: CallId("a".into()),
-                    name: "bash".into(),
-                    input: json!({}),
-                }],
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall {
+                        id: CallId("a".into()),
+                        name: "bash".into(),
+                        input: json!({}),
+                    }],
+                ),
                 upstream_failure: None,
             },
         ),

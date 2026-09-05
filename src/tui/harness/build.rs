@@ -73,9 +73,11 @@ impl Screenplay<'_> {
     /// A committed assistant turn: markdown prose plus zero or more tool calls.
     pub(crate) fn assistant(&mut self, text: &str, calls: Vec<ToolCall>) -> &mut Self {
         self.commit(Payload::Assistant {
-            thinking: vec![],
-            text: vec![ContentBlock::Text(text.into())],
-            calls,
+            output: crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text(text.into())],
+                calls,
+            ),
             upstream_failure: None,
         })
     }
@@ -83,12 +85,14 @@ impl Screenplay<'_> {
     /// A committed assistant turn that did extended thinking first.
     pub(crate) fn assistant_thinking(&mut self, thinking: &str, text: &str) -> &mut Self {
         self.commit(Payload::Assistant {
-            thinking: vec![ContentBlock::Thinking {
-                text: thinking.into(),
-                signature: String::new(),
-            }],
-            text: vec![ContentBlock::Text(text.into())],
-            calls: vec![],
+            output: crate::log::AssistantOutput::from_legacy_messages(
+                vec![ContentBlock::Thinking {
+                    text: thinking.into(),
+                    signature: String::new(),
+                }],
+                vec![ContentBlock::Text(text.into())],
+                vec![],
+            ),
             upstream_failure: None,
         })
     }

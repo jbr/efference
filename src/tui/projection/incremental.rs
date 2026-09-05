@@ -109,8 +109,8 @@ impl Transcript {
             {
                 self.dirty.insert(owner);
             }
-            if let crate::log::Payload::Assistant { calls, .. } = &log[idx].payload {
-                for call in calls {
+            if let crate::log::Payload::Assistant { output, .. } = &log[idx].payload {
+                for call in output.tool_calls().unwrap_or_default() {
                     self.owner.insert(call.id.0.clone(), idx);
                 }
             }

@@ -99,11 +99,11 @@ pub(crate) fn spots_in(
     use std::collections::HashMap;
 
     // Index every tool call by id so each Spot can name what it judged.
-    let mut calls: HashMap<&CallId, &ToolCall> = HashMap::new();
+    let mut calls: HashMap<CallId, ToolCall> = HashMap::new();
     for entry in entries {
-        if let Payload::Assistant { calls: cs, .. } = &entry.payload {
-            for c in cs {
-                calls.insert(&c.id, c);
+        if let Payload::Assistant { output, .. } = &entry.payload {
+            for call in output.tool_calls().unwrap_or_default() {
+                calls.insert(call.id.clone(), call);
             }
         }
     }

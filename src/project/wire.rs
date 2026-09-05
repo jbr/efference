@@ -211,6 +211,20 @@ pub enum BreakpointPlacement {
 /// Kept out of [`project`] so projection stays a pure, byte-stable function (the
 /// breakpoint moves every request; the prefix it caches does not). Idempotent
 /// re-placement on an identical wire is byte-identical.
+impl ApiBlock {
+    /// The breakpoint slot every block carries.
+    pub fn cache_control_mut(&mut self) -> &mut Option<CacheControl> {
+        match self {
+            Self::Text { cache_control, .. }
+            | Self::Thinking { cache_control, .. }
+            | Self::RedactedThinking { cache_control, .. }
+            | Self::ToolUse { cache_control, .. }
+            | Self::Image { cache_control, .. }
+            | Self::ToolResult { cache_control, .. } => cache_control,
+        }
+    }
+}
+
 pub fn place_trailing_cache_breakpoint(
     messages: &mut [ApiMessage],
     placement: BreakpointPlacement,

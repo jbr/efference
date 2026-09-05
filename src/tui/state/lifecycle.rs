@@ -188,7 +188,12 @@ impl<'a> InteractiveState<'a> {
             .enumerate()
             .rev()
             .find_map(|(i, entry)| match &entry.payload {
-                Payload::Assistant { calls, .. } => calls.first().map(|c| (i, c)),
+                Payload::Assistant { output, .. } => output.messages().and_then(|blocks| {
+                    blocks.iter().find_map(|block| match block {
+                        crate::log::MessagesOutputBlock::ToolUse(call) => Some((i, call)),
+                        _ => None,
+                    })
+                }),
                 _ => None,
             })?;
         let paired = self.log[idx + 1..].iter().any(|entry| {

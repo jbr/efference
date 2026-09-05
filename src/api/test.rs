@@ -54,7 +54,7 @@ fn endpoint_openrouter_rejects_anthropic_key_fallback() {
 /// silent fallback to a host the key doesn't belong to.
 #[test]
 fn endpoint_unknown_provider_is_loud() {
-    let err = Endpoint::resolve(Some("openai".into()), Some("k".into()), None)
+    let err = Endpoint::resolve(Some("cohere".into()), Some("k".into()), None)
         .unwrap_err()
         .to_string();
     assert!(err.contains("anthropic"), "{err}");
@@ -787,13 +787,17 @@ fn assembles_text_and_split_tool_use() {
 
     match completion.assistant {
         Payload::Assistant {
-            thinking,
-            text,
-            calls,
+            output: AssistantOutput::Messages(blocks),
             ..
         } => {
-            assert!(thinking.is_empty(), "no thinking blocks in this stream");
-            assert_eq!(text, vec![ContentBlock::Text("let me look".into())]);
+            assert_eq!(blocks[0], MessagesOutputBlock::Text("let me look".into()));
+            let calls: Vec<_> = blocks
+                .iter()
+                .filter_map(|block| match block {
+                    MessagesOutputBlock::ToolUse(call) => Some(call),
+                    _ => None,
+                })
+                .collect();
             assert_eq!(calls.len(), 1);
             assert_eq!(calls[0].name, "bash");
             assert_eq!(calls[0].id.0, "toolu_9");
@@ -828,7 +832,8 @@ fn tool_call_cut_at_the_output_cap_is_a_record_only_partial() {
     assert!(why.contains("output-token cap"), "{why}");
     // The raw call is kept for audit, parsed as it arrived.
     match &completion.assistant {
-        Payload::Assistant { calls, .. } => {
+        Payload::Assistant { output, .. } => {
+            let calls = output.tool_calls().unwrap();
             assert_eq!(calls.len(), 1);
             assert_eq!(calls[0].name, "write");
         }
@@ -919,7 +924,8 @@ fn empty_tool_input_is_empty_object() {
     ])
     .unwrap();
     match completion.assistant {
-        Payload::Assistant { calls, .. } => {
+        Payload::Assistant { output, .. } => {
+            let calls = output.tool_calls().unwrap();
             assert_eq!(calls[0].input, serde_json::json!({}));
         }
         other => panic!("expected Payload::Assistant, got {other:?}"),
@@ -948,23 +954,95 @@ fn assembles_thinking_block_leading_the_turn() {
         .unwrap();
     match completion.assistant {
         Payload::Assistant {
-            thinking,
-            text,
-            calls,
+            output: AssistantOutput::Messages(blocks),
             ..
         } => {
             assert_eq!(
-                thinking,
-                vec![ContentBlock::Thinking {
-                    text: "weighing the options".into(),
-                    signature: "SiG==".into(),
-                }]
+                blocks,
+                vec![
+                    MessagesOutputBlock::Thinking {
+                        text: "weighing the options".into(),
+                        signature: "SiG==".into(),
+                    },
+                    MessagesOutputBlock::Text("here's the answer".into()),
+                ]
             );
-            assert_eq!(text, vec![ContentBlock::Text("here's the answer".into())]);
-            assert!(calls.is_empty());
         }
         other => panic!("expected Payload::Assistant, got {other:?}"),
     }
+}
+
+/// Provider order is the record's order. A turn that interleaves text, thinking,
+/// text, and a tool call assembles to exactly that sequence, and `project` copies
+/// it onto the wire without regrouping — the log is a transcript of the provider's
+/// structure, not a reconstruction from buckets (docs/log-and-projection.md).
+#[test]
+fn assembles_and_projects_interleaved_blocks_in_provider_order() {
+    let completion = feed(&[
+            ("message_start", r#"{"message":{"model":"claude-opus-4-8","usage":{"input_tokens":5,"output_tokens":1}}}"#),
+            ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
+            ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"first"}}"#),
+            ("content_block_stop", r#"{"index":0}"#),
+            ("content_block_start", r#"{"index":1,"content_block":{"type":"thinking","thinking":""}}"#),
+            ("content_block_delta", r#"{"index":1,"delta":{"type":"thinking_delta","thinking":"hmm"}}"#),
+            ("content_block_delta", r#"{"index":1,"delta":{"type":"signature_delta","signature":"SiG=="}}"#),
+            ("content_block_stop", r#"{"index":1}"#),
+            ("content_block_start", r#"{"index":2,"content_block":{"type":"text","text":""}}"#),
+            ("content_block_delta", r#"{"index":2,"delta":{"type":"text_delta","text":"second"}}"#),
+            ("content_block_stop", r#"{"index":2}"#),
+            ("content_block_start", r#"{"index":3,"content_block":{"type":"tool_use","id":"toolu_1","name":"bash","input":{}}}"#),
+            ("content_block_delta", r#"{"index":3,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}"#),
+            ("content_block_stop", r#"{"index":3}"#),
+            ("message_delta", r#"{"delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":6}}"#),
+            ("message_stop", r#"{"type":"message_stop"}"#),
+        ])
+        .unwrap();
+    let Payload::Assistant {
+        output: AssistantOutput::Messages(blocks),
+        upstream_failure: None,
+    } = &completion.assistant
+    else {
+        panic!(
+            "expected a finalized Payload::Assistant, got {:?}",
+            completion.assistant
+        )
+    };
+    assert_eq!(
+        *blocks,
+        vec![
+            MessagesOutputBlock::Text("first".into()),
+            MessagesOutputBlock::Thinking {
+                text: "hmm".into(),
+                signature: "SiG==".into(),
+            },
+            MessagesOutputBlock::Text("second".into()),
+            MessagesOutputBlock::ToolUse(ToolCall {
+                id: CallId("toolu_1".into()),
+                name: "bash".into(),
+                input: serde_json::json!({"command": "ls"}),
+            }),
+        ]
+    );
+
+    let log = vec![crate::log::LogEntry {
+        seq: 0,
+        turn: 0,
+        at: crate::log::Timestamp(0),
+        submission_id: None,
+        payload: completion.assistant.clone(),
+    }];
+    let wire = crate::project::project(&log);
+    let kinds: Vec<&str> = wire[0]
+        .content
+        .iter()
+        .map(|block| match block {
+            ApiBlock::Text { .. } => "text",
+            ApiBlock::Thinking { .. } => "thinking",
+            ApiBlock::ToolUse { .. } => "tool_use",
+            other => panic!("unexpected wire block {other:?}"),
+        })
+        .collect();
+    assert_eq!(kinds, ["text", "thinking", "text", "tool_use"]);
 }
 
 /// A `redacted_thinking` block (opaque `data`, no text/signature) is preserved into a
@@ -980,9 +1058,12 @@ fn assembles_redacted_thinking_block() {
         ])
         .unwrap();
     match completion.assistant {
-        Payload::Assistant { thinking, .. } => assert_eq!(
-            thinking,
-            vec![ContentBlock::RedactedThinking {
+        Payload::Assistant {
+            output: AssistantOutput::Messages(blocks),
+            ..
+        } => assert_eq!(
+            blocks,
+            vec![MessagesOutputBlock::RedactedThinking {
                 data: "ENCRYPTED==".into()
             }]
         ),
@@ -1018,8 +1099,8 @@ fn done_sentinel_is_terminal_not_unknown() {
         ])
         .unwrap();
     match completion.assistant {
-        Payload::Assistant { text, .. } => {
-            assert_eq!(text, vec![ContentBlock::Text("hi".into())]);
+        Payload::Assistant { output, .. } => {
+            assert_eq!(output.text(), vec!["hi"]);
         }
         other => panic!("expected Payload::Assistant, got {other:?}"),
     }
@@ -1048,8 +1129,8 @@ fn in_stream_error_surfaces_body() {
     let why = completion.upstream_failure().expect("must be marked");
     assert!(why.contains("overloaded_error"), "{why}");
     match &completion.assistant {
-        Payload::Assistant { text, .. } => {
-            assert_eq!(text, &vec![ContentBlock::Text("half an ans".into())]);
+        Payload::Assistant { output, .. } => {
+            assert_eq!(output.text(), vec!["half an ans"]);
         }
         other => panic!("expected Payload::Assistant, got {other:?}"),
     }
@@ -1073,8 +1154,12 @@ fn aborted_stream_assembles_as_record_only_partial() {
     assert!(why.contains("before finalizing"), "{why}");
     assert_eq!(completion.stop_reason, None);
     match &completion.assistant {
-        Payload::Assistant { thinking, .. } => {
-            assert_eq!(thinking.len(), 1, "the partial thinking must survive");
+        Payload::Assistant { output, .. } => {
+            assert_eq!(
+                output.reasoning_text().len(),
+                1,
+                "the partial thinking must survive"
+            );
         }
         other => panic!("expected Payload::Assistant, got {other:?}"),
     }
@@ -1137,7 +1222,8 @@ fn aborted_stream_keeps_partial_tool_input_unparsed() {
     .unwrap();
     assert!(completion.upstream_failure().is_some());
     match &completion.assistant {
-        Payload::Assistant { calls, .. } => {
+        Payload::Assistant { output, .. } => {
+            let calls = output.tool_calls().unwrap();
             assert_eq!(
                 calls[0].input,
                 Value::String("{\"command\":\"cargo t".into())
@@ -1975,8 +2061,8 @@ fn a_finalized_stream_with_unparseable_tool_input_is_marked_retryable() {
     let why = completion.upstream_failure().expect("must be marked");
     assert!(why.contains("unparseable tool input"), "{why}");
     match &completion.assistant {
-        Payload::Assistant { calls, .. } => assert_eq!(
-            calls[0].input,
+        Payload::Assistant { output, .. } => assert_eq!(
+            output.tool_calls().unwrap()[0].input,
             serde_json::Value::String(r#"{"command": "echo cut"#.to_string()),
             "the raw fragment is kept verbatim"
         ),

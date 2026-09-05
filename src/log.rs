@@ -77,20 +77,14 @@ pub struct LogEntry {
 pub enum Payload {
     /// Prose (and, later, richer blocks) authored by the user / operator.
     User(Vec<ContentBlock>),
-    /// A model turn: leading thinking blocks, prose, then zero or more tool calls.
+    /// One model turn in its provider dialect's ordered output vocabulary.
     ///
-    /// `thinking` holds the extended-thinking blocks that lead the turn on the wire
-    /// (`thinking` → `text` → `tool_use`); it is a separate typed field rather than folded
-    /// into `text` because thinking is always a *leading group* under efference's
-    /// single-tool-per-turn constraint (`disable_parallel_tool_use` → no intra-turn
-    /// `think→act→think` interleaving), so field order encodes wire order and `calls` stays a
-    /// first-class handle (docs/transport.md). `#[serde(default)]` keeps pre-thinking
-    /// log entries deserializable.
+    /// Both Messages content blocks and Responses output items are ordered arrays on
+    /// their native wires. Keeping that order in the record makes projection a copy of
+    /// provider-authored structure rather than a reconstruction from grouped fields
+    /// (docs/log-and-projection.md).
     Assistant {
-        #[serde(default)]
-        thinking: Vec<ContentBlock>,
-        text: Vec<ContentBlock>,
-        calls: Vec<ToolCall>,
+        output: AssistantOutput,
         /// `Some` = the upstream stream died before finalizing (no `message_stop` /
         /// `[DONE]`, an in-stream `error` event, or a mid-stream transport failure) —
         /// or, for an entry with no content at all, the request itself failed and this
@@ -217,6 +211,229 @@ pub enum Payload {
     },
 }
 
+/// The ordered assistant-output vocabulary of the session's wire dialect.
+///
+/// The dialect is outside the item vector so one turn cannot mix replay credentials
+/// from different providers. Presentation and execution consume semantic accessors;
+/// request projection consumes the concrete arm (docs/log-and-projection.md).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum AssistantOutput {
+    /// The content blocks of one Anthropic-Messages assistant message, in provider
+    /// order. OpenRouter's Anthropic-compatible endpoint uses the same shape.
+    Messages(Vec<MessagesOutputBlock>),
+    /// The top-level `output` items of one OpenAI Responses result, in provider order.
+    Responses(Vec<ResponsesOutputItem>),
+}
+
+impl AssistantOutput {
+    /// Build a Messages turn from grouped thinking / text / calls, in that order.
+    /// A fixture convenience (also used by binary-crate tests, hence `pub`): the
+    /// persisted log has no grouped form to migrate, and assemblers append ordered
+    /// blocks directly.
+    pub fn from_legacy_messages(
+        thinking: Vec<ContentBlock>,
+        text: Vec<ContentBlock>,
+        calls: Vec<ToolCall>,
+    ) -> Self {
+        let blocks = thinking
+            .into_iter()
+            .chain(text)
+            .map(|block| match block {
+                ContentBlock::Text(text) => MessagesOutputBlock::Text(text),
+                ContentBlock::Thinking { text, signature } => {
+                    MessagesOutputBlock::Thinking { text, signature }
+                }
+                ContentBlock::RedactedThinking { data } => {
+                    MessagesOutputBlock::RedactedThinking { data }
+                }
+            })
+            .chain(calls.into_iter().map(MessagesOutputBlock::ToolUse))
+            .collect();
+        Self::Messages(blocks)
+    }
+
+    pub fn messages(&self) -> Option<&[MessagesOutputBlock]> {
+        match self {
+            Self::Messages(blocks) => Some(blocks),
+            Self::Responses(_) => None,
+        }
+    }
+
+    /// Visible assistant prose in provider order. Refusals are user-visible output
+    /// and therefore participate in the same presentation view.
+    pub fn text(&self) -> Vec<&str> {
+        match self {
+            Self::Messages(blocks) => blocks
+                .iter()
+                .filter_map(|block| match block {
+                    MessagesOutputBlock::Text(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect(),
+            Self::Responses(items) => items
+                .iter()
+                .flat_map(|item| match item {
+                    ResponsesOutputItem::Message { content, .. } => content.as_slice(),
+                    _ => &[],
+                })
+                .map(|content| match content {
+                    ResponsesMessageContent::OutputText { text, .. } => text.as_str(),
+                    ResponsesMessageContent::Refusal { refusal } => refusal.as_str(),
+                })
+                .collect(),
+        }
+    }
+
+    /// Human-readable reasoning only. Provider replay credentials are deliberately
+    /// absent from this view.
+    pub fn reasoning_text(&self) -> Vec<&str> {
+        match self {
+            Self::Messages(blocks) => blocks
+                .iter()
+                .filter_map(|block| match block {
+                    MessagesOutputBlock::Thinking { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect(),
+            Self::Responses(items) => items
+                .iter()
+                .flat_map(|item| match item {
+                    ResponsesOutputItem::Reasoning { summary, .. } => summary.as_slice(),
+                    _ => &[],
+                })
+                .map(|summary| summary.text.as_str())
+                .collect(),
+        }
+    }
+
+    /// Calls in provider order, normalized for local execution. Responses keeps its
+    /// exact argument string as authority and parses it only for this derived view.
+    pub fn tool_calls(&self) -> Result<Vec<ToolCall>, serde_json::Error> {
+        match self {
+            Self::Messages(blocks) => Ok(blocks
+                .iter()
+                .filter_map(|block| match block {
+                    MessagesOutputBlock::ToolUse(call) => Some(call.clone()),
+                    _ => None,
+                })
+                .collect()),
+            Self::Responses(items) => items
+                .iter()
+                .filter_map(|item| match item {
+                    ResponsesOutputItem::FunctionCall {
+                        call_id,
+                        name,
+                        arguments,
+                        ..
+                    } => Some((call_id, name, arguments)),
+                    _ => None,
+                })
+                .map(|(call_id, name, arguments)| {
+                    Ok(ToolCall {
+                        id: call_id.clone(),
+                        name: name.clone(),
+                        input: serde_json::from_str(arguments)?,
+                    })
+                })
+                .collect(),
+        }
+    }
+}
+
+/// One ordered content block in an Anthropic-Messages assistant message.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum MessagesOutputBlock {
+    Text(String),
+    /// Visible thinking plus the opaque signature required for replay.
+    Thinking {
+        text: String,
+        signature: String,
+    },
+    /// Safety-redacted thinking whose only replay representation is opaque data.
+    RedactedThinking {
+        data: String,
+    },
+    ToolUse(ToolCall),
+}
+
+/// One ordered output item returned by OpenAI Responses.
+///
+/// The first integration exposes custom function tools only, so these are the output
+/// forms it can intentionally produce. `Unsupported` retains a future or unexpected
+/// item for audit; an assembler that constructs it marks the enclosing turn record-only
+/// rather than projecting or dispatching it (docs/transport.md).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ResponsesOutputItem {
+    Reasoning {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<String>,
+        /// Visible `summary_text` parts. May be empty even when the model reasoned.
+        #[serde(default)]
+        summary: Vec<ResponsesReasoningSummary>,
+        /// Visible `reasoning_text` parts; absent for most models. Replayed when
+        /// present so the item returns as the provider emitted it.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        content: Vec<ResponsesReasoningText>,
+        /// Opaque continuation state. Populated by default in stateless mode
+        /// (`store: false`); complete only on `response.output_item.done`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        encrypted_content: Option<String>,
+    },
+    Message {
+        id: String,
+        status: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        phase: Option<ResponsesPhase>,
+        content: Vec<ResponsesMessageContent>,
+    },
+    FunctionCall {
+        /// The output item's identity (`fc_...`), distinct from the call/result join
+        /// key. Optional on the wire.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        call_id: CallId,
+        name: String,
+        /// The provider's exact JSON-encoded argument string. This is the replay
+        /// authority; execution parses it on demand rather than storing a second copy.
+        arguments: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<String>,
+    },
+    Unsupported(Value),
+}
+
+/// One `summary_text` part of a reasoning item.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResponsesReasoningSummary {
+    pub text: String,
+}
+
+/// One `reasoning_text` part of a reasoning item.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResponsesReasoningText {
+    pub text: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResponsesPhase {
+    Commentary,
+    FinalAnswer,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ResponsesMessageContent {
+    OutputText {
+        text: String,
+        #[serde(default)]
+        annotations: Vec<Value>,
+    },
+    Refusal {
+        refusal: String,
+    },
+}
+
 /// A content block authored by the model or user. `Thinking` / `RedactedThinking`
 /// carry the extended-thinking payload (docs/transport.md): `signature` is the
 /// opaque per-block token the API mints and requires echoed **verbatim** on replay
@@ -233,7 +450,7 @@ pub enum ContentBlock {
 /// A tool invocation emitted by the model. `input` is a [`serde_json::Value`],
 /// whose object maps serialize with sorted keys — deterministic, sidestepping
 /// the `HashMap`-key-order cache hazard (docs/log-and-projection.md).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: CallId,
     pub name: String,
@@ -300,7 +517,7 @@ pub struct ContentElision {
 /// (audit, TUI, token math) — the wire image block carries only `media_type` +
 /// `data`; the dimensions the *model* needs ride in the result's text content,
 /// written by the tool.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResultImage {
     /// An API-accepted media type: `image/jpeg`, `image/png`, `image/gif`, or
     /// `image/webp`.

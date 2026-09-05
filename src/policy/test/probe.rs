@@ -78,13 +78,15 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
             at: Timestamp(0),
             submission_id: None,
             payload: Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
-                    id: CallId(id.into()),
-                    name: bash::NAME.into(),
-                    input: serde_json::json!({ "command": command }),
-                }],
+                output: crate::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall {
+                        id: CallId(id.into()),
+                        name: bash::NAME.into(),
+                        input: serde_json::json!({ "command": command }),
+                    }],
+                ),
                 upstream_failure: None,
             },
         }

@@ -21,13 +21,15 @@ fn pinned_notification_projects_at_triage_position() {
             0,
             0,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
-                    id: CallId("t".into()),
-                    name: "bash".into(),
-                    input: json!({}),
-                }],
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall {
+                        id: CallId("t".into()),
+                        name: "bash".into(),
+                        input: json!({}),
+                    }],
+                ),
                 upstream_failure: None,
             },
         ),
@@ -110,13 +112,15 @@ fn surfaced_context_item_projects_at_triage_position() {
             1,
             0,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
-                    id: CallId("t".into()),
-                    name: "grep".into(),
-                    input: json!({}),
-                }],
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall {
+                        id: CallId("t".into()),
+                        name: "grep".into(),
+                        input: json!({}),
+                    }],
+                ),
                 upstream_failure: None,
             },
         ),
@@ -192,13 +196,15 @@ fn recorded_triage_thinking_projects_to_identical_bytes() {
                 0,
                 0,
                 Payload::Assistant {
-                    thinking: vec![],
-                    text: vec![],
-                    calls: vec![ToolCall {
-                        id: CallId("t".into()),
-                        name: "bash".into(),
-                        input: json!({}),
-                    }],
+                    output: AssistantOutput::from_legacy_messages(
+                        vec![],
+                        vec![],
+                        vec![ToolCall {
+                            id: CallId("t".into()),
+                            name: "bash".into(),
+                            input: json!({}),
+                        }],
+                    ),
                     upstream_failure: None,
                 },
             ),

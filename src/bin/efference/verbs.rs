@@ -23,13 +23,23 @@ pub(crate) async fn wire(
     let placement = provider
         .map(|p| p.image_placement(model))
         .unwrap_or_default();
-    let mut messages = efference::project::project_with(&entries, placement);
-    efference::project::place_trailing_cache_breakpoint(
-        &mut messages,
+    let dialect = provider
+        .map(|p| p.dialect())
+        .unwrap_or(efference::api::WireDialect::Messages);
+    // The same turns a live request encodes, trailing breakpoint included; the
+    // dialect decides the wire they render on (docs/transport.md).
+    let mut turns = efference::project::project_semantic(&entries);
+    turns.push(efference::project::WireTurn::Breakpoint);
+    let messages = efference::project::encode_messages(
+        &turns,
+        placement,
         provider
             .map(|p| p.breakpoint_placement())
             .unwrap_or_default(),
     );
+    // Responses caching is model-specific; the offline view assumes the explicit
+    // policy every model in the compiled catalog reports.
+    let cache = efference::api::PromptCachePolicy::Explicit;
 
     // `--messages` prints just the projected array and returns before touching
     // config/system/tools at all — a lean, config-independent view of what the
@@ -40,9 +50,12 @@ pub(crate) async fn wire(
             entries.len(),
             messages.len()
         );
-        let rendered = match format {
-            WireFormat::Json => efference::api::render_messages_pretty(&messages)?,
-            WireFormat::Yaml => efference::api::render_messages_yaml(&messages)?,
+        let rendered = match (dialect, format) {
+            (efference::api::WireDialect::Responses, _) => {
+                serde_json::to_string_pretty(&efference::api::encode_responses(&turns, "", cache))?
+            }
+            (_, WireFormat::Json) => efference::api::render_messages_pretty(&messages)?,
+            (_, WireFormat::Yaml) => efference::api::render_messages_yaml(&messages)?,
         };
         println!("{rendered}");
         return Ok(());
@@ -113,11 +126,16 @@ pub(crate) async fn wire(
     let tools = efference::agent::tool_definitions(&toolbox);
 
     let choice = efference::api::ToolChoice::auto();
-    let rendered = match format {
-        WireFormat::Json => {
+    let rendered = match (dialect, format) {
+        (efference::api::WireDialect::Responses, _) => {
+            efference::api::render_responses_request_pretty(
+                model, &system, &tools, choice, &turns, cache,
+            )?
+        }
+        (_, WireFormat::Json) => {
             efference::api::render_request_pretty(model, &system, &tools, choice, &messages)?
         }
-        WireFormat::Yaml => {
+        (_, WireFormat::Yaml) => {
             efference::api::render_request_yaml(model, &system, &tools, choice, &messages)?
         }
     };

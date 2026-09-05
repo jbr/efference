@@ -94,9 +94,11 @@ fn write_fixture_log(path: &Path) {
     log.append(
         1,
         efference::log::Payload::Assistant {
-            thinking: vec![],
-            text: vec![efference::log::ContentBlock::Text("hi there".into())],
-            calls: vec![],
+            output: efference::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![efference::log::ContentBlock::Text("hi there".into())],
+                vec![],
+            ),
             upstream_failure: None,
         },
     )
@@ -175,13 +177,15 @@ fn spot_fixture() -> Vec<efference::log::LogEntry> {
         entry(
             1,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
-                    id: CallId("toolu_a".into()),
-                    name: "bash".into(),
-                    input: serde_json::json!({ "command": "rm  -rf\n ./build" }),
-                }],
+                output: efference::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall {
+                        id: CallId("toolu_a".into()),
+                        name: "bash".into(),
+                        input: serde_json::json!({ "command": "rm  -rf\n ./build" }),
+                    }],
+                ),
                 upstream_failure: None,
             },
         ),
@@ -320,9 +324,11 @@ fn a_gate_carries_a_completions_results_and_a_prefix_that_stops_short_of_them() 
         entry(
             1,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![call("a"), call("b")],
+                output: efference::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![call("a"), call("b")],
+                ),
                 upstream_failure: None,
             },
         ),
@@ -348,9 +354,11 @@ fn a_gate_carries_its_recorded_first_attempt() {
         entry(
             1,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![call("a")],
+                output: efference::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![call("a")],
+                ),
                 upstream_failure: None,
             },
         ),
@@ -363,9 +371,11 @@ fn a_gate_carries_its_recorded_first_attempt() {
         entry(
             4,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![call("b")],
+                output: efference::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![call("b")],
+                ),
                 upstream_failure: None,
             },
         ),
@@ -393,9 +403,11 @@ fn a_completion_with_no_results_opens_no_gate() {
     let log = vec![entry(
         1,
         Payload::Assistant {
-            thinking: vec![],
-            text: vec![],
-            calls: vec![call("a")],
+            output: efference::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call("a")],
+            ),
             upstream_failure: None,
         },
     )];

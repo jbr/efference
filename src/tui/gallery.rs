@@ -12,8 +12,8 @@
 pub mod stream;
 
 use crate::log::{
-    CallId, ContentBlock, Keep, LogEntry, Mark, MarkKind, Payload, RawResult, Timestamp, ToolCall,
-    WireState,
+    AssistantOutput, CallId, ContentBlock, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock,
+    Payload, RawResult, Timestamp, ToolCall, WireState,
 };
 
 /// A committed user turn carrying markdown prose.
@@ -26,9 +26,11 @@ fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
     entry(
         seq,
         Payload::Assistant {
-            thinking: vec![],
-            text: vec![ContentBlock::Text(text.into())],
-            calls,
+            output: AssistantOutput::Messages(
+                std::iter::once(MessagesOutputBlock::Text(text.into()))
+                    .chain(calls.into_iter().map(MessagesOutputBlock::ToolUse))
+                    .collect(),
+            ),
             upstream_failure: None,
         },
     )
@@ -42,12 +44,13 @@ fn assistant_thinking(seq: u64, thinking: &str, text: &str) -> LogEntry {
     entry(
         seq,
         Payload::Assistant {
-            thinking: vec![ContentBlock::Thinking {
-                text: thinking.into(),
-                signature: String::new(),
-            }],
-            text: vec![ContentBlock::Text(text.into())],
-            calls: vec![],
+            output: AssistantOutput::Messages(vec![
+                MessagesOutputBlock::Thinking {
+                    text: thinking.into(),
+                    signature: String::new(),
+                },
+                MessagesOutputBlock::Text(text.into()),
+            ]),
             upstream_failure: None,
         },
     )

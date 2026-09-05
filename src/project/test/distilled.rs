@@ -144,13 +144,15 @@ fn distilled_projects_the_verdict_not_raw() {
             0,
             0,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
-                    id: CallId("x".into()),
-                    name: "bash".into(),
-                    input: json!({}),
-                }],
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall {
+                        id: CallId("x".into()),
+                        name: "bash".into(),
+                        input: json!({}),
+                    }],
+                ),
                 upstream_failure: None,
             },
         ),
@@ -195,13 +197,15 @@ fn triage_failed_projects_an_error_never_the_raw() {
             0,
             0,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![ToolCall {
-                    id: CallId("x".into()),
-                    name: "bash".into(),
-                    input: json!({}),
-                }],
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall {
+                        id: CallId("x".into()),
+                        name: "bash".into(),
+                        input: json!({}),
+                    }],
+                ),
                 upstream_failure: None,
             },
         ),

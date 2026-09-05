@@ -38,11 +38,11 @@ use crate::api::{Client, Completion, RequestUsage, RetrySurface, ToolChoice};
 use crate::context::Item;
 use crate::inbox::ShownNotification;
 use crate::log::{
-    Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall, WireState,
+    AssistantOutput, Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall,
+    WireState,
 };
 use crate::project::{
-    ApiBlock, ApiMessage, BreakpointPlacement, ImagePlacement, PEEK_LINE_CAP, Role, block_to_api,
-    place_trailing_cache_breakpoint, project_with,
+    BreakpointPlacement, ImagePlacement, PEEK_LINE_CAP, UserPart, WireTurn, project_semantic,
 };
 use crate::supervisor::BgView;
 
@@ -322,7 +322,7 @@ pub struct ForkPeek {
 /// (docs/redaction-fork.md).
 async fn peek_with_retries<T>(
     client: &Client,
-    mut messages: Vec<ApiMessage>,
+    mut messages: Vec<WireTurn>,
     tools: &[Value],
     tool: &str,
     parse: impl Fn(&Completion) -> Result<T, String>,
@@ -377,7 +377,7 @@ async fn peek_with_retries<T>(
 /// the corpus rather than silently absorbed.
 async fn peek_completion(
     client: &Client,
-    messages: &[ApiMessage],
+    messages: &[WireTurn],
     tools: &[Value],
     record: &mut PeekRecord,
 ) -> Result<Completion, String> {
@@ -432,59 +432,38 @@ async fn peek_completion(
 /// payload, or an empty one) — the caller treats that as terminal rather than sending
 /// an invalid message.
 fn extend_with_retry(
-    messages: &mut Vec<ApiMessage>,
+    messages: &mut Vec<WireTurn>,
     assistant: &Payload,
     why: &str,
     tool: &str,
 ) -> bool {
-    let Payload::Assistant {
-        thinking,
-        text,
-        calls,
-        ..
-    } = assistant
-    else {
+    let Payload::Assistant { output, .. } = assistant else {
         return false;
     };
-    let mut content: Vec<ApiBlock> = thinking
-        .iter()
-        .chain(text.iter())
-        .map(block_to_api)
-        .collect();
-    for call in calls {
-        content.push(ApiBlock::ToolUse {
-            id: call.id.0.clone(),
-            name: call.name.clone(),
-            input: call.input.clone(),
-            cache_control: None,
-        });
-    }
-    if content.is_empty() {
+    let empty = match output {
+        AssistantOutput::Messages(blocks) => blocks.is_empty(),
+        AssistantOutput::Responses(items) => items.is_empty(),
+    };
+    if empty {
         return false;
     }
-    messages.push(ApiMessage {
-        role: Role::Assistant,
-        content,
-    });
-    let mut reply: Vec<ApiBlock> = calls
-        .iter()
-        .map(|call| ApiBlock::ToolResult {
-            tool_use_id: call.id.0.clone(),
-            content: format!("not accepted — {why}.").into(),
+    messages.push(WireTurn::Assistant(output.clone()));
+    let mut reply: Vec<UserPart> = output
+        .tool_calls()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|call| UserPart::ToolResult {
+            call_id: call.id,
+            seq: None,
+            content: format!("not accepted — {why}."),
             is_error: true,
-            cache_control: None,
+            images: Vec::new(),
         })
         .collect();
-    reply.push(ApiBlock::Text {
-        text: format!(
-            "That response didn't answer the ask. Call `{tool}` now, as instructed above."
-        ),
-        cache_control: None,
-    });
-    messages.push(ApiMessage {
-        role: Role::User,
-        content: reply,
-    });
+    reply.push(UserPart::Text(format!(
+        "That response didn't answer the ask. Call `{tool}` now, as instructed above."
+    )));
+    messages.push(WireTurn::User(reply));
     true
 }
 
@@ -593,19 +572,10 @@ fn require_in_bounds(
 /// Only the text: a `signature` is what the API requires to *replay* a thinking block,
 /// and nothing replays the fork's tail — it is discarded with the fork.
 fn peek_thinking(assistant: &Payload) -> Option<String> {
-    let Payload::Assistant { thinking, .. } = assistant else {
+    let Payload::Assistant { output, .. } = assistant else {
         return None;
     };
-    let text = thinking
-        .iter()
-        .filter_map(|b| match b {
-            crate::log::ContentBlock::Thinking { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string();
+    let text = output.reasoning_text().join("\n").trim().to_string();
     (!text.is_empty()).then_some(text)
 }
 
@@ -613,8 +583,11 @@ fn peek_thinking(assistant: &Payload) -> Option<String> {
 /// The model's actual input is the most useful form when the asked-for tool was called —
 /// that is what a future reader needs to tell a malformed verdict from a wrong-tool call.
 fn unusable(completion: &Completion, tool: &str) -> String {
-    let Payload::Assistant { calls, .. } = &completion.assistant else {
+    let Payload::Assistant { output, .. } = &completion.assistant else {
         return "peek returned no assistant payload".into();
+    };
+    let Ok(calls) = output.tool_calls() else {
+        return "peek returned an unparseable tool call".into();
     };
     match calls.iter().find(|c| c.name == tool) {
         Some(c) => format!("unparseable {tool} input: {}", c.input),
@@ -650,9 +623,7 @@ fn peek_messages(
     inbox: &[ShownNotification],
     background: &[BgView],
     roster: &[Item],
-    placement: ImagePlacement,
-    breakpoint: BreakpointPlacement,
-) -> Vec<ApiMessage> {
+) -> Vec<WireTurn> {
     let mut sections = String::new();
     append_inbox_and_background(&mut sections, inbox, background);
     append_roster(&mut sections, roster);
@@ -674,39 +645,35 @@ fn peek_messages(
     let instruction = retain_instruction(&offered, &riders);
 
     // The prefix hits cache; only the raws and the instruction are fresh, and they are
-    // discarded — the canonical lineage never sees raw (docs/redaction-fork.md).
-    let mut messages = project_with(prefix, placement);
-    place_trailing_cache_breakpoint(&mut messages, breakpoint);
-    // Every call is answered — a `tool_use` left unpaired makes the request invalid —
+    // discarded — the canonical lineage never sees raw (docs/redaction-fork.md). The
+    // frontier sits before that raw tail: the shared prefix is read, the throwaway
+    // suffix is never written.
+    let mut messages = project_semantic(prefix);
+    messages.push(WireTurn::Breakpoint);
+    // Every call is answered — a call left unpaired makes the request invalid —
     // but a bypassed result answers with a stand-in rather than its output: the harness
     // already decided it (docs/redaction-fork.md), and the ask above does not offer it.
-    let mut content: Vec<ApiBlock> = pending
+    let mut content: Vec<UserPart> = pending
         .iter()
-        .map(|p| ApiBlock::ToolResult {
-            tool_use_id: p.call.id.0.clone(),
+        .map(|p| UserPart::ToolResult {
+            call_id: p.call.id.clone(),
+            seq: None,
             content: match bypassed(p) {
                 Some(shape) => bypassed_view(p.call, shape),
                 None => result_view(p.call, p.raw),
-            }
-            .into(),
+            },
             is_error: p.raw.is_error,
-            cache_control: None,
+            images: Vec::new(),
         })
         .collect();
     // `sections` already opens with its own blank line when non-empty, and is empty
     // outright on a gate carrying no riders — so trim rather than always joining with a
     // gap, which left the block opening on stray whitespace.
-    content.push(ApiBlock::Text {
-        text: match sections.trim() {
-            "" => instruction,
-            sections => format!("{sections}\n\n{instruction}"),
-        },
-        cache_control: None,
-    });
-    messages.push(ApiMessage {
-        role: Role::User,
-        content,
-    });
+    content.push(UserPart::Text(match sections.trim() {
+        "" => instruction,
+        sections => format!("{sections}\n\n{instruction}"),
+    }));
+    messages.push(WireTurn::User(content));
     messages
 }
 
@@ -757,13 +724,9 @@ pub fn peek_request(
     pending: &[Pending<'_>],
     inbox: &[ShownNotification],
     background: &[BgView],
-    placement: ImagePlacement,
-    breakpoint: BreakpointPlacement,
-) -> Vec<ApiMessage> {
+) -> Vec<WireTurn> {
     let roster = surfaceable_roster(prefix);
-    peek_messages(
-        prefix, pending, inbox, background, &roster, placement, breakpoint,
-    )
+    peek_messages(prefix, pending, inbox, background, &roster)
 }
 
 /// One fork-peek round trip against a recorded gate, with **no retries**
@@ -784,14 +747,7 @@ pub async fn peek_attempt(
         .filter(|p| bypassed(p).is_none())
         .map(|p| (p.call.id.0.clone(), shown_line_count(p.raw)))
         .collect();
-    let messages = peek_request(
-        prefix,
-        pending,
-        inbox,
-        background,
-        client.image_placement(),
-        client.breakpoint_placement(),
-    );
+    let messages = peek_request(prefix, pending, inbox, background);
     let completion = client
         .complete(&messages, tools, ToolChoice::auto(), |_| {})
         .await
@@ -801,27 +757,22 @@ pub async fn peek_attempt(
     }
 
     let (called, inputs, said) = match &completion.assistant {
-        Payload::Assistant {
-            calls,
-            text,
-            thinking,
-            ..
-        } => (
-            calls.iter().map(|c| c.name.clone()).collect(),
-            calls.iter().map(|c| c.input.clone()).collect(),
-            thinking
-                .iter()
-                .chain(text)
-                .map(|b| match b {
-                    crate::log::ContentBlock::Text(t) => t.as_str(),
-                    crate::log::ContentBlock::Thinking { text, .. } => text.as_str(),
-                    _ => "",
-                })
+        Payload::Assistant { output, .. } => {
+            let calls = output.tool_calls().unwrap_or_default();
+            let said = output
+                .reasoning_text()
+                .into_iter()
+                .chain(output.text())
                 .collect::<Vec<_>>()
                 .join("\n")
                 .trim()
-                .to_string(),
-        ),
+                .to_string();
+            (
+                calls.iter().map(|c| c.name.clone()).collect(),
+                calls.iter().map(|c| c.input.clone()).collect(),
+                said,
+            )
+        }
         _ => (Vec::new(), Vec::new(), String::new()),
     };
     let verdict = parse_retain(&completion, &offered)
@@ -889,15 +840,7 @@ impl ForkPeek {
             .collect();
 
         let roster = surfaceable_roster(prefix);
-        let messages = peek_messages(
-            prefix,
-            pending,
-            inbox,
-            background,
-            &roster,
-            self.image_placement,
-            self.breakpoint_placement,
-        );
+        let messages = peek_messages(prefix, pending, inbox, background, &roster);
 
         let mut record = PeekRecord::default();
         let parsed = peek_with_retries(
@@ -1023,15 +966,9 @@ impl ForkPeek {
         view.push_str("\n\n");
         view.push_str(TRIAGE_INSTRUCTION);
 
-        let mut messages = project_with(prefix, self.image_placement);
-        place_trailing_cache_breakpoint(&mut messages, self.breakpoint_placement);
-        messages.push(ApiMessage {
-            role: Role::User,
-            content: vec![ApiBlock::Text {
-                text: view,
-                cache_control: None,
-            }],
-        });
+        let mut messages = project_semantic(prefix);
+        messages.push(WireTurn::Breakpoint);
+        messages.push(WireTurn::text(view));
 
         let mut record = PeekRecord::default();
         let parsed = peek_with_retries(

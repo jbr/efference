@@ -30,8 +30,7 @@ pre-existing logs read back unchanged.
 ```rust
 enum Payload {
     User(Vec<ContentBlock>),
-    Assistant { thinking: Vec<ContentBlock>, text: Vec<ContentBlock>, calls: Vec<ToolCall>,
-                upstream_failure: Option<UpstreamFailureRecord> },
+    Assistant { output: AssistantOutput, upstream_failure: Option<UpstreamFailureRecord> },
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
     Mark(Mark),        // a salience annotation
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
@@ -56,6 +55,42 @@ on every tool call, and at every background spawn and exit — without moving th
 cached prefix. `ProcessEvent` is the durable answer to "what was `p#3`" for a
 reader with no daemon ([supervisor.md](supervisor.md)); metadata only, since a
 process's output belongs to the registry's bounded best-effort capture.
+
+### `AssistantOutput`
+
+One model turn is stored in its provider dialect's ordered output vocabulary, not in
+grouped `thinking` / `text` / `calls` fields:
+
+```rust
+enum AssistantOutput {
+    Messages(Vec<MessagesOutputBlock>),    // Anthropic Messages content blocks, provider order
+    Responses(Vec<ResponsesOutputItem>),   // OpenAI Responses output items, provider order
+}
+enum MessagesOutputBlock { Text(String), Thinking { text, signature }, RedactedThinking { data }, ToolUse(ToolCall) }
+enum ResponsesOutputItem { Reasoning { id, status, summary, encrypted_content },
+                           Message { id, status, phase, content },
+                           FunctionCall { id, call_id, name, arguments: String, status },
+                           Unsupported(Value) }
+```
+
+Both wires return an ordered array, and a provider may interleave freely (text before
+thinking, several messages around one call). Keeping that order makes projection a copy
+of provider-authored structure rather than a reconstruction: `project` maps each
+`MessagesOutputBlock` to its wire block in place. The dialect sits outside the item vector
+so one turn cannot mix replay credentials from two providers; the Messages projector emits
+nothing for a `Responses` turn and the Responses projector will do the converse.
+
+Consumers that do not care about the wire read the semantic accessors — `text()`,
+`reasoning_text()`, `tool_calls()` — which flatten either arm in provider order.
+`reasoning_text()` returns only human-readable reasoning; a Messages `signature`,
+`RedactedThinking.data`, and Responses `encrypted_content` are replay credentials and never
+surface through it. For a Responses function call the exact `arguments` string is the
+replay authority; `tool_calls()` parses it on demand into a normalized `ToolCall` keyed by
+`call_id` (the execution/result join key), never by the output item's own `id`.
+
+Logs written before this shape (grouped fields) are not read back; they were rewritten
+once by a throwaway script under `scripts/`, which emits the old group order
+(thinking, text, calls) because that is the only order the old record attests to.
 
 `Assistant.upstream_failure` is the assistant-side analogue of a `WireState`
 verdict: `Some(record)` marks a **record-only** entry — the stream that produced
@@ -192,23 +227,55 @@ projection folds every entry with `seq <= upto` to a summary user message.
 There is no separate mutation of stored entries; the fold is a projection
 concern, not a log mutation. See [consolidate.md](consolidate.md).
 
-### `project`
+### `project_semantic` and the encoders
 
 ```rust
-fn project(log: &[LogEntry]) -> Vec<ApiMessage>
+fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn>
+fn encode_messages(&[WireTurn], ImagePlacement, BreakpointPlacement) -> Vec<ApiMessage>
+fn encode_responses(&[WireTurn], preamble: &str, PromptCachePolicy) -> Vec<InputItem>
+fn project(log) -> Vec<ApiMessage>   // = encode_messages(project_semantic(log), defaults)
 ```
 
-Implemented in `src/project.rs`. A pure deterministic fold over the log that
-produces the Anthropic `messages` array. It coalesces consecutive `ToolResult`
-entries into one user message — and a `User` entry that directly follows them
-merges into that *same* message as `[tool_result…, text]` rather than forming a
-second consecutive user-role message, so role-alternation and byte-stability
+Projection is two stages. `project_semantic` (`src/project/semantic.rs`) is the
+dialect-neutral fold: it decides **selection** — which entries reach the wire, the
+compaction fold driven by a pre-pass over `Mark::Boundary` entries, result verdicts
+(`Distilled` re-rendered from `keep` + `raw`, `Elided`, `TriageFailed`), pinned
+notifications, surfaced context, and every audit-only exclusion — and renders what
+every dialect sends identically (result text with its `[seq]` handle). Its output is
+a list of `WireTurn`s:
+
+```rust
+enum WireTurn {
+    User(Vec<UserPart>),          // prose, tool results, fold summaries, pins — log order
+    Assistant(AssistantOutput),   // one model turn, owned (a fork tail appends synthetic ones)
+    Breakpoint,                   // a cache-write boundary requested here
+}
+enum UserPart { Text(String), ToolResult { call_id, seq, content, is_error, images }, Breakpoint }
+```
+
+Consecutive `ToolResult` entries coalesce into one `User` turn, and a `User` entry
+that directly follows them merges into that *same* turn as `[result…, text]` rather
+than forming a second consecutive user turn, so role-alternation and byte-stability
 hold when a user turn is appended right after a turn's results (the seam-drain,
-[operator participation](control-channel.md#operator-participation--the-intervention-points) — the mid-trajectory injection and
-the redirect steer both rely on this shape). It omits `is_error: false` for a
-lean wire and re-renders `Distilled` wire states from their `keep` + `raw` pair.
-A pre-pass over `Mark::Boundary` entries drives the compaction fold; no external
-parameter controls it.
+[operator participation](control-channel.md#operator-participation--the-intervention-points) —
+the mid-trajectory injection and the redirect steer both rely on this shape).
+
+Each **encoder** (`src/project/messages.rs`, `src/api/responses.rs`) copies the turns
+onto its wire and owns what differs there: the Messages encoder groups a user turn's
+parts into one message, applies the three image placements and their interposed
+turn, omits `is_error: false`, and attaches a `Breakpoint` per `BreakpointPlacement`;
+the Responses encoder emits one `function_call_output` item per result and one user
+message per run of prose, leads with the preamble as a developer message, replays a
+logged Responses turn as the items the provider returned, and attaches a `Breakpoint`
+as `prompt_cache_breakpoint` on the nearest preceding carrier ([transport.md](transport.md)).
+The three byte pins fix the Messages encoder's output over the semantic fold; the
+Responses envelope has its own pin (`responses_envelope_matches_expected_wire_bytes`).
+
+The `Breakpoint` turn is how every request shape expresses its frontier without
+touching wire types: the agent loop appends one at the tail, a fork peek places one
+ahead of its raw fork-local tail, and the spotter marks its stable scope block mid-turn
+with `UserPart::Breakpoint`. `Client::complete` takes turns, encodes for its dialect,
+and sends — callers never build wire messages.
 
 ---
 
@@ -289,7 +356,15 @@ per request, walking back from the wire tail. **Which** block it may mark is
   request until a text block (a user turn, a pinned notification, a
   surfaced-context reminder) reappears.
 
-The two placements are the same seam `ImagePlacement` uses, and for the same
+On the Responses dialect the marker is `prompt_cache_breakpoint: {"mode":"explicit"}`
+on an `input_text` / `input_image` part, sent only when the model's cache policy is
+`Explicit` (GPT-5.6 and later; the request also sets `prompt_cache_options.mode`).
+Assistant items are not carriers, so the marker walks back to the last user part —
+a bare-string `function_call_output` is lifted to its parts form to carry it — and
+the physical marker can sit earlier than the logical frontier. Under any other
+policy the encoder places nothing and the provider's implicit breakpoint governs.
+
+The placements are the same seam `ImagePlacement` uses, and for the same
 reason: a projection-shaping choice that varies by provider has to be *fixed at
 boot* rather than re-derived, or a session's cached prefix could move under it.
 The consequence for the byte pins is that the pinned bytes are pinned **per

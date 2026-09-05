@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{ContentBlock, LogEntry, Payload, Timestamp};
+use crate::log::{AssistantOutput, ContentBlock, LogEntry, Payload, Timestamp};
 
 fn at(seq: Seq, payload: Payload) -> LogEntry {
     LogEntry {
@@ -17,9 +17,7 @@ fn work(seq: Seq) -> LogEntry {
     at(
         seq,
         Payload::Assistant {
-            thinking: vec![],
-            text: vec![],
-            calls: vec![],
+            output: AssistantOutput::Messages(vec![]),
             upstream_failure: None,
         },
     )

@@ -132,7 +132,7 @@ const RETIRED_KNOBS: [&str; 3] = [
 impl Endpoint {
     /// Resolve the endpoint from the environment:
     ///
-    /// - `EFFERENCE_PROVIDER` — `anthropic` (default when unset) or `openrouter`.
+    /// - `EFFERENCE_PROVIDER` — `anthropic` (default when unset), `openrouter`, or `openai`.
     /// - `EFFERENCE_API_KEY` — the **raw secret**, nothing else; header name and
     ///   scheme prefix come from the provider.
     ///
@@ -163,7 +163,7 @@ impl Endpoint {
             if read(knob).is_some() {
                 return Err(format!(
                     "{knob} is no longer read: the provider is declared, not assembled — \
-                     set EFFERENCE_PROVIDER=anthropic|openrouter and unset {knob} \
+                     set EFFERENCE_PROVIDER=anthropic|openrouter|openai and unset {knob} \
                      (docs/transport.md)"
                 )
                 .into());
@@ -194,9 +194,17 @@ impl Endpoint {
                             credential for OpenRouter"
                     .into());
             }
+            (Provider::OpenAI, None, Some(_)) => {
+                return Err(
+                    "EFFERENCE_PROVIDER=openai needs EFFERENCE_API_KEY (an OpenAI \
+                            `sk-…` secret); ANTHROPIC_API_KEY is the wrong credential for \
+                            OpenAI"
+                        .into(),
+                );
+            }
             (_, None, None) => {
                 return Err("no API credentials: set EFFERENCE_API_KEY (with \
-                            EFFERENCE_PROVIDER=anthropic|openrouter), or ANTHROPIC_API_KEY \
+                            EFFERENCE_PROVIDER=anthropic|openrouter|openai), or ANTHROPIC_API_KEY \
                             for the default Anthropic provider"
                     .into());
             }

@@ -148,9 +148,10 @@ pub(super) fn collect_dispositions(
 /// caller reconciles, the same harness-side guard used for invented notification ids
 /// and roster names (docs/redaction-fork.md).
 pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Option<ParsedRetain> {
-    let Payload::Assistant { calls, .. } = &completion.assistant else {
+    let Payload::Assistant { output, .. } = &completion.assistant else {
         return None;
     };
+    let calls = output.tool_calls().ok()?;
     let retain = calls.iter().find(|c| c.name == RETAIN)?;
     let RetainInput {
         results,
@@ -202,9 +203,10 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
 /// Pull the inbox/background dispositions from a `triage`-tool completion (the
 /// standalone idle peek). `None` when the turn didn't call the named tool.
 pub(super) fn parse_dispositions(completion: &Completion, tool: &str) -> Option<Dispositions> {
-    let Payload::Assistant { calls, .. } = &completion.assistant else {
+    let Payload::Assistant { output, .. } = &completion.assistant else {
         return None;
     };
+    let calls = output.tool_calls().ok()?;
     let call = calls.iter().find(|c| c.name == tool)?;
     let TriageInput { inbox, background } = TriageInput::deserialize(&call.input).ok()?;
     Some(collect_dispositions(inbox, background))

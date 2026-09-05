@@ -41,7 +41,7 @@ use crate::frontend::{Approval, Frontend, Interrupt, SubmittedTurn};
 use crate::log::{CallId, EditState, LogEntry, Payload, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{
-    ApiMessage, ImagePlacement, Retention, Role, place_trailing_cache_breakpoint, project_with,
+    ApiMessage, ImagePlacement, Retention, WireTurn, project_semantic, project_with,
 };
 use crate::spotter::Spotter;
 use crate::supervisor::{BgView, Supervisor};
@@ -873,6 +873,12 @@ impl Shared {
     /// synchronous fold.
     pub fn project_messages(&self) -> Vec<ApiMessage> {
         project_with(self.log.lock().unwrap().entries(), self.image_placement)
+    }
+
+    /// The dialect-neutral fold of the current log (docs/log-and-projection.md) —
+    /// what a request encodes. Lock held only for the synchronous fold.
+    pub fn project_turns(&self) -> Vec<WireTurn> {
+        project_semantic(self.log.lock().unwrap().entries())
     }
 
     /// A clone of the entries — handed to the fork distiller, which awaits the

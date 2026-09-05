@@ -42,13 +42,15 @@ fn view_of_an_image_free_entry_is_the_derived_bytes() {
             1,
             Some("sub-1"),
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![ContentBlock::Text("ok".into())],
-                calls: vec![ToolCall {
-                    id: CallId("toolu_1".into()),
-                    name: "bash".into(),
-                    input: serde_json::json!({ "command": "ls" }),
-                }],
+                output: crate::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![ContentBlock::Text("ok".into())],
+                    vec![ToolCall {
+                        id: CallId("toolu_1".into()),
+                        name: "bash".into(),
+                        input: serde_json::json!({ "command": "ls" }),
+                    }],
+                ),
                 upstream_failure: None,
             },
         ),

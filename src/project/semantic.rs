@@ -1,0 +1,275 @@
+//! The dialect-neutral fold of the log: which entries reach the wire, in what
+//! order, rendered as far as every dialect agrees (docs/log-and-projection.md).
+//!
+//! `project_semantic` decides *selection* — boundary folds, result verdicts, pinned
+//! notifications, surfaced context, audit-only exclusions — and produces turns a
+//! dialect encoder copies onto its wire. It renders tool-result text (verdict, `[seq]`
+//! handle) because every dialect sends the same text; it does not decide image
+//! placement, block grouping, or breakpoint carriers, which differ per wire. Pure
+//! over the log: no clock, no map iteration order reaches the output.
+
+use std::collections::{HashMap, HashSet};
+
+use super::{extract_boundaries, render_distilled, render_triage_failure};
+use crate::context::Item;
+use crate::log::{
+    AssistantOutput, CallId, ContentBlock, Disposition, LogEntry, Notification, Payload, RawResult,
+    ResultImage, Seq, WireState,
+};
+
+/// One wire turn, before dialect encoding.
+#[derive(Clone, Debug, PartialEq)]
+pub enum WireTurn {
+    /// A user-role turn: prose, tool results answering the previous assistant turn,
+    /// fold summaries, pinned notifications. Parts keep log order; a dialect encoder
+    /// may regroup them (Messages coalesces into one message; Responses emits one
+    /// input item per result and one message for the prose).
+    User(Vec<UserPart>),
+    /// One model turn in its provider dialect. Owned rather than borrowed so a fork
+    /// tail can append a synthetic turn without a log entry behind it.
+    Assistant(AssistantOutput),
+    /// A prompt-cache breakpoint requested at this point in the turn list — the
+    /// per-request trailing marker, or a fork peek's frontier ahead of its raw tail
+    /// (docs/log-and-projection.md). Each encoder attaches it to the nearest
+    /// preceding block its wire lets carry one, so the physical marker may sit
+    /// earlier than the logical frontier.
+    Breakpoint,
+}
+
+/// One part of a user-role turn.
+#[derive(Clone, Debug, PartialEq)]
+pub enum UserPart {
+    Text(String),
+    /// A tool result as the model will read it: verdict applied, `[seq]` handle
+    /// prefixed. `seq` is `None` for a fork-local result that has no log entry yet.
+    ToolResult {
+        call_id: CallId,
+        seq: Option<u64>,
+        content: String,
+        is_error: bool,
+        images: Vec<ResultImage>,
+    },
+    /// A prompt-cache breakpoint requested after the preceding part. The trailing
+    /// per-request breakpoint is placed by the client at encode time; this marker
+    /// is for a caller that wants one mid-turn (the spotter's stable scope block).
+    Breakpoint,
+}
+
+impl WireTurn {
+    /// A user turn of one prose part.
+    pub fn text(text: impl Into<String>) -> Self {
+        Self::User(vec![UserPart::Text(text.into())])
+    }
+}
+
+/// Render a logged result the way the model reads it: the verdict applied, the
+/// `[seq]` handle prefixed, images kept only where the verdict keeps content.
+pub fn render_result(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireState) -> UserPart {
+    let (content, is_error) = match wire {
+        WireState::Raw => (raw.content.clone(), raw.is_error),
+        WireState::Distilled { keep, note } => (
+            render_distilled(&raw.content, keep, note.as_deref()),
+            raw.is_error,
+        ),
+        WireState::Elided => ("[elided]".to_string(), false),
+        WireState::TriageFailed { why } => (render_triage_failure(why), true),
+    };
+    let images = match wire {
+        WireState::Raw | WireState::Distilled { .. } => raw.images.clone(),
+        WireState::Elided | WireState::TriageFailed { .. } => Vec::new(),
+    };
+    UserPart::ToolResult {
+        call_id: call_id.clone(),
+        seq: Some(seq),
+        content: format!("[{seq}] {content}"),
+        is_error,
+        images,
+    }
+}
+
+/// Fold the append-only log into dialect-neutral turns (docs/log-and-projection.md).
+///
+/// Deterministic by construction: a pure function of `log`, with no clock, map
+/// iteration, or other ambient input leaking into the output.
+pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
+    let (boundaries, elided) = extract_boundaries(log);
+    // Notification bodies by arrival `seq`, so a `Triage` can emit a block for each
+    // notification it pinned (docs/inbox.md) without re-walking the log.
+    let notifications: HashMap<Seq, &Notification> = log
+        .iter()
+        .filter_map(|e| match &e.payload {
+            Payload::Ambient(n) => Some((e.seq, n)),
+            _ => None,
+        })
+        .collect();
+    // The `[context]` listing by item name — (description, path) for each read-on-demand
+    // stub — so a `Triage` can re-render a surfaced context item (docs/redaction-fork.md)
+    // at cache-read cost, mirroring the notification body map. Sourced from the last boot
+    // `Preamble`'s structured snapshot (context.md); only looked up by name, so `HashMap`
+    // order can't reach the wire.
+    let listing: HashMap<&str, (&str, &str)> = log
+        .iter()
+        .rev()
+        .find_map(|e| match &e.payload {
+            Payload::Preamble { context, .. } => Some(context),
+            _ => None,
+        })
+        .into_iter()
+        .flat_map(|ctx| ctx.sections.iter().flat_map(|s| &s.items))
+        .filter_map(|item| match item {
+            Item::Listed {
+                name,
+                description,
+                path,
+            } => Some((name.as_str(), (description.as_str(), path.as_str()))),
+            Item::Inline { .. } | Item::Exec { .. } => None,
+        })
+        .collect();
+    // Cursor into `boundaries` — advance past each one as we emit the first
+    // non-elided entry after its `upto`.
+    let mut boundary_cursor = 0;
+
+    let mut turns = Vec::new();
+    // The user turn currently being assembled. Tool results coalesce here (the
+    // results answering one assistant turn's calls form the following user turn),
+    // and a `User` entry that immediately follows them merges into the *same* turn
+    // rather than forming a second consecutive user turn — the seam-drain shape
+    // (docs/log-and-projection.md): an injected/redirect user turn appended right
+    // after a turn's results must project as one turn `[result…, text]`, preserving
+    // role-alternation and byte-stability. Flushed at the next assistant / boundary /
+    // end.
+    let mut pending: Vec<UserPart> = Vec::new();
+    let flush = |pending: &mut Vec<UserPart>, turns: &mut Vec<WireTurn>| {
+        if !pending.is_empty() {
+            turns.push(WireTurn::User(std::mem::take(pending)));
+        }
+    };
+    let elided: HashSet<Seq> = elided;
+
+    for entry in log {
+        // Inject the summary just before the first non-elided entry that follows
+        // the fold span (i.e., the first entry with seq > upto). This places the
+        // summary at the head of the live conversation rather than at the mark's
+        // own log position (docs/README.md).
+        while boundary_cursor < boundaries.len()
+            && !elided.contains(&entry.seq)
+            && entry.seq > boundaries[boundary_cursor].upto
+        {
+            flush(&mut pending, &mut turns);
+            turns.push(WireTurn::text(boundaries[boundary_cursor].summary.clone()));
+            boundary_cursor += 1;
+        }
+
+        // Skip elided entries (the folded old-task span + the mark itself).
+        if elided.contains(&entry.seq) {
+            continue;
+        }
+
+        match &entry.payload {
+            Payload::User(blocks) => {
+                // Merge into the pending user turn rather than flushing first (see
+                // `pending` above). Only prose is user-authored today; the thinking
+                // block forms exist on `ContentBlock` for the legacy fixture shape and
+                // never occur in a `User` entry.
+                pending.extend(blocks.iter().filter_map(|block| match block {
+                    ContentBlock::Text(text) => Some(UserPart::Text(text.clone())),
+                    ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => None,
+                }));
+            }
+            // A record-only partial (docs/transport.md): the stream that produced this
+            // entry died before finalizing, so the provider has no record of it and the
+            // content must not enter the trajectory — a thinking-only partial projects
+            // as a dangling thinking block. Skipped entirely, like `Ambient`: the retry
+            // that follows re-projects to the same bytes, which is what lets it ride
+            // the cached prefix.
+            Payload::Assistant {
+                upstream_failure: Some(_),
+                ..
+            } => {}
+            Payload::Assistant {
+                output,
+                upstream_failure: None,
+            } => {
+                flush(&mut pending, &mut turns);
+                turns.push(WireTurn::Assistant(output.clone()));
+            }
+            Payload::ToolResult { call_id, raw, wire } => {
+                pending.push(render_result(entry.seq, call_id, raw, wire));
+            }
+            // Marks are in the elided set (extract_boundaries inserts every
+            // Boundary mark's own seq); this arm is only reachable for future
+            // non-Boundary mark kinds, which can be added here when they land.
+            Payload::Mark(_) => {}
+            // An `Ambient` arrival is audit-only on the wire (docs/inbox.md) — it never
+            // itself projects; a *pinned* one is emitted by its `Triage` (below).
+            Payload::Ambient(_) => {}
+            // A spotter verdict (docs/permissions.md) is audit-only — the permission
+            // decision lives in the log, never on the canonical wire.
+            Payload::Spot(_) => {}
+            // Per-call tool telemetry (docs/tools.md) is log metadata in the same
+            // sense timestamps are: it measures a call the wire already carries,
+            // and adds nothing the model reads. It projects to nothing, which is
+            // what lets it be appended on every call without moving the cached
+            // prefix (docs/log-and-projection.md).
+            Payload::ToolTelemetry(_) => {}
+            // A process lifecycle record (docs/supervisor.md) is audit metadata
+            // beside events the wire already carries in prose — the backgrounding
+            // result and the exit notification. It projects to nothing, so a
+            // spawn or an exit mid-session cannot move the cached prefix
+            // (docs/log-and-projection.md).
+            Payload::ProcessEvent(_) => {}
+            // A grant (docs/permissions.md) is audit-only too — its *effect* reaches
+            // the model through the classifier (the policy fold), never the
+            // transcript. So it projects to nothing, and appending one cannot perturb
+            // the cached prefix (docs/log-and-projection.md).
+            Payload::ConfigEdit(_) => {}
+            // The boot preamble snapshot (docs/context.md) is replay/audit data:
+            // the system prompt rides the request's preamble slot, never the turn
+            // list, so the snapshot projects to nothing.
+            Payload::Preamble { .. } => {}
+            // A fork verdict emits a block per **pinned** notification and per
+            // **surfaced** context item at its own position — notification bodies
+            // looked up from the `Ambient` arrival (docs/inbox.md), surfaced items
+            // re-rendered from the boot listing (docs/redaction-fork.md). This
+            // tail-ward placement keeps the wire append-only: content acknowledged
+            // at a later gate than its origin never splices behind a breakpoint
+            // (docs/log-and-projection.md). Dismissed / left / already-surfaced
+            // dispositions don't project. The verdict is otherwise audit-only.
+            Payload::Triage(t) => {
+                let mut blocks: Vec<String> = t
+                    .inbox
+                    .iter()
+                    .filter(|(_, d)| matches!(d, Disposition::Pin))
+                    .filter_map(|(seq, _)| {
+                        notifications
+                            .get(seq)
+                            .map(|n| format!("⟢ {}: {}", n.source, n.body))
+                    })
+                    .collect();
+                // Surfaced context items — name resolved to its one-line description and
+                // read path off the listing. A name absent from the current listing (a
+                // cross-boot listing change) simply drops: deterministic, never a panic.
+                blocks.extend(t.surfaced.iter().filter_map(|name| {
+                    listing.get(name.as_str()).map(|(description, path)| {
+                        format!("⟢ context · {name} may be relevant: {description} — read {path}")
+                    })
+                }));
+                if !blocks.is_empty() {
+                    flush(&mut pending, &mut turns);
+                    turns.push(WireTurn::text(blocks.join("\n")));
+                }
+            }
+        }
+    }
+
+    // Flush any boundaries whose upto is past the end of the log (degenerate
+    // edge: consolidate called with nothing after it yet).
+    while boundary_cursor < boundaries.len() {
+        flush(&mut pending, &mut turns);
+        turns.push(WireTurn::text(boundaries[boundary_cursor].summary.clone()));
+        boundary_cursor += 1;
+    }
+
+    flush(&mut pending, &mut turns);
+    turns
+}

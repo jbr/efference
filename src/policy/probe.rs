@@ -82,14 +82,14 @@ impl ProbeLedger {
 /// when it ran. `role` is the effective config the grant check for the `cd` target reads.
 pub fn probe_ledger(role: &Config, log: &[LogEntry]) -> ProbeLedger {
     // call_id → the bash command it ran, so a `Spot` can recover the command it judged.
-    let mut command_of: HashMap<&crate::log::CallId, &str> = HashMap::new();
+    let mut command_of: HashMap<crate::log::CallId, String> = HashMap::new();
     for entry in log {
-        if let Payload::Assistant { calls, .. } = &entry.payload {
-            for call in calls {
+        if let Payload::Assistant { output, .. } = &entry.payload {
+            for call in output.tool_calls().unwrap_or_default() {
                 if call.name == bash::NAME
                     && let Some(cmd) = call.input.get("command").and_then(Value::as_str)
                 {
-                    command_of.insert(&call.id, cmd);
+                    command_of.insert(call.id, cmd.to_string());
                 }
             }
         }

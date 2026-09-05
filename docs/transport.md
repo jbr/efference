@@ -30,8 +30,9 @@ live network connection.
 | `ping` | keepalive; no-op |
 | `error` | in-stream error (e.g. `overloaded_error` after a 200); stops assembly, body preserved as the completion's `upstream_failure` |
 
-**Reassembly.** `finish()` collapses the accumulated blocks into a
-`Payload::Assistant { text, calls }`. Tool input is the non-trivial part: the
+**Reassembly.** `finish()` emits the accumulated blocks, in stream order, as
+`Payload::Assistant { output: AssistantOutput::Messages(blocks) }`
+([log-and-projection.md](log-and-projection.md)). Tool input is the non-trivial part: the
 API splits a `tool_use` block's JSON across arbitrarily many `input_json_delta`
 fragments. The assembler concatenates every raw fragment and parses the whole
 once the block closes. An empty accumulator (no fragments received) produces
@@ -112,11 +113,10 @@ field and an explicit `null` to zero.
 
 Extended thinking is supported end-to-end. The assembler folds streamed
 `thinking` / `redacted_thinking` blocks (and their `thinking_delta` /
-`signature_delta` deltas) into leading `ContentBlock::Thinking { text,
-signature }` / `RedactedThinking { data }` on the assistant turn; `project`
-renders them as the first wire blocks (`thinking` → `text` → `tool_use`),
-signatures preserved verbatim because the API rejects a modified block on
-replay. Same-model replay only ever happens (the model is locked per session),
+`signature_delta` deltas) into `MessagesOutputBlock::Thinking { text,
+signature }` / `RedactedThinking { data }` at their stream position in the
+assistant turn; `project` renders the blocks in that same order, signatures
+preserved verbatim because the API rejects a modified block on replay. Same-model replay only ever happens (the model is locked per session),
 so a signature always returns to the model that minted it.
 
 The `thinking` **request** field rides on `tool_choice`, the model family, and
@@ -519,15 +519,80 @@ process without bound — the durable record is the log, not the queue.
 ---
 
 
+## The Responses dialect
+
+A provider speaks one of two wire dialects (`api::WireDialect`), fixed by the
+declared provider: Anthropic and OpenRouter speak **Messages** (everything above);
+OpenAI speaks **Responses** (`POST /v1/responses`). There is no independent knob —
+one session projects and assembles in exactly one dialect, and `Client::complete`
+dispatches on it after encoding the shared semantic turns
+([log-and-projection.md](log-and-projection.md)).
+
+**Request** (`api/responses.rs`, `ResponsesRequest`; field order pinned by
+`responses_envelope_matches_expected_wire_bytes`). `input[]` is the encoded turn
+list: the preamble as a leading developer message (a breakpoint-eligible carrier,
+which top-level `instructions` is not), user prose as `input_text` parts, each tool
+result as a `function_call_output` keyed by `call_id` (bare string, or parts when
+images ride along as `data:` URLs), and every logged Responses assistant item
+replayed as returned — `reasoning` with its `encrypted_content`, `message` with its
+`phase`, `function_call` with its exact `arguments` string. `store: false` (the log
+is the only history; encrypted reasoning arrives by default in stateless mode),
+`truncation: disabled` (a history change is the harness's decision),
+`parallel_tool_calls: false` (one call per turn), `tools[]` as `function` entries
+with `strict: false` built from the same `{name, description, input_schema}`
+definitions Messages sends, `tool_choice` as `auto` or `{type: function, name}`,
+`max_output_tokens` from the same reservation as `max_tokens`, `reasoning: {effort,
+summary: auto}` when the model reports reasoning, `prompt_cache_key` carrying the
+sticky session id, and `prompt_cache_options: {mode: explicit}` plus the encoded
+`prompt_cache_breakpoint` marker when the model's cache policy is explicit. No
+`anthropic-version` header rides this dialect; auth is `authorization: Bearer`.
+
+**Stream** (`api/responses/assembler.rs`). Events are typed by the `type` field
+of each body. Deltas feed the live view with the `output_index` as the block
+index: `output_text.delta` → prose, `reasoning_summary_text.delta` /
+`reasoning_text.delta` → thinking, `output_item.added` for a `function_call` →
+tool start (its `call_id`, the join key), `function_call_arguments.delta` → tool
+input. The committed turn is the terminal event's `response.output`
+(`response.completed` / `response.incomplete`), which carries every item whole —
+an `output_item.added` reasoning item's `encrypted_content` may be partial, the
+terminal copy is complete. `output_item.done` items are held in case a terminal
+event never arrives. Every other event type is ignored under one rule: no
+semantic output depends on an intermediate event, because the terminal `output`
+carries all of it. `error` ends assembly; a stream with no terminal event is a
+record-only partial, exactly as a Messages stream with no `message_stop`.
+
+Items are lifted into the log's `ResponsesOutputItem` vocabulary
+(`api/responses/wire.rs`): `reasoning`, `message` (assistant role only),
+`function_call`; anything else is kept whole as `Unsupported`, and a turn holding
+one is record-only — never dispatched, never replayed. Unparseable
+`function_call.arguments` are kept as the string and make the turn record-only
+too. The stop reason is normalized to the Messages spellings the loop reads:
+`completed` → `tool_use` / `end_turn`, `incomplete` at `max_output_tokens` →
+`max_tokens` (a call cut there stays undispatched), other `incomplete` reasons
+pass through.
+
+**Usage.** Responses `input_tokens` is the whole prompt, cached and written tokens
+included; the harness's `Usage` splits input three ways so every consumer's sum is
+the prompt total. The assembler restates it: `input_tokens = input − cached −
+cache_write`, `cache_read_input_tokens = cached_tokens`,
+`cache_creation_input_tokens = cache_write_tokens`.
+
+**Not on this dialect.** The `max_tokens: 0` keepalive is a Messages primitive; the
+daemon never starts the loop on Responses (backlog: openai-provider/validation.md).
+OpenAI exposes no per-generation cost endpoint, so cost tracking stays off. The
+spotter model must be one the compiled OpenAI catalog knows (`--spotter-model`);
+the Haiku default is rejected at boot.
+
 ## Providers
 
-The request **body** is always the Anthropic Messages wire — `project(log)`
-output — so the entire log, projection, assembler, and cache-breakpoint
-model are provider-independent. What varies between providers is **where** the
-POST goes, **how** it authenticates, and **which metadata endpoint** answers
-questions about the selected model. All three derive from one declared
-identity: `api::Provider`, a closed enum (`anthropic`, `openrouter`) set by
-`EFFERENCE_PROVIDER` and grown in code as providers are added. Identity is an
+The request **body** is the dialect's encoding of the shared semantic projection —
+Messages for Anthropic and OpenRouter, Responses for OpenAI — so the log, the
+semantic fold, and the cache-frontier model are provider-independent. What varies
+between providers is the **dialect**, **where** the POST goes, **how** it
+authenticates, and **which metadata source** answers questions about the selected
+model. All derive from one declared identity: `api::Provider`, a closed enum
+(`anthropic`, `openrouter`, `openai`) set by `EFFERENCE_PROVIDER` and grown in
+code as providers are added. Identity is an
 input, never inferred from URL shape (sniffing fails for proxies and custom
 URLs). `api::Endpoint` carries the derived `url` + `auth_header` + `auth_value`
 alongside the provider, resolved once at boot and shared by the agent `Client`
@@ -536,9 +601,9 @@ cached prefix.
 
 Env knobs:
 
-- `EFFERENCE_PROVIDER` — `anthropic` (the default when unset) or `openrouter`.
-  An unrecognized value is a hard error naming the valid ones, never a silent
-  fallback to a host the key doesn't belong to.
+- `EFFERENCE_PROVIDER` — `anthropic` (the default when unset), `openrouter`, or
+  `openai`. An unrecognized value is a hard error naming the valid ones, never a
+  silent fallback to a host the key doesn't belong to.
 - `EFFERENCE_API_KEY` — the **raw secret**, and nothing else. The auth header
   name and any scheme prefix come from the provider (`x-api-key` for Anthropic;
   `authorization` + `"Bearer "` for OpenRouter), so the secret stays a **whole
@@ -546,9 +611,15 @@ Env knobs:
   substitutes an `op://…` reference that is the entire value, never one
   embedded mid-string).
 - `ANTHROPIC_API_KEY` — fallback secret for the Anthropic provider only. Under
-  `openrouter` it is rejected at resolve with a message naming
+  `openrouter` or `openai` it is rejected at resolve with a message naming
   `EFFERENCE_API_KEY`: an Anthropic key is the wrong credential there, and the
   early error beats a confusing 401.
+
+**OpenAI capabilities** come from a compiled catalog (`api/provider/openai.rs`)
+rather than a metadata GET: the Models endpoint reports none of the limits the
+boot path consumes. Entries are exact — `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`,
+`gpt-5.6-luna` today — and an unknown model fails boot rather than inheriting a
+family's limits.
 
 **Sticky routing (`x-session-id`).** OpenRouter routes a model slug to *some*
 upstream provider and keeps a conversation on one of them so the prompt cache

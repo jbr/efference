@@ -6,9 +6,11 @@ use crate::client::ContinueOutcome;
 /// An assistant turn with prose and no calls — a finished turn's wire tail.
 fn assistant_text(text: &str) -> Payload {
     Payload::Assistant {
-        thinking: vec![],
-        text: vec![ContentBlock::Text(text.into())],
-        calls: vec![],
+        output: crate::log::AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![ContentBlock::Text(text.into())],
+            vec![],
+        ),
         upstream_failure: None,
     }
 }
@@ -16,13 +18,15 @@ fn assistant_text(text: &str) -> Payload {
 /// An assistant turn carrying one unanswered tool call.
 fn assistant_calling(call_id: &str) -> Payload {
     Payload::Assistant {
-        thinking: vec![],
-        text: vec![],
-        calls: vec![ToolCall {
-            id: CallId(call_id.into()),
-            name: crate::bash::NAME.into(),
-            input: serde_json::json!({ "command": "ls" }),
-        }],
+        output: crate::log::AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![],
+            vec![ToolCall {
+                id: CallId(call_id.into()),
+                name: crate::bash::NAME.into(),
+                input: serde_json::json!({ "command": "ls" }),
+            }],
+        ),
         upstream_failure: None,
     }
 }
@@ -46,9 +50,7 @@ fn tool_result(call_id: &str) -> Payload {
 /// the tail looks like to the continue precondition.
 fn aborted_attempt() -> Payload {
     Payload::Assistant {
-        thinking: vec![],
-        text: vec![],
-        calls: vec![],
+        output: crate::log::AssistantOutput::Messages(vec![]),
         upstream_failure: Some("stream aborted".into()),
     }
 }

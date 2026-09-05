@@ -7,13 +7,15 @@ use std::path::Path;
 fn spot_completion(name: &str, input: Value) -> Completion {
     Completion {
         assistant: Payload::Assistant {
-            thinking: vec![],
-            text: vec![],
-            calls: vec![ToolCall {
-                id: CallId("s".into()),
-                name: name.into(),
-                input,
-            }],
+            output: crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall {
+                    id: CallId("s".into()),
+                    name: name.into(),
+                    input,
+                }],
+            ),
             upstream_failure: None,
         },
         id: None,

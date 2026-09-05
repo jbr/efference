@@ -1,6 +1,16 @@
 use super::*;
 use crate::api::Usage;
 use crate::log::{CallId, Triage};
+use crate::project::{ApiBlock, ApiMessage, Role, encode_messages, project_with};
+
+/// The Messages-wire view of a fork tail, for assertions written against blocks.
+fn wire(turns: &[WireTurn]) -> Vec<ApiMessage> {
+    encode_messages(
+        turns,
+        ImagePlacement::default(),
+        BreakpointPlacement::default(),
+    )
+}
 
 fn lines(s: &str) -> Vec<&str> {
     s.lines().collect()
@@ -16,13 +26,15 @@ const CALL_ID: &str = "toolu_x";
 fn retain_completion(name: &str, input: Value) -> Completion {
     Completion {
         assistant: Payload::Assistant {
-            thinking: vec![],
-            text: vec![],
-            calls: vec![ToolCall {
-                id: CallId("r".into()),
-                name: name.into(),
-                input,
-            }],
+            output: AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall {
+                    id: CallId("r".into()),
+                    name: name.into(),
+                    input,
+                }],
+            ),
             upstream_failure: None,
         },
         id: None,
@@ -181,13 +193,7 @@ fn parse_retain_is_none_without_a_retain_call() {
 #[test]
 fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
     let completion = retain_completion("bash", json!({"command": "ls"}));
-    let mut messages = vec![ApiMessage {
-        role: Role::User,
-        content: vec![ApiBlock::Text {
-            text: "the peek tail".into(),
-            cache_control: None,
-        }],
-    }];
+    let mut messages = vec![WireTurn::text("the peek tail")];
     let why = unusable(&completion, RETAIN);
     assert!(extend_with_retry(
         &mut messages,
@@ -196,6 +202,7 @@ fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
         RETAIN
     ));
     assert_eq!(messages.len(), 3, "assistant turn + reply appended");
+    let messages = wire(&messages);
 
     let assistant = &messages[1];
     assert_eq!(assistant.role, Role::Assistant);
@@ -234,9 +241,11 @@ fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
 fn a_prose_only_response_retries_with_just_the_renewed_ask() {
     let completion = Completion {
         assistant: Payload::Assistant {
-            thinking: vec![],
-            text: vec![crate::log::ContentBlock::Text("hmm, let me think".into())],
-            calls: vec![],
+            output: AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![crate::log::ContentBlock::Text("hmm, let me think".into())],
+                vec![],
+            ),
             upstream_failure: None,
         },
         id: None,
@@ -257,6 +266,7 @@ fn a_prose_only_response_retries_with_just_the_renewed_ask() {
         TRIAGE
     ));
     assert_eq!(messages.len(), 2);
+    let messages = wire(&messages);
     assert!(
         matches!(&messages[1].content[..], [ApiBlock::Text { text, .. }] if text.contains("Call `triage` now"))
     );
@@ -267,9 +277,7 @@ fn a_prose_only_response_retries_with_just_the_renewed_ask() {
 #[test]
 fn an_empty_response_is_terminal_not_an_invalid_retry() {
     let empty = Payload::Assistant {
-        thinking: vec![],
-        text: vec![],
-        calls: vec![],
+        output: AssistantOutput::Messages(vec![]),
         upstream_failure: None,
     };
     let mut messages = Vec::new();
@@ -601,9 +609,7 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
         entry(
             2,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: calls.clone(),
+                output: AssistantOutput::from_legacy_messages(vec![], vec![], calls.clone()),
                 upstream_failure: None,
             },
         ),
@@ -628,15 +634,7 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
         .map(|(call, raw)| Pending { call, raw })
         .collect();
 
-    let messages = peek_messages(
-        &prefix,
-        &pending,
-        &[],
-        &[],
-        &[],
-        ImagePlacement::default(),
-        BreakpointPlacement::default(),
-    );
+    let messages = wire(&peek_messages(&prefix, &pending, &[], &[], &[]));
     let tail = messages.last().expect("a tail message");
     assert_eq!(tail.role, Role::User);
 
@@ -1089,9 +1087,7 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
         entry(
             2,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: calls.to_vec(),
+                output: AssistantOutput::from_legacy_messages(vec![], vec![], calls.to_vec()),
                 upstream_failure: None,
             },
         ),
@@ -1108,15 +1104,7 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
     );
     assert_eq!(offered_ids(&pending), vec!["read_2".to_string()]);
 
-    let messages = peek_messages(
-        &prefix,
-        &pending,
-        &[],
-        &[],
-        &[],
-        ImagePlacement::default(),
-        BreakpointPlacement::default(),
-    );
+    let messages = wire(&peek_messages(&prefix, &pending, &[], &[], &[]));
     let tail = messages.last().expect("a tail message");
     let blocks: Vec<(&str, &str)> = tail
         .content
@@ -1170,9 +1158,11 @@ fn a_bypassed_result_reaches_the_wire_verbatim() {
         entry(
             2,
             Payload::Assistant {
-                thinking: vec![],
-                text: vec![],
-                calls: vec![call("write_1", "write")],
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![call("write_1", "write")],
+                ),
                 upstream_failure: None,
             },
         ),
@@ -1214,9 +1204,11 @@ fn peek_thinking_joins_thinking_text_only() {
     use crate::log::ContentBlock;
 
     let assistant = |thinking: Vec<ContentBlock>| Payload::Assistant {
-        thinking,
-        text: vec![ContentBlock::Text("prose the gate never reads".into())],
-        calls: Vec::new(),
+        output: AssistantOutput::from_legacy_messages(
+            thinking,
+            vec![ContentBlock::Text("prose the gate never reads".into())],
+            Vec::new(),
+        ),
         upstream_failure: None,
     };
 

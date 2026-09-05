@@ -23,7 +23,7 @@ use crate::api::{Client, Endpoint, RequestUsage};
 use crate::bash;
 use crate::config::Config;
 use crate::log::{Origin, Stance, ToolCall};
-use crate::project::{ApiBlock, ApiMessage, CacheControl, Role as ApiRole};
+use crate::project::{UserPart, WireTurn};
 use crate::tools::ToolBrief;
 use mcplease::types::Tool as ToolDefinition;
 
@@ -171,32 +171,24 @@ impl Spotter for ForkSpot {
         // block: the move (plus the optional promotion probe — it rides the fresh tail, so it never
         // perturbs the cached prefix, docs/log-and-projection.md). The persona (system) + the cached block are
         // the prefix; only the move is rewritten each call (docs/permissions.md).
-        let messages = vec![ApiMessage {
-            role: ApiRole::User,
-            content: vec![
-                ApiBlock::Text {
-                    text: render_context(
-                        role,
-                        self.cwd
-                            .clone()
-                            .or_else(|| std::env::current_dir().ok())
-                            .as_deref(),
-                        self.scratch.as_deref(),
-                    ),
-                    cache_control: Some(CacheControl::Ephemeral),
-                },
-                ApiBlock::Text {
-                    text: render_move(call, brief, probe),
-                    cache_control: None,
-                },
-            ],
-        }];
+        let turns = vec![WireTurn::User(vec![
+            UserPart::Text(render_context(
+                role,
+                self.cwd
+                    .clone()
+                    .or_else(|| std::env::current_dir().ok())
+                    .as_deref(),
+                self.scratch.as_deref(),
+            )),
+            UserPart::Breakpoint,
+            UserPart::Text(render_move(call, brief, probe)),
+        ])];
 
         // No-op sink: the spotter's tokens are internal and must never surface on        // the control stream (mirrors the fork peek).
         match self
             .client
             .complete(
-                &messages,
+                &turns,
                 &[spot_tool()],
                 crate::api::ToolChoice::force(SPOT),
                 |_| {},
@@ -567,9 +559,10 @@ struct SpotInput {
 /// Pull the spotter verdict out of the completion. `None` when the turn didn't call
 /// `spot` (or called something else) — the caller then fails closed.
 fn parse_spot(completion: &crate::api::Completion) -> Option<Read> {
-    let crate::log::Payload::Assistant { calls, .. } = &completion.assistant else {
+    let crate::log::Payload::Assistant { output, .. } = &completion.assistant else {
         return None;
     };
+    let calls = output.tool_calls().ok()?;
     let call = calls.iter().find(|c| c.name == SPOT)?;
     let SpotInput { stance, reason } = SpotInput::deserialize(&call.input).ok()?;
     Some(Read {

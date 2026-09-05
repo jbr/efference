@@ -55,8 +55,8 @@ fn diagnostics_round_trip() {
 #[test]
 fn an_assistant_entry_round_trips_from_either_spelling() {
     for json in [
-        r#"{"seq":7,"turn":2,"at":1,"payload":{"Assistant":{"thinking":[],"text":[],"calls":[],"upstream_failure":"stream aborted"}}}"#,
-        r#"{"seq":7,"turn":2,"at":1,"payload":{"Assistant":{"thinking":[],"text":[],"calls":[],"upstream_failure":{"why":"stream aborted","stream":{"status":200}}}}}"#,
+        r#"{"seq":7,"turn":2,"at":1,"payload":{"Assistant":{"output":{"Messages":[]},"upstream_failure":"stream aborted"}}}"#,
+        r#"{"seq":7,"turn":2,"at":1,"payload":{"Assistant":{"output":{"Messages":[]},"upstream_failure":{"why":"stream aborted","stream":{"status":200}}}}}"#,
     ] {
         let entry: crate::log::LogEntry = serde_json::from_str(json).unwrap();
         let Payload::Assistant {

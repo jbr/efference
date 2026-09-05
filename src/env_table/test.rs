@@ -520,34 +520,38 @@ fn every_text_bearing_payload_path_is_masked() {
     assert!(!raw.content.contains("leaked-secret-value"));
 
     let mut assistant = Payload::Assistant {
-        thinking: vec![ContentBlock::Thinking {
-            text: leak(),
-            signature: "sig".into(),
-        }],
-        text: vec![ContentBlock::Text(leak())],
-        calls: vec![crate::log::ToolCall {
-            id: crate::log::CallId("toolu_2".into()),
-            name: "bash".into(),
-            input: serde_json::json!({ "command": leak() }),
-        }],
+        output: crate::log::AssistantOutput::from_legacy_messages(
+            vec![ContentBlock::Thinking {
+                text: leak(),
+                signature: "sig".into(),
+            }],
+            vec![ContentBlock::Text(leak())],
+            vec![crate::log::ToolCall {
+                id: crate::log::CallId("toolu_2".into()),
+                name: "bash".into(),
+                input: serde_json::json!({ "command": leak() }),
+            }],
+        ),
         upstream_failure: Some(leak().into()),
     };
     masker.mask_payload(&mut assistant);
     let Payload::Assistant {
-        thinking,
-        text,
-        calls,
+        output,
         upstream_failure,
     } = &assistant
     else {
         unreachable!()
     };
-    let ContentBlock::Text(text) = &text[0] else {
+    let blocks = output.messages().unwrap();
+    let crate::log::MessagesOutputBlock::Text(text) = &blocks[1] else {
+        unreachable!()
+    };
+    let crate::log::MessagesOutputBlock::ToolUse(call) = &blocks[2] else {
         unreachable!()
     };
     assert!(!text.contains("leaked-secret-value"));
     assert!(
-        !calls[0].input["command"]
+        !call.input["command"]
             .as_str()
             .unwrap()
             .contains("leaked-secret-value")
@@ -561,7 +565,7 @@ fn every_text_bearing_payload_path_is_masked() {
     );
     // The documented exception: a thinking block carries a provider signature over
     // its exact text, and a modified block is rejected on replay.
-    let ContentBlock::Thinking { text, .. } = &thinking[0] else {
+    let crate::log::MessagesOutputBlock::Thinking { text, .. } = &blocks[0] else {
         unreachable!()
     };
     assert!(text.contains("leaked-secret-value"));
@@ -600,9 +604,7 @@ fn captured_stream_diagnostics_are_masked() {
     let leak = || "before leaked-secret-value after".to_string();
 
     let mut payload = Payload::Assistant {
-        thinking: Vec::new(),
-        text: Vec::new(),
-        calls: Vec::new(),
+        output: crate::log::AssistantOutput::Messages(Vec::new()),
         upstream_failure: Some(crate::log::UpstreamFailureRecord {
             why: "stream finalized with no content and no usage".into(),
             stream: Some(crate::log::StreamDiagnostics {

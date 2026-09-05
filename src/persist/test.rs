@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{CallId, ContentBlock, RawResult, ToolCall, WireState};
+use crate::log::{AssistantOutput, CallId, ContentBlock, RawResult, ToolCall, WireState};
 use crate::project::project;
 use serde_json::json;
 
@@ -9,13 +9,15 @@ fn sample(log: &mut Log) {
     log.append(
         1,
         Payload::Assistant {
-            thinking: vec![],
-            text: vec![ContentBlock::Text("let me check".into())],
-            calls: vec![ToolCall {
-                id: CallId("toolu_1".into()),
-                name: "bash".into(),
-                input: json!({ "command": "ls", "timeout": 5 }),
-            }],
+            output: AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text("let me check".into())],
+                vec![ToolCall {
+                    id: CallId("toolu_1".into()),
+                    name: "bash".into(),
+                    input: json!({ "command": "ls", "timeout": 5 }),
+                }],
+            ),
             upstream_failure: None,
         },
     )
