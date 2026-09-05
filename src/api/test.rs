@@ -2253,6 +2253,7 @@ async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
         auth_header: "x-api-key".into(),
         auth_value: "k".into(),
         session_id: None,
+        extra_headers: Vec::new(),
     };
     let client = Client::new(endpoint, "m", "sys", None)
         .with_stream_ceiling(std::time::Duration::from_millis(200));
@@ -2304,6 +2305,7 @@ async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
         auth_header: "authorization".into(),
         auth_value: "Bearer k".into(),
         session_id: None,
+        extra_headers: Vec::new(),
     };
     let client = Client::new(endpoint, "m", "sys", None);
     let completion = client
@@ -2419,6 +2421,7 @@ async fn only_the_shared_turn_envelope_carries_the_effort() {
             auth_header: "x-api-key".into(),
             auth_value: "k".into(),
             session_id: None,
+            extra_headers: Vec::new(),
         };
         let client = Client::new(endpoint, "claude-opus-5", "sys", None)
             .with_effort(effort.map(String::from));
@@ -2518,6 +2521,7 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
             auth_header: "x-api-key".into(),
             auth_value: "k".into(),
             session_id: None,
+            extra_headers: Vec::new(),
         };
         let client = Client::new(endpoint, "m", "sys", None);
         if sse {

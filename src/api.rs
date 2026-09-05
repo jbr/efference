@@ -329,7 +329,7 @@ pub use diagnostics::{
 };
 pub use endpoint::{Endpoint, sticky_session_id};
 pub use provider::{
-    ModelCapabilities, OUTPUT_FLOOR, PromptCachePolicy, Provider, WireDialect,
+    ModelCapabilities, OUTPUT_FLOOR, PromptCachePolicy, Provider, ResponsesProfile, WireDialect,
     openai_model_capabilities,
 };
 pub use render::{

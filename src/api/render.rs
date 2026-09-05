@@ -94,13 +94,15 @@ pub fn render_responses_request_pretty(
 ) -> Result<String, Error> {
     let request = responses::ResponsesRequest {
         model,
+        instructions: None,
         input: responses::encode_responses(turns, system, cache),
         tools: responses::tool_definitions(tools),
         tool_choice: responses::tool_choice_value(&tool_choice),
         parallel_tool_calls: false,
         store: false,
-        truncation: "disabled",
-        max_output_tokens: MAX_TOKENS,
+        include: None,
+        truncation: Some("disabled"),
+        max_output_tokens: Some(MAX_TOKENS),
         reasoning: None,
         temperature: None,
         prompt_cache_key: None,

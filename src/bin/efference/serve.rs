@@ -507,7 +507,7 @@ pub(crate) async fn serve(
     // The spotter shares the endpoint, so its model must be one the provider serves:
     // the Haiku default is meaningless on OpenAI, and the catalog is the check the
     // main model already passed (docs/transport.md).
-    if endpoint.provider == efference::api::Provider::OpenAI
+    if endpoint.provider.uses_openai_catalog()
         && let Err(e) = efference::api::openai_model_capabilities(spotter_model)
     {
         return Err(format!("--spotter-model {spotter_model:?}: {e}").into());

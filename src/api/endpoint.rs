@@ -41,6 +41,42 @@ pub struct Endpoint {
     ///
     /// [`session_header`]: Provider::session_header
     pub session_id: Option<String>,
+    /// Provider-specific identity headers beyond auth — the Codex backend's
+    /// `ChatGPT-Account-ID`. Empty for every other provider.
+    pub extra_headers: Vec<(String, String)>,
+}
+
+/// Where Codex CLI caches its OAuth tokens: `$CODEX_HOME/auth.json`, default
+/// `~/.codex/auth.json`. Read, never written — refresh is Codex CLI's job.
+fn codex_auth_path() -> Option<std::path::PathBuf> {
+    if let Ok(home) = std::env::var("CODEX_HOME") {
+        return Some(std::path::PathBuf::from(home).join("auth.json"));
+    }
+    std::env::home_dir().map(|home| home.join(".codex").join("auth.json"))
+}
+
+/// The access token and account id from Codex CLI's cache.
+fn codex_cached_credentials() -> Result<(String, String), Error> {
+    let path = codex_auth_path().ok_or("no home directory to find ~/.codex/auth.json in")?;
+    let text = std::fs::read_to_string(&path).map_err(|e| -> Error {
+        format!(
+            "EFFERENCE_PROVIDER=openai-codex reads {}: {e}. Run `codex login` first, or set \
+             EFFERENCE_API_KEY (the access token) and EFFERENCE_CHATGPT_ACCOUNT_ID",
+            path.display()
+        )
+        .into()
+    })?;
+    let json: serde_json::Value = serde_json::from_str(&text)?;
+    let tokens = json.get("tokens").unwrap_or(&json);
+    let token = tokens
+        .get("access_token")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("{}: no tokens.access_token", path.display()))?;
+    let account = tokens
+        .get("account_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("{}: no tokens.account_id", path.display()))?;
+    Ok((token.to_string(), account.to_string()))
 }
 
 /// The cap OpenRouter puts on a session key. `--name` is arbitrary user input,
@@ -169,8 +205,31 @@ impl Endpoint {
                 .into());
             }
         }
+        let provider = read("EFFERENCE_PROVIDER");
+        if Provider::parse(provider.as_deref())? == Provider::OpenAICodex {
+            let (token, account) = match (
+                read("EFFERENCE_API_KEY"),
+                read("EFFERENCE_CHATGPT_ACCOUNT_ID"),
+            ) {
+                (Some(token), Some(account)) => (token, account),
+                (Some(_), None) => {
+                    return Err(
+                        "EFFERENCE_PROVIDER=openai-codex with EFFERENCE_API_KEY also \
+                                needs EFFERENCE_CHATGPT_ACCOUNT_ID (or unset both to read \
+                                ~/.codex/auth.json)"
+                            .into(),
+                    );
+                }
+                (None, _) => codex_cached_credentials()?,
+            };
+            let mut endpoint = Self::resolve(provider, Some(token), None)?;
+            endpoint
+                .extra_headers
+                .push(("ChatGPT-Account-ID".to_string(), account));
+            return Ok(endpoint);
+        }
         Self::resolve(
-            read("EFFERENCE_PROVIDER"),
+            provider,
             read("EFFERENCE_API_KEY"),
             read("ANTHROPIC_API_KEY"),
         )
@@ -202,6 +261,14 @@ impl Endpoint {
                         .into(),
                 );
             }
+            (Provider::OpenAICodex, None, Some(_)) => {
+                return Err(
+                    "EFFERENCE_PROVIDER=openai-codex needs a Codex access token \
+                            (from ~/.codex/auth.json or EFFERENCE_API_KEY); ANTHROPIC_API_KEY \
+                            is the wrong credential"
+                        .into(),
+                );
+            }
             (_, None, None) => {
                 return Err("no API credentials: set EFFERENCE_API_KEY (with \
                             EFFERENCE_PROVIDER=anthropic|openrouter|openai), or ANTHROPIC_API_KEY \
@@ -215,6 +282,7 @@ impl Endpoint {
             auth_header: provider.auth_header().to_string(),
             auth_value: format!("{}{}", provider.auth_prefix(), key),
             session_id: None,
+            extra_headers: Vec::new(),
         })
     }
 

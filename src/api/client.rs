@@ -482,7 +482,12 @@ impl Client {
                 self.breakpoint_placement(),
             )),
             WireDialect::Responses => {
-                Encoded::Responses(encode_responses(turns, &self.system, self.prompt_cache))
+                let preamble = match self.endpoint.provider.responses_profile() {
+                    ResponsesProfile::Platform => self.system.as_str(),
+                    // Rides `instructions` instead (docs/transport.md).
+                    ResponsesProfile::Codex => "",
+                };
+                Encoded::Responses(encode_responses(turns, preamble, self.prompt_cache))
             }
         };
         // The prompt's variable parts, sized before `max_tokens` is chosen: the
@@ -655,6 +660,13 @@ impl Client {
             }
             WireDialect::Responses => conn,
         };
+        let conn = self
+            .endpoint
+            .extra_headers
+            .iter()
+            .fold(conn, |conn, (name, value)| {
+                conn.with_request_header(name.clone(), value.clone())
+            });
         self.with_attribution(self.with_session_id(conn))
     }
 
@@ -666,26 +678,50 @@ impl Client {
         tool_choice: &ToolChoice,
         max_output_tokens: u32,
     ) -> responses::ResponsesRequest<'a> {
-        responses::ResponsesRequest {
-            model: &self.model,
-            input,
-            tools: responses::tool_definitions(tools),
-            tool_choice: responses::tool_choice_value(tool_choice),
-            parallel_tool_calls: false,
-            store: false,
-            truncation: "disabled",
-            max_output_tokens,
-            reasoning: self.model_reasoning.then(|| responses::Reasoning {
-                effort: self.effort.clone(),
-                summary: "auto",
-            }),
-            temperature: self
-                .temperature
-                .map(|t| self.endpoint.provider.map_temperature(t)),
-            prompt_cache_key: self.prompt_cache_key(),
-            prompt_cache_options: (self.prompt_cache == PromptCachePolicy::Explicit)
-                .then_some(responses::PromptCacheOptions { mode: "explicit" }),
-            stream: true,
+        let reasoning = self.model_reasoning.then(|| responses::Reasoning {
+            effort: self.effort.clone(),
+            summary: "auto",
+        });
+        match self.endpoint.provider.responses_profile() {
+            ResponsesProfile::Platform => responses::ResponsesRequest {
+                model: &self.model,
+                instructions: None,
+                input,
+                tools: responses::tool_definitions(tools),
+                tool_choice: responses::tool_choice_value(tool_choice),
+                parallel_tool_calls: false,
+                store: false,
+                include: None,
+                truncation: Some("disabled"),
+                max_output_tokens: Some(max_output_tokens),
+                reasoning,
+                temperature: self
+                    .temperature
+                    .map(|t| self.endpoint.provider.map_temperature(t)),
+                prompt_cache_key: self.prompt_cache_key(),
+                prompt_cache_options: (self.prompt_cache == PromptCachePolicy::Explicit)
+                    .then_some(responses::PromptCacheOptions { mode: "explicit" }),
+                stream: true,
+            },
+            // What Codex CLI sends, and nothing it does not: the backend is
+            // undocumented, so an extra field is a guess at its tolerance.
+            ResponsesProfile::Codex => responses::ResponsesRequest {
+                model: &self.model,
+                instructions: Some(&self.system),
+                input,
+                tools: responses::tool_definitions(tools),
+                tool_choice: responses::tool_choice_value(tool_choice),
+                parallel_tool_calls: false,
+                store: false,
+                include: Some(vec!["reasoning.encrypted_content"]),
+                truncation: None,
+                max_output_tokens: None,
+                reasoning,
+                temperature: None,
+                prompt_cache_key: self.prompt_cache_key(),
+                prompt_cache_options: None,
+                stream: true,
+            },
         }
     }
 

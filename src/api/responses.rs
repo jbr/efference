@@ -23,6 +23,10 @@ use wire::{CacheBreakpoint, FunctionOutput, InputContent, InputItem, InputRole, 
 #[derive(Serialize)]
 pub(super) struct ResponsesRequest<'a> {
     pub model: &'a str,
+    /// The preamble, on the Codex profile only; the platform profile carries it
+    /// as a developer message inside `input` (docs/transport.md).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<&'a str>,
     pub input: Vec<InputItem>,
     /// Function tools in the Responses spelling ([`tool_definitions`]).
     pub tools: Vec<Value>,
@@ -33,10 +37,16 @@ pub(super) struct ResponsesRequest<'a> {
     /// Stateless replay: the log is the only history, and encrypted reasoning
     /// arrives by default when nothing is stored (docs/transport.md).
     pub store: bool,
+    /// Codex profile: `["reasoning.encrypted_content"]`, as Codex CLI sends.
+    /// Platform profile: omitted — stateless mode includes it by default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<&'static str>>,
     /// Never `auto`: a history change is the harness's decision, not the
-    /// provider's silent drop of leading items.
-    pub truncation: &'static str,
-    pub max_output_tokens: u32,
+    /// provider's silent drop of leading items. Omitted on the Codex profile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncation: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<Reasoning>,
     #[serde(skip_serializing_if = "Option::is_none")]

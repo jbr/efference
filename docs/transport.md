@@ -577,6 +577,19 @@ the prompt total. The assembler restates it: `input_tokens = input − cached �
 cache_write`, `cache_read_input_tokens = cached_tokens`,
 `cache_creation_input_tokens = cache_write_tokens`.
 
+**Two request profiles** (`api::ResponsesProfile`). The platform endpoint
+(`openai`) takes the full documented parameter set above. The Codex backend
+(`openai-codex`, `chatgpt.com/backend-api/codex/responses`) is undocumented and
+billed to a ChatGPT/Codex subscription, so that arm sends exactly what Codex CLI
+sends: the preamble as top-level `instructions` rather than a developer message,
+`include: ["reasoning.encrypted_content"]`, and no `max_output_tokens`,
+`truncation`, `temperature`, or `prompt_cache_options`. Auth is the OAuth access
+token Codex CLI caches in `~/.codex/auth.json` (`$CODEX_HOME` honoured) sent as
+`authorization: Bearer`, plus `ChatGPT-Account-ID` from the same file and an
+`originator: efference` header. efference reads that file and never writes it;
+refreshing an expired token is `codex login`'s job. `EFFERENCE_API_KEY` plus
+`EFFERENCE_CHATGPT_ACCOUNT_ID` override the file. Both profiles have a byte pin.
+
 **Not on this dialect.** The `max_tokens: 0` keepalive is a Messages primitive; the
 daemon never starts the loop on Responses (backlog: openai-provider/validation.md).
 OpenAI exposes no per-generation cost endpoint, so cost tracking stays off. The
@@ -591,8 +604,8 @@ semantic fold, and the cache-frontier model are provider-independent. What varie
 between providers is the **dialect**, **where** the POST goes, **how** it
 authenticates, and **which metadata source** answers questions about the selected
 model. All derive from one declared identity: `api::Provider`, a closed enum
-(`anthropic`, `openrouter`, `openai`) set by `EFFERENCE_PROVIDER` and grown in
-code as providers are added. Identity is an
+(`anthropic`, `openrouter`, `openai`, `openai-codex`) set by `EFFERENCE_PROVIDER`
+and grown in code as providers are added. Identity is an
 input, never inferred from URL shape (sniffing fails for proxies and custom
 URLs). `api::Endpoint` carries the derived `url` + `auth_header` + `auth_value`
 alongside the provider, resolved once at boot and shared by the agent `Client`
@@ -601,9 +614,9 @@ cached prefix.
 
 Env knobs:
 
-- `EFFERENCE_PROVIDER` — `anthropic` (the default when unset), `openrouter`, or
-  `openai`. An unrecognized value is a hard error naming the valid ones, never a
-  silent fallback to a host the key doesn't belong to.
+- `EFFERENCE_PROVIDER` — `anthropic` (the default when unset), `openrouter`,
+  `openai`, or `openai-codex`. An unrecognized value is a hard error naming the
+  valid ones, never a silent fallback to a host the key doesn't belong to.
 - `EFFERENCE_API_KEY` — the **raw secret**, and nothing else. The auth header
   name and any scheme prefix come from the provider (`x-api-key` for Anthropic;
   `authorization` + `"Bearer "` for OpenRouter), so the secret stays a **whole

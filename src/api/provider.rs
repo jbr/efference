@@ -42,6 +42,21 @@ pub enum Provider {
     /// capabilities from the compiled catalog in `provider/openai.rs` because
     /// the Models endpoint reports none of the limits the boot path consumes.
     OpenAI,
+    /// The Codex backend (`chatgpt.com/backend-api/codex/responses`): the same
+    /// Responses wire, billed to a ChatGPT/Codex subscription instead of the
+    /// platform balance. Auth is the OAuth access token Codex CLI caches in
+    /// `~/.codex/auth.json` plus its `ChatGPT-Account-ID`; the request shape
+    /// mirrors what Codex CLI sends ([`ResponsesProfile::Codex`]).
+    OpenAICodex,
+}
+
+/// Which Responses request shape a provider takes (docs/transport.md). The
+/// platform endpoint documents the full parameter set; the Codex backend is
+/// undocumented, so that arm sends only what Codex CLI itself sends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResponsesProfile {
+    Platform,
+    Codex,
 }
 
 impl Provider {
@@ -53,15 +68,28 @@ impl Provider {
     /// no levels, and the provider's own 400 on the first turn is the
     /// feedback for a misspelled one.
     pub fn validates_effort_levels(&self) -> bool {
-        matches!(self, Self::OpenRouter | Self::OpenAI)
+        matches!(self, Self::OpenRouter | Self::OpenAI | Self::OpenAICodex)
     }
 
     /// The wire dialect this provider speaks (docs/transport.md).
     pub fn dialect(&self) -> WireDialect {
         match self {
             Self::Anthropic | Self::OpenRouter => WireDialect::Messages,
-            Self::OpenAI => WireDialect::Responses,
+            Self::OpenAI | Self::OpenAICodex => WireDialect::Responses,
         }
+    }
+
+    /// The Responses request shape, for providers on that dialect.
+    pub fn responses_profile(&self) -> ResponsesProfile {
+        match self {
+            Self::OpenAICodex => ResponsesProfile::Codex,
+            Self::Anthropic | Self::OpenRouter | Self::OpenAI => ResponsesProfile::Platform,
+        }
+    }
+
+    /// Whether this provider's capabilities come from the compiled OpenAI catalog.
+    pub fn uses_openai_catalog(&self) -> bool {
+        matches!(self, Self::OpenAI | Self::OpenAICodex)
     }
 
     /// Parse the `EFFERENCE_PROVIDER` value. Unset defaults to [`Anthropic`];
@@ -75,10 +103,11 @@ impl Provider {
             Some("anthropic") => Ok(Self::Anthropic),
             Some("openrouter") => Ok(Self::OpenRouter),
             Some("openai") => Ok(Self::OpenAI),
+            Some("openai-codex" | "codex") => Ok(Self::OpenAICodex),
             Some(other) => Err(format!(
                 "EFFERENCE_PROVIDER={other:?} not recognized: valid values are \
-                 `anthropic`, `openrouter`, and `openai` (a new provider is a new enum \
-                 variant — docs/transport.md)"
+                 `anthropic`, `openrouter`, `openai`, and `openai-codex` (a new provider \
+                 is a new enum variant — docs/transport.md)"
             )
             .into()),
         }
@@ -99,7 +128,9 @@ impl Provider {
     /// the slug rather than the provider.
     pub fn image_placement(&self, model: &str) -> crate::project::ImagePlacement {
         match self {
-            Self::Anthropic | Self::OpenAI => crate::project::ImagePlacement::InToolResult,
+            Self::Anthropic | Self::OpenAI | Self::OpenAICodex => {
+                crate::project::ImagePlacement::InToolResult
+            }
             Self::OpenRouter if is_gemini(model) => {
                 crate::project::ImagePlacement::AfterInterposedTurn
             }
@@ -119,7 +150,9 @@ impl Provider {
         match self {
             // Responses places its own marker (`api/responses.rs`); the Messages
             // placement is unused there.
-            Self::Anthropic | Self::OpenAI => crate::project::BreakpointPlacement::TrailingBlock,
+            Self::Anthropic | Self::OpenAI | Self::OpenAICodex => {
+                crate::project::BreakpointPlacement::TrailingBlock
+            }
             Self::OpenRouter => crate::project::BreakpointPlacement::LastTextBlock,
         }
     }
@@ -132,6 +165,7 @@ impl Provider {
             Self::Anthropic => "anthropic",
             Self::OpenRouter => "openrouter",
             Self::OpenAI => "openai",
+            Self::OpenAICodex => "openai-codex",
         }
     }
     /// Map the session's 0–100 integer temperature to this provider's native
@@ -145,7 +179,7 @@ impl Provider {
         let v = (t as f64) / 100.0;
         match self {
             Self::Anthropic => v,
-            Self::OpenRouter | Self::OpenAI => v * 2.0,
+            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => v * 2.0,
         }
     }
 
@@ -155,6 +189,7 @@ impl Provider {
             Self::Anthropic => "https://api.anthropic.com/v1/messages",
             Self::OpenRouter => "https://openrouter.ai/api/v1/messages",
             Self::OpenAI => "https://api.openai.com/v1/responses",
+            Self::OpenAICodex => "https://chatgpt.com/backend-api/codex/responses",
         }
     }
 
@@ -162,7 +197,7 @@ impl Provider {
     pub(super) fn auth_header(&self) -> &'static str {
         match self {
             Self::Anthropic => "x-api-key",
-            Self::OpenRouter | Self::OpenAI => "authorization",
+            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => "authorization",
         }
     }
 
@@ -175,7 +210,7 @@ impl Provider {
     /// being ignored rather than rejected.
     pub(super) fn session_header(&self) -> Option<&'static str> {
         match self {
-            Self::Anthropic | Self::OpenAI => None,
+            Self::Anthropic | Self::OpenAI | Self::OpenAICodex => None,
             Self::OpenRouter => Some("x-session-id"),
         }
     }
@@ -197,6 +232,8 @@ impl Provider {
     pub(super) fn attribution(&self) -> &'static [(&'static str, &'static str)] {
         match self {
             Self::Anthropic | Self::OpenAI => &[],
+            // Codex CLI names itself with this header; the backend may key on it.
+            Self::OpenAICodex => &[("originator", "efference")],
             Self::OpenRouter => &[
                 // The app's identity in OpenRouter's rankings. Required: without
                 // it the other two headers do nothing.
@@ -219,7 +256,7 @@ impl Provider {
     pub(super) fn prompt_cache_key_field(&self) -> bool {
         match self {
             Self::Anthropic => false,
-            Self::OpenRouter | Self::OpenAI => true,
+            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => true,
         }
     }
 
@@ -229,7 +266,7 @@ impl Provider {
     pub(super) fn auth_prefix(&self) -> &'static str {
         match self {
             Self::Anthropic => "",
-            Self::OpenRouter | Self::OpenAI => "Bearer ",
+            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => "Bearer ",
         }
     }
 
@@ -248,8 +285,8 @@ impl Provider {
                     "https://openrouter.ai/api/v1/models/{author}/{slug}/endpoints"
                 ))
             }
-            Self::OpenAI => Err("OpenAI capabilities come from the compiled catalog, \
-                                 not a metadata URL"
+            Self::OpenAI | Self::OpenAICodex => Err("OpenAI capabilities come from the \
+                                                    compiled catalog, not a metadata URL"
                 .into()),
         }
     }
@@ -264,7 +301,7 @@ impl Provider {
     /// passes through to the provider's own validation.
     pub(super) fn effort_levels_url(&self, model: &str) -> Result<Option<String>, Error> {
         match self {
-            Self::Anthropic | Self::OpenAI => Ok(None),
+            Self::Anthropic | Self::OpenAI | Self::OpenAICodex => Ok(None),
             Self::OpenRouter => {
                 let (author, slug) = openrouter_slug(model)?;
                 Ok(Some(format!(
@@ -289,7 +326,9 @@ impl Provider {
         upstream: &[String],
     ) -> Result<ModelCapabilities, Error> {
         match self {
-            Self::OpenAI => Err("OpenAI capabilities come from the compiled catalog".into()),
+            Self::OpenAI | Self::OpenAICodex => {
+                Err("OpenAI capabilities come from the compiled catalog".into())
+            }
             Self::Anthropic => {
                 // `GET /v1/models/{id}`: `max_input_tokens` is the context
                 // window, `max_tokens` the output cap. Unknown fields are
@@ -508,7 +547,9 @@ impl Provider {
     pub(super) fn parse_model_entry(&self, body: &str) -> Result<EffortLevels, Error> {
         match self {
             Self::Anthropic => Err("Anthropic metadata names no effort levels".into()),
-            Self::OpenAI => Err("OpenAI effort levels come from the compiled catalog".into()),
+            Self::OpenAI | Self::OpenAICodex => {
+                Err("OpenAI effort levels come from the compiled catalog".into())
+            }
             Self::OpenRouter => {
                 // Same envelope as every other OpenRouter response: the entry
                 // sits under `data` (parse_capabilities parses the same
@@ -742,7 +783,7 @@ impl Endpoint {
         model: &str,
         upstream: &[String],
     ) -> Result<ModelCapabilities, Error> {
-        if self.provider == Provider::OpenAI {
+        if self.provider.uses_openai_catalog() {
             return openai_model_capabilities(model);
         }
         let url = self.provider.capabilities_url(model)?;
@@ -781,7 +822,7 @@ impl Endpoint {
             Provider::Anthropic => {
                 return Err("anthropic exposes no per-generation cost endpoint".into());
             }
-            Provider::OpenAI => {
+            Provider::OpenAI | Provider::OpenAICodex => {
                 return Err("openai exposes no per-generation cost endpoint".into());
             }
         };
