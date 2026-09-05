@@ -1545,7 +1545,7 @@ fn caps_with_effort_levels(
         max_output_tokens: None,
         supports_reasoning: true,
         supports_image_input: false,
-        supports_prompt_caching: true,
+        prompt_cache: PromptCachePolicy::Explicit,
         supported_efforts: levels.map(|l| l.iter().map(|s| s.to_string()).collect()),
         default_effort: default.map(String::from),
     }
@@ -1670,28 +1670,63 @@ fn prompt_caching_is_read_off_the_endpoint_metadata() {
             .parse_capabilities(&format!(r#"{{"data": {{"endpoints": {endpoints}}}}}"#), &[])
             .unwrap()
     };
-    assert!(
+    assert_eq!(
         caps(r#"[{"context_length": 1, "pricing": {"input_cache_read": "$0.1/M tokens"}}]"#)
-            .supports_prompt_caching,
-        "priced cache reads mean an explicit cache exists"
+            .prompt_cache,
+        PromptCachePolicy::Explicit,
     );
-    assert!(
-        caps(r#"[{"context_length": 1, "supports_implicit_caching": true}]"#)
-            .supports_prompt_caching,
-        "implicit caching needs no marker in the request"
+    assert_eq!(
+        caps(r#"[{"context_length": 1, "supports_implicit_caching": true}]"#).prompt_cache,
+        PromptCachePolicy::Implicit,
     );
-    assert!(
-        !caps(r#"[{"context_length": 1, "pricing": {"prompt": "$1/M tokens"}}]"#)
-            .supports_prompt_caching,
-        "an endpoint that prices no cache read has no cache to keep warm"
+    assert_eq!(
+        caps(
+            r#"[{"context_length": 1, "supports_implicit_caching": true,
+                  "pricing": {"input_cache_read": "$0.1/M tokens"}}]"#
+        )
+        .prompt_cache,
+        PromptCachePolicy::Mixed,
+    );
+    assert_eq!(
+        caps(r#"[{"context_length": 1, "pricing": {"prompt": "$1/M tokens"}}]"#).prompt_cache,
+        PromptCachePolicy::None,
     );
     // Anthropic's own API is the explicit-cache case and never has to be asked.
-    assert!(
+    assert_eq!(
         Provider::Anthropic
             .parse_capabilities(r#"{"max_input_tokens": 200000}"#, &[])
             .unwrap()
-            .supports_prompt_caching
+            .prompt_cache,
+        PromptCachePolicy::Explicit,
     );
+}
+
+/// OpenAI's Models endpoint does not carry the fields boot consumes, so the
+/// current family is an exact compiled profile rather than a partial remote
+/// response. The alias is listed separately and unknown IDs do not inherit a
+/// family-shaped guess.
+#[test]
+fn openai_gpt_5_6_capability_profiles_are_exact() {
+    for model in ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
+        let caps = super::provider::openai_model_capabilities(model).unwrap();
+        assert_eq!(caps.context_length, 1_050_000, "{model}");
+        assert_eq!(caps.max_output_tokens, Some(128_000), "{model}");
+        assert!(caps.supports_reasoning, "{model}");
+        assert!(caps.supports_image_input, "{model}");
+        assert_eq!(caps.prompt_cache, PromptCachePolicy::Explicit, "{model}");
+        assert_eq!(caps.default_effort.as_deref(), Some("medium"), "{model}");
+        assert_eq!(
+            caps.supported_efforts.as_deref(),
+            Some(&["none", "low", "medium", "high", "xhigh", "max"].map(String::from)[..]),
+            "{model}",
+        );
+    }
+
+    let error = super::provider::openai_model_capabilities("gpt-5.7-luna")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("no capability profile"), "{error}");
+    assert!(error.contains("gpt-5.7-luna"), "{error}");
 }
 
 /// Image input, per provider (docs/tools.md). OpenRouter states it in

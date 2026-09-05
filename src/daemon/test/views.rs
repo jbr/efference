@@ -233,7 +233,7 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
         max_output_tokens: Some(64_000),
         supports_reasoning: false,
         supports_image_input: true,
-        supports_prompt_caching: true,
+        prompt_cache: crate::api::PromptCachePolicy::Explicit,
         supported_efforts: None,
         default_effort: None,
     });
@@ -285,7 +285,7 @@ fn context_occupancy_ignores_side_channel_requests() {
         max_output_tokens: Some(64_000),
         supports_reasoning: false,
         supports_image_input: true,
-        supports_prompt_caching: true,
+        prompt_cache: crate::api::PromptCachePolicy::Explicit,
         supported_efforts: None,
         default_effort: None,
     });

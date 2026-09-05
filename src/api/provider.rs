@@ -10,6 +10,16 @@
 
 use super::*;
 
+// The compiled catalog lands before the OpenAI construction path that consumes
+// it (the repository's type-before-feature ordering). Keep it built and tested
+// during that interval without treating the temporary lack of a caller as a
+// stale-code warning.
+#[allow(dead_code)]
+mod openai;
+
+#[allow(unused_imports)]
+pub(crate) use openai::model_capabilities as openai_model_capabilities;
+
 /// Which API family fronts the messages endpoint. Each variant knows its
 /// messages URL, its auth header shape, and its model-metadata endpoint — the
 /// operator declares one word and everything else is derived.
@@ -296,9 +306,9 @@ impl Provider {
                         .and_then(|c| c.image_input)
                         .and_then(|i| i.supported)
                         .unwrap_or(true),
-                    // Anthropic's explicit `cache_control` breakpoints — the
-                    // cache the keepalive exists to refresh (docs/transport.md).
-                    supports_prompt_caching: true,
+                    // Anthropic's `cache_control` markers let the harness choose
+                    // the write frontier (docs/transport.md).
+                    prompt_cache: PromptCachePolicy::Explicit,
                     // No effort levels anywhere in Anthropic's metadata — not
                     // on this route and no second route to ask
                     // (`effort_levels_url`). A configured level passes through
@@ -426,9 +436,12 @@ impl Provider {
                 // reachable endpoint caches, and the runtime tripwire
                 // (`daemon/keepalive.rs`) is what stops a ping that turns out to
                 // cost something.
-                let supports_prompt_caching = endpoints
+                let has_implicit_cache = endpoints.iter().any(|e| e.supports_implicit_caching);
+                let has_explicit_cache = endpoints
                     .iter()
-                    .any(|e| e.supports_implicit_caching || e.pricing.input_cache_read.is_some());
+                    .any(|e| e.pricing.input_cache_read.is_some());
+                let prompt_cache =
+                    PromptCachePolicy::from_support(has_explicit_cache, has_implicit_cache);
                 Ok(ModelCapabilities {
                     context_length,
                     max_output_tokens,
@@ -443,7 +456,7 @@ impl Provider {
                         .input_modalities
                         .iter()
                         .any(|m| m == "image"),
-                    supports_prompt_caching,
+                    prompt_cache,
                     // The endpoints listing carries no effort levels — those
                     // come from the model entry, which `fetch_capabilities`
                     // fetches separately and merges in. Left `None` here so
@@ -549,14 +562,47 @@ pub(super) fn output_ceiling(caps: impl Iterator<Item = u64>) -> Option<u64> {
         .or_else(|| caps.iter().copied().min())
 }
 
-/// What the provider's model-metadata endpoint reports about the selected
-/// model. Fetched once at boot — a **required** step; `serve` aborts if the
-/// lookup fails (docs/transport.md) — held in memory, transport-only: never
-/// logged or projected.
+/// Who chooses prompt-cache write boundaries (docs/transport.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptCachePolicy {
+    /// No prompt cache is known to exist behind the selected model.
+    None,
+    /// The request dialect lets the harness choose the cache-write frontier.
+    Explicit,
+    /// The provider chooses cache-write locations from the request prefix.
+    Implicit,
+    /// Reachable upstreams expose both policies and routing does not reveal
+    /// which one the sticky session selected.
+    Mixed,
+}
+
+impl PromptCachePolicy {
+    fn from_support(explicit: bool, implicit: bool) -> Self {
+        match (explicit, implicit) {
+            (false, false) => Self::None,
+            (true, false) => Self::Explicit,
+            (false, true) => Self::Implicit,
+            (true, true) => Self::Mixed,
+        }
+    }
+
+    /// Whether any prompt cache is known to exist behind the selected model.
+    pub fn is_supported(self) -> bool {
+        self != Self::None
+    }
+}
+
+/// What the provider's capability source reports about the selected model.
+/// Resolved once at boot — a **required** step; `serve` aborts if the lookup
+/// fails (docs/transport.md) — held in memory, transport-only: never logged or
+/// projected. Anthropic and OpenRouter supply remote metadata;
+/// OpenAI's compiled catalog is in `provider/openai.rs` because its Models
+/// endpoint does not report the limits and feature flags consumed here.
 ///
 /// Grows one field per capability consumer: a new conditional (image input,
-/// implicit-caching support, pricing) is a field here plus its extraction from
-/// each provider's response shape.
+/// cache policy, pricing) is a field here plus its extraction from each
+/// provider's source.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelCapabilities {
     /// Maximum prompt tokens the model accepts. Anthropic `max_input_tokens`;
@@ -589,14 +635,12 @@ pub struct ModelCapabilities {
     /// no image input spends the upload on a 400 or on content the model cannot
     /// read, and the tool's own success message says it worked.
     pub supports_image_input: bool,
-    /// Whether a prompt cache exists behind this model — what the keepalive is
-    /// for (docs/transport.md). Anthropic: always true (explicit
-    /// `cache_control`). OpenRouter: some serving endpoint either caches
-    /// implicitly or prices cache reads. False turns the keepalive off for the
-    /// session: a `max_tokens: 0` ping against an uncached model refreshes
-    /// nothing and re-bills the whole prefix at the input rate every interval,
-    /// which is the one way the keepalive can cost more than it saves.
-    pub supports_prompt_caching: bool,
+    /// Who chooses prompt-cache write boundaries (docs/transport.md).
+    /// Anthropic is explicit; OpenRouter can expose explicit, implicit, mixed,
+    /// or absent caching across the endpoints serving a slug. The
+    /// keepalive checks [`PromptCachePolicy::is_supported`], but support alone
+    /// does not imply that a dialect has a cheap refresh primitive.
+    pub prompt_cache: PromptCachePolicy,
     /// The effort levels the model's metadata declares (docs/transport.md).
     /// OpenRouter: the model entry's `reasoning.supported_efforts`, with an
     /// absent or empty list normalized to `None` (`EffortLevels`). The

@@ -679,7 +679,7 @@ here would abort boot with a message about `context_length` that names the wrong
 problem.
 
 The parsed `ModelCapabilities` (`context_length`, `max_output_tokens`,
-`supports_reasoning`, `supports_image_input`, `supports_prompt_caching`,
+`supports_reasoning`, `supports_image_input`, `prompt_cache`,
 `supported_efforts`, `default_effort`; grown
 one field per consumer) is transport-only — held
 in `Shared`, never logged or projected. `max_output_tokens` sets the
@@ -898,19 +898,21 @@ log appends, no projection changes, fully reversible.
 
 The keepalive is armed off the boot capability lookup and one config knob.
 
-`ModelCapabilities::supports_prompt_caching` answers "is there a prompt cache
-behind this model at all". Anthropic is always true (explicit `cache_control`).
-On OpenRouter it is read off the endpoint listing, from either of two sufficient
-signals: an endpoint that reports `supports_implicit_caching`, or one whose
-`pricing` carries an `input_cache_read` — which is how the
-explicit-`cache_control` upstreams report having a cache (every Anthropic
-endpoint on OpenRouter reports `supports_implicit_caching: false`, because their
-caching is explicit; pricing is what distinguishes them from an uncached one).
-**Any** rather than all: sticky routing pins a session to one upstream, so the
-question is whether a reachable endpoint caches. False, and the loop never
-spawns — a `max_tokens: 0` ping against an uncached model refreshes nothing and
-re-bills the whole prefix at the input rate every interval, which is the one way
-this mechanism can cost more than it saves.
+`ModelCapabilities::prompt_cache` records who chooses write boundaries:
+`explicit`, `implicit`, `mixed`, or `none`. Anthropic is `explicit` through
+`cache_control`. On OpenRouter it is read off the endpoint listing: an endpoint
+that reports `supports_implicit_caching` contributes implicit support, while one
+whose `pricing` carries an `input_cache_read` contributes explicit support —
+which is how the explicit-`cache_control` upstreams report having a cache (every
+Anthropic endpoint on OpenRouter reports `supports_implicit_caching: false`,
+because their caching is explicit; pricing is what distinguishes them from an
+uncached one). Both signals across the reachable set produce `mixed`. Sticky
+routing selects one upstream but does not report which cache policy it selected,
+so the distinction remains explicit in the capability rather than being folded
+back into a boolean. `none` turns the keepalive off: a `max_tokens: 0` ping
+against an uncached model refreshes nothing and re-bills the whole prefix at the
+input rate every interval, which is the one way this mechanism can cost more
+than it saves.
 
 `[transport] keepalive-interval` (seconds, `config::TransportLimits`) is how long
 the cached prefix may go untouched before the ping. The default is **240** — a

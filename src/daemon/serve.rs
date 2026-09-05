@@ -40,7 +40,7 @@ pub async fn serve<S: Spotter>(
     shared.set_autonomous(autonomous);
     // Whether this model has a prompt cache to keep warm at all
     // (docs/transport.md) — read before the capabilities move into `Shared`.
-    let cacheable = capabilities.supports_prompt_caching;
+    let cacheable = capabilities.prompt_cache.is_supported();
     // The boot-fetched model capabilities (docs/transport.md) — the caller already
     // treated a failed lookup as fatal, so by here the value always exists.
     shared.set_capabilities(capabilities);
