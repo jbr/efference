@@ -71,7 +71,7 @@ One divergence from the web form, forced by position rather than chosen: **call 
 Results get **per-tool representations** instead of a raw text dump:
 
 - `bash` — rendered as a shell code block; a single-line command goes bare on the call header, a multi-line command overflows into the call entry's body.
-- `read` — strips the sentinel framing (`==<token> BEGIN <path>, LENGTH: n` … `END`) and highlights the file body by extension. The path is everything between ` BEGIN ` and `, LENGTH:`, so fields fs-mcp appends after the length (a windowed read states `, LINES: a-b`) do not move it.
+- `read` — strips the sentinel framing (`==<token> BEGIN <path>, LENGTH: n` … `END`) and highlights the file body by extension. The path is everything between ` BEGIN ` and `, LENGTH:`, so fields fs-mcp appends after the length (a windowed read states `, LINES: a-b`) do not move it. A window that starts past line 1 also prefixes each body line with its file line number and a tab; the TUI shows those prefixes inline.
 - `edit` / `undo_edit` / `retarget_edit` — the result's `===DIFF===` section parses into a color-coded `DocumentNode::Diff` (added/removed/hunk/context lines). The edit *input* is never dumped: the diff is the representation of what happened, so the call signs its arguments and emits no body.
 - Anything else — a plain code block of the content.
 
