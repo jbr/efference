@@ -111,7 +111,7 @@ impl Default for BashLimits {
 /// (docs/log-and-projection.md). `effort` is the exception: it *is* a request
 /// field. It is read once at boot and frozen for the session, so it moves the
 /// prefix no more than `model` does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransportLimits {
     /// How long a single response's SSE stream may stay open before the read
     /// loop stops waiting on it.
@@ -124,12 +124,15 @@ pub struct TransportLimits {
     /// ping", rather than a separate boolean that could disagree with it.
     pub keepalive_interval: Duration,
     /// How much effort the model spends per turn (docs/transport.md) — the level
-    /// axis beside the thinking type. `None` leaves the field off the request
-    /// entirely, which is the provider's own default. `serve --effort` overrides
-    /// whatever this says; both are boot-time, and there is no runtime mutation
-    /// path, because changing a thinking parameter mid-session invalidates the
-    /// message-tier cache on Anthropic.
-    pub effort: Option<crate::api::Effort>,
+    /// axis beside the thinking type. Held as the configured string verbatim:
+    /// the vocabulary is the model's metadata, not a local enum, so a level the
+    /// metadata invents is validated against that list at boot
+    /// (`ModelCapabilities::check_effort`) and sent as spelled. `None` leaves
+    /// the field off the request entirely, which is the provider's own default.
+    /// `serve --effort` overrides whatever this says; both are boot-time, and
+    /// there is no runtime mutation path, because changing a thinking parameter
+    /// mid-session invalidates the message-tier cache on Anthropic.
+    pub effort: Option<String>,
 }
 
 impl Default for TransportLimits {

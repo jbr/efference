@@ -102,6 +102,27 @@ fn anthropic_capabilities_missing_context_is_an_error() {
         .to_string();
     assert!(err.contains("max_input_tokens"), "{err}");
 }
+/// The Anthropic metadata path declares no effort levels — not on its single
+/// route, and there is no second route — so a configured level passes through
+/// to the provider's own validation (docs/transport.md).
+#[test]
+fn anthropic_declares_no_effort_levels() {
+    let body = r#"{
+        "id": "claude-haiku-4-5",
+        "display_name": "Claude Haiku 4.5",
+        "max_input_tokens": 200000,
+        "max_tokens": 64000
+    }"#;
+    let caps = Provider::Anthropic.parse_capabilities(body, &[]).unwrap();
+    assert_eq!(caps.supported_efforts, None);
+    assert_eq!(caps.default_effort, None);
+    assert_eq!(
+        Provider::Anthropic
+            .effort_levels_url("claude-haiku-4-5")
+            .unwrap(),
+        None
+    );
+}
 
 /// The OpenRouter endpoints shape: both ceilings are per serving endpoint, and
 /// they aggregate in opposite directions. `context_length` takes the **max** —
@@ -315,6 +336,86 @@ fn openrouter_capabilities_url_requires_author_slug() {
     assert_eq!(
         url,
         "https://openrouter.ai/api/v1/models/anthropic/claude-haiku-4.5/endpoints"
+    );
+}
+/// The OpenRouter model entry's `reasoning` block is the effort metadata.
+/// Live shape (2026-09-04): GLM 5.3 flash names its levels and its default;
+/// the block's other fields (`mandatory`, `default_enabled`) are ignored.
+#[test]
+fn openrouter_model_entry_yields_effort_levels() {
+    let body = r#"{"data": {"id": "z-ai/glm-5.3-flash", "reasoning": {
+        "mandatory": true, "default_enabled": true,
+        "supported_efforts": ["max", "high", "low"], "default_effort": "max"
+    }}}"#;
+    let efforts = Provider::OpenRouter.parse_model_entry(body).unwrap();
+    assert_eq!(
+        efforts.supported,
+        Some(vec!["max".into(), "high".into(), "low".into()])
+    );
+    assert_eq!(efforts.default.as_deref(), Some("max"));
+}
+
+/// An absent block — a non-reasoning model (live: `openai/gpt-4.1-mini`,
+/// 2026-09-04) — declares nothing, and an empty list is the same state:
+/// neither affirms a level. `default_effort` is read independently, so
+/// incoherent metadata (a default with no list) still reaches the boot line
+/// rather than disappearing.
+#[test]
+fn openrouter_model_entry_declaring_nothing_reads_as_none() {
+    let absent = Provider::OpenRouter
+        .parse_model_entry(r#"{"data": {"id": "openai/gpt-4.1-mini"}}"#)
+        .unwrap();
+    assert_eq!(absent.supported, None);
+    assert_eq!(absent.default, None);
+
+    let empty = Provider::OpenRouter
+        .parse_model_entry(
+            r#"{"data": {"id": "x",
+                "reasoning": {"supported_efforts": [], "default_effort": "high"}}}"#,
+        )
+        .unwrap();
+    assert_eq!(empty.supported, None);
+    assert_eq!(empty.default.as_deref(), Some("high"));
+}
+
+/// A level outside efference's five-level spelling survives as a string: the
+/// metadata's vocabulary is what the boot check tests membership against, not
+/// ours — a model that invents `xmax` is validated, not rejected
+/// (docs/transport.md).
+#[test]
+fn openrouter_model_entry_efforts_are_not_vocabulary_checked() {
+    let efforts = Provider::OpenRouter
+        .parse_model_entry(r#"{"data": {"reasoning": {"supported_efforts": ["xmax", "low-mid"]}}}"#)
+        .unwrap();
+    assert_eq!(
+        efforts.supported,
+        Some(vec!["xmax".into(), "low-mid".into()])
+    );
+    assert_eq!(efforts.default, None);
+}
+
+/// OpenRouter's effort-levels route is the singular model entry; Anthropic
+/// has no second route and answers `None`. Same author/slug requirement as
+/// the ceilings route.
+#[test]
+fn effort_levels_url_per_provider() {
+    assert_eq!(
+        Provider::OpenRouter
+            .effort_levels_url("z-ai/glm-5.3-flash")
+            .unwrap()
+            .as_deref(),
+        Some("https://openrouter.ai/api/v1/model/z-ai/glm-5.3-flash")
+    );
+    assert_eq!(
+        Provider::Anthropic
+            .effort_levels_url("claude-haiku-4-5")
+            .unwrap(),
+        None
+    );
+    assert!(
+        Provider::OpenRouter
+            .effort_levels_url("claude-haiku-4-5")
+            .is_err()
     );
 }
 
@@ -1337,7 +1438,7 @@ fn with_effort_envelope_matches_expected_wire_bytes() {
         tool_choice: ToolChoice::auto(),
         thinking: THINKING_ADAPTIVE,
         output_config: Some(OutputConfig {
-            effort: Effort::Xhigh,
+            effort: "xhigh".to_string(),
         }),
         temperature: Some(0.7),
         upstream: None,
@@ -1357,54 +1458,96 @@ fn with_effort_envelope_matches_expected_wire_bytes() {
     assert_eq!(serde_json::to_string(&request).unwrap(), expected);
 }
 
-/// Each level's wire token, and the parse in both directions. The vocabulary is
-/// the API's, so a typo'd level is rejected here rather than as a provider 400 —
-/// with a message naming the five it could have been.
+/// The levels that are legal only with thinking on: exactly the two spellings
+/// in [`EFFORTS_REQUIRING_THINKING`], known because the provider answers the
+/// pairing with a 400. Any other spelling has no known coupling.
 #[test]
-fn effort_levels_round_trip_and_reject_anything_else() {
-    for (effort, token) in [
-        (Effort::Low, "low"),
-        (Effort::Medium, "medium"),
-        (Effort::High, "high"),
-        (Effort::Xhigh, "xhigh"),
-        (Effort::Max, "max"),
-    ] {
-        assert_eq!(effort.as_str(), token);
-        assert_eq!(
-            serde_json::to_string(&effort).unwrap(),
-            format!("\"{token}\"")
-        );
-        assert_eq!(token.parse::<Effort>(), Ok(effort));
-    }
-    let why = "very-high".parse::<Effort>().unwrap_err();
-    assert!(why.contains("very-high"), "names the input: {why}");
-    assert!(
-        why.contains("low, medium, high, xhigh, max"),
-        "names the vocabulary: {why}"
+fn the_two_spellings_requiring_thinking_are_those_two() {
+    assert_eq!(
+        super::thinking::EFFORTS_REQUIRING_THINKING,
+        ["xhigh", "max"]
     );
-    // `xhigh` and `max` are the two that need thinking on.
-    assert!(!Effort::High.requires_thinking());
-    assert!(Effort::Xhigh.requires_thinking());
-    assert!(Effort::Max.requires_thinking());
 }
 
 /// The one coupling between the level axis and the type axis, checked at boot:
 /// `xhigh`/`max` with thinking off is a 400 from the provider, so the session is
 /// refused at startup with a message naming both halves (docs/transport.md).
-/// Every other pairing — including a session that sets no effort at all — passes.
+/// Every other pairing — including a session that sets no effort at all, and a
+/// level with no known coupling — passes.
 #[test]
 fn thinking_off_rejects_the_two_levels_that_need_thinking() {
-    let why = crate::api::check_effort_thinking(Some(Effort::Max), true).unwrap_err();
+    let why = crate::api::check_effort_thinking(Some("max"), true).unwrap_err();
     assert!(why.contains("max"), "names the level: {why}");
     assert!(
         why.contains("EFFERENCE_THINKING"),
         "names one route to thinking-off: {why}"
     );
-    assert!(crate::api::check_effort_thinking(Some(Effort::Xhigh), true).is_err());
-    assert!(crate::api::check_effort_thinking(Some(Effort::High), true).is_ok());
+    assert!(crate::api::check_effort_thinking(Some("xhigh"), true).is_err());
+    assert!(crate::api::check_effort_thinking(Some("high"), true).is_ok());
+    // A spelling outside the known vocabulary rides through — its coupling,
+    // if any, is the provider's to answer, not a local list's to guess.
+    assert!(crate::api::check_effort_thinking(Some("xmax"), true).is_ok());
     assert!(crate::api::check_effort_thinking(None, true).is_ok());
-    for effort in Effort::ALL {
+    for effort in ["low", "medium", "high"] {
         assert!(crate::api::check_effort_thinking(Some(effort), false).is_ok());
+    }
+}
+
+/// The boot membership check (docs/transport.md): a configured level rides the
+/// wire only when the metadata names it; the declared default, when present,
+/// points at the unset path in the rejection.
+#[test]
+fn check_effort_rejects_unnamed_levels() {
+    let caps = caps_with_effort_levels(Some(&["max", "high", "low"]), Some("max"));
+    assert!(caps.check_effort("high", "z-ai/glm-5.3-flash").is_ok());
+
+    let why = caps
+        .check_effort("medium", "z-ai/glm-5.3-flash")
+        .unwrap_err();
+    assert!(why.contains("medium"), "names the level: {why}");
+    assert!(
+        why.contains("max, high, low"),
+        "names the levels as the metadata spells them: {why}"
+    );
+    assert!(why.contains("silently"), "names the mapping hazard: {why}");
+    assert!(
+        why.contains("provider default: max"),
+        "names the unset path: {why}"
+    );
+
+    // No declared default → the message doesn't invent one.
+    let caps = caps_with_effort_levels(Some(&["xhigh", "high"]), None);
+    let why = caps.check_effort("low", "m").unwrap_err();
+    assert!(!why.contains("default"), "{why}");
+}
+
+/// A model that declares no levels — absent block, absent field, or an empty
+/// list, all normalized to `None` — refuses every configured level: nothing
+/// was affirmed, so nothing is sent (docs/transport.md).
+#[test]
+fn check_effort_refuses_any_configured_level_without_a_declared_list() {
+    let caps = caps_with_effort_levels(None, Some("high"));
+    let why = caps
+        .check_effort("high", "openai/gpt-4.1-mini")
+        .unwrap_err();
+    assert!(why.contains("declares no supported effort levels"), "{why}");
+    assert!(why.contains("openai/gpt-4.1-mini"), "{why}");
+}
+
+/// Test fixture: a [`ModelCapabilities`] with the effort metadata set and the
+/// other fields at neutral values.
+fn caps_with_effort_levels(
+    levels: Option<&[&str]>,
+    default: Option<&str>,
+) -> crate::api::ModelCapabilities {
+    crate::api::ModelCapabilities {
+        context_length: 200_000,
+        max_output_tokens: None,
+        supports_reasoning: true,
+        supports_image_input: false,
+        supports_prompt_caching: true,
+        supported_efforts: levels.map(|l| l.iter().map(|s| s.to_string()).collect()),
+        default_effort: default.map(String::from),
     }
 }
 
@@ -2097,7 +2240,7 @@ async fn only_the_shared_turn_envelope_carries_the_effort() {
     /// One request/response over a fresh socket; returns the request bytes the
     /// client sent. `sse` picks the canned reply: an empty stream for `complete`,
     /// a usage-only JSON body for `keepalive`.
-    async fn round_trip(effort: Option<Effort>, sse: bool) -> String {
+    async fn round_trip(effort: Option<&str>, sse: bool) -> String {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let server = std::thread::spawn(move || {
@@ -2156,7 +2299,8 @@ async fn only_the_shared_turn_envelope_carries_the_effort() {
             auth_value: "k".into(),
             session_id: None,
         };
-        let client = Client::new(endpoint, "claude-opus-5", "sys", None).with_effort(effort);
+        let client = Client::new(endpoint, "claude-opus-5", "sys", None)
+            .with_effort(effort.map(String::from));
         if sse {
             client
                 .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -2171,12 +2315,12 @@ async fn only_the_shared_turn_envelope_carries_the_effort() {
         server.join().unwrap()
     }
 
-    let turn = round_trip(Some(Effort::Max), true).await;
+    let turn = round_trip(Some("max"), true).await;
     assert!(
         turn.contains(r#""output_config":{"effort":"max"}"#),
         "the turn envelope carries it: {turn}"
     );
-    let ping = round_trip(Some(Effort::Max), false).await;
+    let ping = round_trip(Some("max"), false).await;
     assert!(
         !ping.contains("output_config"),
         "the keepalive does not: {ping}"

@@ -148,22 +148,47 @@ never elided today — that's a deferred generalization of the redaction model
 
 `output_config: { effort }` is the second reasoning knob, orthogonal to
 `thinking`: `thinking` is the **type** (whether and when the model thinks),
-`effort` is the **level** — `low | medium | high | xhigh | max` (`api::Effort`).
-It is set at boot from `serve --effort` or `[transport] effort` (the flag wins),
-and there is no runtime mutation path: changing a thinking parameter mid-session
-invalidates the message-tier cache on Anthropic, and a replayed thinking block's
-signature under a changed config is its own unanswered question. Unset, the field
-is omitted entirely and the provider's own default stands — which is why every
-session that sets nothing sends the bytes it always did
-(`request_envelope_matches_expected_wire_bytes` is unmoved;
-`with_effort_envelope_matches_expected_wire_bytes` pins the other side, with
-`output_config` sitting between `thinking` and `temperature`).
+`effort` is the **level**. It is set at boot from `serve --effort` or
+`[transport] effort` (the flag wins), and there is no runtime mutation path:
+changing a thinking parameter mid-session invalidates the message-tier cache on
+Anthropic, and a replayed thinking block's signature under a changed config is
+its own unanswered question. Unset, the field is omitted entirely and the
+provider's own default stands — which is why every session that sets nothing
+sends the bytes it always did (`request_envelope_matches_expected_wire_bytes`
+is unmoved; `with_effort_envelope_matches_expected_wire_bytes` pins the other
+side, with `output_config` sitting between `thinking` and `temperature`).
 
-**The one coupling between the axes**: `xhigh` and `max` require thinking
-enabled, and the pairing is a 400 from Anthropic. `EFFERENCE_THINKING=off` is
-what can take thinking away for a whole session, so that combination is refused
-at boot (`api::check_effort_thinking`, called from `serve`) rather than forwarded
-as a provider error on the first turn.
+**The level is a string end to end.** The flag, the config key, and the wire
+all carry the configured spelling verbatim — there is no local enum of levels.
+The vocabulary is the model's own metadata: OpenRouter's model entry
+(`GET /api/v1/model/{author}/{slug}`, singular) carries a `reasoning` block
+with `supported_efforts` and `default_effort`, fetched alongside the endpoints
+listing at boot and parsed into `ModelCapabilities::supported_efforts` /
+`default_effort` (an absent block, absent field, or empty list all normalize to
+no declared levels). A level the metadata invents is validated against that
+list and sent as spelled, not rejected by a local list that cannot know it.
+
+**Boot validation, per provider** (`Provider::validates_effort_levels` →
+`ModelCapabilities::check_effort`, called from `serve`). OpenRouter refuses a
+configured level the metadata does not affirmatively declare, because it maps
+an unsupported level to the nearest supported one **silently** — a session
+could otherwise believe it set a knob that did nothing (observed 2026-08-29:
+`--effort max` on GLM 5.3 flash, whose `default_effort` was already `max`, so
+the flag was a no-op by coincidence). A model that declares no levels refuses
+every configured level: nothing was affirmed, so nothing is sent. Anthropic's
+metadata names no levels, so the check does not run there and a misspelled
+level is the provider's own 400 on the first turn. The boot line prints
+`effort: {level}` when one is set, and `effort: unset · provider default
+{default}` when the metadata names one, which answers what an unset knob will
+do without a probe.
+
+**The one coupling between the axes**: the levels in `EFFORTS_REQUIRING_THINKING`
+(`xhigh`, `max`) require thinking enabled, and the pairing is a 400 from
+Anthropic. `EFFERENCE_THINKING=off` is what can take thinking away for a whole
+session, so that combination is refused at boot (`api::check_effort_thinking`,
+called from `serve`) rather than forwarded as a provider error on the first
+turn. A level outside those two spellings has no known coupling and passes
+through.
 
 **Which envelopes carry it.** The effort rides the agent `Client`, so it reaches
 `Client::complete` only — the main turn and the fork peek, which is the shared
@@ -604,7 +629,10 @@ from the provider before the daemon starts (`Endpoint::fetch_capabilities`,
 **aborts startup** with the URL and body in the message. The query is required
 rather than best-effort because capability conditionals hang off the result
 and "unknown" would silently disable them; there is no offline mode to
-regress (serve already requires the live messages endpoint). Per provider:
+regress (serve already requires the live messages endpoint). Anthropic asks
+one route; OpenRouter asks two, both fatal at boot — the effort-levels route
+is what the boot validation validates against, so "the entry route didn't
+answer" must not degrade into no validation. Per provider:
 
 - `anthropic`: `GET /v1/models/{model}` — `max_input_tokens` is the context
   window, `max_tokens` the output cap.
@@ -630,9 +658,17 @@ regress (serve already requires the live messages endpoint). Per provider:
   from routing is the intended effect. Only when no endpoint clears the floor
   does the plain min stand — a short-output model gains nothing from narrowed
   routing. The
-  model-level fields are not used: `context_length` there is the max across
+    model-level fields are not used: `context_length` there is the max across
   endpoints, while `top_provider` describes one designated endpoint (not the
   originating lab, and not necessarily the cheapest), and the two disagree.
+
+  The ceilings route is the first of OpenRouter's two boot fetches. The second
+  is the singular model entry, `GET /api/v1/model/{author}/{slug}`, whose
+  model-level `reasoning` block carries `supported_efforts` and
+  `default_effort` — the metadata the boot validation validates against
+  (the effort section above). It is a separate route because the endpoints
+  listing carries no `reasoning` block at all, and its model-level fields stay
+  unused; the entry fetch is equally fatal at boot.
 
 When `--upstream` pins the routing (below), the pin **narrows the endpoint set
 before anything aggregates over it**: a pinned session routes to exactly those
@@ -643,7 +679,8 @@ here would abort boot with a message about `context_length` that names the wrong
 problem.
 
 The parsed `ModelCapabilities` (`context_length`, `max_output_tokens`,
-`supports_reasoning`, `supports_image_input`, `supports_prompt_caching`; grown
+`supports_reasoning`, `supports_image_input`, `supports_prompt_caching`,
+`supported_efforts`, `default_effort`; grown
 one field per consumer) is transport-only — held
 in `Shared`, never logged or projected. `max_output_tokens` sets the
 per-turn output cap (`Client::with_max_output`): a reasoning model's

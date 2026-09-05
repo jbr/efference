@@ -18,11 +18,23 @@ pub enum Provider {
     /// Anthropic's own API: `x-api-key` auth, metadata at `GET /v1/models/{model}`.
     Anthropic,
     /// OpenRouter's Anthropic-Messages skin (`/api/v1/messages`): `authorization:
-    /// Bearer` auth, metadata at `GET /api/v1/models/{author}/{slug}/endpoints`.
+    /// Bearer` auth, metadata at `GET /api/v1/models/{author}/{slug}/endpoints`
+    /// (ceilings) plus `GET /api/v1/model/{author}/{slug}` (effort levels).
     OpenRouter,
 }
 
 impl Provider {
+    /// Whether a configured effort level is validated against the metadata's
+    /// declared levels at boot (docs/transport.md). OpenRouter: yes — the
+    /// breadth of models behind one slug and the silent nearest-mapping of an
+    /// unsupported level are the misconfiguration surface, and its metadata
+    /// affirmatively declares the levels. Anthropic: no — its metadata names
+    /// no levels, and the provider's own 400 on the first turn is the
+    /// feedback for a misspelled one.
+    pub fn validates_effort_levels(&self) -> bool {
+        matches!(self, Self::OpenRouter)
+    }
+
     /// Parse the `EFFERENCE_PROVIDER` value. Unset defaults to [`Anthropic`];
     /// anything unrecognized is a hard error naming the valid values — never a
     /// silent fallback (a wrong guess would send the key to the wrong host).
@@ -187,23 +199,40 @@ impl Provider {
         }
     }
 
-    /// The model-metadata URL for `model`. OpenRouter model ids are
-    /// `author/slug`, which its metadata route takes as two path segments; a
-    /// slash-less id can't be queried and errors here, before any request.
+    /// The ceilings half of the boot metadata for `model` (docs/transport.md):
+    /// per-upstream context and output caps, modalities, caching signals.
+    /// OpenRouter model ids are `author/slug`, which its metadata routes take
+    /// as two path segments; a slash-less id can't be queried and errors here,
+    /// before any request. Effort levels are *not* on this route for
+    /// OpenRouter — they come from [`Provider::effort_levels_url`].
     pub(super) fn capabilities_url(&self, model: &str) -> Result<String, Error> {
         match self {
             Self::Anthropic => Ok(format!("https://api.anthropic.com/v1/models/{model}")),
             Self::OpenRouter => {
-                let (author, slug) = model.split_once('/').ok_or_else(|| -> Error {
-                    format!(
-                        "OpenRouter model ids are `author/slug` (e.g. \
-                         `anthropic/claude-haiku-4.5`); {model:?} has no author segment"
-                    )
-                    .into()
-                })?;
+                let (author, slug) = openrouter_slug(model)?;
                 Ok(format!(
                     "https://openrouter.ai/api/v1/models/{author}/{slug}/endpoints"
                 ))
+            }
+        }
+    }
+
+    /// The URL whose response names the model's effort levels, where a
+    /// provider has one: OpenRouter's singular model entry
+    /// (`GET /api/v1/model/{author}/{slug}`), whose `reasoning` block carries
+    /// `supported_efforts` and `default_effort` (docs/transport.md).
+    /// Anthropic's single metadata response names no efforts and there is no
+    /// second route to ask — `None`, which leaves
+    /// `ModelCapabilities::supported_efforts` unset and a configured level
+    /// passes through to the provider's own validation.
+    pub(super) fn effort_levels_url(&self, model: &str) -> Result<Option<String>, Error> {
+        match self {
+            Self::Anthropic => Ok(None),
+            Self::OpenRouter => {
+                let (author, slug) = openrouter_slug(model)?;
+                Ok(Some(format!(
+                    "https://openrouter.ai/api/v1/model/{author}/{slug}"
+                )))
             }
         }
     }
@@ -270,6 +299,12 @@ impl Provider {
                     // Anthropic's explicit `cache_control` breakpoints — the
                     // cache the keepalive exists to refresh (docs/transport.md).
                     supports_prompt_caching: true,
+                    // No effort levels anywhere in Anthropic's metadata — not
+                    // on this route and no second route to ask
+                    // (`effort_levels_url`). A configured level passes through
+                    // unvalidated; the provider's own 400 is the feedback.
+                    supported_efforts: None,
+                    default_effort: None,
                 })
             }
             Self::OpenRouter => {
@@ -409,10 +444,87 @@ impl Provider {
                         .iter()
                         .any(|m| m == "image"),
                     supports_prompt_caching,
+                    // The endpoints listing carries no effort levels — those
+                    // come from the model entry, which `fetch_capabilities`
+                    // fetches separately and merges in. Left `None` here so
+                    // this parse stays an honest statement of what *this*
+                    // response said.
+                    supported_efforts: None,
+                    default_effort: None,
                 })
             }
         }
     }
+    /// Parse the model-entry response into the effort levels it declares
+    /// (docs/transport.md): `reasoning.supported_efforts` and
+    /// `reasoning.default_effort`. An absent block, an absent field, or an
+    /// empty list all read as `None` — the metadata declares no levels, and
+    /// [`EffortLevels`]'s boot rule refuses a configured effort against that.
+    /// Only the OpenRouter fetch reaches this: Anthropic names no efforts and
+    /// has no model-entry route (`effort_levels_url` returns `None` there).
+    /// The block's `mandatory` and `default_enabled` fields are observed in
+    /// live metadata but unused — no consumer yet.
+    pub(super) fn parse_model_entry(&self, body: &str) -> Result<EffortLevels, Error> {
+        match self {
+            Self::Anthropic => Err("Anthropic metadata names no effort levels".into()),
+            Self::OpenRouter => {
+                // Same envelope as every other OpenRouter response: the entry
+                // sits under `data` (parse_capabilities parses the same
+                // wrapper). A response without it is not the shape asked for
+                // and errors — the fetch is required at boot.
+                #[derive(Deserialize)]
+                struct Response {
+                    data: ModelEntry,
+                }
+                #[derive(Deserialize, Default)]
+                struct ModelEntry {
+                    #[serde(default)]
+                    reasoning: Option<Reasoning>,
+                }
+                #[derive(Deserialize, Default)]
+                struct Reasoning {
+                    #[serde(default)]
+                    supported_efforts: Option<Vec<String>>,
+                    #[serde(default)]
+                    default_effort: Option<String>,
+                }
+                let response: Response = serde_json::from_str(body)?;
+                let reasoning = response.data.reasoning.unwrap_or_default();
+                Ok(EffortLevels {
+                    // An empty list is the same "declares nothing" state as an
+                    // absent one: neither affirms a level.
+                    supported: reasoning
+                        .supported_efforts
+                        .filter(|levels| !levels.is_empty()),
+                    default: reasoning.default_effort,
+                })
+            }
+        }
+    }
+}
+
+/// OpenRouter model ids are `author/slug`, which its metadata routes take as
+/// two path segments; a slash-less id can't be queried and errors here,
+/// before any request.
+fn openrouter_slug(model: &str) -> Result<(&str, &str), Error> {
+    model.split_once('/').ok_or_else(|| -> Error {
+        format!(
+            "OpenRouter model ids are `author/slug` (e.g. \
+             `anthropic/claude-haiku-4.5`); {model:?} has no author segment"
+        )
+        .into()
+    })
+}
+
+/// The effort levels a model's metadata declares (docs/transport.md), parsed
+/// from the OpenRouter model entry's `reasoning` block. `supported: None` —
+/// block absent, field absent, or an empty list — means the metadata declares
+/// no levels: a configured effort cannot be affirmatively confirmed against
+/// it and is refused at boot. `default` is boot-line observability only; it
+/// is never sent.
+pub(super) struct EffortLevels {
+    pub supported: Option<Vec<String>>,
+    pub default: Option<String>,
 }
 
 /// The smallest per-turn output budget worth routing to (docs/transport.md).
@@ -485,15 +597,69 @@ pub struct ModelCapabilities {
     /// nothing and re-bills the whole prefix at the input rate every interval,
     /// which is the one way the keepalive can cost more than it saves.
     pub supports_prompt_caching: bool,
+    /// The effort levels the model's metadata declares (docs/transport.md).
+    /// OpenRouter: the model entry's `reasoning.supported_efforts`, with an
+    /// absent or empty list normalized to `None` (`EffortLevels`). The
+    /// consumer is the boot check: a configured `--effort`/`[transport]
+    /// effort` is sent only when this list names it, because OpenRouter maps
+    /// an unsupported level to the nearest one silently — a session could
+    /// otherwise believe it set a knob that did nothing. `None` refuses every
+    /// configured level. Anthropic: `None` — its metadata names no efforts,
+    /// and a configured level passes through to the provider's own validation.
+    pub supported_efforts: Option<Vec<String>>,
+    /// The effort level the model's metadata says it defaults to — OpenRouter
+    /// `reasoning.default_effort` — printed on the boot line even when no
+    /// effort is configured, which answers "what will the knob actually do"
+    /// in one glance (docs/transport.md). Never sent. Anthropic: `None`.
+    pub default_effort: Option<String>,
+}
+
+impl ModelCapabilities {
+    /// The boot check for a configured effort level (docs/transport.md),
+    /// called for providers that validate (`Provider::validates_effort_levels`
+    /// — OpenRouter). A model whose entry lists levels accepts only those:
+    /// OpenRouter maps an unsupported level to the nearest supported one
+    /// silently, so a session could otherwise believe it set a knob that did
+    /// nothing. A model that declares no levels — absent block, absent field,
+    /// or an empty list — refuses every configured level: nothing was
+    /// affirmed, so nothing is sent. The membership test is exact string
+    /// equality against the metadata's own spellings; the declared default,
+    /// when present, is named as the unset path in the message.
+    pub fn check_effort(&self, effort: &str, model: &str) -> Result<(), String> {
+        match &self.supported_efforts {
+            Some(levels) if levels.iter().any(|level| level == effort) => Ok(()),
+            Some(levels) => Err(format!(
+                "effort `{effort}` is not among the levels {model} reports ({}) — \
+                 OpenRouter maps unsupported levels to the nearest silently; pick one of \
+                 those or leave effort unset{}",
+                levels.join(", "),
+                self.default_effort
+                    .as_deref()
+                    .map(|default| format!(" (provider default: {default})"))
+                    .unwrap_or_default()
+            )),
+            None => Err(format!(
+                "{model}'s metadata declares no supported effort levels — a configured \
+                 level cannot be affirmatively confirmed against it. Leave effort unset."
+            )),
+        }
+    }
 }
 
 impl Endpoint {
     /// The required boot-time metadata lookup (docs/transport.md): GET the
-    /// provider's model-metadata endpoint for `model` and parse it into
+    /// provider's model-metadata route(s) for `model` and parse them into
     /// [`ModelCapabilities`]. Authenticated with the same header as the
     /// messages POSTs (Anthropic's Models API requires the key; OpenRouter
     /// tolerates it). Any failure — network, non-2xx, missing fields — is an
     /// error the caller treats as fatal to startup.
+    ///
+    /// Anthropic asks one route ([`Provider::capabilities_url`]). OpenRouter
+    /// asks two: the endpoints listing for the ceilings, then the singular
+    /// model entry ([`Provider::effort_levels_url`]) for the effort levels,
+    /// merged in here. Both are fatal at boot — the boot rule validates a
+    /// configured effort against this metadata, so "the entry route didn't
+    /// answer" must not silently degrade into no validation.
     ///
     /// `upstream` is the session's `--upstream` order (empty when unpinned): a
     /// pinned session's ceilings come from the endpoints it will actually reach,
@@ -505,11 +671,24 @@ impl Endpoint {
     ) -> Result<ModelCapabilities, Error> {
         let url = self.provider.capabilities_url(model)?;
         let body = self.authed_get(&url).await?;
-        self.provider
-            .parse_capabilities(&body, upstream)
-            .map_err(|e| -> Error {
-                format!("could not parse model metadata from {url}: {e}").into()
-            })
+        let mut capabilities =
+            self.provider
+                .parse_capabilities(&body, upstream)
+                .map_err(|e| -> Error {
+                    format!("could not parse model metadata from {url}: {e}").into()
+                })?;
+        if let Some(effort_url) = self.provider.effort_levels_url(model)? {
+            let effort_body = self.authed_get(&effort_url).await?;
+            let efforts = self
+                .provider
+                .parse_model_entry(&effort_body)
+                .map_err(|e| -> Error {
+                    format!("could not parse model metadata from {effort_url}: {e}").into()
+                })?;
+            capabilities.supported_efforts = efforts.supported;
+            capabilities.default_effort = efforts.default;
+        }
+        Ok(capabilities)
     }
 
     /// One request's billed cost in USD, from the provider's own accounting —

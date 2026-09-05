@@ -62,81 +62,26 @@ impl Thinking {
 /// The `output_config` object (docs/transport.md) — present on the request only
 /// when the session set an effort, so a session that sets none sends the same
 /// bytes it always did. One field today; the wrapper exists because the API
-/// nests `effort` inside it.
-#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+/// nests `effort` inside it. The effort is the configured string verbatim: the
+/// vocabulary is the model's metadata (`supported_efforts`), not an enum here,
+/// so a level the metadata invents rides the wire as spelled.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct OutputConfig {
-    pub effort: Effort,
+    pub effort: String,
 }
 
-/// How much effort the model spends on a turn (docs/transport.md) — the *level*
-/// axis, orthogonal to [`Thinking`]'s *type* axis. Set once at boot from
-/// `--effort` or `[transport] effort`, never mutated for the life of the session,
-/// so it cannot move a live cached prefix.
+/// An effort level is a string end to end — the flag, the config key, and the
+/// wire all carry the configured spelling verbatim (docs/transport.md). The
+/// vocabulary is the model's metadata (`ModelCapabilities::supported_efforts`),
+/// not an enum here: when a model invents a level, it is validated against the
+/// metadata that names it and sent as spelled, not rejected by a local list
+/// that cannot know it.
 ///
-/// One coupling with the other axis: `Xhigh` and `Max` require thinking enabled,
-/// and Anthropic answers the pairing with a 400 — [`check_effort_thinking`]
-/// rejects it at boot instead.
-#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Effort {
-    Low,
-    Medium,
-    High,
-    Xhigh,
-    Max,
-}
-
-impl Effort {
-    /// The five spellings, in ascending order — the vocabulary the flag, the
-    /// config key, and the rejection message all read from.
-    pub const ALL: [Effort; 5] = [
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::Xhigh,
-        Effort::Max,
-    ];
-
-    /// The token the wire, the config, and the flag spell it with.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Effort::Low => "low",
-            Effort::Medium => "medium",
-            Effort::High => "high",
-            Effort::Xhigh => "xhigh",
-            Effort::Max => "max",
-        }
-    }
-
-    /// Whether this level is legal only with thinking enabled. The top two are:
-    /// they describe how far a think may run, so there is nothing for them to
-    /// scale when thinking is off.
-    pub fn requires_thinking(self) -> bool {
-        matches!(self, Effort::Xhigh | Effort::Max)
-    }
-}
-
-impl std::fmt::Display for Effort {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl std::str::FromStr for Effort {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::ALL
-            .into_iter()
-            .find(|e| e.as_str() == s.trim())
-            .ok_or_else(|| {
-                format!(
-                    "unknown effort {s:?} — expected one of {}",
-                    Self::ALL.map(Effort::as_str).join(", ")
-                )
-            })
-    }
-}
+/// One coupling with the thinking axis: these levels are legal only with
+/// thinking enabled, and Anthropic answers the pairing with a 400 —
+/// [`check_effort_thinking`] rejects it at boot instead. A level beyond these
+/// two spellings has no known coupling and passes through.
+pub const EFFORTS_REQUIRING_THINKING: [&str; 2] = ["xhigh", "max"];
 
 /// The boot check for the one coupling between the two axes (docs/transport.md):
 /// `xhigh`/`max` with thinking off is a 400 from Anthropic, so a session
@@ -147,14 +92,16 @@ impl std::str::FromStr for Effort {
 /// `EFFERENCE_THINKING=off` override, and a Claude-family model whose turns fall
 /// through to explicit `disabled` (Haiku, or any model the capability lookup
 /// denies reasoning).
-pub fn check_effort_thinking(effort: Option<Effort>, thinking_off: bool) -> Result<(), String> {
+pub fn check_effort_thinking(effort: Option<&str>, thinking_off: bool) -> Result<(), String> {
     match effort {
-        Some(effort) if thinking_off && effort.requires_thinking() => Err(format!(
-            "effort `{effort}` requires thinking, but this session's turns send thinking \
-             disabled (EFFERENCE_THINKING=off, or a model that doesn't get adaptive thinking) \
-             — the provider answers that pairing with a 400. Use `high` or lower, or enable \
-             thinking."
-        )),
+        Some(effort) if thinking_off && EFFORTS_REQUIRING_THINKING.contains(&effort) => {
+            Err(format!(
+                "effort `{effort}` requires thinking, but this session's turns send thinking \
+                 disabled (EFFERENCE_THINKING=off, or a model that doesn't get adaptive \
+                 thinking) — the provider answers that pairing with a 400. Use a lower \
+                 level, or enable thinking."
+            ))
+        }
         _ => Ok(()),
     }
 }

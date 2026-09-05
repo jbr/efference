@@ -148,7 +148,7 @@ pub(crate) async fn serve(
     spotter_model: &str,
     config: Option<PathBuf>,
     temperature: Option<u8>,
-    effort: Option<efference::api::Effort>,
+    effort: Option<String>,
     upstream: Vec<String>,
     autonomous: bool,
     reauth: Vec<String>,
@@ -279,15 +279,27 @@ pub(crate) async fn serve(
     // provider's 400: `xhigh`/`max` need thinking, which either `EFFERENCE_THINKING=off`
     // or a model whose turns fall through to explicit `disabled` takes away — the
     // capability lookup above is what makes the effective answer computable here.
-    let effort = effort.or(loaded.role.transport.effort);
+    let effort = effort.or_else(|| loaded.role.transport.effort.clone());
+    // Validate before the coupling check: the metadata's list is the level's
+    // only defense, so an unsupported spelling is named first (docs/transport.md).
+    if let Some(effort) = &effort
+        && endpoint.provider.validates_effort_levels()
+        && let Err(why) = capabilities.check_effort(effort, model)
+    {
+        return Err(why.into());
+    }
     if let Err(why) = efference::api::check_effort_thinking(
-        effort,
+        effort.as_deref(),
         efference::api::auto_turns_disable_thinking(model, capabilities.supports_reasoning),
     ) {
         return Err(why.into());
     }
-    if let Some(effort) = effort {
-        eprintln!("effort: {effort}");
+    match (&effort, &capabilities.default_effort) {
+        (Some(effort), _) => eprintln!("effort: {effort}"),
+        (None, Some(default)) => {
+            eprintln!("effort: unset · provider default {default}");
+        }
+        (None, None) => {}
     }
 
     // Layer the harness's self-surface protection over the operator's grants (docs/permissions.md).

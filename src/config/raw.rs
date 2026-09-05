@@ -71,9 +71,10 @@ pub(super) struct RawTransport {
     stream_ceiling: Option<u64>,
     #[serde(rename = "keepalive-interval", default)]
     keepalive_interval: Option<u64>,
-    /// `effort = "high"` — held as a string here and parsed in [`validate`], so an
-    /// unrecognized level is rejected with a message naming the five it could have
-    /// been rather than serde's untagged-enum complaint.
+    /// `effort = "high"` — held as a string and passed through unchanged: the
+    /// vocabulary is the model's metadata, not a local enum, so any spelling
+    /// parses and the boot check (`ModelCapabilities::check_effort`) is what
+    /// rejects one the model doesn't declare (docs/transport.md).
     #[serde(default)]
     effort: Option<String>,
 }
@@ -246,10 +247,6 @@ pub enum ValidationError {
     /// `<server>__<tool>`, and the API constrains tool names to `[a-zA-Z0-9_-]`, so the server
     /// name must fit the same alphabet (and stay short enough to leave room for the tool).
     McpServerName(String),
-    /// A `[transport] effort` value outside the five levels the API defines. The
-    /// payload is the parse message from [`crate::api::Effort`], so the flag and
-    /// the config key reject an unknown level in the same words.
-    Effort(String),
 }
 
 impl std::fmt::Display for ValidationError {
@@ -312,7 +309,6 @@ impl std::fmt::Display for ValidationError {
                  the API constrains tool names to that alphabet, and `__` is the separator itself \
                  — a name containing one would move the namespace boundary)"
             ),
-            ValidationError::Effort(why) => write!(f, "[transport] {why}"),
         }
     }
 }
@@ -381,10 +377,7 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
             ),
         },
         transport: crate::config::TransportLimits {
-            effort: match raw.transport.effort {
-                Some(text) => Some(text.parse().map_err(ValidationError::Effort)?),
-                None => None,
-            },
+            effort: raw.transport.effort,
             stream_ceiling: raw
                 .transport
                 .stream_ceiling

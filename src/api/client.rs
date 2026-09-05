@@ -220,7 +220,7 @@ pub struct Client {
     /// lineage's (docs/redaction-fork.md). The keepalive deliberately omits it
     /// (`max_tokens: 0` sends thinking disabled), and the spotter's client never
     /// sets it.
-    effort: Option<Effort>,
+    effort: Option<String>,
     /// Which upstream serves this session, when pinned (docs/transport.md).
     upstream: Option<Upstream>,
     upstream_failure: UpstreamFailureState,
@@ -379,7 +379,7 @@ impl Client {
     /// never changed, since a mid-session change would move the cached prefix.
     /// Applies to every [`Self::complete`] this client makes, so the turn and
     /// the fork peek carry the same envelope; the keepalive is not built from it.
-    pub fn with_effort(mut self, effort: Option<Effort>) -> Self {
+    pub fn with_effort(mut self, effort: Option<String>) -> Self {
         self.effort = effort;
         self
     }
@@ -471,7 +471,7 @@ impl Client {
                 tools,
                 tool_choice,
                 thinking: Thinking::for_request(&self.model, &tool_choice, self.model_reasoning),
-                output_config: self.effort.map(|effort| OutputConfig { effort }),
+                output_config: self.effort.clone().map(|effort| OutputConfig { effort }),
                 temperature: self
                     .temperature
                     .map(|t| self.endpoint.provider.map_temperature(t)),

@@ -229,15 +229,19 @@ pub(crate) enum Command {
         /// of the wire entirely, and the API uses its own default (1.0).
         #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
         temperature: Option<u8>,
-        /// How much effort the model spends per turn: low, medium, high, xhigh,
-        /// max (docs/transport.md). Overrides `[transport] effort` in the config;
+        /// How much effort the model spends per turn, e.g. high, xhigh, max
+        /// (docs/transport.md). Accepted as given and validated at boot against
+        /// the levels the model's metadata declares — an unsupported level is
+        /// refused there with the list, because OpenRouter maps one to the nearest
+        /// supported silently. Overrides `[transport] effort` in the config;
         /// omitted with no config key → the field is left off the wire and the
-        /// provider's own default stands. Boot-time only — there is no runtime
-        /// toggle, since changing a thinking parameter mid-session invalidates the
-        /// message-tier cache. `xhigh`/`max` require thinking, so pairing either
-        /// with EFFERENCE_THINKING=off is refused at startup.
+        /// provider's own default stands (the boot line prints it when the
+        /// metadata names one). Boot-time only — there is no runtime toggle, since
+        /// changing a thinking parameter mid-session invalidates the message-tier
+        /// cache. `xhigh`/`max` require thinking, so pairing either with
+        /// EFFERENCE_THINKING=off is refused at startup.
         #[arg(long, value_name = "LEVEL")]
-        effort: Option<efference::api::Effort>,
+        effort: Option<String>,
         /// Pin which **upstream** serves the model, for an OpenRouter session:
         /// an endpoint slug such as `google-ai-studio` or `google-vertex/global`
         /// (OpenRouter's model page lists them). Repeatable — the

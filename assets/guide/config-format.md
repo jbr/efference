@@ -135,16 +135,23 @@ background-after-max = 600   # ceiling on what one call may ask for
 [transport]
 stream-ceiling = 300         # seconds one response's stream may stay open
 keepalive-interval = 240     # seconds the prompt cache may go untouched at idle; 0 = no ping
-effort = "high"              # low | medium | high | xhigh | max; omit for the provider default
+effort = "high"              # e.g. low/medium/high/xhigh/max; boot-validated against the model's own list; omit for the provider default (printed at boot)
 ```
 
 The keepalive only runs at all if the model's provider metadata reports a prompt
 cache behind it; the interval says how often to touch it, and `0` turns it off.
 
 `effort` is how much effort the model spends per turn, a separate axis from
-whether it thinks. It is read once at session start (`serve --effort` overrides
-it) and cannot change mid-session. `xhigh` and `max` require thinking, so pairing
-either with `EFFERENCE_THINKING=off` is refused at startup.
+whether it thinks. The value is accepted as given — there is no fixed vocabulary
+— and validated at session start against the levels the model's metadata
+declares: on OpenRouter a level the model does not declare is refused at boot
+with the supported list (OpenRouter would otherwise map it to the nearest
+silently), and the provider default is printed on the boot line when nothing is
+set. Anthropic's metadata names no levels, so a misspelled one surfaces as the
+provider's own 400 on the first turn. `serve --effort` overrides this key, both
+are read once at session start, and neither can change mid-session. `xhigh` and
+`max` require thinking, so pairing either with `EFFERENCE_THINKING=off` is
+refused at startup.
 
 ## `[mcp.servers.<name>]` — connected providers
 
