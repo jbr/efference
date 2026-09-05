@@ -281,12 +281,17 @@ impl ResponsesAssembler {
                 }
                 None
             }
+            // The reference shows `message` at the top level; a live quota error
+            // arrived nested as `error.{type,code,message}`. Read both.
             "error" => {
-                let message = body
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("(no message)");
-                return Err(format!("upstream stream error: {message} — {data}").into());
+                let field = |name: &str| {
+                    body.get(name)
+                        .or_else(|| body.get("error").and_then(|e| e.get(name)))
+                        .and_then(Value::as_str)
+                };
+                let message = field("message").unwrap_or("(no message)");
+                let code = field("code").unwrap_or("");
+                return Err(format!("upstream stream error [{code}]: {message} — {data}").into());
             }
             _ => None,
         };

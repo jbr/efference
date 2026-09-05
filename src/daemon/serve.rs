@@ -150,6 +150,8 @@ pub async fn serve<S: Spotter>(
             tools,
             ping_at,
         ));
+    } else if client.dialect() == crate::api::WireDialect::Responses {
+        eprintln!("[keepalive off: no established refresh primitive on the Responses dialect]");
     } else if !cacheable {
         eprintln!(
             "[keepalive off: {} reports no prompt cache behind this model]",

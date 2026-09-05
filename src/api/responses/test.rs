@@ -354,6 +354,19 @@ fn an_error_event_marks_the_turn_record_only() {
     );
 }
 
+/// The live quota error nests its fields under `error`; the reference's flat shape
+/// is read too. The code rides the message so a log line names the class.
+#[test]
+fn a_nested_error_event_surfaces_code_and_message() {
+    let (completion, _) = feed(&[
+        r#"{"type":"response.created","response":{"id":"resp_1","status":"in_progress","output":[]}}"#,
+        r#"{"type":"error","error":{"type":"insufficient_quota","code":"credit_balance_exhausted","message":"You have no credits remaining.","param":null},"sequence_number":2}"#,
+    ]);
+    let why = completion.upstream_failure().unwrap();
+    assert!(why.contains("[credit_balance_exhausted]"), "{why}");
+    assert!(why.contains("You have no credits remaining."), "{why}");
+}
+
 /// `incomplete` at the output cap normalizes to the Messages spelling the loop
 /// reads; a call cut by the cap stays undispatched.
 #[test]
