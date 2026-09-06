@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             serve(
                 session_dir(&id),
                 &model,
-                &spotter_model,
+                spotter_model.as_deref(),
                 config,
                 temperature,
                 effort,

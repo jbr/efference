@@ -92,6 +92,19 @@ impl Provider {
         matches!(self, Self::OpenAI | Self::OpenAICodex)
     }
 
+    /// The spotter model a bare `serve` uses on this provider
+    /// (docs/permissions.md): the cheap band of whatever catalog the provider
+    /// serves, since the spotter shares the endpoint and a Haiku id is meaningless
+    /// on OpenAI. An explicit `--spotter-model` replaces it and still passes the
+    /// provider's capability check.
+    pub fn default_spotter_model(&self) -> &'static str {
+        if self.uses_openai_catalog() {
+            openai::CHEAPEST_MODEL
+        } else {
+            "claude-haiku-4-5"
+        }
+    }
+
     /// Parse the `EFFERENCE_PROVIDER` value. Unset defaults to [`Anthropic`];
     /// anything unrecognized is a hard error naming the valid values — never a
     /// silent fallback (a wrong guess would send the key to the wrong host).
@@ -395,6 +408,7 @@ impl Provider {
                     // Messages API has accepted image blocks on every Claude
                     // model since it shipped, so a metadata response that stops
                     // carrying the field must not disable a working tool.
+                    accepts_temperature: true,
                     supports_image_input: model
                         .capabilities
                         .and_then(|c| c.image_input)
@@ -545,6 +559,7 @@ impl Provider {
                     // response with no `architecture`) reads as text-only, which
                     // is the fail-closed direction for a field whose whole job is
                     // to stop bytes a model cannot read.
+                    accepts_temperature: true,
                     supports_image_input: data
                         .architecture
                         .input_modalities
@@ -732,7 +747,13 @@ pub struct ModelCapabilities {
     /// no image input spends the upload on a 400 or on content the model cannot
     /// read, and the tool's own success message says it worked.
     pub supports_image_input: bool,
-    /// Who chooses prompt-cache write boundaries (docs/transport.md).
+    /// Whether the model takes a sampling `temperature` (docs/transport.md).
+    /// The compiled OpenAI catalog names the models that reject the parameter
+    /// outright (GPT-6 Astra); every other source reports `true` and leaves an
+    /// unsupported value to the provider's own validation. The consumer is the
+    /// boot check: an explicit `--temperature` against a model that refuses one
+    /// fails before any request is sent.
+    pub accepts_temperature: bool,
     /// Anthropic is explicit; OpenRouter can expose explicit, implicit, mixed,
     /// or absent caching across the endpoints serving a slug. The
     /// keepalive checks [`PromptCachePolicy::is_supported`], but support alone

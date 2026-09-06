@@ -1649,6 +1649,7 @@ fn caps_with_effort_levels(
         context_length: 200_000,
         max_output_tokens: None,
         supports_reasoning: true,
+        accepts_temperature: true,
         supports_image_input: false,
         prompt_cache: PromptCachePolicy::Explicit,
         supported_efforts: levels.map(|l| l.iter().map(|s| s.to_string()).collect()),
@@ -1820,12 +1821,47 @@ fn openai_gpt_5_6_capability_profiles_are_exact() {
         assert!(caps.supports_image_input, "{model}");
         assert_eq!(caps.prompt_cache, PromptCachePolicy::Explicit, "{model}");
         assert_eq!(caps.default_effort.as_deref(), Some("medium"), "{model}");
+        assert!(caps.accepts_temperature, "{model}");
         assert_eq!(
             caps.supported_efforts.as_deref(),
             Some(&["none", "low", "medium", "high", "xhigh", "max"].map(String::from)[..]),
             "{model}",
         );
     }
+
+    // GPT-6 Astra: the model page's window and output, no `none` effort, no
+    // temperature (docs/transport.md).
+    let astra = super::provider::openai_model_capabilities("gpt-6-astra").unwrap();
+    assert_eq!(astra.context_length, 1_050_000);
+    assert_eq!(astra.max_output_tokens, Some(128_000));
+    assert!(astra.supports_reasoning && astra.supports_image_input);
+    assert!(!astra.accepts_temperature);
+    assert_eq!(astra.default_effort, None);
+    assert_eq!(
+        astra.supported_efforts.as_deref(),
+        Some(&["low", "medium", "high", "xhigh", "max"].map(String::from)[..]),
+    );
+    // The harness does not normalize slugs: a `.0` the catalog never named is unknown,
+    // and the error lists what this build knows.
+    let error = super::provider::openai_model_capabilities("gpt-6.0-astra")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("gpt-6-astra"), "{error}");
+
+    // The spotter default follows the catalog (docs/permissions.md).
+    assert_eq!(Provider::OpenAI.default_spotter_model(), "gpt-5.6-luna");
+    assert_eq!(
+        Provider::OpenAICodex.default_spotter_model(),
+        "gpt-5.6-luna"
+    );
+    assert_eq!(
+        Provider::Anthropic.default_spotter_model(),
+        "claude-haiku-4-5"
+    );
+    assert_eq!(
+        Provider::OpenRouter.default_spotter_model(),
+        "claude-haiku-4-5"
+    );
 
     let error = super::provider::openai_model_capabilities("gpt-5.7-luna")
         .unwrap_err()

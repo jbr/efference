@@ -10,6 +10,25 @@ use super::{ModelCapabilities, PromptCachePolicy};
 use crate::api::Error;
 
 const GPT_5_6_EFFORTS: &[&str] = &["none", "low", "medium", "high", "xhigh", "max"];
+/// Astra drops `none`; the guide's migration note sends `none` users to `low`.
+const GPT_6_ASTRA_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+
+/// Every model this build knows, for the error that names them.
+pub const KNOWN_MODELS: &[&str] = &[
+    "gpt-5.6",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-6-astra",
+];
+
+/// The catalog's cheapest entry, the spotter default on either OpenAI arm
+/// (docs/permissions.md).
+pub const CHEAPEST_MODEL: &str = "gpt-5.6-luna";
+
+fn efforts(list: &[&str]) -> Option<Vec<String>> {
+    Some(list.iter().map(|effort| (*effort).to_string()).collect())
+}
 
 /// Capabilities for an OpenAI model known to this build.
 pub fn model_capabilities(model: &str) -> Result<ModelCapabilities, Error> {
@@ -19,18 +38,28 @@ pub fn model_capabilities(model: &str) -> Result<ModelCapabilities, Error> {
             max_output_tokens: Some(128_000),
             supports_reasoning: true,
             supports_image_input: true,
+            accepts_temperature: true,
             prompt_cache: PromptCachePolicy::Explicit,
-            supported_efforts: Some(
-                GPT_5_6_EFFORTS
-                    .iter()
-                    .map(|effort| (*effort).to_string())
-                    .collect(),
-            ),
+            supported_efforts: efforts(GPT_5_6_EFFORTS),
             default_effort: Some("medium".to_string()),
+        }),
+        // From the model page (1,050,000 context, 128,000 max output, text and
+        // image input, efforts low–max) and the Astra guide: no `none` effort,
+        // and `temperature` must be omitted. The page names no default effort.
+        "gpt-6-astra" => Ok(ModelCapabilities {
+            context_length: 1_050_000,
+            max_output_tokens: Some(128_000),
+            supports_reasoning: true,
+            supports_image_input: true,
+            accepts_temperature: false,
+            prompt_cache: PromptCachePolicy::Explicit,
+            supported_efforts: efforts(GPT_6_ASTRA_EFFORTS),
+            default_effort: None,
         }),
         _ => Err(format!(
             "OpenAI model {model:?} has no capability profile in this efference build; \
-             known models are gpt-5.6, gpt-5.6-sol, gpt-5.6-terra, and gpt-5.6-luna"
+             known models are {}",
+            KNOWN_MODELS.join(", ")
         )
         .into()),
     }

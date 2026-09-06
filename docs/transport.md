@@ -648,8 +648,16 @@ openai-provider/validation.md).
 **Not on this dialect.** The `max_tokens: 0` keepalive is a Messages primitive; the
 daemon never starts the loop on Responses (backlog: openai-provider/validation.md).
 OpenAI exposes no per-generation cost endpoint, so cost tracking stays off. The
-spotter model must be one the compiled OpenAI catalog knows (`--spotter-model`);
-the Haiku default is rejected at boot.
+spotter model must be one the compiled OpenAI catalog knows: a bare `serve` takes
+the provider's cheap band (`Provider::default_spotter_model`, gpt-5.6-luna here,
+claude-haiku-4-5 on the Messages providers), and an explicit `--spotter-model`
+passes the same catalog check the main model did. The catalog
+(`api/provider/openai.rs`) is exact per model: GPT-5.6 and its sol/terra/luna
+variants, and GPT-6 Astra, which takes no `none` effort and no `temperature` —
+`ModelCapabilities::accepts_temperature` is what makes an explicit
+`--temperature` against it fail at boot rather than on the first request. An
+unknown slug is refused with the list this build knows; slugs are never
+normalized, so `gpt-6.0-astra` is unknown.
 
 ## Providers
 

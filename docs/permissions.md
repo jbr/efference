@@ -429,8 +429,8 @@ look like an ordinary relative path and a broad grant would then appear to cover
 ## The spotter (`src/spotter.rs`)
 
 What the fast-path can't `Clear` falls to the **spotter** before it reaches the human — a
-one-shot, **fresh-context** model call (Haiku band, on its own `Client`, model-independent
-of the acting session) that re-decides the residual. Independence is the point: the
+one-shot, **fresh-context** model call (the provider's cheap band by default, on its own
+`Client`, model-independent of the acting session) that re-decides the residual. Independence is the point: the
 acting session can't check its own folly because it shares its own trajectory; the spotter
 can, precisely because its context is built from scratch — *not* `project(log)`.
 

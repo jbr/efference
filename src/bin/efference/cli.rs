@@ -222,9 +222,10 @@ pub(crate) enum Command {
         /// Model for the spotter permission rung.
         ///
         /// Independent of the agent model — the spotter is volume work, so it defaults to the
-        /// cheap band (Haiku) regardless of what the agent runs.
-        #[arg(long, default_value = "claude-haiku-4-5")]
-        spotter_model: String,
+        /// provider's cheap band regardless of what the agent runs: claude-haiku-4-5 on
+        /// Anthropic and OpenRouter, gpt-5.6-luna on OpenAI and OpenAI-Codex.
+        #[arg(long)]
+        spotter_model: Option<String>,
         /// Path to the config file. Defaults to `efference.toml` in the current directory.
         ///
         /// With no file present the built-in default config is used. An explicit path that doesn't exist is an error. The resolved path is

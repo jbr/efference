@@ -145,7 +145,7 @@ fn resolve_env_values(
 pub(crate) async fn serve(
     session_dir: PathBuf,
     model: &str,
-    spotter_model: &str,
+    spotter_model: Option<&str>,
     config: Option<PathBuf>,
     temperature: Option<u8>,
     effort: Option<String>,
@@ -216,6 +216,13 @@ pub(crate) async fn serve(
             .into());
         }
     };
+    // A model that refuses the parameter fails here rather than on the first
+    // request, where the rejection would read as a transport error.
+    if temperature.is_some() && !capabilities.accepts_temperature {
+        return Err(
+            format!("--temperature: {model} does not accept a sampling temperature").into(),
+        );
+    }
     eprintln!(
         "model: {model} · context {} tokens{}",
         capabilities.context_length,
@@ -505,8 +512,10 @@ pub(crate) async fn serve(
     // sticky key (`for_spotter`): same endpoint, but a prefix the agent lineage never
     // shares, so pointing both at one model doesn't pin them to one route.
     // The spotter shares the endpoint, so its model must be one the provider serves:
-    // the Haiku default is meaningless on OpenAI, and the catalog is the check the
-    // main model already passed (docs/transport.md).
+    // omitted, it is the provider's cheap band; explicit, it still passes the catalog
+    // check the main model already passed (docs/transport.md).
+    let spotter_model = spotter_model.unwrap_or_else(|| endpoint.provider.default_spotter_model());
+    eprintln!("spotter: {spotter_model}");
     if endpoint.provider.uses_openai_catalog()
         && let Err(e) = efference::api::openai_model_capabilities(spotter_model)
     {
