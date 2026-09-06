@@ -2,6 +2,9 @@
 
 use super::*;
 
+#[cfg(test)]
+mod test;
+
 impl<'a> InteractiveState<'a> {
     /// Create new interactive state. The document starts empty; it is filled in
     /// as [`TuiEvent`]s arrive over `events`. The argument count is the stateful
@@ -172,6 +175,14 @@ impl<'a> InteractiveState<'a> {
     /// runs the call and the `ToolResult` after (`src/agent.rs`), so the unpaired
     /// tail of the log the TUI already holds is exactly "what is running now."
     ///
+    /// Dialect-neutral: reads calls through [`AssistantOutput::tool_calls`], so a
+    /// Responses function call is found the same way a Messages `tool_use` is
+    /// (docs/log-and-projection.md). That view is derived — a Responses call parses
+    /// its argument string on demand — which is why this returns an owned call rather
+    /// than a borrow into the log. An entry whose arguments do not parse yields
+    /// `None`: the loop records such a turn without executing it, so nothing is in
+    /// flight.
+    ///
     /// `disable_parallel_tool_use` asks for one call per turn but cannot enforce it
     /// (docs/README.md), so an entry may carry several — and the loop appends *no*
     /// result until every call has run and the gate has closed
@@ -181,19 +192,21 @@ impl<'a> InteractiveState<'a> {
     /// the cost is a slightly stale label rather than a wrong lifecycle state. A gate
     /// pending on the call looks the same from here; callers that care check
     /// `pending_gate` first.
-    pub(in crate::tui) fn in_flight_call(&self) -> Option<&crate::log::ToolCall> {
+    ///
+    /// [`AssistantOutput::tool_calls`]: crate::log::AssistantOutput::tool_calls
+    pub(in crate::tui) fn in_flight_call(&self) -> Option<crate::log::ToolCall> {
         let (idx, call) = self
             .log
             .iter()
             .enumerate()
             .rev()
             .find_map(|(i, entry)| match &entry.payload {
-                Payload::Assistant { output, .. } => output.messages().and_then(|blocks| {
-                    blocks.iter().find_map(|block| match block {
-                        crate::log::MessagesOutputBlock::ToolUse(call) => Some((i, call)),
-                        _ => None,
-                    })
-                }),
+                Payload::Assistant { output, .. } => output
+                    .tool_calls()
+                    .ok()?
+                    .into_iter()
+                    .next()
+                    .map(|call| (i, call)),
                 _ => None,
             })?;
         let paired = self.log[idx + 1..].iter().any(|entry| {

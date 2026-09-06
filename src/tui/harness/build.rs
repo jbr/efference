@@ -123,6 +123,32 @@ impl Screenplay<'_> {
         self.event(TuiEvent::Running(true))
     }
 
+    /// The Responses-dialect twin of [`running_tool`](Self::running_tool): commit an
+    /// assistant turn carrying one `function_call` item whose `arguments` is exactly
+    /// the given string, unpaired, with the loop reported running. The string is
+    /// passed through verbatim so a scenario can stage a malformed one — the
+    /// record-only shape the loop leaves when the provider's arguments do not parse.
+    pub(crate) fn running_responses_tool(
+        &mut self,
+        call_id: &str,
+        name: &str,
+        arguments: &str,
+    ) -> &mut Self {
+        self.commit(Payload::Assistant {
+            output: crate::log::AssistantOutput::Responses(vec![
+                crate::log::ResponsesOutputItem::FunctionCall {
+                    id: Some(format!("fc_{call_id}")),
+                    call_id: CallId(call_id.into()),
+                    name: name.into(),
+                    arguments: arguments.into(),
+                    status: Some("completed".into()),
+                },
+            ]),
+            upstream_failure: None,
+        });
+        self.event(TuiEvent::Running(true))
+    }
+
     /// The common case of [`running_tool`](Self::running_tool): a foreground `bash`
     /// command mid-run — the one state that offers `background` and `kill`.
     pub(crate) fn running_bash(&mut self, call_id: &str, command: &str) -> &mut Self {

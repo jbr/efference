@@ -214,7 +214,9 @@ impl InteractiveState<'_> {
             // naming, so there it reads `kill`. `background` stays bash-only: the
             // handoff adopts a live child into the supervisor, and there is no
             // child to adopt anywhere else.
-            let bash_foreground = self.in_flight_call().is_some_and(bash::is_foreground_call);
+            let bash_foreground = self
+                .in_flight_call()
+                .is_some_and(|call| bash::is_foreground_call(&call));
             return if bash_foreground {
                 vec![
                     item("background", "b", StripVerb::Background),

@@ -91,7 +91,7 @@ impl<'a> InteractiveState<'a> {
         let _ = self.interrupt_tx.send(Interrupt::Kill);
         self.ui.debug_message = if self
             .in_flight_call()
-            .is_some_and(crate::bash::is_foreground_call)
+            .is_some_and(|call| crate::bash::is_foreground_call(&call))
         {
             "interrupting — killing the running command · type to steer".into()
         } else {
