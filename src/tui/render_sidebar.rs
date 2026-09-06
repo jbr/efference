@@ -276,7 +276,7 @@ impl<'a> InteractiveState<'a> {
                 y += 1;
             }
             // The review-level dial (docs/tui.md) — who reviews a
-            // gated call. Read-only here; set it with `efference review-level` (the interactive
+            // gated call. Read-only here; set it with `efference control review-level` (the interactive
             // gear selector is deferred to the ergonomics pass).
             if let Some(level) = &policy.review_level
                 && y < bottom

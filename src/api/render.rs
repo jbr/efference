@@ -3,7 +3,7 @@
 use super::*;
 
 /// Render the full request envelope as pretty JSON — the dev `wire` view (the
-/// `efference wire` subcommand) of exactly what [`Client::complete`] POSTs for a
+/// `efference dev wire` subcommand) of exactly what [`Client::complete`] POSTs for a
 /// real turn: the same private [`Request`] shape, with `max_tokens`/`stream` set
 /// as a streaming turn sends them. The transport headers (`x-api-key`,
 /// `anthropic-version`) are request metadata, not part of the body the model

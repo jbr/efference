@@ -163,7 +163,7 @@ signal in the request said "ordinary tool result", including `tools[]` carrying 
 world toolset under `tool_choice: auto`.
 
 Measured by replaying a recorded session's gates one feature at a time
-(`efference peek`), **no single one of those is necessary** — ablating any one of the
+(`efference dev peek`), **no single one of those is necessary** — ablating any one of the
 banner, the leading/closing imperative, the triage-turn stance, or the field block leaves
 the failure rate where it is, while ablating all four costs about twelve points. The
 shaping is redundant rather than resting on a particular sentence, which is the useful
@@ -325,7 +325,7 @@ caching. But the fork's *decision* is logged as a `Triage` entry (in `src/log.rs
 The fork runs under the same thinking policy as an agent turn (the shared envelope above),
 so most gates think. That thinking is recorded on the `Triage` entry and **never
 projected** — it is what answers "why did *that* verdict happen", where replay
-(`efference peek`) answers "how does the fork reason about this class of result". Text
+(`efference dev peek`) answers "how does the fork reason about this class of result". Text
 only: a thinking block's `signature` is what the API needs to replay it, and the fork's
 tail is discarded rather than replayed. It is operator/developer observability, with no
 client surface.

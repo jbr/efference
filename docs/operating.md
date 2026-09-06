@@ -8,6 +8,55 @@ same surface serves both.
 The rest of `docs/` describes how the harness is built. This one describes how it is
 driven, and it is refined from use rather than written ahead of it.
 
+## Three groups of commands
+
+`efference --help` lists only what a person types: `serve`, `tui`, `view`, `attach`,
+`open`, `check`, `cache`, `host`. The rest is grouped by who it is for.
+
+- **`efference control <tool>`** — the twelve calls that drive a *running* session:
+  `turn`, `approve`, `settle`, `interrupt`, `background`, `pace`, `review-level`,
+  `notify`, `dismiss`, `image`, `state`, `log`. Each is one control-API call over the
+  session's socket ([control-channel.md](control-channel.md)).
+- **`efference mcp`** — the same twelve, served as an MCP server over stdin/stdout
+  (below). One definition, two entry points: they are written once as mcplease tools
+  (`src/bin/efference/control/`, one file per tool) and mounted both ways, so the
+  command line and a mounting harness cannot drift apart.
+- **`efference dev <verb>`** — instruments for developing efference itself: `wire`,
+  `gallery`, `peek`, `spotter`, `spotter-log`, `spotter-eval`. Compiled under the `dev`
+  cargo feature, which is in `default`; a release build passes `--no-default-features`.
+
+`--name` and `--socket` are global, so they sit before the group: `efference --name foo
+control state`.
+
+### Mounting the control tools in another harness
+
+`efference mcp` speaks newline-delimited JSON-RPC on stdin/stdout and blocks until stdin
+closes, which is the transport a locally-spawned MCP server speaks. A Claude Code
+`.mcp.json` mounts it with:
+
+```json
+{
+  "mcpServers": {
+    "efference": {
+      "command": "efference",
+      "args": ["--name", "my-session", "mcp"]
+    }
+  }
+}
+```
+
+Session selection is the same two knobs as the command line and nothing more: the socket
+resolved at startup from `--name`/`--socket`/discovery, and an optional `session` argument
+on every tool that overrides it for one call. The server's `instructions` and each tool's
+description are written for the model reading `tools/list`; the behaviour hints say which
+tools read and which mutate, since the spec's defaults are pessimistic and a mounting
+harness's approval UX reads them.
+
+The three waiting tools — `settle`, and `turn`/`approve` with `wait` — take a `timeout_s`,
+because MCP clients time tool calls out. On expiry they answer with the current state
+marked `settled: false` rather than with an error, so a caller never has to tell "still
+working" from "the socket broke".
+
 ## Where a session lives
 
 `efference serve` mints `.efference/<id>/` and never reuses one. It holds:
@@ -25,11 +74,11 @@ skipped, so discovery finds the running session rather than the most recent one.
 
 Three reads, at three grains.
 
-- **`efference state`** — the whole ephemeral picture in one JSON object: the pending gate,
+- **`efference control state`** — the whole ephemeral picture in one JSON object: the pending gate,
   the inbox, running processes, token usage and cost, the pace and review-level dials, the
   **effective** policy in force, and the three condition topics (`stall`, `upstream_retry`,
   `config_repair`). Effective, not boot: a grant made twenty minutes ago shows up here.
-- **`efference log [--since N]`** — the durable history. Entries are immutable, so anything
+- **`efference control log [--since N]`** — the durable history. Entries are immutable, so anything
   you have already read stays valid.
 - **`GET /events`** — one SSE stream carrying everything as it happens, in one order:
   durable log entries, pre-commit output (assistant text, thinking, tool arguments
@@ -78,7 +127,7 @@ decisions resolve it:
 | **redirect** | reject it, and send text to the model as the next user turn. |
 | **config_edit** | change the rule, then re-check *this* call against the new one. |
 
-`efference approve` sends the first; `--abort` and `--redirect <msg>` the next two. In the
+`efference control approve` sends the first; `--abort` and `--redirect <msg>` the next two. In the
 TUI, an empty composer approves, `.abort` aborts, and any other text redirects.
 
 **What approving scopes: this call, and nothing else.** There is no "allow this kind of
@@ -146,33 +195,33 @@ resolve its own.
 
 ## The dials
 
-- **`efference review-level <level>`** — who reviews a call the fast path did not clear.
+- **`efference control review-level <level>`** — who reviews a call the fast path did not clear.
   `spotter_human` is the supervised default (fast path → spotter → you). `autonomous`
   removes the synchronous human: the spotter still runs and can clear, and what it will not
   clear is handed back to the model with the reason and a pointer at its own config file —
   so routine gates self-resolve and your attention is spent on genuine policy requests.
   `human_only` skips the spotter entirely and sends everything it did not clear to you.
-- **`efference pace [--speed-ms N] [--hold | --resume]`** — a between-turns wall-clock
+- **`efference control pace [--speed-ms N] [--hold | --resume]`** — a between-turns wall-clock
   delay, and a hold overlay on top of it. Holding parks the loop at the next juncture; the
   speed underneath is retained, so resuming returns to it. Sending a turn also resumes.
   None of this is visible to the agent.
-- **`efference interrupt`** — signal a running tool: its process group is killed. Fired
+- **`efference control interrupt`** — signal a running tool: its process group is killed. Fired
   while the model is generating instead, the *next* call does not run. Fired where a
   result lands, the call's output is kept out of the model's context entirely while staying
   in the log for you — the answer when a cleared call is about to put several thousand
   tokens of the wrong thing into the transcript.
-- **`efference background [--note …]`** — hand the running foreground command to the
+- **`efference control background [--note …]`** — hand the running foreground command to the
   background supervisor instead of killing it. It keeps running as `p#<n>`, its output
   surfaces at later steps, and the optional note is delivered to the model as a user
   message alongside the handoff.
 
 ## Speaking to a running session
 
-- **`efference turn <text>`** — a user turn. It never waits for the trajectory to end: it is
+- **`efference control turn <text>`** — a user turn. It never waits for the trajectory to end: it is
   picked up at the next juncture, after the current tool's results land, and merges into the
   same message as those results. So mid-trajectory steering arrives *with* the evidence the
   model is about to reason from, not after it.
-- **`efference notify <source> <body>`** — an ambient notification into the inbox. Unlike a
+- **`efference control notify <source> <body>`** — an ambient notification into the inbox. Unlike a
   turn, this is **triageable**: the model may pin it, dismiss it, or leave it. Use it for
   things that can wait and might not matter. `--slot <name>` supersedes an earlier
   notification on the same channel rather than stacking.
@@ -186,17 +235,17 @@ resolve its own.
 The asymmetry is deliberate: a user turn is canonical and cannot be dismissed by the model;
 a notification can. Say it as a turn when it must land.
 
-**`efference image <seq> [idx]`** writes a logged result image back out as a file — the same
+**`efference control image <seq> [idx]`** writes a logged result image back out as a file — the same
 bytes the model was sent, not a re-render of a source file that may since have changed.
 
-`--wait` on `turn` and `approve`, and the standalone `efference settle`, block until the
+`--wait` on `turn` and `approve`, and the standalone `efference control settle`, block until the
 daemon reaches a decision point and print the resulting state — which is how a script or an
 agent operator drives a session as *act, read, act* instead of polling.
 
 ## Silence, and what it means
 
 A session that has said nothing for two minutes is in one of a few conditions, and
-`efference state` distinguishes them. Guessing is no longer necessary.
+`efference control state` distinguishes them. Guessing is no longer necessary.
 
 - **`upstream_retry` is non-null** — a request or a stream failed and the transport is
   retrying on a capped schedule. The topic carries the attempt, the budget, when the next
@@ -215,7 +264,7 @@ A session that has said nothing for two minutes is in one of a few conditions, a
   stream's `thinking_delta` and `tool_call_input` frames are what tell a live turn from a
   hung one; the TUI renders them.
 
-Long-poll `GET /state?wait=settled` (or `efference settle`) blocks until a gate opens or the
+Long-poll `GET /state?wait=settled` (or `efference control settle`) blocks until a gate opens or the
 loop goes idle, capped server-side, and is the shape a supervising process should loop on.
 
 The inverse condition is a session that looks entirely healthy and is quietly paying full
@@ -255,7 +304,7 @@ until it is relevant), and the `watch-for` list (which the spotter holds instead
 Beyond turns, calls, and results, the log carries the decisions:
 
 - **`Spot`** — every spotter verdict, its stance, its one-line reason, and the prefix it was
-  asked to vouch for. Audit-only; it never reaches the wire. `efference spotter-log`
+  asked to vouch for. Audit-only; it never reaches the wire. `efference dev spotter-log`
   summarizes these across sessions.
 - **`ConfigEdit`** — every proposed, committed, or cancelled policy change, with its note.
 - **`Triage`** — what each result's peek decided to keep, and whether the verdict came from

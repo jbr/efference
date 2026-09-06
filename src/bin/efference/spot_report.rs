@@ -1,30 +1,7 @@
-//! `efference spotter-log` — read a session log and report the spotter's verdicts (docs/permissions.md).
+//! `efference dev spotter-log` — read a session log and report the spotter's verdicts (docs/permissions.md).
 
 use super::*;
-
-// ---- spotter-log survey (docs/permissions.md) ----
-// Minimal ANSI so the survey reads at a glance on a tty and stays clean when piped.
-pub(crate) const BOLD: &str = "1";
-
-pub(crate) const DIM: &str = "2";
-
-pub(crate) const RED: &str = "31";
-
-pub(crate) const GREEN: &str = "32";
-
-pub(crate) const YELLOW: &str = "33";
-
-pub(crate) const GREEN_BOLD: &str = "1;32";
-
-/// Wrap `s` in an ANSI SGR code, but only when writing to a terminal — piped output stays plain
-/// (and grep/`jq`-friendly). The reset always closes the span so padded widths stay correct.
-pub(crate) fn paint(s: &str, code: &str, tty: bool) -> String {
-    if tty {
-        format!("\x1b[{code}m{s}\x1b[0m")
-    } else {
-        s.to_string()
-    }
-}
+use crate::dev::StanceArg;
 
 /// The uppercase display label and colour for a stance in the survey listing.
 pub(crate) fn stance_label(stance: efference::log::Stance) -> (&'static str, &'static str) {

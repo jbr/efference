@@ -1,4 +1,4 @@
-//! A scripted emitter for the streaming render path (`efference gallery --stream`).
+//! A scripted emitter for the streaming render path (`efference dev gallery --stream`).
 //!
 //! The gallery runs the real [`ui_loop`](crate::tui::ui_loop) over a fixed offline
 //! log, holding the [`TuiEvent`] sender for the session's life. This pushes live

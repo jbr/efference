@@ -1,5 +1,5 @@
 //! The element gallery — a fixed "one of each" transcript for eyeballing the real
-//! TUI (`efference gallery`), the terminal cousin of a component design page.
+//! TUI (`efference dev gallery`), the terminal cousin of a component design page.
 //!
 //! It builds a [`LogEntry`] sequence that exercises every transcript shape — rich
 //! markdown prose (headings, lists, quote, table, code, rule, inline styles), a

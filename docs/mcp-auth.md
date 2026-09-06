@@ -132,7 +132,7 @@ place the harness stops and waits for a human mid-startup. Per server:
    read the challenge out of it), run the dance and mount again with the token.
 3. Anything else is a mount failure like any other: fatal unless `optional = true`.
 
-`efference spotter --tool` mounts through the plain path with no credentials and no
+`efference dev spotter --tool` mounts through the plain path with no credentials and no
 dance, so a spotter check can never open a browser; a server needing authorization
 fails there with a message pointing at `serve`. `--reauth <server>` discards stored
 credentials first, for a revoked grant or a changed authorization server.

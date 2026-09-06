@@ -202,5 +202,5 @@ so each server's advertised tools print against the file's `tools` grants. It pr
 preamble's size, or the boot-time error. Stored MCP credentials are reused; a server needing
 authorization is reported, never authorized here. **The task is complete when the check passes and
 the operator has seen the decisions.** A session started from the file then holds a
-verbatim copy at `.efference/<id>/config.toml`, and `efference state` prints the
+verbatim copy at `.efference/<id>/config.toml`, and `efference control state` prints the
 **effective** policy in force, which is that file plus every change approved since boot.

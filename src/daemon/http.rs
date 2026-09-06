@@ -883,7 +883,7 @@ struct EventsRequest {
 }
 
 /// [`router_with_heartbeat`] at the real [`EVENTS_HEARTBEAT`] interval.
-pub(crate) fn router() -> Router {
+pub fn router() -> Router {
     router_with_heartbeat(EVENTS_HEARTBEAT)
 }
 

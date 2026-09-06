@@ -1,5 +1,5 @@
 //! A pseudo-YAML pretty-printer for [`serde_json::Value`] — a deliberately lossy,
-//! **read-only** rendering for eyeballing the dev `wire` view (`efference wire
+//! **read-only** rendering for eyeballing the dev `wire` view (`efference dev wire
 //! --format yaml`). It trades round-trip fidelity for readability of deeply
 //! nested, escape-heavy JSON: multi-line strings (tool-schema descriptions, the
 //! system prompt, tool-result bodies) unfold into indented blocks instead of

@@ -961,6 +961,13 @@ mod topics;
 mod views;
 mod watch;
 
+/// The control API's handler (docs/control-api.md) — every `(method, path)` the
+/// daemon answers, as one [`Router`]. `serve` mounts it behind the Unix socket and
+/// the TCP gate mounts it behind authentication; it is public so a client of the
+/// control channel can also mount it on an in-memory transport and exercise a real
+/// request/response cycle without binding anything.
+pub use http::router;
+
 pub(crate) use watch::refresh_and_emit;
 
 use approvals::Pending;
@@ -977,8 +984,8 @@ use stream::{Include, control_stream};
 use topics::{StateUpdate, watch_topics};
 
 use attachments::attachments_watch_loop;
+use http::LogSelect;
 pub use http::mint_submission_id;
-use http::{LogSelect, router};
 pub use keepalive::DEFAULT_KEEPALIVE_INTERVAL;
 use keepalive::keepalive_loop;
 use watch::config_watch_loop;

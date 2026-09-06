@@ -262,7 +262,7 @@ pub(crate) fn entry_nodes(
             // It draws nothing here.
             Payload::ProcessEvent(_) => {}
             // The boot preamble snapshot (docs/context.md) — session boot record,
-            // not conversation; the human inspects it via `efference wire`, not the transcript.
+            // not conversation; the human inspects it via `efference dev wire`, not the transcript.
             Payload::Preamble { .. } => {}
         }
     }

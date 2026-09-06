@@ -264,7 +264,7 @@ fn redacted_thinking_says_so_rather_than_rendering_nothing() {
     );
 }
 
-/// Renders the `efference gallery` transcript (every element type) headlessly,
+/// Renders the `efference dev gallery` transcript (every element type) headlessly,
 /// at a tall terminal so most of it fits — a regression guard for the live
 /// design page and a single place to eyeball the whole element set at once.
 #[test]

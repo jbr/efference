@@ -13,7 +13,7 @@
 //! 3. Anything else, or a second failure, is a mount failure like any other:
 //!    fatal unless the stanza is `optional = true`.
 //!
-//! Only `efference serve` calls this. `efference spotter --tool` mounts through
+//! Only `efference serve` calls this. `efference dev spotter --tool` mounts through
 //! the plain path, so a spotter check can never open a browser — it fails with
 //! a message pointing here instead.
 

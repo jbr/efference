@@ -543,7 +543,7 @@ the definition the server actually advertises rather than a hand-written stand-i
 drift from it. `--show-move` prints the exact block sent (implied by `--tool`), and
 `--no-brief` withholds it — the A/B that measures what the brief changes. Config, mount, and
 brief all resolve before credentials do, so a typo'd tool name or an unreachable server fails
-on its own terms and the move preview works with no key at all. Its read-side companion, `efference spotter-log`, surveys
+on its own terms and the move preview works with no key at all. Its read-side companion, `efference dev spotter-log`, surveys
 these `Spot` entries back out of the session logs — a stance-distribution summary (with the
 fail-closed rate) plus each verdict correlated to the call it judged and its one-line reason,
 across every `.efference/*/log.jsonl` or one session; `--stance`/`--no-fallback` filter, and
@@ -646,7 +646,7 @@ always has an owner.
 ## The review-level dial (`src/agent.rs`, `src/daemon/config_edits.rs`)
 
 **Who reviews a call the fast-path didn't clear** is a runtime dial — a [`ReviewLevel`] ordinal on
-`Shared` (`policy.rs`), set over the control channel (`PATCH /loop {review_level}`, `efference review-level`)
+`Shared` (`policy.rs`), set over the control channel (`PATCH /loop {review_level}`, `efference control review-level`)
 and reported on `GET /state`, orthogonal to pace ([operator participation](control-channel.md#operator-participation--the-intervention-points)). Three
 positions of increasing human involvement:
 
@@ -704,7 +704,7 @@ safe-votes reach `PROMOTE_AFTER_SAFE_VOTES` (`K`), the loop files a non-blocking
 The descent self-terminates: `git`→not-safe, then `git log`→safe promotes `git log`, whose subtree
 then fast-path clears and never reaches the spotter again. `K`/`N` are the dials toward evidence-only,
 human-out-of-the-loop promotion (each probe is a *fresh* spotter, so probing a prefix across its
-recurrences is independent-judge consensus accruing in the ledger). `efference spotter --probe
+recurrences is independent-judge consensus accruing in the ledger). `efference dev spotter --probe
 <prefix> …` exercises one probe. See
 [`../backlog/permissions/prefix-promotion.md`](../backlog/permissions/prefix-promotion.md).
 

@@ -1,9 +1,10 @@
 //! The control-channel client (docs/control-channel.md).
 //!
 //! Every non-loop interaction with a running daemon goes through here: the
-//! scriptable verbs (`efference turn`/`approve`/`interrupt`/`state`/`log`) and the
-//! `attach` REPL are all clients of the same socket, with no privileged in-process
-//! path. Built on `trillium-tokio`'s [`UnixClientConfig`].
+//! `efference control <tool>` group and the MCP server that shares its definition
+//! (docs/operating.md), the TUI, and the `attach` REPL are all clients of the same
+//! socket, with no privileged in-process path. Built on `trillium-tokio`'s
+//! [`UnixClientConfig`].
 //!
 //! The connector dials a *fixed* socket path, so the request URL's host/port are
 //! ignored (only the path + metadata matter) — we mount a placeholder base and

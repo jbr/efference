@@ -298,7 +298,7 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
             paint(
                 "  A run this long means the provider stopped matching the prefix — check\n  \
                  what moved between requests (a dependency's serialization, a per-session\n  \
-                 field on the wire, a provider-side normalization). `efference wire` prints\n  \
+                 field on the wire, a provider-side normalization). `efference dev wire` prints\n  \
                  the projection the pins cover.",
                 DIM,
                 tty

@@ -74,7 +74,7 @@ carries the gate, processes, usage, and effective policy that used to require
 it.
 
 > **`GET /state` is still served** as a one-shot read (a script, a health
-> check, the `efference state` verb). No shipped client polls it: the
+> check, the `efference control state` verb). No shipped client polls it: the
 > reference TUI holds one stream connection and derives everything from its
 > frames.
 

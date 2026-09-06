@@ -215,7 +215,7 @@ unknown fields, so a renamed key fails there), every tool name a document declar
 - **Snapshotted into the log.** Because the preamble folds in file contents that drift on
   disk, it is no longer reconstructable from `config + current files` — so `serve` appends
   the full rendered system prompt as a `Payload::Preamble` entry once at boot
-  ([log-and-projection.md](log-and-projection.md)). The log stays the complete record; `efference wire`
+  ([log-and-projection.md](log-and-projection.md)). The log stays the complete record; `efference dev wire`
   reads the snapshot back instead of re-resolving; and once order is baked into the
   snapshot, sort order is a pure semantic choice, never a stability constraint. The entry
   also carries the **structured** `Resolved` listing (the `Section`/`Item` tree) beside the

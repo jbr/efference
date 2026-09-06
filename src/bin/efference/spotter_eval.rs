@@ -1,4 +1,4 @@
-//! `efference spotter-eval` — run the labeled spotter corpus against a model
+//! `efference dev spotter-eval` — run the labeled spotter corpus against a model
 //! (docs/permissions.md).
 //!
 //! Each case is a self-contained (config, call, expected) triple; the runner

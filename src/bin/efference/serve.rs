@@ -453,7 +453,7 @@ pub(crate) async fn serve(
     // Snapshot the rendered boot preamble into the log (docs/context.md): the
     // [context] block folds in file contents that drift on disk, so the preamble is no longer
     // reconstructable from config + current files — this one entry keeps the log the complete
-    // record of the wire. `efference wire` reads it back instead of rebuilding.
+    // record of the wire. `efference dev wire` reads it back instead of rebuilding.
     log.append(
         0,
         efference::log::Payload::Preamble {
@@ -568,6 +568,7 @@ pub(crate) async fn serve(
 
 /// Every mounted tool name, dotted — what the tester prints when `--tool` names
 /// something no provider owns.
+#[cfg(feature = "dev")]
 fn available_tools(toolbox: &Toolbox) -> Vec<String> {
     toolbox
         .definitions()
@@ -590,6 +591,7 @@ fn available_tools(toolbox: &Toolbox) -> Vec<String> {
 ///
 /// [`ToolCall`]: efference::log::ToolCall
 #[allow(clippy::too_many_arguments)] // a dev tester: every knob is one flag
+#[cfg(feature = "dev")]
 pub(crate) async fn spotter_check(
     scope: Option<String>,
     watch_for: Vec<String>,
@@ -626,7 +628,10 @@ pub(crate) async fn spotter_check(
         paths: if paths.is_empty() {
             base.paths
         } else {
-            paths.iter().map(|s| parse_path_grant(s)).collect()
+            paths
+                .iter()
+                .map(|s| crate::dev::parse_path_grant(s))
+                .collect()
         },
         mcp_servers: base.mcp_servers,
         ..Default::default()

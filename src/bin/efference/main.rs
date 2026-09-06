@@ -1,5 +1,10 @@
 //! The binary — the control-channel daemon entry point.
 //!
+//! The CLI is three groups (docs/operating.md): the human verbs at the top level,
+//! `efference control <tool>` / `efference mcp` for the twelve calls that drive a
+//! running session, and `efference dev <verb>` for the instruments that develop the
+//! harness itself.
+//!
 //! `efference serve` opens a JSONL session log, binds the control socket, and runs
 //! the agent loop with the HTTP-fed [`RemoteFrontend`] (docs/README.md, docs/control-channel.md):
 //! the socket is the singular authoritative input source — the first user turn
@@ -18,7 +23,9 @@ use efference::daemon;
 use efference::distill::ForkPeek;
 use efference::frontend::Approval;
 use efference::persist::Log;
-use efference::spotter::{ForkSpot, Spotter};
+use efference::spotter::ForkSpot;
+#[cfg(feature = "dev")]
+use efference::spotter::Spotter;
 use efference::tools::Toolbox;
 use futures_lite::StreamExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -28,9 +35,9 @@ type CliError = Box<dyn std::error::Error + Send + Sync>;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cli = Cli::parse();
-    // Client verbs talk to a daemon over a socket resolved from `--name`/discovery; the daemon and
-    // the offline verbs (spotter/gallery/wire) don't. Resolve lazily, per arm, so an offline verb
-    // never triggers discovery.
+    // The `control`/`mcp` groups and the client verbs talk to a daemon over a socket resolved
+    // from `--name`/`--socket`/discovery; the daemon and the offline `dev` verbs don't. Resolve
+    // lazily, per arm, so an offline verb never triggers discovery.
     let name = cli.name.clone();
     let socket_override = cli.socket.clone();
     let client_socket = || resolve_client_socket(name.as_deref(), socket_override.clone());
@@ -91,94 +98,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })
             .await
         }
-        Command::Turn { text, wait } => turn(client_socket()?, text.join(" "), wait).await,
-        Command::Approve {
-            call_id,
-            abort,
-            redirect,
-            wait,
-        } => approve(client_socket()?, call_id, abort, redirect, wait).await,
-        Command::Settle => settle(client_socket()?).await,
         Command::Open { print, qr, bearer } => open(client_socket()?, print, qr, bearer).await,
-        Command::Interrupt => interrupt(client_socket()?).await,
-        Command::Background { note } => background(client_socket()?, note).await,
-        Command::Pace {
-            speed_ms,
-            hold,
-            resume,
-        } => pace(client_socket()?, speed_ms, hold, resume).await,
-        Command::ReviewLevel { level } => review_level(client_socket()?, level).await,
-        Command::Notify {
-            source,
-            body,
-            slot,
-            replaces,
-        } => notify(client_socket()?, source, body.join(" "), slot, replaces).await,
-        Command::Image { seq, idx, out } => image(client_socket()?, seq, idx, out).await,
-        Command::Dismiss { id } => dismiss(client_socket()?, id).await,
-        Command::State => state(client_socket()?).await,
-        Command::Log { since } => log(client_socket()?, since).await,
-        Command::Spotter {
-            scope,
-            watch_for,
-            paths,
-            model,
-            probe,
-            tool,
-            input,
-            config,
-            show_move,
-            no_brief,
-            command,
-        } => {
-            spotter_check(
-                scope,
-                watch_for,
-                paths,
-                &model,
-                probe,
-                tool,
-                input,
-                config,
-                show_move,
-                no_brief,
-                command.join(" "),
-            )
-            .await
-        }
-        Command::SpotterLog {
-            path,
-            stances,
-            summary,
-            list,
-            no_fallback,
-        } => spotter_log(path, stances, summary, list, no_fallback),
-        Command::SpotterEval {
-            cases,
-            labels,
-            model,
-            runs,
-            out,
-            limit,
-            filter,
-            concurrency,
-            persona,
-            no_cost,
-        } => {
-            spotter_eval(
-                cases,
-                labels,
-                model,
-                runs,
-                out,
-                limit,
-                filter,
-                concurrency,
-                persona,
-                no_cost,
-            )
-            .await
-        }
+        Command::Control(tools) => control::run_cli(tools, client_socket()?).await,
+        Command::Mcp => control::run_stdio(client_socket()?).await,
+        #[cfg(feature = "dev")]
+        Command::Dev(command) => dev::run(command).await,
         Command::Cache { session, all } => cache(session, name.clone(), all),
         Command::Check { path } => check(path).await,
         Command::Attach => attach(client_socket()?).await,
@@ -192,29 +116,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             theme,
             images,
         } => view(session, name.clone(), theme, images.into()).await,
-        Command::Gallery {
-            theme,
-            images,
-            stream,
-            chunk,
-            interval,
-            frame_cost,
-        } => gallery(theme, images.into(), stream, chunk, interval, frame_cost).await,
-        Command::Wire {
-            path,
-            messages,
-            format,
-            model,
-            config,
-        } => wire(path, messages, format, &model, config).await,
-        Command::Peek {
-            path,
-            seq,
-            repeat,
-            limit,
-            dry_run,
-            model,
-        } => peek(path, seq, repeat, limit, dry_run, &model).await,
     }
 }
 
@@ -225,21 +126,26 @@ use cache_report::cache;
 use check::*;
 use cli::*;
 use host::host as host_serve;
-use peek_replay::peek;
-use serve::{serve, spotter_check};
-use spot_report::*;
-use spotter_eval::spotter_eval;
+use paint::*;
+use serve::serve;
 use verbs::*;
 
 mod attach;
 mod cache_report;
 mod check;
 mod cli;
+mod control;
+#[cfg(feature = "dev")]
+mod dev;
 mod host;
 mod mcp_mount;
+mod paint;
+#[cfg(feature = "dev")]
 mod peek_replay;
 mod serve;
+#[cfg(feature = "dev")]
 mod spot_report;
+#[cfg(feature = "dev")]
 mod spotter_eval;
 mod verbs;
 

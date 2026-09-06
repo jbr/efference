@@ -177,6 +177,12 @@ Each crate gets one additive `lib.rs` (the binary and tests are untouched,
 fully reversible) that exposes its modules, `Tools` enum, state struct, and an
 `embedded(cwd)` constructor.
 
+This section is about efference *consuming* MCP servers. It also serves one: the
+session-control verbs are written as mcplease tools and mounted twice, as `efference
+control <tool>` and as the stdio server `efference mcp` ([operating.md](operating.md)).
+That server drives a session from outside; it has nothing to do with the toolbox a
+session's model calls.
+
 `McpServer<State, ToolEnum>` in `src/tools.rs` is generic over the two
 instantiations (fs-mcp and semantic-edit-mcp). It holds state in a `RefCell`
 — the agent loop is single-threaded and `mcplease`'s `Dispatch::call` is

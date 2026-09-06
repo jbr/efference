@@ -169,7 +169,12 @@ holds the subsystem's vocabulary and public surface and the directory holds one 
 concern; each module's tests live in its own `test.rs`.
 
 The turn engine that ties it together is `src/agent.rs`; the CLI binary is
-`src/bin/efference/`, whose `serve` verb boots the daemon.
+`src/bin/efference/`, whose `serve` verb boots the daemon. Its command tree is three
+groups ([operating.md](operating.md)): the human verbs at the top level, `efference
+control <tool>` for the twelve calls that drive a running session — the same tools
+`efference mcp` serves over MCP, written once in `src/bin/efference/control/` — and
+`efference dev <verb>` for the instruments that develop the harness itself, behind the
+`dev` cargo feature.
 
 `src/daemon.rs` holds the shared-state vocabulary and the loop wiring; each concern it
 serves lives in a `src/daemon/` submodule named for its governing doc — `http.rs` and

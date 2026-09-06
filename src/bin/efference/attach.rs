@@ -35,7 +35,7 @@ pub(crate) async fn attach(socket: PathBuf) -> CliResult {
         // pending call (docs/README.md), and stdin is dual-use — approval when a gate is
         // open (mirroring the old interactive frontend's Enter-approves policy),
         // otherwise a new turn.
-        match pending_call_id(&client).await.ok() {
+        match control::pending_call_id(&client).await.ok() {
             Some(call_id) => {
                 let decision = match text.as_str() {
                     "" => Approval::Approve,

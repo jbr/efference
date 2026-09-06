@@ -83,7 +83,7 @@ pub trait Spotter {
     /// `brief` is what the mounted tool table knows about a structured call's tool
     /// — its description, its input schema, and the server's own behavior hints
     /// (docs/permissions.md). `None` for bash (judged as command text) and when no
-    /// toolbox is at hand (the `efference spotter` dev command).
+    /// toolbox is at hand (the `efference dev spotter` dev command).
     ///
     /// `probe` is an optional command prefix the prefix-promotion descent
     /// (docs/permissions.md) wants judged *for promotion* alongside this move:
@@ -398,7 +398,7 @@ fn render_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>, probe: Option<&st
 }
 
 /// The exact move block [`Spotter::assess`] would send for this call — what the
-/// spotter model reads, byte for byte. The `efference spotter` tester prints it, so
+/// spotter model reads, byte for byte. The `efference dev spotter` tester prints it, so
 /// iterating on a tool's brief doesn't mean guessing at what the model saw.
 pub fn preview_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>, probe: Option<&str>) -> String {
     render_move(call, brief, probe)

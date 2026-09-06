@@ -11,7 +11,13 @@ fs-mcp = { path = "../fs-mcp" }
 semantic-edit-mcp = { path = "../semantic-edit-mcp" }
 # `client` is the transport-agnostic client protocol (docs/tools.md); the
 # in-process servers above bring the `server` half through their own dependency.
-mcplease = { version = "0.4.2", features = ["client"], default-features = false }
+# `cli` adds the `tools!` macro's clap derive and the stdio serve loop, which is
+# what lets `efference control <tool>` and `efference mcp` be one definition
+# (docs/operating.md).
+mcplease = { version = "0.4.2", features = ["client", "cli"], default-features = false }
+# JSON Schema derive for the control tools' arguments — what an MCP client reads
+# out of `tools/list`. Same major as mcplease's own, so there is one schemars.
+schemars = "1.2.2"
 anyhow = "1"
 # Lightweight logging facade + env-driven backend. The daemon emits request sizes,
 # fork-peek fallbacks, capped tool results, and full API error bodies; control verbosity
@@ -171,6 +177,11 @@ p256 = { version = "0.14", features = ["ecdh", "ecdsa"] }
 aes-gcm = "0.11"
 
 [features]
+default = ["dev"]
+# The `efference dev <verb>` group: the instruments for developing efference
+# itself (docs/operating.md). In `default` because a gated feature nobody builds
+# rots; a release build passes `--no-default-features`.
+dev = []
 # Serve the web client from a spawned Vite dev server (with HMR) instead of the
 # compile-time embed: `cargo run --features dev-proxy -- serve --bind …`.
 dev-proxy = ["trillium-frontend/dev-proxy"]

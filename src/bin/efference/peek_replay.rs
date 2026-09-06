@@ -1,4 +1,4 @@
-//! `efference peek` — replay a recorded session's fork gates (docs/redaction-fork.md).
+//! `efference dev peek` — replay a recorded session's fork gates (docs/redaction-fork.md).
 //!
 //! A dev tool, like `wire`/`gallery`/`spotter`. The live gate retries, so a session's
 //! `Triage.retries` records *that* a first attempt failed but can't compare two asks —
