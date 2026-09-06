@@ -12,13 +12,16 @@ use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 use super::SidebarRow;
 use super::render_frame::fmt_secs;
 use super::state::InteractiveState;
+use super::write_text::fold_control;
 
 /// Write `text` at absolute `(x, y)`, clipped to `max_w` columns. One cell per char
-/// (wide glyphs occupy one cell, as elsewhere in this TUI's chrome).
+/// (wide glyphs occupy one cell, as elsewhere in this TUI's chrome). Content text
+/// lands here too — a process's command line is whatever the model wrote, newlines
+/// included — so control characters are folded, not written.
 fn put(buf: &mut Buffer, x: u16, y: u16, max_w: u16, text: &str, style: Style) {
     for (i, ch) in text.chars().take(max_w as usize).enumerate() {
         if let Some(cell) = buf.cell_mut((x + i as u16, y)) {
-            cell.set_char(ch).set_style(style);
+            cell.set_char(fold_control(ch)).set_style(style);
         }
     }
 }

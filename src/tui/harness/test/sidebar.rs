@@ -46,6 +46,30 @@ fn sidebar_shows_processes_and_stats() {
     play.snapshot("sidebar_processes_and_stats");
 }
 
+/// A process's command line is whatever the model wrote — a multi-line `python -c`
+/// script, say. Newlines go to the sidebar as the replacement glyph rather than into
+/// a cell, where ratatui's `cell_width` would assert and kill the TUI thread (and
+/// keep killing it on every restart while the process lives in the daemon).
+#[test]
+fn sidebar_folds_control_characters_in_a_process_command() {
+    use crate::tui::{BgProc, TuiEvent};
+    let mut play = Screenplay::new(110, 20);
+    play.user("Start a producer.");
+    play.assistant("Started.", vec![]);
+    play.event(TuiEvent::Processes(vec![BgProc {
+        id: 5,
+        command: "python3 -u -c 'import time\ncount = 0\nwhile True:\n\tcount += 1'".into(),
+        call_id: None,
+        spawned_at: 0,
+        last_chunk_at: None,
+        tail: "heartbeat count=1\x1b[0m\r".into(),
+        running_secs: 3,
+        idle_secs: 0,
+    }]));
+    let rendered = play.render();
+    assert!(rendered.contains("'import time\u{fffd}cou"), "{rendered}");
+}
+
 /// Retention is absent, not 0%, before the first result is triaged — and a withheld
 /// result is reported as its own condition rather than folded into the ratio
 /// (docs/redaction-fork.md).

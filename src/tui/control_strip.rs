@@ -595,7 +595,8 @@ fn put_row(
             break;
         }
         if let Some(cell) = buf.cell_mut((area.x + x, area.y)) {
-            cell.set_char(ch).set_style(style);
+            cell.set_char(super::write_text::fold_control(ch))
+                .set_style(style);
         }
         x += 1;
     }

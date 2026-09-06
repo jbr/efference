@@ -134,7 +134,7 @@ impl<'a> InteractiveState<'a> {
                 }
                 buf.cell_mut((col, row))
                     .unwrap()
-                    .set_char(ch)
+                    .set_char(super::write_text::fold_control(ch))
                     .set_style(*style);
             }
         }
