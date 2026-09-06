@@ -2967,3 +2967,234 @@ async fn plan_windows_are_ignored_off_the_codex_backend() {
     server.join().unwrap();
     assert!(client.plan_state().lock().unwrap().is_none());
 }
+
+/// The Responses HTTP boundary over a socket (docs/transport.md): a Codex request
+/// carries the bearer token, the account header the endpoint resolved, and the
+/// originator attribution, and no `anthropic-version` — that header belongs to
+/// the Messages dialect, not to a provider.
+#[tokio::test]
+async fn a_codex_request_carries_its_headers_and_no_anthropic_version() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut sock, _) = listener.accept().unwrap();
+        let mut buf = vec![0u8; 65536];
+        let n = sock.read(&mut buf).unwrap();
+        let head = String::from_utf8_lossy(&buf[..n]).to_string();
+        let body = "event: response.completed\ndata: {\"type\":\"response.completed\",\
+                    \"response\":{\"id\":\"r\",\"status\":\"completed\",\"output\":[],\
+                    \"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n";
+        sock.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        head
+    });
+    let endpoint = Endpoint {
+        provider: Provider::OpenAICodex,
+        url: format!("http://{addr}/backend-api/codex/responses"),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer tok".into(),
+        session_id: None,
+        extra_headers: vec![("ChatGPT-Account-ID".into(), "acct-1".into())],
+    };
+    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
+    client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .expect("a stream with no content-type still assembles on the Codex arm");
+    let head = server.join().unwrap().to_ascii_lowercase();
+    let head = head.split("\r\n\r\n").next().unwrap().to_string();
+    assert!(head.contains("authorization: bearer tok"), "{head}");
+    assert!(head.contains("chatgpt-account-id: acct-1"), "{head}");
+    assert!(head.contains("originator: efference"), "{head}");
+    assert!(!head.contains("anthropic-version"), "{head}");
+    assert!(head.contains("content-type: application/json"), "{head}");
+}
+
+/// A non-2xx open outside the transient set is not retried: the body comes back
+/// in the error and is queued as a durable attempt for the loop to record
+/// (docs/transport.md).
+#[tokio::test]
+async fn a_400_open_returns_its_body_once_and_queues_the_attempt() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let mut served = 0;
+        loop {
+            let Ok((mut sock, _)) = listener.accept() else {
+                break;
+            };
+            let mut buf = vec![0u8; 65536];
+            let n = sock.read(&mut buf).unwrap_or(0);
+            if !buf[..n].starts_with(b"POST") {
+                break;
+            }
+            let body = r#"{"error":{"type":"invalid_request_error","code":"invalid_prompt","message":"bad input"}}"#;
+            sock.write_all(
+                format!(
+                    "HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\n\
+                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            served += 1;
+        }
+        served
+    });
+    let endpoint = Endpoint {
+        provider: Provider::OpenAI,
+        url: format!("http://{addr}/v1/responses"),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+    };
+    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
+    let error = client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .expect_err("a 400 is an open failure");
+    let _ = std::net::TcpStream::connect(addr);
+    assert_eq!(server.join().unwrap(), 1, "not retried");
+    let text = error.to_string();
+    assert!(text.contains("400"), "{text}");
+    assert!(text.contains("bad input"), "{text}");
+    let attempts = client.drain_upstream_attempts();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0].status, 400);
+    assert!(attempts[0].body.contains("invalid_prompt"));
+}
+
+/// The documented transient family is retried by the transport itself: a 503
+/// (`server_is_overloaded`) followed by a 200 completes, and the absorbed attempt
+/// is queued with its body for the loop's record (docs/transport.md).
+#[tokio::test]
+async fn a_503_open_is_retried_and_the_attempt_is_queued() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let responses = [
+            (
+                "503 Service Unavailable",
+                r#"{"error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"busy"}}"#.to_string(),
+            ),
+            (
+                "200 OK",
+                "event: response.completed\ndata: {\"type\":\"response.completed\",\
+                 \"response\":{\"id\":\"r\",\"status\":\"completed\",\"output\":[],\
+                 \"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"
+                    .to_string(),
+            ),
+        ];
+        for (status, body) in responses {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut buf = vec![0u8; 65536];
+            let _ = sock.read(&mut buf);
+            sock.write_all(
+                format!(
+                    "HTTP/1.1 {status}\r\ncontent-type: text/event-stream\r\n\
+                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        }
+    });
+    let endpoint = Endpoint {
+        provider: Provider::OpenAI,
+        url: format!("http://{addr}/v1/responses"),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+    };
+    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
+    let completion = client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .expect("the second attempt completes");
+    server.join().unwrap();
+    assert!(completion.upstream_failure().is_none());
+    let attempts = client.drain_upstream_attempts();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0].status, 503);
+    assert!(attempts[0].body.contains("server_is_overloaded"));
+}
+
+/// The duration ceiling on the Responses dialect: a stream that delivered partial
+/// text and then stayed open is cut at the ceiling, the partial kept record-only
+/// with a transient class, so the abort schedule retries it (docs/transport.md).
+#[tokio::test]
+async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let held = std::sync::Arc::clone(&done);
+    let server = std::thread::spawn(move || {
+        let (mut sock, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 8192];
+        let _ = sock.read(&mut buf);
+        let events = "event: response.created\ndata: {\"type\":\"response.created\",\
+                      \"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"output\":[]}}\n\n\
+                      event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\
+                      \"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg_1\",\"role\":\"assistant\",\
+                      \"status\":\"in_progress\",\"content\":[]}}\n\n\
+                      event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\
+                      \"output_index\":0,\"content_index\":0,\"delta\":\"half an\"}\n\n";
+        sock.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                 transfer-encoding: chunked\r\n\r\n{:x}\r\n{events}\r\n",
+                events.len()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        sock.flush().unwrap();
+        sock.set_read_timeout(Some(std::time::Duration::from_millis(50)))
+            .unwrap();
+        while !held.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = sock.read(&mut buf);
+        }
+    });
+    let endpoint = Endpoint {
+        provider: Provider::OpenAI,
+        url: format!("http://{addr}/v1/responses"),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+    };
+    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None)
+        .with_stream_ceiling(std::time::Duration::from_millis(200));
+    let mut streamed = Vec::new();
+    let completion = client
+        .complete(&[], &[], ToolChoice::auto(), |s| streamed.push(s))
+        .await
+        .expect("the ceiling assembles a partial");
+    done.store(true, std::sync::atomic::Ordering::SeqCst);
+    server.join().unwrap();
+    let why = completion.upstream_failure().expect("marked");
+    assert!(why.contains("stream-ceiling"), "{why}");
+    assert_eq!(completion.failure_class, FailureClass::Transient);
+    assert!(
+        streamed.iter().any(|s| matches!(s, Streamed::Text { .. })),
+        "the partial text streamed before the cut"
+    );
+}

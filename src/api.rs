@@ -168,6 +168,15 @@ pub struct Usage {
 }
 
 impl Usage {
+    /// The whole prompt as the provider counted it: the uncached remainder plus
+    /// what was read from and written to the cache (docs/transport.md).
+    /// `input_tokens` alone is only the uncached part on both dialects, so
+    /// every consumer that wants "how big was the prompt" — the reservation
+    /// anchor, context occupancy — reads this rather than summing the fields.
+    pub fn prompt_tokens(&self) -> u64 {
+        self.input_tokens + self.cache_read_input_tokens + self.cache_creation_input_tokens
+    }
+
     /// Fold another `usage` object from the same response into this one, keeping
     /// the larger count per field (docs/transport.md: the usage merge). Max
     /// rather than "last event wins" because both usage-bearing events report

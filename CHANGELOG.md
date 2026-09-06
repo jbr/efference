@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **The Responses HTTP boundary is covered over a mock upstream** (docs/transport.md): headers, a 400 returning its body once, a 503 retried and recorded, and the ceiling cutting a partial stream; the retry set is checked against OpenAI's error guide, whose non-retryable 429 codes now class as terminal; `Usage::prompt_tokens` is the one prompt-total sum.
 - **GPT-6 Astra is in the compiled OpenAI catalog** (docs/transport.md): exact window, output, and effort vocabulary, and a model that refuses `temperature` now fails an explicit `--temperature` at boot.
 - **The spotter model defaults per provider** (docs/permissions.md): gpt-5.6-luna on the OpenAI arms, claude-haiku-4-5 elsewhere, so a bare OpenAI `serve` no longer fails on the Haiku default.
 - **`usage.plan` publishes the Codex subscription windows** (docs/control-api.md): the plan type and the 5-hour and 7-day windows' used percentage, length, and reset instant, read off every Codex response including the 429 that ends a window; null on other providers.

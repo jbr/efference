@@ -119,9 +119,7 @@ impl Shared {
         let context = self.capabilities.lock().unwrap().as_ref().map(|caps| {
             serde_json::json!({
                 "limit": caps.context_length.saturating_sub(reserved),
-                "used": metrics.last_turn_usage.as_ref().map(|u| {
-                    u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
-                }),
+                "used": metrics.last_turn_usage.as_ref().map(Usage::prompt_tokens),
             })
         });
         // Session cost (docs/transport.md): the billed running total from the

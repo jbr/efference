@@ -293,7 +293,16 @@ request body is an owned `String`) on 429, 500, 502, 503, and 504. Other 4xx
 responses remain terminal, so malformed or oversized requests fail without
 replaying them. It makes at most four total attempts and has a 30-second
 wall-clock budget; an HTTP `Retry-After` is honored only within that same
-budget.
+budget. The set is shared by both dialects and is a superset of what OpenAI's
+error guide names as retryable (429 rate limits and `slow_down`, 500, 503
+`server_is_overloaded`, each with `Retry-After` when present); the guide's
+non-retryable 429s — exhausted credit, spend and usage limits — are the body
+veto in `api/failure.rs` (below), and Codex CLI retries all 5xx the same way.
+Both Responses profiles ride the same handler: the bearer header, the account
+header, the `originator` attribution, and the absence of `anthropic-version` are
+pinned over a mock upstream in `src/api/test.rs`, as are a 400 open returning
+its body once, a 503 open retried and queued, and the ceiling cutting a
+Responses stream mid-text.
 
 The retry handler covers failures while opening a response, before an SSE stream
 has yielded any deltas. A connection that has returned 200 and then dies
@@ -594,7 +603,12 @@ pass through.
 included; the harness's `Usage` splits input three ways so every consumer's sum is
 the prompt total. The assembler restates it: `input_tokens = input − cached −
 cache_write`, `cache_read_input_tokens = cached_tokens`,
-`cache_creation_input_tokens = cache_write_tokens`.
+`cache_creation_input_tokens = cache_write_tokens`. `Usage::prompt_tokens` is the
+one sum consumers read for the whole prompt — the reservation anchor and the
+`usage.context.used` view both go through it. Responses' separate
+`output_tokens_details.reasoning_tokens` is not carried: it is already inside
+`output_tokens`, and no consumer states a meaning for the split that would not
+be misread as visible thinking.
 
 **Two request profiles** (`api::ResponsesProfile`). The platform endpoint
 (`openai`) takes the full documented parameter set above. The Codex backend

@@ -34,6 +34,9 @@ const TERMINAL: &[&str] = &[
     // OpenAI Responses and the Codex backend.
     "insufficient_quota",
     "credit_balance_exhausted",
+    "organization_spend_limit_exceeded",
+    "project_spend_limit_exceeded",
+    "organization_usage_limit_exceeded",
     "usage_not_included",
     "usage_limit_reached",
     "invalid_api_key",

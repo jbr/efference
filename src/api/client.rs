@@ -742,9 +742,7 @@ impl Client {
         // (`api/reservation.rs`). An attempt that died with zero usage
         // counted nothing and teaches nothing.
         if let Ok(completion) = &completion {
-            let prompt_tokens = completion.usage.input_tokens
-                + completion.usage.cache_read_input_tokens
-                + completion.usage.cache_creation_input_tokens;
+            let prompt_tokens = completion.usage.prompt_tokens();
             if prompt_tokens > 0 {
                 self.reservation
                     .lock()
