@@ -83,7 +83,7 @@ pub(super) fn tool_choice_value(choice: &ToolChoice) -> Value {
 /// Function tools from the harness's Anthropic-shaped definitions
 /// (`{name, description, input_schema}`). `strict: false` keeps optional
 /// properties optional; strict-schema conversion is a separate decision
-/// (backlog: openai-provider/projection.md).
+/// (docs/transport.md).
 pub(super) fn tool_definitions(tools: &[Value]) -> Vec<Value> {
     tools
         .iter()

@@ -597,7 +597,7 @@ The Codex backend streams with **no `content-type` header** (verified with curl,
 rejects only a present non-`text/event-stream` one. Each response also carries
 `x-codex-*` headers naming the plan, the 5-hour and 7-day usage windows as
 percentages, and their reset times — not read yet (backlog:
-openai-provider/provider-integration.md).
+openai-provider/codex-plan-state.md).
 
 **Not on this dialect.** The `max_tokens: 0` keepalive is a Messages primitive; the
 daemon never starts the loop on Responses (backlog: openai-provider/validation.md).
