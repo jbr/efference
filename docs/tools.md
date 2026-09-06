@@ -495,6 +495,17 @@ than guarded case-by-case.
 Because `__` is what resolves the boundary in every direction, a server name may
 not itself contain one — `_` is legal, `my__server` is rejected at validate.
 
+The server's own tool names are not validated at config time — the MCP spec permits
+characters (a dot, say) and lengths the request alphabet does not, and the namespace
+prefix counts against the ceiling. So the frozen toolbox is checked against the
+session's dialect at boot (`Toolbox::illegal_names`, `WireDialect::tool_name_problem`):
+one alphabet, `[a-zA-Z0-9_-]`, and a ceiling of 128 characters on Messages or 64 on
+Responses. An offending name fails the boot, reported in its display form with the
+reason, rather than the first turn failing with a 400 that names nothing. Names are
+not rewritten: a mapping would have to hold across the advertised definition, the
+returned call, dispatch, the log, and replay, and the operator can rename the server
+or hide the tool instead.
+
 The alphabet has no separator that reads as one to a human, so the TUI renders
 the boundary as a dot — `ferritin__get` displays as `ferritin.get`
 (`mcp::display_name`, applied at the two transcript sites that print a tool

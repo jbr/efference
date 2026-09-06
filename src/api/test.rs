@@ -3198,3 +3198,40 @@ async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
         "the partial text streamed before the cut"
     );
 }
+
+/// The dialect guard sits before the encoder in `complete` (docs/transport.md): a
+/// turn list recorded in the other dialect is refused with the conflict named, and
+/// no request leaves — the endpoint here has nothing listening, so a request would
+/// fail with a connection error instead of this message.
+#[tokio::test]
+async fn a_foreign_dialect_turn_list_never_becomes_a_request() {
+    use crate::project::WireTurn;
+    let endpoint = Endpoint {
+        provider: Provider::Anthropic,
+        url: "http://127.0.0.1:1/v1/messages".into(),
+        auth_header: "x-api-key".into(),
+        auth_value: "k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+    };
+    let client = Client::new(endpoint, "m", "sys", None);
+    let turns = vec![
+        WireTurn::text("hello"),
+        WireTurn::Assistant(AssistantOutput::Responses(vec![
+            crate::log::ResponsesOutputItem::FunctionCall {
+                id: None,
+                call_id: CallId("call_1".into()),
+                name: "bash".into(),
+                arguments: "{}".into(),
+                status: None,
+            },
+        ])),
+    ];
+    let err = client
+        .complete(&turns, &[], ToolChoice::auto(), |_| {})
+        .await
+        .expect_err("a Responses history must not encode onto the Messages wire");
+    let text = err.to_string();
+    assert!(text.contains("recorded in the Responses dialect"), "{text}");
+    assert!(text.contains("speaks Messages"), "{text}");
+}

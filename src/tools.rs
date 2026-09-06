@@ -692,6 +692,22 @@ impl Toolbox {
             .collect()
     }
 
+    /// Every advertised name the given dialect's request would reject, each with why
+    /// (docs/tools.md). Names are checked as they reach the wire — the namespaced
+    /// `<server>__<tool>` form — because the MCP spec lets a server's own tool name
+    /// carry characters and lengths the request alphabet does not, and the namespace
+    /// prefix counts against the ceiling. Empty means every name is legal.
+    pub fn illegal_names(&self, dialect: crate::api::WireDialect) -> Vec<String> {
+        self.names()
+            .iter()
+            .filter_map(|name| {
+                dialect
+                    .tool_name_problem(name)
+                    .map(|why| format!("{} {why}", crate::mcp::display_name(name)))
+            })
+            .collect()
+    }
+
     /// The names of every mounted tool, in mount order.
     pub fn names(&self) -> Vec<String> {
         self.definitions()

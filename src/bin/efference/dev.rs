@@ -472,12 +472,18 @@ pub(crate) async fn wire(
     let placement = provider
         .map(|p| p.image_placement(model))
         .unwrap_or_default();
-    let dialect = provider
-        .map(|p| p.dialect())
-        .unwrap_or(efference::api::WireDialect::Messages);
     // The same turns a live request encodes, trailing breakpoint included; the
     // dialect decides the wire they render on (docs/transport.md).
     let mut turns = efference::project::project_semantic(&entries);
+    // The dialect the log was recorded in; with no provider declared it is the view's
+    // dialect, and with one declared the two must agree — the other encoder would
+    // drop every assistant turn (docs/transport.md).
+    let recorded = efference::project::recorded_dialect(&turns)?;
+    let dialect = provider
+        .map(|p| p.dialect())
+        .or(recorded)
+        .unwrap_or(efference::api::WireDialect::Messages);
+    efference::project::check_dialect(&turns, dialect)?;
     turns.push(efference::project::WireTurn::Breakpoint);
     let messages = efference::project::encode_messages(
         &turns,

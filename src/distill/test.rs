@@ -1239,3 +1239,159 @@ fn peek_thinking_joins_thinking_text_only() {
         "a redacted-only attempt has no text to record"
     );
 }
+
+/// The Responses analogue of the canonical-versus-peek prefix rule
+/// (docs/redaction-fork.md): under explicit caching the peek's one marker sits at the
+/// shared pre-fork frontier, nothing in the fork-local raw tail carries one, and the
+/// next canonical request is that same prefix, content for content, followed by the
+/// distillate — never the raw output or the peek's ask.
+#[test]
+fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_only_the_distillate() {
+    use crate::api::{PromptCachePolicy, encode_responses};
+    use crate::log::{Keep, ResponsesOutputItem, WireState};
+
+    let call = ToolCall {
+        id: CallId("call_1".into()),
+        name: "bash".into(),
+        input: json!({ "command": "ls" }),
+    };
+    let prefix = vec![
+        entry(
+            1,
+            Payload::User(vec![crate::log::ContentBlock::Text("go".into())]),
+        ),
+        entry(
+            2,
+            Payload::Assistant {
+                output: AssistantOutput::Responses(vec![
+                    ResponsesOutputItem::Reasoning {
+                        id: "rs_1".into(),
+                        status: Some("completed".into()),
+                        summary: Vec::new(),
+                        content: Vec::new(),
+                        encrypted_content: Some("ENC==".into()),
+                    },
+                    ResponsesOutputItem::FunctionCall {
+                        id: Some("fc_1".into()),
+                        call_id: call.id.clone(),
+                        name: call.name.clone(),
+                        arguments: r#"{"command":"ls"}"#.into(),
+                        status: Some("completed".into()),
+                    },
+                ]),
+                upstream_failure: None,
+            },
+        ),
+    ];
+    let raw = raw("alpha\nbeta\ngamma", false);
+    let pending = [Pending {
+        call: &call,
+        raw: &raw,
+    }];
+
+    // The peek: prefix, frontier, then the fork-local raw and the ask.
+    let peek = peek_request(&prefix, &pending, &[], &[]);
+    let peek_input = encode_responses(&peek, "", PromptCachePolicy::Explicit);
+    let peek_json: Vec<serde_json::Value> = peek_input
+        .iter()
+        .map(|item| serde_json::to_value(item).unwrap())
+        .collect();
+    let marked: Vec<usize> = peek_json
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| item.to_string().contains("prompt_cache_breakpoint"))
+        .map(|(i, _)| i)
+        .collect();
+    let first_output = peek_json
+        .iter()
+        .position(|item| item["type"] == "function_call_output")
+        .expect("the raw tail answers the call");
+    assert_eq!(marked.len(), 1, "one marker: {peek_json:#?}");
+    assert!(
+        marked[0] < first_output,
+        "the marker sits before the fork-local tail, not on it: marked {marked:?}, tail at {first_output}"
+    );
+    let tail = serde_json::to_string(&peek_json[first_output..]).unwrap();
+    assert!(tail.contains("gamma"), "the raw rides the tail: {tail}");
+    let shared = serde_json::to_string(&peek_json[..first_output]).unwrap();
+    assert!(!shared.contains("gamma"), "and never the prefix: {shared}");
+
+    // The canonical continuation: the verdict is logged, the raw is not projected.
+    let mut log = prefix;
+    log.push(entry(
+        3,
+        Payload::ToolResult {
+            call_id: call.id.clone(),
+            raw: raw.clone(),
+            wire: WireState::Distilled {
+                keep: Keep::Ranges(vec![(1, 1)]),
+                note: Some("kept the first".into()),
+            },
+        },
+    ));
+    let mut canonical = project_semantic(&log);
+    canonical.push(WireTurn::Breakpoint);
+    let canonical_input = encode_responses(&canonical, "", PromptCachePolicy::Explicit);
+    let canonical_json: Vec<serde_json::Value> = canonical_input
+        .iter()
+        .map(|item| serde_json::to_value(item).unwrap())
+        .collect();
+    // The pre-fork items are the peek's, content for content. The marker is a
+    // write instruction, not content: the peek's sits at the frontier, the
+    // canonical request's at its own tail, and the provider matches the prefix on
+    // what is between them (docs/log-and-projection.md).
+    fn unmarked(item: &serde_json::Value) -> serde_json::Value {
+        match item {
+            serde_json::Value::Object(map) => map
+                .iter()
+                .filter(|(key, _)| key.as_str() != "prompt_cache_breakpoint")
+                .map(|(key, value)| (key.clone(), unmarked(value)))
+                .collect(),
+            serde_json::Value::Array(items) => items.iter().map(unmarked).collect(),
+            other => other.clone(),
+        }
+    }
+    assert_eq!(
+        canonical_json[..first_output]
+            .iter()
+            .map(unmarked)
+            .collect::<Vec<_>>(),
+        peek_json[..first_output]
+            .iter()
+            .map(unmarked)
+            .collect::<Vec<_>>(),
+        "the pre-fork items are the peek's — one cache lineage"
+    );
+    let canonical_marked: Vec<usize> = canonical_json
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| item.to_string().contains("prompt_cache_breakpoint"))
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(
+        canonical_marked,
+        vec![canonical_json.len() - 1],
+        "the canonical marker moved to the distillate at the tail: {canonical_json:#?}"
+    );
+    let text = serde_json::to_string(&canonical_json).unwrap();
+    assert!(
+        text.contains("alpha") && text.contains("kept the first"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("gamma"),
+        "dropped raw stays off the canonical wire: {text}"
+    );
+    let ask = peek_json.last().unwrap().to_string();
+    assert!(
+        ask.contains("retain"),
+        "the peek's ask names the retain tool: {ask}"
+    );
+    let ask_text = peek_json.last().unwrap()["content"][0]["text"]
+        .as_str()
+        .expect("the ask is a text part");
+    assert!(
+        !text.contains(ask_text),
+        "the peek's ask never reaches the canonical wire"
+    );
+}

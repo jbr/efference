@@ -556,6 +556,17 @@ one session projects and assembles in exactly one dialect, and `Client::complete
 dispatches on it after encoding the shared semantic turns
 ([log-and-projection.md](log-and-projection.md)).
 
+The recorded log carries its dialect in every assistant entry
+(`AssistantOutput::dialect`), and each encoder skips the other dialect's assistant
+turns rather than failing. That skip is harmless while a live session is pinned to one
+provider and silent loss when a recorded session is rendered or continued under the
+other: the model would see a history with its own replies missing. So
+`project::check_dialect` runs before either encoder — in `Client::complete` and in
+`efference dev wire` — and refuses a turn list whose assistant turns were recorded in a
+different dialect, or in both. A list with no assistant turn yet belongs to no dialect
+and encodes on either; `dev wire` with no provider declared renders in the recorded
+dialect. A provider or model change within one dialect passes this check.
+
 **Request** (`api/responses.rs`, `ResponsesRequest`; field order pinned by
 `responses_envelope_matches_expected_wire_bytes`). `input[]` is the encoded turn
 list: the preamble as a leading developer message (a breakpoint-eligible carrier,

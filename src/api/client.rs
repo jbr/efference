@@ -586,6 +586,12 @@ impl Client {
         tool_choice: ToolChoice,
         mut on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
+        // A turn list recorded in the other dialect never becomes a request: the
+        // encoder would skip every assistant turn and send a history with the
+        // model's replies missing (docs/transport.md). Live sessions are pinned to
+        // one provider, so this answers only a recorded session continued or
+        // rendered under another.
+        crate::project::check_dialect(turns, self.dialect())?;
         // Encode once per dialect (docs/transport.md). The encoded form is what the
         // reservation sizes and what each retry re-sends verbatim.
         let encoded = match self.dialect() {

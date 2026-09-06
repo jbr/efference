@@ -151,7 +151,10 @@ mod semantic;
 mod wire;
 
 pub use messages::encode_messages;
-pub use semantic::{UserPart, WireTurn, project_semantic, render_result};
+pub use semantic::{
+    DialectConflict, UserPart, WireTurn, check_dialect, project_semantic, recorded_dialect,
+    render_result,
+};
 
 pub use render::{Distillate, distillate, render_distilled, render_triage_failure};
 pub use retention::Retention;

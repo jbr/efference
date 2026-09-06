@@ -369,7 +369,12 @@ reason: a projection-shaping choice that varies by provider has to be *fixed at
 boot* rather than re-derived, or a session's cached prefix could move under it.
 The consequence for the byte pins is that the pinned bytes are pinned **per
 placement** — `project/test/cache.rs` covers the arms and asserts the marker
-count stays one for each.
+count stays one for each. On the Responses wire the fork peek's frontier has its own
+pin (`distill/test.rs`): the peek's one marker sits on the last carrier before the
+fork-local tail and never in it, and the next canonical request repeats the pre-fork
+items content for content, marks its own tail, and carries the distillate rather
+than the raw output or the peek's ask. The marker is a write instruction, not
+content, so the two requests differ only in where it sits.
 
 One request shape rides this marker everywhere: agent turns, fork peeks, and
 keepalive pings send the same `tools[]`, `tool_choice: auto`, and thinking policy

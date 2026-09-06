@@ -261,6 +261,14 @@ impl AssistantOutput {
         }
     }
 
+    /// The wire dialect these items were recorded in (docs/transport.md).
+    pub fn dialect(&self) -> crate::api::WireDialect {
+        match self {
+            Self::Messages(_) => crate::api::WireDialect::Messages,
+            Self::Responses(_) => crate::api::WireDialect::Responses,
+        }
+    }
+
     pub fn messages(&self) -> Option<&[MessagesOutputBlock]> {
         match self {
             Self::Messages(blocks) => Some(blocks),

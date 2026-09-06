@@ -546,3 +546,53 @@ fn a_result_that_carries_images_keeps_its_text_and_sheds_the_bytes() {
         stripped.content
     );
 }
+
+/// The name rule per dialect (docs/tools.md): one alphabet, two ceilings. The
+/// namespaced wire form is what is judged, and the display form is what is reported.
+#[test]
+fn tool_names_are_judged_on_the_wire_form_per_dialect() {
+    use crate::api::WireDialect;
+    for dialect in [WireDialect::Messages, WireDialect::Responses] {
+        assert_eq!(dialect.tool_name_problem("ferritin__get"), None);
+        assert!(dialect.tool_name_problem("").is_some());
+        let dotted = dialect
+            .tool_name_problem("ferritin__admin.tools.list")
+            .expect("a dot is outside the alphabet on both dialects");
+        assert!(dotted.contains("'.'"), "{dotted}");
+    }
+    let long = format!("server__{}", "t".repeat(60));
+    assert_eq!(long.len(), 68);
+    assert_eq!(WireDialect::Messages.tool_name_problem(&long), None);
+    let why = WireDialect::Responses
+        .tool_name_problem(&long)
+        .expect("68 characters exceeds the Responses ceiling of 64");
+    assert!(why.contains("68") && why.contains("64"), "{why}");
+}
+
+/// Every embedded tool the harness mounts is legal on both dialects, and the report
+/// names an offender in its display form with the reason beside it.
+#[test]
+fn the_embedded_toolbox_is_legal_on_both_dialects() {
+    use crate::api::WireDialect;
+    let cwd = std::env::temp_dir();
+    let toolbox = Toolbox::bash_and_mcps(cwd, None).unwrap();
+    assert_eq!(
+        toolbox.illegal_names(WireDialect::Messages),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        toolbox.illegal_names(WireDialect::Responses),
+        Vec::<String>::new()
+    );
+    let harness: Vec<String> = crate::agent::tool_definitions(&toolbox)
+        .iter()
+        .filter_map(|d| d["name"].as_str().map(str::to_string))
+        .collect();
+    for name in harness {
+        assert_eq!(
+            WireDialect::Responses.tool_name_problem(&name),
+            None,
+            "{name}"
+        );
+    }
+}

@@ -27,6 +27,46 @@ pub enum WireDialect {
     Responses,
 }
 
+impl WireDialect {
+    /// The longest tool name this dialect's request accepts. Both dialects share
+    /// the alphabet `[a-zA-Z0-9_-]`; only the ceiling differs — Messages allows 128
+    /// characters, Responses 64 (docs/tools.md).
+    pub fn tool_name_limit(self) -> usize {
+        match self {
+            Self::Messages => 128,
+            Self::Responses => 64,
+        }
+    }
+
+    /// Why `name` is not a legal tool name on this dialect, or `None` if it is. The
+    /// check runs over the frozen toolbox at boot (docs/tools.md), so an illegal name
+    /// fails the session before a request carries it and the provider answers 400.
+    pub fn tool_name_problem(self, name: &str) -> Option<String> {
+        let limit = self.tool_name_limit();
+        if name.is_empty() {
+            return Some("is empty".into());
+        }
+        if name.len() > limit {
+            return Some(format!(
+                "is {} characters; the {self} dialect allows at most {limit}",
+                name.len()
+            ));
+        }
+        name.chars()
+            .find(|c| !(c.is_ascii_alphanumeric() || *c == '_' || *c == '-'))
+            .map(|c| format!("contains {c:?}; the {self} dialect allows only [a-zA-Z0-9_-]"))
+    }
+}
+
+impl std::fmt::Display for WireDialect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Messages => "Messages",
+            Self::Responses => "Responses",
+        })
+    }
+}
+
 /// Which API family fronts the messages endpoint. Each variant knows its
 /// messages URL, its auth header shape, and its model-metadata endpoint — the
 /// operator declares one word and everything else is derived.

@@ -601,5 +601,6 @@ fn preamble_snapshot_projects_to_nothing() {
 mod cache;
 mod coalesce;
 mod consolidate;
+mod dialect;
 mod distilled;
 mod notifications;

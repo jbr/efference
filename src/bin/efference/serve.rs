@@ -427,6 +427,22 @@ pub(crate) async fn serve(
     )
     .await?;
     let unmounted_section = efference::mcp::unmounted_section(&unmounted);
+    // The frozen toolbox against the dialect's name rule (docs/tools.md): a name the
+    // request would reject fails the boot here, by its display name, instead of the
+    // first turn failing with a 400 that names nothing.
+    let illegal = toolbox.illegal_names(endpoint.provider.dialect());
+    if !illegal.is_empty() {
+        for problem in &illegal {
+            eprintln!("error: tool name {problem}");
+        }
+        return Err(format!(
+            "{} mounted tool name{} the {} dialect rejects",
+            illegal.len(),
+            if illegal.len() == 1 { "" } else { "s" },
+            endpoint.provider.dialect()
+        )
+        .into());
+    }
 
     let role_section = loaded.role.preamble_section();
     // The [context] preamble builder (docs/context.md): resolve the operator's listed

@@ -11,6 +11,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::{extract_boundaries, render_distilled, render_triage_failure};
+use crate::api::WireDialect;
 use crate::context::Item;
 use crate::log::{
     AssistantOutput, CallId, ContentBlock, Disposition, LogEntry, Notification, Payload, RawResult,
@@ -34,6 +35,71 @@ pub enum WireTurn {
     /// preceding block its wire lets carry one, so the physical marker may sit
     /// earlier than the logical frontier.
     Breakpoint,
+}
+
+/// Why a turn list cannot be encoded onto a target dialect (docs/transport.md).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DialectConflict {
+    /// Assistant turns of both dialects in one list. No session writes this; it is
+    /// a log stitched together from two, and neither encoder can carry all of it.
+    Mixed,
+    /// Every assistant turn is in `recorded`, and the request would go out as
+    /// `target`. That encoder skips the foreign turns, so the model would see a
+    /// history with its own replies missing.
+    Foreign {
+        recorded: WireDialect,
+        target: WireDialect,
+    },
+}
+
+impl std::fmt::Display for DialectConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Mixed => write!(
+                f,
+                "the session records assistant turns in both the Messages and Responses \
+                 dialects; no single request can carry them"
+            ),
+            Self::Foreign { recorded, target } => write!(
+                f,
+                "the session's assistant turns are recorded in the {recorded} dialect, \
+                 but the declared provider speaks {target}; encoding it would drop every \
+                 assistant turn. Resume it under a {recorded} provider"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DialectConflict {}
+
+/// The dialect the assistant turns are recorded in — `None` for a list with no
+/// assistant turn yet (a fresh session is dialect-free until its first reply), an
+/// error if the turns do not agree.
+pub fn recorded_dialect(turns: &[WireTurn]) -> Result<Option<WireDialect>, DialectConflict> {
+    let mut recorded = None;
+    for turn in turns {
+        let WireTurn::Assistant(output) = turn else {
+            continue;
+        };
+        match recorded {
+            None => recorded = Some(output.dialect()),
+            Some(seen) if seen != output.dialect() => return Err(DialectConflict::Mixed),
+            Some(_) => {}
+        }
+    }
+    Ok(recorded)
+}
+
+/// Refuse to encode `turns` onto `target` when their assistant turns belong to the
+/// other dialect (docs/transport.md). Each encoder skips the foreign arm rather than
+/// failing, which is right while a live session is pinned to one provider and wrong
+/// for a recorded session rendered or continued under another — there the skip is
+/// silent loss. A list with no assistant turn passes on either dialect.
+pub fn check_dialect(turns: &[WireTurn], target: WireDialect) -> Result<(), DialectConflict> {
+    match recorded_dialect(turns)? {
+        Some(recorded) if recorded != target => Err(DialectConflict::Foreign { recorded, target }),
+        _ => Ok(()),
+    }
 }
 
 /// One part of a user-role turn.
