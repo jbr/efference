@@ -8,6 +8,8 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Fixed
+- **The TUI no longer dies on a control character in sidebar or strip text** (docs/tui.md): a background process whose command line held a newline (a multi-line `python -c`) hit ratatui's `cell_width` assertion on every frame, and again on every restart while the process lived; direct cell writes now fold control characters to `�` as the transcript already did.
+- **The web client reads the ordered assistant entry** (docs/web-client.md): it still expected the grouped `thinking`/`text`/`calls` shape the log dropped with the Responses dialect, so any session crashed at first render; `session/assistant.ts` now derives that view from either dialect.
 - **A tool call cut at the output-token cap is no longer dispatched** (docs/transport.md): a `max_tokens` completion carrying a `tool_use` block is a record-only partial whether or not its arguments happen to parse — the upstream had been repairing a truncated `write` into a valid object with no `path`.
 - **An OpenRouter endpoint far below its peers no longer caps the session's output** (docs/transport.md): the `max_completion_tokens` min is taken over endpoints at or above a 32k floor, so one 2048-token outlier excludes itself from routing instead of holding every turn to 2048.
 - **`max_tokens` is shrunk to what the window spares** (docs/transport.md): each request reserves `min(cap, context_length − estimated prompt − margin)` instead of the advertised cap verbatim, and a window-overflow 400 halves and retries — a 1M model advertising a 943k cap had walled every session at ~105k of prompt; `usage.context.limit` now reports the window less the reservation.
