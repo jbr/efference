@@ -62,6 +62,17 @@ it should not). Neither subsumes the other, and neither is adversary-grade.
   the bytes to think about.
 - **Image bytes are not scanned.** `ResultImage.data` is base64 of an encoded
   image; a substitution there corrupts the image and protects nothing.
+- **A Responses `function_call` argument string is masked as JSON, and rewritten
+  only when a value changed.** The string is the replay authority
+  ([transport.md](transport.md)): it goes back to the provider byte for byte. The
+  masker parses it, masks the values as it masks a Messages `tool_use` input, and
+  re-serializes only if masking changed something — so an ordinary call keeps the
+  provider's exact bytes, and a masked one replays as the logged string, which still
+  parses and pairs with its result. A string that does not parse is scanned as text:
+  the turn is record-only and never dispatched, and the secret must not reach disk
+  either way. Nothing signs the argument string (only reasoning carries
+  `encrypted_content`), which is what makes this override safe where masking a
+  signed thinking block is not.
 - **The Codex strip gotcha.** A tool whose credential was stripped dies with an
   opaque auth error and the session has no way to connect the two. Today the
   mitigation is documentation: if a tool starts failing to authenticate, check

@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Responses replay is covered across consolidation and masking** (docs/consolidate.md, docs/env.md): a boundary that would cut a call from its result is refused at construction with an error result instead of folding an orphan into every later request; a masked `function_call` argument string is rewritten only when a value changed, so ordinary calls replay the provider's exact bytes.
 - **Requests refuse a lossy dialect switch and an illegal tool name** (docs/transport.md, docs/tools.md): `Client::complete` and `dev wire` reject a recorded session whose assistant turns are in the other dialect instead of encoding a history with the replies dropped, and boot fails on a mounted tool name the dialect's alphabet or ceiling (128 Messages, 64 Responses) rejects, by display name; the Responses fork-peek frontier is pinned beside the Messages one.
 - **The TUI names an executing Responses function call** (docs/tui.md): `in_flight_call` reads calls through the dialect-neutral accessor, so `background`/`kill` and the interrupt hint follow a Codex bash the same as a Messages one; unparseable arguments name nothing.
 - **The Responses HTTP boundary is covered over a mock upstream** (docs/transport.md): headers, a 400 returning its body once, a 503 retried and recorded, and the ceiling cutting a partial stream; the retry set is checked against OpenAI's error guide, whose non-retryable 429 codes now class as terminal; `Usage::prompt_tokens` is the one prompt-total sum.

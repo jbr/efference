@@ -32,6 +32,22 @@ folds away. The `extent` function in `src/consolidate.rs` computes this by scann
 log in reverse for the most recent `User` entry, then taking the maximum `seq` strictly
 less than that entry's seq.
 
+The boundary is validated where it is made, not where it is projected. Projection folds
+by sequence range and pairs nothing, so a boundary that fell between a call and its
+result would replay the result with no call before it (on the Responses wire, a
+`function_call_output` with no `function_call`), and the mark is append-only — once
+written it shapes every later request. `consolidate::split_calls` names the calls a
+candidate `upto` would cut from their results, in either direction; the loop runs it
+on the `extent` it derived and, if any are named, answers the `consolidate` call with
+an error result and writes no mark. `extent` never names one in ordinary use, because
+results are appended before the next user turn, so the step before the live ask is
+whole; the check is there for an append ordering that changes that. A persisted mark
+projects as written: `project` is infallible and deterministic, and has no place to
+put a refusal. Tests in `project/test/consolidate.rs` pin both the whole-unit fold
+over Responses replay state (calls, outputs, and the folded turn's `encrypted_content`
+leave together) and what a mid-step mark does, so the construction check is seen to be
+load-bearing.
+
 ## The projection fold
 
 `project` in `src/project.rs` handles consolidation in two passes.

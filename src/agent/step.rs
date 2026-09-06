@@ -247,7 +247,32 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
         // output to curate, so it never reaches the gate.
         Approval::Approve if call.name == consolidate::NAME => {
             let note = consolidate::summary(&call.input).unwrap_or_default();
-            let upto = consolidate::extent(&shared.snapshot());
+            let log = shared.snapshot();
+            let upto = consolidate::extent(&log);
+            // The boundary is checked where it is made, not where it is projected: a
+            // mark is append-only, and a fold that cut a call from its result would
+            // replay an unpaired item on every later request (docs/consolidate.md).
+            // `extent` never produces one in ordinary use; this refuses the write if
+            // an append ordering ever changes that.
+            let split = consolidate::split_calls(&log, upto);
+            if !split.is_empty() {
+                let ids: Vec<&str> = split.iter().map(|id| id.0.as_str()).collect();
+                log::error!("consolidate refused: a boundary at {upto} would split {ids:?}");
+                return Ok(Decision::Direct(vec![Payload::ToolResult {
+                    call_id: call.id.clone(),
+                    raw: RawResult {
+                        images: Vec::new(),
+                        content: format!(
+                            "consolidate refused: the boundary would separate a call from \
+                             its result ({}); nothing was folded",
+                            ids.join(", ")
+                        ),
+                        is_error: true,
+                        content_elided: None,
+                    },
+                    wire: WireState::Raw,
+                }]));
+            }
             Ok(Decision::Direct(vec![
                 Payload::Mark(Mark {
                     kind: MarkKind::Boundary { upto },

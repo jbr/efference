@@ -315,3 +315,198 @@ fn mark_folds_named_span_and_injects_summary() {
     );
     assert!(matches!(&messages[1].content[0], ApiBlock::Text { text, .. } if text == "continue"));
 }
+
+/// A real boundary over Responses replay state (docs/consolidate.md): the folded task's
+/// `function_call` / `function_call_output` units leave together, no
+/// `function_call_output` replays without its call before it, and the folded turn's
+/// `encrypted_content` is gone from the wire. The live task, the summary, and the
+/// consolidate exchange itself project as before.
+#[test]
+fn a_responses_boundary_folds_whole_replay_units() {
+    use crate::api::{PromptCachePolicy, encode_responses};
+    use crate::log::ResponsesOutputItem;
+
+    fn call(call_id: &str, encrypted: &str) -> Payload {
+        Payload::Assistant {
+            output: AssistantOutput::Responses(vec![
+                ResponsesOutputItem::Reasoning {
+                    id: format!("rs_{call_id}"),
+                    status: None,
+                    summary: Vec::new(),
+                    content: Vec::new(),
+                    encrypted_content: Some(encrypted.into()),
+                },
+                ResponsesOutputItem::FunctionCall {
+                    id: None,
+                    call_id: CallId(call_id.into()),
+                    name: "bash".into(),
+                    arguments: r#"{"command":"ls"}"#.into(),
+                    status: None,
+                },
+            ]),
+            upstream_failure: None,
+        }
+    }
+    fn result(call_id: &str, out: &str) -> Payload {
+        Payload::ToolResult {
+            call_id: CallId(call_id.into()),
+            raw: RawResult {
+                images: Vec::new(),
+                content: out.into(),
+                is_error: false,
+                content_elided: None,
+            },
+            wire: WireState::Raw,
+        }
+    }
+    let log = vec![
+        entry(
+            0,
+            0,
+            Payload::User(vec![ContentBlock::Text("task A".into())]),
+        ),
+        entry(1, 0, call("call_a", "ENC-A")),
+        entry(2, 0, result("call_a", "out-a")),
+        entry(
+            3,
+            1,
+            Payload::User(vec![ContentBlock::Text("task B".into())]),
+        ),
+        entry(4, 1, call("consolidate_1", "ENC-C")),
+        entry(
+            5,
+            1,
+            Payload::Mark(Mark {
+                kind: MarkKind::Boundary {
+                    upto: crate::consolidate::extent(&log_prefix()),
+                },
+                note: "A is done".into(),
+            }),
+        ),
+        entry(6, 1, result("consolidate_1", "consolidated")),
+    ];
+    // `extent` reads the log as it stood when the consolidate call was made.
+    fn log_prefix() -> Vec<LogEntry> {
+        vec![
+            entry(
+                0,
+                0,
+                Payload::User(vec![ContentBlock::Text("task A".into())]),
+            ),
+            entry(1, 0, call("call_a", "ENC-A")),
+            entry(2, 0, result("call_a", "out-a")),
+            entry(
+                3,
+                1,
+                Payload::User(vec![ContentBlock::Text("task B".into())]),
+            ),
+            entry(4, 1, call("consolidate_1", "ENC-C")),
+        ]
+    }
+    assert_eq!(crate::consolidate::extent(&log_prefix()), 2);
+    assert!(crate::consolidate::split_calls(&log, 2).is_empty());
+
+    let input = encode_responses(&project_semantic(&log), "", PromptCachePolicy::None);
+    let items: Vec<serde_json::Value> = input
+        .iter()
+        .map(|i| serde_json::to_value(i).unwrap())
+        .collect();
+    let text = serde_json::to_string(&items).unwrap();
+    assert!(
+        !text.contains("out-a") && !text.contains("call_a"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("ENC-A"),
+        "folded reasoning leaves the wire: {text}"
+    );
+    assert!(
+        text.contains("A is done") && text.contains("task B"),
+        "{text}"
+    );
+    assert!(
+        text.contains("ENC-C"),
+        "the live turn's reasoning replays: {text}"
+    );
+    assert!(!text.contains("task A"), "{text}");
+    // Every output has its call before it.
+    for (i, item) in items.iter().enumerate() {
+        if item["type"] == "function_call_output" {
+            let call_id = &item["call_id"];
+            assert!(
+                items[..i]
+                    .iter()
+                    .any(|c| c["type"] == "function_call" && &c["call_id"] == call_id),
+                "orphan output {call_id}: {items:#?}"
+            );
+        }
+    }
+}
+
+/// What a mark inside a step does to the Responses wire, pinned so the construction
+/// check is seen to be load-bearing: projection folds by range and pairs nothing, so
+/// a boundary between a call and its result replays the output with no call before
+/// it. `split_calls` names that boundary and the loop refuses to append it
+/// (docs/consolidate.md); a persisted mark is projected as written.
+#[test]
+fn a_boundary_inside_a_responses_step_orphans_its_output() {
+    use crate::api::{PromptCachePolicy, encode_responses};
+    use crate::log::ResponsesOutputItem;
+    let log = vec![
+        entry(0, 0, Payload::User(vec![ContentBlock::Text("go".into())])),
+        entry(
+            1,
+            0,
+            Payload::Assistant {
+                output: AssistantOutput::Responses(vec![ResponsesOutputItem::FunctionCall {
+                    id: None,
+                    call_id: CallId("call_x".into()),
+                    name: "bash".into(),
+                    arguments: "{}".into(),
+                    status: None,
+                }]),
+                upstream_failure: None,
+            },
+        ),
+        entry(
+            2,
+            0,
+            Payload::ToolResult {
+                call_id: CallId("call_x".into()),
+                raw: RawResult {
+                    images: Vec::new(),
+                    content: "out".into(),
+                    is_error: false,
+                    content_elided: None,
+                },
+                wire: WireState::Raw,
+            },
+        ),
+        entry(
+            3,
+            0,
+            Payload::Mark(Mark {
+                kind: MarkKind::Boundary { upto: 1 },
+                note: "cut".into(),
+            }),
+        ),
+        entry(4, 1, Payload::User(vec![ContentBlock::Text("on".into())])),
+    ];
+    assert_eq!(
+        crate::consolidate::split_calls(&log, 1),
+        vec![CallId("call_x".into())]
+    );
+    let input = encode_responses(&project_semantic(&log), "", PromptCachePolicy::None);
+    let items: Vec<serde_json::Value> = input
+        .iter()
+        .map(|i| serde_json::to_value(i).unwrap())
+        .collect();
+    assert!(
+        items.iter().any(|i| i["type"] == "function_call_output"),
+        "{items:#?}"
+    );
+    assert!(
+        !items.iter().any(|i| i["type"] == "function_call"),
+        "the call folded, the output did not: {items:#?}"
+    );
+}

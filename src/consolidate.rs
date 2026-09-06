@@ -11,12 +11,13 @@
 //! [`RawResult`]: crate::log::RawResult
 //! [`Toolbox`]: crate::tools::Toolbox
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::log::{LogEntry, Payload, Seq};
+use crate::log::{CallId, LogEntry, Payload, Seq};
 use crate::tools::{ToolBrief, anthropic_def};
 use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
 
@@ -119,6 +120,40 @@ pub fn extent(log: &[LogEntry]) -> Seq {
             .unwrap_or(live.seq),
         None => log.last().map(|e| e.seq).unwrap_or(0),
     }
+}
+
+/// The calls a boundary at `upto` would cut from their results: a call recorded at or
+/// before `upto` whose result lands after it, or a result at or before `upto` whose
+/// call lands after. Projection folds by sequence range and pairs nothing, so such a
+/// mark would replay a `function_call_output` with no `function_call` before it (or a
+/// call with no output), which the provider rejects — and the mark is append-only, so
+/// the loop checks here, at construction, and refuses to write one
+/// (docs/consolidate.md). Empty for the boundary `extent` derives in ordinary use:
+/// results are appended before the next user turn, so the step before the live ask
+/// is whole. Ids are reported in log order of the result, once each.
+pub fn split_calls(log: &[LogEntry], upto: Seq) -> Vec<CallId> {
+    // Which side of the boundary each call was made on, by id.
+    let call_folded: HashMap<CallId, bool> = log
+        .iter()
+        .filter_map(|e| match &e.payload {
+            Payload::Assistant {
+                output,
+                upstream_failure: None,
+            } => Some((e.seq <= upto, output.tool_calls().unwrap_or_default())),
+            _ => None,
+        })
+        .flat_map(|(folded, calls)| calls.into_iter().map(move |c| (c.id, folded)))
+        .collect();
+    let mut split = Vec::new();
+    for entry in log {
+        let Payload::ToolResult { call_id, .. } = &entry.payload else {
+            continue;
+        };
+        if call_folded.get(call_id) == Some(&(entry.seq > upto)) && !split.contains(call_id) {
+            split.push(call_id.clone());
+        }
+    }
+    split
 }
 
 #[cfg(test)]

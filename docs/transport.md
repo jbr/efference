@@ -574,7 +574,9 @@ which top-level `instructions` is not), user prose as `input_text` parts, each t
 result as a `function_call_output` keyed by `call_id` (bare string, or parts when
 images ride along as `data:` URLs), and every logged Responses assistant item
 replayed as returned — `reasoning` with its `encrypted_content`, `message` with its
-`phase`, `function_call` with its exact `arguments` string. `store: false` (the log
+`phase`, `function_call` with its exact `arguments` string (the one exception is a
+masked secret, [env.md](env.md): the logged string is then a re-serialization
+without it, and that is what replays). `store: false` (the log
 is the only history; encrypted reasoning arrives by default in stateless mode),
 `truncation: disabled` (a history change is the harness's decision),
 `parallel_tool_calls: false` (one call per turn), `tools[]` as `function` entries

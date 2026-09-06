@@ -242,11 +242,24 @@ impl Masker {
                                         }
                                     }
                                 }
+                                // The argument string is the replay authority
+                                // (docs/transport.md): it goes back to the provider
+                                // byte for byte. Parse, mask the values, and
+                                // re-serialize only when a value changed, so the
+                                // common call keeps the provider's exact bytes and a
+                                // masked one is the same security override a Messages
+                                // `tool_use` input takes (docs/env.md). A string that
+                                // does not parse is scanned as text: it is
+                                // record-only, never dispatched, and still must not
+                                // carry the secret to disk.
                                 ResponsesOutputItem::FunctionCall { arguments, .. } => {
-                                    match serde_json::from_str(arguments) {
-                                        Ok(mut value) => {
-                                            self.mask_json(&mut value);
-                                            *arguments = value.to_string();
+                                    match serde_json::from_str::<Value>(arguments) {
+                                        Ok(original) => {
+                                            let mut masked = original.clone();
+                                            self.mask_json(&mut masked);
+                                            if masked != original {
+                                                *arguments = masked.to_string();
+                                            }
                                         }
                                         Err(_) => self.mask_in_place(arguments),
                                     }

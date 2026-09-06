@@ -666,3 +666,136 @@ fn glob_matching_is_star_only() {
     assert!(glob_match("EXACT", "EXACT"));
     assert!(!glob_match("EXACT", "EXACTLY"));
 }
+
+/// The Responses argument string through append, log, and replay (docs/env.md,
+/// docs/transport.md). The string is the replay authority, so masking rewrites it
+/// only when a value changed: a clean call keeps the provider's exact bytes, a masked
+/// one is re-serialized without the secret and still parses and pairs, the wire
+/// carries the logged string byte for byte, and a string that does not parse is
+/// scanned as text so the secret never reaches disk either way.
+#[test]
+fn a_responses_function_call_is_masked_on_append_and_replayed_as_logged() {
+    use crate::api::{PromptCachePolicy, encode_responses};
+    use crate::log::{AssistantOutput, CallId, ResponsesOutputItem, WireState};
+    use crate::persist::Log;
+
+    let policy =
+        EnvPolicy::build_from(&BTreeMap::new(), &env(&[("A_KEY", "leaked-secret-value")])).policy;
+    let mut log = Log::in_memory();
+    log.set_masker(policy.masker());
+
+    let call = |call_id: &str, arguments: &str| Payload::Assistant {
+        output: AssistantOutput::Responses(vec![ResponsesOutputItem::FunctionCall {
+            id: None,
+            call_id: CallId(call_id.into()),
+            name: "bash".into(),
+            arguments: arguments.into(),
+            status: None,
+        }]),
+        upstream_failure: None,
+    };
+    let result = |call_id: &str| Payload::ToolResult {
+        call_id: CallId(call_id.into()),
+        raw: RawResult {
+            content: "ok".into(),
+            is_error: false,
+            images: Vec::new(),
+            content_elided: None,
+        },
+        wire: WireState::Raw,
+    };
+    // Provider spacing and key order, kept as sent when nothing is masked.
+    let clean = r#"{"command": "ls",  "cwd": "/tmp"}"#;
+    log.append(0, call("call_clean", clean)).unwrap();
+    log.append(0, result("call_clean")).unwrap();
+    log.append(
+        0,
+        call(
+            "call_hot",
+            r#"{"command": "curl -H 'x: leaked-secret-value'"}"#,
+        ),
+    )
+    .unwrap();
+    log.append(0, result("call_hot")).unwrap();
+    log.append(
+        0,
+        call("call_broken", r#"{"command": "leaked-secret-value"#),
+    )
+    .unwrap();
+
+    let entries = log.entries();
+    let arguments = |i: usize| -> String {
+        let Payload::Assistant { output, .. } = &entries[i].payload else {
+            unreachable!()
+        };
+        let AssistantOutput::Responses(items) = output else {
+            unreachable!()
+        };
+        let ResponsesOutputItem::FunctionCall { arguments, .. } = &items[0] else {
+            unreachable!()
+        };
+        arguments.clone()
+    };
+    assert_eq!(
+        arguments(0),
+        clean,
+        "a clean call keeps the provider's bytes"
+    );
+
+    // On disk: the same bytes the sink writes, with no secret anywhere.
+    for entry in entries {
+        let line = serde_json::to_string(entry).unwrap();
+        assert!(!line.contains("leaked-secret-value"), "{line}");
+    }
+
+    // The masked call still parses and pairs.
+    let Payload::Assistant { output, .. } = &entries[2].payload else {
+        unreachable!()
+    };
+    let calls = output.tool_calls().expect("masked arguments still parse");
+    assert_eq!(calls[0].id, CallId("call_hot".into()));
+    let command = calls[0].input["command"].as_str().unwrap();
+    assert!(
+        command.contains("curl -H 'x: ") && !command.contains("leaked"),
+        "{command}"
+    );
+
+    // The malformed string is masked as text and stays record-only.
+    let broken = arguments(4);
+    assert!(!broken.contains("leaked-secret-value"), "{broken}");
+    let Payload::Assistant { output, .. } = &entries[4].payload else {
+        unreachable!()
+    };
+    assert!(output.tool_calls().is_err(), "still unparseable: {broken}");
+
+    // Replay carries the logged strings exactly.
+    let input = encode_responses(
+        &crate::project::project_semantic(entries),
+        "",
+        PromptCachePolicy::None,
+    );
+    let items: Vec<serde_json::Value> = input
+        .iter()
+        .map(|i| serde_json::to_value(i).unwrap())
+        .collect();
+    let wire_arguments: Vec<&str> = items
+        .iter()
+        .filter(|i| i["type"] == "function_call")
+        .map(|i| i["arguments"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        wire_arguments,
+        vec![arguments(0), arguments(2), arguments(4)]
+    );
+    let outputs: Vec<&str> = items
+        .iter()
+        .filter(|i| i["type"] == "function_call_output")
+        .map(|i| i["call_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(outputs, vec!["call_clean", "call_hot"]);
+    assert!(
+        !serde_json::to_string(&items)
+            .unwrap()
+            .contains("leaked-secret-value")
+    );
+}

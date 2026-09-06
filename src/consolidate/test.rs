@@ -71,3 +71,70 @@ fn consolidate_has_a_brief_and_a_clean_wire_entry() {
         .collect();
     assert_eq!(keys, vec!["description", "input_schema", "name"]);
 }
+
+fn responses_call(seq: Seq, call_id: &str) -> LogEntry {
+    use crate::log::{CallId, ResponsesOutputItem};
+    at(
+        seq,
+        Payload::Assistant {
+            output: AssistantOutput::Responses(vec![ResponsesOutputItem::FunctionCall {
+                id: None,
+                call_id: CallId(call_id.into()),
+                name: "bash".into(),
+                arguments: "{}".into(),
+                status: None,
+            }]),
+            upstream_failure: None,
+        },
+    )
+}
+
+fn result(seq: Seq, call_id: &str) -> LogEntry {
+    use crate::log::{CallId, RawResult, WireState};
+    at(
+        seq,
+        Payload::ToolResult {
+            call_id: CallId(call_id.into()),
+            raw: RawResult {
+                images: Vec::new(),
+                content: "out".into(),
+                is_error: false,
+                content_elided: None,
+            },
+            wire: WireState::Raw,
+        },
+    )
+}
+
+/// The boundary `extent` derives is whole: results are appended before the next user
+/// turn, so the step just before the live ask is never cut. A boundary set by hand
+/// inside a step is what `split_calls` names — the call whose result is on the other
+/// side, in either direction, once each.
+#[test]
+fn extent_never_splits_a_call_and_a_hand_placed_boundary_is_named() {
+    let log = vec![
+        user(0),
+        responses_call(1, "call_a"),
+        result(2, "call_a"),
+        responses_call(3, "call_b"),
+        result(4, "call_b"),
+        user(5),
+        responses_call(6, "consolidate"),
+    ];
+    let upto = extent(&log);
+    assert_eq!(upto, 4);
+    assert_eq!(split_calls(&log, upto), Vec::<crate::log::CallId>::new());
+
+    // Between call_b and its result: the call folds, the output would replay alone.
+    assert_eq!(
+        split_calls(&log, 3),
+        vec![crate::log::CallId("call_b".into())]
+    );
+    // Before call_a's result but after nothing else: the same shape at the front.
+    assert_eq!(
+        split_calls(&log, 1),
+        vec![crate::log::CallId("call_a".into())]
+    );
+    // A boundary before any call splits nothing.
+    assert_eq!(split_calls(&log, 0), Vec::<crate::log::CallId>::new());
+}
