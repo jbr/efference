@@ -59,9 +59,7 @@ EfferenceGuide = { builtin = \"guide\" }
 #[derive(Parser)]
 #[command(name = "efference", about = "An API-backed agentic coding harness.")]
 pub(crate) struct Cli {
-    /// Session name. `serve` creates `.efference/<name>/`; every other command uses it to
-    /// find that session. Omitted: `serve` generates a timestamp id, and the others use the
-    /// one live session here, erroring if several are.
+    /// Session name. Defaults to a timestamp (`serve`) or the session running at this path.
     #[arg(long, global = true)]
     pub(crate) name: Option<String>,
     /// Explicit control-socket path; overrides `--name` and discovery.
