@@ -736,6 +736,30 @@ impl Client {
     /// assistant entry. Mid-stream deaths are the different case — they assemble
     /// as record-only partials and the loop retries them (docs/transport.md).
     async fn sse_open_failure(e: SseError) -> (Option<Status>, String) {
+        // Any open failure still owns the conn: an unexpected content-type (a JSON
+        // error body on a 4xx the retry handler let through, or a 200 that is not
+        // a stream) is read the same way a status error is, so the upstream's
+        // words reach the record instead of "content-type: None".
+        if !matches!(e.kind, SseErrorKind::Status(_)) {
+            let kind = e.kind.to_string();
+            let mut conn: Conn = e.into();
+            let status = conn.status();
+            let body = match captured_error_body(&mut conn) {
+                Some(body) => body,
+                None => conn
+                    .response_body()
+                    .read_string()
+                    .await
+                    .unwrap_or_else(|read_err| format!("(could not read body: {read_err})")),
+            };
+            let body = body.trim();
+            let detail = if body.is_empty() {
+                kind
+            } else {
+                format!("{kind} — {body}")
+            };
+            return (status, detail);
+        }
         // `Status` is `Copy`, so binding it doesn't move `e.kind` — `e` stays whole and
         // convertible into its `Conn`.
         if let SseErrorKind::Status(status) = e.kind {

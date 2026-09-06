@@ -784,7 +784,14 @@ impl Endpoint {
         upstream: &[String],
     ) -> Result<ModelCapabilities, Error> {
         if self.provider.uses_openai_catalog() {
-            return openai_model_capabilities(model);
+            let mut capabilities = openai_model_capabilities(model)?;
+            // The Codex backend rejects `prompt_cache_breakpoint` ("not supported on
+            // this model", observed 2026-09-06 on gpt-5.6-luna), so on that arm the
+            // provider places the breakpoints and the encoder emits no markers.
+            if self.provider == Provider::OpenAICodex {
+                capabilities.prompt_cache = PromptCachePolicy::Implicit;
+            }
+            return Ok(capabilities);
         }
         let url = self.provider.capabilities_url(model)?;
         let body = self.authed_get(&url).await?;

@@ -25,8 +25,8 @@ use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
     AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Mark,
-    MarkKind, MessagesOutputBlock, Notification, Origin, Payload, RawResult, Spot, Stance,
-    ToolCall, Triage, Turn, WireState,
+    MarkKind, Notification, Origin, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn,
+    WireState,
 };
 use crate::policy::{self, ReviewLevel, Verdict};
 use crate::project::WireTurn;
@@ -249,7 +249,7 @@ fn record_absorbed_attempts(
         shared.append(
             *turn,
             Payload::Assistant {
-                output: AssistantOutput::Messages(Vec::new()),
+                output: AssistantOutput::empty(client.dialect()),
                 upstream_failure: Some(failure.record_text().into()),
             },
         )?;
@@ -483,7 +483,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                         shared.append(
                             turn,
                             Payload::Assistant {
-                                output: AssistantOutput::Messages(Vec::new()),
+                                output: AssistantOutput::empty(client.dialect()),
                                 upstream_failure: Some(error.to_string().into()),
                             },
                         )?;
@@ -512,28 +512,20 @@ pub async fn run<F: Frontend, S: Spotter>(
 
             // Surface the model's prose, then pull its calls before the payload
             // moves into the log.
-            let calls = match &completion.assistant {
-                Payload::Assistant {
-                    output: AssistantOutput::Messages(blocks),
-                    ..
-                } => {
-                    for block in blocks {
-                        if let MessagesOutputBlock::Text(text) = block
-                            && !text.is_empty()
-                        {
-                            println!("\n{text}");
-                        }
-                    }
-                    blocks
-                        .iter()
-                        .filter_map(|block| match block {
-                            MessagesOutputBlock::ToolUse(call) => Some(call.clone()),
-                            _ => None,
-                        })
-                        .collect()
+            // Dialect-neutral through the accessors (docs/log-and-projection.md). A
+            // finalized turn's calls parse by construction — the assembler marks a
+            // turn with unparseable arguments record-only, and record-only turns
+            // never reach here — so an `Err` is a contract breach, not a path.
+            let output = completion.assistant_output();
+            for text in output.text() {
+                if !text.is_empty() {
+                    println!("\n{text}");
                 }
-                _ => Vec::new(),
-            };
+            }
+            let calls = output.tool_calls().unwrap_or_else(|e| {
+                log::error!("finalized turn carried unparseable call arguments: {e}");
+                Vec::new()
+            });
             // Record cache/usage telemetry (surfaced on `GET /state`) and print a
             // legible live line: cache read vs creation is the hot/cold signal
             // (docs/log-and-projection.md). Transport-only — `record_request` never touches the log.

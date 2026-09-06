@@ -252,6 +252,15 @@ impl AssistantOutput {
         Self::Messages(blocks)
     }
 
+    /// A turn with no output, in the given dialect — the record-only entry for a
+    /// request that never produced a stream (docs/transport.md).
+    pub fn empty(dialect: crate::api::WireDialect) -> Self {
+        match dialect {
+            crate::api::WireDialect::Messages => Self::Messages(Vec::new()),
+            crate::api::WireDialect::Responses => Self::Responses(Vec::new()),
+        }
+    }
+
     pub fn messages(&self) -> Option<&[MessagesOutputBlock]> {
         match self {
             Self::Messages(blocks) => Some(blocks),

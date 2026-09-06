@@ -583,12 +583,21 @@ cache_write`, `cache_read_input_tokens = cached_tokens`,
 billed to a ChatGPT/Codex subscription, so that arm sends exactly what Codex CLI
 sends: the preamble as top-level `instructions` rather than a developer message,
 `include: ["reasoning.encrypted_content"]`, and no `max_output_tokens`,
-`truncation`, `temperature`, or `prompt_cache_options`. Auth is the OAuth access
+`truncation`, `temperature`, or `prompt_cache_options`, and no
+`prompt_cache_breakpoint` markers — the backend rejects them, so the arm's
+capability profile reports implicit caching. Auth is the OAuth access
 token Codex CLI caches in `~/.codex/auth.json` (`$CODEX_HOME` honoured) sent as
 `authorization: Bearer`, plus `ChatGPT-Account-ID` from the same file and an
 `originator: efference` header. efference reads that file and never writes it;
 refreshing an expired token is `codex login`'s job. `EFFERENCE_API_KEY` plus
 `EFFERENCE_CHATGPT_ACCOUNT_ID` override the file. Both profiles have a byte pin.
+
+The Codex backend streams with **no `content-type` header** (verified with curl,
+2026-09-06); trillium-client 0.9.19's `into_sse` accepts an absent header and
+rejects only a present non-`text/event-stream` one. Each response also carries
+`x-codex-*` headers naming the plan, the 5-hour and 7-day usage windows as
+percentages, and their reset times — not read yet (backlog:
+openai-provider/provider-integration.md).
 
 **Not on this dialect.** The `max_tokens: 0` keepalive is a Messages primitive; the
 daemon never starts the loop on Responses (backlog: openai-provider/validation.md).

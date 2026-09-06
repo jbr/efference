@@ -211,3 +211,14 @@ syntect = { version = "5.3", default-features = false, features = [
   "regex-onig",
 ] }
 
+
+# Local override until trillium-client 0.9.19 ships the lenient SSE content-type gate
+# (the Codex backend sends none). Drop this stanza and bump the version on release.
+[patch.crates-io]
+trillium-client = { path = "../trillium/client" }
+# The client's path deps must resolve to the same source as the published ones
+# or cargo sees two copies of each; versions match the lockfile.
+trillium = { path = "../trillium/trillium" }
+trillium-http = { path = "../trillium/http" }
+trillium-macros = { path = "../trillium/macros" }
+trillium-server-common = { path = "../trillium/server-common" }

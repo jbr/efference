@@ -61,6 +61,25 @@ fn endpoint_unknown_provider_is_loud() {
     assert!(err.contains("openrouter"), "{err}");
 }
 
+/// The Codex backend takes the catalog's limits but not its explicit cache
+/// policy: it rejects `prompt_cache_breakpoint`, so the arm reports implicit.
+#[tokio::test]
+async fn codex_backend_capabilities_report_implicit_caching() {
+    let codex = Endpoint::resolve(Some("openai-codex".into()), Some("tok".into()), None)
+        .unwrap()
+        .fetch_capabilities("gpt-5.6-luna", &[])
+        .await
+        .unwrap();
+    assert_eq!(codex.prompt_cache, PromptCachePolicy::Implicit);
+    let platform = Endpoint::resolve(Some("openai".into()), Some("tok".into()), None)
+        .unwrap()
+        .fetch_capabilities("gpt-5.6-luna", &[])
+        .await
+        .unwrap();
+    assert_eq!(platform.prompt_cache, PromptCachePolicy::Explicit);
+    assert_eq!(codex.context_length, platform.context_length);
+}
+
 /// A blank `EFFERENCE_PROVIDER` means unset, not an unknown provider.
 #[test]
 fn endpoint_blank_provider_defaults_to_anthropic() {
