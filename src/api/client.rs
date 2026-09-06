@@ -10,6 +10,7 @@ use trillium_client::ClientHandler;
 use trillium_client_retry::RetryHandler;
 
 use crate::api::assembler::ResponseMeta;
+use crate::api::failure::{FailureClass, classify_body};
 use crate::api::responses::assembler::ResponsesAssembler;
 use crate::log::is_captured_header;
 use crate::project::{WireTurn, encode_messages};
@@ -63,6 +64,16 @@ pub(super) fn clear_upstream_failure(failure: &UpstreamFailureState) {
 /// the caller's own error message quote the upstream, instead of one of them
 /// finding an empty body.
 struct CapturedErrorBody(String);
+
+/// The non-2xx statuses the transport retries on its own, before the agent loop
+/// sees a failure (docs/transport.md): the rate-limit and server-side family.
+const RETRY_STATUSES: [Status; 5] = [
+    Status::TooManyRequests,
+    Status::InternalServerError,
+    Status::BadGateway,
+    Status::ServiceUnavailable,
+    Status::GatewayTimeout,
+];
 
 /// The stashed non-2xx body, if this conn's response carried one.
 pub(super) fn captured_error_body(conn: &mut Conn) -> Option<String> {
@@ -296,6 +307,24 @@ impl Client {
                 Status::ServiceUnavailable,
                 Status::GatewayTimeout,
             ])
+            // The status set above, with one veto: a body that names a condition
+            // no retry can change (`api/failure.rs`) — the Codex backend answers
+            // an exhausted plan with a 429 whose body says `usage_limit_reached`
+            // and when it resets — fails at once instead of spending the
+            // schedule on the same answer. The status handler runs first in the
+            // reverse pass and stashes the body, which is what this reads.
+            .retry_when(|conn| {
+                // No status means no response: a transport error, retried as the
+                // default gate does.
+                let Some(status) = conn.status() else {
+                    return true;
+                };
+                if !RETRY_STATUSES.contains(&status) {
+                    return false;
+                }
+                conn.state::<CapturedErrorBody>()
+                    .is_none_or(|body| classify_body(&body.0) == FailureClass::Transient)
+            })
             .with_max_attempts(RETRY_MAX_ATTEMPTS)
             .with_max_elapsed(RETRY_MAX_ELAPSED)
             .with_max_retry_after(RETRY_MAX_ELAPSED);

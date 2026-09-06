@@ -4,6 +4,7 @@ use super::*;
 
 use std::collections::BTreeMap;
 
+use crate::api::failure::{FailureClass, classify_body};
 use crate::log::{FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord};
 
 /// One content block being reassembled from the stream, keyed by its `index`.
@@ -53,6 +54,9 @@ pub(super) struct Assembler {
     /// event's body, a transport error, or an unparseable event. Carried into the
     /// completion's `upstream_failure` so the why survives to the log.
     failure: Option<String>,
+    /// How `failure` should be retried, from the provider's naming of it
+    /// (`api/failure.rs`).
+    failure_class: FailureClass,
     /// The response the stream arrived on, as [`Assembler::observed_response`]
     /// recorded it. Only the empty-finalized path reads it (docs/transport.md).
     response: Option<ResponseMeta>,
@@ -83,6 +87,7 @@ impl Assembler {
             usage: Usage::default(),
             finalized: false,
             failure: None,
+            failure_class: FailureClass::Transient,
             response: None,
             frames: String::new(),
             frames_truncated: false,
@@ -319,7 +324,10 @@ impl Assembler {
             // An in-stream error (e.g. `overloaded_error` after a 200) carries a
             // full JSON body — surface it verbatim, so it reaches the completion's
             // `upstream_failure` and thus the log (docs/transport.md).
-            Some("error") => return Err(format!("upstream stream error: {data}").into()),
+            Some("error") => {
+                self.failure_class = classify_body(data);
+                return Err(format!("upstream stream error: {data}").into());
+            }
             other => return Err(format!("unknown SSE event {other:?}: {data}").into()),
         }
         Ok(streamed)
@@ -473,6 +481,7 @@ impl Assembler {
             model: self.model,
             stop_reason: self.stop_reason,
             usage: self.usage,
+            failure_class: self.failure_class,
         })
     }
 }

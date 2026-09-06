@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Fixed
+- **A quota, plan, credential, or invalid-request failure stalls on the first attempt** (docs/transport.md): the provider's error name is classed as terminal or transient, and a terminal one — inside the stream or as the Codex backend's `usage_limit_reached` 429 — stops the trajectory at once with `stall.reason: upstream_refused` instead of spending the twelve-attempt abort schedule on the same answer.
 - **Codex requests replay the backend's `x-codex-turn-state` sticky-routing token** (docs/transport.md): the header is captured from the first response of a user turn, sent on every later request of that turn including fork peeks, and dropped at the next turn, as Codex CLI does; a session that omitted it paid for its prefix repeatedly as the cache missed. Requests also carry the `x-codex-routing-hint` model hint.
 - **The TUI no longer dies on a control character in sidebar or strip text** (docs/tui.md): a background process whose command line held a newline (a multi-line `python -c`) hit ratatui's `cell_width` assertion on every frame, and again on every restart while the process lived; direct cell writes now fold control characters to `�` as the transcript already did.
 - **The web client reads the ordered assistant entry** (docs/web-client.md): it still expected the grouped `thinking`/`text`/`calls` shape the log dropped with the Responses dialect, so any session crashed at first render; `session/assistant.ts` now derives that view from either dialect.

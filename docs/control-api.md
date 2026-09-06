@@ -434,9 +434,11 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
 }
 ```
 
-**`stall` distinguishes the two idle conditions `running: false` collapses.**
-When a turn's stream-abort budget is exhausted, or the request itself fails past
-the transport's retries, the loop appends its record-only entries, posts the
+**`stall` distinguishes the idle conditions `running: false` collapses.**
+When a turn's stream-abort budget is exhausted, the request itself fails past
+the transport's retries, or the upstream names a failure no retry can change
+(`upstream_refused`, [transport.md](transport.md)), the loop appends its
+record-only entries, posts the
 turn-not-completed notification, and returns to idle
 ([transport.md](transport.md)). The daemon does not exit: the socket stays up
 and one `POST /turns` recovers the session. But every other signal then reads

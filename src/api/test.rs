@@ -2699,3 +2699,91 @@ fn a_client_without_turn_routing_holds_no_token() {
     client.begin_turn();
     assert_eq!(client.turn_routing_token(), None);
 }
+
+/// A Messages in-stream `error` is classed by its nested type (`api/failure.rs`):
+/// overloaded is transient, a rejected credential is terminal.
+#[test]
+fn a_messages_error_event_is_classed_by_its_type() {
+    let overloaded = feed(&[(
+        "error",
+        r#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#,
+    )])
+    .unwrap();
+    assert_eq!(overloaded.failure_class, FailureClass::Transient);
+    let refused = feed(&[(
+        "error",
+        r#"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#,
+    )])
+    .unwrap();
+    assert_eq!(refused.failure_class, FailureClass::Terminal);
+    assert!(
+        refused
+            .terminal_failure()
+            .unwrap()
+            .contains("authentication_error")
+    );
+}
+
+/// The transport's own retry gate reads the non-2xx body (docs/transport.md): a
+/// 429 whose body names an exhausted plan is answered once, where the status
+/// alone would be retried. The mock counts connections; each closes after one
+/// response.
+#[tokio::test]
+async fn a_terminal_429_body_is_answered_once() {
+    use std::io::{Read, Write};
+
+    async fn attempts_for(body: &'static str) -> usize {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let mut served = 0;
+            loop {
+                let Ok((mut sock, _)) = listener.accept() else {
+                    break;
+                };
+                let mut buf = vec![0u8; 65536];
+                let n = sock.read(&mut buf).unwrap_or(0);
+                // The unblocking connect below sends nothing: it ends the loop.
+                if !buf[..n].starts_with(b"POST") {
+                    break;
+                }
+                sock.write_all(
+                    format!(
+                        "HTTP/1.1 429 Too Many Requests\r\ncontent-type: application/json\r\n\
+                         connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+                sock.flush().unwrap();
+                served += 1;
+                if served == 12 {
+                    break;
+                }
+            }
+            served
+        });
+        let endpoint = Endpoint {
+            provider: Provider::OpenAICodex,
+            url: format!("http://{addr}/backend-api/codex/responses"),
+            auth_header: "authorization".into(),
+            auth_value: "Bearer k".into(),
+            session_id: None,
+            extra_headers: Vec::new(),
+        };
+        let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
+        let outcome = client.complete(&[], &[], ToolChoice::auto(), |_| {}).await;
+        assert!(outcome.is_err(), "a 429 that never clears is an error");
+        drop(client);
+        // Unblock the accept loop if it is still waiting.
+        let _ = std::net::TcpStream::connect(addr);
+        server.join().unwrap()
+    }
+
+    let terminal = attempts_for(
+        r#"{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"plus","resets_at":1788744444,"resets_in_seconds":15805}}"#,
+    )
+    .await;
+    assert_eq!(terminal, 1, "an exhausted plan is answered once");
+}

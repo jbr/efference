@@ -220,6 +220,11 @@ pub struct Completion {
     pub model: String,
     pub stop_reason: Option<String>,
     pub usage: Usage,
+    /// How the failure `upstream_failure` reports should be retried
+    /// (docs/transport.md): `Terminal` when the provider named a condition no
+    /// retry can change, `Transient` for everything else, including a stream
+    /// that simply died. Meaningless when there is no failure.
+    pub failure_class: FailureClass,
 }
 
 /// One request's [`Usage`] paired with its upstream response id — what the daemon
@@ -258,6 +263,14 @@ impl Completion {
             } => Some(why.why()),
             _ => None,
         }
+    }
+
+    /// The failure `upstream_failure` reports, when the provider named it as one
+    /// a retry cannot change (docs/transport.md).
+    pub fn terminal_failure(&self) -> Option<&str> {
+        (self.failure_class == FailureClass::Terminal)
+            .then(|| self.upstream_failure())
+            .flatten()
     }
 
     /// This completion's [`RequestUsage`] — the per-request record the daemon persists.
@@ -314,6 +327,7 @@ pub(crate) mod assembler;
 mod client;
 mod diagnostics;
 mod endpoint;
+pub(crate) mod failure;
 mod provider;
 mod render;
 mod reservation;
@@ -328,6 +342,7 @@ pub use diagnostics::{
     upstream_failure_state, upstream_retry_state,
 };
 pub use endpoint::{Endpoint, sticky_session_id};
+pub use failure::FailureClass;
 pub use provider::{
     ModelCapabilities, OUTPUT_FLOOR, PromptCachePolicy, Provider, ResponsesProfile, WireDialect,
     openai_model_capabilities,

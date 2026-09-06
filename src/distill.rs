@@ -402,6 +402,16 @@ async fn peek_completion(
             return Ok(completion);
         };
         aborted += 1;
+        if completion.terminal_failure().is_some() {
+            // Named by the provider as unretryable (`api/failure.rs`): withhold now
+            // rather than repeat the answer up the schedule. The main loop's next
+            // request meets the same condition and stalls with it.
+            record.retries.push(format!(
+                "stream refused upstream (attempt {aborted}): {why}"
+            ));
+            client.upstream_retry().clear(RetrySurface::Peek);
+            return Err(format!("peek refused upstream: {why}"));
+        }
         record.retries.push(format!(
             "stream aborted upstream (attempt {aborted} of {STREAM_ABORT_ATTEMPTS}): {why}"
         ));

@@ -251,7 +251,8 @@ A session that has said nothing for two minutes is in one of a few conditions, a
 - **`upstream_retry` is non-null** — a request or a stream failed and the transport is
   retrying on a capped schedule. The topic carries the attempt, the budget, when the next
   attempt is due, and the upstream's own words. Nothing to do; it is working.
-- **`stall` is non-null** — the retries were exhausted, or the request failed past them.
+- **`stall` is non-null** — the retries were exhausted, the request failed past them, or
+  the upstream refused it outright (an exhausted plan, a rejected request).
   The loop appended its record and returned to idle. Every other signal reads like a
   finished run (`running: false`, no gate, an empty inbox), which is why this topic exists.
   The recovery is a `POST /turns` — send a turn and the session picks up.

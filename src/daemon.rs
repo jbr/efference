@@ -118,6 +118,10 @@ pub enum StallReason {
     RetriesExhausted,
     /// The request itself failed after the transport's own retries.
     RequestFailed,
+    /// The upstream named a failure no retry can change — an exhausted plan, a
+    /// rejected request, a bad credential — so the loop stalled on the first
+    /// attempt rather than spend the schedule (docs/transport.md).
+    UpstreamRefused,
 }
 
 /// A trajectory that ended without finishing (docs/transport.md).

@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::wire::item_from_wire;
 use crate::api::assembler::ResponseMeta;
+use crate::api::failure::{FailureClass, classify};
 use crate::api::{Completion, Error, Streamed, Usage};
 use crate::log::{
     AssistantOutput, FRAME_CAPTURE_CAP, Payload, ResponsesOutputItem, StreamDiagnostics,
@@ -30,6 +31,9 @@ pub(crate) struct ResponsesAssembler {
     usage: Usage,
     finalized: bool,
     failure: Option<String>,
+    /// How `failure` should be retried, from the provider's own naming of it
+    /// (`api/failure.rs`).
+    failure_class: FailureClass,
     response: Option<ResponseMeta>,
     frames: String,
     frames_truncated: bool,
@@ -100,6 +104,8 @@ struct IncompleteDetails {
 
 #[derive(Deserialize)]
 struct WireError {
+    #[serde(default, rename = "type")]
+    kind: Option<String>,
     #[serde(default)]
     code: Option<String>,
     #[serde(default)]
@@ -117,6 +123,7 @@ impl ResponsesAssembler {
             usage: Usage::default(),
             finalized: false,
             failure: None,
+            failure_class: FailureClass::Transient,
             response: None,
             frames: String::new(),
             frames_truncated: false,
@@ -178,6 +185,7 @@ impl ResponsesAssembler {
         if let Some(error) = response.error
             && self.failure.is_none()
         {
+            self.failure_class = classify(error.kind.as_deref(), error.code.as_deref());
             self.failure = Some(format!(
                 "upstream response failed: {} ({})",
                 error.message.unwrap_or_default(),
@@ -291,6 +299,12 @@ impl ResponsesAssembler {
                 };
                 let message = field("message").unwrap_or("(no message)");
                 let code = field("code").unwrap_or("");
+                // The envelope's own `type` is `"error"`; the class is the nested one.
+                let kind = body
+                    .get("error")
+                    .and_then(|e| e.get("type"))
+                    .and_then(Value::as_str);
+                self.failure_class = classify(kind, Some(code));
                 return Err(format!("upstream stream error [{code}]: {message} — {data}").into());
             }
             _ => None,
@@ -387,6 +401,7 @@ impl ResponsesAssembler {
             model: self.model,
             stop_reason,
             usage: self.usage,
+            failure_class: self.failure_class,
         })
     }
 }

@@ -414,7 +414,7 @@ export interface UpstreamRetry {
 // the difference. Level-triggered: `null` once a trajectory starts again.
 export interface Stall {
   // Why it stopped short.
-  reason: "retries_exhausted" | "request_failed";
+  reason: "retries_exhausted" | "request_failed" | "upstream_refused";
   // Attempts spent, where the failure path counts them.
   attempts: number | null;
   // Absolute Unix millis at which the loop gave up.

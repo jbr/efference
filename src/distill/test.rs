@@ -46,6 +46,7 @@ fn retain_completion(name: &str, input: Value) -> Completion {
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
         },
+        failure_class: crate::api::FailureClass::Transient,
     }
 }
 
@@ -257,6 +258,7 @@ fn a_prose_only_response_retries_with_just_the_renewed_ask() {
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
         },
+        failure_class: crate::api::FailureClass::Transient,
     };
     let mut messages = Vec::new();
     assert!(extend_with_retry(

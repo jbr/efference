@@ -474,3 +474,45 @@ fn a_responses_turn_round_trips_through_the_log() {
     let back: AssistantOutput = serde_json::from_str(&line).unwrap();
     assert_eq!(back, output);
 }
+
+/// The provider's naming of an in-stream failure decides its retry class
+/// (`api/failure.rs`): a quota error is terminal, a server error transient, and
+/// an unnamed death transient.
+#[test]
+fn an_error_events_name_sets_the_failure_class() {
+    use crate::api::FailureClass;
+    let (quota, _) = feed(&[
+        r#"{"type":"response.created","response":{"id":"resp_1","status":"in_progress","output":[]}}"#,
+        r#"{"type":"error","error":{"type":"insufficient_quota","code":"credit_balance_exhausted","message":"You have no credits remaining.","param":null},"sequence_number":2}"#,
+    ]);
+    assert_eq!(quota.failure_class, FailureClass::Terminal);
+    assert!(quota.terminal_failure().is_some());
+    let (server, _) = feed(&[
+        r#"{"type":"response.created","response":{"id":"resp_1","status":"in_progress","output":[]}}"#,
+        r#"{"type":"error","code":"server_error","message":"boom","param":null}"#,
+    ]);
+    assert_eq!(server.failure_class, FailureClass::Transient);
+    assert!(server.terminal_failure().is_none());
+    let (died, _) = feed(&[
+        r#"{"type":"response.created","response":{"id":"resp_1","status":"in_progress","output":[]}}"#,
+    ]);
+    assert!(died.upstream_failure().is_some());
+    assert_eq!(died.failure_class, FailureClass::Transient);
+}
+
+/// `response.failed` carries the name under `response.error`, the shape Codex
+/// CLI's fixture records for an exhausted platform quota.
+#[test]
+fn a_failed_response_with_a_quota_code_is_terminal() {
+    use crate::api::FailureClass;
+    let (completion, _) = feed(&[
+        r#"{"type":"response.failed","response":{"id":"resp_q","status":"failed","output":[],"error":{"code":"insufficient_quota","message":"You exceeded your current quota."}}}"#,
+    ]);
+    assert_eq!(completion.failure_class, FailureClass::Terminal);
+    assert!(
+        completion
+            .upstream_failure()
+            .unwrap()
+            .contains("insufficient_quota")
+    );
+}

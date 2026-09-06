@@ -344,11 +344,30 @@ dismiss it, leaving a clean idle (observed 2026-08-28). Both clients render the
 topic where turn state already shows — the
 TUI's status bar, the web composer's turn-state readout.
 
+**Not every in-stream failure is worth the schedule.** Both dialects can open a
+stream with a 200 and then deliver the failure inside it — Messages as an `error`
+event, Responses as an `error` event or a `response.failed` — and the provider
+names it with a type and a code. `api/failure.rs` reads that name: quota and plan
+exhaustion (`insufficient_quota`, `usage_limit_reached`, `billing_error`),
+rejected requests (`invalid_request_error`, `context_length_exceeded`),
+credentials and permissions, and policy refusals are **terminal**; overload, rate
+limits, server errors, and every name the table has not met are **transient**.
+The class rides the `Completion` beside `upstream_failure`. A terminal failure
+takes the record-only append like any abort and then stalls at once with
+`StallReason::UpstreamRefused`, carrying the provider's words — the platform quota
+error that once ran all twelve attempts is answered once. The same table gates
+the transport's own HTTP retry: a retryable status whose body names a terminal
+condition (the Codex backend's 429 with `usage_limit_reached` and a reset time)
+is not retried, since the status handler stashes the body before the retry
+handler decides. An unknown name defaults to transient deliberately, so a code
+this table has not met keeps the bounded retry rather than stalling a session on
+it; the name stays visible in the record-only entry and the stall detail.
+
 The **fork peek** takes the same treatment on the same budget: an aborted peek
 stream is retried up to `STREAM_ABORT_ATTEMPTS` times on the same capped
 schedule, re-sending byte-identical messages over the warm prefix (its
 tail is throwaway, so nothing has to be committed to arrange the replay). Only
-on exhaustion does the gate withhold. The surfaces used to disagree — an
+on exhaustion — or a terminal failure, above — does the gate withhold. The surfaces used to disagree — an
 aborted turn got four attempts while an aborted peek withheld on the first —
 and the asymmetry was expensive in a way the turn path is not: a withheld
 result asks the agent to re-issue a call whose side effects already stand. In a

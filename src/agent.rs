@@ -436,7 +436,27 @@ pub async fn run<F: Frontend, S: Spotter>(
                             RequestOrigin::AbortedAttempt,
                             completion.request_usage(),
                         );
+                        let terminal = completion.terminal_failure().is_some();
                         shared.append(turn, completion.assistant)?;
+                        if terminal {
+                            // The provider named the failure as one a retry cannot
+                            // change (`api/failure.rs`): an exhausted plan, a
+                            // rejected request. The schedule would only repeat the
+                            // answer, so the trajectory stalls now, with the same
+                            // audiences as exhaustion — the record-only entry, stderr,
+                            // and the stall topic carrying the provider's words.
+                            eprintln!("[stream refused upstream: {why}]");
+                            shared.set_stall(stalled(
+                                StallReason::UpstreamRefused,
+                                Some(aborted_attempts),
+                                "the trajectory stopped: the upstream refused the \
+                                 request — send a turn to retry once the condition \
+                                 it names has changed"
+                                    .to_string(),
+                                why.clone(),
+                            ));
+                            break None;
+                        }
                         if aborted_attempts >= STREAM_ABORT_ATTEMPTS {
                             eprintln!(
                                 "[stream unusable, {aborted_attempts} attempts \
