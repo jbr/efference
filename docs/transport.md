@@ -307,7 +307,7 @@ each aborted attempt's partial is appended to the log first, and its usage
 finalized unparseable) is recorded to `usage.jsonl` under its own
 `aborted_attempt` origin (docs/log-and-projection.md) rather than `turn` — it
 is never evidence about the cache prefix, and tagging it separately is what
-keeps `daemon::metrics` and `efference cache` from reading it as a main-loop
+keeps `daemon::metrics` and `efference dev cache` from reading it as a main-loop
 request. The budget is sized
 to **wait the failure out**, because a mid-stream abort is an ephemeral upstream
 condition and the alternative on exhaustion is worse than waiting: idling with
@@ -813,7 +813,7 @@ no reason not to (not session boot, not a model change, not idle past the TTL).
 It is the live end of the empirical prefix oracle — the byte pins prove the
 harness emits what it emitted yesterday, and only a read rate proves the
 provider still matches it. The classifier, the threshold and the corpus it came
-from, and the offline `efference cache` view are in
+from, and the offline `efference dev cache` view are in
 [log-and-projection](log-and-projection.md).
 
 **Session cost telemetry.** Where the provider has a per-request accounting
@@ -962,7 +962,7 @@ enforcement.
 `tokio::select` reads of stdout and stderr, which is terminal-faithful (cargo
 build progress, test output, etc.) and preserves the process-group abort path.
 
-**`attach` renders both classes from one connection.** Live fragments
+**The TUI renders both classes from one connection.** Live fragments
 print first; the committed entry finalizes the line when the turn closes. Tool
 output is intentionally not deduped against the committed `tool_result`: the
 stream shows raw live output, the result shows the fork's distillate (see

@@ -276,7 +276,7 @@ enum CodeRejection {
     /// No timestep in the skew window produced this code.
     Wrong,
     /// The code verified but its step was already burned — a replay (or a stale
-    /// scrollback link; the remedy is `efference open`).
+    /// scrollback link; the remedy is `efference dev open`).
     Replayed,
     /// The ledger could not record the burn; verification fails closed.
     Ledger,
@@ -638,7 +638,7 @@ pub(crate) fn public_router(auth: Arc<TcpAuth>) -> Router {
                     Err(CodeRejection::Replayed) => fail(
                         conn,
                         ErrorCode::Unauthorized,
-                        "code already used — mint a fresh link with `efference open`",
+                        "code already used — mint a fresh link with `efference dev open`",
                     ),
                     Err(CodeRejection::Ledger) => {
                         fail(conn, ErrorCode::Internal, "could not record the code burn")

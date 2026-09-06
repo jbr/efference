@@ -135,6 +135,7 @@ pub(crate) fn discover_live_socket() -> Result<PathBuf, CliError> {
     }
 }
 
+#[cfg(feature = "dev")]
 /// Resolve what a *reader* verb should open: an explicit path (to a `log.jsonl` or
 /// to a session directory), else a session name under `.efference/`. Returns the log
 /// path and the label to show for it — the session id when the log was reached by
@@ -161,11 +162,13 @@ pub(crate) fn resolve_session_log(target: &str) -> Result<(PathBuf, String), Cli
     Err(format!("no session {target:?}.{}", session_listing()).into())
 }
 
+#[cfg(feature = "dev")]
 /// How many sessions a listing names before it just counts the rest. A long-running
 /// project accumulates dozens of session dirs, and an error that prints all of them
 /// buries the error.
 const LISTED_SESSIONS: usize = 10;
 
+#[cfg(feature = "dev")]
 /// The session ids under `.efference/` that have a log, **most recently written
 /// first** — what a reader verb offers when it was given no session, or one that
 /// doesn't resolve. Ordered by the log's mtime rather than by name, since the
@@ -188,6 +191,7 @@ pub(crate) fn session_ids() -> Vec<String> {
     found.into_iter().map(|(_, name)| name).collect()
 }
 
+#[cfg(feature = "dev")]
 /// The recorded sessions as an error-message tail — the most recent
 /// [`LISTED_SESSIONS`] by name, a count for any beyond them, and a plain note when
 /// the directory holds none.
@@ -349,21 +353,6 @@ pub(crate) enum Command {
         #[arg(long)]
         open: bool,
     },
-    /// Mint a fresh bootstrap link against a running daemon's TCP bind and open it —
-    /// the re-auth path when at the host, and the answer to lost scrollback
-    /// (docs/web-bind.md). The credential routes answer only on the Unix socket:
-    /// possession of the host machine is the enrollment authority.
-    Open {
-        /// Print the link without launching a browser.
-        #[arg(long)]
-        print: bool,
-        /// Show the authenticator-app enrollment QR (`otpauth://`) instead of a link.
-        #[arg(long, conflicts_with = "bearer")]
-        qr: bool,
-        /// Print the program bearer token instead of a link.
-        #[arg(long)]
-        bearer: bool,
-    },
     /// Drive a running session: the twelve control-API verbs (docs/operating.md)
     /// as one tool each. The same tools `efference mcp` serves over MCP, so a
     /// script and a mounting harness reach a session through one definition.
@@ -374,15 +363,12 @@ pub(crate) enum Command {
     /// through. Speaks newline-delimited JSON-RPC and blocks until stdin closes.
     Mcp,
     /// Instruments for developing efference itself (docs/operating.md): the wire
-    /// view, the element gallery, and the spotter/peek testers. Compiled only
-    /// under the `dev` cargo feature, which is on by default.
+    /// view, the element gallery, the spotter/peek testers, the cache-rate report,
+    /// the read-only session viewer, and the bootstrap-link mint. Compiled only under the `dev` cargo feature,
+    /// which is on by default.
     #[cfg(feature = "dev")]
     #[command(subcommand)]
     Dev(dev::DevCommand),
-    /// Interactive client: tail the event stream and drive the daemon from one
-    /// terminal. Type a message to send a turn; at an approval gate, Enter
-    /// approves, `.abort` aborts, any other text redirects. Ctrl-D quits.
-    Attach,
     /// Interactive TUI: a themed, scrolling, markdown-rendering view of the
     /// transcript, fed live from the daemon's event streams, with a composer and
     /// in-TUI approval gates. q quits, ? for help, t for the theme picker.
@@ -401,42 +387,6 @@ pub(crate) enum Command {
         /// instrumentation for the streaming render.
         #[arg(long)]
         frame_cost: bool,
-    },
-    /// Read a recorded session in the TUI, inert: the same transcript rendering as
-    /// `tui`, over a session's `log.jsonl` instead of a live daemon. Nothing can be
-    /// sent — no composer, no approvals, no loop verbs — and the log is read once,
-    /// so a session that is still running shows as of the moment it was opened.
-    /// q closes, ? for help, t for the theme picker.
-    View {
-        /// Which session to read: a session name (`.efference/<name>/log.jsonl`), a
-        /// session directory, or a path to a `log.jsonl`. Omit to use `--name`;
-        /// with neither, the available session names are listed.
-        session: Option<String>,
-        /// Syntax/UI theme — a built-in name or a `.tmTheme` path. Defaults to
-        /// "Catppuccin Frappe".
-        #[arg(long, env = "EFFERENCE_THEME")]
-        theme: Option<String>,
-        /// Result-image rendering: "auto" queries the terminal, "kitty"/"iterm2"
-        /// force a protocol detection missed (tmux), "off" disables.
-        #[arg(long, env = "EFFERENCE_IMAGES", value_enum, default_value_t)]
-        images: ImagesArg,
-    },
-    /// Report a session's prompt-cache read rate from its `usage.jsonl`
-    /// (docs/log-and-projection.md) — the empirical half of the prefix oracle the
-    /// byte pins cover statically. Offline: no daemon, no network. Reads warm/cold
-    /// per `RequestOrigin`, separates the cold reads that need no explanation
-    /// (session boot, a model change, an idle gap past the cache TTL) from the ones
-    /// that do, and reports the longest run of the latter — a long run means the
-    /// provider stopped matching a prefix the pins say did not change.
-    Cache {
-        /// Which session to read: a session name (`.efference/<name>/usage.jsonl`), a
-        /// session directory, or a path to a `usage.jsonl`. Omit for the most
-        /// recently written session.
-        session: Option<String>,
-        /// Sweep every session under `.efference/` instead of one — the corpus view,
-        /// which is where a rate is worth comparing against.
-        #[arg(long, conflicts_with = "session")]
-        all: bool,
     },
     /// Validate a config template: parse it, apply the same checks `serve`
     /// applies at boot, resolve its `[context]` entries from the current

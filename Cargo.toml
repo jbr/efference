@@ -152,10 +152,6 @@ hkdf = "0.13"
 hmac = "0.13"
 sha1 = "0.11"
 data-encoding = "2"
-# Renders the `otpauth://` enrollment QR as unicode blocks at the host terminal —
-# the only place the TOTP secret is ever displayed (docs/web-bind.md). No image
-# features; the terminal is the only target.
-qrcode = { version = "0.14", default-features = false }
 # Opens the operator's browser for the MCP authorization step (docs/mcp-auth.md).
 # Only reached from `efference serve` with a tty; a headless boot prints the URL
 # instead, since there is no browser to hand a redirect back to.

@@ -25,6 +25,7 @@ fn session_dir_is_under_the_base() {
 /// under `.efference/`. A name that resolves to nothing is an error that lists what
 /// there is — never a silent empty view. Uses a temp dir as the "session dir" so the
 /// test doesn't depend on the repo's own `.efference/` contents.
+#[cfg(feature = "dev")]
 #[test]
 fn view_resolves_a_path_a_dir_or_a_name() {
     let dir = std::env::temp_dir().join(format!("efference-view-{}", std::process::id()));
@@ -81,6 +82,7 @@ fn serve_mints_a_fresh_session_dir_and_refuses_an_existing_one() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+#[cfg(feature = "dev")]
 /// A minimal session log fixture: one user turn, one assistant reply. Written
 /// via [`Log::create`]/[`Log::append`] (like a real session) so `persist::load`
 /// reads back exactly what `wire` would see.
@@ -105,6 +107,7 @@ pub(crate) fn write_fixture_log(path: &Path) {
     .unwrap();
 }
 
+#[cfg(feature = "dev")]
 #[test]
 fn paint_is_plain_when_not_a_tty() {
     assert_eq!(paint("x", RED, false), "x");
@@ -138,12 +141,13 @@ fn the_scaffold_parses_and_lists_the_guide() {
     );
 }
 
-/// What `efference cache` reads out of a session's `usage.jsonl`
+/// What `efference dev cache` reads out of a session's `usage.jsonl`
 /// (docs/log-and-projection.md): a per-origin warm rate, the cold main-loop reads
 /// that carry their own explanation separated from the ones that do not, and the
 /// longest run of the latter — the number the threshold is set against. A malformed
 /// line is skipped rather than failing the report: the record is diagnostic, and its
 /// last line can be a half-flushed write from a killed daemon.
+#[cfg(feature = "dev")]
 #[test]
 fn cache_report_separates_explained_cold_reads_from_the_streak() {
     use efference::daemon::UsageLine;
@@ -194,6 +198,7 @@ fn cache_report_separates_explained_cold_reads_from_the_streak() {
 /// Two sessions are folded with two trackers, never one: a prefix belongs to a
 /// session, so the end of one must not be joined to the start of the next (which
 /// would swallow the second session's boot cold start into the first's streak).
+#[cfg(feature = "dev")]
 #[test]
 fn cache_report_does_not_join_streaks_across_sessions() {
     use efference::daemon::RequestOrigin::Turn;

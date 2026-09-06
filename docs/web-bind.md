@@ -96,15 +96,18 @@ The gate is the enforcement; the strip closes the accident.)
 ## The bootstrap dance
 
 `serve --bind` prints `https://<host>:<port>/#token=<current code>`; `--open` also
-launches the browser. `efference open` re-mints against a running daemon — the re-auth
-path when at the host, and the answer to lost scrollback. The code rides the URL
+launches the browser. `efference dev open` re-mints against a running daemon — the re-auth
+path when at the host, and the answer to lost scrollback. It is a `dev` verb rather than a
+`control` tool because it mints credentials for the HTTP surface, and `control` is the set
+`efference mcp` exposes to whatever mounts it; the re-mint is expected to move into the TUI
+or `serve` when host and serve merge. The code rides the URL
 *fragment*: it never reaches server or proxy logs, and burned codes make
 browser-history residue inert. The web client's login view
 ([web-client.md](web-client.md), `web/src/ui/Login.tsx`) reads the hash,
 `POST /auth/session`, gets the cookie, scrubs the URL with `history.replaceState`; a
-bare visit renders a six-digit field posting to the same endpoint. `efference open
---qr` renders the `otpauth://` QR so a stock authenticator app becomes a re-auth path
-with no host access.
+bare visit renders a six-digit field posting to the same endpoint. `GET /auth/otpauth` on the Unix socket returns the `otpauth://` enrollment URI for a stock
+authenticator app; nothing renders it as a QR any more (the CLI flag was removed pending a
+TUI or web onboarding flow).
 
 TOTP acceptance has two hard properties:
 

@@ -412,7 +412,7 @@ pub(super) struct InteractiveState<'a> {
     pub events: Receiver<TuiEvent>,
 
     /// `Some(label)` when this is a **read-only view** of a recorded log with no
-    /// daemon behind it (docs/tui.md — `efference view`): the label names the
+    /// daemon behind it (docs/tui.md — `efference dev view`): the label names the
     /// session in the status bar, and its presence is what
     /// [`read_only`](Self::read_only) reports. In that mode the composer is not
     /// rendered, the strip carries no loop verbs, and the resting focus is the

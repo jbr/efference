@@ -434,7 +434,7 @@ read the cache once. The constant's doc comment carries the full fold.
 
 Two surfaces read it. `GET /state` publishes the live count as
 `usage.cold_streak`, which the TUI sidebar states beside the context meter once it
-crosses the threshold and drops when a warm read arrives. `efference cache`
+crosses the threshold and drops when a warm read arrives. `efference dev cache`
 (docs/operating.md) replays a recorded `usage.jsonl` through the same `ColdStreak`
 offline — per-origin read rates, the explained cold starts, and the longest run —
 for one session, or `--all` for the corpus. It also reports the abort rate (aborted

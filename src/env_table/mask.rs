@@ -5,7 +5,7 @@
 //! not the tool-result path — so tool results, the boot `Preamble`, `Ambient`
 //! notifications, user paste, and harness error text are all covered by one
 //! mechanism, and every downstream surface (the wire, the jsonl, the TUI, the
-//! `log`/`attach` views) reads an already-filtered record.
+//! `control log` view) reads an already-filtered record.
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;

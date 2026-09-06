@@ -140,7 +140,7 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// Handle a composer submission. When a gate is pending, the text resolves it
-    /// with the same three-valued semantics as the `attach` REPL — empty approves,
+    /// with three-valued semantics — empty approves,
     /// `.abort` aborts, anything else redirects the model. Otherwise it's a normal
     /// user turn (`POST /turns`).
     /// The `ConfigChange` a `.allow` at the gate proposes (docs/permissions.md). An

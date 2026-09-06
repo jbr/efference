@@ -34,7 +34,7 @@ impl Screenplay<'_> {
     }
 
     /// Run the scenario as a **read-only view** of the recorded session `label`
-    /// (docs/tui.md — `efference view`), the way `efference view` launches it: no
+    /// (docs/tui.md — `efference dev view`), the way `efference dev view` launches it: no
     /// composer, no loop verbs, focus resting on the strip. Pair with
     /// [`replay`](Self::replay) to snapshot what opening a real log actually shows.
     pub(crate) fn viewing(&mut self, label: &str) -> &mut Self {

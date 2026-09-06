@@ -10,8 +10,7 @@ driven, and it is refined from use rather than written ahead of it.
 
 ## Three groups of commands
 
-`efference --help` lists only what a person types: `serve`, `tui`, `view`, `attach`,
-`open`, `check`, `cache`, `host`. The rest is grouped by who it is for.
+`efference --help` lists only what a person types: `serve`, `tui`, `check`, `host`. The rest is grouped by who it is for.
 
 - **`efference control <tool>`** — the twelve calls that drive a *running* session:
   `turn`, `approve`, `settle`, `interrupt`, `background`, `pace`, `review-level`,
@@ -22,7 +21,8 @@ driven, and it is refined from use rather than written ahead of it.
   (`src/bin/efference/control/`, one file per tool) and mounted both ways, so the
   command line and a mounting harness cannot drift apart.
 - **`efference dev <verb>`** — instruments for developing efference itself: `wire`,
-  `gallery`, `peek`, `spotter`, `spotter-log`, `spotter-eval`. Compiled under the `dev`
+  `gallery`, `peek`, `spotter`, `spotter-log`, `spotter-eval`, `cache`, `view` (a recorded log in the TUI, inert), and `open`, the
+  web-bind bootstrap-link mint ([web-bind.md](web-bind.md)). Compiled under the `dev`
   cargo feature, which is in `default`; a release build passes `--no-default-features`.
 
 `--name` and `--socket` are global, so they sit before the group: `efference --name foo
@@ -85,10 +85,11 @@ Three reads, at three grains.
   arriving, live process output), and whole-topic state replacements. A client holding this
   stream never needs to poll.
 
-`efference tui` is the interactive view of all three; `efference view <session>` opens a
+`efference tui` is the interactive view of all three; `efference dev view <session>` opens a
 recorded log in the same rendering, inert.
 
-A fourth read is offline and about spend rather than content: **`efference cache`** folds a
+A fourth read is offline, about spend rather than content, and a developer's instrument
+rather than an operator's: **`efference dev cache`** folds a
 session's `usage.jsonl` into a prompt-cache read rate per request origin, separating the
 cold reads that explain themselves (session boot, a model change, an idle gap past the
 cache TTL) from the ones that do not, and reporting the longest run of the latter. With no
@@ -271,7 +272,7 @@ The inverse condition is a session that looks entirely healthy and is quietly pa
 price for every turn: `usage.cold_streak` counts consecutive main-loop requests that read
 nothing from the prompt cache with no reason to (docs/log-and-projection.md), and the TUI
 sidebar states it as `⚠ cache cold ×N` beside the context meter. Nothing stalls, so nothing
-else says so. `efference cache` is the detail view.
+else says so. `efference dev cache` is the detail view.
 
 ## What the session was already told
 

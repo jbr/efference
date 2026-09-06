@@ -2,7 +2,7 @@
 //!
 //! Every non-loop interaction with a running daemon goes through here: the
 //! `efference control <tool>` group and the MCP server that shares its definition
-//! (docs/operating.md), the TUI, and the `attach` REPL are all clients of the same
+//! (docs/operating.md) and the TUI are all clients of the same
 //! socket, with no privileged in-process path. Built on `trillium-tokio`'s
 //! [`UnixClientConfig`].
 //!
@@ -20,7 +20,7 @@ use trillium_tokio::UnixClientConfig;
 use crate::frontend::Approval;
 
 /// A client bound to one daemon control socket. Cheap to [`Clone`] (the inner
-/// trillium client is `Arc`-backed) so `attach` can hand a copy to its
+/// trillium client is `Arc`-backed) so a client can hand a copy to a
 /// background event-tail task.
 #[derive(Clone)]
 pub struct Client {

@@ -1,4 +1,4 @@
-//! `efference cache` — read a session's `usage.jsonl` and report the prompt-cache
+//! `efference dev cache` — read a session's `usage.jsonl` and report the prompt-cache
 //! read rate (docs/log-and-projection.md, docs/operating.md).
 //!
 //! The pins in `project.rs` and `api/test.rs` prove the harness still emits the

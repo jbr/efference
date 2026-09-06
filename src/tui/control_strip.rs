@@ -71,7 +71,7 @@ const TAIL: [StripItem; 4] = [
     item("detach", "q", StripVerb::Detach),
 ];
 
-/// The whole strip in a read-only view (docs/tui.md — `efference view`): the tail
+/// The whole strip in a read-only view (docs/tui.md — `efference dev view`): the tail
 /// verbs that act on the client alone, with `detach` reading `close` because there
 /// is no daemon to leave running. `pace` is dropped with the rest of the loop verbs
 /// — it is a control over a running loop, and there isn't one.

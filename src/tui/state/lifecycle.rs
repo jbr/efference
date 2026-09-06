@@ -133,7 +133,7 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// Make this a **read-only view** of the recorded session `label` (docs/tui.md —
-    /// `efference view`). Set after construction rather than as a `new` parameter, so
+    /// `efference dev view`). Set after construction rather than as a `new` parameter, so
     /// the live construction site and every existing scenario stay untouched.
     ///
     /// Focus starts on the control strip: with no composer rendered there is no

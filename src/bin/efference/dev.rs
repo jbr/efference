@@ -2,8 +2,10 @@
 //! itself (docs/operating.md), compiled only under the `dev` cargo feature.
 //!
 //! None of these drive a session. They read a recorded log, render the wire a turn
-//! would send, replay recorded gates, or exercise the spotter rung directly — the
-//! views and testers that make the harness's own behaviour inspectable. The feature
+//! would send, replay recorded gates, exercise the spotter rung directly, fold
+//! `usage.jsonl` into a cache read rate, open a recorded log read-only in the TUI, or
+//! mint a bootstrap link for the web bind —
+//! the views and testers that make the harness's own behaviour inspectable. The feature
 //! is in `default` because a gated feature nobody builds rots; a release build
 //! passes `--no-default-features`.
 
@@ -11,6 +13,56 @@ use super::*;
 
 #[derive(Subcommand)]
 pub(crate) enum DevCommand {
+    /// Mint a fresh bootstrap link against a running daemon's TCP bind and open it —
+    /// the re-auth path when at the host, and the answer to lost scrollback
+    /// (docs/web-bind.md). The credential routes answer only on the Unix socket:
+    /// possession of the host machine is the enrollment authority. Lives under `dev`
+    /// because it mints credentials for the HTTP surface: it is not a session-control
+    /// tool and must not be reachable through `efference mcp`.
+    Open {
+        /// Print the link without launching a browser.
+        #[arg(long)]
+        print: bool,
+        /// Print the program bearer token instead of a link.
+        #[arg(long)]
+        bearer: bool,
+    },
+    /// Report a session's prompt-cache read rate from its `usage.jsonl`
+    /// (docs/log-and-projection.md) — the empirical half of the prefix oracle the
+    /// byte pins cover statically. Offline: no daemon, no network. Reads warm/cold
+    /// per `RequestOrigin`, separates the cold reads that need no explanation
+    /// (session boot, a model change, an idle gap past the cache TTL) from the ones
+    /// that do, and reports the longest run of the latter — a long run means the
+    /// provider stopped matching a prefix the pins say did not change.
+    Cache {
+        /// Which session to read: a session name (`.efference/<name>/usage.jsonl`), a
+        /// session directory, or a path to a `usage.jsonl`. Omit for the most
+        /// recently written session.
+        session: Option<String>,
+        /// Sweep every session under `.efference/` instead of one — the corpus view,
+        /// which is where a rate is worth comparing against.
+        #[arg(long, conflicts_with = "session")]
+        all: bool,
+    },
+    /// Read a recorded session in the TUI, inert: the same transcript rendering as
+    /// `tui`, over a session's `log.jsonl` instead of a live daemon. Nothing can be
+    /// sent — no composer, no approvals, no loop verbs — and the log is read once,
+    /// so a session that is still running shows as of the moment it was opened.
+    /// q closes, ? for help, t for the theme picker.
+    View {
+        /// Which session to read: a session name (`.efference/<name>/log.jsonl`), a
+        /// session directory, or a path to a `log.jsonl`. Omit to use `--name`;
+        /// with neither, the available session names are listed.
+        session: Option<String>,
+        /// Syntax/UI theme — a built-in name or a `.tmTheme` path. Defaults to
+        /// "Catppuccin Frappe".
+        #[arg(long, env = "EFFERENCE_THEME")]
+        theme: Option<String>,
+        /// Result-image rendering: "auto" queries the terminal, "kitty"/"iterm2"
+        /// force a protocol detection missed (tmux), "off" disables.
+        #[arg(long, env = "EFFERENCE_IMAGES", value_enum, default_value_t)]
+        images: ImagesArg,
+    },
     /// Element gallery: launch the TUI on a fixed "one of each" transcript (rich
     /// markdown, a shell call, a colored diff, a collapsed long result, an error, a
     /// distilled result, a consolidation mark) — no daemon. A live design page for
@@ -243,8 +295,21 @@ pub(crate) enum DevCommand {
 }
 
 /// Run one `dev` verb.
-pub(crate) async fn run(command: DevCommand) -> CliResult {
+/// `name` is the global `--name`; `client_socket` resolves the session socket on
+/// demand, so the offline verbs never trigger discovery.
+pub(crate) async fn run(
+    command: DevCommand,
+    name: Option<String>,
+    client_socket: impl FnOnce() -> Result<PathBuf, CliError>,
+) -> CliResult {
     match command {
+        DevCommand::Open { print, bearer } => open(client_socket()?, print, bearer).await,
+        DevCommand::Cache { session, all } => cache_report::cache(session, name, all),
+        DevCommand::View {
+            session,
+            theme,
+            images,
+        } => view(session, name, theme, images.into()).await,
         DevCommand::Gallery {
             theme,
             images,
@@ -547,3 +612,47 @@ pub(crate) async fn gallery(
 
 #[cfg(test)]
 mod test;
+
+/// Mint and open a fresh bootstrap link against a running daemon's TCP bind
+/// (docs/web-bind.md); `--bearer` prints the program token instead. Both come over
+/// the Unix socket only.
+async fn open(socket: PathBuf, print: bool, bearer: bool) -> CliResult {
+    let client = ControlClient::new(socket);
+    if bearer {
+        println!("{}", client.auth_bearer().await?);
+        return Ok(());
+    }
+    let url = client.auth_link().await?;
+    println!("{url}");
+    if !print && webbrowser::open(&url).is_err() {
+        eprintln!("[could not open a browser — use the printed link]");
+    }
+    Ok(())
+}
+
+/// Read a recorded session in the TUI, inert (docs/tui.md): resolve the session to
+/// a `log.jsonl`, load it with the same `persist::load` a live session's entries come
+/// through, and hand the entries to the read-only TUI. No socket, no network, no
+/// writes — and no config, so it works on a session whose config no longer parses or
+/// that ran in another directory.
+async fn view(
+    session: Option<String>,
+    name: Option<String>,
+    theme: Option<String>,
+    images: efference::tui::ImageMode,
+) -> CliResult {
+    let Some(target) = session.or(name) else {
+        return Err(format!(
+            "which session? pass a session name, a session dir, or a log.jsonl path.{}",
+            session_listing()
+        )
+        .into());
+    };
+    let (path, label) = resolve_session_log(&target)?;
+    let entries = efference::persist::load(&path)?;
+    if entries.is_empty() {
+        return Err(format!("{} holds no entries", path.display()).into());
+    }
+    efference::tui::run_view(entries, label, theme, images).await?;
+    Ok(())
+}

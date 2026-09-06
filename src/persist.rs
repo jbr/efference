@@ -30,7 +30,7 @@ pub struct Log {
     sink: Option<BufWriter<File>>,
     /// The `[env]` mask (docs/env.md). Every payload passes through it on the way
     /// in, which is what makes append the one choke point securing every
-    /// downstream surface — the wire, the jsonl, the TUI, `log`/`attach`. An empty
+    /// downstream surface — the wire, the jsonl, the TUI, `control log`. An empty
     /// masker (the default, and every test that does not install one) is the
     /// identity.
     masker: Arc<Masker>,
@@ -126,7 +126,7 @@ impl Log {
     }
 }
 
-/// Replay a persisted log back into memory (the basis for daemon attach — the backlog).
+/// Replay a persisted log back into memory.
 /// Blank lines are tolerated; a malformed line is a hard error — a corrupt
 /// journal should be loud, not silently truncated.
 pub fn load(path: impl AsRef<Path>) -> io::Result<Vec<LogEntry>> {

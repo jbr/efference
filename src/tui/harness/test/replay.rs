@@ -1,5 +1,5 @@
 //! Filmstrip frames replayed from a real recorded session (`fixtures/replay_session.jsonl`),
-//! including the read-only view `efference view` opens one in.
+//! including the read-only view `efference dev view` opens one in.
 
 use super::*;
 
@@ -28,7 +28,7 @@ fn replay_real_session_tail() {
     play.snapshot("replay_real_session_tail");
 }
 
-/// The same recorded session opened **read-only** (`efference view`, docs/tui.md):
+/// The same recorded session opened **read-only** (`efference dev view`, docs/tui.md):
 /// identical transcript rendering, with the composer row gone, the strip reduced to
 /// the client-only verbs, and the status bar naming the session it is reading. Wide
 /// enough to dock the sidebar in a live session — which a read-only view drops,

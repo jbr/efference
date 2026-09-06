@@ -63,7 +63,7 @@ authenticates to the host and vice versa (cookies ignore ports, and the root is
 machine-scoped). The host mounts the anonymous `POST /auth/session` mint; the
 enrollment routes (`/auth/link`, `/auth/otpauth`, `/auth/bearer`) stay on the session
 daemon's Unix socket, where possession of the host machine is the authority, so
-`efference open` continues to address a session rather than the host.
+`efference dev open` continues to address a session rather than the host.
 
 ## `GET /sessions` — the liveness scan, promoted
 

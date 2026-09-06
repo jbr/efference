@@ -158,7 +158,7 @@ impl ImageStore {
     }
 
     /// Decode an image whose base64 bytes rode the entry itself — the offline
-    /// path (`efference view`, the gallery), where `persist::load` delivers the
+    /// path (`efference dev view`, the gallery), where `persist::load` delivers the
     /// full log entry rather than a data-omitted view (docs/control-api.md).
     pub(crate) fn insert_inline(&mut self, key: ImageKey, data: &str) {
         use base64::Engine;

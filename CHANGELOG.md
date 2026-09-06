@@ -14,6 +14,7 @@ behind a change, see [`journal/`](journal/).
 - **Session cost pricing backs off over minutes** (docs/transport.md): the generation lookup retries across 2s–300s instead of 2s/10s, so an upstream whose record lands late (`meta/muse-spark-1.3`, >60s) no longer leaves every request `unpriced`.
 
 ### Changed
+- **`efference attach` is removed; `open`, `cache`, and `view` move under `efference dev`** (docs/operating.md): the TUI superseded the line REPL, the bootstrap-link mint is a credential-minting verb that must not ride the MCP-exposed `control` group, and the cache report is a developer's instrument until a client shows the rate. `open --qr` is gone pending a TUI or web onboarding flow.
 - **One HTTP client per process** (docs/transport.md): the agent, provider metadata, MCP-over-HTTP, OAuth, web push, and the dev-proxy share one connection pool instead of eight — the turn stream and the generation-cost GETs now multiplex onto one OpenRouter HTTP/2 connection, and a spotter eval no longer opens a pool per case.
 - **The bash fast-path parses with `brush-parser`** (docs/permissions.md), replacing a `yash-syntax` pinned to its last standalone version — same admitted shapes, same fail-closed posture, on a parser that tracks bash and still receives updates.
 

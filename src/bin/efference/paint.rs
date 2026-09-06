@@ -1,8 +1,5 @@
-//! Minimal ANSI for the terminal reports (`cache`, and the `dev` surveys).
-//!
-//! Its own module because the two groups that use it are gated differently: the
-//! cache report is a top-level operator instrument, the spotter survey is a `dev`
-//! verb, and a shared helper cannot live in the one that disappears.
+//! Minimal ANSI for the `dev` terminal reports (the cache report and the spotter
+//! survey). Gated with them.
 
 // Minimal ANSI so the survey reads at a glance on a tty and stays clean when piped.
 pub(crate) const BOLD: &str = "1";

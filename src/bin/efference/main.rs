@@ -21,14 +21,11 @@ use efference::api::Client;
 use efference::client::Client as ControlClient;
 use efference::daemon;
 use efference::distill::ForkPeek;
-use efference::frontend::Approval;
 use efference::persist::Log;
 use efference::spotter::ForkSpot;
 #[cfg(feature = "dev")]
 use efference::spotter::Spotter;
 use efference::tools::Toolbox;
-use futures_lite::StreamExt;
-use tokio::io::{AsyncBufReadExt, BufReader};
 
 type CliError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -98,39 +95,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })
             .await
         }
-        Command::Open { print, qr, bearer } => open(client_socket()?, print, qr, bearer).await,
         Command::Control(tools) => control::run_cli(tools, client_socket()?).await,
         Command::Mcp => control::run_stdio(client_socket()?).await,
         #[cfg(feature = "dev")]
-        Command::Dev(command) => dev::run(command).await,
-        Command::Cache { session, all } => cache(session, name.clone(), all),
+        Command::Dev(command) => dev::run(command, name.clone(), client_socket).await,
         Command::Check { path } => check(path).await,
-        Command::Attach => attach(client_socket()?).await,
         Command::Tui {
             theme,
             images,
             frame_cost,
         } => tui(client_socket()?, theme, images.into(), frame_cost).await,
-        Command::View {
-            session,
-            theme,
-            images,
-        } => view(session, name.clone(), theme, images.into()).await,
     }
 }
 
 type CliResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
-use attach::attach;
-use cache_report::cache;
 use check::*;
 use cli::*;
 use host::host as host_serve;
+#[cfg(feature = "dev")]
 use paint::*;
 use serve::serve;
 use verbs::*;
 
-mod attach;
+#[cfg(feature = "dev")]
 mod cache_report;
 mod check;
 mod cli;
@@ -139,6 +127,7 @@ mod control;
 mod dev;
 mod host;
 mod mcp_mount;
+#[cfg(feature = "dev")]
 mod paint;
 #[cfg(feature = "dev")]
 mod peek_replay;

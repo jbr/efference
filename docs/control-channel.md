@@ -80,7 +80,7 @@ The client side has the matching seam: `Client::new(socket)` is `Client::with_co
 
 ## The Frontend trait
 
-The agent loop and the log know only the `Frontend` trait. Swapping the underlying line-editor or replacing the spartan attach client with a full TUI touches only this boundary, never the log or projection.
+The agent loop and the log know only the `Frontend` trait. Swapping the client — a different TUI, a web client — touches only this boundary, never the log or projection.
 
 ```rust
 trait Frontend {
@@ -161,6 +161,6 @@ Withheld from the model is not withheld from the operator: `raw` is in the log, 
 
 `efference serve` opens the log file, binds the control socket, and runs the agent loop with a `RemoteFrontend`. The loop parks at `read_user_turn` until the first `POST /turns` arrives.
 
-`efference attach` is the interactive client: a background task tails `/events?include=log,output` and renders, while the foreground reads stdin and per line either resolves the pending gate (Enter approves, `.abort` aborts, any other text redirects) or sends a new turn. It is spartan by design — the full TUI (see [the TUI](tui.md)) is a later client that co-evolves the API.
+`efference tui` ([the TUI](tui.md)) is the interactive client: it tails `/events` and renders, and its composer either resolves the pending gate (empty approves, `.abort` aborts, any other text redirects) or sends a new turn.
 
 Scriptable verbs share one `client.rs` over the socket, grouped under `efference control` and served over MCP by `efference mcp` from the same definition ([operating.md](operating.md)): `efference control turn <text> [--wait]`, `efference control approve [call_id] [--abort | --redirect <msg>] [--wait]`, `efference control settle`, `efference control interrupt`, `efference control pace [--speed-ms N] [--hold | --resume]`, `efference control log [--since N]`, `efference control state`. A bare `efference control approve` defaults to the one pending gate. `--wait` (and the standalone `settle`) block until the daemon settles and print the resulting `/state`, so a script drives the daemon synchronously — *act, read state, act* — instead of polling in a wall-clock loop. These replaced the earlier SIGUSR1 hack.

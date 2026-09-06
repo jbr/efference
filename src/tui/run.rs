@@ -214,7 +214,7 @@ pub async fn run_gallery(
     run_offline(gallery::log(), None, theme, images, stream, frame_cost).await
 }
 
-/// Launch the TUI **read-only** on a recorded session's log (`efference view`,
+/// Launch the TUI **read-only** on a recorded session's log (`efference dev view`,
 /// docs/tui.md): the same transcript rendering as a live attach, over entries
 /// loaded from a jsonl file rather than a daemon's event stream. `label` names the
 /// session in the status bar. Nothing here can write — the log is read once, and
