@@ -59,12 +59,12 @@ EfferenceGuide = { builtin = \"guide\" }
 #[derive(Parser)]
 #[command(name = "efference", about = "An API-backed agentic coding harness.")]
 pub(crate) struct Cli {
-    /// Session name. `serve` creates `.efference/<name>/`; a client verb locates that session's
-    /// socket. Omitted: `serve` generates a timestamp id; a client uses the single live daemon
-    /// (discovered by scanning the session dirs), erroring if several are live.
+    /// Session name. `serve` creates `.efference/<name>/`; every other command uses it to
+    /// find that session. Omitted: `serve` generates a timestamp id, and the others use the
+    /// one live session here, erroring if several are.
     #[arg(long, global = true)]
     pub(crate) name: Option<String>,
-    /// Explicit control-socket path — an escape hatch that overrides `--name` and discovery.
+    /// Explicit control-socket path; overrides `--name` and discovery.
     #[arg(long, global = true)]
     pub(crate) socket: Option<PathBuf>,
     #[command(subcommand)]
@@ -210,31 +210,39 @@ pub(crate) fn session_listing() -> String {
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
-    /// Run the daemon: bind the control socket and drive the agent loop. Waits for
-    /// the first user turn over the socket (`POST /turns`).
+    /// Start a session: run the agent loop in this directory.
+    ///
+    /// The session daemon binds a control socket under `.efference/<id>/` and runs the
+    /// whole agentic loop — turns, tool calls, approvals — for as long as it lives.
+    /// Everything else talks to it over that socket: `efference tui` in a terminal, the
+    /// web client over `--bind`, and `efference control`/`efference mcp` for scripts and
+    /// other agents. Nothing happens until a client sends the first turn.
     Serve {
         /// Model to use for the agent. Defaults to claude-haiku-4-5.
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
-        /// Model for the spotter permission rung (docs/permissions.md). Independent
-        /// of the agent model — the spotter is volume work, so it defaults to the
+        /// Model for the spotter permission rung.
+        ///
+        /// Independent of the agent model — the spotter is volume work, so it defaults to the
         /// cheap band (Haiku) regardless of what the agent runs.
         #[arg(long, default_value = "claude-haiku-4-5")]
         spotter_model: String,
-        /// Path to the config (TOML, see docs/permissions.md). If omitted,
-        /// `efference.toml` in the cwd is probed; absent → the built-in default config.
-        /// An explicit path that doesn't exist is an error. The resolved path is
+        /// Path to the config file. Defaults to `efference.toml` in the current directory.
+        ///
+        /// With no file present the built-in default config is used. An explicit path that doesn't exist is an error. The resolved path is
         /// reported on `GET /state`.
         #[arg(long, short = 'c')]
         config: Option<PathBuf>,
-        /// Sampling temperature on a 0–100 scale. Integer to avoid float
-        /// serialization drift and the two-provider-scale confusion: 50 is mid-scale
+        /// Sampling temperature on a 0–100 scale; 50 is each provider's default.
+        ///
+        /// Integer to avoid float serialization drift and the two-provider-scale confusion: 50 is mid-scale
         /// and maps to each provider's default (1.0). Omitted → the field is left out
         /// of the wire entirely, and the API uses its own default (1.0).
         #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
         temperature: Option<u8>,
-        /// How much effort the model spends per turn, e.g. high, xhigh, max
-        /// (docs/transport.md). Accepted as given and validated at boot against
+        /// How much effort the model spends per turn, e.g. high, xhigh, max.
+        ///
+        /// Accepted as given and validated at boot against
         /// the levels the model's metadata declares — an unsupported level is
         /// refused there with the list, because OpenRouter maps one to the nearest
         /// supported silently. Overrides `[transport] effort` in the config;
@@ -246,8 +254,9 @@ pub(crate) enum Command {
         /// EFFERENCE_THINKING=off is refused at startup.
         #[arg(long, value_name = "LEVEL")]
         effort: Option<String>,
-        /// Pin which **upstream** serves the model, for an OpenRouter session:
-        /// an endpoint slug such as `google-ai-studio` or `google-vertex/global`
+        /// Pin which upstream endpoint serves the model, for an OpenRouter session.
+        ///
+        /// An endpoint slug such as `google-ai-studio` or `google-vertex/global`
         /// (OpenRouter's model page lists them). Repeatable — the
         /// order is the preference order, and fallbacks past it are disabled, so
         /// a pinned session either gets one of these or fails rather than
@@ -258,29 +267,29 @@ pub(crate) enum Command {
         /// choice. Applies to the agent's own requests (turns and fork peeks),
         /// not the spotter: slugs are per-model and the spotter runs a different
         /// one. Endpoints behind one model slug differ in uptime and latency
-        /// tail, so a controlled run should pin one and record it
-        /// (eval/harness/README.md).
+        /// tail, so a controlled run should pin one and record it.
         #[arg(long, value_name = "SLUG")]
         upstream: Vec<String>,
-        /// Run **autonomous** (no synchronous human at the gate): a spotter `Watch`/`Gate`
-        /// becomes a redirect that hands the call back to the model, pointing it at its config
+        /// Run with no human at the approval gate.
+        ///
+        /// A spotter `Watch`/`Gate` becomes a redirect that hands the call back to the model, pointing it at its config
         /// file to request access, instead of blocking on an absent human. A config-file write
-        /// still gates — held for the orchestrator-above to review over the control channel
-        /// (docs/permissions.md).
+        /// still gates — held for the orchestrator above to review over the control channel.
         #[arg(long)]
         autonomous: bool,
-        /// Re-run the MCP authorization dance for this server, discarding any stored
-        /// credentials for it first (docs/mcp-auth.md). The recovery path when a grant
+        /// Re-authorize this MCP server, discarding its stored credentials first. Repeatable.
+        ///
+        /// The recovery path when a grant
         /// has been revoked or the server has changed authorization servers — otherwise
-        /// a stored token is reused until it fails. Repeatable.
+        /// a stored token is reused until it fails.
         #[arg(long, value_name = "SERVER")]
         reauth: Vec<String>,
-        /// Keep the per-session `$TMPDIR` scratch directory on exit instead of
-        /// deleting it — an artifact for post-mortem analysis (docs/tools.md).
+        /// Keep the per-session `$TMPDIR` scratch directory on exit, for post-mortem analysis.
         #[arg(long)]
         keep_scratch: bool,
-        /// Also listen on a TCP address (docs/web-bind.md) — the web client's front
-        /// door, beside the UDS. Loopback may be plaintext; any other address
+        /// Also listen on a TCP address: the web client's front door.
+        ///
+        /// Loopback may be plaintext; any other address
         /// requires --tls-cert/--tls-key (never cleartext on a routable interface),
         /// and either way EFFERENCE_ROOT_SECRET must be set (the op env-file
         /// pattern). Deliberately a flag/env, not a config key: the session config
@@ -315,11 +324,12 @@ pub(crate) enum Command {
         #[arg(long, requires = "bind")]
         open: bool,
     },
-    /// Run the host: one authenticated front door for every session on this machine
-    /// (docs/host.md). Serves the live-session listing at `GET /sessions`, each
-    /// session's own control API under `/sessions/<id>/`, and the web client at the
-    /// root. It starts no sessions and adopts whatever `serve` processes are running
-    /// under `.efference/` in this directory; their Unix sockets stay UDS-only.
+    /// Serve every session in this directory through one authenticated web front door.
+    ///
+    /// Lists the live sessions at `GET /sessions`, exposes each one's control API
+    /// under `/sessions/<id>/`, and serves the web client at the root. It starts no
+    /// sessions: it adopts whatever `serve` processes are running under `.efference/`
+    /// here, and their Unix sockets stay local.
     ///
     /// The bind and auth flags are `serve --bind`'s, with the same env fallbacks and
     /// the same posture: plaintext only on loopback, TLS wants an explicit public
@@ -353,25 +363,32 @@ pub(crate) enum Command {
         #[arg(long)]
         open: bool,
     },
-    /// Drive a running session: the twelve control-API verbs (docs/operating.md)
-    /// as one tool each. The same tools `efference mcp` serves over MCP, so a
-    /// script and a mounting harness reach a session through one definition.
+    /// Drive a running session from a script: send turns, resolve approvals, read state.
+    ///
+    /// One subcommand per control-API call. These are the same tools `efference mcp`
+    /// serves over MCP, so a shell script and a mounting harness reach a session
+    /// through one definition. `efference control --help` lists them.
     #[command(subcommand)]
     Control(control::Tools),
-    /// Serve the `control` tools as an MCP server on stdin/stdout
-    /// (docs/operating.md) — the mount another harness supervises a session
-    /// through. Speaks newline-delimited JSON-RPC and blocks until stdin closes.
+    /// Serve the `control` tools as an MCP server on stdin/stdout.
+    ///
+    /// The mount another agent harness supervises a session through: each `control`
+    /// subcommand is one tool. Speaks newline-delimited JSON-RPC and blocks until
+    /// stdin closes. Pass `--name` to pick the session when several are live.
     Mcp,
-    /// Instruments for developing efference itself (docs/operating.md): the wire
-    /// view, the element gallery, the spotter/peek testers, the cache-rate report,
-    /// the read-only session viewer, and the bootstrap-link mint. Compiled only under the `dev` cargo feature,
-    /// which is on by default.
+    /// Instruments for developing efference itself.
+    ///
+    /// The wire view, the element gallery, the spotter and peek testers, the
+    /// cache-rate report, the read-only session viewer, and the web-bind
+    /// bootstrap-link mint. Compiled only under the `dev` cargo feature.
     #[cfg(feature = "dev")]
     #[command(subcommand)]
     Dev(dev::DevCommand),
-    /// Interactive TUI: a themed, scrolling, markdown-rendering view of the
-    /// transcript, fed live from the daemon's event streams, with a composer and
-    /// in-TUI approval gates. q quits, ? for help, t for the theme picker.
+    /// efference in your terminal: attach to a running session.
+    ///
+    /// The terminal counterpart to the web client. Connects to the session `serve`
+    /// started here (or the one named by `--name`) and shows the transcript live,
+    /// with a composer for turns and approvals. Press ? inside for the keys.
     Tui {
         /// Syntax/UI theme: a built-in theme name (e.g. "Catppuccin Frappe",
         /// "Nord", "gruvbox-dark") or a path to a `.tmTheme` file. An unknown name
@@ -388,15 +405,15 @@ pub(crate) enum Command {
         #[arg(long)]
         frame_cost: bool,
     },
-    /// Validate a config template: parse it, apply the same checks `serve`
-    /// applies at boot, resolve its `[context]` entries from the current
-    /// directory (`exec` entries run), and mount its `[mcp.servers.*]` stanzas
-    /// to enumerate each server's advertised tools against the file's `tools`
-    /// grants. Prints what the file grants and how many preamble bytes it
-    /// costs; exits non-zero with the boot-time error otherwise. No daemon —
-    /// the terminus for setting a project up. Stored MCP credentials are
-    /// reused; a server needing authorization is reported, never authorized
-    /// here.
+    /// Validate an efference.toml without starting a session.
+    ///
+    /// Parses the file, applies the same checks `serve` applies at boot, resolves
+    /// its `[context]` entries from the current directory (`exec` entries run), and
+    /// mounts each `[mcp.servers.*]` stanza to list the server's tools against the
+    /// file's `tools` grants. Prints what the file grants and how many preamble
+    /// bytes it costs; exits non-zero with the boot-time error otherwise. Stored MCP
+    /// credentials are reused; a server that needs authorization is reported, not
+    /// authorized here.
     Check {
         /// The file to check. Defaults to `efference.toml` in the current directory.
         path: Option<PathBuf>,
