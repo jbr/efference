@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Fixed
+- **Codex requests replay the backend's `x-codex-turn-state` sticky-routing token** (docs/transport.md): the header is captured from the first response of a user turn, sent on every later request of that turn including fork peeks, and dropped at the next turn, as Codex CLI does; a session that omitted it paid for its prefix repeatedly as the cache missed. Requests also carry the `x-codex-routing-hint` model hint.
 - **The TUI no longer dies on a control character in sidebar or strip text** (docs/tui.md): a background process whose command line held a newline (a multi-line `python -c`) hit ratatui's `cell_width` assertion on every frame, and again on every restart while the process lived; direct cell writes now fold control characters to `�` as the transcript already did.
 - **The web client reads the ordered assistant entry** (docs/web-client.md): it still expected the grouped `thinking`/`text`/`calls` shape the log dropped with the Responses dialect, so any session crashed at first render; `session/assistant.ts` now derives that view from either dialect.
 - **A tool call cut at the output-token cap is no longer dispatched** (docs/transport.md): a `max_tokens` completion carrying a `tool_use` block is a record-only partial whether or not its arguments happen to parse — the upstream had been repairing a truncated `write` into a valid object with no `path`.

@@ -135,7 +135,7 @@ impl ForkSpot {
         persona: impl Into<String>,
     ) -> Self {
         ForkSpot {
-            client: Client::new(endpoint, model, persona, None),
+            client: Client::new(endpoint, model, persona, None).without_turn_routing(),
             scratch: None,
             cwd: None,
         }

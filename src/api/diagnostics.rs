@@ -22,6 +22,19 @@ use serde::Serialize;
 use tokio::sync::Notify;
 use tokio::sync::futures::Notified;
 
+/// The upstream's sticky-routing token for the user turn in flight
+/// (docs/transport.md). The Codex backend issues one on the first response of a
+/// turn and expects it replayed on every later request of that turn; a new user
+/// turn starts empty. Written by the response handler, read when a request is
+/// built, cleared by the agent loop. Never logged: it is routing state, not a
+/// diagnostic, and it is opaque.
+pub type TurnRoutingState = Arc<Mutex<Option<String>>>;
+
+/// Construct an empty turn-routing cell.
+pub fn turn_routing_state() -> TurnRoutingState {
+    Arc::new(Mutex::new(None))
+}
+
 /// The last non-success status received from the upstream API, plus consecutive
 /// occurrences of that status. Ephemeral transport diagnostics: never appended
 /// to the log or projected (docs/transport.md).

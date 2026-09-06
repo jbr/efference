@@ -135,6 +135,9 @@ impl std::error::Error for KeepaliveError {}
 struct UpstreamStatusHandler {
     failure: UpstreamFailureState,
     attempts: UpstreamAttemptQueue,
+    /// The turn's sticky-routing token and the header it arrives on
+    /// (docs/transport.md); `None` where the provider has no such contract.
+    turn_routing: Option<(&'static str, TurnRoutingState)>,
 }
 
 impl ClientHandler for UpstreamStatusHandler {
@@ -144,6 +147,16 @@ impl ClientHandler for UpstreamStatusHandler {
         };
         if status.is_success() {
             clear_upstream_failure(&self.failure);
+            // First token of the turn wins: the backend issues it at turn start and
+            // the contract is to replay that value unchanged until the turn ends.
+            if let Some((header, cell)) = &self.turn_routing
+                && let Some(token) = conn.response_headers().get_str(*header)
+            {
+                let mut slot = cell.lock().unwrap_or_else(|e| e.into_inner());
+                if slot.is_none() {
+                    *slot = Some(token.to_string());
+                }
+            }
             return Ok(());
         }
         let status = u16::from(status);
@@ -238,6 +251,11 @@ pub struct Client {
     /// Failed HTTP attempts the retry handler absorbed, waiting for the agent
     /// loop to drain them into record-only log entries (docs/transport.md).
     upstream_attempts: UpstreamAttemptQueue,
+    /// The sticky-routing token for the user turn in flight, shared with the
+    /// response handler that fills it (docs/transport.md). `None` where the
+    /// provider has no such contract, or on a client whose every request is its
+    /// own conversation (the spotter's), which must not replay one.
+    turn_routing: Option<TurnRoutingState>,
 }
 
 impl Client {
@@ -261,6 +279,10 @@ impl Client {
     ) -> Self {
         let upstream_failure = upstream_failure_state();
         let upstream_attempts = upstream_attempt_queue();
+        let turn_routing = endpoint
+            .provider
+            .turn_routing_header()
+            .map(|_| turn_routing_state());
         let retry = RetryHandler::default()
             // Messages POSTs are replay-safe: an unsuccessful open produced no
             // assistant entry or provider-side completion.
@@ -290,6 +312,10 @@ impl Client {
                 UpstreamStatusHandler {
                     failure: Arc::clone(&upstream_failure),
                     attempts: Arc::clone(&upstream_attempts),
+                    turn_routing: endpoint
+                        .provider
+                        .turn_routing_header()
+                        .zip(turn_routing.as_ref().map(Arc::clone)),
                 },
             )),
             endpoint,
@@ -307,7 +333,35 @@ impl Client {
             upstream_failure,
             upstream_retry: upstream_retry_state(),
             upstream_attempts,
+            turn_routing,
         }
+    }
+
+    /// A client whose every request is its own conversation (the spotter's): it
+    /// neither keeps nor replays a turn-routing token, since the token belongs
+    /// to one user turn and this client is never inside one (docs/transport.md).
+    pub fn without_turn_routing(mut self) -> Self {
+        self.turn_routing = None;
+        self
+    }
+
+    /// A user turn is starting (docs/transport.md): forget the previous turn's
+    /// routing token so the first request of this one goes out without a header
+    /// and the backend issues a fresh token. Called by the agent loop at each
+    /// trajectory start and each seam-drained user turn; the fork peek shares this
+    /// client and so the token, which is the point — the peek is a request of the
+    /// same turn.
+    pub fn begin_turn(&self) {
+        if let Some(cell) = &self.turn_routing {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        }
+    }
+
+    /// The turn-routing token in hand, for tests and the daemon's view.
+    pub fn turn_routing_token(&self) -> Option<String> {
+        self.turn_routing
+            .as_ref()
+            .and_then(|cell| cell.lock().unwrap_or_else(|e| e.into_inner()).clone())
     }
 
     /// Clone the transport diagnostic cell the daemon exposes through `GET /state`.
@@ -667,7 +721,24 @@ impl Client {
             .fold(conn, |conn, (name, value)| {
                 conn.with_request_header(name.clone(), value.clone())
             });
-        self.with_attribution(self.with_session_id(conn))
+        let conn = self.with_attribution(self.with_session_id(conn));
+        self.with_turn_routing(conn)
+    }
+
+    /// The Codex backend's routing headers (docs/transport.md): the model hint
+    /// on every request, and the turn's sticky token once the backend has issued
+    /// one. Both are transport-only — neither reaches the body, so neither can
+    /// move the cached prefix; what they move is which machine sees it.
+    fn with_turn_routing(&self, conn: trillium_client::Conn) -> trillium_client::Conn {
+        let provider = &self.endpoint.provider;
+        let conn = match provider.routing_hint_header() {
+            Some(header) => conn.with_request_header(header, format!("model={}", self.model)),
+            None => conn,
+        };
+        match (provider.turn_routing_header(), self.turn_routing_token()) {
+            (Some(header), Some(token)) => conn.with_request_header(header, token),
+            _ => conn,
+        }
     }
 
     /// The Responses envelope for one turn (docs/transport.md).

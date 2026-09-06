@@ -215,6 +215,27 @@ impl Provider {
         }
     }
 
+    /// The header a sticky-routing token for the user turn in flight travels on,
+    /// in both directions (docs/transport.md): the backend sets it on a response,
+    /// the client replays it on every later request of the same turn. Only the
+    /// Codex backend has this contract; Codex CLI treats it as required. `None`
+    /// means neither capture nor replay happens.
+    pub(super) fn turn_routing_header(&self) -> Option<&'static str> {
+        match self {
+            Self::OpenAICodex => Some("x-codex-turn-state"),
+            Self::Anthropic | Self::OpenAI | Self::OpenRouter => None,
+        }
+    }
+
+    /// The request header naming the model for the backend's router, sent as
+    /// Codex CLI sends it (`model=<slug>`) on the Codex backend only.
+    pub(super) fn routing_hint_header(&self) -> Option<&'static str> {
+        match self {
+            Self::OpenAICodex => Some("x-codex-routing-hint"),
+            Self::Anthropic | Self::OpenAI | Self::OpenRouter => None,
+        }
+    }
+
     /// The app-attribution headers this provider reads, empty where it has no
     /// such concept (docs/transport.md).
     ///

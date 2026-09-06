@@ -322,10 +322,10 @@ mod thinking;
 
 pub use client::{Client, DEFAULT_STREAM_CEILING, KeepaliveError};
 pub use diagnostics::{
-    RetrySurface, UpstreamAttemptFailure, UpstreamAttemptQueue, UpstreamFailure,
+    RetrySurface, TurnRoutingState, UpstreamAttemptFailure, UpstreamAttemptQueue, UpstreamFailure,
     UpstreamFailureState, UpstreamRetry, UpstreamRetryCell, UpstreamRetryState,
-    drain_upstream_attempts, push_upstream_attempt, upstream_attempt_queue, upstream_failure_state,
-    upstream_retry_state,
+    drain_upstream_attempts, push_upstream_attempt, turn_routing_state, upstream_attempt_queue,
+    upstream_failure_state, upstream_retry_state,
 };
 pub use endpoint::{Endpoint, sticky_session_id};
 pub use provider::{

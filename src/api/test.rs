@@ -2584,3 +2584,118 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
         assert!(anthropic.contains(&expected_ua), "{anthropic}");
     }
 }
+
+/// The Codex backend's turn-routing contract over a socket (docs/transport.md):
+/// the first request of a turn carries no token, the token the backend issues
+/// on that response rides every later request of the turn unchanged (a second
+/// issued value does not replace it), and a new turn starts without one. The
+/// model hint rides every request. Three connections, each closed by the server,
+/// so the pool opens a fresh one per request and the mock sees each head whole.
+#[tokio::test]
+async fn codex_turn_routing_token_is_replayed_within_a_turn_and_dropped_at_the_next() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let issued = [Some("tok-one"), Some("tok-two"), None];
+        let mut heads = Vec::new();
+        for token in issued {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut buf = vec![0u8; 65536];
+            let n = sock.read(&mut buf).unwrap();
+            heads.push(String::from_utf8_lossy(&buf[..n]).to_string());
+            let body = "event: response.completed\ndata: {\"type\":\"response.completed\",\
+                        \"response\":{\"id\":\"r\",\"status\":\"completed\",\"output\":[],\
+                        \"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n";
+            let token_line =
+                token.map_or(String::new(), |t| format!("x-codex-turn-state: {t}\r\n"));
+            sock.write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n{token_line}\
+                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            sock.flush().unwrap();
+        }
+        heads
+    });
+
+    let endpoint = Endpoint {
+        provider: Provider::OpenAICodex,
+        url: format!("http://{addr}/backend-api/codex/responses"),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+    };
+    let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
+    assert_eq!(client.turn_routing_token(), None);
+    client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(client.turn_routing_token().as_deref(), Some("tok-one"));
+    client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(
+        client.turn_routing_token().as_deref(),
+        Some("tok-one"),
+        "the first issued token holds for the whole turn"
+    );
+    client.begin_turn();
+    assert_eq!(client.turn_routing_token(), None);
+    client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .unwrap();
+    let heads = server.join().unwrap();
+
+    let head = |i: usize| {
+        heads[i]
+            .split("\r\n\r\n")
+            .next()
+            .unwrap()
+            .to_ascii_lowercase()
+    };
+    for i in 0..3 {
+        assert!(
+            head(i).contains("x-codex-routing-hint: model=gpt-5.6-sol"),
+            "request {i} names the model for the router"
+        );
+    }
+    assert!(
+        !head(0).contains("x-codex-turn-state"),
+        "a turn's first request carries no token"
+    );
+    assert!(
+        head(1).contains("x-codex-turn-state: tok-one"),
+        "the second request replays it"
+    );
+    assert!(
+        !head(2).contains("x-codex-turn-state"),
+        "a new turn starts without one"
+    );
+}
+
+/// A client outside any turn (the spotter's) never holds a token, whatever the
+/// backend sends.
+#[test]
+fn a_client_without_turn_routing_holds_no_token() {
+    let endpoint = Endpoint {
+        provider: Provider::OpenAICodex,
+        url: "http://127.0.0.1:1/x".into(),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+    };
+    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None).without_turn_routing();
+    client.begin_turn();
+    assert_eq!(client.turn_routing_token(), None);
+}

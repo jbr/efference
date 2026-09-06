@@ -315,6 +315,11 @@ pub async fn run<F: Frontend, S: Spotter>(
             }
         }
 
+        // A trajectory is starting: the upstream's turn-routing token, if the
+        // provider issues one, belongs to the previous trajectory and must not be
+        // replayed into this one (docs/transport.md).
+        client.begin_turn();
+
         // A trajectory is starting, so the previous one's give-up is no longer the
         // current condition (docs/transport.md): the `stall` topic names what the
         // daemon is *now*, and a supervisor that answered a stall by sending a turn
@@ -360,6 +365,9 @@ pub async fn run<F: Frontend, S: Spotter>(
             // the fast path (the outer `select!`); this only catches mid-trajectory ones.
             for submitted in frontend.drain_injected_turns() {
                 turn += 1;
+                // A user turn lands mid-trajectory: to the upstream that is a new
+                // turn, so its routing token starts over (docs/transport.md).
+                client.begin_turn();
                 shared.append_submission(
                     turn,
                     Payload::User(vec![ContentBlock::Text(submitted.text)]),

@@ -599,6 +599,26 @@ rejects only a present non-`text/event-stream` one. Each response also carries
 percentages, and their reset times — not read yet (backlog:
 openai-provider/codex-plan-state.md).
 
+**Turn routing on the Codex backend.** Each response carries an `x-codex-turn-state`
+header: an opaque token the backend issues at the start of a user turn and expects
+back, as a request header, on every later request of that turn — retries, the fork
+peek, each tool round-trip — and not on the next turn. Codex CLI treats this as a
+sticky-routing contract with the server (`codex-rs/core/src/client.rs`); a session
+that omitted it saw its prefix cache miss erratically
+(journal/2026-09-06-codex-session-token-audit.md). The client holds the token in a
+cell (`api::TurnRoutingState`) that the response handler fills on the first
+successful response of a turn (later values do not replace it), `Client::post`
+replays on every request, and the agent loop clears through `Client::begin_turn`
+at each trajectory start and each seam-drained user turn. The fork peek shares the
+agent's client and so the token; the spotter's client is built
+`without_turn_routing`, since each of its requests is its own conversation. Every
+Codex request also names its model in `x-codex-routing-hint` (`model=<slug>`), as
+Codex CLI does. Both headers are transport-only and never enter the log. The
+rejection of `prompt_cache_breakpoint` above was observed on gpt-5.6-luna; OpenAI's
+guide lists explicit breakpoints as a GPT-5.6-family feature on the platform, so it
+is the backend, not the model, that is presumed to refuse them (backlog:
+openai-provider/validation.md).
+
 **Not on this dialect.** The `max_tokens: 0` keepalive is a Messages primitive; the
 daemon never starts the loop on Responses (backlog: openai-provider/validation.md).
 OpenAI exposes no per-generation cost endpoint, so cost tracking stays off. The
