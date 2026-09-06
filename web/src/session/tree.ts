@@ -29,6 +29,7 @@ import type {
   ToolTelemetry,
   UpstreamFailureRecord,
 } from "../api/types.ts";
+import { assistantView } from "./assistant.ts";
 
 /** The prose half of a record-only mark, whichever shape the log wrote
  * (src/log.rs): the bare string older logs carry, or the object's `why`. */
@@ -121,7 +122,8 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     }
 
     if ("Assistant" in p) {
-      const { thinking, text, calls, upstream_failure } = p.Assistant;
+      const { upstream_failure } = p.Assistant;
+      const { thinking, text, calls } = assistantView(p.Assistant);
       // A record-only entry leads with the marker, above content that still
       // renders — it is often the only copy of what the model produced. The
       // node exists even when the entry is empty, which is exactly the

@@ -302,6 +302,17 @@ session
       └─ result             carries its own keep + note
 ```
 
+An assistant entry reaches the tree through `session/assistant.ts`, which groups
+its ordered, dialect-tagged `output` (Messages blocks or Responses items,
+[log-and-projection.md](log-and-projection.md)) into the thinking / prose / calls
+view the leaves and the call nodes render — the client-side counterpart of the
+`AssistantOutput` accessors in `src/log.rs`. A Responses `FunctionCall` carries
+its arguments as the provider's JSON string; the view parses it into the call's
+`input`, and an unparseable string is kept under an `arguments` key so the
+call still has a node for its result to attach to. Replay credentials
+(a thinking signature, `encrypted_content`) are not part of the view. Nothing in
+`ui/` reads `output` directly.
+
 Two containers, `batch` and `call`; everything else is a leaf sibling at session
 level. A result, a verdict, and a call's telemetry are attached to the call they
 name rather than emitted where they fall in the log — that attachment is the

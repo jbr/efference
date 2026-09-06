@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Frame } from "../api/types.ts";
 import { record, SCRUB_EVENT } from "./record.ts";
 import { Store } from "./store.ts";
+import { messagesAssistant } from "./assistant.ts";
 
 /** One `tool_call_input` delta — the frame class the scrubber exists for. */
 const fragment = (index: number, text: string): Frame => ({
@@ -30,11 +31,11 @@ const commit: Frame = {
     turn: 1,
     at: 0,
     payload: {
-      Assistant: {
-        thinking: [],
-        text: [],
-        calls: [{ id: "c1", name: "write", input: { path: "a.rs" } }],
-      },
+      Assistant: messagesAssistant(
+        [],
+        [],
+        [{ id: "c1", name: "write", input: { path: "a.rs" } }],
+      ),
     },
   },
 };

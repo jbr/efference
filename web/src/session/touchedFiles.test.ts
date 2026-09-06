@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LogEntry } from "../api/types.ts";
+import { messagesAssistant } from "./assistant.ts";
 import {
   anchorForCall,
   editedPath,
@@ -69,7 +70,7 @@ const entry = (payload: LogEntry["payload"]): LogEntry => ({
 });
 const assistant = (
   calls: { id: string; name: string; input: unknown }[],
-): LogEntry => entry({ Assistant: { thinking: [], text: [], calls } });
+): LogEntry => entry({ Assistant: messagesAssistant([], [], calls) });
 const result = (callId: string, isError = false, content = ""): LogEntry =>
   entry({
     ToolResult: {

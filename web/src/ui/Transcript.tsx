@@ -14,6 +14,7 @@ import type {
   TranscriptNode,
 } from "../session/tree.ts";
 import { upstreamFailureWhy } from "../session/tree.ts";
+import { assistantView } from "../session/assistant.ts";
 import type { CallId } from "../api/types.ts";
 import { Markdown } from "./Markdown.tsx";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
@@ -162,13 +163,14 @@ function Leaf({ node }: { node: LeafNode }) {
         </Entry>
       );
     }
+    const view = assistantView(p.Assistant);
     return node.key.endsWith(":thinking") ? (
       <Entry label="thinking" as="thinking">
-        <Markdown>{text(p.Assistant.thinking)}</Markdown>
+        <Markdown>{text(view.thinking)}</Markdown>
       </Entry>
     ) : (
       <Entry label={null}>
-        <Markdown>{text(p.Assistant.text)}</Markdown>
+        <Markdown>{text(view.text)}</Markdown>
       </Entry>
     );
   }
@@ -225,7 +227,9 @@ const Call = memo(function Call({
   const call = useMemo(() => {
     const issued = node.issued.payload;
     return "Assistant" in issued
-      ? (issued.Assistant.calls.find((c) => c.id === node.callId) ?? null)
+      ? (assistantView(issued.Assistant).calls.find(
+          (c) => c.id === node.callId,
+        ) ?? null)
       : null;
   }, [node.issued, node.callId]);
   const result =

@@ -25,9 +25,11 @@ export type Payload =
   | { User: ContentBlock[] }
   | {
       Assistant: {
-        thinking: ContentBlock[];
-        text: ContentBlock[];
-        calls: ToolCall[];
+        /** The provider's output in provider order, in whichever wire dialect
+         * answered (src/log.rs, docs/log-and-projection.md). Nothing in ui/
+         * reads this directly: `session/assistant.ts` derives the grouped
+         * thinking / prose / calls view the transcript renders. */
+        output: AssistantOutput;
         /** Set on a **record-only** entry: the stream never stood behind it —
          * an aborted partial, an absorbed HTTP failure, an empty finalized
          * stream — so `project` skips it and nothing here is in the model's
@@ -53,6 +55,52 @@ export type Payload =
  * (src/log.rs): a bare string, and the object an entry with stream diagnostics
  * carries. */
 export type UpstreamFailureRecord = string | { why: string; stream?: unknown };
+
+/** One assistant turn's ordered output, externally tagged by wire dialect. */
+export type AssistantOutput =
+  { Messages: MessagesOutputBlock[] } | { Responses: ResponsesOutputItem[] };
+
+/** One content block of an Anthropic-Messages assistant message. */
+export type MessagesOutputBlock =
+  | { Text: string }
+  | { Thinking: { text: string; signature: string } }
+  | { RedactedThinking: { data: string } }
+  | { ToolUse: ToolCall };
+
+/** One top-level output item of an OpenAI Responses result. Fields the client
+ * never reads (`status`, `encrypted_content`, `annotations`) are left open so a
+ * provider addition does not fail the parse. */
+export type ResponsesOutputItem =
+  | {
+      Reasoning: {
+        id: string;
+        summary: { text: string }[];
+        content?: { text: string }[];
+        [extra: string]: unknown;
+      };
+    }
+  | {
+      Message: {
+        id: string;
+        content: ResponsesMessageContent[];
+        [extra: string]: unknown;
+      };
+    }
+  | {
+      FunctionCall: {
+        call_id: CallId;
+        name: string;
+        /** The provider's exact JSON-encoded argument string — the replay
+         * authority. Parsed on demand for the call view. */
+        arguments: string;
+        [extra: string]: unknown;
+      };
+    }
+  | { Unsupported: unknown };
+
+export type ResponsesMessageContent =
+  | { OutputText: { text: string; [extra: string]: unknown } }
+  | { Refusal: { refusal: string } };
 
 export type ContentBlock =
   | { Text: string }

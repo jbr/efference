@@ -14,6 +14,7 @@ import type {
   WireState,
 } from "../api/types.ts";
 import type { CallNode } from "../session/tree.ts";
+import { assistantView } from "../session/assistant.ts";
 import { ArgsTab } from "./ArgsTab.tsx";
 import { CallSignature } from "./CallHead.tsx";
 import { ResultBody } from "./ToolBlocks.tsx";
@@ -285,7 +286,9 @@ export function Inspector({
   const call = useMemo(() => {
     const issued = node.issued.payload;
     return "Assistant" in issued
-      ? (issued.Assistant.calls.find((c) => c.id === node.callId) ?? null)
+      ? (assistantView(issued.Assistant).calls.find(
+          (c) => c.id === node.callId,
+        ) ?? null)
       : null;
   }, [node.issued, node.callId]);
   const view = useMemo(

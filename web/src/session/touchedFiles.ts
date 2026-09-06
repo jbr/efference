@@ -10,6 +10,7 @@
 // and is declined for the same reason.
 
 import type { CallId, LogEntry } from "../api/types.ts";
+import { assistantView } from "./assistant.ts";
 import { anchorFromResult, type DiffAnchor } from "./editAnchor.ts";
 
 const EDIT_TOOLS = new Set(["write", "edit", "undo_edit", "retarget_edit"]);
@@ -74,7 +75,7 @@ export function lastEdit(entries: LogEntry[]): EditEvent | null {
   for (const entry of entries) {
     const p = entry.payload;
     if ("Assistant" in p) {
-      for (const call of p.Assistant.calls) {
+      for (const call of assistantView(p.Assistant).calls) {
         calls.set(call.id, { name: call.name, input: call.input });
       }
       continue;
@@ -123,7 +124,7 @@ export function fileActivity(entries: LogEntry[]): Map<string, FileActivity> {
   for (const entry of entries) {
     const p = entry.payload;
     if ("Assistant" in p) {
-      for (const call of p.Assistant.calls) {
+      for (const call of assistantView(p.Assistant).calls) {
         calls.set(call.id, { name: call.name, input: call.input });
       }
       continue;

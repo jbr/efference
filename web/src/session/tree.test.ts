@@ -6,6 +6,7 @@ import {
   type BatchNode,
   type CallNode,
 } from "./tree.ts";
+import { messagesAssistant } from "./assistant.ts";
 
 const entry = (seq: number, payload: LogEntry["payload"]): LogEntry => ({
   seq,
@@ -25,11 +26,11 @@ const assistant = (
   },
 ) =>
   entry(seq, {
-    Assistant: {
-      thinking: opts.thinking === true ? [{ Text: "hm" }] : [],
-      text: opts.text === true ? [{ Text: "prose" }] : [],
-      calls: (opts.calls ?? []).map((c) => ({ ...c, input: {} })),
-    },
+    Assistant: messagesAssistant(
+      opts.thinking === true ? [{ Text: "hm" }] : [],
+      opts.text === true ? [{ Text: "prose" }] : [],
+      (opts.calls ?? []).map((c) => ({ ...c, input: {} })),
+    ),
   });
 
 const batches = (nodes: ReturnType<typeof buildTree>): BatchNode[] =>
@@ -45,9 +46,7 @@ describe("record-only entries", () => {
     const nodes = buildTree([
       entry(1, {
         Assistant: {
-          thinking: [],
-          text: [{ Text: "half a sentence" }],
-          calls: [],
+          ...messagesAssistant([], [{ Text: "half a sentence" }], []),
           upstream_failure: "stream aborted after 2 blocks",
         },
       }),
@@ -59,9 +58,7 @@ describe("record-only entries", () => {
     const nodes = buildTree([
       entry(1, {
         Assistant: {
-          thinking: [],
-          text: [],
-          calls: [],
+          ...messagesAssistant([], [], []),
           upstream_failure: { why: "empty finalized stream", stream: {} },
         },
       }),

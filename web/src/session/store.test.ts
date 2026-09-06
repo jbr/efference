@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Frame, LogEntry } from "../api/types.ts";
+import { messagesAssistant } from "./assistant.ts";
 import {
   applyFrame,
   emptySession,
@@ -31,7 +32,7 @@ describe("the log fold", () => {
   it("appends entries in order and advances the cursor", () => {
     const a = entry(1, { User: [{ Text: "hi" }] });
     const b = entry(2, {
-      Assistant: { thinking: [], text: [{ Text: "hello" }], calls: [] },
+      Assistant: messagesAssistant([], [{ Text: "hello" }], []),
     });
     const s = fold(emptySession, [logFrame(a), logFrame(b)]);
     expect(s.entries).toEqual([a, b]);
@@ -211,7 +212,7 @@ describe("the output tail", () => {
         kind: "assistant",
         seq: 1,
         data: entry(1, {
-          Assistant: { thinking: [], text: [{ Text: "prose" }], calls: [] },
+          Assistant: messagesAssistant([], [{ Text: "prose" }], []),
         }),
       },
     ]);
@@ -262,7 +263,7 @@ describe("the output tail", () => {
         kind: "assistant",
         seq: 1,
         data: entry(1, {
-          Assistant: { thinking: [], text: [{ Text: "prose" }], calls: [] },
+          Assistant: messagesAssistant([], [{ Text: "prose" }], []),
         }),
       },
       // The stragglers, in the order the connection delivers them.
@@ -292,7 +293,7 @@ describe("the output tail", () => {
         kind: "assistant",
         seq: 1,
         data: entry(1, {
-          Assistant: { thinking: [], text: [], calls: [] },
+          Assistant: messagesAssistant([], [], []),
         }),
       },
       {
@@ -339,7 +340,7 @@ describe("the output tail", () => {
         class: "log",
         kind: "assistant",
         seq: 1,
-        data: entry(1, { Assistant: { thinking: [], text: [], calls: [] } }),
+        data: entry(1, { Assistant: messagesAssistant([], [], []) }),
       },
       {
         class: "output",
