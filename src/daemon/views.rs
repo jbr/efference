@@ -154,6 +154,10 @@ impl Shared {
             // model change, not idle past the TTL). A number, not a flag, so the
             // threshold stays a client decision; 0 whenever the last turn read warm.
             "cold_streak": metrics.cold_streak.streak(),
+            // The Codex backend's subscription windows (docs/transport.md): the
+            // plan and its two usage windows as of the last response that named
+            // them, resets as absolute millis. null on every other provider.
+            "plan": *self.plan.lock().unwrap(),
             // Triage retention (docs/redaction-fork.md): how much of what the gate
             // showed survives on the wire, derived from the log rather than from
             // transport telemetry. `withheld` counts results whose output a failed

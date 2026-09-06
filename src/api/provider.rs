@@ -227,6 +227,12 @@ impl Provider {
         }
     }
 
+    /// Whether responses carry the subscription-window headers `api/plan.rs`
+    /// reads (docs/transport.md). Only the Codex backend does.
+    pub(super) fn reports_plan_windows(&self) -> bool {
+        matches!(self, Self::OpenAICodex)
+    }
+
     /// The request header naming the model for the backend's router, sent as
     /// Codex CLI sends it (`model=<slug>`) on the Codex backend only.
     pub(super) fn routing_hint_header(&self) -> Option<&'static str> {

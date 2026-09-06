@@ -304,6 +304,10 @@ pub struct Shared {
     /// the whole pause (docs/transport.md). Transport-only: never logged or
     /// projected.
     upstream_retry: UpstreamRetryState,
+    /// The Codex backend's subscription windows as of the last response that
+    /// carried them (`api/plan.rs`), shared with the HTTP client and published
+    /// under `usage.plan`. `None` for every other provider. Transport-only.
+    plan: crate::api::PlanState,
     /// Cumulative triage retention (docs/redaction-fork.md), folded lazily from the
     /// log behind a cursor rather than accumulated at the append sites. Unlike the
     /// transport telemetry above this is **derived from the canonical record**, so a
@@ -495,6 +499,7 @@ impl Shared {
             scratch,
             upstream_failure,
             upstream_retry_state(),
+            crate::api::plan_state(),
             ImagePlacement::default(),
             env_policy,
         )
@@ -509,6 +514,7 @@ impl Shared {
         scratch: Option<PathBuf>,
         upstream_failure: UpstreamFailureState,
         upstream_retry: UpstreamRetryState,
+        plan: crate::api::PlanState,
         image_placement: ImagePlacement,
         env_policy: crate::env_table::EnvPolicy,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
@@ -589,6 +595,7 @@ impl Shared {
             usage_log: Mutex::new(None),
             upstream_failure,
             upstream_retry,
+            plan,
             retention: Mutex::new((0, Retention::default())),
             capabilities: Mutex::new(None),
             reservation: Mutex::new(reservation_state()),

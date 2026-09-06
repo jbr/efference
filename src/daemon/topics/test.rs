@@ -163,6 +163,7 @@ async fn a_retry_publishes_without_an_append() {
         Arc::clone(&retry),
         Default::default(),
         Default::default(),
+        Default::default(),
     );
     let mut rx = shared.subscribe_state();
     tokio::spawn(watch_topics(Arc::clone(&shared)));

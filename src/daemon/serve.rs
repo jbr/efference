@@ -31,6 +31,7 @@ pub async fn serve<S: Spotter>(
         toolbox.scratch_dir().map(std::path::Path::to_path_buf),
         client.upstream_failure(),
         client.upstream_retry(),
+        client.plan_state(),
         client.image_placement(),
         env_policy,
     );

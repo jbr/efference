@@ -372,6 +372,25 @@ export interface Usage {
   last_request_at: number | null;
   context: { limit: number; used: number | null } | null;
   cost: { usd: number; unpriced: number } | null;
+  // The Codex backend's subscription windows as of the last response that named
+  // them (docs/transport.md); null on every other provider. Resets are absolute
+  // Unix millis — subtract from the client clock, the daemon never ticks.
+  plan: Plan | null;
+}
+
+export interface PlanWindow {
+  used_percent: number;
+  window_minutes: number | null;
+  resets_at: number | null;
+}
+
+export interface Plan {
+  type: string | null;
+  // The short window (5 hours on a Plus plan).
+  primary: PlanWindow | null;
+  // The long window (7 days on a Plus plan).
+  secondary: PlanWindow | null;
+  observed_at: number;
 }
 
 export interface Pace {

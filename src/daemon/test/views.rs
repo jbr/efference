@@ -42,6 +42,7 @@ fn state_reports_the_retry_in_flight() {
         Arc::clone(&retry),
         Default::default(),
         Default::default(),
+        Default::default(),
     );
 
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
@@ -652,4 +653,44 @@ fn state_is_last_seq_plus_exactly_the_topics() {
             topic.as_str()
         );
     }
+}
+
+/// `usage.plan` publishes the Codex subscription windows off the shared cell, and
+/// is `null` until a Codex response has named them (docs/transport.md).
+#[test]
+fn state_reports_plan_windows_under_usage() {
+    let plan = crate::api::plan_state();
+    let (shared, _turns_rx) = Shared::full(
+        Log::in_memory(),
+        LoadedConfig::default(),
+        None,
+        crate::api::upstream_failure_state(),
+        crate::api::upstream_retry_state(),
+        Arc::clone(&plan),
+        Default::default(),
+        Default::default(),
+    );
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert!(v["usage"]["plan"].is_null());
+
+    *plan.lock().unwrap() = Some(crate::api::PlanSnapshot {
+        plan_type: Some("plus".into()),
+        primary: Some(crate::api::PlanWindow {
+            used_percent: 12.5,
+            window_minutes: Some(300),
+            resets_at: Some(1_788_677_725_000),
+        }),
+        secondary: None,
+        observed_at: 5,
+    });
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(
+        v["usage"]["plan"],
+        serde_json::json!({
+            "type": "plus",
+            "primary": { "used_percent": 12.5, "window_minutes": 300, "resets_at": 1_788_677_725_000u64 },
+            "secondary": null,
+            "observed_at": 5,
+        })
+    );
 }

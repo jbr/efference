@@ -11,6 +11,7 @@ use trillium_client_retry::RetryHandler;
 
 use crate::api::assembler::ResponseMeta;
 use crate::api::failure::{FailureClass, classify_body};
+use crate::api::plan::{PlanState, plan_from_headers, plan_state};
 use crate::api::responses::assembler::ResponsesAssembler;
 use crate::log::is_captured_header;
 use crate::project::{WireTurn, encode_messages};
@@ -149,6 +150,9 @@ struct UpstreamStatusHandler {
     /// The turn's sticky-routing token and the header it arrives on
     /// (docs/transport.md); `None` where the provider has no such contract.
     turn_routing: Option<(&'static str, TurnRoutingState)>,
+    /// The subscription-window snapshot (`api/plan.rs`), on the provider that
+    /// reports one. Read on every status: the 429 that ends a window carries it.
+    plan: Option<PlanState>,
 }
 
 impl ClientHandler for UpstreamStatusHandler {
@@ -156,6 +160,16 @@ impl ClientHandler for UpstreamStatusHandler {
         let Some(status) = conn.status() else {
             return Ok(());
         };
+        if let Some(cell) = &self.plan {
+            let headers = conn.response_headers();
+            let observed_at = crate::log::Timestamp::now().0;
+            if let Some(snapshot) = plan_from_headers(
+                |name| headers.get_str(name).map(str::to_string),
+                observed_at,
+            ) {
+                *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(snapshot);
+            }
+        }
         if status.is_success() {
             clear_upstream_failure(&self.failure);
             // First token of the turn wins: the backend issues it at turn start and
@@ -267,6 +281,10 @@ pub struct Client {
     /// provider has no such contract, or on a client whose every request is its
     /// own conversation (the spotter's), which must not replay one.
     turn_routing: Option<TurnRoutingState>,
+    /// The latest subscription-window snapshot (`api/plan.rs`), shared with the
+    /// response handler that fills it and read by the daemon's `usage` topic.
+    /// Allocated for every client; only the Codex arm's handler ever writes it.
+    plan: PlanState,
 }
 
 impl Client {
@@ -294,6 +312,7 @@ impl Client {
             .provider
             .turn_routing_header()
             .map(|_| turn_routing_state());
+        let plan = plan_state();
         let retry = RetryHandler::default()
             // Messages POSTs are replay-safe: an unsuccessful open produced no
             // assistant entry or provider-side completion.
@@ -345,6 +364,10 @@ impl Client {
                         .provider
                         .turn_routing_header()
                         .zip(turn_routing.as_ref().map(Arc::clone)),
+                    plan: endpoint
+                        .provider
+                        .reports_plan_windows()
+                        .then(|| Arc::clone(&plan)),
                 },
             )),
             endpoint,
@@ -363,7 +386,14 @@ impl Client {
             upstream_retry: upstream_retry_state(),
             upstream_attempts,
             turn_routing,
+            plan,
         }
+    }
+
+    /// Clone the subscription-window cell the daemon publishes as `usage.plan`
+    /// (docs/transport.md).
+    pub fn plan_state(&self) -> PlanState {
+        Arc::clone(&self.plan)
     }
 
     /// A client whose every request is its own conversation (the spotter's): it

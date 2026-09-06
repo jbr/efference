@@ -2787,3 +2787,147 @@ async fn a_terminal_429_body_is_answered_once() {
     .await;
     assert_eq!(terminal, 1, "an exhausted plan is answered once");
 }
+
+/// The Codex backend's plan windows are read off every response, a 429 included,
+/// and a response that carries none leaves the last snapshot standing
+/// (docs/transport.md). Three connections: a 200 with both windows, a 200 with
+/// none, and a 429 that moves the primary window.
+#[tokio::test]
+async fn codex_plan_windows_are_read_off_every_response_and_retained_when_absent() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let responses = [
+            (
+                "200 OK",
+                "x-codex-plan-type: plus\r\nx-codex-primary-used-percent: 12\r\n\
+                 x-codex-primary-window-minutes: 300\r\nx-codex-primary-reset-at: 1788677725\r\n\
+                 x-codex-secondary-used-percent: 19\r\nx-codex-secondary-window-minutes: 10080\r\n\
+                 x-codex-secondary-reset-at: 1789180313\r\n",
+            ),
+            ("200 OK", ""),
+            (
+                "429 Too Many Requests",
+                "x-codex-plan-type: plus\r\nx-codex-primary-used-percent: 100\r\n\
+                 x-codex-primary-window-minutes: 300\r\nx-codex-primary-reset-at: 1788744444\r\n",
+            ),
+        ];
+        for (status, plan_headers) in responses {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut buf = vec![0u8; 65536];
+            let _ = sock.read(&mut buf).unwrap();
+            let body = if status.starts_with("200") {
+                "event: response.completed\ndata: {\"type\":\"response.completed\",\
+                 \"response\":{\"id\":\"r\",\"status\":\"completed\",\"output\":[],\
+                 \"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"
+                    .to_string()
+            } else {
+                r#"{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","resets_in_seconds":15805}}"#.to_string()
+            };
+            sock.write_all(
+                format!(
+                    "HTTP/1.1 {status}\r\ncontent-type: text/event-stream\r\n{plan_headers}\
+                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            sock.flush().unwrap();
+        }
+    });
+
+    let endpoint = Endpoint {
+        provider: Provider::OpenAICodex,
+        url: format!("http://{addr}/backend-api/codex/responses"),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+    };
+    let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
+    let plan = client.plan_state();
+    assert!(plan.lock().unwrap().is_none());
+
+    client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .unwrap();
+    let first = plan
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("read off the first response");
+    assert_eq!(first.plan_type.as_deref(), Some("plus"));
+    let primary = first.primary.as_ref().unwrap();
+    assert_eq!(primary.used_percent, 12.0);
+    assert_eq!(primary.window_minutes, Some(300));
+    assert_eq!(primary.resets_at, Some(1_788_677_725_000));
+    assert_eq!(first.secondary.as_ref().unwrap().used_percent, 19.0);
+
+    client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(
+        plan.lock().unwrap().clone(),
+        Some(first.clone()),
+        "a response without plan headers retains the last snapshot"
+    );
+
+    let refused = client.complete(&[], &[], ToolChoice::auto(), |_| {}).await;
+    assert!(refused.is_err(), "the terminal 429 is not retried");
+    server.join().unwrap();
+    let last = plan.lock().unwrap().clone().unwrap();
+    assert_eq!(last.primary.as_ref().unwrap().used_percent, 100.0);
+    assert_eq!(
+        last.primary.as_ref().unwrap().resets_at,
+        Some(1_788_744_444_000)
+    );
+    assert!(
+        last.secondary.is_none(),
+        "a response naming only one window replaces the whole snapshot"
+    );
+}
+
+/// A client on a provider without plan headers never fills the cell, whatever
+/// the response says.
+#[tokio::test]
+async fn plan_windows_are_ignored_off_the_codex_backend() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut sock, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 8192];
+        let _ = sock.read(&mut buf);
+        let body = "event: message_start\ndata: {\"message\":{\"id\":\"gen-1\",\
+                    \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
+                    event: data\ndata: [DONE]\n\n";
+        sock.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                 x-codex-plan-type: plus\r\nx-codex-primary-used-percent: 50\r\n\
+                 connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+    });
+    let endpoint = Endpoint {
+        provider: Provider::OpenRouter,
+        url: format!("http://{addr}/api/v1/messages"),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+    };
+    let client = Client::new(endpoint, "m", "sys", None);
+    let _ = client.complete(&[], &[], ToolChoice::auto(), |_| {}).await;
+    server.join().unwrap();
+    assert!(client.plan_state().lock().unwrap().is_none());
+}

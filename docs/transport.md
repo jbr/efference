@@ -615,8 +615,15 @@ The Codex backend streams with **no `content-type` header** (verified with curl,
 2026-09-06); trillium-client 0.9.19's `into_sse` accepts an absent header and
 rejects only a present non-`text/event-stream` one. Each response also carries
 `x-codex-*` headers naming the plan, the 5-hour and 7-day usage windows as
-percentages, and their reset times — not read yet (backlog:
-openai-provider/codex-plan-state.md).
+percentages, and their reset times. `api/plan.rs` reads them off every response
+the status handler sees — a 429 included, since the response that ends a window
+is the one that most wants reading — into a cell the daemon publishes as
+`usage.plan` (control-api.md): the plan type and each window's used percentage,
+length, and reset as absolute millis. A response carrying none of the headers
+retains the previous snapshot; one carrying any replaces it whole. The snapshot
+is operational state, not a record: it never enters the log, so the captured-
+header allowlist and the masker are not involved, and a resumed session starts
+with `null` until its first Codex response.
 
 **Turn routing on the Codex backend.** Each response carries an `x-codex-turn-state`
 header: an opaque token the backend issues at the start of a user turn and expects

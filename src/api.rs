@@ -328,6 +328,7 @@ mod client;
 mod diagnostics;
 mod endpoint;
 pub(crate) mod failure;
+pub(crate) mod plan;
 mod provider;
 mod render;
 mod reservation;
@@ -343,6 +344,7 @@ pub use diagnostics::{
 };
 pub use endpoint::{Endpoint, sticky_session_id};
 pub use failure::FailureClass;
+pub use plan::{PlanSnapshot, PlanState, PlanWindow, plan_state};
 pub use provider::{
     ModelCapabilities, OUTPUT_FLOOR, PromptCachePolicy, Provider, ResponsesProfile, WireDialect,
     openai_model_capabilities,

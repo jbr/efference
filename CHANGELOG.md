@@ -7,6 +7,9 @@ behind a change, see [`journal/`](journal/).
 
 ## [Unreleased]
 
+### Added
+- **`usage.plan` publishes the Codex subscription windows** (docs/control-api.md): the plan type and the 5-hour and 7-day windows' used percentage, length, and reset instant, read off every Codex response including the 429 that ends a window; null on other providers.
+
 ### Fixed
 - **A quota, plan, credential, or invalid-request failure stalls on the first attempt** (docs/transport.md): the provider's error name is classed as terminal or transient, and a terminal one — inside the stream or as the Codex backend's `usage_limit_reached` 429 — stops the trajectory at once with `stall.reason: upstream_refused` instead of spending the twelve-attempt abort schedule on the same answer.
 - **Codex requests replay the backend's `x-codex-turn-state` sticky-routing token** (docs/transport.md): the header is captured from the first response of a user turn, sent on every later request of that turn including fork peeks, and dropped at the next turn, as Codex CLI does; a session that omitted it paid for its prefix repeatedly as the cache missed. Requests also carry the `x-codex-routing-hint` model hint.
