@@ -1415,6 +1415,7 @@ fn request_omits_temperature_when_none() {
         tools: &[],
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Disabled,
+        reasoning: None,
         output_config: None,
         temperature: None,
         upstream: None,
@@ -1441,6 +1442,7 @@ fn request_includes_temperature_when_set() {
         tools: &[],
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Disabled,
+        reasoning: None,
         output_config: None,
         temperature: Some(0.7),
         upstream: None,
@@ -1493,6 +1495,7 @@ fn request_envelope_matches_expected_wire_bytes() {
         tools: &tools,
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Disabled,
+        reasoning: None,
         output_config: None,
         temperature: Some(0.7),
         upstream: None,
@@ -1544,6 +1547,7 @@ fn with_effort_envelope_matches_expected_wire_bytes() {
         tools: &tools,
         tool_choice: ToolChoice::auto(),
         thinking: THINKING_ADAPTIVE,
+        reasoning: None,
         output_config: Some(OutputConfig {
             effort: "xhigh".to_string(),
         }),
@@ -1696,6 +1700,7 @@ fn openrouter_envelope_carries_the_prompt_cache_key() {
         tools: &[],
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Omit,
+        reasoning: None,
         output_config: None,
         temperature: None,
         upstream: Some(&pin),
@@ -1934,6 +1939,7 @@ fn request_envelope_omits_unset_fields_entirely() {
         tools: &[],
         tool_choice: ToolChoice::auto(),
         thinking: Thinking::Omit,
+        reasoning: None,
         output_config: None,
         temperature: None,
         upstream: None,
@@ -2051,6 +2057,7 @@ fn a_pinned_upstream_renders_as_the_provider_object() {
             tools: &tools,
             tool_choice: ToolChoice::auto(),
             thinking: Thinking::Omit,
+            reasoning: None,
             output_config: None,
             temperature: None,
             upstream,
@@ -3276,4 +3283,32 @@ fn thinking_off_switch_disables_claude_and_omits_foreign() {
         Thinking::for_request("claude-fable-5", &auto, false, false),
         Thinking::Adaptive { .. }
     ));
+}
+
+/// `without_thinking` reaches a foreign model on OpenRouter as `reasoning.enabled:
+/// false`, since `thinking` is omitted there; a Claude model gets `thinking:
+/// disabled` and no `reasoning`; Anthropic never sees the field; and a client
+/// that never asked sends nothing (docs/redaction-fork.md).
+#[test]
+fn thinking_off_reaches_a_foreign_openrouter_model_as_reasoning_disabled() {
+    use super::thinking::Thinking;
+    let openrouter =
+        Endpoint::resolve(Some("openrouter".into()), Some("sk-or-v1-abc".into()), None).unwrap();
+    let anthropic = Endpoint::resolve(None, None, Some("sk-ant-xyz".into())).unwrap();
+    let auto = ToolChoice::auto();
+    let field = |client: &Client| {
+        let thinking = Thinking::for_request(client.model(), &auto, false, client.thinking_off);
+        client
+            .reasoning_off(thinking)
+            .map(|r| serde_json::to_string(&r).unwrap())
+    };
+    let foreign = Client::new(openrouter.clone(), "ibm/granite", "sys", None).without_thinking();
+    assert_eq!(field(&foreign).as_deref(), Some(r#"{"enabled":false}"#));
+    let claude =
+        Client::new(openrouter.clone(), "anthropic/claude-opus-5", "sys", None).without_thinking();
+    assert_eq!(field(&claude), None);
+    let direct = Client::new(anthropic, "claude-opus-5", "sys", None).without_thinking();
+    assert_eq!(field(&direct), None);
+    let unasked = Client::new(openrouter, "ibm/granite", "sys", None);
+    assert_eq!(field(&unasked), None);
 }

@@ -241,7 +241,7 @@ pub struct Client {
     /// discarded with the tail and costs latency and tokens on every gate. Feeds
     /// `Thinking::for_request` on Messages; on Responses it is subsumed by
     /// `model_reasoning`, which that dialect's `reasoning` object already gates on.
-    thinking_off: bool,
+    pub(super) thinking_off: bool,
     /// The per-turn output cap. Defaults to the pre-reasoning-era 4096;
     /// [`Self::with_max_output`] raises it to the model's reported cap — a
     /// reasoning model's thinking bills against this budget, and a long think
@@ -535,6 +535,15 @@ impl Client {
         self
     }
 
+    /// The `reasoning` field a request carries: OpenRouter's switch, off, and only
+    /// where `thinking` says nothing — a foreign model on OpenRouter gets that
+    /// field omitted, so the switch this client asked for has to be said in
+    /// OpenRouter's own word. `None` everywhere else, which serializes nothing.
+    pub(super) fn reasoning_off(&self, thinking: Thinking) -> Option<ReasoningOff> {
+        (self.thinking_off && thinking.is_omit() && self.endpoint.provider == Provider::OpenRouter)
+            .then_some(ReasoningOff { enabled: false })
+    }
+
     /// Send every request with thinking off, whatever the model family's default
     /// (docs/redaction-fork.md): the separate-model fork peek's default. The
     /// keepalive already sends thinking off, so this changes only `complete`.
@@ -644,18 +653,20 @@ impl Client {
         let mut events = loop {
             let body = match &encoded {
                 Encoded::Messages(messages) => {
+                    let thinking = Thinking::for_request(
+                        &self.model,
+                        &tool_choice,
+                        self.model_reasoning,
+                        self.thinking_off,
+                    );
                     let request = Request {
                         model: &self.model,
                         max_tokens,
                         system: &self.system,
                         tools,
                         tool_choice,
-                        thinking: Thinking::for_request(
-                            &self.model,
-                            &tool_choice,
-                            self.model_reasoning,
-                            self.thinking_off,
-                        ),
+                        thinking,
+                        reasoning: self.reasoning_off(thinking),
                         output_config: self.effort.clone().map(|effort| OutputConfig { effort }),
                         temperature: self
                             .temperature
@@ -981,6 +992,7 @@ impl Client {
             tools,
             tool_choice,
             thinking: Thinking::for_keepalive(&self.model),
+            reasoning: None,
             // No effort: this ping sends thinking disabled/omitted (`max_tokens: 0`
             // rejects thinking-on), and `xhigh`/`max` with thinking off is a 400.
             // Its envelope therefore differs from a turn's by this field whenever a

@@ -20,7 +20,7 @@ use clap::{Parser, Subcommand};
 use efference::api::Client;
 use efference::client::Client as ControlClient;
 use efference::daemon;
-use efference::distill::ForkPeek;
+use efference::distill::{ForkPeek, PEEK_MAX_OUTPUT};
 use efference::persist::Log;
 use efference::spotter::ForkSpot;
 #[cfg(feature = "dev")]
@@ -44,6 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             spotter_model,
             triage_model,
             triage_thinking,
+            triage_auto_choice,
             config,
             temperature,
             effort,
@@ -67,6 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 serve::TriageFlags {
                     model: triage_model,
                     thinking: triage_thinking,
+                    auto_choice: triage_auto_choice,
                 },
                 config,
                 temperature,

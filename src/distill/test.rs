@@ -1427,4 +1427,11 @@ fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
         .map(|t| t["name"].as_str().unwrap())
         .collect();
     assert_eq!(names, ["retain", "triage"]);
+
+    // The own peek forces the asked-for tool; the shared peek never does, and the
+    // knob turns the own one back to `auto`.
+    assert_eq!(shared.choice(RETAIN).forced(), None);
+    assert_eq!(own.choice(RETAIN).forced(), Some("retain"));
+    assert_eq!(own.choice(TRIAGE).forced(), Some("triage"));
+    assert_eq!(own.with_auto_choice().choice(RETAIN).forced(), None);
 }

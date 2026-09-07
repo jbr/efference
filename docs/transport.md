@@ -135,7 +135,8 @@ the shared envelope ([redaction-fork.md](redaction-fork.md)): identical
 cache — so both may think (the fork's thinking is discarded with its throwaway
 tail); the spotter still forces its `spot` tool → thinking off (`disabled` on
 Claude, omitted foreign); a separate-model peek sends thinking off the same way
-unless `--triage-thinking` (`Client::without_thinking`,
+unless `--triage-thinking` (`Client::without_thinking` — on OpenRouter a foreign model
+additionally gets `reasoning: {enabled: false}`, the only spelling that reaches it;
 [redaction-fork.md](redaction-fork.md)); the keepalive follows the same family split
 independently (`max_tokens: 0` rejects thinking-on). Toggling thinking
 keeps the tools+system cache tier valid (see

@@ -146,6 +146,7 @@ fn resolve_env_values(
 pub(crate) struct TriageFlags {
     pub(crate) model: Option<String>,
     pub(crate) thinking: bool,
+    pub(crate) auto_choice: bool,
 }
 
 #[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
@@ -582,9 +583,10 @@ pub(crate) async fn serve(
                 }
             };
             eprintln!(
-                "triage: {triage_model} · context {} tokens · thinking {}",
+                "triage: {triage_model} · context {} tokens · thinking {} · tool choice {}",
                 triage_caps.context_length,
-                if triage.thinking { "on" } else { "off" }
+                if triage.thinking { "on" } else { "off" },
+                if triage.auto_choice { "auto" } else { "forced" }
             );
             let triage_system = env_policy.mask(&efference::env::triage_system_prompt(
                 triage_model,
@@ -600,10 +602,20 @@ pub(crate) async fn serve(
             } else {
                 triage_client.without_thinking()
             };
-            if let Some(cap) = triage_caps.max_output_tokens {
-                triage_client = triage_client.with_max_output(cap);
+            // A verdict is one small call: cap the reservation at the peek's size,
+            // not the model's, so it never crowds the window (`PEEK_MAX_OUTPUT`).
+            let cap = triage_caps
+                .max_output_tokens
+                .map_or(PEEK_MAX_OUTPUT, |cap| cap.min(PEEK_MAX_OUTPUT));
+            triage_client = triage_client
+                .with_max_output(cap)
+                .with_context_window(triage_caps.context_length);
+            let peek = ForkPeek::own(triage_client);
+            if triage.auto_choice {
+                peek.with_auto_choice()
+            } else {
+                peek
             }
-            ForkPeek::own(triage_client.with_context_window(triage_caps.context_length))
         }
         Some(_) => {
             eprintln!("triage: {model} (same as the agent; shared peek)");

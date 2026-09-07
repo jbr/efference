@@ -240,6 +240,11 @@ pub(crate) enum Command {
         /// meaningful with --triage-model.
         #[arg(long)]
         triage_thinking: bool,
+        /// Send the triage model's ask under `tool_choice: auto` instead of forcing the
+        /// peek tool. Forced is the default: an unforced small model answers the ask
+        /// with an invented work call. Only meaningful with --triage-model.
+        #[arg(long)]
+        triage_auto_choice: bool,
         /// Path to the config file. Defaults to `efference.toml` in the current directory.
         ///
         /// With no file present the built-in default config is used. An explicit path that doesn't exist is an error. The resolved path is

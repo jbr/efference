@@ -299,7 +299,19 @@ pub struct ForkPeek {
 struct OwnPeek {
     client: Client,
     tools: Vec<Value>,
+    /// Force the asked-for tool (`tool_choice: {type: tool}`) rather than `auto`.
+    /// The default: the first separate-model run opened five of eight gates with an
+    /// invented work call (backlog/distiller-experiment.md), and forcing removes that
+    /// path by construction. `auto` is the knob, kept for the ablation and for a
+    /// Claude triage model that should think (a forced choice disables thinking).
+    force_choice: bool,
 }
+
+/// The separate-model peek's output cap (docs/redaction-fork.md): a verdict is one
+/// small tool call, so reserving the model's whole output cap against the window
+/// only brings the overflow forward — a 65k cap on a 131k model overran at a 66k
+/// prompt. Generous enough for a thinking triage model's reasoning.
+pub const PEEK_MAX_OUTPUT: u64 = 16_384;
 
 impl ForkPeek {
     /// The shared-lineage peek: the agent's client and `tools[]`, borrowed per call.
@@ -315,8 +327,18 @@ impl ForkPeek {
             own: Some(OwnPeek {
                 client,
                 tools: vec![retain_tool(), triage_tool()],
+                force_choice: true,
             }),
         }
+    }
+
+    /// Send the own peek's ask under `tool_choice: auto` instead of forcing the tool
+    /// — the ablation knob. No effect on the shared peek, which is always `auto`.
+    pub fn with_auto_choice(mut self) -> Self {
+        if let Some(own) = &mut self.own {
+            own.force_choice = false;
+        }
+        self
     }
 
     /// Whether the peek runs on its own model.
@@ -347,6 +369,16 @@ impl ForkPeek {
     /// The `tools[]` a peek sends: the peek-only array when own, else the agent's.
     fn tools<'a>(&'a self, agent: &'a [Value]) -> &'a [Value] {
         self.own.as_ref().map_or(agent, |o| o.tools.as_slice())
+    }
+
+    /// The `tool_choice` a peek sends for `tool`: forced on the own peek unless
+    /// [`Self::with_auto_choice`]; always `auto` on the shared peek, whose envelope
+    /// must match the agent turn's (docs/redaction-fork.md).
+    fn choice(&self, tool: &'static str) -> ToolChoice {
+        match &self.own {
+            Some(own) if own.force_choice => ToolChoice::force(tool),
+            _ => ToolChoice::auto(),
+        }
     }
 }
 
@@ -380,12 +412,13 @@ async fn peek_with_retries<T>(
     client: &Client,
     mut messages: Vec<WireTurn>,
     tools: &[Value],
-    tool: &str,
+    choice: ToolChoice,
+    tool: &'static str,
     parse: impl Fn(&Completion) -> Result<T, String>,
     record: &mut PeekRecord,
 ) -> Result<T, String> {
     for attempt in 1..=PEEK_ATTEMPTS {
-        let completion = peek_completion(client, &messages, tools, record).await?;
+        let completion = peek_completion(client, &messages, tools, choice, record).await?;
         record.thinking.extend(peek_thinking(&completion.assistant));
         let parsed = parse(&completion);
         match parsed {
@@ -435,16 +468,14 @@ async fn peek_completion(
     client: &Client,
     messages: &[WireTurn],
     tools: &[Value],
+    choice: ToolChoice,
     record: &mut PeekRecord,
 ) -> Result<Completion, String> {
     let mut aborted: u32 = 0;
     loop {
         // No-op sink: the fork peek's triage tokens are internal and must never surface
         // on the control stream — only the main thread's prose streams.
-        let completion = match client
-            .complete(messages, tools, ToolChoice::auto(), |_| {})
-            .await
-        {
+        let completion = match client.complete(messages, tools, choice, |_| {}).await {
             Ok(completion) => completion,
             Err(e) => {
                 client.upstream_retry().clear(RetrySurface::Peek);
@@ -913,6 +944,7 @@ impl ForkPeek {
             self.client(agent),
             messages,
             self.tools(agent_tools),
+            self.choice(RETAIN),
             RETAIN,
             |c| {
                 let verdict = parse_retain(c, &offered).ok_or_else(|| unusable(c, RETAIN))?;
@@ -1041,6 +1073,7 @@ impl ForkPeek {
             self.client(agent),
             messages,
             self.tools(agent_tools),
+            self.choice(TRIAGE),
             TRIAGE,
             |c| parse_dispositions(c, TRIAGE).ok_or_else(|| unusable(c, TRIAGE)),
             &mut record,

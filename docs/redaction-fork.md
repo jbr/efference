@@ -157,12 +157,20 @@ drops the parts of it that only served that:
   the agent, named by model, and are to be read as the model's own working context,
   then the session's `[context]` block verbatim. No curation preamble, role section,
   or unmounted list — those describe the agent's perimeter.
-- **A `tools[]` of only `retain` and `triage`**, so there is no work tool to call
-  instead. `tool_choice` stays `auto`; forcing it is a separate knob to measure.
+- **A `tools[]` of only `retain` and `triage`**, and the asked-for tool **forced**
+  (`tool_choice: {type: tool}`), so a wrong-tool answer cannot happen. The first run
+  under `auto` opened five of eight gates with an invented `read` or `bash`;
+  `--triage-auto-choice` restores `auto` as the ablation, and is what a Claude
+  triage model needs if it is to think.
 - **Its own sticky key** (`Endpoint::for_triage`, a `-triage` suffix), for the same
   reason as the spotter's ([transport.md](transport.md)).
 - **Thinking off** (`Client::without_thinking`) unless `--triage-thinking`: the
   peek's reasoning is discarded with the tail, so it is latency and tokens per gate.
+  On OpenRouter a foreign model gets `reasoning: {enabled: false}`, since the
+  `thinking` field is omitted for it and OpenRouter's default is on.
+- **A peek-sized output cap** (`PEEK_MAX_OUTPUT`, 16k, or the model's cap if
+  smaller): a verdict is one small call, and reserving the model's whole cap against
+  the window brought the overflow forward to a 66k prompt on a 131k model.
 - **None of the agent client's** effort, temperature, or upstream pin; its own
   capability lookup, so its output cap and context window are its own.
 

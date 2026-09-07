@@ -83,6 +83,14 @@ struct Request<'a> {
     /// cached prefix's way.
     #[serde(skip_serializing_if = "Thinking::is_omit")]
     thinking: Thinking,
+    /// OpenRouter's normalized reasoning switch, sent as `{"enabled": false}` only
+    /// by a client built `without_thinking` on OpenRouter for a foreign model
+    /// (docs/redaction-fork.md, docs/transport.md): `thinking` is omitted there
+    /// rather than `disabled`, and OpenRouter's default for a reasoning model is
+    /// on. A per-client constant, and `None` skips serialization, so no existing
+    /// session's bytes move.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning: Option<ReasoningOff>,
     /// How much effort the model spends on the turn (docs/transport.md) — the
     /// level axis beside `thinking`'s type axis. `None` (no `--effort`, no
     /// `[transport] effort`) skips serialization entirely, so a session that
@@ -116,6 +124,13 @@ struct Request<'a> {
     /// this struct is pinned along with the rest of the envelope by
     /// `request_envelope_matches_expected_wire_bytes`.
     stream: bool,
+}
+
+/// The one shape [`Request::reasoning`] takes: OpenRouter's `reasoning.enabled`
+/// turned off.
+#[derive(Serialize, Clone, Copy)]
+struct ReasoningOff {
+    enabled: bool,
 }
 
 const THINKING_DISABLED: Thinking = Thinking::Disabled;
