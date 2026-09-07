@@ -42,6 +42,7 @@ pub fn model_capabilities(model: &str) -> Result<ModelCapabilities, Error> {
             prompt_cache: PromptCachePolicy::Explicit,
             supported_efforts: efforts(GPT_5_6_EFFORTS),
             default_effort: Some("medium".to_string()),
+            reasoning_mandatory: false,
         }),
         // From the model page (1,050,000 context, 128,000 max output, text and
         // image input, efforts low–max) and the Astra guide: no `none` effort,
@@ -55,6 +56,7 @@ pub fn model_capabilities(model: &str) -> Result<ModelCapabilities, Error> {
             prompt_cache: PromptCachePolicy::Explicit,
             supported_efforts: efforts(GPT_6_ASTRA_EFFORTS),
             default_effort: None,
+            reasoning_mandatory: false,
         }),
         _ => Err(format!(
             "OpenAI model {model:?} has no capability profile in this efference build; \

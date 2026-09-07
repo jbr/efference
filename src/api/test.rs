@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use super::assembler::ResponseMeta;
 use super::client::record_upstream_failure;
+use super::thinking::ThinkingOff;
 use super::thinking::is_recognized_adaptive_claude;
 use super::*;
 use crate::log::{FRAME_CAPTURE_CAP, is_captured_header};
@@ -255,7 +256,7 @@ fn thinking_matrix_never_disables_foreign_models() {
     let auto = ToolChoice::auto();
     let forced = ToolChoice::force("retain");
     let m = |model: &str, choice: &ToolChoice, reasoning: bool| {
-        Thinking::for_request(model, choice, reasoning, false)
+        Thinking::for_request(model, choice, reasoning, ThinkingOff::No)
     };
     assert!(matches!(
         m("claude-fable-5", &auto, false),
@@ -361,7 +362,8 @@ fn openrouter_capabilities_url_requires_author_slug() {
 }
 /// The OpenRouter model entry's `reasoning` block is the effort metadata.
 /// Live shape (2026-09-04): GLM 5.3 flash names its levels and its default;
-/// the block's other fields (`mandatory`, `default_enabled`) are ignored.
+/// `default_enabled` is ignored; `mandatory` is read (qwen/qwen3.8-flash reports
+/// `false`, glm-5.3-flash `true`, 2026-09-06).
 #[test]
 fn openrouter_model_entry_yields_effort_levels() {
     let body = r#"{"data": {"id": "z-ai/glm-5.3-flash", "reasoning": {
@@ -374,6 +376,8 @@ fn openrouter_model_entry_yields_effort_levels() {
         Some(vec!["max".into(), "high".into(), "low".into()])
     );
     assert_eq!(efforts.default.as_deref(), Some("max"));
+    // `mandatory` decides how a client says thinking-off (docs/transport.md).
+    assert!(efforts.mandatory);
 }
 
 /// An absent block — a non-reasoning model (live: `openai/gpt-4.1-mini`,
@@ -388,6 +392,7 @@ fn openrouter_model_entry_declaring_nothing_reads_as_none() {
         .unwrap();
     assert_eq!(absent.supported, None);
     assert_eq!(absent.default, None);
+    assert!(!absent.mandatory);
 
     let empty = Provider::OpenRouter
         .parse_model_entry(
@@ -1660,6 +1665,7 @@ fn caps_with_effort_levels(
         prompt_cache: PromptCachePolicy::Explicit,
         supported_efforts: levels.map(|l| l.iter().map(|s| s.to_string()).collect()),
         default_effort: default.map(String::from),
+        reasoning_mandatory: false,
     }
 }
 
@@ -3264,23 +3270,28 @@ fn triage_endpoint_takes_a_distinct_key_under_the_cap() {
     assert!(triage.len() <= 256);
 }
 
-/// `Client::without_thinking` takes the model family's non-adaptive arm on an
-/// `auto` turn: explicit `disabled` on Claude, the field omitted for a foreign
-/// model — even one the lookup granted reasoning (docs/redaction-fork.md).
+/// `Client::without_thinking` on an `auto` turn: explicit `disabled` on Claude
+/// either way; a foreign model gets the explicit form when its reasoning is
+/// optional and the field omitted when it is mandatory — even one the lookup
+/// granted reasoning (docs/redaction-fork.md, docs/transport.md).
 #[test]
-fn thinking_off_switch_disables_claude_and_omits_foreign() {
+fn thinking_off_switch_disables_claude_and_optional_foreign_and_omits_mandatory() {
     use super::thinking::Thinking;
     let auto = ToolChoice::auto();
     assert!(matches!(
-        Thinking::for_request("claude-fable-5", &auto, false, true),
+        Thinking::for_request("claude-fable-5", &auto, false, ThinkingOff::Omit),
         Thinking::Disabled
     ));
     assert!(matches!(
-        Thinking::for_request("stealth/ox-alpha", &auto, true, true),
+        Thinking::for_request("qwen/qwen3.8-flash", &auto, true, ThinkingOff::Disable),
+        Thinking::Disabled
+    ));
+    assert!(matches!(
+        Thinking::for_request("stealth/ox-alpha", &auto, true, ThinkingOff::Omit),
         Thinking::Omit
     ));
     assert!(matches!(
-        Thinking::for_request("claude-fable-5", &auto, false, false),
+        Thinking::for_request("claude-fable-5", &auto, false, ThinkingOff::No),
         Thinking::Adaptive { .. }
     ));
 }
@@ -3302,12 +3313,18 @@ fn thinking_off_reaches_a_foreign_openrouter_model_as_reasoning_disabled() {
             .reasoning_off(thinking)
             .map(|r| serde_json::to_string(&r).unwrap())
     };
-    let foreign = Client::new(openrouter.clone(), "ibm/granite", "sys", None).without_thinking();
-    assert_eq!(field(&foreign).as_deref(), Some(r#"{"enabled":false}"#));
-    let claude =
-        Client::new(openrouter.clone(), "anthropic/claude-opus-5", "sys", None).without_thinking();
+    // Mandatory reasoning: `thinking` is omitted, so OpenRouter's own switch rides.
+    let mandatory =
+        Client::new(openrouter.clone(), "ibm/granite", "sys", None).without_thinking(true);
+    assert_eq!(field(&mandatory).as_deref(), Some(r#"{"enabled":false}"#));
+    // Optional reasoning: explicit `thinking: disabled` says it, nothing else needed.
+    let optional =
+        Client::new(openrouter.clone(), "qwen/qwen3.8-flash", "sys", None).without_thinking(false);
+    assert_eq!(field(&optional), None);
+    let claude = Client::new(openrouter.clone(), "anthropic/claude-opus-5", "sys", None)
+        .without_thinking(false);
     assert_eq!(field(&claude), None);
-    let direct = Client::new(anthropic, "claude-opus-5", "sys", None).without_thinking();
+    let direct = Client::new(anthropic, "claude-opus-5", "sys", None).without_thinking(false);
     assert_eq!(field(&direct), None);
     let unasked = Client::new(openrouter, "ibm/granite", "sys", None);
     assert_eq!(field(&unasked), None);

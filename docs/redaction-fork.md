@@ -164,10 +164,14 @@ drops the parts of it that only served that:
   triage model needs if it is to think.
 - **Its own sticky key** (`Endpoint::for_triage`, a `-triage` suffix), for the same
   reason as the spotter's ([transport.md](transport.md)).
-- **Thinking off** (`Client::without_thinking`) unless `--triage-thinking`: the
-  peek's reasoning is discarded with the tail, so it is latency and tokens per gate.
-  On OpenRouter a foreign model gets `reasoning: {enabled: false}`, since the
-  `thinking` field is omitted for it and OpenRouter's default is on.
+- **Thinking off** (`Client::without_thinking`) unless `--triage-thinking` or
+  `--triage-effort`: the peek's reasoning is discarded with the tail, so it is latency
+  and tokens per gate. How "off" is spelled follows the model's metadata
+  (`ModelCapabilities::reasoning_mandatory`, [transport.md](transport.md)): a model
+  whose reasoning is optional gets the explicit `thinking: disabled`; one whose
+  reasoning is mandatory has the field omitted and, on OpenRouter, `reasoning:
+  {enabled: false}` beside it. `--triage-effort <level>` turns the model down instead
+  of off, validated against its declared levels like `--effort`.
 - **A peek-sized output cap** (`PEEK_MAX_OUTPUT`, 16k, or the model's cap if
   smaller): a verdict is one small call, and reserving the model's whole cap against
   the window brought the overflow forward to a 66k prompt on a 131k model.

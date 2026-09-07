@@ -38,15 +38,16 @@ impl Thinking {
         model: &str,
         tool_choice: &ToolChoice,
         model_reasoning: bool,
-        thinking_off: bool,
+        off: ThinkingOff,
     ) -> Self {
-        // `thinking_off` is the client-level switch (`Client::without_thinking`):
-        // it takes the non-adaptive arm the model family already has, so a Claude
-        // model sends explicit `disabled` and a foreign one omits the field.
-        let adaptive = !thinking_off && adaptive_on_auto(model, model_reasoning);
+        // `off` is the client-level switch (`Client::without_thinking`). Claude
+        // always takes explicit `disabled`; a foreign model takes it only when its
+        // reasoning is optional (`ThinkingOff::Disable`), since a mandatory-reasoning
+        // endpoint rejects the explicit form, and omits the field otherwise.
+        let adaptive = off == ThinkingOff::No && adaptive_on_auto(model, model_reasoning);
         match tool_choice.kind {
             "auto" if adaptive => THINKING_ADAPTIVE,
-            _ if is_claude_family(model) => THINKING_DISABLED,
+            _ if is_claude_family(model) || off == ThinkingOff::Disable => THINKING_DISABLED,
             _ => Thinking::Omit,
         }
     }
@@ -61,6 +62,19 @@ impl Thinking {
             Thinking::Omit
         }
     }
+}
+
+/// A client's request to send thinking off, and in which spelling
+/// (`Client::without_thinking`, docs/transport.md). `Disable` is the explicit
+/// `thinking: {type: disabled}`, right for Claude and for a foreign model whose
+/// reasoning is optional; `Omit` leaves the field off for a model whose reasoning
+/// is mandatory, where the explicit form is a 400 — OpenRouter's own
+/// `reasoning.enabled: false` is sent beside it there.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ThinkingOff {
+    No,
+    Disable,
+    Omit,
 }
 
 /// The `output_config` object (docs/transport.md) — present on the request only

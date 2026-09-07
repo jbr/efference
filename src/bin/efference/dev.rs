@@ -141,6 +141,9 @@ pub(crate) enum DevCommand {
         /// With --triage-model: `tool_choice: auto` instead of forcing the peek tool.
         #[arg(long)]
         triage_auto_choice: bool,
+        /// With --triage-model: its reasoning level (implies thinking on).
+        #[arg(long, value_name = "LEVEL")]
+        triage_effort: Option<String>,
         /// Write every compared result-draw as a JSON line to this file.
         #[arg(long)]
         out: Option<PathBuf>,
@@ -354,6 +357,7 @@ pub(crate) async fn run(
             triage_model,
             triage_thinking,
             triage_auto_choice,
+            triage_effort,
             out,
             table,
         } => {
@@ -361,6 +365,7 @@ pub(crate) async fn run(
                 model,
                 thinking: triage_thinking,
                 auto_choice: triage_auto_choice,
+                effort: triage_effort,
             });
             peek_replay::peek(
                 path, seq, repeat, limit, dry_run, &model, triage, out, table,

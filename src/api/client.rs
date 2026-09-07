@@ -13,6 +13,7 @@ use crate::api::assembler::ResponseMeta;
 use crate::api::failure::{FailureClass, classify_body};
 use crate::api::plan::{PlanState, plan_from_headers, plan_state};
 use crate::api::responses::assembler::ResponsesAssembler;
+use crate::api::thinking::ThinkingOff;
 use crate::log::is_captured_header;
 use crate::project::{WireTurn, encode_messages};
 
@@ -241,7 +242,7 @@ pub struct Client {
     /// discarded with the tail and costs latency and tokens on every gate. Feeds
     /// `Thinking::for_request` on Messages; on Responses it is subsumed by
     /// `model_reasoning`, which that dialect's `reasoning` object already gates on.
-    pub(super) thinking_off: bool,
+    pub(super) thinking_off: ThinkingOff,
     /// The per-turn output cap. Defaults to the pre-reasoning-era 4096;
     /// [`Self::with_max_output`] raises it to the model's reported cap — a
     /// reasoning model's thinking bills against this budget, and a long think
@@ -381,7 +382,7 @@ impl Client {
             system: system.into(),
             temperature,
             model_reasoning: false,
-            thinking_off: false,
+            thinking_off: ThinkingOff::No,
             max_tokens: MAX_TOKENS,
             context_length: None,
             reservation: reservation_state(),
@@ -540,15 +541,24 @@ impl Client {
     /// field omitted, so the switch this client asked for has to be said in
     /// OpenRouter's own word. `None` everywhere else, which serializes nothing.
     pub(super) fn reasoning_off(&self, thinking: Thinking) -> Option<ReasoningOff> {
-        (self.thinking_off && thinking.is_omit() && self.endpoint.provider == Provider::OpenRouter)
+        (self.thinking_off != ThinkingOff::No
+            && thinking.is_omit()
+            && self.endpoint.provider == Provider::OpenRouter)
             .then_some(ReasoningOff { enabled: false })
     }
 
     /// Send every request with thinking off, whatever the model family's default
     /// (docs/redaction-fork.md): the separate-model fork peek's default. The
     /// keepalive already sends thinking off, so this changes only `complete`.
-    pub fn without_thinking(mut self) -> Self {
-        self.thinking_off = true;
+    /// `reasoning_mandatory` is the capability lookup's answer
+    /// (`ModelCapabilities::reasoning_mandatory`): a model that can be told not to
+    /// reason gets the explicit `disabled`; one that cannot gets the field omitted.
+    pub fn without_thinking(mut self, reasoning_mandatory: bool) -> Self {
+        self.thinking_off = if reasoning_mandatory {
+            ThinkingOff::Omit
+        } else {
+            ThinkingOff::Disable
+        };
         self.model_reasoning = false;
         self
     }

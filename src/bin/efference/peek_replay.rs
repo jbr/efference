@@ -436,7 +436,11 @@ pub(crate) async fn peek(
                 "triage: {} · context {} tokens · thinking {} · tool choice {} · reference: {agent_model}'s own verdicts",
                 t.model,
                 caps.context_length,
-                if t.thinking { "on" } else { "off" },
+                match (&t.effort, t.thinking) {
+                    (Some(effort), _) => format!("on, effort {effort}"),
+                    (None, true) => "on".into(),
+                    (None, false) => "off".into(),
+                },
                 if t.auto_choice { "auto" } else { "forced" }
             );
             (peek, t.model.as_str())

@@ -463,6 +463,7 @@ impl Provider {
                     // unvalidated; the provider's own 400 is the feedback.
                     supported_efforts: None,
                     default_effort: None,
+                    reasoning_mandatory: false,
                 })
             }
             Self::OpenRouter => {
@@ -613,6 +614,7 @@ impl Provider {
                     // response said.
                     supported_efforts: None,
                     default_effort: None,
+                    reasoning_mandatory: false,
                 })
             }
         }
@@ -652,6 +654,8 @@ impl Provider {
                     supported_efforts: Option<Vec<String>>,
                     #[serde(default)]
                     default_effort: Option<String>,
+                    #[serde(default)]
+                    mandatory: Option<bool>,
                 }
                 let response: Response = serde_json::from_str(body)?;
                 let reasoning = response.data.reasoning.unwrap_or_default();
@@ -662,6 +666,7 @@ impl Provider {
                         .supported_efforts
                         .filter(|levels| !levels.is_empty()),
                     default: reasoning.default_effort,
+                    mandatory: reasoning.mandatory.unwrap_or(false),
                 })
             }
         }
@@ -690,6 +695,10 @@ fn openrouter_slug(model: &str) -> Result<(&str, &str), Error> {
 pub(super) struct EffortLevels {
     pub supported: Option<Vec<String>>,
     pub default: Option<String>,
+    /// The entry's `reasoning.mandatory`: the model cannot be asked not to
+    /// reason, so an explicit `thinking: disabled` is refused upstream
+    /// (`api::thinking`). Absent reads as optional.
+    pub mandatory: bool,
 }
 
 /// The smallest per-turn output budget worth routing to (docs/transport.md).
@@ -814,6 +823,12 @@ pub struct ModelCapabilities {
     /// effort is configured, which answers "what will the knob actually do"
     /// in one glance (docs/transport.md). Never sent. Anthropic: `None`.
     pub default_effort: Option<String>,
+    /// OpenRouter `reasoning.mandatory`: the model always reasons and refuses
+    /// an explicit `thinking: disabled` (docs/transport.md). Decides how a
+    /// client built `without_thinking` says so: explicit `disabled` for a model
+    /// whose reasoning is optional, the field omitted for one whose reasoning is
+    /// mandatory. `false` from every other source.
+    pub reasoning_mandatory: bool,
 }
 
 impl ModelCapabilities {
@@ -899,6 +914,7 @@ impl Endpoint {
                 })?;
             capabilities.supported_efforts = efforts.supported;
             capabilities.default_effort = efforts.default;
+            capabilities.reasoning_mandatory = efforts.mandatory;
         }
         Ok(capabilities)
     }

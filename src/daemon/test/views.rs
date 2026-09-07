@@ -238,6 +238,7 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
         prompt_cache: crate::api::PromptCachePolicy::Explicit,
         supported_efforts: None,
         default_effort: None,
+        reasoning_mandatory: false,
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["context"]["limit"], 200_000);
@@ -291,6 +292,7 @@ fn context_occupancy_ignores_side_channel_requests() {
         prompt_cache: crate::api::PromptCachePolicy::Explicit,
         supported_efforts: None,
         default_effort: None,
+        reasoning_mandatory: false,
     });
     let usage = |input, read| RequestUsage {
         id: None,

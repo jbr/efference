@@ -245,6 +245,11 @@ pub(crate) enum Command {
         /// with an invented work call. Only meaningful with --triage-model.
         #[arg(long)]
         triage_auto_choice: bool,
+        /// Reasoning level for the triage model, in its own vocabulary (validated like
+        /// --effort). Implies --triage-thinking: for a model that can be turned down
+        /// rather than off.
+        #[arg(long, value_name = "LEVEL")]
+        triage_effort: Option<String>,
         /// Path to the config file. Defaults to `efference.toml` in the current directory.
         ///
         /// With no file present the built-in default config is used. An explicit path that doesn't exist is an error. The resolved path is

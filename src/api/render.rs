@@ -1,6 +1,7 @@
 //! Human-readable renderings of an outbound request — the `wire` dev verb's output.
 
 use super::*;
+use crate::api::thinking::ThinkingOff;
 
 /// Render the full request envelope as pretty JSON — the dev `wire` view (the
 /// `efference dev wire` subcommand) of exactly what [`Client::complete`] POSTs for a
@@ -26,7 +27,7 @@ pub fn render_request_pretty(
         system,
         tools,
         tool_choice,
-        thinking: Thinking::for_request(model, &tool_choice, false, false),
+        thinking: Thinking::for_request(model, &tool_choice, false, ThinkingOff::No),
         reasoning: None,
         // The dev views render the shape a turn sends; the session's effort is a
         // boot-time value these helpers are not given, so they show none.
@@ -142,7 +143,7 @@ pub(super) fn request_value(
         system,
         tools,
         tool_choice,
-        thinking: Thinking::for_request(model, &tool_choice, false, false),
+        thinking: Thinking::for_request(model, &tool_choice, false, ThinkingOff::No),
         reasoning: None,
         // The dev views render the shape a turn sends; the session's effort is a
         // boot-time value these helpers are not given, so they show none.

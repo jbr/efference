@@ -15,6 +15,10 @@ pub struct TriageModel {
     pub thinking: bool,
     /// `--triage-auto-choice`: `tool_choice: auto` instead of forcing the peek tool.
     pub auto_choice: bool,
+    /// `--triage-effort`: the reasoning level, in the model's own vocabulary
+    /// (validated against its metadata like `--effort`). Implies thinking on: a
+    /// model that can be turned down rather than off is the case this serves.
+    pub effort: Option<String>,
 }
 
 impl ForkPeek {
@@ -40,13 +44,19 @@ impl ForkPeek {
                     endpoint.provider.name()
                 )
             })?;
+        if let Some(effort) = &triage.effort
+            && endpoint.provider.validates_effort_levels()
+        {
+            caps.check_effort(effort, &triage.model)?;
+        }
         let mut client = Client::new(endpoint.for_triage(), &triage.model, system, None)
             .with_stream_ceiling(stream_ceiling)
-            .with_prompt_cache(caps.prompt_cache);
-        client = if triage.thinking {
+            .with_prompt_cache(caps.prompt_cache)
+            .with_effort(triage.effort.clone());
+        client = if triage.thinking || triage.effort.is_some() {
             client.with_model_reasoning(caps.supports_reasoning)
         } else {
-            client.without_thinking()
+            client.without_thinking(caps.reasoning_mandatory)
         };
         // A verdict is one small call: cap the reservation at the peek's size, not
         // the model's, so it never crowds the window (`PEEK_MAX_OUTPUT`).
