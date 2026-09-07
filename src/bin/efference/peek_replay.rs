@@ -175,6 +175,10 @@ struct Compared {
     under: usize,
     reference_note: Option<String>,
     candidate_note: Option<String>,
+    /// Wall-clock seconds the draw took, request to verdict. The peek sits on the
+    /// critical path of every tool call, so this is one of the three axes beside
+    /// judgment and price.
+    seconds: f64,
     /// `retain(none)` against a reference that kept something — the shape of the
     /// "no content was shown" verdicts seen on a real read.
     phantom_none: bool,
@@ -208,7 +212,7 @@ fn keep_label(keep: &Keep) -> String {
 }
 
 /// Compare one draw's verdicts against the gate's recorded ones, result by result.
-fn compare(gate: &Gate, draw: usize, verdicts: &[ReplayVerdict]) -> Vec<Compared> {
+fn compare(gate: &Gate, draw: usize, verdicts: &[ReplayVerdict], seconds: f64) -> Vec<Compared> {
     let mut out = Vec::new();
     for ((call, raw), wire) in gate.calls.iter().zip(&gate.raws).zip(&gate.recorded) {
         let Some((reference, reference_note)) = recorded_keep(wire) else {
@@ -235,6 +239,7 @@ fn compare(gate: &Gate, draw: usize, verdicts: &[ReplayVerdict]) -> Vec<Compared
             under: r.difference(&c).count(),
             reference_note: reference_note.map(str::to_string),
             candidate_note: candidate.note.clone(),
+            seconds,
             phantom_none: matches!(candidate.keep, Keep::None) && !r.is_empty(),
         });
     }
@@ -457,6 +462,7 @@ pub(crate) async fn peek(
     // reported separately because "the model refused the ask" and "the response didn't
     // decode" are different defects.
     let mut transport_errors = 0usize;
+    let mut seconds_total = 0f64;
     // Gates whose recorded first attempt failed, and whose replays now all pass (and the
     // reverse) — the discordant pairs, which are what a paired comparison actually rests on.
     let (mut fixed, mut broke) = (0usize, 0usize);
@@ -477,6 +483,7 @@ pub(crate) async fn peek(
             // malformed JSON — and a model that sometimes fails to produce a parseable
             // response *is* part of what a cross-model comparison is measuring, so it is
             // recorded as a failed draw rather than hidden by aborting.
+            let started = std::time::Instant::now();
             let attempt = match peek
                 .attempt(
                     &client,
@@ -500,6 +507,8 @@ pub(crate) async fn peek(
                 }
             };
             draws += 1;
+            let seconds = started.elapsed().as_secs_f64();
+            seconds_total += seconds;
             cache_read += attempt.usage.usage.cache_read_input_tokens;
             out_tokens += attempt.usage.usage.output_tokens;
             prompt_tokens += attempt.usage.usage.input_tokens
@@ -518,7 +527,7 @@ pub(crate) async fn peek(
                 "" => "(no tool)".to_string(),
                 s => s.to_string(),
             };
-            let rows = compare(g, draw, &attempt.verdicts);
+            let rows = compare(g, draw, &attempt.verdicts, seconds);
             let against = rows
                 .iter()
                 .map(|c| {
@@ -532,7 +541,7 @@ pub(crate) async fn peek(
                 })
                 .collect::<String>();
             println!(
-                "seq {:>4} · draw {draw}/{repeat} · {:<24} {}{against}",
+                "seq {:>4} · draw {draw}/{repeat} · {:<24} {}{against} · {seconds:.1}s",
                 g.seq,
                 called,
                 outcome(&attempt)
@@ -606,6 +615,12 @@ pub(crate) async fn peek(
     );
     println!(
         "  cache     {cache_read} tokens read (a cold total means the replay isn't reading the session's prefix)"
+    );
+    // On the critical path of every tool call: a verdict's latency is paid by the
+    // agent's step, so it is reported beside tokens rather than left to the clock.
+    println!(
+        "  latency   {:.1}s per draw, request to verdict",
+        seconds_total / draws.max(1) as f64
     );
     if !compared.is_empty() {
         let n = compared.len();
