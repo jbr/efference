@@ -363,7 +363,7 @@ fn openrouter_capabilities_url_requires_author_slug() {
 /// The OpenRouter model entry's `reasoning` block is the effort metadata.
 /// Live shape (2026-09-04): GLM 5.3 flash names its levels and its default;
 /// `default_enabled` is ignored; `mandatory` is read (qwen/qwen3.8-flash reports
-/// `false`, glm-5.3-flash `true`, 2026-09-06).
+/// `false`, glm-5.3-flash `true`).
 #[test]
 fn openrouter_model_entry_yields_effort_levels() {
     let body = r#"{"data": {"id": "z-ai/glm-5.3-flash", "reasoning": {
