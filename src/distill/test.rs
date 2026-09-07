@@ -1,7 +1,9 @@
 use super::*;
 use crate::api::Usage;
 use crate::log::{CallId, Triage};
-use crate::project::{ApiBlock, ApiMessage, Role, encode_messages, project_with};
+use crate::project::{
+    ApiBlock, ApiMessage, BreakpointPlacement, ImagePlacement, Role, encode_messages, project_with,
+};
 
 /// The Messages-wire view of a fork tail, for assertions written against blocks.
 fn wire(turns: &[WireTurn]) -> Vec<ApiMessage> {
@@ -1394,4 +1396,35 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
         !text.contains(ask_text),
         "the peek's ask never reaches the canonical wire"
     );
+}
+
+/// The peek's request surface follows its configuration (docs/redaction-fork.md):
+/// shared borrows the agent's client and `tools[]`; own sends its own client and
+/// only the two peek tools.
+#[test]
+fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
+    let resolved = std::collections::BTreeMap::from([(
+        "ANTHROPIC_API_KEY".to_string(),
+        "sk-ant-xyz".to_string(),
+    )]);
+    let endpoint = crate::api::Endpoint::from_env_with(&resolved).unwrap();
+    let agent = Client::new(endpoint.clone(), "big", "sys", None);
+    let agent_tools = vec![json!({"name": "read"}), retain_tool(), triage_tool()];
+
+    let shared = ForkPeek::shared();
+    assert!(!shared.is_own());
+    assert_eq!(shared.own_model(), None);
+    assert_eq!(shared.client(&agent).model(), "big");
+    assert_eq!(shared.tools(&agent_tools).len(), 3);
+
+    let own = ForkPeek::own(Client::new(endpoint.for_triage(), "small", "persona", None));
+    assert!(own.is_own());
+    assert_eq!(own.own_model(), Some("small"));
+    assert_eq!(own.client(&agent).model(), "small");
+    let names: Vec<&str> = own
+        .tools(&agent_tools)
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["retain", "triage"]);
 }

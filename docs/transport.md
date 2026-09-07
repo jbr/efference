@@ -134,7 +134,9 @@ the shared envelope ([redaction-fork.md](redaction-fork.md)): identical
 `tool_choice` and thinking are part of what lets the peek read the agent lineage's
 cache — so both may think (the fork's thinking is discarded with its throwaway
 tail); the spotter still forces its `spot` tool → thinking off (`disabled` on
-Claude, omitted foreign); the keepalive follows the same family split
+Claude, omitted foreign); a separate-model peek sends thinking off the same way
+unless `--triage-thinking` (`Client::without_thinking`,
+[redaction-fork.md](redaction-fork.md)); the keepalive follows the same family split
 independently (`max_tokens: 0` rejects thinking-on). Toggling thinking
 keeps the tools+system cache tier valid (see
 [log-and-projection.md](log-and-projection.md)), and it's set once per
@@ -774,7 +776,9 @@ field rather than on OpenRouter's routing key. Like `model` and the upstream pin
 it is a per-session constant, so it cannot toggle mid-session; unset, it skips
 serialization entirely, so adding it moved no Anthropic session's bytes.
 
-The spotter takes a **distinct** key (`Endpoint::for_spotter`, a `-spot` suffix).
+The spotter takes a **distinct** key (`Endpoint::for_spotter`, a `-spot` suffix), and
+so does the separate-model fork peek when one is configured (`Endpoint::for_triage`,
+`-triage`; [redaction-fork.md](redaction-fork.md)).
 It has its own system prompt and shares no prefix with the agent turn, so the two
 are separate conversations over one endpoint; message-hash derivation separated
 them for free, and an explicit key overrides that, so the separation has to be

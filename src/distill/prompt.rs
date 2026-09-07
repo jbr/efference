@@ -37,7 +37,9 @@ const KEEP_FIELDS: &str =
               as you can. Where the output enumerates — matches, a listing, a set of
               candidates — the lines you keep read afterwards as the whole set, so keep
               the enumeration whole or say in the `note` how many of how many survived.
-  note        One line, saying what this output showed — only what it showed. Do not
+  note        One line, saying what this output showed — only what it showed. It is a
+              note to self: it is read on the next turn, in the working context, in
+              place of the lines that were dropped. Do not
               generalize past it or explain what it means for the task. Ground it in
               the lines you kept, not the ones you dropped: if the note turns on a
               particular line, that line belongs in `keep`. Where the
@@ -181,6 +183,11 @@ struct AskVariant {
     verdict_channel: bool,
     /// Additive candidate: the output above is complete, nothing further is coming.
     output_final: bool,
+    /// The shape sentence says "the call the agent just made" instead of "the call you
+    /// just made" — the separate-model peek's alternative framing
+    /// (backlog/distiller-experiment.md). Off: the tail stays byte-identical between
+    /// the shared and the separate-model peek, so the replay eval varies one thing.
+    third_person: bool,
 }
 
 impl Default for AskVariant {
@@ -195,6 +202,7 @@ impl Default for AskVariant {
             block: true,
             verdict_channel: true,
             output_final: false,
+            third_person: false,
         }
     }
 }
@@ -232,6 +240,7 @@ impl AskVariant {
                 "no-verdict-channel" => v.verdict_channel = false,
                 "+verdict-channel" => v.verdict_channel = true,
                 "+output-final" => v.output_final = true,
+                "+third-person" => v.third_person = true,
                 other => panic!("EFFERENCE_PEEK_ASK: unknown variant {other:?}"),
             }
         }
@@ -258,12 +267,16 @@ anything else is rejected and this ask comes back.",
 read. Describing what to keep instead of calling `retain` leaves the result untriaged.",
             );
         }
+        let shape = match self.third_person {
+            true => shape.replace("you just made", "the agent just made"),
+            false => shape.to_string(),
+        };
         let shape = match self.output_final {
             true => format!(
                 "{shape} That call has finished and the output above is complete — nothing \
 further is coming, so decide on what is there."
             ),
-            false => shape.to_string(),
+            false => shape,
         };
 
         let fields = match self.block {

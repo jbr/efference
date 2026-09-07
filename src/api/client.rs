@@ -236,6 +236,12 @@ pub struct Client {
     /// — one input to the thinking matrix (`Thinking::for_request`). `false` when no
     /// lookup ran (the spotter's client), which only ever omits the field.
     model_reasoning: bool,
+    /// Never think, whatever the model would do on its own (docs/redaction-fork.md):
+    /// the separate-model fork peek's default, where the peek's reasoning is
+    /// discarded with the tail and costs latency and tokens on every gate. Feeds
+    /// `Thinking::for_request` on Messages; on Responses it is subsumed by
+    /// `model_reasoning`, which that dialect's `reasoning` object already gates on.
+    thinking_off: bool,
     /// The per-turn output cap. Defaults to the pre-reasoning-era 4096;
     /// [`Self::with_max_output`] raises it to the model's reported cap — a
     /// reasoning model's thinking bills against this budget, and a long think
@@ -375,6 +381,7 @@ impl Client {
             system: system.into(),
             temperature,
             model_reasoning: false,
+            thinking_off: false,
             max_tokens: MAX_TOKENS,
             context_length: None,
             reservation: reservation_state(),
@@ -495,6 +502,11 @@ impl Client {
         self
     }
 
+    /// The model this client sends every request to.
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
     /// The wire dialect this client speaks, fixed by the provider (docs/transport.md).
     pub fn dialect(&self) -> WireDialect {
         self.endpoint.provider.dialect()
@@ -520,6 +532,15 @@ impl Client {
     /// ([`Thinking::for_request`]).
     pub fn with_model_reasoning(mut self, model_reasoning: bool) -> Self {
         self.model_reasoning = model_reasoning;
+        self
+    }
+
+    /// Send every request with thinking off, whatever the model family's default
+    /// (docs/redaction-fork.md): the separate-model fork peek's default. The
+    /// keepalive already sends thinking off, so this changes only `complete`.
+    pub fn without_thinking(mut self) -> Self {
+        self.thinking_off = true;
+        self.model_reasoning = false;
         self
     }
 
@@ -633,6 +654,7 @@ impl Client {
                             &self.model,
                             &tool_choice,
                             self.model_reasoning,
+                            self.thinking_off,
                         ),
                         output_config: self.effort.clone().map(|effort| OutputConfig { effort }),
                         temperature: self

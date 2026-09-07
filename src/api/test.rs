@@ -254,7 +254,9 @@ fn thinking_matrix_never_disables_foreign_models() {
     use super::thinking::Thinking;
     let auto = ToolChoice::auto();
     let forced = ToolChoice::force("retain");
-    let m = Thinking::for_request;
+    let m = |model: &str, choice: &ToolChoice, reasoning: bool| {
+        Thinking::for_request(model, choice, reasoning, false)
+    };
     assert!(matches!(
         m("claude-fable-5", &auto, false),
         Thinking::Adaptive { .. }
@@ -3234,4 +3236,44 @@ async fn a_foreign_dialect_turn_list_never_becomes_a_request() {
     let text = err.to_string();
     assert!(text.contains("recorded in the Responses dialect"), "{text}");
     assert!(text.contains("speaks Messages"), "{text}");
+}
+
+/// The separate-model peek's key is its own: distinct from the agent's and the
+/// spotter's, under the same cap, and absent when the agent has none
+/// (docs/redaction-fork.md, docs/transport.md).
+#[test]
+fn triage_endpoint_takes_a_distinct_key_under_the_cap() {
+    let mut e =
+        Endpoint::resolve(Some("openrouter".into()), Some("sk-or-v1-abc".into()), None).unwrap();
+    assert_eq!(e.for_triage().session_id, None);
+    let long = "x".repeat(400);
+    e.session_id = Some(sticky_session_id(
+        &std::path::PathBuf::from(".efference").join(&long),
+    ));
+    let triage = e.for_triage().session_id.unwrap();
+    assert_ne!(Some(&triage), e.session_id.as_ref());
+    assert_ne!(Some(&triage), e.for_spotter().session_id.as_ref());
+    assert!(triage.ends_with("-triage"));
+    assert!(triage.len() <= 256);
+}
+
+/// `Client::without_thinking` takes the model family's non-adaptive arm on an
+/// `auto` turn: explicit `disabled` on Claude, the field omitted for a foreign
+/// model — even one the lookup granted reasoning (docs/redaction-fork.md).
+#[test]
+fn thinking_off_switch_disables_claude_and_omits_foreign() {
+    use super::thinking::Thinking;
+    let auto = ToolChoice::auto();
+    assert!(matches!(
+        Thinking::for_request("claude-fable-5", &auto, false, true),
+        Thinking::Disabled
+    ));
+    assert!(matches!(
+        Thinking::for_request("stealth/ox-alpha", &auto, true, true),
+        Thinking::Omit
+    ));
+    assert!(matches!(
+        Thinking::for_request("claude-fable-5", &auto, false, false),
+        Thinking::Adaptive { .. }
+    ));
 }

@@ -21,6 +21,10 @@
 /// newline so the joined prompt stays byte-clean.
 const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 
+/// The separate-model fork peek's persona (docs/redaction-fork.md). `{agent_model}`
+/// is substituted with the main model's id.
+const TRIAGE_PERSONA: &str = include_str!("../assets/prompts/triage.md");
+
 /// The full system prompt sent in the request's `system` field (docs/log-and-projection.md): the
 /// curation-model [`PREAMBLE`], the `[context]` preamble builder's block when configured
 /// (`context_block`, rendered by [`crate::context::Resolved::render`] — docs/context.md; this is
@@ -73,6 +77,40 @@ pub fn system_prompt(
     if let Some(unmounted) = unmounted {
         prompt.push_str("\n\n");
         prompt.push_str(unmounted);
+    }
+    prompt
+}
+
+/// The system prompt of the separate-model fork peek (docs/redaction-fork.md): the
+/// triage model's own identity line, the persona that discloses the model seam once
+/// and then reads the transcript as its own, and the session's `[context]` block
+/// verbatim. No curation preamble, role section, or unmounted list — those describe
+/// the agent's perimeter, and the peek never acts inside it.
+///
+/// Assumptions this text encodes, each an experiment knob rather than a finding
+/// (backlog/distiller-experiment.md): the seam is disclosed at the head rather than
+/// hidden; the tail ask stays first-person and byte-identical to the shared peek's;
+/// the whole context block is shared. A knowledge-cutoff note or a provider system
+/// prompt would sit on the identity line, as it does for the agent.
+pub fn triage_system_prompt(
+    triage_model: &str,
+    agent_model: &str,
+    context_block: Option<&str>,
+) -> String {
+    let mut prompt = String::new();
+    prompt.push_str("You are ");
+    prompt.push_str(triage_model);
+    prompt.push('.');
+    prompt.push_str("\n\n");
+    prompt.push_str(
+        TRIAGE_PERSONA
+            .trim_end()
+            .replace("{agent_model}", agent_model)
+            .as_str(),
+    );
+    if let Some(block) = context_block {
+        prompt.push_str("\n\n");
+        prompt.push_str(block);
     }
     prompt
 }

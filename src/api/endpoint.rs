@@ -86,6 +86,11 @@ const SESSION_ID_MAX: usize = 256;
 /// What distinguishes the spotter's key from the agent's ([`Endpoint::for_spotter`]).
 const SPOTTER_SUFFIX: &str = "-spot";
 
+/// What distinguishes the separate-model peek's key from the agent's
+/// ([`Endpoint::for_triage`]). The longer of the two suffixes is what
+/// [`sticky_session_id`] reserves room for.
+const TRIAGE_SUFFIX: &str = "-triage";
+
 /// This session's sticky-routing key: `<session id>-<hash of the session dir's
 /// absolute path>` (docs/transport.md).
 ///
@@ -103,7 +108,7 @@ pub fn sticky_session_id(session_dir: &std::path::Path) -> String {
     // Truncate the *name*, never the tail: the hash is the disambiguating half, so a
     // cap that dropped it would defeat the thing the key exists for. The spotter's
     // suffix is reserved here so its derived key fits the same cap.
-    let budget = SESSION_ID_MAX - SPOTTER_SUFFIX.len() - hash.len() - 1;
+    let budget = SESSION_ID_MAX - SPOTTER_SUFFIX.len().max(TRIAGE_SUFFIX.len()) - hash.len() - 1;
     format!("{}-{hash}", truncate_on_char_boundary(name, budget))
 }
 
@@ -298,6 +303,21 @@ impl Endpoint {
                 .session_id
                 .as_ref()
                 .map(|id| format!("{id}{SPOTTER_SUFFIX}")),
+            ..self.clone()
+        }
+    }
+
+    /// The endpoint the separate-model fork peek dials (docs/redaction-fork.md): the
+    /// same provider and credentials, under a sticky key the agent lineage never
+    /// shares. A triage model is a wholly separate cache lineage over the same
+    /// transcript, so routing it with the agent's key would only pin two models to
+    /// one route.
+    pub fn for_triage(&self) -> Self {
+        Self {
+            session_id: self
+                .session_id
+                .as_ref()
+                .map(|id| format!("{id}{TRIAGE_SUFFIX}")),
             ..self.clone()
         }
     }

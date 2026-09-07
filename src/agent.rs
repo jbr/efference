@@ -319,6 +319,7 @@ pub async fn run<F: Frontend, S: Spotter>(
         // provider issues one, belongs to the previous trajectory and must not be
         // replayed into this one (docs/transport.md).
         client.begin_turn();
+        distiller.begin_turn();
 
         // A trajectory is starting, so the previous one's give-up is no longer the
         // current condition (docs/transport.md): the `stall` topic names what the
@@ -368,6 +369,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 // A user turn lands mid-trajectory: to the upstream that is a new
                 // turn, so its routing token starts over (docs/transport.md).
                 client.begin_turn();
+                distiller.begin_turn();
                 shared.append_submission(
                     turn,
                     Payload::User(vec![ContentBlock::Text(submitted.text)]),

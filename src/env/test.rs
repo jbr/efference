@@ -87,3 +87,16 @@ fn system_prompt_states_the_model_identity() {
     assert!(s.contains("You are anthropic/claude-sonnet-5."));
     assert!(s.find("You are ").unwrap() < s.find("<CLAUDE.md>").unwrap());
 }
+
+/// The separate-model peek's system prompt (docs/redaction-fork.md): the triage
+/// model's own identity line, the agent named where the seam is disclosed, the
+/// context block verbatim, and none of the agent's curation preamble.
+#[test]
+fn triage_system_prompt_names_both_models_and_carries_the_context() {
+    let prompt = triage_system_prompt("small", "big", Some("<ctx>x</ctx>"));
+    assert!(prompt.starts_with("You are small.\n\n"));
+    assert!(prompt.contains("produced by the agent, big,"));
+    assert!(prompt.ends_with("\n\n<ctx>x</ctx>"));
+    assert!(!prompt.contains(PREAMBLE.trim_end()));
+    assert!(!triage_system_prompt("small", "big", None).ends_with("\n\n"));
+}

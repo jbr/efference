@@ -38,8 +38,12 @@ impl Thinking {
         model: &str,
         tool_choice: &ToolChoice,
         model_reasoning: bool,
+        thinking_off: bool,
     ) -> Self {
-        let adaptive = adaptive_on_auto(model, model_reasoning);
+        // `thinking_off` is the client-level switch (`Client::without_thinking`):
+        // it takes the non-adaptive arm the model family already has, so a Claude
+        // model sends explicit `disabled` and a foreign one omits the field.
+        let adaptive = !thinking_off && adaptive_on_auto(model, model_reasoning);
         match tool_choice.kind {
             "auto" if adaptive => THINKING_ADAPTIVE,
             _ if is_claude_family(model) => THINKING_DISABLED,

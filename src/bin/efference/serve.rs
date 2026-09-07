@@ -141,11 +141,19 @@ fn resolve_env_values(
         .collect())
 }
 
+/// `--triage-model` / `--triage-thinking`: the separate-model fork peek
+/// (docs/redaction-fork.md).
+pub(crate) struct TriageFlags {
+    pub(crate) model: Option<String>,
+    pub(crate) thinking: bool,
+}
+
 #[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
 pub(crate) async fn serve(
     session_dir: PathBuf,
     model: &str,
     spotter_model: Option<&str>,
+    triage: TriageFlags,
     config: Option<PathBuf>,
     temperature: Option<u8>,
     effort: Option<String>,
@@ -553,15 +561,60 @@ pub(crate) async fn serve(
              config file; config writes still gate for the orchestrator-above"
         );
     }
-    let image_placement = client.image_placement();
-    let breakpoint_placement = client.breakpoint_placement();
+    // The fork peek's model (docs/redaction-fork.md): the agent's own client unless
+    // `--triage-model` names a different model, in which case the peek gets its own
+    // client — own identity and persona over the same [context] block, own sticky
+    // key, thinking off unless asked for, and none of the agent client's effort,
+    // temperature, or upstream pin (endpoint slugs are per-model, as for the
+    // spotter). Its context window is looked up like the agent's; nothing yet acts
+    // on it being smaller (backlog/distiller-experiment.md).
+    let distiller = match triage.model.as_deref() {
+        Some(triage_model) if triage_model != model => {
+            let triage_caps = match endpoint.fetch_capabilities(triage_model, &[]).await {
+                Ok(caps) => caps,
+                Err(e) => {
+                    return Err(format!(
+                        "--triage-model: model metadata lookup for {triage_model:?} on {} \
+                         failed: {e}",
+                        endpoint.provider.name()
+                    )
+                    .into());
+                }
+            };
+            eprintln!(
+                "triage: {triage_model} · context {} tokens · thinking {}",
+                triage_caps.context_length,
+                if triage.thinking { "on" } else { "off" }
+            );
+            let triage_system = env_policy.mask(&efference::env::triage_system_prompt(
+                triage_model,
+                model,
+                context_block.as_deref(),
+            ));
+            let mut triage_client =
+                Client::new(endpoint.for_triage(), triage_model, triage_system, None)
+                    .with_stream_ceiling(loaded.role.transport.stream_ceiling)
+                    .with_prompt_cache(triage_caps.prompt_cache);
+            triage_client = if triage.thinking {
+                triage_client.with_model_reasoning(triage_caps.supports_reasoning)
+            } else {
+                triage_client.without_thinking()
+            };
+            if let Some(cap) = triage_caps.max_output_tokens {
+                triage_client = triage_client.with_max_output(cap);
+            }
+            ForkPeek::own(triage_client.with_context_window(triage_caps.context_length))
+        }
+        Some(_) => {
+            eprintln!("triage: {model} (same as the agent; shared peek)");
+            ForkPeek::shared()
+        }
+        None => ForkPeek::shared(),
+    };
     let result = daemon::serve(
         client,
         toolbox,
-        ForkPeek {
-            image_placement,
-            breakpoint_placement,
-        },
+        distiller,
         spotter,
         log,
         socket,

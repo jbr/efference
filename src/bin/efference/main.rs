@@ -42,6 +42,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::Serve {
             model,
             spotter_model,
+            triage_model,
+            triage_thinking,
             config,
             temperature,
             effort,
@@ -62,6 +64,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 session_dir(&id),
                 &model,
                 spotter_model.as_deref(),
+                serve::TriageFlags {
+                    model: triage_model,
+                    thinking: triage_thinking,
+                },
                 config,
                 temperature,
                 effort,

@@ -143,6 +143,42 @@ Un-forcing also lifts the forced-choice-excludes-thinking constraint
 ([transport.md](transport.md)): the fork may think, and the thinking is discarded with
 the tail.
 
+## The separate-model peek
+
+`--triage-model` names a model other than the agent's and the peek runs on its own
+`Client` (`ForkPeek::own`) instead of borrowing the agent turn's (`ForkPeek::shared`,
+the default, and what an omitted or equal `--triage-model` boots). The shared
+envelope above exists to keep one cache lineage; a second model is a second
+lineage over the same transcript whatever the envelope does, so the own client
+drops the parts of it that only served that:
+
+- **Its own system prompt** (`env::triage_system_prompt`): the triage model's real
+  identity line, a persona that says once that the assistant turns were produced by
+  the agent, named by model, and are to be read as the model's own working context,
+  then the session's `[context]` block verbatim. No curation preamble, role section,
+  or unmounted list — those describe the agent's perimeter.
+- **A `tools[]` of only `retain` and `triage`**, so there is no work tool to call
+  instead. `tool_choice` stays `auto`; forcing it is a separate knob to measure.
+- **Its own sticky key** (`Endpoint::for_triage`, a `-triage` suffix), for the same
+  reason as the spotter's ([transport.md](transport.md)).
+- **Thinking off** (`Client::without_thinking`) unless `--triage-thinking`: the
+  peek's reasoning is discarded with the tail, so it is latency and tokens per gate.
+- **None of the agent client's** effort, temperature, or upstream pin; its own
+  capability lookup, so its output cap and context window are its own.
+
+The prefix is the same canonical projection either way, so the own lineage is warm
+across gates: each peek writes the newest assistant turn and reads the rest, at the
+triage model's rate. The **tail ask is unchanged** — first person, "the call you just
+made" — and byte-identical between the two configurations, so a replayed gate
+differs only in model and head. The `+third-person` ask variant is the framing
+alternative, an ablation, not a default. The `note` field's ask says whose note it
+is: a note to self, read on the agent's next turn in place of the dropped lines,
+which holds whichever model writes it.
+
+What is *not* built: the own client's retry and reservation state is not reported
+on `GET /state`, and nothing acts on the triage model's context window being
+smaller than the agent's (backlog/distiller-experiment.md).
+
 ## Two answer shapes, and one scoped ask
 
 The schema is static while gate size is not, so `retain` carries both shapes and the

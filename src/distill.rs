@@ -41,9 +41,7 @@ use crate::log::{
     AssistantOutput, Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall,
     WireState,
 };
-use crate::project::{
-    BreakpointPlacement, ImagePlacement, PEEK_LINE_CAP, UserPart, WireTurn, project_semantic,
-};
+use crate::project::{PEEK_LINE_CAP, UserPart, WireTurn, project_semantic};
 use crate::supervisor::BgView;
 
 const RETAIN: &str = "retain";
@@ -277,21 +275,79 @@ pub struct InboxTriage {
 /// `agent::run`, `daemon::serve`, and `run_idle_triage`; the second implementation
 /// that bound existed for never arrived, and the one that briefly did (a model-free
 /// `HeadTail` stub) had no call sites, tests included. Swapping the *model* behind
-/// the peek — the measured experiment — is a field on this struct and a different
-/// `Client`, not another implementation; a materially different peek *shape* (a
-/// compacted second projection, a different transcript budget) is what would earn
-/// the indirection back.
+/// the peek is [`Self::own`] — a second `Client` and a peek-only `tools[]`, not
+/// another implementation; a materially different peek *shape* (a compacted second
+/// projection, a different transcript budget) is what would earn the indirection back.
+///
+/// Two configurations, chosen at boot (docs/redaction-fork.md):
+///
+/// - [`Self::shared`] — the default. The peek borrows the agent turn's client and
+///   `tools[]`, so it sends the agent's envelope with a different tail and reads the
+///   agent lineage's cache. Nothing the request keys a cache on differs.
+/// - [`Self::own`] — the triage model. The peek has its own client (its own model,
+///   system prompt, and session key) and a `tools[]` of just the peek tools. Its
+///   prefix is the same canonical projection, so it has its own warm lineage, but it
+///   shares nothing with the agent's.
 pub struct ForkPeek {
-    /// The session's provider-derived image placement — the fork's `project` of
-    /// the canonical prefix must be byte-identical to the agent turn's, or the
-    /// peek pays a cold prefix instead of a cache read (docs/redaction-fork.md,
-    /// docs/log-and-projection.md).
-    pub image_placement: ImagePlacement,
-    /// The session's provider-derived cache-breakpoint placement — same reason as
-    /// `image_placement`: the fork's request must place its breakpoint exactly
-    /// where the agent turn placed its, or the peek writes a second cache entry
-    /// instead of reading the live one (docs/log-and-projection.md).
-    pub breakpoint_placement: BreakpointPlacement,
+    /// The triage model's client and tools when the peek runs on its own model;
+    /// `None` borrows the agent turn's.
+    own: Option<OwnPeek>,
+}
+
+/// The separate-model peek's request surface: everything cache-keyed that the shared
+/// configuration would have borrowed from the agent turn.
+struct OwnPeek {
+    client: Client,
+    tools: Vec<Value>,
+}
+
+impl ForkPeek {
+    /// The shared-lineage peek: the agent's client and `tools[]`, borrowed per call.
+    pub fn shared() -> Self {
+        ForkPeek { own: None }
+    }
+
+    /// The separate-model peek over `client`. Its `tools[]` is the two peek tools —
+    /// no world tools, since nothing is ever asked of them in a peek, and this
+    /// lineage shares no cache with the agent turn to keep the arrays identical for.
+    pub fn own(client: Client) -> Self {
+        ForkPeek {
+            own: Some(OwnPeek {
+                client,
+                tools: vec![retain_tool(), triage_tool()],
+            }),
+        }
+    }
+
+    /// Whether the peek runs on its own model.
+    pub fn is_own(&self) -> bool {
+        self.own.is_some()
+    }
+
+    /// The model the peek runs on when it has its own, for the boot line and
+    /// `GET /state`.
+    pub fn own_model(&self) -> Option<&str> {
+        self.own.as_ref().map(|o| o.client.model())
+    }
+
+    /// A user turn is starting: the own client forgets its turn-routing token the
+    /// way the agent's does (`Client::begin_turn`, docs/transport.md). The shared
+    /// peek rides the agent's client, whose token the loop already resets.
+    pub fn begin_turn(&self) {
+        if let Some(own) = &self.own {
+            own.client.begin_turn();
+        }
+    }
+
+    /// The client a peek sends through: the own one when set, else the agent's.
+    fn client<'a>(&'a self, agent: &'a Client) -> &'a Client {
+        self.own.as_ref().map_or(agent, |o| &o.client)
+    }
+
+    /// The `tools[]` a peek sends: the peek-only array when own, else the agent's.
+    fn tools<'a>(&'a self, agent: &'a [Value]) -> &'a [Value] {
+        self.own.as_ref().map_or(agent, |o| o.tools.as_slice())
+    }
 }
 
 /// Run one peek to a usable verdict, with bounded in-fork retries
@@ -825,8 +881,8 @@ impl ForkPeek {
     /// the peek's tail must answer all N (docs/redaction-fork.md). One gate, N verdicts.
     pub async fn distill(
         &self,
-        client: &Client,
-        tools: &[Value],
+        agent: &Client,
+        agent_tools: &[Value],
         prefix: &[LogEntry],
         pending: &[Pending<'_>],
         inbox: &[ShownNotification],
@@ -854,9 +910,9 @@ impl ForkPeek {
 
         let mut record = PeekRecord::default();
         let parsed = peek_with_retries(
-            client,
+            self.client(agent),
             messages,
-            tools,
+            self.tools(agent_tools),
             RETAIN,
             |c| {
                 let verdict = parse_retain(c, &offered).ok_or_else(|| unusable(c, RETAIN))?;
@@ -965,8 +1021,8 @@ impl ForkPeek {
     /// the agent simply goes back to idle, losing no data.
     pub async fn triage(
         &self,
-        client: &Client,
-        tools: &[Value],
+        agent: &Client,
+        agent_tools: &[Value],
         prefix: &[LogEntry],
         inbox: &[ShownNotification],
         background: &[BgView],
@@ -982,9 +1038,9 @@ impl ForkPeek {
 
         let mut record = PeekRecord::default();
         let parsed = peek_with_retries(
-            client,
+            self.client(agent),
             messages,
-            tools,
+            self.tools(agent_tools),
             TRIAGE,
             |c| parse_dispositions(c, TRIAGE).ok_or_else(|| unusable(c, TRIAGE)),
             &mut record,

@@ -226,6 +226,20 @@ pub(crate) enum Command {
         /// Anthropic and OpenRouter, gpt-5.6-luna on OpenAI and OpenAI-Codex.
         #[arg(long)]
         spotter_model: Option<String>,
+        /// Model for the fork peek that triages every tool result.
+        ///
+        /// Experimental. Omitted, or equal to --model, the peek runs on the agent's own
+        /// client and reads the agent's prompt cache. A different model runs the peek
+        /// on its own client: its own system prompt, its own session key, and only the
+        /// two peek tools offered. Its cache is a separate lineage over the same
+        /// transcript, paid at that model's rate.
+        #[arg(long)]
+        triage_model: Option<String>,
+        /// Let the triage model think. Off by default: the peek's reasoning is discarded
+        /// with the fork, so thinking there is latency and tokens per tool result. Only
+        /// meaningful with --triage-model.
+        #[arg(long)]
+        triage_thinking: bool,
         /// Path to the config file. Defaults to `efference.toml` in the current directory.
         ///
         /// With no file present the built-in default config is used. An explicit path that doesn't exist is an error. The resolved path is
