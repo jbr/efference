@@ -399,7 +399,15 @@ pub(crate) async fn peek(
         return Ok(());
     }
 
-    let endpoint = efference::api::Endpoint::from_env()?;
+    let mut endpoint = efference::api::Endpoint::from_env()?;
+    // The session's sticky-routing key (docs/transport.md), derived from its dir
+    // exactly as `serve` derives it, so the replay reads the session's own prefix on
+    // the upstream that holds it — and the own peek takes its `-triage` suffix, its
+    // own lineage's key. Without it a provider with sticky routing re-derives a key
+    // per request and the replay wanders between upstreams, cold every time.
+    if let Some(dir) = path.parent() {
+        endpoint.session_id = Some(efference::api::sticky_session_id(dir));
+    }
     // The own peek replays the exact live shape (docs/redaction-fork.md): the same
     // constructor `serve` boots, the same system prompt over the recorded context
     // block, the session's own model named as the agent. The shared peek replays on
