@@ -30,7 +30,19 @@ pub struct PeekAttempt {
     pub raw_keep: Option<String>,
     /// The one-line `note`, which is where an invented claim would show up.
     pub note: Option<String>,
+    /// Every result's verdict when the attempt was usable, in the order the model
+    /// answered — what a comparison against the recorded verdicts reads, since
+    /// `raw_keep`/`note` carry only the first.
+    pub verdicts: Vec<ReplayVerdict>,
     pub usage: RequestUsage,
+}
+
+/// One result's verdict out of a replayed attempt.
+#[derive(Debug, Clone)]
+pub struct ReplayVerdict {
+    pub call_id: String,
+    pub keep: Keep,
+    pub note: Option<String>,
 }
 
 impl PeekAttempt {
@@ -54,13 +66,38 @@ pub fn peek_request(
     peek_messages(prefix, pending, inbox, background, &roster)
 }
 
-/// One fork-peek round trip against a recorded gate, with **no retries**
-/// (docs/redaction-fork.md). Same request, same validity rule (`parse_retain` plus
-/// [`require_coverage`] and [`require_in_bounds`]) as the live gate — only the retry
-/// loop is absent, because the first attempt is the measurement.
-pub async fn peek_attempt(
+impl ForkPeek {
+    /// One fork-peek round trip against a recorded gate, with **no retries**
+    /// (docs/redaction-fork.md). Same request, same client, tools and `tool_choice`
+    /// as the live gate under this configuration (shared or own), same validity rule
+    /// (`parse_retain` plus [`require_coverage`] and [`require_in_bounds`]) — only the
+    /// retry loop is absent, because the first attempt is the measurement.
+    pub async fn attempt(
+        &self,
+        agent: &Client,
+        agent_tools: &[Value],
+        prefix: &[LogEntry],
+        pending: &[Pending<'_>],
+        inbox: &[ShownNotification],
+        background: &[BgView],
+    ) -> Result<PeekAttempt, String> {
+        peek_attempt(
+            self.client(agent),
+            self.tools(agent_tools),
+            self.choice(RETAIN),
+            prefix,
+            pending,
+            inbox,
+            background,
+        )
+        .await
+    }
+}
+
+async fn peek_attempt(
     client: &Client,
     tools: &[Value],
+    choice: ToolChoice,
     prefix: &[LogEntry],
     pending: &[Pending<'_>],
     inbox: &[ShownNotification],
@@ -74,7 +111,7 @@ pub async fn peek_attempt(
         .collect();
     let messages = peek_request(prefix, pending, inbox, background);
     let completion = client
-        .complete(&messages, tools, ToolChoice::auto(), |_| {})
+        .complete(&messages, tools, choice, |_| {})
         .await
         .map_err(|e| format!("peek request failed: {e}"))?;
     if let Some(why) = completion.upstream_failure() {
@@ -104,16 +141,24 @@ pub async fn peek_attempt(
         .ok_or_else(|| unusable(&completion, RETAIN))
         .and_then(|v| require_coverage(v, &offered))
         .and_then(|v| require_in_bounds(v, &shown_lines));
-    let (why, raw_keep, note) = match verdict {
+    let (why, raw_keep, note, verdicts) = match verdict {
         Ok(v) => {
             let first = v.results.first();
             (
                 None,
                 first.map(|r| r.raw_keep.clone()),
                 first.and_then(|r| r.note.clone()),
+                v.results
+                    .iter()
+                    .map(|r| ReplayVerdict {
+                        call_id: r.call_id.clone(),
+                        keep: r.keep.clone(),
+                        note: r.note.clone(),
+                    })
+                    .collect(),
             )
         }
-        Err(why) => (Some(why), None, None),
+        Err(why) => (Some(why), None, None, Vec::new()),
     };
     Ok(PeekAttempt {
         called,
@@ -122,6 +167,7 @@ pub async fn peek_attempt(
         why,
         raw_keep,
         note,
+        verdicts,
         usage: completion.request_usage(),
     })
 }

@@ -529,6 +529,7 @@ type Dispositions = (Vec<(Seq, Disposition)>, Vec<(String, BgVerdict)>);
 mod test;
 
 mod handles;
+mod own;
 mod parse;
 mod peek;
 mod prompt;
@@ -542,5 +543,6 @@ use peek::*;
 use prompt::*;
 use validate::*;
 
-pub use replay::{PeekAttempt, peek_attempt, peek_request};
+pub use own::TriageModel;
+pub use replay::{PeekAttempt, ReplayVerdict, peek_request};
 pub use schema::{retain_tool, triage_tool};

@@ -10,8 +10,11 @@
 //! session depth, and replaying one is a single warm prefix read.
 
 use super::*;
-use efference::distill::{Pending, peek_attempt, peek_request};
-use efference::log::{Payload, RawResult, ToolCall};
+use efference::distill::{ForkPeek, Pending, ReplayVerdict, TriageModel, peek_request};
+use efference::log::{Keep, Payload, RawResult, ToolCall, WireState};
+use efference::project::distillate;
+use std::collections::BTreeSet;
+use std::io::Write;
 
 /// One recorded gate, rebuilt from the log: the prefix the peek saw, and the results it
 /// was asked to triage.
@@ -27,6 +30,11 @@ pub(crate) struct Gate {
     pub(crate) seq: u64,
     pub(crate) calls: Vec<ToolCall>,
     pub(crate) raws: Vec<RawResult>,
+    /// The recorded verdict per result, alongside `raws` — what the session's own
+    /// peek chose to see. The reference a candidate model is compared against
+    /// (backlog/distiller-experiment.md): not an operator's idea of the right keep,
+    /// but what the agent that was doing the work kept for itself.
+    pub(crate) recorded: Vec<WireState>,
     /// What the recorded run's first attempt did, from `Triage.retries` — the baseline
     /// each replay is compared against. `None` means it complied first try.
     pub(crate) recorded_first_failure: Option<String>,
@@ -53,12 +61,13 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
         }
         let ids: Vec<&str> = calls.iter().map(|c| c.id.0.as_str()).collect();
         let mut raws = Vec::new();
+        let mut recorded = Vec::new();
         let mut kept_calls = Vec::new();
         let mut prefix_end = None;
         let mut seq = 0;
         for (j, later) in entries.iter().enumerate().skip(i + 1) {
             match &later.payload {
-                Payload::ToolResult { call_id, raw, .. } if ids.contains(&call_id.0.as_str()) => {
+                Payload::ToolResult { call_id, raw, wire } if ids.contains(&call_id.0.as_str()) => {
                     if prefix_end.is_none() {
                         prefix_end = Some(j);
                         seq = later.seq;
@@ -66,6 +75,7 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
                     if let Some(call) = calls.iter().find(|c| c.id == *call_id) {
                         kept_calls.push(call.clone());
                         raws.push(raw.clone());
+                        recorded.push(wire.clone());
                     }
                 }
                 // The next completion starts a new gate.
@@ -92,6 +102,7 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
             seq,
             calls: kept_calls,
             raws,
+            recorded,
             recorded_first_failure,
         });
     }
@@ -136,7 +147,152 @@ fn outcome(attempt: &efference::distill::PeekAttempt) -> String {
     }
 }
 
+/// The 1-based line numbers a verdict keeps over `content`, after the cap.
+fn kept_set(content: &str, keep: &Keep) -> BTreeSet<usize> {
+    distillate(content, keep)
+        .ranges
+        .iter()
+        .flat_map(|&(a, b)| a..=b)
+        .collect()
+}
+
+/// One result's comparison: a candidate verdict against the recorded one.
+#[derive(serde::Serialize)]
+struct Compared {
+    seq: u64,
+    draw: usize,
+    call_id: String,
+    tool: String,
+    intent: Option<String>,
+    shown: usize,
+    reference_keep: String,
+    candidate_keep: String,
+    reference_kept: usize,
+    candidate_kept: usize,
+    /// Lines the candidate kept that the reference dropped.
+    over: usize,
+    /// Lines the reference kept that the candidate dropped.
+    under: usize,
+    reference_note: Option<String>,
+    candidate_note: Option<String>,
+    /// `retain(none)` against a reference that kept something — the shape of the
+    /// "no content was shown" verdicts seen on a real read.
+    phantom_none: bool,
+}
+
+/// The `Keep` a recorded wire state carries, if the reference is a model verdict.
+/// A bypassed (`Raw`) or withheld result has no reference to compare against.
+fn recorded_keep(wire: &WireState) -> Option<(&Keep, Option<&str>)> {
+    match wire {
+        WireState::Distilled { keep, note } => Some((keep, note.as_deref())),
+        _ => None,
+    }
+}
+
+fn keep_label(keep: &Keep) -> String {
+    match keep {
+        Keep::All => "all".into(),
+        Keep::None => "none".into(),
+        Keep::Ranges(rs) => rs
+            .iter()
+            .map(|(a, b)| {
+                if a == b {
+                    a.to_string()
+                } else {
+                    format!("{a}-{b}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+    }
+}
+
+/// Compare one draw's verdicts against the gate's recorded ones, result by result.
+fn compare(gate: &Gate, draw: usize, verdicts: &[ReplayVerdict]) -> Vec<Compared> {
+    let mut out = Vec::new();
+    for ((call, raw), wire) in gate.calls.iter().zip(&gate.raws).zip(&gate.recorded) {
+        let Some((reference, reference_note)) = recorded_keep(wire) else {
+            continue;
+        };
+        let Some(candidate) = verdicts.iter().find(|v| v.call_id == call.id.0) else {
+            continue;
+        };
+        let shown = distillate(&raw.content, &Keep::All).shown.len();
+        let r = kept_set(&raw.content, reference);
+        let c = kept_set(&raw.content, &candidate.keep);
+        out.push(Compared {
+            seq: gate.seq,
+            draw,
+            call_id: call.id.0.clone(),
+            tool: call.name.clone(),
+            intent: call.intent().map(str::to_string),
+            shown,
+            reference_keep: keep_label(reference),
+            candidate_keep: keep_label(&candidate.keep),
+            reference_kept: r.len(),
+            candidate_kept: c.len(),
+            over: c.difference(&r).count(),
+            under: r.difference(&c).count(),
+            reference_note: reference_note.map(str::to_string),
+            candidate_note: candidate.note.clone(),
+            phantom_none: matches!(candidate.keep, Keep::None) && !r.is_empty(),
+        });
+    }
+    out
+}
+
+fn pct(n: usize, d: usize) -> String {
+    if d == 0 {
+        "–".into()
+    } else {
+        format!("{:.0}%", 100.0 * n as f64 / d as f64)
+    }
+}
+
+/// The session's own model, off the recorded preamble's identity line.
+fn session_model(system: &str) -> Option<String> {
+    system
+        .lines()
+        .next()?
+        .strip_prefix("You are ")?
+        .strip_suffix('.')
+        .map(str::to_string)
+}
+
+/// Print the comparison table: every compared result sorted by disagreement, the
+/// worst first, capped at `rows`. Where the reading happens.
+fn print_table(rows_cap: usize, compared: &[Compared]) {
+    let mut rows: Vec<&Compared> = compared.iter().collect();
+    rows.sort_by_key(|c| std::cmp::Reverse(c.over + c.under));
+    println!(
+        "\n| seq | draw | tool | shown | reference | candidate | over | under | reference note | candidate note |"
+    );
+    println!("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+    for c in rows.iter().take(rows_cap) {
+        println!(
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            c.seq,
+            c.draw,
+            c.tool,
+            c.shown,
+            one_line(&c.reference_keep, 24),
+            one_line(&c.candidate_keep, 24),
+            pct(c.over, c.shown),
+            pct(c.under, c.shown),
+            one_line(c.reference_note.as_deref().unwrap_or(""), 120),
+            one_line(c.candidate_note.as_deref().unwrap_or(""), 120),
+        );
+    }
+    if compared.len() > rows_cap {
+        println!(
+            "\n({} more rows; `--table` raises the cap, `--out` writes every row)",
+            compared.len() - rows_cap
+        );
+    }
+}
+
 /// Replay one gate or every gate in a recorded session, `repeat` draws each.
+#[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
 pub(crate) async fn peek(
     path: PathBuf,
     seq: Option<u64>,
@@ -144,6 +300,9 @@ pub(crate) async fn peek(
     limit: Option<usize>,
     dry_run: bool,
     model: &str,
+    triage: Option<TriageModel>,
+    out: Option<PathBuf>,
+    table: usize,
 ) -> CliResult {
     // A `log.jsonl`, or a session dir / name that resolves to one — the same target
     // grammar the other reader verbs take.
@@ -185,11 +344,11 @@ pub(crate) async fn peek(
     // The envelope a real turn sends. `system` is the recorded boot preamble, so the
     // replay reads the same cached prefix the session did; `tools[]` is rebuilt from the
     // current code and cwd, exactly as `wire` does and with the same caveat.
-    let system = entries
+    let (system, context_block) = entries
         .iter()
         .rev()
         .find_map(|e| match &e.payload {
-            Payload::Preamble { system, .. } => Some(system.clone()),
+            Payload::Preamble { system, context } => Some((system.clone(), context.render())),
             _ => None,
         })
         .ok_or("log predates the boot-preamble snapshot; no recorded system prompt to replay")?;
@@ -241,7 +400,42 @@ pub(crate) async fn peek(
     }
 
     let endpoint = efference::api::Endpoint::from_env()?;
+    // The own peek replays the exact live shape (docs/redaction-fork.md): the same
+    // constructor `serve` boots, the same system prompt over the recorded context
+    // block, the session's own model named as the agent. The shared peek replays on
+    // the agent client, whose model is `--model`.
+    let agent_model = session_model(&system).unwrap_or_else(|| model.to_string());
+    let (peek, model) = match &triage {
+        Some(t) => {
+            let triage_system = efference::env::triage_system_prompt(
+                &t.model,
+                &agent_model,
+                context_block.as_deref(),
+            );
+            let (peek, caps) = ForkPeek::for_triage_model(
+                &endpoint,
+                t,
+                triage_system,
+                std::time::Duration::from_secs(600),
+            )
+            .await?;
+            eprintln!(
+                "triage: {} · context {} tokens · thinking {} · tool choice {} · reference: {agent_model}'s own verdicts",
+                t.model,
+                caps.context_length,
+                if t.thinking { "on" } else { "off" },
+                if t.auto_choice { "auto" } else { "forced" }
+            );
+            (peek, t.model.as_str())
+        }
+        None => (ForkPeek::shared(), model),
+    };
     let client = Client::new(endpoint, model, system, None);
+    let mut sink = match &out {
+        Some(path) => Some(std::io::BufWriter::new(std::fs::File::create(path)?)),
+        None => None,
+    };
+    let mut compared: Vec<Compared> = Vec::new();
 
     eprintln!(
         "replaying {} gate(s) from {label} × {repeat} on {model} — first attempt only, no retries",
@@ -275,15 +469,16 @@ pub(crate) async fn peek(
             // malformed JSON — and a model that sometimes fails to produce a parseable
             // response *is* part of what a cross-model comparison is measuring, so it is
             // recorded as a failed draw rather than hidden by aborting.
-            let attempt = match peek_attempt(
-                &client,
-                &tools,
-                &entries[..g.prefix_end],
-                &pending,
-                &[],
-                &[],
-            )
-            .await
+            let attempt = match peek
+                .attempt(
+                    &client,
+                    &tools,
+                    &entries[..g.prefix_end],
+                    &pending,
+                    &[],
+                    &[],
+                )
+                .await
             {
                 Ok(attempt) => attempt,
                 Err(e) => {
@@ -315,12 +510,31 @@ pub(crate) async fn peek(
                 "" => "(no tool)".to_string(),
                 s => s.to_string(),
             };
+            let rows = compare(g, draw, &attempt.verdicts);
+            let against = rows
+                .iter()
+                .map(|c| {
+                    format!(
+                        " · vs {} (over {}, under {}{})",
+                        c.reference_keep,
+                        pct(c.over, c.shown),
+                        pct(c.under, c.shown),
+                        if c.phantom_none { ", phantom none" } else { "" }
+                    )
+                })
+                .collect::<String>();
             println!(
-                "seq {:>4} · draw {draw}/{repeat} · {:<24} {}",
+                "seq {:>4} · draw {draw}/{repeat} · {:<24} {}{against}",
                 g.seq,
                 called,
                 outcome(&attempt)
             );
+            if let Some(sink) = &mut sink {
+                for c in &rows {
+                    writeln!(sink, "{}", serde_json::to_string(c)?)?;
+                }
+            }
+            compared.extend(rows);
             // A failing draw prints what it reached for and what it said. The tool name
             // alone says the peek answered with the wrong thing; the arguments and the
             // prose say whether it was continuing the task, re-reading what it had just
@@ -385,5 +599,42 @@ pub(crate) async fn peek(
     println!(
         "  cache     {cache_read} tokens read (a cold total means the replay isn't reading the session's prefix)"
     );
+    if !compared.is_empty() {
+        let n = compared.len();
+        let shown: usize = compared.iter().map(|c| c.shown).sum();
+        let r: usize = compared.iter().map(|c| c.reference_kept).sum();
+        let c: usize = compared.iter().map(|c| c.candidate_kept).sum();
+        let over: usize = compared.iter().map(|c| c.over).sum();
+        let under: usize = compared.iter().map(|c| c.under).sum();
+        let exact = compared
+            .iter()
+            .filter(|c| c.over == 0 && c.under == 0)
+            .count();
+        let phantom = compared.iter().filter(|c| c.phantom_none).count();
+        println!("\nAGAINST THE RECORDED VERDICTS · {n} result-draws");
+        println!(
+            "  kept      reference {} of shown lines · candidate {}",
+            pct(r, shown),
+            pct(c, shown)
+        );
+        println!(
+            "  over      {} of shown lines kept that the reference dropped",
+            pct(over, shown)
+        );
+        println!(
+            "  under     {} of shown lines dropped that the reference kept",
+            pct(under, shown)
+        );
+        println!("  exact     {exact}/{n} result-draws kept the same lines");
+        if phantom > 0 {
+            println!(
+                "  phantom   {phantom} `none` verdict(s) against a reference that kept something"
+            );
+        }
+        print_table(table, &compared);
+        if let Some(path) = &out {
+            println!("\n{n} rows written to {}", path.display());
+        }
+    }
     Ok(())
 }

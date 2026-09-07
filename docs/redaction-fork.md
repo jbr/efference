@@ -183,6 +183,21 @@ alternative, an ablation, not a default. The `note` field's ask says whose note 
 is: a note to self, read on the agent's next turn in place of the dropped lines,
 which holds whichever model writes it.
 
+**Evaluating a candidate offline.** `efference dev peek <session> --triage-model X`
+replays every recorded gate under the separate-model shape — the same constructor
+`serve` boots (`ForkPeek::for_triage_model`), the session's own preamble context and
+model name in the triage system prompt — and compares each draw's verdict against the
+**recorded** one, line for line after the cap. The reference is what the session's own
+peek chose to see, not an operator's idea of the right keep: the agent doing the work
+is the only reader who knows what it needed. The summary reports the kept fraction for
+both, over-retention (lines the candidate kept that the reference dropped) and
+under-retention (the reverse) as separate fractions since they are different failures,
+exact-match count, and `none` verdicts against a reference that kept something. A
+table sorts every compared result by disagreement with both notes beside it; `--out`
+writes every row as JSON. Per-gate judgment against the same prefix is what this
+measures; a candidate triaging from turn one would build a different prefix, and only
+a live session measures that.
+
 What is *not* built: the own client's retry and reservation state is not reported
 on `GET /state`, and nothing acts on the triage model's context window being
 smaller than the agent's (backlog/distiller-experiment.md).

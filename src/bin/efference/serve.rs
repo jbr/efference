@@ -141,20 +141,12 @@ fn resolve_env_values(
         .collect())
 }
 
-/// `--triage-model` / `--triage-thinking`: the separate-model fork peek
-/// (docs/redaction-fork.md).
-pub(crate) struct TriageFlags {
-    pub(crate) model: Option<String>,
-    pub(crate) thinking: bool,
-    pub(crate) auto_choice: bool,
-}
-
 #[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
 pub(crate) async fn serve(
     session_dir: PathBuf,
     model: &str,
     spotter_model: Option<&str>,
-    triage: TriageFlags,
+    triage: Option<TriageModel>,
     config: Option<PathBuf>,
     temperature: Option<u8>,
     effort: Option<String>,
@@ -569,53 +561,29 @@ pub(crate) async fn serve(
     // temperature, or upstream pin (endpoint slugs are per-model, as for the
     // spotter). Its context window is looked up like the agent's; nothing yet acts
     // on it being smaller (backlog/distiller-experiment.md).
-    let distiller = match triage.model.as_deref() {
-        Some(triage_model) if triage_model != model => {
-            let triage_caps = match endpoint.fetch_capabilities(triage_model, &[]).await {
-                Ok(caps) => caps,
-                Err(e) => {
-                    return Err(format!(
-                        "--triage-model: model metadata lookup for {triage_model:?} on {} \
-                         failed: {e}",
-                        endpoint.provider.name()
-                    )
-                    .into());
-                }
-            };
-            eprintln!(
-                "triage: {triage_model} · context {} tokens · thinking {} · tool choice {}",
-                triage_caps.context_length,
-                if triage.thinking { "on" } else { "off" },
-                if triage.auto_choice { "auto" } else { "forced" }
-            );
-            let triage_system = env_policy.mask(&efference::env::triage_system_prompt(
-                triage_model,
+    let distiller = match &triage {
+        Some(t) if t.model != model => {
+            let system = env_policy.mask(&efference::env::triage_system_prompt(
+                &t.model,
                 model,
                 context_block.as_deref(),
             ));
-            let mut triage_client =
-                Client::new(endpoint.for_triage(), triage_model, triage_system, None)
-                    .with_stream_ceiling(loaded.role.transport.stream_ceiling)
-                    .with_prompt_cache(triage_caps.prompt_cache);
-            triage_client = if triage.thinking {
-                triage_client.with_model_reasoning(triage_caps.supports_reasoning)
-            } else {
-                triage_client.without_thinking()
-            };
-            // A verdict is one small call: cap the reservation at the peek's size,
-            // not the model's, so it never crowds the window (`PEEK_MAX_OUTPUT`).
-            let cap = triage_caps
-                .max_output_tokens
-                .map_or(PEEK_MAX_OUTPUT, |cap| cap.min(PEEK_MAX_OUTPUT));
-            triage_client = triage_client
-                .with_max_output(cap)
-                .with_context_window(triage_caps.context_length);
-            let peek = ForkPeek::own(triage_client);
-            if triage.auto_choice {
-                peek.with_auto_choice()
-            } else {
-                peek
-            }
+            let (peek, caps) = ForkPeek::for_triage_model(
+                &endpoint,
+                t,
+                system,
+                loaded.role.transport.stream_ceiling,
+            )
+            .await
+            .map_err(|e| format!("--triage-model: {e}"))?;
+            eprintln!(
+                "triage: {} · context {} tokens · thinking {} · tool choice {}",
+                t.model,
+                caps.context_length,
+                if t.thinking { "on" } else { "off" },
+                if t.auto_choice { "auto" } else { "forced" }
+            );
+            peek
         }
         Some(_) => {
             eprintln!("triage: {model} (same as the agent; shared peek)");

@@ -128,6 +128,25 @@ pub(crate) enum DevCommand {
         /// aren't comparable to its record.
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
+        /// Replay under the separate-model peek instead: this model on its own client,
+        /// the same shape `serve --triage-model` boots. Every draw's verdict is
+        /// compared line-for-line against the session's recorded verdict — what the
+        /// agent chose to see — and the summary reports kept fractions, over- and
+        /// under-retention, and a table of the gates that disagreed most.
+        #[arg(long)]
+        triage_model: Option<String>,
+        /// With --triage-model: let it think.
+        #[arg(long)]
+        triage_thinking: bool,
+        /// With --triage-model: `tool_choice: auto` instead of forcing the peek tool.
+        #[arg(long)]
+        triage_auto_choice: bool,
+        /// Write every compared result-draw as a JSON line to this file.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Rows in the disagreement table.
+        #[arg(long, default_value = "15")]
+        table: usize,
     },
     /// Point it at a session JSONL log and print the wire request — the deterministic projection
     /// the assistant actually sees. Reconstructs the full envelope (`system` +
@@ -332,7 +351,22 @@ pub(crate) async fn run(
             limit,
             dry_run,
             model,
-        } => peek_replay::peek(path, seq, repeat, limit, dry_run, &model).await,
+            triage_model,
+            triage_thinking,
+            triage_auto_choice,
+            out,
+            table,
+        } => {
+            let triage = triage_model.map(|model| efference::distill::TriageModel {
+                model,
+                thinking: triage_thinking,
+                auto_choice: triage_auto_choice,
+            });
+            peek_replay::peek(
+                path, seq, repeat, limit, dry_run, &model, triage, out, table,
+            )
+            .await
+        }
         DevCommand::Spotter {
             scope,
             watch_for,
