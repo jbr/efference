@@ -137,7 +137,7 @@ What forcing bought is re-bought harness-side:
   recovered from** — is recorded attempt-stamped on the gate's `Triage` (`retries`)
   and rendered as a `⚠ triage retry` annotation in the TUI transcript: a runtime
   triage failure is a harness defect signal, never silently accepted, and the
-  compliance record is a fold over that field. Implemented in `src/distill.rs`.
+  compliance record is a fold over that field. Implemented in `src/distill/peek.rs`.
 
 Un-forcing also lifts the forced-choice-excludes-thinking constraint
 ([transport.md](transport.md)): the fork may think, and the thinking is discarded with
@@ -328,7 +328,7 @@ small result would be larger than the raw it replaces. The two renderings are
 therefore split:
 
 - **`number_lines`** (`cat -n` per line) — shown only in the throwaway fork peek;
-  the coordinate system `retain(lines=…)` addresses. Implemented in `src/distill.rs`.
+  the coordinate system `retain(lines=…)` addresses. Implemented in `src/distill/prompt.rs`.
 
 - **`render_hunks`** (the canonical wire form) — a `@@ lines a-b @@` header per
   contiguous kept span, then those lines verbatim. One header per range (not per

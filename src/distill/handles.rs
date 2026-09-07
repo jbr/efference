@@ -10,6 +10,8 @@
 //! One entry per known shape in [`SHAPES`]. A second handle-bearing format is one
 //! more entry, not another mechanism.
 
+use super::*;
+
 /// A handle format: a sentinel followed by a fixed-width hex digest. The digest
 /// width and the hex alphabet are what keep the match narrow — a result that
 /// merely mentions the sentinel in prose is not a handle-bearing result.
@@ -58,6 +60,57 @@ pub(super) fn verbatim_handle(text: &str) -> Option<&'static str> {
         .iter()
         .find(|shape| shape.matches(text))
         .map(|s| s.name)
+}
+
+/// The known-shape rule (docs/redaction-fork.md): the name of the verbatim handle
+/// this result carries, if any. A handle-bearing result is **bypassed** — kept out
+/// of the ask, decided by the harness, and delivered raw — because the peek has
+/// nothing in front of it that says the text is unsummarizable.
+pub(super) fn bypassed(pending: &Pending<'_>) -> Option<&'static str> {
+    verbatim_handle(&pending.raw.content)
+}
+
+/// The call ids this gate asks about: every pending result the shape rule did not
+/// bypass. This is the verdict's coordinate system, so the bypassed ids appear in
+/// neither the ask nor the coverage check — the peek is never asked to decide
+/// something the harness already decided.
+pub(super) fn offered_ids(pending: &[Pending<'_>]) -> Vec<String> {
+    pending
+        .iter()
+        .filter(|p| bypassed(p).is_none())
+        .map(|p| p.call.id.0.clone())
+        .collect()
+}
+
+/// The harness's verdict on a bypassed result (docs/redaction-fork.md):
+/// [`WireState::Raw`], so the whole body — handle included — projects verbatim.
+/// `origin` is `Fallback` because no model produced it; `raw_keep` names the shape,
+/// which is what separates a bypass from a failed gate in the log after the fact.
+pub(super) fn bypass_verdict(shape: &str) -> Distillation {
+    Distillation {
+        wire: WireState::Raw,
+        origin: Origin::Fallback,
+        raw_keep: format!("bypassed triage: {shape} — delivered verbatim"),
+    }
+}
+
+/// The whole gate's outcome when the shape rule bypassed **every** result: decided
+/// without a request at all, since there is nothing left to ask about — a skipped
+/// verdict is also a skipped round-trip. `None` means at least one result is still
+/// the fork's, and the peek runs.
+///
+/// The gate-scoped riders (inbox, background, surfacing) simply wait for the next
+/// gate: an undispositioned notification stays active and is re-shown there
+/// (docs/inbox.md), so nothing is lost by not opening a peek for them here.
+pub(super) fn bypassed_gate(pending: &[Pending<'_>]) -> Option<GateOutcome> {
+    let results: Vec<Distillation> = pending
+        .iter()
+        .map_while(|p| bypassed(p).map(bypass_verdict))
+        .collect();
+    (results.len() == pending.len()).then(|| GateOutcome {
+        results,
+        ..GateOutcome::default()
+    })
 }
 
 #[cfg(test)]

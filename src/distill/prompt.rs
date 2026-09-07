@@ -488,3 +488,77 @@ pub(super) fn number_lines(lines: &[&str]) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+/// Build the fork peek's request (docs/redaction-fork.md): the cached
+/// prefix-through-`tool_use`, then one user message carrying every result plus the
+/// gate-scoped riders and the retain prompt.
+///
+/// **The invariant this exists to hold:** the trailing assistant message carries one
+/// `tool_use` per call the completion made, and the API rejects a request that leaves
+/// any of them unanswered. So the tail emits one `tool_result` per [`Pending`] — which
+/// is only correct because the loop runs *every* call of a completion before opening the
+/// gate. Peeking between calls would leave the later ones orphaned, which is exactly the
+/// failure this replaced.
+///
+/// The riders (inbox, background, surfacing roster) are gate-scoped, so they ride the
+/// trailing text block rather than any one result. Pure and separate from the round-trip
+/// so the pairing invariant is testable without a live client.
+pub(super) fn peek_messages(
+    prefix: &[LogEntry],
+    pending: &[Pending<'_>],
+    inbox: &[ShownNotification],
+    background: &[BgView],
+    roster: &[Item],
+) -> Vec<WireTurn> {
+    let mut sections = String::new();
+    append_inbox_and_background(&mut sections, inbox, background);
+    append_roster(&mut sections, roster);
+
+    // Scoped to exactly this gate's ids, and shape-selected on its size — the tail is
+    // discarded with the fork, so nothing here is cache-keyed (docs/redaction-fork.md).
+    // A rider's field row is offered only when its section is actually above.
+    let offered = offered_ids(pending);
+    let mut riders: Vec<&str> = Vec::new();
+    if !inbox.is_empty() {
+        riders.push(INBOX_FIELD);
+    }
+    if !background.is_empty() {
+        riders.push(BACKGROUND_FIELD);
+    }
+    if roster_shown(roster) {
+        riders.push(SURFACE_FIELD);
+    }
+    let instruction = retain_instruction(&offered, &riders);
+
+    // The prefix hits cache; only the raws and the instruction are fresh, and they are
+    // discarded — the canonical lineage never sees raw (docs/redaction-fork.md). The
+    // frontier sits before that raw tail: the shared prefix is read, the throwaway
+    // suffix is never written.
+    let mut messages = project_semantic(prefix);
+    messages.push(WireTurn::Breakpoint);
+    // Every call is answered — a call left unpaired makes the request invalid —
+    // but a bypassed result answers with a stand-in rather than its output: the harness
+    // already decided it (docs/redaction-fork.md), and the ask above does not offer it.
+    let mut content: Vec<UserPart> = pending
+        .iter()
+        .map(|p| UserPart::ToolResult {
+            call_id: p.call.id.clone(),
+            seq: None,
+            content: match bypassed(p) {
+                Some(shape) => bypassed_view(p.call, shape),
+                None => result_view(p.call, p.raw),
+            },
+            is_error: p.raw.is_error,
+            images: Vec::new(),
+        })
+        .collect();
+    // `sections` already opens with its own blank line when non-empty, and is empty
+    // outright on a gate carrying no riders — so trim rather than always joining with a
+    // gap, which left the block opening on stray whitespace.
+    content.push(UserPart::Text(match sections.trim() {
+        "" => instruction,
+        sections => format!("{sections}\n\n{instruction}"),
+    }));
+    messages.push(WireTurn::User(content));
+    messages
+}
