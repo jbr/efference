@@ -43,7 +43,7 @@ trillium = "1.4.0"
 # gate reads `authority()` from — h2's `:authority` is not consulted by
 # `trillium::Conn::host()` (docs/web-bind.md).
 trillium-http = "1.7"
-trillium-client = { version = "0.9.18", features = ["sse"] }
+trillium-client = { version = "0.9.19", features = ["sse"] }
 trillium-client-retry = "0.0.1"
 trillium-rustls = "0.11.3"
 # 0.6.4 adds `UnixClientConfig` — the client-side Unix-socket connector the
@@ -210,15 +210,3 @@ syntect = { version = "5.3", default-features = false, features = [
   "dump-create",
   "regex-onig",
 ] }
-
-
-# Local override until trillium-client 0.9.19 ships the lenient SSE content-type gate
-# (the Codex backend sends none). Drop this stanza and bump the version on release.
-[patch.crates-io]
-trillium-client = { path = "../trillium/client" }
-# The client's path deps must resolve to the same source as the published ones
-# or cargo sees two copies of each; versions match the lockfile.
-trillium = { path = "../trillium/trillium" }
-trillium-http = { path = "../trillium/http" }
-trillium-macros = { path = "../trillium/macros" }
-trillium-server-common = { path = "../trillium/server-common" }

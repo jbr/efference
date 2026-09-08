@@ -705,6 +705,26 @@ impl Client {
             let conn = self.post();
             match conn.with_body(body).into_sse().await {
                 Ok(events) => break events,
+                // The Codex backend streams SSE with no `content-type` at all
+                // (docs/transport.md). `into_sse` refuses that like a browser
+                // EventSource would, but the failed negotiation still owns the
+                // executed conn, so the Responses dialect recovers the stream
+                // from it. A *present* wrong content-type, and every other
+                // dialect, stay on the failure arm.
+                Err(e)
+                    if self.dialect() == WireDialect::Responses
+                        && matches!(e.kind, SseErrorKind::UnexpectedContentType(None)) =>
+                {
+                    // `new` fails only on an unexecuted conn (`NoBody`), which a
+                    // content-type refusal has already ruled out.
+                    match EventStream::new(e.into()) {
+                        Ok(events) => break events,
+                        Err(e) => {
+                            let (status, detail) = Self::sse_open_failure(e).await;
+                            return Err(Self::open_error(status, detail));
+                        }
+                    }
+                }
                 Err(e) => {
                     let (status, detail) = Self::sse_open_failure(e).await;
                     // The window backstop (`api/reservation.rs`): the estimate

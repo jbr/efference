@@ -644,8 +644,11 @@ refreshing an expired token is `codex login`'s job. `EFFERENCE_API_KEY` plus
 `EFFERENCE_CHATGPT_ACCOUNT_ID` override the file. Both profiles have a byte pin.
 
 The Codex backend streams with **no `content-type` header** (verified with curl,
-2026-09-06); trillium-client 0.9.19's `into_sse` accepts an absent header and
-rejects only a present non-`text/event-stream` one. Each response also carries
+2026-09-06). `into_sse` refuses an absent header the way a browser `EventSource`
+does, but the failed negotiation still owns the executed conn, so the Responses
+dialect recovers the stream from it with `EventStream::new` when the error is
+`UnexpectedContentType(None)`; a present non-`text/event-stream` value, and every
+other dialect, stay on the open-failure path. Each response also carries
 `x-codex-*` headers naming the plan, the 5-hour and 7-day usage windows as
 percentages, and their reset times. `api/plan.rs` reads them off every response
 the status handler sees — a 429 included, since the response that ends a window

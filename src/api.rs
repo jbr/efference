@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use trillium_client::Client as HttpClient;
 use trillium_client::Conn;
-use trillium_client::sse::{SseError, SseErrorKind};
+use trillium_client::sse::{EventStream, SseError, SseErrorKind};
 
 use crate::log::{AssistantOutput, CallId, MessagesOutputBlock, Payload, ToolCall};
 use crate::project::ApiMessage;
