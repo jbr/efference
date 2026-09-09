@@ -8,18 +8,12 @@ fn structured_tool_gates_without_a_name_grant() {
     let c = call("read", serde_json::json!({ "paths": ["src/main.rs"] }));
     assert_eq!(structured(&Config::default(), &c), Verdict::Gate);
     // Even with a path grant, an un-granted *name* gates.
-    let role = Config {
-        paths: [(
-            ".".to_string(),
-            Perms {
-                read: true,
-                write: true,
-            },
-        )]
-        .into_iter()
-        .collect(),
-        ..Default::default()
-    };
+    let role = role(
+        r#"
+        [paths]
+        "." = true
+        "#,
+    );
     assert_eq!(structured(&role, &c), Verdict::Gate);
 }
 
@@ -105,29 +99,16 @@ fn a_nested_deny_carves_an_exclusion_out_of_an_allowed_parent() {
     // The self-surface stack the harness injects in `serve`: allow `.`, deny the whole
     // `.efference/` base, re-allow read-only on *this* session's `config.toml`. Resolution
     // is longest-prefix-wins, so each target is judged by its most specific grant.
-    let role = Config {
-        tools: ["read", "write"].iter().map(|s| s.to_string()).collect(),
-        paths: [
-            (
-                ".".to_string(),
-                Perms {
-                    read: true,
-                    write: true,
-                },
-            ),
-            (".efference".to_string(), Perms::default()), // deny
-            (
-                ".efference/sess/config.toml".to_string(),
-                Perms {
-                    read: true,
-                    write: false,
-                }, // re-allow, read only
-            ),
-        ]
-        .into_iter()
-        .collect(),
-        ..Config::default()
-    };
+    let role = role(
+        r#"
+        tools = ["read", "write"]
+
+        [paths]
+        "." = true
+        ".efference" = false
+        ".efference/sess/config.toml" = { read = true }
+        "#,
+    );
     let read = |p: &str| structured(&role, &call("read", serde_json::json!({ "paths": [p] })));
     let write = |p: &str| structured(&role, &call("write", serde_json::json!({ "path": p })));
 
@@ -262,10 +243,12 @@ fn read_image_clears_like_a_read() {
 /// Build a role whose `tools` set is spelled the way a validated config stores it (wire names,
 /// globs as `<namespace>__*`).
 fn tool_role(entries: &[&str]) -> Config {
-    Config {
-        tools: entries.iter().map(|s| s.to_string()).collect(),
-        ..Default::default()
-    }
+    let list = entries
+        .iter()
+        .map(|s| format!("\"{s}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    role(&format!("tools = [{list}]"))
 }
 
 /// `ferritin.*` clears every tool that server advertises — the one the mount table held when the

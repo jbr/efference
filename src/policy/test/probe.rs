@@ -53,10 +53,7 @@ fn descent_picks_shortest_then_descends_past_a_vote() {
 /// coverage check is a defensive guard — when all prefixes are covered it probes nothing.
 #[test]
 fn descent_probes_nothing_when_every_prefix_is_covered() {
-    let role = Config {
-        commands: commands(&["cargo"]),
-        ..Default::default()
-    };
+    let role = role("[commands]\ncargo = true\n");
     let mut ledger = ProbeLedger::default();
     let t = toks("cargo test --workspace");
     ledger.observe(&t);

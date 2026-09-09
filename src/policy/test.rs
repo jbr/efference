@@ -28,27 +28,25 @@ fn review_level_round_trips_and_fails_safe() {
     assert_eq!(ReviewLevel::parse("nonsense"), None);
 }
 
-/// Build a `commands` table whose keys all carry [`CommandStance::Clear`] — the `true` sugar,
-/// which is what every config written before the stance vocabulary spells.
-fn commands(keys: &[&str]) -> std::collections::BTreeMap<String, CommandStance> {
-    keys.iter()
-        .map(|s| (s.to_string(), CommandStance::Clear))
-        .collect()
-}
-
-/// Build a `commands` table from explicit `(key, stance)` pairs.
-fn stances(entries: &[(&str, CommandStance)]) -> std::collections::BTreeMap<String, CommandStance> {
-    entries.iter().map(|(k, s)| (k.to_string(), *s)).collect()
+/// Parse a config from TOML for a test that needs one as an *input* — the operator's own
+/// vocabulary, checked by the real parser rather than assembled field by field.
+fn role(toml: &str) -> Config {
+    Config::from_toml(toml).expect("valid config")
 }
 
 /// A config whose command-allowlist mirrors the curation rule: blanket for whole-arg-space-
 /// recoverable programs (`cargo`, `rg`), sub-verb for the irreversible frontier
 /// (`git diff`/`status`, never `git push`).
 fn sample_role() -> Config {
-    Config {
-        commands: commands(&["cargo", "rg", "git diff", "git status"]),
-        ..Default::default()
-    }
+    role(
+        r#"
+        [commands]
+        cargo = true
+        rg = true
+        "git diff" = true
+        "git status" = true
+        "#,
+    )
 }
 
 fn bash_call(command: &str) -> ToolCall {
@@ -93,39 +91,15 @@ mod tools;
 /// no sub-deny, so a read-only grant can only restrict where the writable cwd grant
 /// doesn't already reach (see [`path_granted`]).
 fn fs_role() -> Config {
-    Config {
-        tools: [
-            "read",
-            "list",
-            "search",
-            "write",
-            "edit",
-            "undo_edit",
-            "kill_process",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect(),
-        paths: [
-            (
-                ".".to_string(),
-                Perms {
-                    read: true,
-                    write: true,
-                },
-            ),
-            (
-                "/refs".to_string(),
-                Perms {
-                    read: true,
-                    write: false,
-                },
-            ),
-        ]
-        .into_iter()
-        .collect(),
-        ..Default::default()
-    }
+    role(
+        r#"
+        tools = ["read", "list", "search", "write", "edit", "undo_edit", "kill_process"]
+
+        [paths]
+        "." = true
+        "/refs" = { read = true }
+        "#,
+    )
 }
 
 fn structured(role: &Config, c: &ToolCall) -> Verdict {

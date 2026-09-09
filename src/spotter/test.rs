@@ -1,8 +1,14 @@
 use super::*;
 use crate::api::{Completion, Usage};
-use crate::config::{Config, Perms};
+use crate::config::Config;
 use crate::log::Payload;
 use std::path::Path;
+
+/// Parse a config from TOML for a test that needs one as an *input* — the operator's own
+/// vocabulary, checked by the real parser.
+fn role(toml: &str) -> Config {
+    Config::from_toml(toml).expect("valid config")
+}
 
 fn spot_completion(name: &str, input: Value) -> Completion {
     Completion {
@@ -225,29 +231,16 @@ fn an_oversized_description_and_schema_are_clipped_at_a_char_boundary() {
 
 #[test]
 fn render_context_includes_scope_and_watch_for() {
-    let role = Config {
-        scope: Some("Fix the build.".into()),
-        watch_for: vec!["Don't touch the deploy keys.".into()],
-        paths: [
-            (
-                ".".to_string(),
-                Perms {
-                    read: true,
-                    write: true,
-                },
-            ),
-            (
-                "/refs".to_string(),
-                Perms {
-                    read: true,
-                    write: false,
-                },
-            ),
-        ]
-        .into_iter()
-        .collect(),
-        ..Default::default()
-    };
+    let role = role(
+        r#"
+        scope = "Fix the build."
+        watch-for = ["Don't touch the deploy keys."]
+
+        [paths]
+        "." = true
+        "/refs" = { read = true }
+        "#,
+    );
     let ctx = render_context(&role, Some(Path::new("/work/repo")), None);
     assert!(ctx.contains("Fix the build."), "{ctx}");
     // A relative grant leads with its resolved absolute form — string-visible
@@ -282,18 +275,12 @@ fn render_context_states_relative_path_resolution() {
 /// grant (`../fs-mcp`) arrives in.
 #[test]
 fn render_context_resolves_parent_relative_grants() {
-    let role = Config {
-        paths: [(
-            "../sibling".to_string(),
-            Perms {
-                read: true,
-                write: true,
-            },
-        )]
-        .into_iter()
-        .collect(),
-        ..Default::default()
-    };
+    let role = role(
+        r#"
+        [paths]
+        "../sibling" = true
+        "#,
+    );
     let ctx = render_context(&role, Some(Path::new("/work/repo")), None);
     assert!(
         ctx.contains("  - /work/sibling (read, write) — granted as `../sibling`"),
@@ -335,18 +322,12 @@ fn render_context_names_the_scratch_alias() {
 /// resolves elsewhere and the move reads as leaving the perimeter.
 #[test]
 fn render_context_resolves_grants_against_the_given_cwd_not_the_process() {
-    let role = Config {
-        paths: [(
-            ".".to_string(),
-            Perms {
-                read: true,
-                write: true,
-            },
-        )]
-        .into_iter()
-        .collect(),
-        ..Default::default()
-    };
+    let role = role(
+        r#"
+        [paths]
+        "." = true
+        "#,
+    );
     let theirs = render_context(&role, Some(Path::new("/Users/jbr/code/trillium")), None);
     assert!(
         theirs.contains("- working directory: /Users/jbr/code/trillium\n"),
@@ -371,18 +352,12 @@ fn render_context_resolves_grants_against_the_given_cwd_not_the_process() {
 /// directory the caller never named.
 #[test]
 fn render_context_without_a_cwd_names_no_directory() {
-    let role = Config {
-        paths: [(
-            ".".to_string(),
-            Perms {
-                read: true,
-                write: true,
-            },
-        )]
-        .into_iter()
-        .collect(),
-        ..Default::default()
-    };
+    let role = role(
+        r#"
+        [paths]
+        "." = true
+        "#,
+    );
     let ctx = render_context(&role, None, None);
     assert!(ctx.contains("- working directory: unknown\n"), "{ctx}");
     assert!(ctx.contains("  - . (read, write)\n"), "{ctx}");

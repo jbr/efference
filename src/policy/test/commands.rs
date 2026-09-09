@@ -94,27 +94,19 @@ fn fd_dup_carve_out_does_not_leak_to_file_redirections() {
 /// [`sample_role`]'s allowlist plus `[paths]` grants — cwd read+write, `/refs` read-only — so the
 /// `cd` tolerance can be exercised against both a writable and a read-only granted directory.
 fn cd_role() -> Config {
-    Config {
-        paths: [
-            (
-                ".".to_string(),
-                Perms {
-                    read: true,
-                    write: true,
-                },
-            ),
-            (
-                "/refs".to_string(),
-                Perms {
-                    read: true,
-                    write: false,
-                },
-            ),
-        ]
-        .into_iter()
-        .collect(),
-        ..sample_role()
-    }
+    role(
+        r#"
+        [commands]
+        cargo = true
+        rg = true
+        "git diff" = true
+        "git status" = true
+
+        [paths]
+        "." = true
+        "/refs" = { read = true }
+        "#,
+    )
 }
 
 fn cd_verdict(command: &str) -> Verdict {
@@ -228,10 +220,20 @@ fn promotable_command_rejects_unlexable_or_redundant_prefixes() {
 /// A role whose `[commands]` table is given as explicit `(key, stance)` pairs, with the same
 /// `[paths]` grants as [`cd_role`] so the `cd` tolerance can be exercised against it.
 fn stance_role(entries: &[(&str, CommandStance)]) -> Config {
-    Config {
-        commands: stances(entries),
-        ..cd_role()
+    let mut commands = String::new();
+    for (key, stance) in entries {
+        commands.push_str(&format!("\"{key}\" = \"{}\"\n", stance.as_str()));
     }
+    role(&format!(
+        r#"
+        [commands]
+        {commands}
+
+        [paths]
+        "." = true
+        "/refs" = {{ read = true }}
+        "#
+    ))
 }
 
 fn stance_verdict(role: &Config, command: &str) -> Verdict {

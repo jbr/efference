@@ -368,6 +368,15 @@ pub struct Perms {
 pub const DEFAULT_PATH: &str = "efference.toml";
 
 impl Config {
+    /// Parse a config from TOML text — decode, then validate — labelling diagnostics
+    /// with a stand-in path. The same path a file takes through `load`, exposed so a
+    /// config used as an *input* (a policy or spotter test, a scripted scenario) is
+    /// written in the vocabulary an operator writes and checked by the parser that
+    /// reads theirs, rather than assembled field by field around it.
+    pub fn from_toml(text: &str) -> Result<Self, LoadError> {
+        raw::parse(Path::new("<inline>"), text)
+    }
+
     /// Render the scope into the byte-stable preamble section appended to the system prompt
     /// (docs/permissions.md), or `None` if there is no scope. The header is fixed
     /// and the body is the scope verbatim (trimmed), so the output is a pure, deterministic

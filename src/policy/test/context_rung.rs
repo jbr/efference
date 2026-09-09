@@ -1,24 +1,19 @@
 //! The context rung: how a scope/context grant reaches the classifier.
 
 use super::*;
-use crate::config::{ContextEntry, ContextGrants, ContextSource};
 
-fn ctx_entry(paths: &[&str], update: bool, create: bool) -> ContextEntry {
-    ContextEntry {
-        heading: None,
-        source: ContextSource::Files(paths.iter().map(|s| s.to_string()).collect()),
-        grants: ContextGrants { update, create },
-        sort: None,
-        exclude: Vec::new(),
-        description: None,
-    }
-}
-
-fn ctx_role(entries: Vec<ContextEntry>) -> Config {
-    Config {
-        context: entries,
-        ..Default::default()
-    }
+/// A role whose `[context]` table has one entry granting `path` with the given write grants.
+/// `create` is group-only in the TOML vocabulary (a bare path has nowhere to create into), so a
+/// `create` grant forces a labeled group; otherwise a bare path is used, matching what an
+/// operator would write for a plain listing.
+fn ctx_role(path: &str, update: bool, create: bool) -> Config {
+    let entry = match (update, create) {
+        (false, false) => format!("\"{path}\" = true"),
+        (true, false) => format!("\"{path}\" = {{ update = true }}"),
+        (false, true) => format!("Entry = {{ path = \"{path}\", create = true }}"),
+        (true, true) => format!("Entry = {{ path = \"{path}\", update = true, create = true }}"),
+    };
+    role(&format!("[context]\n{entry}\n"))
 }
 
 /// The headline behavior: a `[context]` listing is itself the read grant. An otherwise
@@ -26,7 +21,7 @@ fn ctx_role(entries: Vec<ContextEntry>) -> Config {
 /// — that read is exactly what the preamble stub invited.
 #[test]
 fn listing_clears_a_read_with_no_other_grants() {
-    let role = ctx_role(vec![ctx_entry(&["docs/verify.md"], false, false)]);
+    let role = ctx_role("docs/verify.md", false, false);
     assert_eq!(
         structured(
             &role,
@@ -60,7 +55,7 @@ fn listing_clears_a_read_with_no_other_grants() {
 /// everything under it, not just a mention.
 #[test]
 fn location_entry_clears_reads_under_its_subtree() {
-    let role = ctx_role(vec![ctx_entry(&["memories"], false, false)]);
+    let role = ctx_role("memories", false, false);
     assert_eq!(
         structured(
             &role,
@@ -95,20 +90,17 @@ fn location_entry_clears_reads_under_its_subtree() {
 /// is granted by *some* source.
 #[test]
 fn a_read_spanning_paths_and_context_clears_per_path() {
-    let role = Config {
-        tools: ["read"].iter().map(|s| s.to_string()).collect(),
-        paths: [(
-            ".".to_string(),
-            Perms {
-                read: true,
-                write: true,
-            },
-        )]
-        .into_iter()
-        .collect(),
-        context: vec![ctx_entry(&["/outside/memory"], false, false)],
-        ..Default::default()
-    };
+    let role = role(
+        r#"
+        tools = ["read"]
+
+        [paths]
+        "." = true
+
+        [context]
+        "/outside/memory" = true
+        "#,
+    );
     // `docs/x.md` is under the `.` [paths] grant; `/outside/memory/note.md` is under the
     // [context] entry. Each path clears via a *different* source; the batch clears.
     assert_eq!(
@@ -161,15 +153,15 @@ fn write_grants_split_on_existence() {
     );
     let fresh = call("write", serde_json::json!({ "path": "memories/new.md" }));
 
-    let read_only = ctx_role(vec![ctx_entry(&["memories"], false, false)]);
+    let read_only = ctx_role("memories", false, false);
     assert_eq!(classify_in(&read_only, &existing, &dir), Verdict::Gate);
     assert_eq!(classify_in(&read_only, &fresh, &dir), Verdict::Gate);
 
-    let update_only = ctx_role(vec![ctx_entry(&["memories"], true, false)]);
+    let update_only = ctx_role("memories", true, false);
     assert_eq!(classify_in(&update_only, &existing, &dir), Verdict::Clear);
     assert_eq!(classify_in(&update_only, &fresh, &dir), Verdict::Gate);
 
-    let append_only = ctx_role(vec![ctx_entry(&["memories"], false, true)]);
+    let append_only = ctx_role("memories", false, true);
     assert_eq!(classify_in(&append_only, &existing, &dir), Verdict::Gate);
     assert_eq!(classify_in(&append_only, &fresh, &dir), Verdict::Clear);
 
@@ -190,14 +182,12 @@ fn write_grants_split_on_existence() {
 /// An `exec` entry has no files: it grants nothing, read or write.
 #[test]
 fn exec_entry_grants_nothing() {
-    let role = ctx_role(vec![ContextEntry {
-        heading: Some("Date".into()),
-        source: ContextSource::Exec("date".into()),
-        grants: ContextGrants::default(),
-        sort: None,
-        exclude: Vec::new(),
-        description: None,
-    }]);
+    let role = role(
+        r#"
+        [context]
+        Date = { exec = "date" }
+        "#,
+    );
     assert_eq!(
         structured(
             &role,
@@ -211,7 +201,7 @@ fn exec_entry_grants_nothing() {
 /// tool (or bash) is untouched by `[context]` and follows the ordinary rules.
 #[test]
 fn unrelated_tools_are_untouched() {
-    let role = ctx_role(vec![ctx_entry(&["docs"], true, true)]);
+    let role = ctx_role("docs", true, true);
     assert_eq!(
         structured(&role, &call("kill_process", serde_json::json!({ "id": 1 }))),
         Verdict::Gate

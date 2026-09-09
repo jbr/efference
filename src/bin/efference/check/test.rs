@@ -5,20 +5,12 @@
 use super::*;
 
 fn role_with_tools(entries: &[&str]) -> efference::config::Config {
-    let mut text = String::from("tools = [");
-    for (i, entry) in entries.iter().enumerate() {
-        if i > 0 {
-            text.push_str(", ");
-        }
-        text.push_str(&format!("\"{entry}\""));
-    }
-    text.push_str("]\n");
-    let path =
-        std::env::temp_dir().join(format!("efference-check-mark-{}.toml", std::process::id()));
-    std::fs::write(&path, &text).unwrap();
-    let role = efference::config::load(Some(&path)).unwrap().role;
-    let _ = std::fs::remove_file(&path);
-    role
+    let list = entries
+        .iter()
+        .map(|s| format!("\"{s}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    efference::config::Config::from_toml(&format!("tools = [{list}]\n")).expect("valid config")
 }
 
 #[test]

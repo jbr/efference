@@ -393,29 +393,22 @@ fn state_reports_effective_role_contents() {
 
     // A loaded config surfaces its resolved path and full contents (sorted, by BTree order).
     let loaded = LoadedConfig {
-        role: crate::config::Config {
-            scope: Some("stay in the repo".into()),
-            watch_for: vec!["network egress".into()],
-            commands: [
-                ("cargo", crate::config::CommandStance::Clear),
-                ("git diff", crate::config::CommandStance::Clear),
-                ("git push", crate::config::CommandStance::Deny),
-            ]
-            .into_iter()
-            .map(|(k, s)| (k.to_string(), s))
-            .collect(),
-            tools: ["read"].iter().map(|s| s.to_string()).collect(),
-            paths: [(
-                ".".to_string(),
-                crate::config::Perms {
-                    read: true,
-                    write: true,
-                },
-            )]
-            .into_iter()
-            .collect(),
-            ..Default::default()
-        },
+        role: crate::config::Config::from_toml(
+            r#"
+            scope = "stay in the repo"
+            watch-for = ["network egress"]
+            tools = ["read"]
+
+            [commands]
+            cargo = true
+            "git diff" = true
+            "git push" = "deny"
+
+            [paths]
+            "." = true
+            "#,
+        )
+        .expect("valid config"),
         source: ConfigSource::Path("efference.toml".into()),
     };
     let (shared, _rx) = Shared::with_role(Log::in_memory(), loaded);
