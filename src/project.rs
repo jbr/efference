@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use std::collections::HashSet;
 
-use crate::log::{Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock, Payload, Seq};
+use crate::log::{Distilled, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock, Payload, Seq};
 
 /// A boundary mark and the summary it contributes, extracted in the pre-pass.
 struct Boundary {

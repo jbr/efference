@@ -38,8 +38,8 @@ use crate::api::{Client, Completion, RequestUsage, RetrySurface, ToolChoice};
 use crate::context::Item;
 use crate::inbox::ShownNotification;
 use crate::log::{
-    AssistantOutput, Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall,
-    WireState,
+    AssistantOutput, Disposition, Distilled, Keep, LogEntry, Origin, Payload, RawResult, Seq,
+    ToolCall, WireState,
 };
 use crate::project::{PEEK_LINE_CAP, UserPart, WireTurn, project_semantic};
 use crate::supervisor::BgView;
@@ -84,8 +84,8 @@ pub struct Pending<'a> {
 /// audit pieces the loop stamps into that result's [`Triage`](crate::log::Triage)
 /// entry. `raw` is never mutated — it stays in the log.
 pub struct Distillation {
-    /// The canonical wire form — a [`WireState::Distilled`] verdict (kept ranges +
-    /// note), re-rendered from `raw` at projection time (docs/redaction-fork.md).
+    /// The canonical wire form — a [`WireState::Distilled`] verdict ([`Distilled`]:
+    /// kept ranges, note, feedback), re-rendered from `raw` at projection time (docs/redaction-fork.md).
     pub wire: WireState,
     /// Whether the verdict is the model's or a harness fallback (docs/redaction-fork.md).
     pub origin: Origin,
@@ -398,13 +398,11 @@ impl ForkPeek {
                 Some(shape) => bypass_verdict(shape),
                 None => match verdict.results.iter().find(|v| v.call_id == p.call.id.0) {
                     Some(v) => {
-                        let mut wire = WireState::distilled(v.keep.clone());
-                        if let Some(note) = v.note.clone() {
-                            wire = wire.with_note(note);
-                        }
-                        if let Some(intent_feedback) = v.intent_feedback.clone() {
-                            wire = wire.with_intent_feedback(intent_feedback);
-                        }
+                        let wire = WireState::Distilled(Distilled {
+                            keep: v.keep.clone(),
+                            note: v.note.clone(),
+                            intent_feedback: v.intent_feedback.clone(),
+                        });
                         Distillation {
                             wire,
                             origin: Origin::Model,

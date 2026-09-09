@@ -46,8 +46,8 @@ impl Retention {
             return;
         };
         match wire {
-            WireState::Distilled { keep, .. } => {
-                let d = distillate(&raw.content, keep);
+            WireState::Distilled(verdict) => {
+                let d = distillate(&raw.content, &verdict.keep);
                 self.kept_lines += d
                     .ranges
                     .iter()

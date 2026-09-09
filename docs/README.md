@@ -60,7 +60,7 @@ enum Payload {
 
 enum WireState {
     Raw,                                             // project the full raw result
-    Distilled { keep: Keep, note: Option<String> },  // a verdict, re-rendered by project
+    Distilled(Distilled),                            // a verdict (keep, note, intent_feedback), re-rendered by project
     Elided,                                          // project a placeholder; still recoverable
 }
 

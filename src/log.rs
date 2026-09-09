@@ -995,17 +995,7 @@ pub enum WireState {
     /// structured decision doubles as the record. `raw` stays in the log.
     ///
     /// [`project`]: crate::project::project
-    Distilled {
-        keep: Keep,
-        note: Option<String>,
-        /// Triage's request for a better `intent` — present only when the intent gave
-        /// it nothing to decide against, about the intent and never the task
-        /// (docs/redaction-fork.md). Rendered after the note. Absent on logs written
-        /// before the field existed, so it deserializes as `None` and serializes only
-        /// when set.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        intent_feedback: Option<String>,
-    },
+    Distilled(Distilled),
     /// Project nothing of substance; still recoverable from the log.
     Elided,
     /// The gate could not elicit a usable triage verdict — a transport failure or
@@ -1017,35 +1007,49 @@ pub enum WireState {
     TriageFailed { why: String },
 }
 
-impl WireState {
-    /// A distilled state carrying only its verdict, with no note and no feedback.
-    pub fn distilled(keep: Keep) -> Self {
-        Self::Distilled {
+/// A triage verdict on one result (docs/redaction-fork.md): which lines survive,
+/// the note read in their place, and triage's optional request for a better
+/// `intent`. Carried by [`WireState::Distilled`]; the wire form is re-rendered from
+/// `raw` plus this each turn, so a field added here is one setter and one render
+/// clause, never a sweep.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Distilled {
+    pub keep: Keep,
+    pub note: Option<String>,
+    /// Present only when the intent gave triage nothing to decide against — about
+    /// the intent and never the task (docs/redaction-fork.md). Rendered after the
+    /// note. Absent on logs written before the field existed, so it deserializes as
+    /// `None` and serializes only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent_feedback: Option<String>,
+}
+
+impl Distilled {
+    /// A verdict carrying only its `keep`, with no note and no feedback.
+    pub fn new(keep: Keep) -> Self {
+        Self {
             keep,
             note: None,
             intent_feedback: None,
         }
     }
 
-    /// Set the note on a `Distilled` state; a no-op on any other variant. Builds;
-    /// flipping a stored state is the projection's job, not a setter's.
+    /// Set the note. Builds; flipping a stored state is the projection's job.
     pub fn with_note(mut self, text: impl Into<String>) -> Self {
-        if let Self::Distilled { note, .. } = &mut self {
-            *note = Some(text.into());
-        }
+        self.note = Some(text.into());
         self
     }
 
-    /// Set triage's `intent_feedback` on a `Distilled` state; a no-op on any other
-    /// variant (docs/redaction-fork.md).
+    /// Set triage's `intent_feedback` (docs/redaction-fork.md).
     pub fn with_intent_feedback(mut self, text: impl Into<String>) -> Self {
-        if let Self::Distilled {
-            intent_feedback, ..
-        } = &mut self
-        {
-            *intent_feedback = Some(text.into());
-        }
+        self.intent_feedback = Some(text.into());
         self
+    }
+}
+
+impl From<Distilled> for WireState {
+    fn from(verdict: Distilled) -> Self {
+        Self::Distilled(verdict)
     }
 }
 

@@ -551,7 +551,7 @@ async fn state_json_surfaces_running_processes() {
 /// that a withheld result stays out of the ratio it would otherwise flatter.
 #[test]
 fn state_reports_triage_retention() {
-    use crate::log::{Keep, RawResult, WireState};
+    use crate::log::{Distilled, Keep, RawResult, WireState};
 
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
     let result = |seq: u64, lines: usize, wire: WireState| {
@@ -573,7 +573,11 @@ fn state_reports_triage_retention() {
     assert_eq!(v["usage"]["retention"]["shown_lines"], 0);
     assert_eq!(v["usage"]["retention"]["kept_lines"], 0);
 
-    result(0, 100, WireState::distilled(Keep::Ranges(vec![(1, 40)])));
+    result(
+        0,
+        100,
+        WireState::from(Distilled::new(Keep::Ranges(vec![(1, 40)]))),
+    );
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["retention"]["kept_lines"], 40);
     assert_eq!(v["usage"]["retention"]["shown_lines"], 100);
@@ -582,7 +586,7 @@ fn state_reports_triage_retention() {
     // A second poll after a second result: the fold advanced by exactly the new entry.
     // A cursor that failed to advance would report 40/100 again; one that reset would
     // refold the first result and report 80/200.
-    result(1, 100, WireState::distilled(Keep::All));
+    result(1, 100, WireState::from(Distilled::new(Keep::All)));
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["retention"]["kept_lines"], 140);
     assert_eq!(v["usage"]["retention"]["shown_lines"], 200);

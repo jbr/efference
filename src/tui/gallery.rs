@@ -12,8 +12,8 @@
 pub mod stream;
 
 use crate::log::{
-    AssistantOutput, ContentBlock, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock, Payload,
-    RawResult, Timestamp, ToolCall, WireState,
+    AssistantOutput, ContentBlock, Distilled, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock,
+    Payload, RawResult, Timestamp, ToolCall, WireState,
 };
 
 /// A committed user turn carrying markdown prose.
@@ -279,9 +279,11 @@ pub(super) fn log() -> Vec<LogEntry> {
             "toolu_g5",
             "…600 lines of dependency tree…",
             false,
-            WireState::distilled(Keep::None).with_note(
-                "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated.",
-            ),
+            Distilled::new(Keep::None)
+                .with_note(
+                    "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated.",
+                )
+                .into(),
         ),
         // The file tools: concise call lines (path / pattern, not JSON) and a
         // `read` result with its sentinel framing stripped + highlighted by type.

@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{Keep, RawResult, Timestamp, ToolCall};
+use crate::log::{Distilled, Keep, RawResult, Timestamp, ToolCall};
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
     LogEntry {
@@ -208,7 +208,9 @@ fn distilled_wire_supersedes_raw() {
             Payload::tool_result(
                 "toolu_9",
                 RawResult::text("RAW-NOISE\nthe kept line"),
-                WireState::distilled(Keep::Ranges(vec![(2, 2)])).with_note("the distilled summary"),
+                WireState::from(
+                    Distilled::new(Keep::Ranges(vec![(2, 2)])).with_note("the distilled summary"),
+                ),
             ),
         ),
     ];
@@ -275,7 +277,9 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
             Payload::tool_result(
                 "toolu_9",
                 RawResult::text("RAW-NOISE\nthe kept line"),
-                WireState::distilled(Keep::Ranges(vec![(2, 2)])).with_note("the distilled summary"),
+                WireState::from(
+                    Distilled::new(Keep::Ranges(vec![(2, 2)])).with_note("the distilled summary"),
+                ),
             ),
         ),
     ];

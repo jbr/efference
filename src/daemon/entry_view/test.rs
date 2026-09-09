@@ -1,7 +1,7 @@
 //! Tests for `entry_view.rs`.
 
 use super::*;
-use crate::log::{ContentBlock, ContentElision, Timestamp, WireState};
+use crate::log::{ContentBlock, ContentElision, Distilled, Timestamp, WireState};
 
 fn entry(seq: u64, submission_id: Option<&str>, payload: Payload) -> LogEntry {
     LogEntry {
@@ -214,7 +214,10 @@ fn a_distilled_view_carries_the_line_counts_the_prefix_cannot_yield() {
         Payload::tool_result(
             "toolu_distilled",
             RawResult::text(content.clone()),
-            WireState::distilled(crate::log::Keep::Ranges(vec![(300, 309), (350, 400)])),
+            WireState::from(Distilled::new(crate::log::Keep::Ranges(vec![
+                (300, 309),
+                (350, 400),
+            ]))),
         ),
     );
     let windowed: serde_json::Value =

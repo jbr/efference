@@ -1,6 +1,7 @@
 //! Tool-result rendering: whole results, distilled verdicts, and errors.
 
 use super::*;
+use crate::log::Distilled;
 
 /// The baseline for how a tool call and its result render: the call's command as a
 /// shell block, the result whole under its own status header.
@@ -191,9 +192,9 @@ fn transcript_distilled_result() {
         "toolu_03",
         "efference v0.1.0\n├── anyhow v1.0.86\n├── clap v4.5.4\n│   ├── …600 more lines…",
         false,
-        WireState::distilled(Keep::None).with_note(
+        WireState::from(Distilled::new(Keep::None).with_note(
             "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated.",
-        ),
+        )),
     );
     play.snapshot("transcript_distilled_result");
 }
@@ -219,11 +220,13 @@ fn transcript_distilled_result_shows_intent_feedback() {
 src
 docs",
         false,
-        WireState::distilled(Keep::All)
-            .with_note("3 entries: Cargo.toml, src, docs")
-            .with_intent_feedback(
-                "it said what the call does, not what you needed; kept everything",
-            ),
+        WireState::from(
+            Distilled::new(Keep::All)
+                .with_note("3 entries: Cargo.toml, src, docs")
+                .with_intent_feedback(
+                    "it said what the call does, not what you needed; kept everything",
+                ),
+        ),
     );
     play.snapshot("transcript_distilled_result_with_intent_feedback");
 }
@@ -248,7 +251,7 @@ fn transcript_complete_distillate_shows_a_plain_size() {
         "toolu_k1",
         "line one\nline two\nline three",
         false,
-        WireState::distilled(Keep::All),
+        WireState::from(Distilled::new(Keep::All)),
     );
 
     let frame = play.render();
@@ -288,8 +291,10 @@ fn a_partial_distillate_of_an_edit_shows_the_triaged_lines() {
          +- `read` tool line-range support in `fs-mcp`.\n\
          \x20- Interactive TUI (`efference tui`).",
         false,
-        WireState::distilled(Keep::Ranges(vec![(1, 1)]))
-            .with_note("inserted the read line-range entry"),
+        WireState::from(
+            Distilled::new(Keep::Ranges(vec![(1, 1)]))
+                .with_note("inserted the read line-range entry"),
+        ),
     );
 
     let frame = play.render();
@@ -334,7 +339,7 @@ fn a_partly_kept_diff_is_still_a_diff() {
          +- `read` tool line-range support in `fs-mcp`.\n\
          \x20- Interactive TUI (`efference tui`).",
         false,
-        WireState::distilled(Keep::Ranges(vec![(4, 6)])),
+        WireState::from(Distilled::new(Keep::Ranges(vec![(4, 6)]))),
     );
 
     let frame = play.render();
@@ -383,7 +388,7 @@ fn a_complete_distillate_keeps_its_per_tool_rendering() {
          +- `read` tool line-range support in `fs-mcp`.\n\
          \x20- Interactive TUI (`efference tui`).",
         false,
-        WireState::distilled(Keep::All),
+        WireState::from(Distilled::new(Keep::All)),
     );
 
     let frame = play.render();
@@ -432,8 +437,10 @@ fn transcript_distilled_keeps_numbered_lines() {
         "toolu_04",
         &output,
         false,
-        WireState::distilled(Keep::Ranges(vec![(7, 7), (22, 23)]))
-            .with_note("2 failures, both in the tui wrap/gutter work."),
+        WireState::from(
+            Distilled::new(Keep::Ranges(vec![(7, 7), (22, 23)]))
+                .with_note("2 failures, both in the tui wrap/gutter work."),
+        ),
     );
 
     let frame = play.render();
@@ -468,8 +475,10 @@ fn transcript_raw_view_of_distilled() {
         "toolu_03",
         "efference v0.1.0\n├── anyhow v1.0.86\n├── clap v4.5.4\n└── tokio v1.38.0",
         false,
-        WireState::distilled(Keep::None)
-            .with_note("12 direct deps; tokio + trillium are the heaviest."),
+        WireState::from(
+            Distilled::new(Keep::None)
+                .with_note("12 direct deps; tokio + trillium are the heaviest."),
+        ),
     );
     play.show_raw("toolu_03");
     play.snapshot("transcript_raw_view_of_distilled");
@@ -557,8 +566,10 @@ fn a_partly_kept_read_keeps_its_highlighting() {
              }\n\
              ==MK7 END /Users/jbr/code/efference/src/tui/state.rs MK7==",
         false,
-        WireState::distilled(Keep::Ranges(vec![(2, 3)]))
-            .with_note("the struct head and its first field"),
+        WireState::from(
+            Distilled::new(Keep::Ranges(vec![(2, 3)]))
+                .with_note("the struct head and its first field"),
+        ),
     );
 
     let frame = play.render();

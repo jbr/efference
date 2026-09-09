@@ -1210,7 +1210,7 @@ fn peek_thinking_joins_thinking_text_only() {
 #[test]
 fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_only_the_distillate() {
     use crate::api::{PromptCachePolicy, encode_responses};
-    use crate::log::{Keep, ResponsesOutputItem, WireState};
+    use crate::log::{Distilled, Keep, ResponsesOutputItem, WireState};
 
     let call = ToolCall::new("bash", "call_1", json!({ "command": "ls" }));
     let prefix = vec![
@@ -1281,7 +1281,7 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
         Payload::tool_result(
             call.id.clone(),
             raw.clone(),
-            WireState::distilled(Keep::Ranges(vec![(1, 1)])).with_note("kept the first"),
+            WireState::from(Distilled::new(Keep::Ranges(vec![(1, 1)])).with_note("kept the first")),
         ),
     ));
     let mut canonical = project_semantic(&log);

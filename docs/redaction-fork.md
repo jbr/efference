@@ -375,7 +375,7 @@ therefore split:
   numbers in a gutter instead ([tui.md](tui.md)). Both go through `distillate`, so
   the two views can differ in form but never in *which* lines they show.
   `render_hunks` runs at **projection time** over the stored verdict
-    (`WireState::Distilled { keep, note, intent_feedback }`), not at append — the wire
+    (`WireState::Distilled(Distilled { keep, note, intent_feedback })`), not at append — the wire
   form is re-derived from `raw` plus the verdict each turn, so the kept bytes are never
   stored twice. When a note survives, `render_hunks` prefixes it with the `⟢`
   provenance sigil — the same marker surfaced-context lines carry (`⟢ context ·
@@ -388,9 +388,12 @@ therefore split:
 
 ## The verdict is the stored form
 
-`WireState::Distilled` carries the **verdict** (the `keep` ranges, optional `note`,
-and optional `intent_feedback`, the last serialized only when set so recorded logs
-are byte-unchanged by its arrival), not the rendered bytes. Two payoffs from one move: the kept bytes are
+`WireState::Distilled` carries the **verdict** as one `Distilled` struct (the `keep`
+ranges, optional `note`, and optional `intent_feedback`, the last serialized only when
+set so recorded logs are byte-unchanged by its arrival), not the rendered bytes. The
+struct is what `render_distilled` takes and what the builders construct, so a field
+added to the verdict is one setter and one render clause rather than a change to every
+site that names the variant. Two payoffs from one move: the kept bytes are
 never persisted twice, and the structured decision is itself the record.
 
 The fork's bulky transcript — the full line-numbered output plus the `retain`

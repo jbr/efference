@@ -1,6 +1,18 @@
 //! Rendering a distilled verdict back to wire text (docs/redaction-fork.md).
 
 use super::*;
+
+/// A verdict for the renderer under test, from the three values a case varies.
+fn verdict(keep: Keep, note: Option<&str>, intent_feedback: Option<&str>) -> Distilled {
+    let mut v = Distilled::new(keep);
+    if let Some(note) = note {
+        v = v.with_note(note);
+    }
+    if let Some(fb) = intent_feedback {
+        v = v.with_intent_feedback(fb);
+    }
+    v
+}
 use crate::project::render::{normalize, render_hunks};
 
 fn lines(s: &str) -> Vec<&str> {
@@ -13,13 +25,13 @@ fn lines(s: &str) -> Vec<&str> {
 #[test]
 fn render_distilled_covers_all_none_and_ranges() {
     let c = "a\nb\nc\nd\ne";
-    let all = render_distilled(c, &Keep::All, None, None);
+    let all = render_distilled(c, &verdict(Keep::All, None, None));
     assert_eq!(all, c, "a fully-retained result is the result: {all}");
 
-    let none = render_distilled(c, &Keep::None, Some("nothing useful here"), None);
+    let none = render_distilled(c, &verdict(Keep::None, Some("nothing useful here"), None));
     assert_eq!(none, "⟢ nothing useful here");
 
-    let ranges = render_distilled(c, &Keep::Ranges(vec![(2, 3)]), None, None);
+    let ranges = render_distilled(c, &verdict(Keep::Ranges(vec![(2, 3)]), None, None));
     assert!(ranges.contains("@@ lines 2-3 @@"), "{ranges}");
     assert!(
         ranges.lines().any(|l| l == "b") && ranges.lines().any(|l| l == "c"),
@@ -40,7 +52,7 @@ fn render_distilled_truncates_past_the_cap() {
         .map(|i| format!("line{i}"))
         .collect::<Vec<_>>()
         .join("\n");
-    let out = render_distilled(&body, &Keep::Ranges(vec![(1, 1)]), None, None);
+    let out = render_distilled(&body, &verdict(Keep::Ranges(vec![(1, 1)]), None, None));
     assert!(out.lines().any(|l| l == "line1"), "kept line present");
     assert!(
         out.contains("5 more lines truncated"),
@@ -49,9 +61,11 @@ fn render_distilled_truncates_past_the_cap() {
 
     let past = render_distilled(
         &body,
-        &Keep::Ranges(vec![(PEEK_LINE_CAP + 2, PEEK_LINE_CAP + 4)]),
-        None,
-        None,
+        &verdict(
+            Keep::Ranges(vec![(PEEK_LINE_CAP + 2, PEEK_LINE_CAP + 4)]),
+            None,
+            None,
+        ),
     );
     assert!(
         !past.contains(&format!("line{}", PEEK_LINE_CAP + 3)),
@@ -65,15 +79,22 @@ fn render_distilled_truncates_past_the_cap() {
 #[test]
 fn a_range_spanning_everything_gets_no_header() {
     let ls = lines("alpha\nbeta\ngamma");
-    let wire = render_hunks(&ls, &[(1, 3)], None, None);
+    let wire = render_hunks(&ls, &[(1, 3)], &verdict(Keep::All, None, None));
     assert_eq!(wire, "alpha\nbeta\ngamma", "{wire}");
 
     // The one-line case that made triage net-negative on short results.
-    assert_eq!(render_hunks(&lines("done"), &[(1, 1)], None, None), "done");
+    assert_eq!(
+        render_hunks(&lines("done"), &[(1, 1)], &verdict(Keep::All, None, None)),
+        "done"
+    );
 
     // A note still rides along; it is the breadcrumb, not the position anchor.
     assert_eq!(
-        render_hunks(&lines("done"), &[(1, 1)], Some("wrote the file"), None),
+        render_hunks(
+            &lines("done"),
+            &[(1, 1)],
+            &verdict(Keep::All, Some("wrote the file"), None)
+        ),
         "done\n⟢ wrote the file"
     );
 }
@@ -82,7 +103,7 @@ fn a_range_spanning_everything_gets_no_header() {
 #[test]
 fn a_partial_range_keeps_its_header() {
     let ls = lines("alpha\nbeta\ngamma");
-    let wire = render_hunks(&ls, &[(1, 2)], None, None);
+    let wire = render_hunks(&ls, &[(1, 2)], &verdict(Keep::All, None, None));
     assert!(wire.contains("@@ lines 1-2 @@"), "{wire}");
     assert!(!wire.contains("gamma"), "{wire}");
     assert!(
@@ -98,7 +119,7 @@ fn gapped_hunks_get_a_header_each_and_drop_the_gap() {
         .collect::<Vec<_>>()
         .join("\n");
     let ls = lines(&body);
-    let wire = render_hunks(&ls, &[(1, 3), (99, 100)], None, None);
+    let wire = render_hunks(&ls, &[(1, 3), (99, 100)], &verdict(Keep::All, None, None));
     assert!(
         wire.contains("@@ lines 1-3 @@") && wire.contains("@@ lines 99-100 @@"),
         "{wire}"
@@ -110,7 +131,7 @@ fn gapped_hunks_get_a_header_each_and_drop_the_gap() {
 #[test]
 fn single_line_hunk_uses_the_singular_header() {
     let ls = lines("a\nb\nc");
-    let wire = render_hunks(&ls, &[(2, 2)], None, None);
+    let wire = render_hunks(&ls, &[(2, 2)], &verdict(Keep::All, None, None));
     assert!(wire.contains("@@ line 2 @@"), "{wire}");
     assert!(wire.lines().any(|l| l == "b"));
 }
@@ -118,12 +139,22 @@ fn single_line_hunk_uses_the_singular_header() {
 #[test]
 fn note_appends_and_empty_falls_back_to_breadcrumb() {
     let ls = lines("a\nb\nc");
-    assert!(render_hunks(&ls, &[(2, 2)], Some("the b line"), None).ends_with("⟢ the b line"));
+    assert!(
+        render_hunks(
+            &ls,
+            &[(2, 2)],
+            &verdict(Keep::All, Some("the b line"), None)
+        )
+        .ends_with("⟢ the b line")
+    );
     assert_eq!(
-        render_hunks(&ls, &[], Some("wrong file"), None),
+        render_hunks(&ls, &[], &verdict(Keep::All, Some("wrong file"), None)),
         "⟢ wrong file"
     );
-    assert_eq!(render_hunks(&ls, &[], None, None), "(nothing kept)");
+    assert_eq!(
+        render_hunks(&ls, &[], &verdict(Keep::All, None, None)),
+        "(nothing kept)"
+    );
 }
 
 #[test]
@@ -162,7 +193,7 @@ fn distilled_projects_the_verdict_not_raw() {
             Payload::tool_result(
                 "x",
                 RawResult::text("the gist line\nten thousand lines of output"),
-                WireState::distilled(Keep::Ranges(vec![(1, 1)])).with_note("summary"),
+                WireState::from(Distilled::new(Keep::Ranges(vec![(1, 1)])).with_note("summary")),
             ),
         ),
     ];
@@ -246,16 +277,26 @@ fn intent_feedback_follows_the_note_under_its_own_lead() {
         render_hunks(
             &ls,
             &[(1, 2)],
-            Some("two lines"),
-            Some("no question to keep against")
+            &verdict(
+                Keep::All,
+                Some("two lines"),
+                Some("no question to keep against")
+            )
         ),
         "a\nb\n⟢ two lines\n⟢ re your intent: no question to keep against"
     );
     assert_eq!(
-        render_hunks(&ls, &[], None, Some("no question to keep against")),
+        render_hunks(
+            &ls,
+            &[],
+            &verdict(Keep::All, None, Some("no question to keep against"))
+        ),
         "⟢ re your intent: no question to keep against"
     );
-    assert_eq!(render_hunks(&ls, &[], None, Some("  ")), "(nothing kept)");
+    assert_eq!(
+        render_hunks(&ls, &[], &verdict(Keep::All, None, Some("  "))),
+        "(nothing kept)"
+    );
 }
 
 /// A `Distilled` state written before `intent_feedback` existed deserializes with it
@@ -267,13 +308,13 @@ fn intent_feedback_is_absent_from_older_states_and_omitted_when_none() {
     let wire: WireState = serde_json::from_str(old).unwrap();
     assert!(matches!(
         &wire,
-        WireState::Distilled {
+        WireState::Distilled(Distilled {
             intent_feedback: None,
             ..
-        }
+        })
     ));
     assert_eq!(serde_json::to_string(&wire).unwrap(), old);
-    let with = WireState::distilled(Keep::All).with_intent_feedback("fb");
+    let with = WireState::from(Distilled::new(Keep::All).with_intent_feedback("fb"));
     assert!(
         serde_json::to_string(&with)
             .unwrap()

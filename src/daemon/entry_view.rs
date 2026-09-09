@@ -135,10 +135,10 @@ pub struct DistillateLines {
 
 impl DistillateLines {
     fn of(raw: &RawResult, wire: &WireState) -> Option<Self> {
-        let WireState::Distilled { keep, .. } = wire else {
+        let WireState::Distilled(verdict) = wire else {
             return None;
         };
-        let d = distillate(&raw.content, keep);
+        let d = distillate(&raw.content, &verdict.keep);
         Some(Self {
             total_lines: d.shown.len() + d.dropped,
             kept_lines: d.ranges.iter().map(|&(a, b)| b - a + 1).sum(),

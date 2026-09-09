@@ -1,7 +1,7 @@
 use super::*;
 use crate::context::Item;
 use crate::log::{
-    AssistantOutput, CallId, ContentBlock, Disposition, Keep, LogEntry, Mark, MarkKind,
+    AssistantOutput, CallId, ContentBlock, Disposition, Distilled, Keep, LogEntry, Mark, MarkKind,
     Notification, Origin, Payload, RawResult, Timestamp, ToolCall, Triage, WireState,
 };
 use serde_json::json;
@@ -136,11 +136,11 @@ fn distilled_log(keep: Keep, note: Option<&str>) -> Vec<LogEntry> {
     let mut log = sample_log();
     if let Payload::ToolResult { raw, wire, .. } = &mut log[2].payload {
         raw.content = "alpha\nbeta\ngamma\ndelta".into();
-        let mut distilled = WireState::distilled(keep);
+        let mut verdict = Distilled::new(keep);
         if let Some(note) = note {
-            distilled = distilled.with_note(note);
+            verdict = verdict.with_note(note);
         }
-        *wire = distilled;
+        *wire = verdict.into();
     }
     log
 }
@@ -300,9 +300,9 @@ fn image_survives_distill_and_is_shed_by_elision() {
             .contains(r#""type":"image""#)
     };
     assert!(keeps(WireState::Raw));
-    assert!(keeps(
-        WireState::distilled(Keep::Ranges(vec![(1, 1)])).with_note("kept the header")
-    ));
+    assert!(keeps(WireState::from(
+        Distilled::new(Keep::Ranges(vec![(1, 1)])).with_note("kept the header")
+    )));
     assert!(!keeps(WireState::Elided));
     assert!(!keeps(WireState::TriageFailed {
         why: "peek died".into(),

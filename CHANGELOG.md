@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`Distilled` is a struct** (docs/log-and-projection.md): `WireState::Distilled(Distilled)` carries the verdict as one value with builders on it, and `render_distilled` takes it, so a field added to the verdict is one setter and one render clause; wire bytes are unchanged.
 - **`intent` is the question, `note` the answer, and triage can ask for a better question** (docs/tools.md, docs/redaction-fork.md): the preamble states that a reader between the agent and the tool keeps what answers the intent, asks for the why when the what is obvious, and says a write's intent is only the why; the `note` ask prefers "it didn't" over summarizing around a miss; a new optional `intent_feedback` on `retain`, scoped to the intent and never the task, reaches the wire and the TUI as `⟢ re your intent: …`.
 - **Codex SSE without a `content-type` recovers on the published trillium-client 0.9.19** (docs/transport.md): the Responses dialect rebuilds the event stream from the refused negotiation instead of a local dependency patch; other dialects and a present wrong content-type still fail the open.
 - **`dev peek` evaluates a triage model against a session's own verdicts** (docs/redaction-fork.md): `--triage-model` replays every gate under the separate-model shape and compares each draw line-for-line with what the session's peek kept — kept fractions, over- and under-retention, exact matches, phantom `none`s, a disagreement table with both notes, and `--out` for every row as JSON.

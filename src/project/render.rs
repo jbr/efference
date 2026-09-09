@@ -37,18 +37,13 @@ pub const INTENT_FEEDBACK_LEAD: &str = "⟢ re your intent: ";
 /// lines, the optional `note`, and a truncation breadcrumb past the cap. The wire
 /// projection and the TUI projection share this one renderer. **Deterministic** — part
 /// of the byte-stability contract (docs/log-and-projection.md): a pure function of its inputs.
-pub fn render_distilled(
-    content: &str,
-    keep: &Keep,
-    note: Option<&str>,
-    intent_feedback: Option<&str>,
-) -> String {
+pub fn render_distilled(content: &str, verdict: &Distilled) -> String {
     let Distillate {
         shown,
         ranges,
         dropped,
-    } = distillate(content, keep);
-    let mut out = render_hunks(&shown, &ranges, note, intent_feedback);
+    } = distillate(content, &verdict.keep);
+    let mut out = render_hunks(&shown, &ranges, verdict);
     if dropped > 0 {
         out.push('\n');
         out.push_str(&format!("… [{dropped} more lines truncated before triage]"));
@@ -106,16 +101,17 @@ pub fn distillate<'c>(content: &'c str, keep: &Keep) -> Distillate<'c> {
 /// Render kept ranges as diff-style hunks: a `@@ lines a-b @@` header per contiguous
 /// span (`@@ line n @@` for one line), then those lines *verbatim* (unnumbered). The
 /// header carries the position anchor at one line per *range*; gaps between hunks are
-/// implied by the jump in the headers, as in a unified diff. An optional trailing note
-/// is the breadcrumb kept even when nothing is retained (docs/redaction-fork.md) — one
-/// overall note, so it survives the empty-hunks case. `intent_feedback`, when present,
-/// follows the note under the same `⟢` sign with a fixed `re your intent:` lead, so the
-/// agent reads it as the curator's remark about the channel rather than about the output.
+/// implied by the jump in the headers, as in a unified diff. The verdict's optional
+/// trailing note is the breadcrumb kept even when nothing is retained
+/// (docs/redaction-fork.md) — one overall note, so it survives the empty-hunks case.
+/// Its `intent_feedback`, when present, follows the note under the same `⟢` sign with a
+/// fixed `re your intent:` lead, so the agent reads it as the curator's remark about the
+/// channel rather than about the output. `ranges` is passed resolved rather than read
+/// off `verdict.keep`, since the caller has already clamped it against the cap.
 pub(super) fn render_hunks(
     lines: &[&str],
     ranges: &[(usize, usize)],
-    note: Option<&str>,
-    intent_feedback: Option<&str>,
+    verdict: &Distilled,
 ) -> String {
     let ranges = normalize(ranges, lines.len());
     // A header marks *where* curation cut. One range spanning everything cut nothing,
@@ -133,10 +129,20 @@ pub(super) fn render_hunks(
             parts.push(lines[i - 1].to_string());
         }
     }
-    if let Some(note) = note.map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(note) = verdict
+        .note
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         parts.push(format!("⟢ {note}"));
     }
-    if let Some(fb) = intent_feedback.map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(fb) = verdict
+        .intent_feedback
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         parts.push(format!("{INTENT_FEEDBACK_LEAD}{fb}"));
     }
     if parts.is_empty() {

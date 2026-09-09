@@ -11,8 +11,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::frontend::SubmittedTurn;
 use crate::log::{
-    AssistantOutput, ContentBlock, LogEntry, MarkKind, MessagesOutputBlock, Payload, RawResult,
-    ToolCall, WireState,
+    AssistantOutput, ContentBlock, Distilled, LogEntry, MarkKind, MessagesOutputBlock, Payload,
+    RawResult, ToolCall, WireState,
 };
 use crate::tui::document::{
     DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, ListItem, Span, SpanStyle,
@@ -384,8 +384,8 @@ fn result_entry(
     // The note still shows either way: it is the distiller's account of the output,
     // and it is true regardless of which form of the output is on screen.
     let (mut body, size) = match wire {
-        WireState::Distilled { keep, .. } if !show_raw => {
-            let distillate = crate::project::distillate(&raw.content, keep);
+        WireState::Distilled(verdict) if !show_raw => {
+            let distillate = crate::project::distillate(&raw.content, &verdict.keep);
             let kept = distillate.numbered_lines();
             let total = distillate.shown.len() + distillate.dropped;
             let body = distilled_body(call.name.as_str(), raw, &kept);
@@ -421,16 +421,9 @@ fn result_entry(
                     WireState::TriageFailed { why } => crate::project::render_triage_failure(why),
                     // Unreachable: a distilled result is handled above unless it is
                     // being shown raw, which this branch already excluded.
-                    WireState::Distilled {
-                        keep,
-                        note,
-                        intent_feedback,
-                    } => crate::project::render_distilled(
-                        &raw.content,
-                        keep,
-                        note.as_deref(),
-                        intent_feedback.as_deref(),
-                    ),
+                    WireState::Distilled(verdict) => {
+                        crate::project::render_distilled(&raw.content, verdict)
+                    }
                 };
                 (content, wire)
             };
@@ -515,14 +508,14 @@ fn distillate_note(
     wire: &WireState,
     view: &ViewState,
 ) -> Vec<DocumentNode<'static>> {
-    let WireState::Distilled {
+    let WireState::Distilled(verdict) = wire else {
+        return Vec::new();
+    };
+    let Distilled {
         keep,
         note,
         intent_feedback,
-    } = wire
-    else {
-        return Vec::new();
-    };
+    } = verdict;
     if view.is_raw(call.id.0.as_str()) {
         return Vec::new();
     }
