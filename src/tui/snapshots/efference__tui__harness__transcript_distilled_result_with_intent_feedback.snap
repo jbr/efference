@@ -1,0 +1,29 @@
+---
+source: src/tui/harness.rs
+expression: self.render()
+---
+    0         1         2         3         4         5         6         7         
+    01234567890123456789012345678901234567890123456789012345678901234567890123456789
+   ┌────────────────────────────────────────────────────────────────────────────────┐
+ 0 │ ┃ Look around.                                                                 │
+ 1 │                                                                                │
+ 2 │   ❯ bash · ls                                                                  │
+ 3 │   list the directory                                                           │
+ 4 │   ✓ 3 lines                                                                    │
+ 5 │ ╭──────────────╮                                                               │
+ 6 │ │ 1 Cargo.toml │                                                               │
+ 7 │ │ 2 src        │                                                               │
+ 8 │ │ 3 docs       │                                                               │
+ 9 │ ╰──────────────╯                                                               │
+10 │                                                                                │
+11 │   ⟢ 3 entries: Cargo.toml, src, docs                                           │
+12 │   ⟢ re your intent: it said what the call does, not what you needed; kept      │
+13 │   everything                                                                   │
+14 │                                                                                │
+15 │                                                                                │
+16 │                                                                                │
+17 │   pace fast     theme t     help ?     detach q                                │
+18 │›                                                                               │
+   │  ^                                                                             │
+19 │   efference — ↑ controls                                                       │
+   └────────────────────────────────────────────────────────────────────────────────┘

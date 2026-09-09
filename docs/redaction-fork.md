@@ -260,7 +260,24 @@ line belongs in `keep`"), and `keep` is told that a partial keep of an enumerati
 match list, a listing, a candidate set — reads afterwards as the whole set, so either the
 enumeration is kept whole or the note says how many of how many survived. That is the case
 where a lean verdict changes the answer rather than shortening it. Both clauses are pinned
-in `src/distill/test.rs`.
+in `src/distill/test.rs`. Where the result header carries the call's `intent`, the note
+answers it, and when the output does not contain what the intent asked for the ask prefers
+saying so over summarizing what the output does contain.
+
+**`intent_feedback` — the one channel back about the intent.** Optional beside `note` in
+both answer shapes, absent nearly always. The ask scopes it to the case where the intent
+gave the peek nothing to decide against — it restated the arguments, or named no question
+the output could answer — and to one clause saying what it lacked, so the next intent is
+one the peek can act on. It is about the intent and never the task: no suggesting what to
+call next, no saying what the output means. Two reasons it is a field and not a clause of
+the note. The note's rules are about the *output*, and this is about the *channel*; mixing
+them blurs the rule with the worst failure mode, assertion past the output. And the
+preamble's intent guidance is a frozen soft constraint that decays across a long
+mechanical run, while this is a renewal delivered in-band at the point of failure — the
+same mechanism as re-issuing the ask after a wrong-tool peek. The spotter's persuasion
+concern (the field being written for a gate that can punish, [permissions.md](permissions.md))
+does not apply: triage cannot punish, so there is nothing to plead to. Its emission rate
+per session and per triage model is a reading of how often intents are degenerate.
 
 - **One result** — top-level `keep`/`note`, **no call id**. Naming the one call whose
   output is right there is transcription with no decision in it, and it is the single
@@ -358,18 +375,22 @@ therefore split:
   numbers in a gutter instead ([tui.md](tui.md)). Both go through `distillate`, so
   the two views can differ in form but never in *which* lines they show.
   `render_hunks` runs at **projection time** over the stored verdict
-    (`WireState::Distilled { keep, note }`), not at append — the wire form is
-  re-derived from `raw` plus the verdict each turn, so the kept bytes are never
+    (`WireState::Distilled { keep, note, intent_feedback }`), not at append — the wire
+  form is re-derived from `raw` plus the verdict each turn, so the kept bytes are never
   stored twice. When a note survives, `render_hunks` prefixes it with the `⟢`
   provenance sigil — the same marker surfaced-context lines carry (`⟢ context ·
   …`) — so the note is honestly signed as harness-curated output without invoking
-  mechanism vocabulary. The sigil is render-layer only; the fork produces a bare
-  `note` string and is unaware of how it's rendered. Implemented in `src/project.rs`.
+  mechanism vocabulary. An `intent_feedback` follows the note under the same sigil
+  with a fixed `re your intent:` lead, so the agent reads it as the curator's remark
+  about the channel rather than about the output. The sigil is render-layer only; the
+  fork produces bare strings and is unaware of how they're rendered. Implemented in
+  `src/project.rs`.
 
 ## The verdict is the stored form
 
-`WireState::Distilled` carries the **verdict** (the `keep` ranges and optional
-`note`), not the rendered bytes. Two payoffs from one move: the kept bytes are
+`WireState::Distilled` carries the **verdict** (the `keep` ranges, optional `note`,
+and optional `intent_feedback`, the last serialized only when set so recorded logs
+are byte-unchanged by its arrival), not the rendered bytes. Two payoffs from one move: the kept bytes are
 never persisted twice, and the structured decision is itself the record.
 
 The fork's bulky transcript — the full line-numbered output plus the `retain`

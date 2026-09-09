@@ -245,6 +245,7 @@ fn a_distilled_view_carries_the_line_counts_the_prefix_cannot_yield() {
             wire: WireState::Distilled {
                 keep: crate::log::Keep::Ranges(vec![(300, 309), (350, 400)]),
                 note: None,
+                intent_feedback: None,
             },
         },
     );

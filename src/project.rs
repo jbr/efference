@@ -156,7 +156,9 @@ pub use semantic::{
     render_result,
 };
 
-pub use render::{Distillate, distillate, render_distilled, render_triage_failure};
+pub use render::{
+    Distillate, INTENT_FEEDBACK_LEAD, distillate, render_distilled, render_triage_failure,
+};
 pub use retention::Retention;
 pub use wire::{
     ApiBlock, ApiMessage, BreakpointPlacement, CacheControl, ImageSource, ResultBlock, Role,

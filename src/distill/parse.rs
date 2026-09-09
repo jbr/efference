@@ -11,6 +11,9 @@ pub(super) struct ResultVerdict {
     pub(super) call_id: String,
     pub(super) keep: Keep,
     pub(super) note: Option<String>,
+    /// Triage's request for a better `intent`, when the one it was given left it
+    /// nothing to decide against (docs/redaction-fork.md).
+    pub(super) intent_feedback: Option<String>,
     pub(super) raw_keep: String,
 }
 
@@ -34,6 +37,8 @@ pub(super) struct ResultInput {
     pub(super) keep: String,
     #[serde(default)]
     pub(super) note: Option<String>,
+    #[serde(default)]
+    pub(super) intent_feedback: Option<String>,
 }
 
 /// The `retain` tool's input.
@@ -54,6 +59,8 @@ pub(super) struct RetainInput {
     pub(super) keep: Option<String>,
     #[serde(default)]
     pub(super) note: Option<String>,
+    #[serde(default)]
+    pub(super) intent_feedback: Option<String>,
     #[serde(default)]
     pub(super) inbox: Option<InboxVerdict>,
     #[serde(default)]
@@ -157,6 +164,7 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
         results,
         keep,
         note,
+        intent_feedback,
         inbox,
         background,
         surfaced,
@@ -168,6 +176,7 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
             call_id: r.call_id,
             keep: parse_keep(&r.keep),
             note: r.note,
+            intent_feedback: r.intent_feedback,
             raw_keep: r.keep,
         })
         .collect();
@@ -182,6 +191,7 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
                 call_id: only.clone(),
                 keep: parse_keep(&keep),
                 note,
+                intent_feedback,
                 raw_keep: keep,
             }),
             // A lone keyed entry with the wrong id: unambiguous, so re-key it rather

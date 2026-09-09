@@ -197,6 +197,7 @@ fn a_raw_toggle_rebuilds_only_its_own_exchange() {
                 wire: WireState::Distilled {
                     keep: crate::log::Keep::None,
                     note: Some("three files".into()),
+                    intent_feedback: None,
                 },
             },
         ),

@@ -93,6 +93,10 @@ pub fn retain_tool() -> Value {
                     "type": "string",
                     "description": "One-line summary of what that output showed; the breadcrumb kept when little or nothing is retained."
                 },
+                "intent_feedback": {
+                    "type": "string",
+                    "description": "Optional; omit almost always. One clause, only when the call's intent gave you nothing to decide against, saying what it lacked so the next intent is one you can act on. About the intent, never about the task."
+                },
                 "results": {
                     "type": "array",
                     "description": "The verdict when the harness asked about several results at once — one entry per result it named, and only those. Line numbers restart at 1 within each result.",
@@ -110,6 +114,10 @@ pub fn retain_tool() -> Value {
                             "note": {
                                 "type": "string",
                                 "description": "One-line summary of what this output showed; the breadcrumb kept when little or nothing is retained."
+                            },
+                            "intent_feedback": {
+                                "type": "string",
+                                "description": "Optional; omit almost always. One clause, only when this call's intent gave you nothing to decide against, saying what it lacked. About the intent, never about the task."
                             }
                         },
                         "required": ["call_id", "keep"]

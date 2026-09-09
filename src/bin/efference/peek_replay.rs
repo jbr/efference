@@ -188,7 +188,7 @@ struct Compared {
 /// A bypassed (`Raw`) or withheld result has no reference to compare against.
 fn recorded_keep(wire: &WireState) -> Option<(&Keep, Option<&str>)> {
     match wire {
-        WireState::Distilled { keep, note } => Some((keep, note.as_deref())),
+        WireState::Distilled { keep, note, .. } => Some((keep, note.as_deref())),
         _ => None,
     }
 }

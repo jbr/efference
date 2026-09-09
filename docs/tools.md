@@ -37,7 +37,8 @@ implementation.
 ## The `intent` property
 
 Every tool the toolbox advertises carries one property the tool did not declare:
-`intent`, a required string holding one line on why the call is being made. It is
+`intent`, a required string holding one line on why the call is being made and what
+in the output would settle it. It is
 injected once in `Toolbox::definitions` over the flattened set, so a built-in tool
 and a connected server's tool get the same field on the same terms; the guidance for
 writing it is in the session preamble (`assets/prompts/session.md`), and the schema
@@ -80,14 +81,35 @@ which is free but not a known mechanism, since `required` is semantically a set.
 of these does anything is a reading to take off real calls, and the split sort position
 across tools is a natural A/B.
 
+**What the guidance asks for.** The preamble states the indirection as a fact about
+how tools work here — the agent does not read tool output directly; a reader between
+it and the tool keeps the part that answers this line — and frames `intent` as the
+prompt to that reader: a question, plus what in the output would settle it. Every
+prior a model carries says "I run the call and read the output", under which the
+field reads as a caption, and a caption is what gets written for a reader that is
+invisible; naming the reader is the lever, not asking for better captions. When what
+is wanted is already obvious from the arguments, the guidance asks for the *why*
+instead, since the reason is the part nobody can reconstruct from the record; for a
+call that produces rather than reads — a write, an edit — the why is the whole field,
+and the guidance says that is expected rather than a shortfall. So the field is never
+legitimately empty, which is consistent with it staying required. The preamble also
+tells the agent that triage may answer with a request for a better question
+(`intent_feedback`, [redaction-fork.md](redaction-fork.md)) and that this is about
+the intent, not the task. Collision is stated in one sentence: a tool that declares
+its own `intent` keeps it.
+
 **Readers.** The TUI leads a call entry's body with it. The fork peek's `result_view`
 puts it in the result header so the triage `note` answers it rather than restating
 what the tool did ([redaction-fork.md](redaction-fork.md)); the two halves are written
 at different times by different requests, so they can disagree, and a `note` that does
-not answer its `intent` is the signal that the call went sideways. Showing it to
-triage creates no incentive to write intents for that reader, because triage runs
-after the call and cannot change whether it ran. The spotter is the case where that
-does not hold, and it does not see the field — [permissions.md](permissions.md).
+not answer its `intent` is the signal that the call went sideways. When triage runs on
+a separate model, the intent is the only place the agent's reasoning for a call
+reaches it: the triage model reads the transcript but not the agent's thinking
+blocks. Showing it to triage creates no persuasion incentive, because triage runs
+after the call and cannot change whether it ran; what it can do is ask for a better
+intent next time, through `intent_feedback`. The spotter is the case where the
+persuasion concern does hold, and it does not see the field —
+[permissions.md](permissions.md).
 
 ## Tool taxonomy
 

@@ -133,8 +133,17 @@ impl WireTurn {
 pub fn render_result(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireState) -> UserPart {
     let (content, is_error) = match wire {
         WireState::Raw => (raw.content.clone(), raw.is_error),
-        WireState::Distilled { keep, note } => (
-            render_distilled(&raw.content, keep, note.as_deref()),
+        WireState::Distilled {
+            keep,
+            note,
+            intent_feedback,
+        } => (
+            render_distilled(
+                &raw.content,
+                keep,
+                note.as_deref(),
+                intent_feedback.as_deref(),
+            ),
             raw.is_error,
         ),
         WireState::Elided => ("[elided]".to_string(), false),

@@ -197,9 +197,43 @@ fn transcript_distilled_result() {
                 "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated."
                     .into(),
             ),
+            intent_feedback: None,
         },
     );
     play.snapshot("transcript_distilled_result");
+}
+
+/// Triage's request for a better intent renders as a second annotation after the
+/// note, under the same `⟢` sign with its `re your intent:` lead — rare, and shown by
+/// default because "triage couldn't tell what you wanted" is useful to a human on its
+/// own (docs/redaction-fork.md).
+#[test]
+fn transcript_distilled_result_shows_intent_feedback() {
+    let mut play = Screenplay::new(80, 20);
+    play.user("Look around.");
+    play.assistant(
+        "",
+        vec![tool_call(
+            "bash",
+            "toolu_if1",
+            json!({ "command": "ls", "intent": "list the directory" }),
+        )],
+    );
+    play.tool_result(
+        "toolu_if1",
+        "Cargo.toml
+src
+docs",
+        false,
+        WireState::Distilled {
+            keep: Keep::All,
+            note: Some("3 entries: Cargo.toml, src, docs".into()),
+            intent_feedback: Some(
+                "it said what the call does, not what you needed; kept everything".into(),
+            ),
+        },
+    );
+    play.snapshot("transcript_distilled_result_with_intent_feedback");
 }
 
 /// When triage kept every line, the header presents the result like any whole
@@ -225,6 +259,7 @@ fn transcript_complete_distillate_shows_a_plain_size() {
         WireState::Distilled {
             keep: Keep::All,
             note: None,
+            intent_feedback: None,
         },
     );
 
@@ -268,6 +303,7 @@ fn a_partial_distillate_of_an_edit_shows_the_triaged_lines() {
         WireState::Distilled {
             keep: Keep::Ranges(vec![(1, 1)]),
             note: Some("inserted the read line-range entry".into()),
+            intent_feedback: None,
         },
     );
 
@@ -316,6 +352,7 @@ fn a_partly_kept_diff_is_still_a_diff() {
         WireState::Distilled {
             keep: Keep::Ranges(vec![(4, 6)]),
             note: None,
+            intent_feedback: None,
         },
     );
 
@@ -368,6 +405,7 @@ fn a_complete_distillate_keeps_its_per_tool_rendering() {
         WireState::Distilled {
             keep: Keep::All,
             note: None,
+            intent_feedback: None,
         },
     );
 
@@ -420,6 +458,7 @@ fn transcript_distilled_keeps_numbered_lines() {
         WireState::Distilled {
             keep: Keep::Ranges(vec![(7, 7), (22, 23)]),
             note: Some("2 failures, both in the tui wrap/gutter work.".into()),
+            intent_feedback: None,
         },
     );
 
@@ -458,6 +497,7 @@ fn transcript_raw_view_of_distilled() {
         WireState::Distilled {
             keep: Keep::None,
             note: Some("12 direct deps; tokio + trillium are the heaviest.".into()),
+            intent_feedback: None,
         },
     );
     play.show_raw("toolu_03");
@@ -545,6 +585,7 @@ fn a_partly_kept_read_keeps_its_highlighting() {
         WireState::Distilled {
             keep: Keep::Ranges(vec![(2, 3)]),
             note: Some("the struct head and its first field".into()),
+            intent_feedback: None,
         },
     );
 

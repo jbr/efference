@@ -401,6 +401,7 @@ impl ForkPeek {
                         wire: WireState::Distilled {
                             keep: v.keep.clone(),
                             note: v.note.clone(),
+                            intent_feedback: v.intent_feedback.clone(),
                         },
                         origin: Origin::Model,
                         raw_keep: v.raw_keep.clone(),

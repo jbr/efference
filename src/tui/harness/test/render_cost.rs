@@ -198,6 +198,7 @@ fn a_re_rendered_result_drops_its_cached_layout() {
         crate::log::WireState::Distilled {
             keep: crate::log::Keep::None,
             note: Some("three deps".into()),
+            intent_feedback: None,
         },
     );
     play.pin_to_bottom();

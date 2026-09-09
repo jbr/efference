@@ -588,6 +588,7 @@ fn state_reports_triage_retention() {
         WireState::Distilled {
             keep: Keep::Ranges(vec![(1, 40)]),
             note: None,
+            intent_feedback: None,
         },
     );
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
@@ -604,6 +605,7 @@ fn state_reports_triage_retention() {
         WireState::Distilled {
             keep: Keep::All,
             note: None,
+            intent_feedback: None,
         },
     );
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();

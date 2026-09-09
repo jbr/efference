@@ -239,6 +239,7 @@ fn distilled_wire_supersedes_raw() {
                 wire: WireState::Distilled {
                     keep: Keep::Ranges(vec![(2, 2)]),
                     note: Some("the distilled summary".into()),
+                    intent_feedback: None,
                 },
             },
         ),
@@ -314,6 +315,7 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
                 wire: WireState::Distilled {
                     keep: Keep::Ranges(vec![(2, 2)]),
                     note: Some("the distilled summary".into()),
+                    intent_feedback: None,
                 },
             },
         ),

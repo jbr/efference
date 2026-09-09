@@ -916,7 +916,17 @@ pub enum WireState {
     /// structured decision doubles as the record. `raw` stays in the log.
     ///
     /// [`project`]: crate::project::project
-    Distilled { keep: Keep, note: Option<String> },
+    Distilled {
+        keep: Keep,
+        note: Option<String>,
+        /// Triage's request for a better `intent` — present only when the intent gave
+        /// it nothing to decide against, about the intent and never the task
+        /// (docs/redaction-fork.md). Rendered after the note. Absent on logs written
+        /// before the field existed, so it deserializes as `None` and serializes only
+        /// when set.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        intent_feedback: Option<String>,
+    },
     /// Project nothing of substance; still recoverable from the log.
     Elided,
     /// The gate could not elicit a usable triage verdict — a transport failure or

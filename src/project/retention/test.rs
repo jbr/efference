@@ -26,7 +26,11 @@ fn result(seq: u64, lines: usize, wire: WireState) -> LogEntry {
 }
 
 fn distilled(keep: Keep) -> WireState {
-    WireState::Distilled { keep, note: None }
+    WireState::Distilled {
+        keep,
+        note: None,
+        intent_feedback: None,
+    }
 }
 
 #[test]

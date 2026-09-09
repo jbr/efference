@@ -309,6 +309,7 @@ pub(super) fn log() -> Vec<LogEntry> {
                     "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated."
                         .into(),
                 ),
+                intent_feedback: None,
             },
         ),
         // The file tools: concise call lines (path / pattern, not JSON) and a

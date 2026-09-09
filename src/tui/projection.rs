@@ -421,9 +421,16 @@ fn result_entry(
                     WireState::TriageFailed { why } => crate::project::render_triage_failure(why),
                     // Unreachable: a distilled result is handled above unless it is
                     // being shown raw, which this branch already excluded.
-                    WireState::Distilled { keep, note } => {
-                        crate::project::render_distilled(&raw.content, keep, note.as_deref())
-                    }
+                    WireState::Distilled {
+                        keep,
+                        note,
+                        intent_feedback,
+                    } => crate::project::render_distilled(
+                        &raw.content,
+                        keep,
+                        note.as_deref(),
+                        intent_feedback.as_deref(),
+                    ),
                 };
                 (content, wire)
             };
@@ -508,7 +515,12 @@ fn distillate_note(
     wire: &WireState,
     view: &ViewState,
 ) -> Vec<DocumentNode<'static>> {
-    let WireState::Distilled { keep, note } = wire else {
+    let WireState::Distilled {
+        keep,
+        note,
+        intent_feedback,
+    } = wire
+    else {
         return Vec::new();
     };
     if view.is_raw(call.id.0.as_str()) {
@@ -517,6 +529,15 @@ fn distillate_note(
     let mut nodes = Vec::new();
     if let Some(note) = note.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
         nodes.push(annotation_line("⟢ ", note));
+    }
+    // Triage's request for a better intent, shown as the agent reads it: rare, and
+    // "triage couldn't tell what you wanted" is useful to a human on its own.
+    if let Some(fb) = intent_feedback
+        .as_deref()
+        .map(str::trim)
+        .filter(|f| !f.is_empty())
+    {
+        nodes.push(annotation_line(crate::project::INTENT_FEEDBACK_LEAD, fb));
     }
     let distillate = crate::project::distillate(&raw.content, keep);
     if distillate.dropped > 0 {

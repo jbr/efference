@@ -43,8 +43,16 @@ const KEEP_FIELDS: &str =
               generalize past it or explain what it means for the task. Ground it in
               the lines you kept, not the ones you dropped: if the note turns on a
               particular line, that line belongs in `keep`. Where the
-              result header carries an `intent`, answer it from what is shown; \"it
-              didn't\" is an answer, and often the one worth keeping.";
+              result header carries an `intent`, answer it from what is shown. If the
+              output does not contain what the intent asked for, say that rather than
+              summarizing what it does contain; \"it didn't\" is often the answer
+              worth keeping.
+  intent_feedback
+              Omit almost always. Use only when the `intent` gave you nothing to
+              decide against — it restated the arguments, or named no question the
+              output could answer — and say so in one clause, so the next intent is
+              one you can act on. This is about the intent, never about the task: do
+              not suggest what to call next or what the output means.";
 
 /// The `retain` ask, scoped to the results **this gate** is deciding
 /// (docs/redaction-fork.md).

@@ -148,6 +148,7 @@ fn distilled_log(keep: Keep, note: Option<&str>) -> Vec<LogEntry> {
         *wire = WireState::Distilled {
             keep,
             note: note.map(str::to_string),
+            intent_feedback: None,
         };
     }
     log
@@ -311,6 +312,7 @@ fn image_survives_distill_and_is_shed_by_elision() {
     assert!(keeps(WireState::Distilled {
         keep: Keep::Ranges(vec![(1, 1)]),
         note: Some("kept the header".into()),
+        intent_feedback: None,
     }));
     assert!(!keeps(WireState::Elided));
     assert!(!keeps(WireState::TriageFailed {

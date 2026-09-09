@@ -1328,6 +1328,7 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
             wire: WireState::Distilled {
                 keep: Keep::Ranges(vec![(1, 1)]),
                 note: Some("kept the first".into()),
+                intent_feedback: None,
             },
         },
     ));
@@ -1434,4 +1435,66 @@ fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
     assert_eq!(own.choice(RETAIN).forced(), Some("retain"));
     assert_eq!(own.choice(TRIAGE).forced(), Some("triage"));
     assert_eq!(own.with_auto_choice().choice(RETAIN).forced(), None);
+}
+
+/// `intent_feedback` is the one channel from triage back to the agent about the *intent*
+/// rather than the output (docs/redaction-fork.md). It is optional in both answer shapes
+/// and lands on the verdict beside the note, so it reaches the wire under the `⟢` sign.
+#[test]
+fn intent_feedback_is_carried_in_both_answer_shapes_and_absent_by_default() {
+    let one = ["only".to_string()];
+    let p = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "keep": "all", "note": "3 warnings", "intent_feedback": "it said what the call does, not what you needed" }),
+        ),
+        &one,
+    )
+    .unwrap();
+    assert_eq!(
+        p.results[0].intent_feedback.as_deref(),
+        Some("it said what the call does, not what you needed")
+    );
+
+    let p = parse_retain(&retain_completion(RETAIN, json!({ "keep": "all" })), &one).unwrap();
+    assert_eq!(p.results[0].intent_feedback, None);
+
+    let two = ["a".to_string(), "b".to_string()];
+    let p = parse_retain(
+        &retain_completion(
+            RETAIN,
+            json!({ "results": [
+                { "call_id": "a", "keep": "none", "intent_feedback": "no question to keep against" },
+                { "call_id": "b", "keep": "all" }
+            ] }),
+        ),
+        &two,
+    )
+    .unwrap();
+    assert_eq!(
+        p.results[0].intent_feedback.as_deref(),
+        Some("no question to keep against")
+    );
+    assert_eq!(p.results[1].intent_feedback, None);
+}
+
+/// The ask scopes `intent_feedback` to the channel and not the task, and asks the note to
+/// say when the output lacks what the intent wanted rather than summarize around it.
+#[test]
+fn the_ask_scopes_intent_feedback_to_the_intent_and_prefers_it_didnt() {
+    let instruction = retain_instruction(&["only".to_string()], &[]);
+    assert!(instruction.contains("intent_feedback"), "{instruction}");
+    assert!(
+        instruction.contains("about the intent, never about the task"),
+        "{instruction}"
+    );
+    assert!(
+        instruction
+            .contains("say that rather than\n              summarizing what it does contain"),
+        "{instruction}"
+    );
+    let schema = retain_tool();
+    let props = &schema["input_schema"]["properties"];
+    assert!(props["intent_feedback"].is_object());
+    assert!(props["results"]["items"]["properties"]["intent_feedback"].is_object());
 }

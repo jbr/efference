@@ -29,18 +29,26 @@ pub fn render_triage_failure(why: &str) -> String {
     )
 }
 
+/// The fixed lead on a rendered `intent_feedback` line (docs/redaction-fork.md).
+pub const INTENT_FEEDBACK_LEAD: &str = "⟢ re your intent: ";
+
 /// Render a distilled tool result for the canonical wire from `raw` + the stored
 /// verdict (docs/redaction-fork.md): the kept ranges as diff-style `@@`-hunks over the verbatim
 /// lines, the optional `note`, and a truncation breadcrumb past the cap. The wire
 /// projection and the TUI projection share this one renderer. **Deterministic** — part
 /// of the byte-stability contract (docs/log-and-projection.md): a pure function of its inputs.
-pub fn render_distilled(content: &str, keep: &Keep, note: Option<&str>) -> String {
+pub fn render_distilled(
+    content: &str,
+    keep: &Keep,
+    note: Option<&str>,
+    intent_feedback: Option<&str>,
+) -> String {
     let Distillate {
         shown,
         ranges,
         dropped,
     } = distillate(content, keep);
-    let mut out = render_hunks(&shown, &ranges, note);
+    let mut out = render_hunks(&shown, &ranges, note, intent_feedback);
     if dropped > 0 {
         out.push('\n');
         out.push_str(&format!("… [{dropped} more lines truncated before triage]"));
@@ -100,11 +108,14 @@ pub fn distillate<'c>(content: &'c str, keep: &Keep) -> Distillate<'c> {
 /// header carries the position anchor at one line per *range*; gaps between hunks are
 /// implied by the jump in the headers, as in a unified diff. An optional trailing note
 /// is the breadcrumb kept even when nothing is retained (docs/redaction-fork.md) — one
-/// overall note, so it survives the empty-hunks case.
+/// overall note, so it survives the empty-hunks case. `intent_feedback`, when present,
+/// follows the note under the same `⟢` sign with a fixed `re your intent:` lead, so the
+/// agent reads it as the curator's remark about the channel rather than about the output.
 pub(super) fn render_hunks(
     lines: &[&str],
     ranges: &[(usize, usize)],
     note: Option<&str>,
+    intent_feedback: Option<&str>,
 ) -> String {
     let ranges = normalize(ranges, lines.len());
     // A header marks *where* curation cut. One range spanning everything cut nothing,
@@ -124,6 +135,9 @@ pub(super) fn render_hunks(
     }
     if let Some(note) = note.map(str::trim).filter(|s| !s.is_empty()) {
         parts.push(format!("⟢ {note}"));
+    }
+    if let Some(fb) = intent_feedback.map(str::trim).filter(|s| !s.is_empty()) {
+        parts.push(format!("{INTENT_FEEDBACK_LEAD}{fb}"));
     }
     if parts.is_empty() {
         parts.push("(nothing kept)".to_string());
