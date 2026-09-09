@@ -4,20 +4,11 @@ use crate::log::CallId;
 use serde_json::json;
 
 fn call(name: &str, input: serde_json::Value) -> ToolCall {
-    ToolCall {
-        id: CallId("toolu_1".into()),
-        name: name.into(),
-        input,
-    }
+    ToolCall::new(name, "toolu_1", input)
 }
 
 fn result(content: &str, is_error: bool) -> RawResult {
-    RawResult {
-        content: content.into(),
-        is_error,
-        images: Vec::new(),
-        content_elided: None,
-    }
+    RawResult::new(content, is_error)
 }
 
 const INSTANT: std::time::Duration = std::time::Duration::from_millis(12);

@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{CallId, Keep, RawResult, Timestamp, ToolCall};
+use crate::log::{Keep, RawResult, Timestamp, ToolCall};
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
     LogEntry {
@@ -30,25 +30,20 @@ fn sample_log() -> Vec<LogEntry> {
             2,
             assistant(
                 vec![ContentBlock::Text("**bold** plan".into())],
-                vec![ToolCall {
-                    id: CallId("toolu_1".into()),
-                    name: "bash".into(),
-                    input: serde_json::json!({ "command": "echo hi" }),
-                }],
+                vec![ToolCall::new(
+                    "bash",
+                    "toolu_1",
+                    serde_json::json!({ "command": "echo hi" }),
+                )],
             ),
         ),
         entry(
             3,
-            Payload::ToolResult {
-                call_id: CallId("toolu_1".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "line one\nline two".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result(
+                "toolu_1",
+                RawResult::text("line one\nline two"),
+                WireState::Raw,
+            ),
         ),
     ]
 }
@@ -124,25 +119,16 @@ fn a_long_result_renders_whole() {
             1,
             assistant(
                 vec![],
-                vec![ToolCall {
-                    id: CallId("toolu_1".into()),
-                    name: "bash".into(),
-                    input: serde_json::json!({ "command": "seq 400" }),
-                }],
+                vec![ToolCall::new(
+                    "bash",
+                    "toolu_1",
+                    serde_json::json!({ "command": "seq 400" }),
+                )],
             ),
         ),
         entry(
             2,
-            Payload::ToolResult {
-                call_id: CallId("toolu_1".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: body.clone(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("toolu_1", RawResult::text(body.clone()), WireState::Raw),
         ),
     ];
     let doc = project(
@@ -167,25 +153,16 @@ fn a_failed_result_is_marked_on_the_result_not_the_call() {
             1,
             assistant(
                 vec![],
-                vec![ToolCall {
-                    id: CallId("toolu_1".into()),
-                    name: "bash".into(),
-                    input: serde_json::json!({ "command": "false" }),
-                }],
+                vec![ToolCall::new(
+                    "bash",
+                    "toolu_1",
+                    serde_json::json!({ "command": "false" }),
+                )],
             ),
         ),
         entry(
             2,
-            Payload::ToolResult {
-                call_id: CallId("toolu_1".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "boom".into(),
-                    is_error: true,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("toolu_1", RawResult::error("boom"), WireState::Raw),
         ),
     ];
     let doc = project(
@@ -219,29 +196,20 @@ fn distilled_wire_supersedes_raw() {
             4,
             assistant(
                 vec![],
-                vec![ToolCall {
-                    id: CallId("toolu_9".into()),
-                    name: "bash".into(),
-                    input: serde_json::json!({ "command": "noise" }),
-                }],
+                vec![ToolCall::new(
+                    "bash",
+                    "toolu_9",
+                    serde_json::json!({ "command": "noise" }),
+                )],
             ),
         ),
         entry(
             5,
-            Payload::ToolResult {
-                call_id: CallId("toolu_9".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "RAW-NOISE\nthe kept line".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Distilled {
-                    keep: Keep::Ranges(vec![(2, 2)]),
-                    note: Some("the distilled summary".into()),
-                    intent_feedback: None,
-                },
-            },
+            Payload::tool_result(
+                "toolu_9",
+                RawResult::text("RAW-NOISE\nthe kept line"),
+                WireState::distilled(Keep::Ranges(vec![(2, 2)])).with_note("the distilled summary"),
+            ),
         ),
     ];
     let doc = project(
@@ -295,29 +263,20 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
             4,
             assistant(
                 vec![],
-                vec![ToolCall {
-                    id: CallId("toolu_9".into()),
-                    name: "bash".into(),
-                    input: serde_json::json!({ "command": "noise" }),
-                }],
+                vec![ToolCall::new(
+                    "bash",
+                    "toolu_9",
+                    serde_json::json!({ "command": "noise" }),
+                )],
             ),
         ),
         entry(
             5,
-            Payload::ToolResult {
-                call_id: CallId("toolu_9".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "RAW-NOISE\nthe kept line".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Distilled {
-                    keep: Keep::Ranges(vec![(2, 2)]),
-                    note: Some("the distilled summary".into()),
-                    intent_feedback: None,
-                },
-            },
+            Payload::tool_result(
+                "toolu_9",
+                RawResult::text("RAW-NOISE\nthe kept line"),
+                WireState::distilled(Keep::Ranges(vec![(2, 2)])).with_note("the distilled summary"),
+            ),
         ),
     ];
     let mut view = ViewState::default();

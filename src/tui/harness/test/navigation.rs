@@ -16,7 +16,7 @@ fn up_arrow_spills_from_composer_then_esc_returns_home() {
     play.user("List the tui module.");
     play.assistant(
         "Here.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_nav",
             json!({ "command": "ls src/tui" }),
@@ -75,7 +75,7 @@ fn focused_unit_shows_a_left_bar() {
     play.user("List the tui module.");
     play.assistant(
         "Here.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_fb",
             json!({ "command": "ls src/tui" }),
@@ -105,17 +105,17 @@ fn focus_moves_between_short_exchanges() {
     play.user("Run three quick commands.");
     play.assistant(
         "First.",
-        vec![tool_call("bash", "t1", json!({ "command": "pwd" }))],
+        vec![ToolCall::new("bash", "t1", json!({ "command": "pwd" }))],
     );
     play.tool_result("t1", "/repo", false, WireState::Raw);
     play.assistant(
         "Next.",
-        vec![tool_call("bash", "t2", json!({ "command": "whoami" }))],
+        vec![ToolCall::new("bash", "t2", json!({ "command": "whoami" }))],
     );
     play.tool_result("t2", "jbr", false, WireState::Raw);
     play.assistant(
         "Last.",
-        vec![tool_call("bash", "t3", json!({ "command": "date" }))],
+        vec![ToolCall::new("bash", "t3", json!({ "command": "date" }))],
     );
     play.tool_result("t3", "today", false, WireState::Raw);
 
@@ -142,7 +142,7 @@ fn focus_includes_prose_turns() {
     play.user("What does project() do?");
     play.assistant(
         "It folds the log into the wire.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "p1",
             json!({ "command": "grep -n fold src" }),
@@ -177,7 +177,7 @@ fn down_past_the_last_unit_falls_back_to_the_composer() {
     play.user("List the tui module.");
     play.assistant(
         "Here.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_nav2",
             json!({ "command": "ls src/tui" }),
@@ -244,7 +244,7 @@ fn unbound_key_is_a_noop_in_navigation() {
     play.user("hi");
     play.assistant(
         "yo",
-        vec![tool_call("bash", "z", json!({ "command": "ls" }))],
+        vec![ToolCall::new("bash", "z", json!({ "command": "ls" }))],
     );
     play.tool_result("z", "out", false, WireState::Raw);
 

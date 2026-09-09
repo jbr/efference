@@ -169,18 +169,13 @@ pub fn reject_non_read(call: &ToolCall) -> Option<RawResult> {
     if call.name == "read" || !targets(call).iter().any(|t| is_virtual(t)) {
         return None;
     }
-    Some(RawResult {
-        images: Vec::new(),
-        content: format!(
-            "`{}` does not resolve on `{SCHEME}` paths. These are documents compiled into \
-             the harness binary, not files: `read` is the only tool that opens them, and \
-             nothing writes to them.\n\nThe documents are:\n{}",
-            call.name,
-            listing()
-        ),
-        is_error: true,
-        content_elided: None,
-    })
+    Some(RawResult::error(format!(
+        "`{}` does not resolve on `{SCHEME}` paths. These are documents compiled into \
+         the harness binary, not files: `read` is the only tool that opens them, and \
+         nothing writes to them.\n\nThe documents are:\n{}",
+        call.name,
+        listing()
+    )))
 }
 
 /// Serve a `read` of the virtual mount from the binary, or `None` when the call names no
@@ -197,14 +192,8 @@ pub fn read_documents(call: &ToolCall) -> Option<RawResult> {
     if !targets.iter().any(|t| is_virtual(t)) {
         return None;
     }
-    let error = |content: String| RawResult {
-        images: Vec::new(),
-        content,
-        is_error: true,
-        content_elided: None,
-    };
     if let Some(real) = targets.iter().find(|t| !is_virtual(t)) {
-        return Some(error(format!(
+        return Some(RawResult::error(format!(
             "this `read` mixes harness documents with a file on disk (`{real}`). They are \
              served from different places, so read them in separate calls.",
         )));
@@ -214,19 +203,14 @@ pub fn read_documents(call: &ToolCall) -> Option<RawResult> {
         match lookup(target) {
             Some(document) => bodies.push(document.body.trim_end().to_string()),
             None => {
-                return Some(error(format!(
+                return Some(RawResult::error(format!(
                     "no harness document at `{target}`. The documents are:\n{}",
                     listing()
                 )));
             }
         }
     }
-    Some(RawResult {
-        images: Vec::new(),
-        content: bodies.join("\n\n---\n\n"),
-        is_error: false,
-        content_elided: None,
-    })
+    Some(RawResult::text(bodies.join("\n\n---\n\n")))
 }
 
 #[cfg(test)]

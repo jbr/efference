@@ -16,11 +16,7 @@ fn tool_result_omits_false_is_error_but_keeps_true() {
                 output: AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![ToolCall {
-                        id: CallId("x".into()),
-                        name: "bash".into(),
-                        input: json!({}),
-                    }],
+                    vec![ToolCall::new("bash", "x", json!({}))],
                 ),
                 upstream_failure: None,
             },
@@ -28,16 +24,7 @@ fn tool_result_omits_false_is_error_but_keeps_true() {
         entry(
             1,
             0,
-            Payload::ToolResult {
-                call_id: CallId("x".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "boom".into(),
-                    is_error: true,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("x", RawResult::error("boom"), WireState::Raw),
         ),
     ];
     assert!(
@@ -59,16 +46,8 @@ fn consecutive_tool_results_coalesce_into_one_user_message() {
                     vec![],
                     vec![],
                     vec![
-                        ToolCall {
-                            id: CallId("a".into()),
-                            name: "bash".into(),
-                            input: json!({}),
-                        },
-                        ToolCall {
-                            id: CallId("b".into()),
-                            name: "bash".into(),
-                            input: json!({}),
-                        },
+                        ToolCall::new("bash", "a", json!({})),
+                        ToolCall::new("bash", "b", json!({})),
                     ],
                 ),
                 upstream_failure: None,
@@ -77,30 +56,12 @@ fn consecutive_tool_results_coalesce_into_one_user_message() {
         entry(
             1,
             0,
-            Payload::ToolResult {
-                call_id: CallId("a".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "out-a".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("a", RawResult::text("out-a"), WireState::Raw),
         ),
         entry(
             2,
             0,
-            Payload::ToolResult {
-                call_id: CallId("b".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "out-b".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("b", RawResult::text("out-b"), WireState::Raw),
         ),
     ];
     let messages = project(&log);
@@ -133,11 +94,7 @@ fn user_turn_after_tool_result_merges_into_one_message() {
                 output: AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![ToolCall {
-                        id: CallId("a".into()),
-                        name: "bash".into(),
-                        input: json!({}),
-                    }],
+                    vec![ToolCall::new("bash", "a", json!({}))],
                 ),
                 upstream_failure: None,
             },
@@ -145,16 +102,7 @@ fn user_turn_after_tool_result_merges_into_one_message() {
         entry(
             1,
             0,
-            Payload::ToolResult {
-                call_id: CallId("a".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "tool output".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("a", RawResult::text("tool output"), WireState::Raw),
         ),
         // Injected mid-trajectory (or a redirect steer): a user turn right after
         // the result, with no assistant between.

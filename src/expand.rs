@@ -167,11 +167,11 @@ pub fn expand_call(expander: &Expander, call: &ToolCall) -> Result<Option<ToolCa
     };
     let mut input = call.input.clone();
     input[key] = expanded;
-    Ok(Some(ToolCall {
-        id: call.id.clone(),
-        name: call.name.clone(),
+    Ok(Some(ToolCall::new(
+        call.name.clone(),
+        call.id.0.clone(),
         input,
-    }))
+    )))
 }
 
 #[cfg(test)]

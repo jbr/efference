@@ -329,22 +329,12 @@ where
         let tool: ToolEnum = match serde_json::from_value(envelope) {
             Ok(tool) => tool,
             Err(e) => {
-                return RawResult {
-                    images: Vec::new(),
-                    content: format!("invalid input for {name}: {e}"),
-                    is_error: true,
-                    content_elided: None,
-                };
+                return RawResult::error(format!("invalid input for {name}: {e}"));
             }
         };
         match tool.call(&mut self.state.borrow_mut(), &request_context()) {
             Ok(result) => crate::mcp::render_result(result),
-            Err(e) => RawResult {
-                images: Vec::new(),
-                content: e.to_string(),
-                is_error: true,
-                content_elided: None,
-            },
+            Err(e) => RawResult::error(e.to_string()),
         }
     }
 }
@@ -771,26 +761,14 @@ impl Toolbox {
         // has no useful degraded form, and decoding a file to throw the pixels
         // away spends the work to arrive at the same answer.
         if !self.image_input && call.name == read_image::NAME {
-            return RawResult {
-                images: Vec::new(),
-                content: NO_IMAGE_INPUT_REFUSAL.to_string(),
-                is_error: true,
-                content_elided: None,
-            }
-            .into();
+            return RawResult::error(NO_IMAGE_INPUT_REFUSAL).into();
         }
         let outcome = match self.providers.iter().find(|p| p.handles(&call.name)) {
             Some(provider) => {
                 let call = provider.without_intent(call);
                 provider.run(&call, abort, on_spawn, on_output).await
             }
-            None => RawResult {
-                images: Vec::new(),
-                content: self.unknown_tool_message(&call.name),
-                is_error: true,
-                content_elided: None,
-            }
-            .into(),
+            None => RawResult::error(self.unknown_tool_message(&call.name)).into(),
         };
         strip_unreadable_images(outcome, self.image_input)
     }

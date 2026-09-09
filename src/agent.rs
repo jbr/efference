@@ -801,11 +801,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                         };
                         let result_seq = shared.append(
                             turn,
-                            Payload::ToolResult {
-                                call_id: call.id.clone(),
-                                raw: result,
-                                wire: verdict.wire,
-                            },
+                            Payload::tool_result(call.id.clone(), result, verdict.wire),
                         )?;
                         let last = index == last_ran;
                         shared.append(

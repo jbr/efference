@@ -3,7 +3,7 @@
 //! untouched entries alone.
 
 use super::*;
-use crate::log::{ContentBlock, LogEntry, Payload, RawResult, Timestamp, WireState};
+use crate::log::{ContentBlock, LogEntry, Payload, RawResult, Timestamp, ToolCall, WireState};
 use crate::tui::document::Document;
 use crate::tui::projection::project;
 use crate::tui::state::DocumentState;
@@ -29,7 +29,7 @@ fn assistant_call(seq: u64, text: &str, call_id: &str, command: &str) -> LogEntr
             output: crate::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![ContentBlock::Text(text.into())],
-                vec![crate::tui::harness::tool_call(
+                vec![ToolCall::new(
                     crate::bash::NAME,
                     call_id,
                     serde_json::json!({ "command": command }),
@@ -43,16 +43,7 @@ fn assistant_call(seq: u64, text: &str, call_id: &str, command: &str) -> LogEntr
 fn result(seq: u64, call_id: &str, output: &str) -> LogEntry {
     entry(
         seq,
-        Payload::ToolResult {
-            call_id: crate::log::CallId(call_id.to_string()),
-            raw: RawResult {
-                images: Vec::new(),
-                content: output.to_string(),
-                is_error: false,
-                content_elided: None,
-            },
-            wire: WireState::Raw,
-        },
+        Payload::tool_result(call_id, RawResult::text(output), WireState::Raw),
     )
 }
 
@@ -186,20 +177,11 @@ fn a_raw_toggle_rebuilds_only_its_own_exchange() {
         assistant_call(0, "", "call-1", "ls"),
         entry(
             1,
-            Payload::ToolResult {
-                call_id: crate::log::CallId("call-1".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "a\nb\nc".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Distilled {
-                    keep: crate::log::Keep::None,
-                    note: Some("three files".into()),
-                    intent_feedback: None,
-                },
-            },
+            Payload::tool_result(
+                "call-1",
+                RawResult::text("a\nb\nc"),
+                WireState::distilled(crate::log::Keep::None).with_note("three files"),
+            ),
         ),
         user(2, "ok"),
     ];

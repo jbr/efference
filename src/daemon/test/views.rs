@@ -551,7 +551,7 @@ async fn state_json_surfaces_running_processes() {
 /// that a withheld result stays out of the ratio it would otherwise flatter.
 #[test]
 fn state_reports_triage_retention() {
-    use crate::log::{CallId, Keep, RawResult, WireState};
+    use crate::log::{Keep, RawResult, WireState};
 
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
     let result = |seq: u64, lines: usize, wire: WireState| {
@@ -562,16 +562,7 @@ fn state_reports_triage_retention() {
         shared
             .append(
                 0,
-                Payload::ToolResult {
-                    call_id: CallId(format!("call_{seq}")),
-                    raw: RawResult {
-                        images: Vec::new(),
-                        content,
-                        is_error: false,
-                        content_elided: None,
-                    },
-                    wire,
-                },
+                Payload::tool_result(format!("call_{seq}"), RawResult::text(content), wire),
             )
             .expect("append");
     };
@@ -582,15 +573,7 @@ fn state_reports_triage_retention() {
     assert_eq!(v["usage"]["retention"]["shown_lines"], 0);
     assert_eq!(v["usage"]["retention"]["kept_lines"], 0);
 
-    result(
-        0,
-        100,
-        WireState::Distilled {
-            keep: Keep::Ranges(vec![(1, 40)]),
-            note: None,
-            intent_feedback: None,
-        },
-    );
+    result(0, 100, WireState::distilled(Keep::Ranges(vec![(1, 40)])));
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["retention"]["kept_lines"], 40);
     assert_eq!(v["usage"]["retention"]["shown_lines"], 100);
@@ -599,15 +582,7 @@ fn state_reports_triage_retention() {
     // A second poll after a second result: the fold advanced by exactly the new entry.
     // A cursor that failed to advance would report 40/100 again; one that reset would
     // refold the first result and report 80/200.
-    result(
-        1,
-        100,
-        WireState::Distilled {
-            keep: Keep::All,
-            note: None,
-            intent_feedback: None,
-        },
-    );
+    result(1, 100, WireState::distilled(Keep::All));
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["retention"]["kept_lines"], 140);
     assert_eq!(v["usage"]["retention"]["shown_lines"], 200);

@@ -52,7 +52,7 @@ fn transcript_coding_turn() {
              - caching a prefix would mean tracking invalidation across `WireState` flips\n\
              - the prompt cache already covers the *wire* cost — only the prefix bytes matter\n\n\
              Let me confirm the current signature before we touch it.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_01",
             json!({ "command": "grep -n 'fn project' src/project.rs" }),
@@ -82,7 +82,7 @@ fn transcript_bash_command_block() {
     play.user("Write the version file.");
     play.assistant(
         "Writing it now.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_06",
             json!({ "command": "cat > VERSION <<'EOF'\n0.1.0\nbuild: nightly\nEOF" }),
@@ -139,7 +139,7 @@ fn transcript_pending_approval_gate() {
     play.user("Clean the build directory.");
     play.assistant(
         "Sure — I'll remove it.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_1",
             json!({ "command": "rm -rf ./build" }),
@@ -176,7 +176,7 @@ fn transcript_redirected_gate() {
     play.user("Clean the build directory.");
     play.assistant(
         "Sure — I'll remove it.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_1",
             json!({ "command": "rm -rf ./build" }),

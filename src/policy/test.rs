@@ -1,5 +1,4 @@
 use super::*;
-use crate::log::CallId;
 
 /// The review-level dial (docs/permissions.md) round-trips through its
 /// `u8` ordinal (atomic storage) and its wire token (`/state`, `/review-level`, CLI), and both
@@ -53,11 +52,11 @@ fn sample_role() -> Config {
 }
 
 fn bash_call(command: &str) -> ToolCall {
-    ToolCall {
-        id: CallId("toolu_x".into()),
-        name: bash::NAME.into(),
-        input: serde_json::json!({ "command": command }),
-    }
+    ToolCall::new(
+        bash::NAME,
+        "toolu_x",
+        serde_json::json!({ "command": command }),
+    )
 }
 
 fn verdict(command: &str) -> Verdict {
@@ -134,9 +133,5 @@ fn structured(role: &Config, c: &ToolCall) -> Verdict {
 }
 
 fn call(name: &str, input: Value) -> ToolCall {
-    ToolCall {
-        id: CallId("toolu_s".into()),
-        name: name.into(),
-        input,
-    }
+    ToolCall::new(name, "toolu_s", input)
 }

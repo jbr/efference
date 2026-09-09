@@ -88,7 +88,7 @@ async fn an_unsubscribe_without_an_endpoint_is_refused() {
 mod settle_body {
     use crate::daemon::push::settle_body;
     use crate::log::UpstreamFailureRecord;
-    use crate::log::{CallId, ContentBlock, LogEntry, Payload, Timestamp, ToolCall};
+    use crate::log::{ContentBlock, LogEntry, Payload, Timestamp, ToolCall};
 
     fn entry(seq: u64, payload: Payload) -> LogEntry {
         LogEntry {
@@ -155,11 +155,7 @@ mod settle_body {
                 output: crate::log::AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![ToolCall {
-                        id: CallId("toolu_1".into()),
-                        name: "bash".into(),
-                        input: serde_json::json!({}),
-                    }],
+                    vec![ToolCall::new("bash", "toolu_1", serde_json::json!({}))],
                 ),
                 upstream_failure: None,
             },

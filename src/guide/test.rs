@@ -6,16 +6,11 @@
 //! have to still exist, so a rename breaks the build rather than the reader.
 
 use super::*;
-use crate::log::CallId;
 use serde_json::json;
 use std::path::Path;
 
 fn call(name: &str, input: serde_json::Value) -> ToolCall {
-    ToolCall {
-        id: CallId("toolu_test".into()),
-        name: name.into(),
-        input,
-    }
+    ToolCall::new(name, "toolu_test", input)
 }
 
 /// Every fenced ```toml block in a guide has to parse and validate as a real config. This

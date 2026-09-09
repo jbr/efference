@@ -107,7 +107,7 @@ impl Screenplay<'_> {
         command: &str,
         output: &str,
     ) -> &mut Self {
-        let call = tool_call(name, call_id, serde_json::json!({ "command": command }));
+        let call = ToolCall::new(name, call_id, serde_json::json!({ "command": command }));
         self.assistant("", vec![call]);
         self.tool_result(call_id, output, false, WireState::Raw)
     }
@@ -119,7 +119,7 @@ impl Screenplay<'_> {
     /// [`in_flight_call`](super::InteractiveState::in_flight_call) reads — the
     /// control strip's foreground-bash-vs-other-tool distinction depends on it.
     pub(crate) fn running_tool(&mut self, call_id: &str, name: &str, input: Value) -> &mut Self {
-        self.assistant("", vec![tool_call(name, call_id, input)]);
+        self.assistant("", vec![ToolCall::new(name, call_id, input)]);
         self.event(TuiEvent::Running(true))
     }
 
@@ -205,16 +205,8 @@ impl Screenplay<'_> {
         is_error: bool,
         wire: WireState,
     ) -> &mut Self {
-        self.commit(Payload::ToolResult {
-            call_id: CallId(call_id.into()),
-            raw: RawResult {
-                images: Vec::new(),
-                content: content.into(),
-                is_error,
-                content_elided: None,
-            },
-            wire,
-        })
+        let raw = RawResult::new(content, is_error);
+        self.commit(Payload::tool_result(call_id, raw, wire))
     }
 
     /// Give the scenario the deterministic halfblocks image capability
@@ -237,16 +229,11 @@ impl Screenplay<'_> {
         content: &str,
         images: Vec<crate::log::ResultImage>,
     ) -> &mut Self {
-        self.commit(Payload::ToolResult {
-            call_id: CallId(call_id.into()),
-            raw: RawResult {
-                images,
-                content: content.into(),
-                is_error: false,
-                content_elided: None,
-            },
-            wire: WireState::Raw,
-        })
+        self.commit(Payload::tool_result(
+            call_id,
+            RawResult::text(content).with_images(images),
+            WireState::Raw,
+        ))
     }
 
     /// Mark the agent blocked on approval for `call_id` — the pending gate the

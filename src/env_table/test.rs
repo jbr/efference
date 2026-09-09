@@ -503,16 +503,7 @@ fn every_text_bearing_payload_path_is_masked() {
     };
     assert!(!text.contains("leaked-secret-value"));
 
-    let mut result = Payload::ToolResult {
-        call_id: crate::log::CallId("toolu_1".into()),
-        raw: RawResult {
-            content: leak(),
-            is_error: false,
-            images: Vec::new(),
-            content_elided: None,
-        },
-        wire: WireState::Raw,
-    };
+    let mut result = Payload::tool_result("toolu_1", RawResult::text(leak()), WireState::Raw);
     masker.mask_payload(&mut result);
     let Payload::ToolResult { raw, .. } = &result else {
         unreachable!()
@@ -526,11 +517,11 @@ fn every_text_bearing_payload_path_is_masked() {
                 signature: "sig".into(),
             }],
             vec![ContentBlock::Text(leak())],
-            vec![crate::log::ToolCall {
-                id: crate::log::CallId("toolu_2".into()),
-                name: "bash".into(),
-                input: serde_json::json!({ "command": leak() }),
-            }],
+            vec![crate::log::ToolCall::new(
+                "bash",
+                "toolu_2",
+                serde_json::json!({ "command": leak() }),
+            )],
         ),
         upstream_failure: Some(leak().into()),
     };
@@ -694,16 +685,8 @@ fn a_responses_function_call_is_masked_on_append_and_replayed_as_logged() {
         }]),
         upstream_failure: None,
     };
-    let result = |call_id: &str| Payload::ToolResult {
-        call_id: CallId(call_id.into()),
-        raw: RawResult {
-            content: "ok".into(),
-            is_error: false,
-            images: Vec::new(),
-            content_elided: None,
-        },
-        wire: WireState::Raw,
-    };
+    let result =
+        |call_id: &str| Payload::tool_result(call_id, RawResult::text("ok"), WireState::Raw);
     // Provider spacing and key order, kept as sent when nothing is masked.
     let clean = r#"{"command": "ls",  "cwd": "/tmp"}"#;
     log.append(0, call("call_clean", clean)).unwrap();

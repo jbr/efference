@@ -298,9 +298,10 @@ impl ConnectedProvider {
         tokio::select! {
             result = &mut call_future => result.into(),
             interrupt = abort => match interrupt {
-                Interrupt::Kill => RawResult { images: Vec::new(),
-                    content: format!("`{}` call cancelled by the operator", call.name),
-                    is_error: true, content_elided: None,}
+                Interrupt::Kill => RawResult::error(format!(
+                    "`{}` call cancelled by the operator",
+                    call.name
+                ))
                 .into(),
                 Interrupt::Detach => call_future.await.into(),
             },
@@ -332,30 +333,18 @@ impl ConnectedProvider {
                 // capabilities and does not retry, so this lands as an error
                 // naming what the server asked for — better than the empty
                 // `content` a `CallToolResult` parse would have produced.
-                Ok(ToolCallOutcome::InputRequired(interim)) => RawResult {
-                    images: Vec::new(),
-                    content: format!(
-                        "`{}` returned an interim result asking for more input ({}), which \
-                         efference does not supply",
-                        self.name,
-                        describe_input_required(&interim),
-                    ),
-                    is_error: true,
-                    content_elided: None,
-                },
-                Err(e) => RawResult {
-                    images: Vec::new(),
-                    content: format!("`{}` returned an unparseable tool result: {e}", self.name),
-                    is_error: true,
-                    content_elided: None,
-                },
+                Ok(ToolCallOutcome::InputRequired(interim)) => RawResult::error(format!(
+                    "`{}` returned an interim result asking for more input ({}), which \
+                     efference does not supply",
+                    self.name,
+                    describe_input_required(&interim),
+                )),
+                Err(e) => RawResult::error(format!(
+                    "`{}` returned an unparseable tool result: {e}",
+                    self.name
+                )),
             },
-            Err(e) => RawResult {
-                images: Vec::new(),
-                content: format!("`{}` call failed: {e}", self.name),
-                is_error: true,
-                content_elided: None,
-            },
+            Err(e) => RawResult::error(format!("`{}` call failed: {e}", self.name)),
         }
     }
 }
@@ -577,12 +566,8 @@ pub(crate) fn render_result(result: CallToolResult) -> RawResult {
     if parts.is_empty() {
         parts.push("(empty result)".to_string());
     }
-    RawResult {
-        images,
-        content: parts.join("\n\n"),
-        is_error,
-        content_elided: None,
-    }
+    let content = parts.join("\n\n");
+    RawResult::new(content, is_error).with_images(images)
 }
 
 /// Name what an interim result is waiting on, for the error text the model

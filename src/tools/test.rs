@@ -1,14 +1,9 @@
 use super::*;
-use crate::log::CallId;
 use serde_json::json;
 use std::future::{pending, ready};
 
 fn call(name: &str, input: Value) -> ToolCall {
-    ToolCall {
-        id: CallId("toolu_1".into()),
-        name: name.into(),
-        input,
-    }
+    ToolCall::new(name, "toolu_1", input)
 }
 
 #[test]
@@ -515,17 +510,14 @@ async fn read_image_refuses_when_the_model_takes_no_images() {
 #[test]
 fn a_result_that_carries_images_keeps_its_text_and_sheds_the_bytes() {
     let carrying = || {
-        Outcome::Done(RawResult {
-            content: "the page rendered".into(),
-            is_error: false,
-            images: vec![crate::log::ResultImage {
+        Outcome::Done(RawResult::text("the page rendered").with_images(vec![
+            crate::log::ResultImage {
                 media_type: "image/webp".into(),
                 data: "UklGRg==".into(),
                 width: 10,
                 height: 10,
-            }],
-            content_elided: None,
-        })
+            },
+        ]))
     };
     let done_result = |o: Outcome| match o {
         Outcome::Done(r) => r,

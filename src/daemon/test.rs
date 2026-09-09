@@ -12,11 +12,11 @@ fn user(text: &str) -> Payload {
 
 /// One bash `ToolCall`, for exercising the effective-policy cache through `classify`.
 fn bash_call(command: &str) -> ToolCall {
-    ToolCall {
-        id: CallId("toolu_x".into()),
-        name: crate::bash::NAME.into(),
-        input: serde_json::json!({ "command": command }),
-    }
+    ToolCall::new(
+        crate::bash::NAME,
+        "toolu_x",
+        serde_json::json!({ "command": command }),
+    )
 }
 
 /// A role that resolved from `path`, so `Shared` opens it as the live [`ConfigFile`] — what

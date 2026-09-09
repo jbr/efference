@@ -42,7 +42,7 @@ fn image_scenario_sized(width: u16, height: u16, image: ResultImage) -> Screenpl
     play.user("read the fixture image");
     play.assistant(
         "",
-        vec![tool_call(
+        vec![ToolCall::new(
             "read_image",
             "toolu_img",
             json!({ "path": "earthrise.jpg" }),
@@ -83,7 +83,7 @@ fn transcript_image_off() {
     play.user("read the fixture image");
     play.assistant(
         "",
-        vec![tool_call(
+        vec![ToolCall::new(
             "read_image",
             "toolu_img",
             json!({ "path": "earthrise.jpg" }),

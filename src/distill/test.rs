@@ -1,6 +1,6 @@
 use super::*;
 use crate::api::Usage;
-use crate::log::{CallId, Triage};
+use crate::log::Triage;
 use crate::project::{
     ApiBlock, ApiMessage, BreakpointPlacement, ImagePlacement, Role, encode_messages, project_with,
 };
@@ -31,11 +31,7 @@ fn retain_completion(name: &str, input: Value) -> Completion {
             output: AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
-                vec![ToolCall {
-                    id: CallId("r".into()),
-                    name: name.into(),
-                    input,
-                }],
+                vec![ToolCall::new(name, "r", input)],
             ),
             upstream_failure: None,
         },
@@ -594,16 +590,8 @@ fn roster_is_empty_without_a_preamble() {
 #[test]
 fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
     let calls = vec![
-        ToolCall {
-            id: CallId("search_2".into()),
-            name: "search".into(),
-            input: json!({}),
-        },
-        ToolCall {
-            id: CallId("bash_3".into()),
-            name: "bash".into(),
-            input: json!({}),
-        },
+        ToolCall::new("search", "search_2", json!({})),
+        ToolCall::new("bash", "bash_3", json!({})),
     ];
     let prefix = vec![
         entry(
@@ -618,20 +606,7 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
             },
         ),
     ];
-    let raws = [
-        RawResult {
-            images: Vec::new(),
-            content: "alpha\nbeta".into(),
-            is_error: false,
-            content_elided: None,
-        },
-        RawResult {
-            images: Vec::new(),
-            content: "gamma".into(),
-            is_error: false,
-            content_elided: None,
-        },
-    ];
+    let raws = [RawResult::text("alpha\nbeta"), RawResult::text("gamma")];
     let pending: Vec<Pending<'_>> = calls
         .iter()
         .zip(&raws)
@@ -1019,30 +994,13 @@ intend to replace it.\n\nYour 8772 bytes of contents are preserved under \
 `write-retry-9f3a1c04be27d5e8`: repeat the call with \"overwrite\": true and \"contents\": \
 \"write-retry-9f3a1c04be27d5e8\" to confirm this exact write.";
 
-fn call(id: &str, name: &str) -> ToolCall {
-    ToolCall {
-        id: CallId(id.into()),
-        name: name.into(),
-        input: json!({}),
-    }
-}
-
-fn raw(content: &str, is_error: bool) -> RawResult {
-    RawResult {
-        images: Vec::new(),
-        content: content.into(),
-        is_error,
-        content_elided: None,
-    }
-}
-
 /// A gate carrying nothing but handle-bearing results is decided by the harness with no
 /// request at all — the skipped verdict is also a skipped round-trip — and each result
 /// projects `WireState::Raw`, so the token reaches the model exactly as the tool wrote it.
 #[test]
 fn a_gate_of_only_handle_bearing_results_is_decided_without_a_peek() {
-    let call = call("write_1", "write");
-    let raw = raw(HANDLE_RESULT, true);
+    let call = ToolCall::new("write", "write_1", json!({}));
+    let raw = RawResult::error(HANDLE_RESULT);
     let pending = vec![Pending {
         call: &call,
         raw: &raw,
@@ -1066,8 +1024,8 @@ fn a_gate_of_only_handle_bearing_results_is_decided_without_a_peek() {
 /// An ordinary result is still the fork's: no bypass, and it is offered for a verdict.
 #[test]
 fn an_ordinary_result_still_goes_through_the_fork() {
-    let call = call("read_1", "read");
-    let raw = raw("alpha\nbeta\n", false);
+    let call = ToolCall::new("read", "read_1", json!({}));
+    let raw = RawResult::text("alpha\nbeta\n");
     let pending = vec![Pending {
         call: &call,
         raw: &raw,
@@ -1081,8 +1039,14 @@ fn an_ordinary_result_still_goes_through_the_fork() {
 /// offered, so the peek is never asked to decide the one the harness already decided.
 #[test]
 fn a_handle_bearing_result_is_answered_but_never_offered() {
-    let calls = [call("write_1", "write"), call("read_2", "read")];
-    let raws = [raw(HANDLE_RESULT, true), raw("alpha\nbeta\n", false)];
+    let calls = [
+        ToolCall::new("write", "write_1", json!({})),
+        ToolCall::new("read", "read_2", json!({})),
+    ];
+    let raws = [
+        RawResult::error(HANDLE_RESULT),
+        RawResult::text("alpha\nbeta\n"),
+    ];
     let prefix = vec![
         entry(
             1,
@@ -1165,18 +1129,14 @@ fn a_bypassed_result_reaches_the_wire_verbatim() {
                 output: AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![call("write_1", "write")],
+                    vec![ToolCall::new("write", "write_1", json!({}))],
                 ),
                 upstream_failure: None,
             },
         ),
         entry(
             3,
-            Payload::ToolResult {
-                call_id: CallId("write_1".into()),
-                raw: raw(HANDLE_RESULT, true),
-                wire: verdict.wire,
-            },
+            Payload::tool_result("write_1", RawResult::error(HANDLE_RESULT), verdict.wire),
         ),
     ];
     let wire = project_with(&log, ImagePlacement::default());
@@ -1252,11 +1212,7 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
     use crate::api::{PromptCachePolicy, encode_responses};
     use crate::log::{Keep, ResponsesOutputItem, WireState};
 
-    let call = ToolCall {
-        id: CallId("call_1".into()),
-        name: "bash".into(),
-        input: json!({ "command": "ls" }),
-    };
+    let call = ToolCall::new("bash", "call_1", json!({ "command": "ls" }));
     let prefix = vec![
         entry(
             1,
@@ -1285,7 +1241,7 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
             },
         ),
     ];
-    let raw = raw("alpha\nbeta\ngamma", false);
+    let raw = RawResult::text("alpha\nbeta\ngamma");
     let pending = [Pending {
         call: &call,
         raw: &raw,
@@ -1322,15 +1278,11 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
     let mut log = prefix;
     log.push(entry(
         3,
-        Payload::ToolResult {
-            call_id: call.id.clone(),
-            raw: raw.clone(),
-            wire: WireState::Distilled {
-                keep: Keep::Ranges(vec![(1, 1)]),
-                note: Some("kept the first".into()),
-                intent_feedback: None,
-            },
-        },
+        Payload::tool_result(
+            call.id.clone(),
+            raw.clone(),
+            WireState::distilled(Keep::Ranges(vec![(1, 1)])).with_note("kept the first"),
+        ),
     ));
     let mut canonical = project_semantic(&log);
     canonical.push(WireTurn::Breakpoint);

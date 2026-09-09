@@ -112,30 +112,20 @@ fn config_request_sentence(config_path: Option<&Path>) -> String {
 /// parse, here's the error" fixes the TOML.
 pub(super) fn config_write_outcome(shared: &Shared, result: RawResult) -> RawResult {
     match crate::daemon::refresh_and_emit(shared) {
-        Some(Refreshed::Reverted { error }) => RawResult {
-            images: Vec::new(),
-            content: format!(
-                "Your config edit was not adopted: the file did not parse, so it has been restored \
-                 to the last valid config and your effective permissions are unchanged. Nothing \
-                 else about the write failed — the tool wrote the bytes you gave it, they just \
-                 aren't a valid config. Re-read the file (its header comment carries the schema) \
-                 and write a version that parses.\n\nParse error: {error}"
-            ),
-            is_error: true,
-            content_elided: None,
-        },
-        Some(Refreshed::RevertFailed { error, io }) => RawResult {
-            images: Vec::new(),
-            content: format!(
-                "Your config edit was not adopted: the file did not parse, and restoring the last \
-                 valid config also failed, so the file on disk is currently invalid. Your \
-                 effective permissions are unchanged. This needs a human to repair the file, and \
-                 the loop is parked until it parses again — there is nothing further you can do \
-                 here.\n\nParse error: {error}\nRestore error: {io}"
-            ),
-            is_error: true,
-            content_elided: None,
-        },
+        Some(Refreshed::Reverted { error }) => RawResult::error(format!(
+            "Your config edit was not adopted: the file did not parse, so it has been restored \
+             to the last valid config and your effective permissions are unchanged. Nothing \
+             else about the write failed — the tool wrote the bytes you gave it, they just \
+             aren't a valid config. Re-read the file (its header comment carries the schema) \
+             and write a version that parses.\n\nParse error: {error}"
+        )),
+        Some(Refreshed::RevertFailed { error, io }) => RawResult::error(format!(
+            "Your config edit was not adopted: the file did not parse, and restoring the last \
+             valid config also failed, so the file on disk is currently invalid. Your \
+             effective permissions are unchanged. This needs a human to repair the file, and \
+             the loop is parked until it parses again — there is nothing further you can do \
+             here.\n\nParse error: {error}\nRestore error: {io}"
+        )),
         // Adopted, or no config file at all — the write stands as reported.
         Some(Refreshed::Adopted(_)) | None => result,
     }

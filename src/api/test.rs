@@ -5,7 +5,7 @@ use super::client::record_upstream_failure;
 use super::thinking::ThinkingOff;
 use super::thinking::is_recognized_adaptive_claude;
 use super::*;
-use crate::log::{FRAME_CAPTURE_CAP, is_captured_header};
+use crate::log::{CallId, FRAME_CAPTURE_CAP, is_captured_header};
 
 /// A bare `ANTHROPIC_API_KEY` and no `EFFERENCE_PROVIDER` resolves to the
 /// Anthropic provider: its endpoint, `x-api-key` auth, key verbatim.
@@ -1042,11 +1042,11 @@ fn assembles_and_projects_interleaved_blocks_in_provider_order() {
                 signature: "SiG==".into(),
             },
             MessagesOutputBlock::Text("second".into()),
-            MessagesOutputBlock::ToolUse(ToolCall {
-                id: CallId("toolu_1".into()),
-                name: "bash".into(),
-                input: serde_json::json!({"command": "ls"}),
-            }),
+            MessagesOutputBlock::ToolUse(ToolCall::new(
+                "bash",
+                "toolu_1",
+                serde_json::json!({"command": "ls"}),
+            )),
         ]
     );
 

@@ -10,7 +10,7 @@ fn transcript_tool_io() {
     play.user("Show me the project function signature.");
     play.assistant(
         "On it.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_01",
             json!({ "command": "grep -n 'fn project' src/project.rs" }),
@@ -35,7 +35,7 @@ fn transcript_long_result() {
     play.user("List the tui module.");
     play.assistant(
         "Here's the directory.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_05",
             json!({ "command": "ls src/tui" }),
@@ -59,7 +59,7 @@ fn transcript_long_line_wraps_inside_the_box() {
     play.user("Why did it fail?");
     play.assistant(
         "Reading the failure.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_09",
             json!({ "command": "cargo test --lib" }),
@@ -96,7 +96,7 @@ fn transcript_write_call() {
     play.user("Write a counter script.");
     play.assistant(
         "Writing it now.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "write",
             "toolu_w1",
             json!({
@@ -136,8 +136,8 @@ fn transcript_read_image_call() {
     play.assistant(
         "Reading both.",
         vec![
-            tool_call("read_image", "toolu_i1", json!({ "path": "mock.png" })),
-            tool_call(
+            ToolCall::new("read_image", "toolu_i1", json!({ "path": "mock.png" })),
+            ToolCall::new(
                 "read_image",
                 "toolu_i2",
                 json!({ "path": "mock-header.png", "long_edge": 2576 }),
@@ -181,7 +181,7 @@ fn transcript_distilled_result() {
     play.user("Summarize the dependency tree.");
     play.assistant(
         "Pulling the tree, then I'll distill it.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_03",
             json!({ "command": "cargo tree" }),
@@ -191,14 +191,9 @@ fn transcript_distilled_result() {
         "toolu_03",
         "efference v0.1.0\n├── anyhow v1.0.86\n├── clap v4.5.4\n│   ├── …600 more lines…",
         false,
-        WireState::Distilled {
-            keep: Keep::None,
-            note: Some(
-                "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated."
-                    .into(),
-            ),
-            intent_feedback: None,
-        },
+        WireState::distilled(Keep::None).with_note(
+            "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated.",
+        ),
     );
     play.snapshot("transcript_distilled_result");
 }
@@ -213,11 +208,10 @@ fn transcript_distilled_result_shows_intent_feedback() {
     play.user("Look around.");
     play.assistant(
         "",
-        vec![tool_call(
-            "bash",
-            "toolu_if1",
-            json!({ "command": "ls", "intent": "list the directory" }),
-        )],
+        vec![
+            ToolCall::new("bash", "toolu_if1", json!({ "command": "ls" }))
+                .with_intent("list the directory"),
+        ],
     );
     play.tool_result(
         "toolu_if1",
@@ -225,13 +219,11 @@ fn transcript_distilled_result_shows_intent_feedback() {
 src
 docs",
         false,
-        WireState::Distilled {
-            keep: Keep::All,
-            note: Some("3 entries: Cargo.toml, src, docs".into()),
-            intent_feedback: Some(
-                "it said what the call does, not what you needed; kept everything".into(),
+        WireState::distilled(Keep::All)
+            .with_note("3 entries: Cargo.toml, src, docs")
+            .with_intent_feedback(
+                "it said what the call does, not what you needed; kept everything",
             ),
-        },
     );
     play.snapshot("transcript_distilled_result_with_intent_feedback");
 }
@@ -246,7 +238,7 @@ fn transcript_complete_distillate_shows_a_plain_size() {
     play.user("Tail the log.");
     play.assistant(
         "",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_k1",
             json!({ "command": "tail -n 3 e.log" }),
@@ -256,11 +248,7 @@ fn transcript_complete_distillate_shows_a_plain_size() {
         "toolu_k1",
         "line one\nline two\nline three",
         false,
-        WireState::Distilled {
-            keep: Keep::All,
-            note: None,
-            intent_feedback: None,
-        },
+        WireState::distilled(Keep::All),
     );
 
     let frame = play.render();
@@ -284,7 +272,7 @@ fn a_partial_distillate_of_an_edit_shows_the_triaged_lines() {
     play.user("Add the line.");
     play.assistant(
         "Editing.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "edit",
             "toolu_e3",
             json!({ "file_path": "CHANGELOG.md", "operation": "insert_after" }),
@@ -300,11 +288,8 @@ fn a_partial_distillate_of_an_edit_shows_the_triaged_lines() {
          +- `read` tool line-range support in `fs-mcp`.\n\
          \x20- Interactive TUI (`efference tui`).",
         false,
-        WireState::Distilled {
-            keep: Keep::Ranges(vec![(1, 1)]),
-            note: Some("inserted the read line-range entry".into()),
-            intent_feedback: None,
-        },
+        WireState::distilled(Keep::Ranges(vec![(1, 1)]))
+            .with_note("inserted the read line-range entry"),
     );
 
     let frame = play.render();
@@ -333,7 +318,7 @@ fn a_partly_kept_diff_is_still_a_diff() {
     play.user("Add the line.");
     play.assistant(
         "Editing.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "edit",
             "toolu_e4",
             json!({ "file_path": "CHANGELOG.md", "operation": "insert_after" }),
@@ -349,11 +334,7 @@ fn a_partly_kept_diff_is_still_a_diff() {
          +- `read` tool line-range support in `fs-mcp`.\n\
          \x20- Interactive TUI (`efference tui`).",
         false,
-        WireState::Distilled {
-            keep: Keep::Ranges(vec![(4, 6)]),
-            note: None,
-            intent_feedback: None,
-        },
+        WireState::distilled(Keep::Ranges(vec![(4, 6)])),
     );
 
     let frame = play.render();
@@ -382,7 +363,7 @@ fn a_complete_distillate_keeps_its_per_tool_rendering() {
     play.user("Add the line.");
     play.assistant(
         "Editing.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "edit",
             "toolu_e2",
             json!({
@@ -402,11 +383,7 @@ fn a_complete_distillate_keeps_its_per_tool_rendering() {
          +- `read` tool line-range support in `fs-mcp`.\n\
          \x20- Interactive TUI (`efference tui`).",
         false,
-        WireState::Distilled {
-            keep: Keep::All,
-            note: None,
-            intent_feedback: None,
-        },
+        WireState::distilled(Keep::All),
     );
 
     let frame = play.render();
@@ -437,7 +414,7 @@ fn transcript_distilled_keeps_numbered_lines() {
     play.user("Which tests failed?");
     play.assistant(
         "Running them.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_04",
             json!({ "command": "cargo test" }),
@@ -455,11 +432,8 @@ fn transcript_distilled_keeps_numbered_lines() {
         "toolu_04",
         &output,
         false,
-        WireState::Distilled {
-            keep: Keep::Ranges(vec![(7, 7), (22, 23)]),
-            note: Some("2 failures, both in the tui wrap/gutter work.".into()),
-            intent_feedback: None,
-        },
+        WireState::distilled(Keep::Ranges(vec![(7, 7), (22, 23)]))
+            .with_note("2 failures, both in the tui wrap/gutter work."),
     );
 
     let frame = play.render();
@@ -484,7 +458,7 @@ fn transcript_raw_view_of_distilled() {
     play.user("Summarize the dependency tree.");
     play.assistant(
         "Pulling the tree, then I'll distill it.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_03",
             json!({ "command": "cargo tree" }),
@@ -494,11 +468,8 @@ fn transcript_raw_view_of_distilled() {
         "toolu_03",
         "efference v0.1.0\n├── anyhow v1.0.86\n├── clap v4.5.4\n└── tokio v1.38.0",
         false,
-        WireState::Distilled {
-            keep: Keep::None,
-            note: Some("12 direct deps; tokio + trillium are the heaviest.".into()),
-            intent_feedback: None,
-        },
+        WireState::distilled(Keep::None)
+            .with_note("12 direct deps; tokio + trillium are the heaviest."),
     );
     play.show_raw("toolu_03");
     play.snapshot("transcript_raw_view_of_distilled");
@@ -513,7 +484,7 @@ fn transcript_file_tools() {
     play.user("Open state.rs, then search and list.");
     play.assistant(
         "Reading the file:",
-        vec![tool_call(
+        vec![ToolCall::new(
             "read",
             "toolu_r1",
             json!({ "paths": ["src/tui/state.rs"] }),
@@ -532,7 +503,7 @@ fn transcript_file_tools() {
     );
     play.assistant(
         "Now searching:",
-        vec![tool_call(
+        vec![ToolCall::new(
             "search",
             "toolu_r2",
             json!({ "pattern": "fn project", "path": "src" }),
@@ -546,7 +517,11 @@ fn transcript_file_tools() {
         );
     play.assistant(
         "And listing:",
-        vec![tool_call("list", "toolu_r3", json!({ "path": "src/tui" }))],
+        vec![ToolCall::new(
+            "list",
+            "toolu_r3",
+            json!({ "path": "src/tui" }),
+        )],
     );
     play.tool_result(
         "toolu_r3",
@@ -567,7 +542,7 @@ fn a_partly_kept_read_keeps_its_highlighting() {
     play.user("Open state.rs.");
     play.assistant(
         "Reading the file:",
-        vec![tool_call(
+        vec![ToolCall::new(
             "read",
             "toolu_r4",
             json!({ "paths": ["src/tui/state.rs"] }),
@@ -582,11 +557,8 @@ fn a_partly_kept_read_keeps_its_highlighting() {
              }\n\
              ==MK7 END /Users/jbr/code/efference/src/tui/state.rs MK7==",
         false,
-        WireState::Distilled {
-            keep: Keep::Ranges(vec![(2, 3)]),
-            note: Some("the struct head and its first field".into()),
-            intent_feedback: None,
-        },
+        WireState::distilled(Keep::Ranges(vec![(2, 3)]))
+            .with_note("the struct head and its first field"),
     );
 
     let frame = play.render();
@@ -613,7 +585,7 @@ fn transcript_error_result() {
     play.user("Run the test suite.");
     play.assistant(
         "Running the full suite now.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_02",
             json!({ "command": "cargo test" }),
@@ -639,7 +611,11 @@ fn a_triage_failed_result_reads_as_a_failed_call() {
     play.user("Run it.");
     play.assistant(
         "",
-        vec![tool_call("bash", "toolu_tf", json!({ "command": "ls" }))],
+        vec![ToolCall::new(
+            "bash",
+            "toolu_tf",
+            json!({ "command": "ls" }),
+        )],
     );
     play.tool_result(
         "toolu_tf",
@@ -673,7 +649,11 @@ fn a_recovered_retry_surfaces_as_an_annotation() {
     play.user("Run it.");
     play.assistant(
         "",
-        vec![tool_call("bash", "toolu_rt", json!({ "command": "ls" }))],
+        vec![ToolCall::new(
+            "bash",
+            "toolu_rt",
+            json!({ "command": "ls" }),
+        )],
     );
     play.tool_result("toolu_rt", "file.txt", false, WireState::Raw);
     play.commit(Payload::Triage(Triage {
@@ -700,7 +680,11 @@ fn error_exchange_prompt_is_red() {
     play.user("Run it.");
     play.assistant(
         "",
-        vec![tool_call("bash", "toolu_07", json!({ "command": "false" }))],
+        vec![ToolCall::new(
+            "bash",
+            "toolu_07",
+            json!({ "command": "false" }),
+        )],
     );
     play.tool_result("toolu_07", "command failed", true, WireState::Raw);
 

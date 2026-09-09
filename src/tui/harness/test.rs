@@ -1,5 +1,5 @@
-use super::{Screenplay, tool_call};
-use crate::log::{Keep, Stance, WireState};
+use super::Screenplay;
+use crate::log::{Keep, Stance, ToolCall, WireState};
 use crate::tui::{PaceView, TuiEvent};
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::style::{Color, Modifier};
@@ -25,7 +25,7 @@ fn edit_scenario(w: u16, h: u16) -> Screenplay<'static> {
     play.user("Wrap that long line.");
     play.assistant(
         "Here's the reformatted version.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "edit",
             "toolu_08",
             json!({

@@ -212,7 +212,7 @@ impl Bash {
                     .map_or(self.background_after, Duration::from_secs)
                     .min(self.background_after_max),
             ),
-            Err(e) => return error(format!("invalid bash input: {e}")).into(),
+            Err(e) => return RawResult::error(format!("invalid bash input: {e}")).into(),
         };
 
         let mut cmd = Command::new("bash");
@@ -238,7 +238,7 @@ impl Bash {
         self.child_env.apply_tokio(&mut cmd);
         let mut child = match cmd.spawn() {
             Ok(child) => child,
-            Err(e) => return error(format!("failed to spawn bash: {e}")).into(),
+            Err(e) => return RawResult::error(format!("failed to spawn bash: {e}")).into(),
         };
 
         // Grab the pgid before anything consumes the handle; `killpg` needs only it.
@@ -283,13 +283,7 @@ impl Bash {
                 let mut content = String::from_utf8_lossy(&combined).into_owned();
                 push_line_break(&mut content);
                 content.push_str("[aborted by user — process group killed]");
-                RawResult {
-                    images: Vec::new(),
-                    content,
-                    is_error: true,
-                    content_elided: None,
-                }
-                .into()
+                RawResult::error(content).into()
             }
             // Surrender the live child, don't reap it (docs/supervisor.md): no
             // `killpg`, no `wait`. The loop adopts it into the supervisor, seeding
@@ -305,7 +299,7 @@ impl Bash {
             // Both pipes at EOF: the child has finished writing; reap its status.
             None => match child.wait().await {
                 Ok(status) => render(combined, status).into(),
-                Err(e) => error(format!("error waiting on bash: {e}")).into(),
+                Err(e) => RawResult::error(format!("error waiting on bash: {e}")).into(),
             },
         }
     }
@@ -398,26 +392,12 @@ fn render(combined: Vec<u8>, status: ExitStatus) -> RawResult {
     if content.is_empty() {
         content.push_str("(no output)");
     }
-    RawResult {
-        images: Vec::new(),
-        content,
-        is_error,
-        content_elided: None,
-    }
+    RawResult::new(content, is_error)
 }
 
 fn push_line_break(content: &mut String) {
     if !content.is_empty() && !content.ends_with('\n') {
         content.push('\n');
-    }
-}
-
-fn error(content: impl Into<String>) -> RawResult {
-    RawResult {
-        images: Vec::new(),
-        content: content.into(),
-        is_error: true,
-        content_elided: None,
     }
 }
 

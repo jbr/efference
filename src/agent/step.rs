@@ -94,11 +94,11 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // question with no second option. The corrective text names the paths that do work,
     // and rides to the wire verbatim as a `Direct` payload.
     if let Some(result) = crate::guide::reject_non_read(call) {
-        return Ok(Decision::Direct(vec![Payload::ToolResult {
-            call_id: call.id.clone(),
-            raw: result,
-            wire: WireState::Raw,
-        }]));
+        return Ok(Decision::Direct(vec![Payload::tool_result(
+            call.id.clone(),
+            result,
+            WireState::Raw,
+        )]));
     }
     // The permission cascade (docs/permissions.md). First the deterministic fast-path: a
     // `Clear` verdict auto-approves with zero model cost. What it can't clear falls to
@@ -258,36 +258,26 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             if !split.is_empty() {
                 let ids: Vec<&str> = split.iter().map(|id| id.0.as_str()).collect();
                 log::error!("consolidate refused: a boundary at {upto} would split {ids:?}");
-                return Ok(Decision::Direct(vec![Payload::ToolResult {
-                    call_id: call.id.clone(),
-                    raw: RawResult {
-                        images: Vec::new(),
-                        content: format!(
-                            "consolidate refused: the boundary would separate a call from \
-                             its result ({}); nothing was folded",
-                            ids.join(", ")
-                        ),
-                        is_error: true,
-                        content_elided: None,
-                    },
-                    wire: WireState::Raw,
-                }]));
+                return Ok(Decision::Direct(vec![Payload::tool_result(
+                    call.id.clone(),
+                    RawResult::error(format!(
+                        "consolidate refused: the boundary would separate a call from \
+                         its result ({}); nothing was folded",
+                        ids.join(", ")
+                    )),
+                    WireState::Raw,
+                )]));
             }
             Ok(Decision::Direct(vec![
                 Payload::Mark(Mark {
                     kind: MarkKind::Boundary { upto },
                     note,
                 }),
-                Payload::ToolResult {
-                    call_id: call.id.clone(),
-                    raw: RawResult {
-                        images: Vec::new(),
-                        content: "consolidated".into(),
-                        is_error: false,
-                        content_elided: None,
-                    },
-                    wire: WireState::Raw,
-                },
+                Payload::tool_result(
+                    call.id.clone(),
+                    RawResult::text("consolidated"),
+                    WireState::Raw,
+                ),
             ]))
         }
         Approval::Approve => {
@@ -331,32 +321,17 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                                      composed this turn reach it."
                                 );
                                 process_handle = Some(handle);
-                                RawResult {
-                                    images: Vec::new(),
-                                    content,
-                                    is_error: false,
-                                    content_elided: None,
-                                }
+                                RawResult::text(content)
                             }
                             Err(e) => {
                                 harness_error = true;
-                                RawResult {
-                                    images: Vec::new(),
-                                    content: format!("failed to background: {e}"),
-                                    is_error: true,
-                                    content_elided: None,
-                                }
+                                RawResult::error(format!("failed to background: {e}"))
                             }
                         }
                     }
                     None => {
                         harness_error = true;
-                        RawResult {
-                            images: Vec::new(),
-                            content: "background bash requires a `command`".into(),
-                            is_error: true,
-                            content_elided: None,
-                        }
+                        RawResult::error("background bash requires a `command`")
                     }
                 }
             } else if let Some(r) = crate::guide::read_documents(call) {
@@ -467,12 +442,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                                  process."
                             ),
                         };
-                        RawResult {
-                            images: Vec::new(),
-                            content,
-                            is_error: false,
-                            content_elided: None,
-                        }
+                        RawResult::text(content)
                     }
                 }
             };

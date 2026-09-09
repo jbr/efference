@@ -21,11 +21,11 @@ fn assistant_calling(call_id: &str) -> Payload {
         output: crate::log::AssistantOutput::from_legacy_messages(
             vec![],
             vec![],
-            vec![ToolCall {
-                id: CallId(call_id.into()),
-                name: crate::bash::NAME.into(),
-                input: serde_json::json!({ "command": "ls" }),
-            }],
+            vec![ToolCall::new(
+                crate::bash::NAME,
+                call_id,
+                serde_json::json!({ "command": "ls" }),
+            )],
         ),
         upstream_failure: None,
     }
@@ -33,16 +33,11 @@ fn assistant_calling(call_id: &str) -> Payload {
 
 /// The paired result — a `tool_result` tail, which projects as a **user** message.
 fn tool_result(call_id: &str) -> Payload {
-    Payload::ToolResult {
-        call_id: CallId(call_id.into()),
-        raw: crate::log::RawResult {
-            content: "ok".into(),
-            is_error: false,
-            images: vec![],
-            content_elided: None,
-        },
-        wire: crate::log::WireState::Raw,
-    }
+    Payload::tool_result(
+        call_id,
+        crate::log::RawResult::text("ok"),
+        crate::log::WireState::Raw,
+    )
 }
 
 /// A record-only assistant entry: an upstream attempt that died before finalizing.

@@ -151,11 +151,7 @@ fn distilled_projects_the_verdict_not_raw() {
                 output: AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![ToolCall {
-                        id: CallId("x".into()),
-                        name: "bash".into(),
-                        input: json!({}),
-                    }],
+                    vec![ToolCall::new("bash", "x", json!({}))],
                 ),
                 upstream_failure: None,
             },
@@ -163,20 +159,11 @@ fn distilled_projects_the_verdict_not_raw() {
         entry(
             1,
             0,
-            Payload::ToolResult {
-                call_id: CallId("x".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "the gist line\nten thousand lines of output".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Distilled {
-                    keep: Keep::Ranges(vec![(1, 1)]),
-                    note: Some("summary".into()),
-                    intent_feedback: None,
-                },
-            },
+            Payload::tool_result(
+                "x",
+                RawResult::text("the gist line\nten thousand lines of output"),
+                WireState::distilled(Keep::Ranges(vec![(1, 1)])).with_note("summary"),
+            ),
         ),
     ];
     let wire = serde_json::to_string(&project(&log)).unwrap();
@@ -205,11 +192,7 @@ fn triage_failed_projects_an_error_never_the_raw() {
                 output: AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![ToolCall {
-                        id: CallId("x".into()),
-                        name: "bash".into(),
-                        input: json!({}),
-                    }],
+                    vec![ToolCall::new("bash", "x", json!({}))],
                 ),
                 upstream_failure: None,
             },
@@ -217,18 +200,13 @@ fn triage_failed_projects_an_error_never_the_raw() {
         entry(
             1,
             0,
-            Payload::ToolResult {
-                call_id: CallId("x".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "ten thousand lines of output".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::TriageFailed {
+            Payload::tool_result(
+                "x",
+                RawResult::text("ten thousand lines of output"),
+                WireState::TriageFailed {
                     why: "peek called no tool (attempt 3 of 3)".into(),
                 },
-            },
+            ),
         ),
     ];
     let messages = project(&log);
@@ -295,11 +273,7 @@ fn intent_feedback_is_absent_from_older_states_and_omitted_when_none() {
         }
     ));
     assert_eq!(serde_json::to_string(&wire).unwrap(), old);
-    let with = WireState::Distilled {
-        keep: Keep::All,
-        note: None,
-        intent_feedback: Some("fb".into()),
-    };
+    let with = WireState::distilled(Keep::All).with_intent_feedback("fb");
     assert!(
         serde_json::to_string(&with)
             .unwrap()

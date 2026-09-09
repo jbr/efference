@@ -397,15 +397,20 @@ impl ForkPeek {
                 // written one unasked, finds no home.
                 Some(shape) => bypass_verdict(shape),
                 None => match verdict.results.iter().find(|v| v.call_id == p.call.id.0) {
-                    Some(v) => Distillation {
-                        wire: WireState::Distilled {
-                            keep: v.keep.clone(),
-                            note: v.note.clone(),
-                            intent_feedback: v.intent_feedback.clone(),
-                        },
-                        origin: Origin::Model,
-                        raw_keep: v.raw_keep.clone(),
-                    },
+                    Some(v) => {
+                        let mut wire = WireState::distilled(v.keep.clone());
+                        if let Some(note) = v.note.clone() {
+                            wire = wire.with_note(note);
+                        }
+                        if let Some(intent_feedback) = v.intent_feedback.clone() {
+                            wire = wire.with_intent_feedback(intent_feedback);
+                        }
+                        Distillation {
+                            wire,
+                            origin: Origin::Model,
+                            raw_keep: v.raw_keep.clone(),
+                        }
+                    }
                     // Unreachable in practice (coverage validated); defensively
                     // withhold rather than keep untriaged output.
                     None => Distillation {

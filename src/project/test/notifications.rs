@@ -24,11 +24,7 @@ fn pinned_notification_projects_at_triage_position() {
                 output: AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![ToolCall {
-                        id: CallId("t".into()),
-                        name: "bash".into(),
-                        input: json!({}),
-                    }],
+                    vec![ToolCall::new("bash", "t", json!({}))],
                 ),
                 upstream_failure: None,
             },
@@ -38,16 +34,7 @@ fn pinned_notification_projects_at_triage_position() {
         entry(
             3,
             0,
-            Payload::ToolResult {
-                call_id: CallId("t".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "out".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("t", RawResult::text("out"), WireState::Raw),
         ),
         entry(
             4,
@@ -115,11 +102,7 @@ fn surfaced_context_item_projects_at_triage_position() {
                 output: AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![ToolCall {
-                        id: CallId("t".into()),
-                        name: "grep".into(),
-                        input: json!({}),
-                    }],
+                    vec![ToolCall::new("grep", "t", json!({}))],
                 ),
                 upstream_failure: None,
             },
@@ -127,16 +110,7 @@ fn surfaced_context_item_projects_at_triage_position() {
         entry(
             2,
             0,
-            Payload::ToolResult {
-                call_id: CallId("t".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "no match".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("t", RawResult::text("no match"), WireState::Raw),
         ),
         entry(
             3,
@@ -199,11 +173,7 @@ fn recorded_triage_thinking_projects_to_identical_bytes() {
                     output: AssistantOutput::from_legacy_messages(
                         vec![],
                         vec![],
-                        vec![ToolCall {
-                            id: CallId("t".into()),
-                            name: "bash".into(),
-                            input: json!({}),
-                        }],
+                        vec![ToolCall::new("bash", "t", json!({}))],
                     ),
                     upstream_failure: None,
                 },
@@ -212,16 +182,7 @@ fn recorded_triage_thinking_projects_to_identical_bytes() {
             entry(
                 2,
                 0,
-                Payload::ToolResult {
-                    call_id: CallId("t".into()),
-                    raw: RawResult {
-                        images: Vec::new(),
-                        content: "out".into(),
-                        is_error: false,
-                        content_elided: None,
-                    },
-                    wire: WireState::Raw,
-                },
+                Payload::tool_result("t", RawResult::text("out"), WireState::Raw),
             ),
             entry(
                 3,

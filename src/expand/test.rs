@@ -1,5 +1,4 @@
 use super::*;
-use crate::log::CallId;
 use serde_json::json;
 
 fn tmpdir_expander() -> Expander {
@@ -55,11 +54,7 @@ fn shell_default_syntax_and_unclosed_braces_error() {
 }
 
 fn call(name: &str, input: serde_json::Value) -> ToolCall {
-    ToolCall {
-        id: CallId("toolu_x".into()),
-        name: name.into(),
-        input,
-    }
+    ToolCall::new(name, "toolu_x", input)
 }
 
 /// Only the path field is rewritten — content carrying `$TMPDIR` as *text*

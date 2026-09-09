@@ -14,16 +14,11 @@ fn entry(seq: u64, submission_id: Option<&str>, payload: Payload) -> LogEntry {
 }
 
 fn result_with_images(images: Vec<ResultImage>) -> Payload {
-    Payload::ToolResult {
-        call_id: CallId("toolu_img".into()),
-        raw: RawResult {
-            content: "1×1 image/webp, 1 visual tokens".into(),
-            is_error: false,
-            images,
-            content_elided: None,
-        },
-        wire: WireState::Raw,
-    }
+    Payload::tool_result(
+        "toolu_img",
+        RawResult::text("1×1 image/webp, 1 visual tokens").with_images(images),
+        WireState::Raw,
+    )
 }
 
 /// The mirror pin: an image-free entry **under the threshold** serializes
@@ -45,11 +40,11 @@ fn view_of_an_image_free_entry_is_the_derived_bytes() {
                 output: crate::log::AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![ContentBlock::Text("ok".into())],
-                    vec![ToolCall {
-                        id: CallId("toolu_1".into()),
-                        name: "bash".into(),
-                        input: serde_json::json!({ "command": "ls" }),
-                    }],
+                    vec![ToolCall::new(
+                        "bash",
+                        "toolu_1",
+                        serde_json::json!({ "command": "ls" }),
+                    )],
                 ),
                 upstream_failure: None,
             },
@@ -58,16 +53,7 @@ fn view_of_an_image_free_entry_is_the_derived_bytes() {
         entry(
             3,
             None,
-            Payload::ToolResult {
-                call_id: CallId("toolu_2".into()),
-                raw: RawResult {
-                    content: "gone".into(),
-                    is_error: true,
-                    images: Vec::new(),
-                    content_elided: None,
-                },
-                wire: WireState::Elided,
-            },
+            Payload::tool_result("toolu_2", RawResult::error("gone"), WireState::Elided),
         ),
     ];
     for case in &cases {
@@ -139,16 +125,7 @@ fn stripped_view_deserializes_as_a_log_entry() {
 }
 
 fn text_result(content: String) -> Payload {
-    Payload::ToolResult {
-        call_id: CallId("toolu_big".into()),
-        raw: RawResult {
-            content,
-            is_error: false,
-            images: Vec::new(),
-            content_elided: None,
-        },
-        wire: WireState::Raw,
-    }
+    Payload::tool_result("toolu_big", RawResult::text(content), WireState::Raw)
 }
 
 /// The threshold's two sides. A small result is byte-identical through the windowed
@@ -234,20 +211,11 @@ fn a_distilled_view_carries_the_line_counts_the_prefix_cannot_yield() {
     let distilled = entry(
         10,
         None,
-        Payload::ToolResult {
-            call_id: CallId("toolu_distilled".into()),
-            raw: RawResult {
-                content: content.clone(),
-                is_error: false,
-                images: Vec::new(),
-                content_elided: None,
-            },
-            wire: WireState::Distilled {
-                keep: crate::log::Keep::Ranges(vec![(300, 309), (350, 400)]),
-                note: None,
-                intent_feedback: None,
-            },
-        },
+        Payload::tool_result(
+            "toolu_distilled",
+            RawResult::text(content.clone()),
+            WireState::distilled(crate::log::Keep::Ranges(vec![(300, 309), (350, 400)])),
+        ),
     );
     let windowed: serde_json::Value =
         serde_json::from_str(&serde_json::to_string(&EntryView::new(&distilled)).unwrap()).unwrap();

@@ -235,7 +235,7 @@ fn gate_shows_spotter_reason_inline() {
     play.user("Clean the build directory.");
     play.assistant(
         "Sure — I'll remove it.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_g",
             json!({ "command": "rm -rf ./build" }),
@@ -285,7 +285,11 @@ fn gate_survives_a_long_command() {
     play.user("Clean the build directory.");
     play.assistant(
         "Sure — I'll remove it.",
-        vec![tool_call("bash", "toolu_g", json!({ "command": command }))],
+        vec![ToolCall::new(
+            "bash",
+            "toolu_g",
+            json!({ "command": command }),
+        )],
     );
     play.pending_gate_reason(
         "toolu_g",
@@ -321,7 +325,7 @@ fn a_cleared_call_shows_its_verdict() {
     play.user("How big is the source tree?");
     play.assistant(
         "Counting it now.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_c",
             json!({ "command": "wc -l src/*.rs" }),
@@ -354,7 +358,7 @@ fn a_resolved_gate_keeps_its_verdict() {
     play.user("Clean the build directory.");
     play.assistant(
         "Sure — I'll remove it.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_r",
             json!({ "command": "rm -rf ./build" }),
@@ -732,7 +736,7 @@ fn dev_screenshot_matches_snapshot_render() {
     play.user("Show me the project signature.");
     play.assistant(
         "On it.",
-        vec![tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_ss",
             json!({ "command": "grep -n 'fn project' src/project.rs" }),
@@ -792,7 +796,7 @@ fn view_jumps_transcript_focus_to_the_processs_entry() {
     play.user("start the dev server");
     play.assistant(
         "Backgrounding it.",
-        vec![crate::tui::harness::test::tool_call(
+        vec![ToolCall::new(
             "bash",
             "toolu_bg",
             json!({ "command": "npm run dev", "background": true }),

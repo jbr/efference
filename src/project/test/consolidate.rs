@@ -29,11 +29,7 @@ fn boundary_mark_folds_span_to_summary() {
                 output: AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![ToolCall {
-                        id: CallId("t1".into()),
-                        name: "bash".into(),
-                        input: json!({}),
-                    }],
+                    vec![ToolCall::new("bash", "t1", json!({}))],
                 ),
                 upstream_failure: None,
             },
@@ -41,16 +37,7 @@ fn boundary_mark_folds_span_to_summary() {
         entry(
             2,
             1,
-            Payload::ToolResult {
-                call_id: CallId("t1".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "old output".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("t1", RawResult::text("old output"), WireState::Raw),
         ),
         entry(
             3,
@@ -64,11 +51,11 @@ fn boundary_mark_folds_span_to_summary() {
                 output: AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![ToolCall {
-                        id: CallId("c1".into()),
-                        name: "consolidate".into(),
-                        input: json!({"summary": "summary of old task"}),
-                    }],
+                    vec![ToolCall::new(
+                        "consolidate",
+                        "c1",
+                        json!({"summary": "summary of old task"}),
+                    )],
                 ),
                 upstream_failure: None,
             },
@@ -84,16 +71,7 @@ fn boundary_mark_folds_span_to_summary() {
         entry(
             6,
             3,
-            Payload::ToolResult {
-                call_id: CallId("c1".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "consolidated".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("c1", RawResult::text("consolidated"), WireState::Raw),
         ),
     ];
     let messages = project(&log);
@@ -269,11 +247,7 @@ fn mark_folds_named_span_and_injects_summary() {
                 output: AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![ToolCall {
-                        id: CallId("a".into()),
-                        name: "bash".into(),
-                        input: json!({}),
-                    }],
+                    vec![ToolCall::new("bash", "a", json!({}))],
                 ),
                 upstream_failure: None,
             },
@@ -281,16 +255,7 @@ fn mark_folds_named_span_and_injects_summary() {
         entry(
             1,
             0,
-            Payload::ToolResult {
-                call_id: CallId("a".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "out-a".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("a", RawResult::text("out-a"), WireState::Raw),
         ),
         entry(
             99,
@@ -348,16 +313,7 @@ fn a_responses_boundary_folds_whole_replay_units() {
         }
     }
     fn result(call_id: &str, out: &str) -> Payload {
-        Payload::ToolResult {
-            call_id: CallId(call_id.into()),
-            raw: RawResult {
-                images: Vec::new(),
-                content: out.into(),
-                is_error: false,
-                content_elided: None,
-            },
-            wire: WireState::Raw,
-        }
+        Payload::tool_result(call_id, RawResult::text(out), WireState::Raw)
     }
     let log = vec![
         entry(
@@ -471,16 +427,7 @@ fn a_boundary_inside_a_responses_step_orphans_its_output() {
         entry(
             2,
             0,
-            Payload::ToolResult {
-                call_id: CallId("call_x".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "out".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("call_x", RawResult::text("out"), WireState::Raw),
         ),
         entry(
             3,

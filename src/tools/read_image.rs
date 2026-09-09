@@ -83,28 +83,32 @@ impl ReadImage {
 
     pub fn run(&self, input: &Value) -> RawResult {
         let Some(path) = input.get("path").and_then(Value::as_str) else {
-            return error("read_image requires a string `path`");
+            return RawResult::error("read_image requires a string `path`");
         };
         let long_edge = match input.get("long_edge") {
             None => DEFAULT_LONG_EDGE,
             Some(v) => match v.as_u64() {
                 Some(n) => (n as u32).clamp(MIN_LONG_EDGE, HIGH_RES_MAX_EDGE),
-                None => return error("`long_edge` must be an integer"),
+                None => return RawResult::error("`long_edge` must be an integer"),
             },
         };
         let region = match parse_region(input) {
             Ok(region) => region,
-            Err(message) => return error(message),
+            Err(message) => return RawResult::error(message),
         };
         let absolute = crate::policy::absolutize(path, &self.cwd);
         let bytes = match std::fs::read(&absolute) {
             Ok(bytes) => bytes,
-            Err(e) => return error(format!("could not read {}: {e}", absolute.display())),
+            Err(e) => {
+                return RawResult::error(format!("could not read {}: {e}", absolute.display()));
+            }
         };
         let prepared = match vision::prepare_region(&bytes, region, long_edge, HIGH_RES_MAX_TOKENS)
         {
             Ok(prepared) => prepared,
-            Err(e) => return error(format!("could not prepare {}: {e}", absolute.display())),
+            Err(e) => {
+                return RawResult::error(format!("could not prepare {}: {e}", absolute.display()));
+            }
         };
 
         let mut content = format!(
@@ -169,17 +173,12 @@ impl ReadImage {
             content.push_str(&format!(" ({})", clauses.join("; ")));
         }
 
-        RawResult {
-            content,
-            is_error: false,
-            images: vec![ResultImage {
-                media_type: prepared.media_type.to_string(),
-                data: STANDARD.encode(&prepared.data),
-                width: prepared.width,
-                height: prepared.height,
-            }],
-            content_elided: None,
-        }
+        RawResult::text(content).with_images(vec![ResultImage {
+            media_type: prepared.media_type.to_string(),
+            data: STANDARD.encode(&prepared.data),
+            width: prepared.width,
+            height: prepared.height,
+        }])
     }
 }
 
@@ -243,15 +242,6 @@ fn parse_region(input: &Value) -> Result<Option<Crop>, String> {
         width,
         height,
     }))
-}
-
-fn error(content: impl Into<String>) -> RawResult {
-    RawResult {
-        content: content.into(),
-        is_error: true,
-        images: Vec::new(),
-        content_elided: None,
-    }
 }
 
 #[cfg(test)]

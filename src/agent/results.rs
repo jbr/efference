@@ -2,24 +2,6 @@
 
 use super::*;
 
-pub(super) fn ok(content: String) -> RawResult {
-    RawResult {
-        images: Vec::new(),
-        content,
-        is_error: false,
-        content_elided: None,
-    }
-}
-
-pub(super) fn err(content: String) -> RawResult {
-    RawResult {
-        images: Vec::new(),
-        content,
-        is_error: true,
-        content_elided: None,
-    }
-}
-
 /// Enforce [`MAX_TOOL_RESULT_BYTES`]: replace an over-cap result with a hard error
 /// (rather than a silent truncation) that names the byte counts and shows a short,
 /// char-boundary-safe head, so both the model and the logs see what overflowed and the
@@ -41,7 +23,7 @@ pub(super) fn cap_tool_result(call: &ToolCall, result: RawResult) -> RawResult {
         }
         head.push(ch);
     }
-    err(format!(
+    RawResult::error(format!(
         "tool `{}` returned {len} bytes, over the {MAX_TOOL_RESULT_BYTES}-byte limit \
          for a single tool result. This almost always means the call was too broad \
          (e.g. searching generated or log files). Narrow it — a tighter path, a more \
@@ -57,16 +39,16 @@ pub(super) fn cap_tool_result(call: &ToolCall, result: RawResult) -> RawResult {
 pub(super) fn supervisor_tool_result(shared: &Arc<Shared>, call: &ToolCall) -> Option<RawResult> {
     let handle = || call.input.get("handle").and_then(Value::as_str);
     match call.name.as_str() {
-        supervisor::LIST => Some(ok(shared.bg_list_text())),
-        supervisor::CHECK_INBOX => Some(ok(shared.inbox_summary())),
+        supervisor::LIST => Some(RawResult::text(shared.bg_list_text())),
+        supervisor::CHECK_INBOX => Some(RawResult::text(shared.inbox_summary())),
         supervisor::READ => Some(match handle() {
             Some(h) => {
                 match shared.bg_read_since(h, call.input.get("cursor").and_then(Value::as_u64)) {
-                    Some(text) => ok(text),
-                    None => err(format!("no background process {h}")),
+                    Some(text) => RawResult::text(text),
+                    None => RawResult::error(format!("no background process {h}")),
                 }
             }
-            None => err("read_process requires a `handle`".into()),
+            None => RawResult::error("read_process requires a `handle`"),
         }),
         // `watch_process` registers and returns (docs/supervisor.md) — it never waits.
         // The hit arrives as an inbox notification, which is what wakes an idle agent;
@@ -75,25 +57,25 @@ pub(super) fn supervisor_tool_result(shared: &Arc<Shared>, call: &ToolCall) -> O
             match (handle(), call.input.get("pattern").and_then(Value::as_str)) {
                 (Some(h), Some(pattern)) if !pattern.is_empty() => {
                     match shared.watch_bg(h, pattern.to_string()) {
-                        Some(count) => ok(format!(
+                        Some(count) => RawResult::text(format!(
                             "watching {h} for `{pattern}` ({count} watch(es) pending on it). \
                              Only output printed from now on is matched. You'll be notified \
                              once, the first time a line contains it — end your turn rather \
                              than polling."
                         )),
-                        None => err(format!("no running background process {h}")),
+                        None => RawResult::error(format!("no running background process {h}")),
                     }
                 }
-                (None, _) => err("watch_process requires a `handle`".into()),
-                _ => err("watch_process requires a non-empty `pattern`".into()),
+                (None, _) => RawResult::error("watch_process requires a `handle`"),
+                _ => RawResult::error("watch_process requires a non-empty `pattern`"),
             },
         ),
         supervisor::KILL => Some(match handle() {
-            Some(h) if shared.kill_bg(h) => ok(format!(
+            Some(h) if shared.kill_bg(h) => RawResult::text(format!(
                 "killed {h} (SIGKILL to its process group); its exit will be confirmed in your inbox."
             )),
-            Some(h) => err(format!("no running background process {h}")),
-            None => err("kill_process requires a `handle`".into()),
+            Some(h) => RawResult::error(format!("no running background process {h}")),
+            None => RawResult::error("kill_process requires a `handle`"),
         }),
         _ => None,
     }
@@ -114,19 +96,14 @@ pub(super) fn background_command(call: &ToolCall) -> Option<String> {
 /// not corruption. The stable "nothing is being asked" phrase is the compliance
 /// breadcrumb — the rate of un-asked calls is a grep over the logged raw results.
 pub(super) fn unasked(call: &ToolCall) -> Payload {
-    Payload::ToolResult {
-        call_id: call.id.clone(),
-        raw: RawResult {
-            images: Vec::new(),
-            content: format!(
-                "not run — nothing is being asked of `{}` right now; continue with your task.",
-                call.name
-            ),
-            is_error: true,
-            content_elided: None,
-        },
-        wire: WireState::Raw,
-    }
+    Payload::tool_result(
+        call.id.clone(),
+        RawResult::error(format!(
+            "not run — nothing is being asked of `{}` right now; continue with your task.",
+            call.name
+        )),
+        WireState::Raw,
+    )
 }
 
 /// A `tool_result` for a call naming no tool the turn advertised (docs/tools.md).
@@ -134,27 +111,22 @@ pub(super) fn unasked(call: &ToolCall) -> Payload {
 /// permission decision — and carried as a `Direct` payload, so the corrective text
 /// reaches the wire unsummarized. `is_error`, because the call was not cogent.
 pub(super) fn unknown_tool(call: &ToolCall, callable: &[String]) -> Payload {
-    Payload::ToolResult {
-        call_id: call.id.clone(),
-        raw: err(crate::tools::unknown_tool_message(&call.name, callable)),
-        wire: WireState::Raw,
-    }
+    Payload::tool_result(
+        call.id.clone(),
+        RawResult::error(crate::tools::unknown_tool_message(&call.name, callable)),
+        WireState::Raw,
+    )
 }
 
 /// A `tool_result` standing in for a call that didn't run (aborted). Every
 /// assistant `tool_use` needs exactly one paired result or projection orphans it
 /// and the API rejects the request (docs/README.md).
 pub(super) fn aborted(call: &ToolCall) -> Payload {
-    Payload::ToolResult {
-        call_id: call.id.clone(),
-        raw: RawResult {
-            images: Vec::new(),
-            content: "aborted by user".into(),
-            is_error: true,
-            content_elided: None,
-        },
-        wire: WireState::Raw,
-    }
+    Payload::tool_result(
+        call.id.clone(),
+        RawResult::error("aborted by user"),
+        WireState::Raw,
+    )
 }
 
 /// A `tool_result` for a call the operator interrupted while it ran
@@ -171,11 +143,7 @@ pub(super) fn aborted(call: &ToolCall) -> Payload {
 /// gloss here would guess at a meaning that differs per tool and land *before*
 /// the person whose intent it was guessing at.
 pub(super) fn withheld(call: &ToolCall, raw: RawResult) -> Payload {
-    Payload::ToolResult {
-        call_id: call.id.clone(),
-        raw,
-        wire: WireState::Elided,
-    }
+    Payload::tool_result(call.id.clone(), raw, WireState::Elided)
 }
 
 /// A `tool_result` for a call whose path expansion failed (docs/tools.md): the
@@ -184,16 +152,11 @@ pub(super) fn withheld(call: &ToolCall, raw: RawResult) -> Payload {
 /// [`aborted`]; the message names the variable and the allowed set so the model
 /// can correct the path rather than theorize about the tool.
 pub(super) fn expansion_error(call: &ToolCall, message: &str) -> Payload {
-    Payload::ToolResult {
-        call_id: call.id.clone(),
-        raw: RawResult {
-            images: Vec::new(),
-            content: format!("not run — {message}"),
-            is_error: true,
-            content_elided: None,
-        },
-        wire: WireState::Raw,
-    }
+    Payload::tool_result(
+        call.id.clone(),
+        RawResult::error(format!("not run — {message}")),
+        WireState::Raw,
+    )
 }
 
 /// A `tool_result` for a call the user rejected in favor of a redirect message.
@@ -204,15 +167,11 @@ pub(super) fn expansion_error(call: &ToolCall, message: &str) -> Payload {
 /// model reads this as context for the steer that follows rather than as tool output
 /// (docs/README.md).
 pub(super) fn rejected(call: &ToolCall) -> Payload {
-    Payload::ToolResult {
-        call_id: call.id.clone(),
-        raw: RawResult {
-            images: Vec::new(),
-            content: "Not run — the user replied instead of approving; see their next message."
-                .into(),
-            is_error: true,
-            content_elided: None,
-        },
-        wire: WireState::Raw,
-    }
+    Payload::tool_result(
+        call.id.clone(),
+        RawResult::error(
+            "Not run — the user replied instead of approving; see their next message.",
+        ),
+        WireState::Raw,
+    )
 }

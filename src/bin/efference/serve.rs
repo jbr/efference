@@ -728,17 +728,16 @@ pub(crate) async fn spotter_check(
     let call = match &tool {
         // Either spelling is accepted, resolved by the same rule the config uses, so the
         // tester and a `tools` grant agree on what a dotted name means.
-        Some(name) => efference::log::ToolCall {
-            id: efference::log::CallId("toolu_spotter_check".into()),
-            name: efference::config::wire_tool_name(name.clone()),
-            input: serde_json::from_str(&input)
-                .map_err(|e| format!("--input is not valid JSON: {e}"))?,
-        },
-        None => efference::log::ToolCall {
-            id: efference::log::CallId("toolu_spotter_check".into()),
-            name: efference::bash::NAME.into(),
-            input: serde_json::json!({ "command": command }),
-        },
+        Some(name) => efference::log::ToolCall::new(
+            efference::config::wire_tool_name(name.clone()),
+            "toolu_spotter_check",
+            serde_json::from_str(&input).map_err(|e| format!("--input is not valid JSON: {e}"))?,
+        ),
+        None => efference::log::ToolCall::new(
+            efference::bash::NAME,
+            "toolu_spotter_check",
+            serde_json::json!({ "command": command }),
+        ),
     };
 
     let brief = toolbox

@@ -487,16 +487,6 @@ impl CellStyle {
     }
 }
 
-/// Build a [`ToolCall`] for a scenario: a tool name, the `toolu_…` id that its
-/// result will reference, and a JSON input value (`serde_json::json!({…})`).
-pub(crate) fn tool_call(name: &str, call_id: &str, input: serde_json::Value) -> ToolCall {
-    ToolCall {
-        id: CallId(call_id.into()),
-        name: name.into(),
-        input,
-    }
-}
-
 /// Baseline transcript scenarios — realistic user / assistant / tool blocks
 /// rendered through the full frame, so formatting/rendering changes have a
 /// visible before/after. These are the "what the user sees" fixtures; the

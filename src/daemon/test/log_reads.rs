@@ -14,11 +14,11 @@ fn assistant_calling(call_id: &str, command: &str) -> Payload {
         output: crate::log::AssistantOutput::from_legacy_messages(
             vec![],
             vec![],
-            vec![ToolCall {
-                id: CallId(call_id.into()),
-                name: crate::bash::NAME.into(),
-                input: serde_json::json!({ "command": command }),
-            }],
+            vec![ToolCall::new(
+                crate::bash::NAME,
+                call_id,
+                serde_json::json!({ "command": command }),
+            )],
         ),
         upstream_failure: None,
     }
@@ -219,21 +219,18 @@ async fn a_tool_call_resolves_by_its_call_id() {
 /// A tool result carrying one image whose decoded bytes are `IMAGE_BYTES`.
 fn result_with_image() -> Payload {
     use base64::Engine;
-    Payload::ToolResult {
-        call_id: CallId("toolu_img".into()),
-        raw: crate::log::RawResult {
-            content: "2×2 image/webp, 1 visual tokens".into(),
-            is_error: false,
-            images: vec![crate::log::ResultImage {
+    Payload::tool_result(
+        "toolu_img",
+        crate::log::RawResult::text("2×2 image/webp, 1 visual tokens").with_images(vec![
+            crate::log::ResultImage {
                 media_type: "image/webp".into(),
                 data: base64::engine::general_purpose::STANDARD.encode(IMAGE_BYTES),
                 width: 2,
                 height: 2,
-            }],
-            content_elided: None,
-        },
-        wire: crate::log::WireState::Raw,
-    }
+            },
+        ]),
+        crate::log::WireState::Raw,
+    )
 }
 
 const IMAGE_BYTES: &[u8] = &[0x52, 0x49, 0x46, 0x46, 0x00, 0x01, 0x02, 0x03];
@@ -300,15 +297,12 @@ async fn an_image_resolves_by_seq_and_index() {
 async fn an_oversized_result_is_elided_in_the_window_and_whole_by_seq() {
     let (shared, _turns_rx) = Shared::new(Log::in_memory());
     let big = "z".repeat(crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES * 2);
-    let result = |call_id: &str, content: &str| Payload::ToolResult {
-        call_id: CallId(call_id.into()),
-        raw: crate::log::RawResult {
-            content: content.into(),
-            is_error: false,
-            images: Vec::new(),
-            content_elided: None,
-        },
-        wire: crate::log::WireState::Raw,
+    let result = |call_id: &str, content: &str| {
+        Payload::tool_result(
+            call_id,
+            crate::log::RawResult::text(content),
+            crate::log::WireState::Raw,
+        )
     };
     shared.append(1, result("toolu_small", "small")).unwrap();
     shared.append(1, result("toolu_big", &big)).unwrap();

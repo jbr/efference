@@ -411,11 +411,7 @@ impl Assembler {
                         }
                     };
                     has_calls = true;
-                    output.push(MessagesOutputBlock::ToolUse(ToolCall {
-                        id: CallId(id),
-                        name,
-                        input,
-                    }));
+                    output.push(MessagesOutputBlock::ToolUse(ToolCall::new(name, id, input)));
                 }
             }
         }

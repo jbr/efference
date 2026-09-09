@@ -14,7 +14,7 @@ use trillium_client::Client as HttpClient;
 use trillium_client::Conn;
 use trillium_client::sse::{EventStream, SseError, SseErrorKind};
 
-use crate::log::{AssistantOutput, CallId, MessagesOutputBlock, Payload, ToolCall};
+use crate::log::{AssistantOutput, MessagesOutputBlock, Payload, ToolCall};
 use crate::project::ApiMessage;
 
 /// The `anthropic-version` header value. This is part of the Anthropic Messages

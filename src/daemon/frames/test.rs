@@ -196,16 +196,11 @@ fn topic_wire_names_are_pinned() {
 /// constructor — and the divergence is only ever against the entry route.
 #[test]
 fn a_log_frame_matches_the_window_and_defers_to_the_entry_route_when_oversized() {
-    let small = one_entry(Payload::ToolResult {
-        call_id: CallId("toolu_small".into()),
-        raw: RawResult {
-            content: "small".into(),
-            is_error: false,
-            images: Vec::new(),
-            content_elided: None,
-        },
-        wire: WireState::Raw,
-    });
+    let small = one_entry(Payload::tool_result(
+        "toolu_small",
+        RawResult::text("small"),
+        WireState::Raw,
+    ));
     let frame = Frame::log(&small);
     assert_eq!(
         frame.data.get(),
@@ -219,16 +214,11 @@ fn a_log_frame_matches_the_window_and_defers_to_the_entry_route_when_oversized()
     );
     assert!(!frame.data.get().contains("content_elided"));
 
-    let big = one_entry(Payload::ToolResult {
-        call_id: CallId("toolu_big".into()),
-        raw: RawResult {
-            content: "z".repeat(MAX_INLINE_RESULT_BYTES * 2),
-            is_error: false,
-            images: Vec::new(),
-            content_elided: None,
-        },
-        wire: WireState::Raw,
-    });
+    let big = one_entry(Payload::tool_result(
+        "toolu_big",
+        RawResult::text("z".repeat(MAX_INLINE_RESULT_BYTES * 2)),
+        WireState::Raw,
+    ));
     let frame = Frame::log(&big);
     assert_eq!(
         frame.data.get(),

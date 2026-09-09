@@ -19,8 +19,8 @@ use std::time::Duration;
 
 use crossbeam_channel::Sender;
 
-use super::{assistant, call, result};
-use crate::log::WireState;
+use super::{assistant, result};
+use crate::log::{ToolCall, WireState};
 use crate::tui::TuiEvent;
 
 /// A real source file, included at build time: the streaming render is about
@@ -119,7 +119,7 @@ impl Script {
             TuiEvent::Entry(assistant(
                 *seq,
                 prose,
-                vec![call(name, &call_id, input_value)],
+                vec![ToolCall::new(name, &call_id, input_value)],
             )),
         )
         .await?;

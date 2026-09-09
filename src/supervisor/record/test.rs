@@ -50,16 +50,11 @@ fn a_log_with_no_process_records_answers_nothing() {
         ),
         entry(
             1,
-            Payload::ToolResult {
-                call_id: CallId("toolu_1".into()),
-                raw: RawResult {
-                    content: "backgrounded as p#1".into(),
-                    is_error: false,
-                    content_elided: None,
-                    images: Vec::new(),
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result(
+                "toolu_1",
+                RawResult::text("backgrounded as p#1"),
+                WireState::Raw,
+            ),
         ),
     ];
     assert!(from_log(&entries, 1).is_none());

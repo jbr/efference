@@ -53,6 +53,24 @@ impl Timestamp {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CallId(pub String);
 
+impl From<&str> for CallId {
+    fn from(id: &str) -> Self {
+        Self(id.into())
+    }
+}
+
+impl From<&String> for CallId {
+    fn from(id: &String) -> Self {
+        Self(id.clone())
+    }
+}
+
+impl From<String> for CallId {
+    fn from(id: String) -> Self {
+        Self(id)
+    }
+}
+
 /// One immutable, ordered record in the log.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogEntry {
@@ -211,6 +229,18 @@ pub enum Payload {
     },
 }
 
+impl Payload {
+    /// A tool result payload for `call_id`. The one construction site in production
+    /// and in tests, so a field added to the result shape lands in one place.
+    pub fn tool_result(call_id: impl Into<CallId>, raw: RawResult, wire: WireState) -> Self {
+        Self::ToolResult {
+            call_id: call_id.into(),
+            raw,
+            wire,
+        }
+    }
+}
+
 /// The ordered assistant-output vocabulary of the session's wire dialect.
 ///
 /// The dialect is outside the item vector so one turn cannot mix replay credentials
@@ -346,11 +376,11 @@ impl AssistantOutput {
                     _ => None,
                 })
                 .map(|(call_id, name, arguments)| {
-                    Ok(ToolCall {
-                        id: call_id.clone(),
-                        name: name.clone(),
-                        input: serde_json::from_str(arguments)?,
-                    })
+                    Ok(ToolCall::new(
+                        name.clone(),
+                        call_id.0.clone(),
+                        serde_json::from_str(arguments)?,
+                    ))
                 })
                 .collect(),
         }
@@ -475,6 +505,25 @@ pub struct ToolCall {
 }
 
 impl ToolCall {
+    /// A call by tool name, call id, and input. The one way to construct a call,
+    /// in production and in tests alike, so a field added later lands in one place.
+    pub fn new(name: impl Into<String>, id: impl Into<CallId>, input: Value) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            input,
+        }
+    }
+
+    /// Set the harness-injected `intent` inside `input`, where the wire carries it
+    /// (docs/tools.md). Builds; it does not amend a recorded call.
+    pub fn with_intent(mut self, intent: impl Into<String>) -> Self {
+        if let Value::Object(map) = &mut self.input {
+            map.insert(crate::tools::INTENT.into(), Value::String(intent.into()));
+        }
+        self
+    }
+
     /// The harness-injected `intent` (docs/tools.md): why this call was made, in the
     /// model's words, written before it ran. `None` for a call from before the field
     /// existed, one the model omitted, or a tool that declares its own `intent` — no
@@ -518,6 +567,36 @@ pub struct RawResult {
     /// to before the field existed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<ResultImage>,
+}
+
+impl RawResult {
+    /// A text result with no images and no elision, flagged as the caller says.
+    /// [`text`](Self::text) and [`error`](Self::error) name the two common cases.
+    pub fn new(content: impl Into<String>, is_error: bool) -> Self {
+        Self {
+            content: content.into(),
+            is_error,
+            content_elided: None,
+            images: Vec::new(),
+        }
+    }
+
+    /// A successful text result.
+    pub fn text(content: impl Into<String>) -> Self {
+        Self::new(content, false)
+    }
+
+    /// An error result.
+    pub fn error(content: impl Into<String>) -> Self {
+        Self::new(content, true)
+    }
+
+    /// Attach the images the tool returned beside `content`. Builds; a recorded
+    /// result is never amended.
+    pub fn with_images(mut self, images: Vec<ResultImage>) -> Self {
+        self.images = images;
+        self
+    }
 }
 
 /// The tag on a `content` a control-channel view truncated: how many bytes the view
@@ -936,6 +1015,38 @@ pub enum WireState {
     /// session. `why` is the same breadcrumb the `Triage` entry records; `raw`
     /// stays in the log.
     TriageFailed { why: String },
+}
+
+impl WireState {
+    /// A distilled state carrying only its verdict, with no note and no feedback.
+    pub fn distilled(keep: Keep) -> Self {
+        Self::Distilled {
+            keep,
+            note: None,
+            intent_feedback: None,
+        }
+    }
+
+    /// Set the note on a `Distilled` state; a no-op on any other variant. Builds;
+    /// flipping a stored state is the projection's job, not a setter's.
+    pub fn with_note(mut self, text: impl Into<String>) -> Self {
+        if let Self::Distilled { note, .. } = &mut self {
+            *note = Some(text.into());
+        }
+        self
+    }
+
+    /// Set triage's `intent_feedback` on a `Distilled` state; a no-op on any other
+    /// variant (docs/redaction-fork.md).
+    pub fn with_intent_feedback(mut self, text: impl Into<String>) -> Self {
+        if let Self::Distilled {
+            intent_feedback, ..
+        } = &mut self
+        {
+            *intent_feedback = Some(text.into());
+        }
+        self
+    }
 }
 
 /// What of a tool result survives on the canonical wire (docs/redaction-fork.md).

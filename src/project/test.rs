@@ -32,14 +32,14 @@ fn sample_log() -> Vec<LogEntry> {
                 output: AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![ContentBlock::Text("let me check".into())],
-                    vec![ToolCall {
-                        id: CallId("toolu_1".into()),
-                        name: "bash".into(),
-                        // Insertion order == sorted order, so the expected-bytes
-                        // assertion is robust whether serde_json is BTreeMap- or
-                        // (under `preserve_order`) IndexMap-backed.
-                        input: json!({ "command": "ls", "timeout": 5 }),
-                    }],
+                    // Insertion order == sorted order, so the expected-bytes
+                    // assertion is robust whether serde_json is BTreeMap- or
+                    // (under `preserve_order`) IndexMap-backed.
+                    vec![ToolCall::new(
+                        "bash",
+                        "toolu_1",
+                        json!({ "command": "ls", "timeout": 5 }),
+                    )],
                 ),
                 upstream_failure: None,
             },
@@ -47,16 +47,7 @@ fn sample_log() -> Vec<LogEntry> {
         entry(
             2,
             1,
-            Payload::ToolResult {
-                call_id: CallId("toolu_1".into()),
-                raw: RawResult {
-                    images: Vec::new(),
-                    content: "file.txt".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
-                wire: WireState::Raw,
-            },
+            Payload::tool_result("toolu_1", RawResult::text("file.txt"), WireState::Raw),
         ),
     ]
 }
@@ -145,11 +136,11 @@ fn distilled_log(keep: Keep, note: Option<&str>) -> Vec<LogEntry> {
     let mut log = sample_log();
     if let Payload::ToolResult { raw, wire, .. } = &mut log[2].payload {
         raw.content = "alpha\nbeta\ngamma\ndelta".into();
-        *wire = WireState::Distilled {
-            keep,
-            note: note.map(str::to_string),
-            intent_feedback: None,
-        };
+        let mut distilled = WireState::distilled(keep);
+        if let Some(note) = note {
+            distilled = distilled.with_note(note);
+        }
+        *wire = distilled;
     }
     log
 }
@@ -309,11 +300,9 @@ fn image_survives_distill_and_is_shed_by_elision() {
             .contains(r#""type":"image""#)
     };
     assert!(keeps(WireState::Raw));
-    assert!(keeps(WireState::Distilled {
-        keep: Keep::Ranges(vec![(1, 1)]),
-        note: Some("kept the header".into()),
-        intent_feedback: None,
-    }));
+    assert!(keeps(
+        WireState::distilled(Keep::Ranges(vec![(1, 1)])).with_note("kept the header")
+    ));
     assert!(!keeps(WireState::Elided));
     assert!(!keeps(WireState::TriageFailed {
         why: "peek died".into(),
@@ -326,12 +315,7 @@ fn image_survives_distill_and_is_shed_by_elision() {
 /// projection unmoved.
 #[test]
 fn imageless_raw_result_serialization_is_unchanged() {
-    let raw = RawResult {
-        content: "file.txt".into(),
-        is_error: false,
-        images: Vec::new(),
-        content_elided: None,
-    };
+    let raw = RawResult::text("file.txt");
     assert_eq!(
         serde_json::to_string(&raw).unwrap(),
         r#"{"content":"file.txt","is_error":false}"#
@@ -443,11 +427,7 @@ fn thinking_turn_matches_expected_wire_bytes() {
                         },
                     ],
                     vec![ContentBlock::Text("running it".into())],
-                    vec![ToolCall {
-                        id: CallId("toolu_1".into()),
-                        name: "bash".into(),
-                        input: json!({ "command": "ls" }),
-                    }],
+                    vec![ToolCall::new("bash", "toolu_1", json!({ "command": "ls" }))],
                 ),
                 upstream_failure: None,
             },

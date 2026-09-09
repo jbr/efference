@@ -1,5 +1,4 @@
 use super::*;
-use crate::log::CallId;
 
 /// `tool_catalog` covers every name `tool_definitions` advertises — the gap
 /// review found: a catalog built from `Toolbox::tool_catalog` alone answered
@@ -58,19 +57,15 @@ fn only_the_toolbox_half_of_the_catalog_carries_injected_intent() {
 }
 
 pub(super) fn call(name: &str) -> ToolCall {
-    ToolCall {
-        id: CallId("toolu_x".into()),
-        name: name.into(),
-        input: serde_json::json!({}),
-    }
+    ToolCall::new(name, "toolu_x", serde_json::json!({}))
 }
 
 pub(super) fn bash_call(command: &str) -> ToolCall {
-    ToolCall {
-        id: CallId("toolu_b".into()),
-        name: crate::bash::NAME.into(),
-        input: serde_json::json!({ "command": command }),
-    }
+    ToolCall::new(
+        crate::bash::NAME,
+        "toolu_b",
+        serde_json::json!({ "command": command }),
+    )
 }
 
 /// The wire shape an interrupt produces (docs/control-channel.md). Three
@@ -105,12 +100,7 @@ pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_sp
             1,
             withheld(
                 &call,
-                RawResult {
-                    images: Vec::new(),
-                    content: "SECRET_TOKEN=hunter2\n…120k of log…".into(),
-                    is_error: false,
-                    content_elided: None,
-                },
+                RawResult::text("SECRET_TOKEN=hunter2\n…120k of log…"),
             ),
         )
         .unwrap();
@@ -368,13 +358,8 @@ pub(super) fn the_missing_grant_message_names_only_what_is_missing() {
 /// *diagnosis*). `bash` has no such decomposition — its answer is a `[commands]` stance.
 #[test]
 pub(super) fn missing_grants_reports_the_two_halves_independently() {
-    use crate::log::CallId;
     let role = crate::config::parse_text("[paths]\n\".\" = true\n");
-    let call = |name: &str, input| ToolCall {
-        id: CallId("toolu_x".into()),
-        name: name.into(),
-        input,
-    };
+    let call = |name: &str, input| ToolCall::new(name, "toolu_x", input);
     // Path granted, name not: only the name is reported.
     let missing = crate::policy::missing_grants(
         &role,
@@ -418,7 +403,7 @@ pub(super) fn a_config_write_that_does_not_parse_is_reverted_and_reported_as_an_
 
     // The model writes the footgun and the tool reports success, as it truthfully did write.
     std::fs::write(&path, "[scope]\ndefault = \"read\"\n").unwrap();
-    let reported = config_write_outcome(&shared, ok("wrote 2 lines".into()));
+    let reported = config_write_outcome(&shared, RawResult::text("wrote 2 lines"));
 
     assert!(reported.is_error, "an inert edit is not a success");
     assert!(
@@ -439,7 +424,7 @@ pub(super) fn a_config_write_that_does_not_parse_is_reverted_and_reported_as_an_
 
     // A valid edit passes straight through — the tool's own result stands.
     std::fs::write(&path, "scope = \"narrower\"\n").unwrap();
-    let reported = config_write_outcome(&shared, ok("wrote 1 line".into()));
+    let reported = config_write_outcome(&shared, RawResult::text("wrote 1 line"));
     assert!(!reported.is_error);
     assert_eq!(reported.content, "wrote 1 line");
     assert_eq!(
@@ -453,7 +438,7 @@ pub(super) fn a_config_write_that_does_not_parse_is_reverted_and_reported_as_an_
 
 #[test]
 pub(super) fn cap_passes_through_results_under_the_limit() {
-    let r = ok("a".repeat(MAX_TOOL_RESULT_BYTES));
+    let r = RawResult::text("a".repeat(MAX_TOOL_RESULT_BYTES));
     let capped = cap_tool_result(&call("search"), r);
     assert!(!capped.is_error);
     assert_eq!(capped.content.len(), MAX_TOOL_RESULT_BYTES);
@@ -462,7 +447,7 @@ pub(super) fn cap_passes_through_results_under_the_limit() {
 #[test]
 pub(super) fn cap_turns_oversized_results_into_a_hard_error_with_a_head() {
     let huge = "x".repeat(MAX_TOOL_RESULT_BYTES + 1);
-    let capped = cap_tool_result(&call("search"), ok(huge));
+    let capped = cap_tool_result(&call("search"), RawResult::text(huge));
     assert!(capped.is_error, "over-cap result must be a hard error");
     // The result carries the explanation + head, not the megabytes.
     assert!(
@@ -485,7 +470,7 @@ pub(super) fn cap_turns_oversized_results_into_a_hard_error_with_a_head() {
 pub(super) fn cap_head_is_char_boundary_safe() {
     // 4-byte chars straddling the 1KB head boundary.
     let huge = "🦀".repeat(MAX_TOOL_RESULT_BYTES); // 4 bytes each → well over the cap
-    let capped = cap_tool_result(&call("read"), ok(huge));
+    let capped = cap_tool_result(&call("read"), RawResult::text(huge));
     assert!(capped.is_error);
     // Round-trips as valid UTF-8 (the test would not even construct otherwise, but
     // assert the head contains whole crabs).
@@ -505,16 +490,12 @@ pub(super) fn cap_head_is_char_boundary_safe() {
 pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
     use crate::project::ApiBlock;
     let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
-    let first = ToolCall {
-        id: crate::log::CallId("search_2".into()),
-        name: "search".into(),
-        input: serde_json::json!({}),
-    };
-    let second = ToolCall {
-        id: crate::log::CallId("bash_3".into()),
-        name: crate::bash::NAME.into(),
-        input: serde_json::json!({ "command": "ls" }),
-    };
+    let first = ToolCall::new("search", "search_2", serde_json::json!({}));
+    let second = ToolCall::new(
+        crate::bash::NAME,
+        "bash_3",
+        serde_json::json!({ "command": "ls" }),
+    );
     shared
         .append(
             1,
@@ -532,16 +513,7 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
         shared
             .append(
                 1,
-                Payload::ToolResult {
-                    call_id: call.id.clone(),
-                    raw: RawResult {
-                        images: Vec::new(),
-                        content: content.into(),
-                        is_error: false,
-                        content_elided: None,
-                    },
-                    wire: WireState::Raw,
-                },
+                Payload::tool_result(call.id.clone(), RawResult::text(content), WireState::Raw),
             )
             .unwrap();
     }

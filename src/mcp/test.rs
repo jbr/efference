@@ -9,7 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHal
 
 use super::stdio::JsonRpcPipe;
 use super::*;
-use crate::log::{CallId, ToolCall};
+use crate::log::ToolCall;
 
 /// The client half of an in-memory duplex — the framing and mount logic
 /// without a subprocess (`Transport::Loopback`).
@@ -135,11 +135,7 @@ fn scripted_server() -> Box<Script> {
 }
 
 fn call(name: &str, input: Value) -> ToolCall {
-    ToolCall {
-        id: CallId("toolu_1".into()),
-        name: name.to_string(),
-        input,
-    }
+    ToolCall::new(name, "toolu_1", input)
 }
 
 async fn run(provider: &ConnectedProvider, tool_call: &ToolCall) -> crate::log::RawResult {

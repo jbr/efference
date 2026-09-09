@@ -12,8 +12,8 @@
 pub mod stream;
 
 use crate::log::{
-    AssistantOutput, CallId, ContentBlock, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock,
-    Payload, RawResult, Timestamp, ToolCall, WireState,
+    AssistantOutput, ContentBlock, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock, Payload,
+    RawResult, Timestamp, ToolCall, WireState,
 };
 
 /// A committed user turn carrying markdown prose.
@@ -80,19 +80,8 @@ Reprojecting wins."#;
 
 /// A committed tool result for `call_id`, at the given wire state.
 fn result(seq: u64, call_id: &str, content: &str, is_error: bool, wire: WireState) -> LogEntry {
-    entry(
-        seq,
-        Payload::ToolResult {
-            call_id: CallId(call_id.into()),
-            raw: RawResult {
-                images: Vec::new(),
-                content: content.into(),
-                is_error,
-                content_elided: None,
-            },
-            wire,
-        },
-    )
+    let raw = RawResult::new(content, is_error);
+    entry(seq, Payload::tool_result(call_id, raw, wire))
 }
 
 /// A committed tool result carrying one inline image — the offline shape, the
@@ -100,16 +89,11 @@ fn result(seq: u64, call_id: &str, content: &str, is_error: bool, wire: WireStat
 fn image_result(seq: u64, call_id: &str, content: &str) -> LogEntry {
     entry(
         seq,
-        Payload::ToolResult {
-            call_id: CallId(call_id.into()),
-            raw: RawResult {
-                images: vec![test_card()],
-                content: content.into(),
-                is_error: false,
-                content_elided: None,
-            },
-            wire: WireState::Raw,
-        },
+        Payload::tool_result(
+            call_id,
+            RawResult::text(content).with_images(vec![test_card()]),
+            WireState::Raw,
+        ),
     )
 }
 
@@ -151,14 +135,6 @@ fn test_card() -> crate::log::ResultImage {
         data: base64::engine::general_purpose::STANDARD.encode(bytes.into_inner()),
         width: w,
         height: h,
-    }
-}
-
-fn call(name: &str, call_id: &str, input: serde_json::Value) -> ToolCall {
-    ToolCall {
-        id: CallId(call_id.into()),
-        name: name.into(),
-        input,
     }
 }
 
@@ -230,7 +206,7 @@ pub(super) fn log() -> Vec<LogEntry> {
         assistant(
             2,
             RICH_MARKDOWN,
-            vec![call(
+            vec![ToolCall::new(
                 "bash",
                 "toolu_g1",
                 serde_json::json!({
@@ -249,7 +225,7 @@ pub(super) fn log() -> Vec<LogEntry> {
         assistant(
             4,
             "Here's a structured edit, shown as a colored diff:",
-            vec![call(
+            vec![ToolCall::new(
                 "edit",
                 "toolu_g2",
                 serde_json::json!({
@@ -264,7 +240,7 @@ pub(super) fn log() -> Vec<LogEntry> {
         assistant(
             6,
             "A long listing collapses behind a triangle:",
-            vec![call(
+            vec![ToolCall::new(
                 "bash",
                 "toolu_g3",
                 serde_json::json!({ "command": "ls src" }),
@@ -275,7 +251,7 @@ pub(super) fn log() -> Vec<LogEntry> {
         assistant(
             8,
             "And a failing command:",
-            vec![call(
+            vec![ToolCall::new(
                 "bash",
                 "toolu_g4",
                 serde_json::json!({ "command": "cargo test --no-run" }),
@@ -292,7 +268,7 @@ pub(super) fn log() -> Vec<LogEntry> {
         assistant(
             10,
             "A distilled result shows its summary, not the raw bytes:",
-            vec![call(
+            vec![ToolCall::new(
                 "bash",
                 "toolu_g5",
                 serde_json::json!({ "command": "cargo tree" }),
@@ -303,14 +279,9 @@ pub(super) fn log() -> Vec<LogEntry> {
             "toolu_g5",
             "…600 lines of dependency tree…",
             false,
-            WireState::Distilled {
-                keep: Keep::None,
-                note: Some(
-                    "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated."
-                        .into(),
-                ),
-                intent_feedback: None,
-            },
+            WireState::distilled(Keep::None).with_note(
+                "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated.",
+            ),
         ),
         // The file tools: concise call lines (path / pattern, not JSON) and a
         // `read` result with its sentinel framing stripped + highlighted by type.
@@ -318,17 +289,17 @@ pub(super) fn log() -> Vec<LogEntry> {
             12,
             "The file tools render their arguments concisely:",
             vec![
-                call(
+                ToolCall::new(
                     "read",
                     "toolu_g6",
                     serde_json::json!({ "paths": ["src/tui/state.rs"] }),
                 ),
-                call(
+                ToolCall::new(
                     "search",
                     "toolu_g7",
                     serde_json::json!({ "pattern": "fn project", "path": "src" }),
                 ),
-                call("list", "toolu_g8", serde_json::json!({ "path": "src/tui" })),
+                ToolCall::new("list", "toolu_g8", serde_json::json!({ "path": "src/tui" })),
             ],
         ),
         result(
@@ -368,7 +339,7 @@ pub(super) fn log() -> Vec<LogEntry> {
         assistant(
             17,
             "An image result renders through the terminal's graphics protocol:",
-            vec![call(
+            vec![ToolCall::new(
                 "read_image",
                 "toolu_g9",
                 serde_json::json!({ "path": "test-card.png" }),
@@ -394,7 +365,7 @@ pub(super) fn log() -> Vec<LogEntry> {
              - fully visible → the terminal's own protocol, crisp\n\
              - partially visible → halfblock cells, blitted row by row\n\
              - `--images off` → a one-line reference, no reservation",
-            vec![call(
+            vec![ToolCall::new(
                 "bash",
                 "toolu_g10",
                 serde_json::json!({ "command": "seq 1 18 | sed 's/^/scroll ballast line /'" }),

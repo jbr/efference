@@ -90,19 +90,10 @@ fn responses_call(seq: Seq, call_id: &str) -> LogEntry {
 }
 
 fn result(seq: Seq, call_id: &str) -> LogEntry {
-    use crate::log::{CallId, RawResult, WireState};
+    use crate::log::{RawResult, WireState};
     at(
         seq,
-        Payload::ToolResult {
-            call_id: CallId(call_id.into()),
-            raw: RawResult {
-                images: Vec::new(),
-                content: "out".into(),
-                is_error: false,
-                content_elided: None,
-            },
-            wire: WireState::Raw,
-        },
+        Payload::tool_result(call_id, RawResult::text("out"), WireState::Raw),
     )
 }
 

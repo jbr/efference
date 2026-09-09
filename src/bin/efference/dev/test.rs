@@ -81,11 +81,11 @@ fn spot_fixture() -> Vec<efference::log::LogEntry> {
                 output: efference::log::AssistantOutput::from_legacy_messages(
                     vec![],
                     vec![],
-                    vec![ToolCall {
-                        id: CallId("toolu_a".into()),
-                        name: "bash".into(),
-                        input: serde_json::json!({ "command": "rm  -rf\n ./build" }),
-                    }],
+                    vec![ToolCall::new(
+                        "bash",
+                        "toolu_a",
+                        serde_json::json!({ "command": "rm  -rf\n ./build" }),
+                    )],
                 ),
                 upstream_failure: None,
             },
@@ -168,29 +168,16 @@ fn describe_call_prefers_the_obvious_field() {
 // ---- `peek` gate reconstruction (docs/redaction-fork.md) ----
 
 use crate::peek_replay::gates;
-use efference::log::{CallId, LogEntry, Origin, Payload, RawResult, ToolCall, Triage, WireState};
+use efference::log::{LogEntry, Origin, Payload, RawResult, ToolCall, Triage, WireState};
 
 fn call(id: &str) -> ToolCall {
-    ToolCall {
-        id: CallId(id.into()),
-        name: "bash".into(),
-        input: serde_json::json!({"command": "ls"}),
-    }
+    ToolCall::new("bash", id, serde_json::json!({"command": "ls"}))
 }
 
 fn result(seq: u64, id: &str) -> LogEntry {
     entry(
         seq,
-        Payload::ToolResult {
-            call_id: CallId(id.into()),
-            raw: RawResult {
-                images: Vec::new(),
-                content: "out".into(),
-                is_error: false,
-                content_elided: None,
-            },
-            wire: WireState::Raw,
-        },
+        Payload::tool_result(id, RawResult::text("out"), WireState::Raw),
     )
 }
 

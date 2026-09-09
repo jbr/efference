@@ -254,11 +254,11 @@ pub(crate) async fn spotter_eval(
                                 .collect(),
                             ..Default::default()
                         };
-                        let call = efference::log::ToolCall {
-                            id: efference::log::CallId("toolu_spotter_eval".into()),
-                            name: case.call.name.clone(),
-                            input: case.call.input.clone(),
-                        };
+                        let call = efference::log::ToolCall::new(
+                            case.call.name.clone(),
+                            "toolu_spotter_eval",
+                            case.call.input.clone(),
+                        );
                         let spot = match &persona {
                             Some(p) => {
                                 ForkSpot::with_persona(endpoint.clone(), model.clone(), p.clone())

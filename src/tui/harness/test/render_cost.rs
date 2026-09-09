@@ -97,7 +97,7 @@ fn a_block_is_highlighted_once_not_once_a_frame() {
     play.user("read it");
     play.assistant(
         "here",
-        vec![tool_call(
+        vec![ToolCall::new(
             "read",
             "call-hl",
             serde_json::json!({ "paths": ["src/tui/state.rs"] }),
@@ -145,7 +145,7 @@ fn a_theme_change_misses_the_highlight_memo() {
     play.user("read it");
     play.assistant(
         "here",
-        vec![tool_call(
+        vec![ToolCall::new(
             "read",
             "call-hl",
             serde_json::json!({ "paths": ["a.rs"] }),
@@ -185,7 +185,7 @@ fn a_re_rendered_result_drops_its_cached_layout() {
     play.user("run it");
     play.assistant(
         "on it",
-        vec![crate::tui::harness::test::tool_call(
+        vec![ToolCall::new(
             crate::bash::NAME,
             "call-1",
             serde_json::json!({ "command": "cargo tree" }),
@@ -195,11 +195,7 @@ fn a_re_rendered_result_drops_its_cached_layout() {
         "call-1",
         "RAW-ONE\nRAW-TWO\nRAW-THREE",
         false,
-        crate::log::WireState::Distilled {
-            keep: crate::log::Keep::None,
-            note: Some("three deps".into()),
-            intent_feedback: None,
-        },
+        crate::log::WireState::distilled(crate::log::Keep::None).with_note("three deps"),
     );
     play.pin_to_bottom();
     let before = play.render();
