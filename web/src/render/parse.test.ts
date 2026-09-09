@@ -355,3 +355,35 @@ test("an elided result is labelled from its tag, not from its content", () => {
   expect(byteSize(900)).toBe("900 B");
   expect(byteSize(1024)).toBe("1 KiB");
 });
+
+test("the daemon's distillate counts win over a prefix that holds none of the kept lines", () => {
+  // A 3-line prefix of a 937-line result whose verdict kept lines 321..338: the
+  // local count reads 0 of 3; the daemon's reads 18 of 937 and the body says
+  // where the lines are rather than presenting as a verdict that kept nothing.
+  const prefix = {
+    content: "a\nb\nc",
+    is_error: false,
+    content_elided: { kept_bytes: 5, total_bytes: 59_670 },
+  };
+  const wire = {
+    Distilled: {
+      keep: { Ranges: [[321, 338]] as [number, number][] },
+      note: null,
+    },
+  };
+  const view = resultRender("read", prefix, wire, {
+    total_lines: 937,
+    kept_lines: 18,
+  });
+  expect(view.sizeLabel).toBe("kept 18 of 937 lines");
+  expect(view.stateWord).toBe("distilled");
+  expect(view.body).toEqual({
+    kind: "text",
+    text: "the 18 kept lines lie past the loaded prefix",
+  });
+  expect(view.elisionLabel).toBe("5 B of 58 KiB shown");
+
+  // Without the field — an older daemon — the local count stands.
+  const local = resultRender("read", prefix, wire);
+  expect(local.sizeLabel).toBe("kept 0 of 3 lines");
+});

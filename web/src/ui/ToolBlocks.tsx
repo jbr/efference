@@ -8,7 +8,13 @@
 
 import { useMemo } from "react";
 import { join } from "../api/base.ts";
-import type { CallId, RawResult, ToolCall, WireState } from "../api/types.ts";
+import type {
+  CallId,
+  DistillateLines,
+  RawResult,
+  ToolCall,
+  WireState,
+} from "../api/types.ts";
 import { Code, NumberedCode, StreamingCode } from "./Code.tsx";
 import {
   hasStructure,
@@ -171,12 +177,14 @@ export function ResultBlock({
   seq,
   raw,
   wire,
+  distillate,
 }: {
   tool: string | null;
   /** The result entry's seq — the address images resolve through. */
   seq: number;
   raw: RawResult;
   wire: WireState;
+  distillate?: DistillateLines;
 }) {
   // An oversized result arrives truncated (docs/control-api.md); the whole one
   // is one fetch away, on demand rather than eagerly — most truncated
@@ -189,8 +197,8 @@ export function ResultBlock({
   // entry, so without this a streamed token re-parses every result in the
   // session.
   const view = useMemo(
-    () => resultRender(tool, shown, wire),
-    [tool, shown, wire],
+    () => resultRender(tool, shown, wire, distillate),
+    [tool, shown, wire, distillate],
   );
   const narrow = useNarrow();
   const { body, hidden } = useMemo(

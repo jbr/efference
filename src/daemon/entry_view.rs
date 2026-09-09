@@ -17,6 +17,13 @@
 //!   `content_elided: {kept_bytes, total_bytes}`, so a client reads "content, cut at
 //!   N of M bytes" rather than inferring it from a length.
 //!
+//! And one addition: a distilled result's view carries `distillate: {total_lines,
+//! kept_lines}` — the line arithmetic of the verdict against the whole `content`,
+//! computed here from the same [`distillate`] the wire and the TUI render through,
+//! so a client holding only the truncated prefix still states the count the model's
+//! view had. Derived on every read rather than stored: the log stays the record, and
+//! a counting bug is fixed by a build rather than baked into a session.
+//!
 //! The log file and the wire projection are untouched — both keep everything inline
 //! (docs/log-and-projection.md).
 //!
@@ -29,7 +36,8 @@
 //! module fails there.
 
 use super::*;
-use crate::log::{ContentElision, RawResult, ResultImage};
+use crate::log::{ContentElision, RawResult, ResultImage, WireState};
+use crate::project::distillate;
 use serde::ser::{SerializeStruct, SerializeStructVariant, Serializer};
 
 /// How much of a tool result's `content` rides a window read or a `log` frame before
@@ -99,14 +107,42 @@ impl Serialize for PayloadView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0 {
             Payload::ToolResult { call_id, raw, wire } => {
-                let mut s = serializer.serialize_struct_variant("Payload", 2, "ToolResult", 3)?;
+                let lines = DistillateLines::of(raw, wire);
+                let fields = 3 + usize::from(lines.is_some());
+                let mut s =
+                    serializer.serialize_struct_variant("Payload", 2, "ToolResult", fields)?;
                 s.serialize_field("call_id", call_id)?;
                 s.serialize_field("raw", &RawResultView(raw, self.1))?;
                 s.serialize_field("wire", wire)?;
+                if let Some(lines) = lines {
+                    s.serialize_field("distillate", &lines)?;
+                }
                 s.end()
             }
             other => other.serialize(serializer),
         }
+    }
+}
+
+/// The line arithmetic of a `Distilled` verdict against the whole `content`: how many
+/// lines the result has, and how many the model's view kept. Present only on a
+/// distilled result, so a raw or elided one serializes as before.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct DistillateLines {
+    pub total_lines: usize,
+    pub kept_lines: usize,
+}
+
+impl DistillateLines {
+    fn of(raw: &RawResult, wire: &WireState) -> Option<Self> {
+        let WireState::Distilled { keep, .. } = wire else {
+            return None;
+        };
+        let d = distillate(&raw.content, keep);
+        Some(Self {
+            total_lines: d.shown.len() + d.dropped,
+            kept_lines: d.ranges.iter().map(|&(a, b)| b - a + 1).sum(),
+        })
     }
 }
 

@@ -41,7 +41,18 @@ export type Payload =
         upstream_failure?: UpstreamFailureRecord;
       };
     }
-  | { ToolResult: { call_id: CallId; raw: RawResult; wire: WireState } }
+  | {
+      ToolResult: {
+        call_id: CallId;
+        raw: RawResult;
+        wire: WireState;
+        /** The verdict's line arithmetic against the *whole* content, computed
+         * by the daemon (docs/control-api.md). Present only on a `Distilled`
+         * result. The authority for "kept N of M lines" when `raw.content` is
+         * a truncated prefix, which cannot be counted client-side. */
+        distillate?: DistillateLines;
+      };
+    }
   | { Mark: Mark }
   | { Triage: Triage }
   | { Ambient: Notification }
@@ -111,6 +122,11 @@ export interface ToolCall {
   id: CallId;
   name: string;
   input: unknown;
+}
+
+export interface DistillateLines {
+  total_lines: number;
+  kept_lines: number;
 }
 
 export interface RawResult {

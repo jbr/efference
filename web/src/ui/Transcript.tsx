@@ -271,6 +271,7 @@ const Call = memo(function Call({
           seq={node.result.seq}
           raw={result.raw}
           wire={result.wire}
+          distillate={result.distillate}
         />
       )}
     </div>

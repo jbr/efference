@@ -5,7 +5,7 @@
 // whole. Ports stay literal — same names, same classifications — so
 // divergence is findable by diffing against tools.rs.
 
-import type { RawResult, WireState } from "../api/types.ts";
+import type { DistillateLines, RawResult, WireState } from "../api/types.ts";
 import {
   distillateKept,
   renderTriageFailure,
@@ -230,6 +230,11 @@ export function resultRender(
   tool: string | null,
   raw: RawResult,
   wire: WireState,
+  /** The daemon's line arithmetic (docs/control-api.md). Authoritative when
+   * present: `raw.content` may be a truncated prefix, over which the local
+   * count reads "kept 0 of 198" for a result whose kept lines all lie past
+   * it. Optional so a client of an older daemon still renders. */
+  distillate?: DistillateLines,
 ): ResultRender {
   if (wire === "Raw") {
     const body = richRaw(tool, raw);
@@ -254,17 +259,29 @@ export function resultRender(
   }
   if ("Distilled" in wire) {
     const { keep, note } = wire.Distilled;
-    const { kept, total } = distillateKept(raw.content, keep);
+    const local = distillateKept(raw.content, keep);
+    const kept = local.kept;
+    const keptCount = distillate?.kept_lines ?? kept.length;
+    const total = distillate?.total_lines ?? local.total;
     // When triage kept everything, "distilled · kept n of n lines" says only
     // that triage ran — a third of real results. The view is everything the
     // model saw, so the head presents like any whole result.
-    const complete = kept.length === total;
+    const complete = keptCount === total;
+    // Kept lines that lie past the loaded prefix have no rows to show. The body
+    // says so rather than presenting as a verdict that kept nothing.
+    const beyond = raw.content_elided !== undefined && keptCount > kept.length;
     return {
-      body: distilledBody(tool, raw, kept),
+      body:
+        beyond && kept.length === 0
+          ? {
+              kind: "text",
+              text: `the ${keptCount} kept line${keptCount === 1 ? "" : "s"} lie past the loaded prefix`,
+            }
+          : distilledBody(tool, raw, kept),
       stateWord: complete ? null : "distilled",
       sizeLabel: complete
         ? null
-        : `kept ${kept.length} of ${total} line${total === 1 ? "" : "s"}`,
+        : `kept ${keptCount} of ${total} line${total === 1 ? "" : "s"}`,
       note,
       elisionLabel: elisionLabel(raw),
       isError: raw.is_error,

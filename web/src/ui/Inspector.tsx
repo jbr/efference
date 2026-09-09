@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CallId,
+  DistillateLines,
   Keep,
   RawResult,
   ToolOutcome,
@@ -21,6 +22,7 @@ import { ResultBody } from "./ToolBlocks.tsx";
 import { callView, resultRender, wireLabel } from "../render/parse.ts";
 import { openablePaths } from "../session/touchedFiles.ts";
 import { useWholeResult } from "./wholeResult.ts";
+import { rustLines } from "../render/distill.ts";
 import { fetchProcessOutput } from "../api/http.ts";
 
 /** Drag-to-resize, persisted. The drawer floats over the content (the
@@ -81,15 +83,25 @@ const surfacedLines = (keep: Keep, total: number): number => {
 /** "What the fork returned": the verdict's account of the result — raw size,
  * what survived, the keep, the wire state (docs/redaction-fork.md is the
  * mechanism; this is its audit view). */
-function ForkPanel({ raw, wire }: { raw: RawResult; wire: WireState }) {
-  const total = raw.content.split("\n").length;
+function ForkPanel({
+  raw,
+  wire,
+  distillate,
+}: {
+  raw: RawResult;
+  wire: WireState;
+  distillate?: DistillateLines;
+}) {
+  // The daemon's count when it sent one; the local split is only right when the
+  // content on hand is whole.
+  const total = distillate?.total_lines ?? rustLines(raw.content).length;
   const rows: [string, string][] = [
     ["raw", `${total} ${total === 1 ? "line" : "lines"}`],
   ];
   if (typeof wire === "object" && "Distilled" in wire) {
     rows.push([
       "surfaced",
-      `${surfacedLines(wire.Distilled.keep, total)} lines`,
+      `${distillate?.kept_lines ?? surfacedLines(wire.Distilled.keep, total)} lines`,
     ]);
     rows.push(["keep", keepLabel(wire.Distilled.keep)]);
   }
@@ -322,7 +334,9 @@ export function Inspector({
   );
   const rendered = useMemo(
     () =>
-      result !== null ? resultRender(node.name, result.raw, result.wire) : null,
+      result !== null
+        ? resultRender(node.name, result.raw, result.wire, result.distillate)
+        : null,
     [node.name, result],
   );
   const retained = useRetainedOutput(processId, processOutput, processLost);
@@ -431,7 +445,13 @@ export function Inspector({
         />
       )}
       {node.telemetry !== null && <TelemetryPanel telemetry={node.telemetry} />}
-      {result !== null && <ForkPanel raw={result.raw} wire={result.wire} />}
+      {result !== null && (
+        <ForkPanel
+          raw={result.raw}
+          wire={result.wire}
+          distillate={result.distillate}
+        />
+      )}
     </div>
   );
 }

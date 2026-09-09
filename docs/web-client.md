@@ -270,7 +270,13 @@ Two residents:
   signature below with the `intent` leading the entry, and the distilled
   composition — the parse runs over the whole raw, the verdict's kept line
   numbers filter the rows it produced, so a triaged view keeps its tool's
-  rendering (`kept N of M lines` in the header). When nothing was dropped
+  rendering. The `kept N of M lines` header takes its numbers from the entry
+  view's `distillate` field when the daemon sent one
+  ([control-api.md](control-api.md)) — the local count is over whatever
+  content is on hand, which for an elided result is a prefix that may hold
+  none of the kept lines; the body then says where they are instead of
+  presenting as a verdict that kept nothing. The local count is the fallback
+  for a daemon that predates the field. When nothing was dropped
   both header words go quiet (`stateWord` and `sizeLabel` null) and the head
   is a bare `result` — the inspector's wire row still names the state.
 

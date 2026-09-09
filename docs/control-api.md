@@ -541,7 +541,8 @@ query grows with the session, which the tag reflects.
 
 Every read that serves an entry — the window, this route, and a `log` frame's
 `data` — serializes the same **entry view** (`daemon/entry_view.rs`): the entry
-verbatim, except for two elisions, both resolved by fetching an address.
+verbatim, except for two elisions, both resolved by fetching an address, and one
+addition a client cannot compute from an elided prefix.
 
 **A result image's base64 `data` is omitted, on every route.** A result image
 appears as `{media_type, width, height}` — enough to lay out before fetching —
@@ -566,6 +567,24 @@ signal, and its `kept_bytes` is the prefix actually carried (cut back to a UTF-8
 boundary, so it is a valid string rather than a split code point). A client
 holding one renders the prefix, says what it is, and fetches `/log/:seq` when it
 wants the rest.
+
+**A distilled result's view carries the verdict's line arithmetic.** On every
+route, a `ToolResult` whose `wire` is `Distilled` gains one field beside it:
+
+```jsonc
+"distillate": { "total_lines": 937, "kept_lines": 364 }
+```
+
+The counts are over the *whole* `content`, computed by the daemon through the
+same `distillate` the wire and the TUI render from (`src/project/render.rs`), so
+a client holding only the 16 KiB prefix states the same "kept 364 of 937 lines"
+the model's view had — counted locally over the prefix, a verdict whose kept
+ranges lie past it reads as "kept 0". Absent on a raw or elided result, so those
+views stay the derived bytes. Derived on every read rather than stored: the log
+is the record, and the view is where a count belongs. The per-line structure of
+the distillate — which rows survived, numbered — is not served yet; the web
+client still resolves that from the content it holds
+([web-client.md](web-client.md) "The cordon").
 
 Both elisions keep a bulky payload from riding every window, replay, and SSE
 frame, where it would queue every later frame behind it on an expensively-framed

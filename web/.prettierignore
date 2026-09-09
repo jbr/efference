@@ -1,0 +1,3 @@
+# pnpm 12 writes the lockfile as two YAML documents (its own binary identity, then
+# the graph); Prettier reformats the separator and the check fails on every install.
+pnpm-lock.yaml
