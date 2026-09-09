@@ -75,7 +75,7 @@ pub(crate) const MAX_BYTES: u64 = 500 * 1024;
 /// not be canonicalized at boot serves nothing rather than falling back to a wider
 /// one.
 #[derive(Debug, Clone)]
-pub(crate) struct Files {
+pub struct Files {
     root: Option<Arc<PathBuf>>,
     /// The core watcher behind the change streams (`crate::fswatch`). `None` if
     /// the watcher could not start, in which case streams are refused while

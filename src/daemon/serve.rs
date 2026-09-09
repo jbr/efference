@@ -101,7 +101,12 @@ pub async fn serve<S: Spotter>(
         .listeners()
         .bind_uds(&socket)
         .map_err(|e| -> Error { format!("failed to bind {}: {e}", socket.display()).into() })?
-        .spawn((trillium_head::head(), tcp::host_router(web_auth), router()));
+        .spawn(handler(
+            Transport::Socket {
+                auth: web_auth.clone(),
+            },
+            App::session(),
+        ));
     eprintln!("control socket: {}", socket.display());
 
     // The optional TCP listener beside the UDS (docs/web-bind.md): the same router
@@ -113,7 +118,12 @@ pub async fn serve<S: Spotter>(
         let addr = listener.addr.clone();
         let handle = tcp::spawn(
             listener,
-            Arc::clone(&auth),
+            handler(
+                Transport::Web {
+                    auth: Arc::clone(&auth),
+                },
+                App::session(),
+            ),
             server.swansong(),
             Arc::clone(&shared),
         )

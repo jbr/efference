@@ -16,14 +16,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use trillium::Conn;
-use trillium_cookies::CookiesHandler;
 use trillium_router::Router;
 
 use crate::daemon::errors::{ErrorCode, fail};
-use crate::daemon::tcp::{
-    self, SecurityHeaders, Surface, TcpAuth, TcpBind, frontend, gate, public_router,
-};
-use crate::daemon::{SESSION_BASE, SOCKET_NAME};
+use crate::daemon::tcp::{self, TcpBind};
+use crate::daemon::{App, SESSION_BASE, SOCKET_NAME, Transport, handler};
 
 mod proxy;
 
@@ -57,7 +54,14 @@ pub async fn serve(host: Host) -> io::Result<()> {
     let open = bind.open;
     let (auth, listener) = tcp::arm(bind);
     let addr = listener.addr.clone();
-    let handler = stack(Arc::clone(&auth), base);
+    let handler = handler(
+        Transport::Web {
+            auth: Arc::clone(&auth),
+        },
+        App::Host {
+            sessions: Sessions::new(base),
+        },
+    );
     let handle = tcp::bind(&listener, trillium_tokio::config().listeners())?.spawn(handler);
     let link = auth.mint_link();
     eprintln!("host: {} (bound {addr})", auth.public_base());
@@ -71,43 +75,14 @@ pub async fn serve(host: Host) -> io::Result<()> {
     Ok(())
 }
 
-/// The handler stack the host listener mounts. Same shape and same order as the
-/// session bind's (docs/web-bind.md), differing only in what sits between the gate
-/// and the web client: session routes instead of one session's `/v1`.
-pub(crate) fn stack(auth: Arc<TcpAuth>, base: PathBuf) -> impl trillium::Handler {
-    (
-        // Outermost, so its `before_send` runs last and the headers land on every
-        // response the stack produces.
-        SecurityHeaders,
-        // HEAD rewritten to GET going in, body stripped coming out. Before the gate,
-        // so it only ever sees GET.
-        trillium_head::head(),
-        CookiesHandler::new(),
-        gate(Arc::clone(&auth), Surface::Host),
-        // The credential mint, anonymous by the gate's reckoning: the host's login
-        // page is the same web client login view.
-        public_router(auth),
-        router(Sessions::new(base)),
-        // Last: any GET the routes didn't claim is the web client's surface — an
-        // asset, the SPA index at the root, or the same index under a session
-        // prefix, which is the single-session view's base.
-        frontend(Surface::Host),
-    )
-}
-
 /// The host's own routes. Everything under `/sessions/<id>/` is the session's API
 /// unchanged (docs/control-api.md); the host adds no endpoint that translates or
-/// enriches it.
-pub(crate) fn router(sessions: Sessions) -> Router {
+/// enriches it. Mounted only by [`handler`](crate::daemon::handler).
+pub(crate) fn host_routes(sessions: Sessions) -> Router {
     let listing = sessions.clone();
     Router::new()
         .get("/sessions", move |conn: Conn| {
-            let sessions = listing.clone();
-            async move {
-                let live = sessions.live().await;
-                let body = serde_json::to_string(&live).unwrap_or_else(|_| "[]".into());
-                conn.with_status(200).with_body(body).halt()
-            }
+            list_sessions(listing.clone(), conn)
         })
         // The web client's own routes under a session prefix — the single-session
         // view and its file tree, at the base that client joins control paths onto.
@@ -127,6 +102,13 @@ pub(crate) fn router(sessions: Sessions) -> Router {
         .all("/sessions/:id/*", proxy::SessionProxy::new(sessions))
 }
 
+/// `GET /sessions`: the live sessions, as the liveness scan finds them.
+async fn list_sessions(sessions: Sessions, conn: Conn) -> Conn {
+    let live = sessions.live().await;
+    let body = serde_json::to_string(&live).unwrap_or_else(|_| "[]".into());
+    conn.with_status(200).with_body(body).halt()
+}
+
 /// A client route under a session prefix: matched so the proxy does not claim it,
 /// answered by [`frontend`] with the same SPA shell `/` and `/tree` get.
 async fn client_shell(conn: Conn) -> Conn {
@@ -136,7 +118,7 @@ async fn client_shell(conn: Conn) -> Conn {
 /// The session directory layout as the host reads it: `<base>/<id>/control.sock`
 /// (docs/control-channel.md). Cheap to clone — the routes each hold one.
 #[derive(Clone)]
-pub(crate) struct Sessions {
+pub struct Sessions {
     base: Arc<PathBuf>,
 }
 

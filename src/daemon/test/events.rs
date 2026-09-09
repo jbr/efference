@@ -70,7 +70,7 @@ async fn an_idle_stream_heartbeats_with_comments() {
         }),
         // The interval parameter exists for this test: short enough to observe, long
         // enough that the snapshot frame reliably precedes the first heartbeat.
-        super::super::http::router_with_heartbeat(Duration::from_millis(50)),
+        super::super::http::control_routes_with_heartbeat(Duration::from_millis(50)),
     );
     let context = trillium_testing::init(&mut handler).await;
     let raw = trillium_client::Client::new(

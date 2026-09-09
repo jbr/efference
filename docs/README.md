@@ -157,7 +157,7 @@ Read top-down; open the subsystem doc you need.
 | The `[env]` table — stripping and injecting env vars at spawn, masking them at append, resolving vault references | [env.md](env.md) | `src/env_table.rs`, `src/env_table/resolve.rs`, `src/persist.rs`, `src/bash.rs` |
 | Transport & streaming (upstream SSE, deltas, keepalive, the shared HTTP client) | [transport.md](transport.md) | `src/api.rs`, `src/http.rs` |
 | MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/http.rs` |
-| The TCP bind — the web client's front door (root-derived credentials, TOTP bootstrap, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/daemon/tcp.rs` |
+| The TCP bind — the web client's front door (root-derived credentials, TOTP bootstrap, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/daemon/handler.rs`, `src/daemon/tcp.rs` |
 | The host — one authenticated front door for every session on a machine (discovery + the per-session proxy) | [host.md](host.md) | `src/host.rs` (+ `src/host/`), `src/daemon/tcp.rs` |
 | The web client | [web-client.md](web-client.md) | `web/`, `src/daemon/tcp.rs` |
 | Web push — the daemon notifies a pocketed phone | [web-push.md](web-push.md) | `src/push.rs` (+ `src/push/`), `src/daemon/push.rs` |
@@ -177,8 +177,9 @@ control <tool>` for the twelve calls that drive a running session — the same t
 `dev` cargo feature.
 
 `src/daemon.rs` holds the shared-state vocabulary and the loop wiring; each concern it
-serves lives in a `src/daemon/` submodule named for its governing doc — `http.rs` and
-`sse.rs` (the control channel), `config_edits.rs` (permissions), `notifications.rs` (the
+serves lives in a `src/daemon/` submodule named for its governing doc — `handler.rs`
+(the one handler stack every listener mounts), `http.rs` with one file per route
+family under `http/`, and `stream.rs` (the control channel), `config_edits.rs` (permissions), `notifications.rs` (the
 inbox), `background.rs` (the supervisor), plus `pace.rs`, `approvals.rs`, `metrics.rs`,
 `keepalive.rs`, `watch.rs`, and `views.rs` (the `/state` and `/log` readouts).
 

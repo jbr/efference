@@ -330,7 +330,7 @@ A result's images render below its body as plain `<img>` elements pointed at
 `GET /v1/log/{seq}/images/{idx}` ([control-api.md](control-api.md)): the entry
 view carries only `{media_type, width, height}` — the attributes that hold the
 aspect box before the bytes land — and the browser supplies the fetch (ambient
-session cookie), the immutable caching, and lazy loading. Capped at 420px
+session cookie), the `ETag` revalidation, and lazy loading. Capped at 420px
 display width; full resolution is the browser's own open-image-in-new-tab.
 
 An oversized result's **text** arrives the same way — a prefix plus
@@ -1315,9 +1315,9 @@ with `frame-ancestors` for anything current, and one header for browsers that
 predate CSP3). It sits outermost in the handler
 stack so its `before_send` runs last, and the headers land on the SPA index, a
 hashed asset, a `/v1` rejection and a 404 alike — a handler that answered without
-them would be the hole. The stack is built once by `stack()` and used by both the
-listener and the tests, because a hand-copied test stack is what lets the two
-drift.
+them would be the hole. The stack is built once by `handler()`
+(`src/daemon/handler.rs`) and used by both the listener and the tests, because a
+hand-copied test stack is what lets the two drift.
 
 The embedded build loads one external module script and one external stylesheet,
 both same-origin and hashed, with the grammar chunks imported dynamically from the

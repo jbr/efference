@@ -4,7 +4,7 @@
 // cut at 16 KiB, tagged with `content_elided`. `GET /v1/log/{seq}` serves the
 // same entry whole — the same shape as an image reference, one route over — so
 // a client that wants the rest asks for the entry rather than for a new kind of
-// payload. Immutable, so the browser caches the answer.
+// payload. ETag-validated, so a second look is a 304.
 
 import { useCallback, useState } from "react";
 import { fetchLogEntry } from "../api/http.ts";

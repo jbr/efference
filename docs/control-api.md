@@ -527,11 +527,17 @@ One `LogEntry`, or `404 not_found` past the head of the log. The general form of
 reference resolution: every reference is ultimately to an entry or to something
 inside one.
 
-**`Cache-Control: immutable`.** A `LogEntry` is written once and never mutated —
-redaction chooses `wire` at append time from the verdict rather than flipping it
-afterward — so a returning client never refetches an entry it has seen. This is
-a property a log-*window* read cannot offer, and it is the larger reason these
-routes exist; reference resolution is the smaller one.
+**Validated, not immutable.** The router answers every successful GET with a
+content-hash `ETag`, and a matching `If-None-Match` with `304 Not Modified`, so a
+returning client's second look is one empty round-trip. No route sets a
+`Cache-Control` lifetime. The `LogEntry` itself is written once and never
+mutated — redaction chooses `wire` at append time from the verdict rather than
+flipping it afterward — but what this route serves is the build's entry *view*,
+which changes shape with the daemon, and at a session daemon's socket root the
+address `/v1/log/3` is the same for every session that origin ever serves. A
+year-long `immutable` lifetime once returned another session's entry to the web
+client's inspector. The window read gets the same validator; its answer to a
+query grows with the session, which the tag reflects.
 
 Every read that serves an entry — the window, this route, and a `log` frame's
 `data` — serializes the same **entry view** (`daemon/entry_view.rs`): the entry
@@ -581,7 +587,7 @@ image references entry views carry. `:seq` addresses the `ToolResult` entry,
 bytes under the stored media type (`Content-Type: image/webp` etc.), so the URL
 works directly as an `<img src>` in the web client (the session cookie rides
 along ambiently) and as a byte source for a TUI emitting a graphics-protocol
-escape. Immutably cacheable, for the same reason as `/log/:seq`. `404
+escape. Validated by `ETag` like `/log/:seq`. `404
 not_found` when the seq names no entry, the entry is not a tool result, or the
 index is past its images.
 
@@ -595,8 +601,8 @@ The tool call with that id, and the `seq` of the entry carrying it:
 A call is **not** its own log entry — it is embedded in an `Assistant` payload —
 so it needs its own address, and `call_id` is the one already in the log, in
 `tool_output` frames, in `/state`'s `gate`, and in the hand of any client holding
-an orphaned `tool_result`. `404 not_found` if no entry carries it. Immutably
-cacheable, for the same reason as `/log/:seq`.
+an orphaned `tool_result`. `404 not_found` if no entry carries it. Validated by
+`ETag` like `/log/:seq`.
 
 The scale of the orphan problem is small by construction:
 `disable_parallel_tool_use` means one call per turn

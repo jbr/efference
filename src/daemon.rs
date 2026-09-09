@@ -950,13 +950,14 @@ mod entry_view;
 // answers with.
 pub(crate) mod errors;
 // The file viewer's read surface (docs/web-bind.md), mounted on the TCP spawn only.
-mod files;
+pub(crate) mod files;
 // The control-stream frame envelope (docs/control-api.md). `dead_code` covers
 // `Frame::with_render` and `Frame::state`, which the emitter does not reach:
 // nothing annotates a frame with a render yet, and the state path builds from
 // pre-serialized topic JSON (`Frame::state_raw`).
 #[allow(dead_code)]
 mod frames;
+mod handler;
 mod http;
 mod keepalive;
 mod metrics;
@@ -972,12 +973,11 @@ mod topics;
 mod views;
 mod watch;
 
-/// The control API's handler (docs/control-api.md) — every `(method, path)` the
-/// daemon answers, as one [`Router`]. `serve` mounts it behind the Unix socket and
-/// the TCP gate mounts it behind authentication; it is public so a client of the
-/// control channel can also mount it on an in-memory transport and exercise a real
-/// request/response cycle without binding anything.
-pub use http::router;
+/// The one handler construction (docs/web-bind.md): every listener mounts
+/// [`handler`], keyed on its [`Transport`] and [`App`]. Public so a client of the
+/// control channel can mount the socket-shaped stack on an in-memory transport and
+/// exercise a real request/response cycle without binding anything.
+pub use handler::{App, Transport, handler};
 
 pub(crate) use watch::refresh_and_emit;
 

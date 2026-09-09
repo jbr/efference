@@ -1,11 +1,13 @@
 # The TCP bind — the web client's front door
 
 `efference serve --bind <addr:port>` adds a TCP listener beside the Unix socket. Both
-serve the same `/v1` router ([control-api.md](control-api.md)); the TCP listener wraps
-it in a hardening + auth gate, while the UDS stays auth-exempt (filesystem permissions
+serve the same `/v1` routes ([control-api.md](control-api.md)); the TCP listener wraps
+them in a hardening + auth gate, while the UDS stays auth-exempt (filesystem permissions
 are its trust model) and remains the CLI verbs' channel. Implemented in
-`src/daemon/tcp.rs` (the gate, the routes, the spawn) and `src/auth.rs` (the
-credential arithmetic); the flag resolution is `src/bin/efference/serve.rs`.
+`src/daemon/handler.rs` (the one stack every listener mounts), `src/daemon/tcp.rs`
+(the listener, the gate, the mint and enrollment routes, the web client handler) and
+`src/auth.rs` (the credential arithmetic); the flag resolution is
+`src/bin/efference/serve.rs`.
 
 This is the **one**-session bind, and it stays that: `efference host`
 ([host.md](host.md)) is the multi-session front door, and it reuses everything in this
@@ -24,13 +26,19 @@ file is not.
 ## Listener topology is the trust model
 
 The daemon runs two trillium servers sharing one `Swansong` (one shutdown domain) and
-one `Arc<Shared>`:
+one `Arc<Shared>`. Both mount the same stack, `handler(transport, app)` in
+`src/daemon/handler.rs` — the only place a handler is assembled, for the daemon, the
+TCP bind, the host, and every test. Its tuple is fixed; each layer that is not always
+present is an `Option`, which trillium runs as a pass-through when `None`, and the
+`Transport` picks which are `Some`:
 
-- **UDS spawn:** `(head, host_router, router())` — no gate, plus the host-only
-  credential routes (below).
-- **TCP spawn:** `(head, gate, public_router, router(), frontend())` — every conn
-  passes the gate first; the trailing frontend handler serves the embedded web client
-  ([web-client.md](web-client.md)) for the GETs neither router claims. The SPA
+- **Socket:** HEAD rewriting, the `ETag` validator, the enrollment routes (below),
+  the `/v1` routes. No gate, no hardening headers, no web client.
+- **Web:** security headers, HEAD rewriting, the cookie jar, the gate, the `ETag`
+  validator, the credential mint, the `/v1` routes, `/files`, then the web client —
+  every conn passes the gate first; the trailing frontend handler serves the
+  embedded web client ([web-client.md](web-client.md)) for the GETs no route
+  claims. The SPA
   index answers a **named list** of client routes (`SPA_ROUTES`: `/` and
   `/tree`) rather than every unmatched path, which would hand scanner probes a
   `200`; the service worker's offline navigation fallback mirrors that list, and
@@ -157,7 +165,7 @@ The `401`/`403`/`429` codes are `ErrorCode` variants in the standard error envel
 
 ## `/files` — the operator's read surface over the working directory
 
-`src/daemon/files.rs`, mounted on the TCP spawn only, after both routers and before
+`src/daemon/files.rs`, mounted on a web transport only, after the routes and before
 the web client's frontend handler. Read-only and human-facing: it is what running a
 static file server beside the daemon was doing, moved inside it, so project files
 are readable through the same page the session runs in — including from away from

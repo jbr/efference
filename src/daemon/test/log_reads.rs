@@ -148,22 +148,37 @@ async fn contradictory_bounds_are_a_typed_error() {
     });
 }
 
-/// `GET /log/:seq` is the general form of reference resolution for a windowed client, and
-/// is immutably cacheable — a `LogEntry` is written once and never mutated.
+/// `GET /log/:seq` is the general form of reference resolution for a windowed client.
+/// It validates rather than promising freshness: a content `etag`, a `304` on a match,
+/// and no `cache-control` — the address is shared across sessions at a socket-root
+/// binding, and the served shape changes with the build, so a stored copy must be
+/// checked against this daemon every time.
 #[tokio::test]
-async fn one_entry_by_seq_is_immutably_cacheable() {
+async fn one_entry_by_seq_validates_with_an_etag() {
     let app = test_server(&log_of(3)).await;
 
     let conn = app.get("/v1/log/1").await;
     conn.assert_ok();
-    conn.assert_header_with("cache-control", |value| {
-        let value = format!("{value:?}");
-        assert!(value.contains("immutable"), "never refetched: {value}");
-    });
+    assert!(
+        conn.response_headers().get_str("cache-control").is_none(),
+        "no freshness lifetime on a cross-session address"
+    );
+    let etag = conn
+        .response_headers()
+        .get_str("etag")
+        .expect("etag")
+        .to_owned();
     conn.assert_json_body_with(|entry: &Value| {
         assert_eq!(entry["seq"], 1);
         assert!(entry["payload"].to_string().contains("entry 1"));
     });
+
+    let conn = app
+        .get("/v1/log/1")
+        .with_request_header("if-none-match", etag)
+        .await;
+    conn.assert_status(304);
+    assert!(conn.body_bytes().is_empty(), "a 304 carries no body");
 
     // Past the head of the log is a 404, distinct from a window that happens to be empty.
     let conn = app.get("/v1/log/99").await;
@@ -186,9 +201,7 @@ async fn a_tool_call_resolves_by_its_call_id() {
 
     let conn = app.get("/v1/tool_calls/toolu_9").await;
     conn.assert_ok();
-    conn.assert_header_with("cache-control", |value| {
-        assert!(format!("{value:?}").contains("immutable"));
-    });
+    assert!(conn.response_headers().get_str("etag").is_some());
     conn.assert_json_body_with(|body: &Value| {
         // The seq rides along so a client that resolved a call can reach the entry
         // carrying it without a search.
@@ -248,7 +261,7 @@ async fn log_reads_reference_images_instead_of_inlining_them() {
 }
 
 /// `GET /log/:seq/images/:idx` answers with the decoded bytes under the stored media
-/// type, immutably cacheable like any single-entry read; every miss shape is a 404 and
+/// type, `ETag`-validated like any single-entry read; every miss shape is a 404 and
 /// malformed addresses are 400s.
 #[tokio::test]
 async fn an_image_resolves_by_seq_and_index() {
@@ -260,9 +273,7 @@ async fn an_image_resolves_by_seq_and_index() {
     let conn = app.get("/v1/log/1/images/0").await;
     conn.assert_ok();
     conn.assert_header("content-type", "image/webp");
-    conn.assert_header_with("cache-control", |value| {
-        assert!(format!("{value:?}").contains("immutable"));
-    });
+    assert!(conn.response_headers().get_str("etag").is_some());
     assert_eq!(conn.body_bytes(), IMAGE_BYTES, "decoded, not base64");
 
     // Misses: an index past the result's images, an entry that is not a tool result,

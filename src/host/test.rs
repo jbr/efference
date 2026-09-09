@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::auth::{BurnLedger, Root};
-use crate::daemon::tcp::{TlsPem, arm_with_ledger};
+use crate::daemon::tcp::{TcpAuth, TlsPem, arm_with_ledger};
 use std::time::{Duration, Instant};
 use trillium::{Conn, KnownHeaderName, Method};
 use trillium_router::Router;
@@ -106,9 +106,21 @@ fn stub_router() -> Router {
 /// The host stack over a scratch base, virtually hosted at the bind's public name so
 /// the gate's Host check sees what a real conn carries.
 async fn host_server(auth: &Arc<TcpAuth>, base: PathBuf) -> TestServer<impl trillium::Handler> {
-    TestServer::new(stack(Arc::clone(auth), base))
+    TestServer::new(host_handler(auth, base))
         .await
         .with_host("localhost")
+}
+
+/// The host stack over `base`, from `handler` itself rather than a copy of it.
+fn host_handler(auth: &Arc<TcpAuth>, base: PathBuf) -> impl trillium::Handler {
+    handler(
+        Transport::Web {
+            auth: Arc::clone(auth),
+        },
+        App::Host {
+            sessions: Sessions::new(base),
+        },
+    )
 }
 
 fn bearer(auth: &TcpAuth) -> String {
@@ -200,7 +212,7 @@ async fn a_session_stream_is_flushed_not_buffered() {
     let base = scratch_base();
     spawn_stub_session(&base, "streaming");
     let auth = armed("host-stream");
-    let handler = stack(Arc::clone(&auth), base);
+    let handler = host_handler(&auth, base);
 
     let started = Instant::now();
     let mut conn =

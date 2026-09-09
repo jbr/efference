@@ -1339,6 +1339,7 @@ dependencies = [
  "tokio",
  "toml_edit",
  "trillium",
+ "trillium-caching-headers",
  "trillium-client",
  "trillium-client-retry",
  "trillium-cookies",
@@ -5424,6 +5425,17 @@ dependencies = [
  "log",
  "trillium-http",
  "trillium-macros",
+]
+
+[[package]]
+name = "trillium-caching-headers"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80722594a0a86ab97acfcbe154f0633704489ebfe72aa2fb1ccd76c742546c9c"
+dependencies = [
+ "etag",
+ "httpdate",
+ "trillium",
 ]
 
 [[package]]

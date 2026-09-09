@@ -66,6 +66,9 @@ trillium-quinn = "0.1.7"
 # HEAD requests: rewritten to GET going in, body stripped (content-length kept)
 # coming out — the router itself has no HEAD story.
 trillium-head = "0.3"
+# Validators on every successful GET: an `etag` from the body, `if-none-match` answered
+# with a 304. What the single-entry reads use instead of `immutable` (docs/control-api.md).
+trillium-caching-headers = "0.4.3"
 trillium-sse = "0.4.0"
 # `#[derive(Handler)]`: whole-trait delegation for the wrapper that gates the
 # `/files` Sse stage on conn state — delegating `run` alone would drop the

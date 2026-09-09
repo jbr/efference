@@ -80,8 +80,8 @@ export const del = <T>(path: string, body?: unknown) =>
 export const fetchState = () => get<StateSnapshot>("/v1/state");
 export const fetchLogTail = (n: number) => get<LogEntry[]>(`/v1/log?tail=${n}`);
 // One entry by seq — the dereference address for what the window and the stream
-// elide (a truncated result's `content`, docs/control-api.md). Immutable, so the
-// browser caches it and a second look costs nothing.
+// elide (a truncated result's `content`, docs/control-api.md). ETag-validated, so
+// a second look is a 304.
 export const fetchLogEntry = (seq: Seq) => get<LogEntry>(`/v1/log/${seq}`);
 export const submitTurn = (text: string, submissionId: string) =>
   post<{ status: string; submission_id: string }>("/v1/turns", {
@@ -143,7 +143,7 @@ export const fetchProcessRecord = (id: number) =>
   get<ProcessRecord>(`/v1/processes/${id}`);
 // One tool's definition, by the wire name a call carries (docs/control-api.md).
 // The catalog is snapshotted before the loop starts and never changes, so this
-// is immutably cacheable; `404 not_found` covers both an unknown name and a
+// revalidates cheaply; `404 not_found` covers both an unknown name and a
 // recorded session opened with no daemon behind it, which is absence rather
 // than an error state.
 export const fetchToolEntry = (name: string) =>

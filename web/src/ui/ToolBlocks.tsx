@@ -179,7 +179,7 @@ export function ResultBlock({
   wire: WireState;
 }) {
   // An oversized result arrives truncated (docs/control-api.md); the whole one
-  // is one immutable fetch away, on demand rather than eagerly — most truncated
+  // is one fetch away, on demand rather than eagerly — most truncated
   // results are scrolled past, and fetching them all would restore the head-of-
   // line problem the elision removed.
   const whole = useWholeResult(seq, raw);
@@ -218,7 +218,7 @@ export function ResultBlock({
       {(shown.images ?? []).map((image, idx) => (
         // The view carries only the reference (docs/control-api.md); the
         // bytes come from the image route, cookie-authed and
-        // immutably-cached by the browser. width/height reserve layout
+        // ETag-validated by the browser. width/height reserve layout
         // space before the fetch lands.
         <img
           key={idx}

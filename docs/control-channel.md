@@ -40,7 +40,7 @@ Every route is served under the `/v1` prefix; the paths here omit it
 ([control-api](control-api.md) is the consumer-facing reference).
 
 Every terminal response **halts** its conn — trillium's router does not halt on
-a route match, and the TCP spawn mounts the frontend handler after the router,
+a route match, and a web transport mounts the frontend handler after the routes,
 which treats an un-halted conn as unclaimed ([web-bind.md](web-bind.md)). The
 error helpers (`fail`/`respond` in `daemon/errors.rs`) halt centrally; success
 paths halt per-route. The `/v1/events` validating half is the deliberate

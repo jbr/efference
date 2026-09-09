@@ -3,6 +3,7 @@
 //! traverses (gate → public router → `/v1` router), no socket bound.
 
 use super::*;
+use crate::daemon::{App, Transport, handler};
 use crate::persist::Log;
 use trillium_testing::TestServer;
 
@@ -36,14 +37,22 @@ fn init(shared: Arc<Shared>) -> impl trillium::Handler {
     })
 }
 
-/// The handler stack `spawn` mounts, from `stack` itself rather than a copy of it,
+/// The web stack `serve --bind` mounts, from `handler` itself rather than a copy of it,
 /// virtually hosted at the bind's public name so the gate's Host check sees what a
 /// real conn carries.
 async fn tcp_server(auth: &Arc<TcpAuth>) -> (TestServer<impl trillium::Handler>, TurnsGuard) {
     let (shared, turns_rx) = Shared::new(Log::in_memory());
-    let server = TestServer::new((init(shared), stack(Arc::clone(auth))))
-        .await
-        .with_host("localhost");
+    let server = TestServer::new((
+        init(shared),
+        handler(
+            Transport::Web {
+                auth: Arc::clone(auth),
+            },
+            App::session(),
+        ),
+    ))
+    .await
+    .with_host("localhost");
     (server, TurnsGuard(turns_rx))
 }
 
@@ -340,7 +349,7 @@ async fn a_foreign_host_is_rejected() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_host_routes_answer_only_when_a_bind_is_armed() {
     let auth = armed("host-routes");
-    let armed_server = TestServer::new(host_router(Some(Arc::clone(&auth)))).await;
+    let armed_server = TestServer::new(enrollment_routes(Some(Arc::clone(&auth)))).await;
     armed_server
         .get("/auth/link")
         .await
@@ -355,7 +364,7 @@ async fn the_host_routes_answer_only_when_a_bind_is_armed() {
         .await
         .assert_body_contains(r#""bearer":"#);
 
-    let unarmed = TestServer::new(host_router(None)).await;
+    let unarmed = TestServer::new(enrollment_routes(None)).await;
     unarmed.get("/auth/link").await.assert_status(404);
 }
 

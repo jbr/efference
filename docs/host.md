@@ -6,8 +6,8 @@ session's own control API under a `/sessions/<id>/` prefix, and the web client a
 root. It starts no sessions and owns none. Implemented in `src/host.rs` (the routes and
 the liveness scan) and `src/host/proxy.rs` (the per-session forward); the listener, the
 gate, and the credential arithmetic are the single-session bind's
-([web-bind.md](web-bind.md), `src/daemon/tcp.rs` and `src/auth.rs`), reused rather than
-re-implemented.
+([web-bind.md](web-bind.md), `src/daemon/handler.rs`, `src/daemon/tcp.rs` and
+`src/auth.rs`), reused rather than re-implemented.
 
 What exists today is the skeleton: read and attach. Credential consolidation, push
 subscriptions, and session lifecycle (`POST /sessions`, stop, adopt) are later steps of
@@ -49,9 +49,10 @@ missing root or a routable plaintext address means. `--bind` is required here, s
 host with no listener has nothing to be; `--open` launches the operator's browser at
 the printed bootstrap link.
 
-The handler stack is the session bind's, in the same order — security headers, HEAD
-rewriting, the cookie jar, the gate, the credential mint, the routes, the web client —
-differing only in what sits between the gate and the client. The gate's one
+The handler stack is the session bind's — the same `handler()` in
+`src/daemon/handler.rs`, with `App::Host` in place of `App::Session`: security headers,
+HEAD rewriting, the cookie jar, the gate, the credential mint, the routes, the web
+client — differing only in which routes sit between the gate and the client. The gate's one
 listener-dependent decision is which prefixes are guarded, carried as a `Surface`
 (`src/daemon/tcp.rs`): a session bind guards `/v1` and `/files`, the host guards
 `/sessions`. Everything else — the Host allowlist, the Origin and Content-Type checks

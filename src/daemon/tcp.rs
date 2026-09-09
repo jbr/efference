@@ -1,19 +1,21 @@
 //! The TCP bind: the web client's front door (docs/web-bind.md).
 //!
-//! An optional TCP listener beside the UDS — the same `/v1` router, with a hardening +
-//! auth gate layered in front. The layering is structural, not inferred: this module's
-//! handler stack is spawned only on the TCP listener, so the UDS never consults it and
-//! a per-conn "which listener am I on?" guess (which would fail open) never exists.
-//! Credentials are all derived from the machine root (`crate::auth`); the host-only
-//! surfaces (`/auth/link`, `/auth/otpauth`, `/auth/bearer`) are mounted only on the
-//! UDS spawn, because possession of the host machine is the enrollment authority.
+//! An optional TCP listener beside the UDS — the same `/v1` routes, with a hardening +
+//! auth gate layered in front. This module holds the listener, the credential state,
+//! the gate, the mint and enrollment routes, and the web client handler; `handler.rs`
+//! is the one place they are assembled into a stack, keyed on the transport, so the
+//! UDS never consults the gate and a per-conn "which listener am I on?" guess (which
+//! would fail open) never exists. Credentials are all derived from the machine root
+//! (`crate::auth`); the enrollment surfaces (`/auth/link`, `/auth/otpauth`,
+//! `/auth/bearer`) are mounted only on the socket, because possession of the host
+//! machine is the enrollment authority.
 
 use super::*;
 use crate::auth::{self, BurnLedger, Lockout, Root};
 use std::time::SystemTime;
 use trillium::{KnownHeaderName, Method};
 use trillium_cookies::{
-    CookiesConnExt, CookiesHandler,
+    CookiesConnExt,
     cookie::{Cookie, SameSite},
 };
 
@@ -53,7 +55,7 @@ pub struct TlsPem {
 
 /// The derived credential state the gate and the auth routes share. One per daemon,
 /// built at boot from the injected root; holds no secret that can't be re-derived.
-pub(crate) struct TcpAuth {
+pub struct TcpAuth {
     root: Root,
     cookie_key: [u8; 32],
     totp_secret: [u8; 20],
@@ -156,16 +158,15 @@ where
     }
 }
 
-/// Spawn the TCP listener with the gated handler stack, sharing the UDS server's
-/// swansong (one shutdown domain) and its `Shared` state (same `/v1` surface).
-/// `without_signals` because the UDS server already registered the signal handlers.
+/// Spawn a TCP listener with `handler`, sharing the UDS server's swansong (one shutdown
+/// domain) and its `Shared` state (same `/v1` surface). `without_signals` because the
+/// UDS server already registered the signal handlers.
 pub(crate) fn spawn(
     listener: Listener,
-    auth: Arc<TcpAuth>,
+    handler: impl trillium::Handler,
     swansong: trillium_tokio::Swansong,
     shared: Arc<Shared>,
 ) -> io::Result<trillium_server_common::ServerHandle> {
-    let handler = stack(auth);
     let config = trillium_tokio::config()
         .with_swansong(swansong)
         .with_shared_state(shared)
@@ -439,41 +440,6 @@ pub(crate) fn gate(auth: Arc<TcpAuth>, surface: Surface) -> impl trillium::Handl
     }
 }
 
-/// The handler stack the TCP listener mounts, in one place so the tests exercise
-/// the same one rather than a copy that can drift from it.
-pub(crate) fn stack(auth: Arc<TcpAuth>) -> impl trillium::Handler {
-    stack_with_files(auth, super::files::Files::at_cwd())
-}
-
-/// [`stack`] with the file root injected, so tests can serve a scratch directory
-/// instead of whatever the test process's cwd happens to be.
-pub(crate) fn stack_with_files(
-    auth: Arc<TcpAuth>,
-    files: super::files::Files,
-) -> impl trillium::Handler {
-    (
-        // Outermost, so its `before_send` runs last and the headers land on every
-        // response the stack produces — including the routers' errors.
-        SecurityHeaders,
-        // HEAD support: rewrites to GET on the way in, strips the body (keeping
-        // content-length) on the way out. Before the gate, so it only ever sees GET.
-        trillium_head::head(),
-        // Parses the request cookie jar (every field line — see `authed`) and
-        // serializes the response's. Ahead of the gate, which reads the jar.
-        CookiesHandler::new(),
-        gate(Arc::clone(&auth), Surface::Session),
-        public_router(auth),
-        router(),
-        // The operator's read surface over the working directory (docs/web-bind.md),
-        // mounted only here so the UDS never serves it. It claims `/files` and
-        // passes everything else through.
-        files.handler(),
-        // Last: any GET neither router nor `/files` claimed is the web client's surface
-        // (docs/web-client.md) — an asset, or the SPA index.
-        frontend(Surface::Session),
-    )
-}
-
 /// The policy the embedded build is served under. Everything the page loads is
 /// same-origin and external — one module script and one stylesheet, both hashed,
 /// with the grammar chunks imported dynamically from the same origin — so `'self'`
@@ -560,8 +526,8 @@ fn session_scoped(path: &str) -> Option<&str> {
 
 /// The web client (docs/web-client.md): `web/` built and embedded at compile time,
 /// or — under the `dev-proxy` feature — proxied to a spawned Vite dev server with
-/// HMR. Mounted after both routers on the TCP spawn, so it answers exactly the GETs
-/// they don't claim; the gate has already let those through anonymously. The host
+/// HMR. Mounted last on a web transport, so it answers exactly the GETs the routes
+/// don't claim; the gate has already let those through anonymously. The host
 /// mounts the same build at its own root (docs/host.md), which is why the index
 /// predicate is surface-dependent: the host also answers the client's routes under
 /// a session prefix, and the session bind does not.
@@ -577,132 +543,124 @@ pub(crate) fn frontend(surface: Surface) -> impl trillium::Handler {
         })
 }
 
-/// The browser-facing anonymous surface, mounted only on the TCP spawn: the
-/// credential mint. Static assets fall through to [`frontend`]; everything else on
-/// TCP is the shared `/v1` router behind the gate.
-pub(crate) fn public_router(auth: Arc<TcpAuth>) -> Router {
-    Router::new()
-        // Trade a current TOTP code for the session cookie. The one credential mint;
-        // rate-limited, and every accepted code burns. The login view that reads
-        // `#token=` from the fragment and POSTs here is the web client's
-        // (web/src/ui/Login.tsx).
-        .post("/auth/session", move |mut conn: Conn| {
-            let auth = Arc::clone(&auth);
-            async move {
-                #[derive(Deserialize)]
-                struct SessionBody {
-                    code: String,
-                }
-                let body = conn.request_body_string().await.unwrap_or_default();
-                let code = match serde_json::from_str::<SessionBody>(&body) {
-                    Ok(body) => body.code,
-                    Err(e) => {
-                        return fail(
-                            conn,
-                            ErrorCode::BadRequest,
-                            format!("bad /auth/session body: {e}"),
-                        );
-                    }
-                };
-                match auth.authenticate_code(code.trim()) {
-                    Ok(()) => {
-                        let value = auth::mint_cookie(&auth.cookie_key, SystemTime::now());
-                        let cookie = Cookie::build((auth::COOKIE_NAME, value))
-                            .path("/")
-                            .secure(true)
-                            .http_only(true)
-                            .same_site(SameSite::Strict)
-                            .max_age(auth::COOKIE_TTL.try_into().expect("30 days fits"))
-                            .build();
-                        conn.with_cookie(cookie)
-                            .with_status(200)
-                            .with_body(r#"{"status":"authed"}"#)
-                            .halt()
-                    }
-                    Err(CodeRejection::Locked(remaining)) => {
-                        let secs = remaining.as_secs().max(1);
-                        respond(
-                            conn.with_response_header(
-                                KnownHeaderName::RetryAfter,
-                                secs.to_string(),
-                            ),
-                            ErrorBody::new(
-                                ErrorCode::RateLimited,
-                                format!("verification locked; retry in {secs}s"),
-                            ),
-                        )
-                    }
-                    Err(CodeRejection::Wrong) => {
-                        fail(conn, ErrorCode::Unauthorized, "code did not verify")
-                    }
-                    Err(CodeRejection::Replayed) => fail(
-                        conn,
-                        ErrorCode::Unauthorized,
-                        "code already used — mint a fresh link with `efference dev open`",
-                    ),
-                    Err(CodeRejection::Ledger) => {
-                        fail(conn, ErrorCode::Internal, "could not record the code burn")
-                    }
-                }
+/// A route that needs the bind's credential state: `auth` is cloned into each conn's
+/// call. `None` — a socket with no TCP bind armed — answers every such route with the
+/// same sentence, so a CLI verb gets a reason rather than a route mismatch.
+fn with_auth<F, Fut>(auth: Option<Arc<TcpAuth>>, route: F) -> impl trillium::Handler
+where
+    F: Fn(Arc<TcpAuth>, Conn) -> Fut + Copy + Send + Sync + 'static,
+    Fut: Future<Output = Conn> + Send + 'static,
+{
+    move |conn: Conn| {
+        let auth = auth.clone();
+        async move {
+            match auth {
+                Some(auth) => route(auth, conn).await,
+                None => fail(
+                    conn,
+                    ErrorCode::NotFound,
+                    "no TCP bind armed — start serve with --bind",
+                ),
             }
-        })
+        }
+    }
 }
 
-/// The host-only credential surface, mounted only on the UDS spawn — possession of
-/// the host machine is the enrollment authority (docs/web-bind.md). The `otpauth`
-/// URI in particular carries the TOTP secret itself: a strictly stronger credential
-/// than a cookie, so it must never ride the TCP listener even authenticated.
-/// With no bind armed the routes exist but answer 404, so the CLI verb gets a
-/// sentence instead of a route mismatch.
-pub(crate) fn host_router(auth: Option<Arc<TcpAuth>>) -> Router {
-    let for_link = auth.clone();
-    let for_otpauth = auth.clone();
-    let for_bearer = auth;
-    Router::new()
-        .get("/auth/link", move |conn: Conn| {
-            let auth = for_link.clone();
-            async move {
-                match auth {
-                    Some(auth) => conn
-                        .with_status(200)
-                        .with_body(serde_json::json!({ "url": auth.mint_link() }).to_string())
-                        .halt(),
-                    None => no_bind(conn),
-                }
-            }
-        })
-        .get("/auth/otpauth", move |conn: Conn| {
-            let auth = for_otpauth.clone();
-            async move {
-                match auth {
-                    Some(auth) => conn
-                        .with_status(200)
-                        .with_body(serde_json::json!({ "uri": auth.otpauth_uri() }).to_string())
-                        .halt(),
-                    None => no_bind(conn),
-                }
-            }
-        })
-        .get("/auth/bearer", move |conn: Conn| {
-            let auth = for_bearer.clone();
-            async move {
-                match auth {
-                    Some(auth) => conn
-                        .with_status(200)
-                        .with_body(serde_json::json!({ "bearer": auth.bearer() }).to_string())
-                        .halt(),
-                    None => no_bind(conn),
-                }
-            }
-        })
+/// The browser-facing anonymous surface of a web transport: the credential mint.
+/// Mounted only by [`handler`](super::handler::handler).
+pub(crate) fn mint_routes(auth: Arc<TcpAuth>) -> Router {
+    Router::new().post("/auth/session", with_auth(Some(auth), mint_session))
 }
 
-fn no_bind(conn: Conn) -> Conn {
-    fail(
-        conn,
-        ErrorCode::NotFound,
-        "no TCP bind armed — start serve with --bind",
-    )
+/// Trade a current TOTP code for the session cookie. The one credential mint;
+/// rate-limited, and every accepted code burns. The login view that reads
+/// `#token=` from the fragment and POSTs here is the web client's
+/// (web/src/ui/Login.tsx).
+async fn mint_session(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
+    #[derive(Deserialize)]
+    struct SessionBody {
+        code: String,
+    }
+    let body = conn.request_body_string().await.unwrap_or_default();
+    let code = match serde_json::from_str::<SessionBody>(&body) {
+        Ok(body) => body.code,
+        Err(e) => {
+            return fail(
+                conn,
+                ErrorCode::BadRequest,
+                format!("bad /auth/session body: {e}"),
+            );
+        }
+    };
+    match auth.authenticate_code(code.trim()) {
+        Ok(()) => {
+            let value = auth::mint_cookie(&auth.cookie_key, SystemTime::now());
+            let cookie = Cookie::build((auth::COOKIE_NAME, value))
+                .path("/")
+                .secure(true)
+                .http_only(true)
+                .same_site(SameSite::Strict)
+                .max_age(auth::COOKIE_TTL.try_into().expect("30 days fits"))
+                .build();
+            conn.with_cookie(cookie)
+                .with_status(200)
+                .with_body(r#"{"status":"authed"}"#)
+                .halt()
+        }
+        Err(CodeRejection::Locked(remaining)) => {
+            let secs = remaining.as_secs().max(1);
+            respond(
+                conn.with_response_header(KnownHeaderName::RetryAfter, secs.to_string()),
+                ErrorBody::new(
+                    ErrorCode::RateLimited,
+                    format!("verification locked; retry in {secs}s"),
+                ),
+            )
+        }
+        Err(CodeRejection::Wrong) => fail(conn, ErrorCode::Unauthorized, "code did not verify"),
+        Err(CodeRejection::Replayed) => fail(
+            conn,
+            ErrorCode::Unauthorized,
+            "code already used — mint a fresh link with `efference dev open`",
+        ),
+        Err(CodeRejection::Ledger) => {
+            fail(conn, ErrorCode::Internal, "could not record the code burn")
+        }
+    }
+}
+
+/// The enrollment surface, mounted only on a session's socket — possession of the host
+/// machine is the enrollment authority (docs/web-bind.md). The `otpauth` URI in
+/// particular carries the TOTP secret itself: a strictly stronger credential than a
+/// cookie, so it must never ride a TCP listener even authenticated. With no bind
+/// armed the routes exist but answer 404, so the CLI verb gets a sentence instead of
+/// a route mismatch. Mounted only by [`handler`](super::handler::handler).
+pub(crate) fn enrollment_routes(auth: Option<Arc<TcpAuth>>) -> Router {
+    Router::new()
+        .get("/auth/link", with_auth(auth.clone(), auth_link))
+        .get("/auth/otpauth", with_auth(auth.clone(), auth_otpauth))
+        .get("/auth/bearer", with_auth(auth, auth_bearer))
+}
+
+/// The bootstrap link: the public base with a current code in the fragment.
+async fn auth_link(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
+    conn.with_status(200)
+        .with_body(serde_json::json!({ "url": auth.mint_link() }).to_string())
+        .halt()
+}
+
+/// The `otpauth://` URI an authenticator app enrolls from.
+async fn auth_otpauth(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
+    conn.with_status(200)
+        .with_body(serde_json::json!({ "uri": auth.otpauth_uri() }).to_string())
+        .halt()
+}
+
+/// The bearer token a program presents instead of a cookie.
+async fn auth_bearer(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
+    conn.with_status(200)
+        .with_body(serde_json::json!({ "bearer": auth.bearer() }).to_string())
+        .halt()
 }
 
 /// The host part of an authority-shaped value: strip a port and a trailing FQDN dot,

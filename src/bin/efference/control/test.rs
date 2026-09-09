@@ -16,7 +16,10 @@ async fn test_state(cli: bool) -> Control {
             let shared = Arc::clone(&shared);
             async move { info.with_shared_state(shared) }
         }),
-        efference::daemon::router(),
+        efference::daemon::handler(
+            efference::daemon::Transport::Socket { auth: None },
+            efference::daemon::App::session(),
+        ),
     );
     let context = trillium_testing::init(&mut handler).await;
     Control::with_client(
