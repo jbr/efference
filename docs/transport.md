@@ -633,10 +633,16 @@ be misread as visible thinking.
 (`openai-codex`, `chatgpt.com/backend-api/codex/responses`) is undocumented and
 billed to a ChatGPT/Codex subscription, so that arm sends exactly what Codex CLI
 sends: the preamble as top-level `instructions` rather than a developer message,
-`include: ["reasoning.encrypted_content"]`, and no `max_output_tokens`,
-`truncation`, `temperature`, or `prompt_cache_options`, and no
-`prompt_cache_breakpoint` markers — the backend rejects them, so the arm's
-capability profile reports implicit caching. Auth is the OAuth access
+`include: ["reasoning.encrypted_content"]`, the sticky key on `session-id`, and no
+`max_output_tokens`, `truncation`, `temperature`, or `prompt_cache_options`, and no
+`prompt_cache_breakpoint` markers — the backend rejects each of those with a 400
+`Unsupported parameter` (measured 2026-09-10 on gpt-6-astra and gpt-5.6-luna
+alike, so this is the backend's surface rather than one model's), so the arm's
+capability profile reports implicit caching. Explicit mode is unreachable here,
+and would be worse than unreachable if half-applied: `mode: explicit` with no
+breakpoints disables caching outright. "What Codex CLI sends, and nothing it does
+not" cuts both ways — the arm shipped for three days without `session-id`, which
+Codex CLI does send, and paid for it in cache misses. Auth is the OAuth access
 token Codex CLI caches in `~/.codex/auth.json` (`$CODEX_HOME` honoured) sent as
 `authorization: Bearer`, plus `ChatGPT-Account-ID` from the same file and an
 `originator: efference` header. efference reads that file and never writes it;
@@ -663,10 +669,13 @@ with `null` until its first Codex response.
 **Turn routing on the Codex backend.** Each response carries an `x-codex-turn-state`
 header: an opaque token the backend issues at the start of a user turn and expects
 back, as a request header, on every later request of that turn — retries, the fork
-peek, each tool round-trip — and not on the next turn. Codex CLI treats this as a
-sticky-routing contract with the server (`codex-rs/core/src/client.rs`); a session
-that omitted it saw its prefix cache miss erratically
-(journal/2026-09-06-codex-session-token-audit.md). The client holds the token in a
+peek, each tool round-trip — and not on the next turn. Codex CLI is explicit that
+carrying it *across* turns violates the contract and can cause routing bugs, and
+holds it in a `OnceLock` so the turn's first value is the one replayed rather than
+the most recent (`codex-rs/core/src/client.rs`). It is a per-turn token, not a
+running echo — a distinction worth keeping, since the erratic prefix misses this
+was first shipped to answer (journal/2026-09-06-codex-session-token-audit.md)
+turned out to be the missing `session-id` key instead. The client holds the token in a
 cell (`api::TurnRoutingState`) that the response handler fills on the first
 successful response of a turn (later values do not replace it), `Client::post`
 replays on every request, and the agent loop clears through `Client::begin_turn`
@@ -769,10 +778,25 @@ an unrecognized header is free; gating on the declared provider means that
 assumption never has to hold. Offline verbs (the `spotter` probe, `wire`) derive
 no key at all — a one-shot probe has no conversation to pin.
 
+The Codex arm reads the key on **`session-id`**, the spelling Codex CLI sends
+(`codex-api/src/requests/headers.rs`; the backend answers to `session_id` too).
+The backend echoes whatever arrives there back as the response's
+`prompt_cache_key`, and with no header it mints a fresh UUID per request —
+`prompt_cache_key_changed` is one of the miss reasons OpenAI's own diagnostics
+enumerate, so a per-request key means the prefix cache is matched on luck alone.
+That arm was grouped with the providers that read no key until 2026-09-10, on the
+reading that it took the key in the body; it accepts the body field and discards
+it, which is why the gap stayed invisible. Measured on one workload run twice,
+minutes apart: turns 30% warm and peeks 40% without the header, 80% and 100% with
+it. Codex CLI's companion `thread-id` sets no key on its own and is not sent.
+
 The same value also rides the **request body** as `prompt_cache_key`, on the
-providers that read it (`Provider::prompt_cache_key_field` — OpenRouter only;
-Anthropic's Messages API has no such field and 400s an unrecognized top-level
-key, so this cannot be sent unconditionally the way a header could). It is
+providers that read it (`Provider::prompt_cache_key_field` — OpenRouter and the
+two OpenAI arms; Anthropic's Messages API has no such field and 400s an
+unrecognized top-level key, so this cannot be sent unconditionally the way a
+header could). On the Codex arm that body copy is inert — accepted, discarded,
+and superseded by the header above — and is kept only so the arm starts
+benefiting if the backend ever begins honouring it. It is
 deliberately redundant with the header, and third in OpenRouter's own precedence
 order — body `session_id`, then `x-session-id`, then `prompt_cache_key`
 (verified against their prompt-caching docs, 2026-08-28). It is in the body

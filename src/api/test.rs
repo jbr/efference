@@ -1382,12 +1382,17 @@ fn spotter_endpoint_without_a_key_stays_keyless() {
     assert_eq!(e.for_spotter().session_id, None);
 }
 
-/// Only providers that read a sticky key get the header. Anthropic has no
-/// sticky-routing concept, so gating here is what keeps the design off the
-/// assumption that an unrecognized header is ignored rather than rejected.
+/// Only providers that read a sticky key get the header, and each gets the
+/// spelling it reads. Anthropic has no sticky-routing concept, so gating here is
+/// what keeps the design off the assumption that an unrecognized header is ignored
+/// rather than rejected. The Codex arm is the case that gating got wrong once: it
+/// does read a key, on `session_id`, and sending only the body copy left the
+/// backend minting a fresh `prompt_cache_key` per request (docs/transport.md).
 #[test]
-fn only_openrouter_declares_a_session_header() {
+fn each_provider_declares_the_session_header_it_reads() {
     assert_eq!(Provider::Anthropic.session_header(), None);
+    assert_eq!(Provider::OpenAI.session_header(), None);
+    assert_eq!(Provider::OpenAICodex.session_header(), Some("session-id"));
     assert_eq!(Provider::OpenRouter.session_header(), Some("x-session-id"));
 }
 /// The session-level 0–100 integer temperature maps to the provider's
@@ -1735,6 +1740,10 @@ fn only_openrouter_carries_the_sticky_key() {
     assert!(Provider::OpenRouter.prompt_cache_key_field());
     assert_eq!(Provider::Anthropic.session_header(), None);
     assert_eq!(Provider::OpenRouter.session_header(), Some("x-session-id"));
+    // The Codex arm sends both spellings and only the header carries: the
+    // backend accepts the body field and discards it (`api/provider.rs`).
+    assert!(Provider::OpenAICodex.prompt_cache_key_field());
+    assert_eq!(Provider::OpenAICodex.session_header(), Some("session-id"));
 }
 
 /// The `--upstream` pin narrows which endpoints the ceilings aggregate over

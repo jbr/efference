@@ -261,9 +261,20 @@ impl Provider {
     /// routing key, and is not a substitute. Gating here rather than sending the
     /// header everywhere means the design never rests on an unrecognized header
     /// being ignored rather than rejected.
+    ///
+    /// The Codex backend takes the key on `session-id` and echoes it back as the
+    /// response's `prompt_cache_key`; the **body** field of that name is discarded
+    /// there without an error, so sending only the body copy leaves the backend
+    /// minting a fresh per-request key — one of the miss reasons OpenAI's own
+    /// diagnostics enumerate (`prompt_cache_key_changed`), and enough to cost a
+    /// session most of its prefix cache. The spelling is Codex CLI's
+    /// (`build_session_headers`); the backend answers to `session_id` too, but
+    /// matching the client it is built for is the safer of the two. Its companion
+    /// `thread-id` sets no key on its own and is not sent.
     pub(super) fn session_header(&self) -> Option<&'static str> {
         match self {
-            Self::Anthropic | Self::OpenAI | Self::OpenAICodex => None,
+            Self::Anthropic | Self::OpenAI => None,
+            Self::OpenAICodex => Some("session-id"),
             Self::OpenRouter => Some("x-session-id"),
         }
     }
@@ -333,6 +344,13 @@ impl Provider {
     /// their own prompt cache on it. Anthropic's Messages API has no such field,
     /// and an unrecognized top-level key is a 400 there, so gating is not
     /// optional here the way it is for a header.
+    ///
+    /// True on the Codex arm records the documented contract rather than an
+    /// effect: that backend accepts the field and discards it, keying on the
+    /// `session-id` header instead ([`Self::session_header`], which is what
+    /// actually carries the key there). Kept rather than switched off so the arm
+    /// starts benefiting if the backend begins honouring the body field, since
+    /// the value sent is the same one either way.
     pub(super) fn prompt_cache_key_field(&self) -> bool {
         match self {
             Self::Anthropic => false,
@@ -888,9 +906,15 @@ impl Endpoint {
     ) -> Result<ModelCapabilities, Error> {
         if self.provider.uses_openai_catalog() {
             let mut capabilities = openai_model_capabilities(model)?;
-            // The Codex backend rejects `prompt_cache_breakpoint` ("not supported on
-            // this model", observed 2026-09-06 on gpt-5.6-luna), so on that arm the
-            // provider places the breakpoints and the encoder emits no markers.
+            // The Codex backend rejects the whole gpt-5.6+ cache-control family —
+            // `prompt_cache_options` and `prompt_cache_retention` both answer 400
+            // "Unsupported parameter" on every model it serves, so this is the
+            // backend's surface rather than one model's. Explicit mode is therefore
+            // unreachable here, and would be worse than unreachable if half-applied:
+            // `mode: explicit` with no breakpoints disables caching outright. On this
+            // arm the provider places the breakpoints and the encoder emits no
+            // markers; the sticky key ([`Self::session_header`]) is what makes them
+            // land.
             if self.provider == Provider::OpenAICodex {
                 capabilities.prompt_cache = PromptCachePolicy::Implicit;
             }
