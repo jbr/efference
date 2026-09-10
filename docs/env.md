@@ -242,6 +242,11 @@ corner from a plain variable: `strip = false`, because injecting it is the point
 A name that is somehow both stripped and valued gets the value (removals run
 before sets).
 
+`Resolver::at_cwd` fixes reference commands to the session's working directory.
+The CLI supplies it before resolving the origin table, and later config edits
+reuse the same resolver. The runner sets child cwd directly; this does not load
+shell configuration or direnv, and environment inheritance remains process-based.
+
 **Resolution is eager and cached.** Every reference resolves at boot, before the
 daemon serves, and again whenever a config edit is adopted; the cache is keyed by
 command string and lives for the session. That makes a vault prompt (1Password's

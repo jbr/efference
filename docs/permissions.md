@@ -146,7 +146,7 @@ that says the target does not exist.
 
 ## The fast-path (`src/policy.rs`)
 
-`classify(&Config, &ToolCall) -> Verdict` is a **pure function** — no I/O, no model —
+`classify(&Path, &Config, &ToolCall) -> Verdict` is a **pure function** — no I/O, no model —
 returning `Clear` (auto-approve: no human gate, no model round-trip), `Gate` (fall
 through to the spotter rung, then the human gate), or `Deny` (skip the spotter and go
 straight to whoever gates). The loop consults it just before the gate: `Clear` becomes an
@@ -155,6 +155,12 @@ gate, or, autonomous, to the same redirect a spotter `Gate` takes there — `age
 names the config rather than a spotter verdict nobody gave. `Deny` is reachable only from a
 `[commands]` stance (below); everything else the fast-path is unsure of is a `Gate`, and it
 only ever *accepts what it is certain about*.
+
+The first argument is the session's immutable cwd. The loop passes the same root
+to classification, config-write detection, missing-grant diagnosis, and bash
+tokenization; probe-ledger replay also uses it. `config::load_in` resolves a
+relative template path against an explicit root while preserving the distinction
+between an optional missing default and a required explicit config file.
 
 ### bash: a two-stage check; the order matters
 

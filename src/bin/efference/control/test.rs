@@ -10,7 +10,8 @@ use std::sync::Arc;
 /// on `trillium_testing`'s in-memory transport — the whole request/response cycle,
 /// with no socket bound (`daemon/test.rs` explains why the tests never bind one).
 async fn test_state(cli: bool) -> Control {
-    let (shared, _turns) = efference::daemon::Session::new(Log::in_memory());
+    let (shared, _turns) =
+        efference::daemon::Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let mut handler = (
         trillium::Init::new(move |info: trillium::Info| {
             let shared = Arc::clone(&shared);

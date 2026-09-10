@@ -20,7 +20,10 @@ async fn events_replays_then_tails_live() {
     let log_path = std::env::temp_dir().join("efference-sse-test.jsonl");
     let _ = std::fs::remove_file(&log_path);
 
-    let (shared, _turns_rx) = Session::new(Log::create(&log_path).expect("create log"));
+    let (shared, _turns_rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        Log::create(&log_path).expect("create log"),
+    );
     // Two entries present before any client connects (the replay set).
     shared.append(1, user("first")).unwrap();
     shared.append(2, user("second")).unwrap();
@@ -61,7 +64,7 @@ async fn events_replays_then_tails_live() {
 async fn an_idle_stream_heartbeats_with_comments() {
     use futures_lite::AsyncReadExt;
 
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let shared_for_init = Arc::clone(&shared);
     let mut handler = (
         trillium::Init::new(move |info: trillium::Info| {
@@ -121,7 +124,10 @@ async fn the_output_class_carries_ephemeral_deltas() {
     let log_path = std::env::temp_dir().join("efference-stream-test.jsonl");
     let _ = std::fs::remove_file(&log_path);
 
-    let (shared, _turns_rx) = Session::new(Log::create(&log_path).expect("create log"));
+    let (shared, _turns_rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        Log::create(&log_path).expect("create log"),
+    );
     let client = test_client(&shared).await;
     let mut stream = client
         .events(None, Some("output"))
@@ -177,7 +183,7 @@ async fn the_output_class_carries_ephemeral_deltas() {
 /// notifications it connected to observe.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unspelled_presence_value_is_a_typed_error() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let app = test_server(&shared).await;
 
     let conn = app.get("/v1/events?presence=maybe").await;

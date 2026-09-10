@@ -21,7 +21,7 @@ use base64::Engine;
 /// reads that variable, so one test owning it for its duration is sound.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn push_key_is_the_derived_vapid_public_key() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let server = test_server(&shared).await;
 
     // SAFETY: this test is the only reader or writer of this variable in the suite,
@@ -52,7 +52,7 @@ async fn push_key_is_the_derived_vapid_public_key() {
 /// so nothing partial reaches the store.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_malformed_subscription_is_refused() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let server = test_server(&shared).await;
     for body in [
         "{}",
@@ -72,7 +72,7 @@ async fn a_malformed_subscription_is_refused() {
 /// subscription's identity, so there is nothing to act on without one.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unsubscribe_without_an_endpoint_is_refused() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let server = test_server(&shared).await;
     let conn = server
         .delete("/v1/push/subscriptions")

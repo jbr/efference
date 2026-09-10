@@ -7,7 +7,7 @@ use super::*;
 /// not an absence of the definition this route serves).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_built_in_tools_full_definition_is_present() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_tool_catalog(&crate::tools::Toolbox::bash_only());
     let app = test_server(&shared).await;
 
@@ -36,7 +36,7 @@ async fn a_built_in_tools_full_definition_is_present() {
 /// for the route.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_loop_owned_tools_full_definition_is_present() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_tool_catalog(&crate::tools::Toolbox::bash_only());
     let app = test_server(&shared).await;
 
@@ -70,7 +70,7 @@ async fn a_loop_owned_tools_full_definition_is_present() {
 /// fallback the route treats as absence, not as an error state of its own.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unknown_tool_names_are_404() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_tool_catalog(&crate::tools::Toolbox::bash_only());
     let app = test_server(&shared).await;
     app.get("/v1/tools/nope").await.assert_status(404);
@@ -78,7 +78,7 @@ async fn unknown_tool_names_are_404() {
     // No catalog set at all: every name, including a real one, is absent —
     // the "session read with no daemon behind it" fallback, not a distinct
     // error state.
-    let (bare, _turns_rx) = Session::new(Log::in_memory());
+    let (bare, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let app = test_server(&bare).await;
     app.get("/v1/tools/bash").await.assert_status(404);
 }

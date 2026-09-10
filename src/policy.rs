@@ -1,7 +1,7 @@
 //! The permission fast-path — the deterministic, zero-model-cost rung of the cascade
 //! (docs/permissions.md).
 //!
-//! [`classify`] is a **pure function** of `(role, tool call)` returning a [`Verdict`]:
+//! [`classify`] is a **pure function** of `(cwd, role, tool call)` returning a [`Verdict`]:
 //! `Clear` (auto-approve, no human, no model) or `Gate` (fall through to the spotter
 //! rung, then the human gate). The classifier is the *mechanism*; the role config is the
 //! *policy* — there are no special-cased program names or directories in here. It errs
@@ -128,24 +128,22 @@ pub const PROMOTE_AFTER_SAFE_VOTES: u32 = 1;
 
 /// Classify a tool call against the role (docs/permissions.md).
 /// `bash` runs the two-stage check; a structured tool clears on its `tool` grant plus any
-/// `path` grant its target needs. Resolves grants against the process cwd (session-stable,
-/// the fixed root the built-in tools also resolve relative paths against).
-pub fn classify(role: &Config, call: &ToolCall) -> Verdict {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-    classify_in(role, call, &cwd)
+/// `path` grant its target needs. Resolves grants against the supplied session cwd,
+/// the fixed root the built-in tools also resolve relative paths against.
+pub fn classify(cwd: &Path, role: &Config, call: &ToolCall) -> Verdict {
+    classify_in(role, call, cwd)
 }
 
 /// Stage 1's token vector for a bash command — the **bare** command, with a tolerated leading
 /// `cd <granted dir> &&` stripped (docs/permissions.md). `None` if stage 1 rejects the command.
 /// This is what prefix-promotion observes and probes, so a promoted prefix is the command itself
 /// and generalizes across run directories rather than pinning one `cd` target. Resolves the `cd`
-/// target against the process cwd, like [`classify`].
-pub fn bash_tokens(role: &Config, command: &str) -> Option<Vec<String>> {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-    bash_tokens_in(role, command, &cwd)
+/// target against the supplied session cwd, like [`classify`].
+pub fn bash_tokens(cwd: &Path, role: &Config, command: &str) -> Option<Vec<String>> {
+    bash_tokens_in(role, command, cwd)
 }
 
-/// Whether `call` is a write whose target resolves (lexically, against the process cwd) to
+/// Whether `call` is a write whose target resolves (lexically, against the supplied session cwd) to
 /// `protected` — the session's own config file. A write to the policy file is a **proposal** that
 /// must always reach the operator, so the loop forces the human gate on it, **bypassing both the
 /// fast-path and the spotter** — neither may auto-clear a permission change
@@ -157,9 +155,8 @@ pub fn bash_tokens(role: &Config, command: &str) -> Option<Vec<String>> {
 /// `undo_edit` carries no path, but it can only revert a previously-`edit`ed target — and
 /// an `edit` of the config is caught here — so the review point is the naming step, exactly
 /// where write permission is already enforced (the acknowledged per-tool wart in `path_check`).
-pub fn is_config_write(call: &ToolCall, protected: &Path) -> bool {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-    is_config_write_in(call, protected, &cwd)
+pub fn is_config_write(cwd: &Path, call: &ToolCall, protected: &Path) -> bool {
+    is_config_write_in(call, protected, cwd)
 }
 
 /// The cwd-injected core of [`is_config_write`], for deterministic tests.
@@ -281,9 +278,8 @@ pub struct MissingGrants {
 /// every target as ungranted whenever the tool name is missing. That is true of the
 /// *decision* and misleading as a *diagnosis*, so the path half here asks only whether some
 /// grant covers the target.
-pub fn missing_grants(role: &Config, call: &ToolCall) -> Option<MissingGrants> {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-    missing_grants_in(role, call, &cwd)
+pub fn missing_grants(cwd: &Path, role: &Config, call: &ToolCall) -> Option<MissingGrants> {
+    missing_grants_in(role, call, cwd)
 }
 
 /// The cwd-injected core of [`missing_grants`], for deterministic tests.

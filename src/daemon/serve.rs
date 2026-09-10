@@ -27,6 +27,7 @@ pub async fn serve<S: Spotter>(
     // (docs/transport.md).
     let ping_at = role.role.transport.keepalive_interval;
     let (shared, turns) = Session::full(
+        paths.cwd().to_path_buf(),
         log,
         role,
         toolbox.scratch_dir().map(std::path::Path::to_path_buf),

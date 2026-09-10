@@ -178,13 +178,15 @@ pub(super) fn commit_config_edit(
         }),
     )?;
     let role = shared.effective_config();
-    Ok(if policy::classify(&role, call) == Verdict::Clear {
-        Approval::Approve
-    } else {
-        Approval::Redirect(
-            "Scope updated — but that grant doesn't cover this exact call, so it stays gated. \
+    Ok(
+        if policy::classify(shared.cwd(), &role, call) == Verdict::Clear {
+            Approval::Approve
+        } else {
+            Approval::Redirect(
+                "Scope updated — but that grant doesn't cover this exact call, so it stays gated. \
              Adjust the call to fit the new scope and retry."
-                .into(),
-        )
-    })
+                    .into(),
+            )
+        },
+    )
 }

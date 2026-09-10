@@ -6,7 +6,7 @@ use super::*;
 /// dismisses by id; a superseded or dismissed entry is gone from the pending set.
 #[test]
 fn inbox_supersedes_by_slot_and_dismisses() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let _a = shared.notify(
         "test-watch".into(),
         "running 5min".into(),
@@ -44,7 +44,7 @@ fn inbox_supersedes_by_slot_and_dismisses() {
 /// (shown) notifications don't re-trigger it, so a deferred item can't spin the loop.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn inbox_wake_fires_on_pending_not_on_drained() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
 
     // Already pending → resolves at once.
     shared.notify("ci".into(), "failed".into(), None, None);
@@ -79,7 +79,10 @@ async fn notify_supersede_and_dismiss_over_the_router() {
     let log_path = std::env::temp_dir().join("efference-notify-test.jsonl");
     let _ = std::fs::remove_file(&log_path);
 
-    let (shared, _turns_rx) = Session::new(Log::create(&log_path).expect("create log"));
+    let (shared, _turns_rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        Log::create(&log_path).expect("create log"),
+    );
     let client = test_client(&shared).await;
     let gone = client
         .notify("test-watch", "running 5min", Some("bash#7"), None)

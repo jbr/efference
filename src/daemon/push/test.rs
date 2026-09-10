@@ -10,7 +10,7 @@ use crate::persist::Log;
 use std::time::{Duration, Instant};
 
 fn shared() -> Arc<Session> {
-    Session::new(Log::in_memory()).0
+    Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0
 }
 
 fn stash_of(shared: &Session) -> Option<String> {

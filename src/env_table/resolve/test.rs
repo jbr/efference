@@ -152,19 +152,34 @@ fn an_entry_with_no_value_field_resolves_to_nothing() {
 
 #[test]
 fn the_runner_returns_stdout_without_its_trailing_newline() {
-    let value = run_command("echo resolved-value", Duration::from_secs(10)).unwrap();
+    let value = run_command(
+        &std::env::current_dir().unwrap(),
+        "echo resolved-value",
+        Duration::from_secs(10),
+    )
+    .unwrap();
     assert_eq!(value, "resolved-value");
 }
 
 #[test]
 fn a_nonzero_exit_is_an_error_carrying_stderr() {
-    let error = run_command("echo nope 1>&2; exit 3", Duration::from_secs(10)).unwrap_err();
+    let error = run_command(
+        &std::env::current_dir().unwrap(),
+        "echo nope 1>&2; exit 3",
+        Duration::from_secs(10),
+    )
+    .unwrap_err();
     assert!(error.contains("exited 3"), "{error}");
     assert!(error.contains("nope"), "{error}");
 }
 
 #[test]
 fn a_command_that_outlives_the_timeout_is_killed() {
-    let error = run_command("sleep 30", Duration::from_millis(100)).unwrap_err();
+    let error = run_command(
+        &std::env::current_dir().unwrap(),
+        "sleep 30",
+        Duration::from_millis(100),
+    )
+    .unwrap_err();
     assert!(error.contains("did not finish"), "{error}");
 }

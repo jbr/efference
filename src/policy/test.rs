@@ -58,7 +58,7 @@ fn bash_call(command: &str) -> ToolCall {
 }
 
 fn verdict(command: &str) -> Verdict {
-    classify(&sample_role(), &bash_call(command))
+    classify(Path::new(CWD), &sample_role(), &bash_call(command))
 }
 
 // --- Stage 1: structural simplicity (decided before any prefix match) ---

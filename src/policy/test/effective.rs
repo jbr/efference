@@ -30,20 +30,32 @@ fn effective_config_without_edits_matches_the_base() {
     let base = sample_role();
     let eff = effective_config(&base, &[]);
     // npm is unlisted in the base, so it gates under both the base and the (unchanged) fold.
-    assert_eq!(classify(&base, &bash_call("npm install")), Verdict::Gate);
-    assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Gate);
+    assert_eq!(
+        classify(Path::new(CWD), &base, &bash_call("npm install")),
+        Verdict::Gate
+    );
+    assert_eq!(
+        classify(Path::new(CWD), &eff, &bash_call("npm install")),
+        Verdict::Gate
+    );
 }
 
 /// A `Command` change promotes a program the base gated into the fast-path.
 #[test]
 fn a_command_change_clears_a_previously_gated_command() {
     let base = sample_role();
-    assert_eq!(classify(&base, &bash_call("npm install")), Verdict::Gate);
+    assert_eq!(
+        classify(Path::new(CWD), &base, &bash_call("npm install")),
+        Verdict::Gate
+    );
     let log = [change_entry(ConfigChange::Command {
         command: "npm".into(),
     })];
     let eff = effective_config(&base, &log);
-    assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
+    assert_eq!(
+        classify(Path::new(CWD), &eff, &bash_call("npm install")),
+        Verdict::Clear
+    );
 }
 
 /// The lifecycle gate: only a `Committed` edit takes effect. A `Proposed` or `Cancelled`
@@ -58,14 +70,17 @@ fn only_committed_edits_fold_into_the_effective_config() {
     for state in [EditState::Proposed, EditState::Cancelled] {
         let eff = effective_config(&base, &[edit_entry(state, change.clone())]);
         assert_eq!(
-            classify(&eff, &bash_call("npm install")),
+            classify(Path::new(CWD), &eff, &bash_call("npm install")),
             Verdict::Gate,
             "{state:?} must not take effect",
         );
     }
     // The same change, committed, does clear it — proving the gate, not an unrelated miss.
     let eff = effective_config(&base, &[edit_entry(EditState::Committed, change)]);
-    assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
+    assert_eq!(
+        classify(Path::new(CWD), &eff, &bash_call("npm install")),
+        Verdict::Clear
+    );
 }
 
 /// A structured write needs *both* a tool-name and a path change — two changes fold
@@ -99,7 +114,10 @@ fn folding_a_change_twice_is_harmless() {
         command: "npm".into(),
     });
     let eff = effective_config(&base, &[g.clone(), g]);
-    assert_eq!(classify(&eff, &bash_call("npm install")), Verdict::Clear);
+    assert_eq!(
+        classify(Path::new(CWD), &eff, &bash_call("npm install")),
+        Verdict::Clear
+    );
 }
 
 /// A `Scope` change replaces the effective scope (the slot a session-visible edit moves —

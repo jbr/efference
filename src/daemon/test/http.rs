@@ -10,7 +10,10 @@ async fn review_level_over_the_router() {
     let log_path = std::env::temp_dir().join("eff-review-level.jsonl");
     let _ = std::fs::remove_file(&log_path);
 
-    let (shared, _turns_rx) = Session::new(Log::create(&log_path).expect("create log"));
+    let (shared, _turns_rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        Log::create(&log_path).expect("create log"),
+    );
     let client = test_client(&shared).await;
     assert_eq!(
         client.review_level("human_only").await.unwrap(),
@@ -47,7 +50,7 @@ async fn review_level_over_the_router() {
 /// without enqueueing anything.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn turn_submission_ids_adopt_or_mint() {
-    let (shared, mut turns_rx) = Session::new(Log::in_memory());
+    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let client = test_client(&shared).await;
 
     // Client-minted: adopted verbatim, echoed back, and on the queued turn.
@@ -84,7 +87,7 @@ async fn turn_submission_ids_adopt_or_mint() {
 /// and an id the loop already consumed pops nothing rather than erroring.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn withdraw_turns_pops_a_suffix_and_reports_what_it_popped() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let client = test_client(&shared).await;
 
     client.turn_with_submission_id("one", "s1").await.unwrap();
@@ -136,7 +139,7 @@ fn config_edit_decision_body_decodes() {
 /// second round-trip. The old ambiguous 404 is gone.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn put_approvals_enforces_the_gate_precondition() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let app = test_server(&shared).await;
 
     // No gate at all: the precondition fails, and the detail says "none pending".
@@ -176,7 +179,7 @@ async fn put_approvals_enforces_the_gate_precondition() {
 /// and a part-bad request moves nothing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn loop_resource_moves_both_dials_in_one_call() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let app = test_server(&shared).await;
 
     let read: Value = serde_json::from_str(app.get("/v1/loop").await.body()).unwrap();
@@ -217,7 +220,7 @@ async fn loop_resource_moves_both_dials_in_one_call() {
 /// at the `Session` level.)
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn state_wait_takes_a_predicate() {
-    let (shared, _turns_rx) = Session::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let app = test_server(&shared).await;
 
     let conn = app.get("/v1/state?wait=settled").await;

@@ -117,11 +117,11 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // policy.
     let config_write = shared
         .config_path()
-        .is_some_and(|cfg| policy::is_config_write(call, cfg));
+        .is_some_and(|cfg| policy::is_config_write(shared.cwd(), call, cfg));
     let approval = if config_write {
         frontend.approve(call).await
     } else {
-        match policy::classify(&role, call) {
+        match policy::classify(shared.cwd(), &role, call) {
             Verdict::Clear => Approval::Approve,
             // A `[commands]` deny (docs/permissions.md): the operator already wrote the answer
             // for this prefix, so the spotter is not asked — the move goes straight to whoever
@@ -150,7 +150,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                     call.input
                         .get("command")
                         .and_then(Value::as_str)
-                        .and_then(|command| policy::bash_tokens(&role, command))
+                        .and_then(|command| policy::bash_tokens(shared.cwd(), &role, command))
                         .and_then(|tokens| shared.observe_and_pick_probe(&role, &tokens))
                 } else {
                     None
@@ -216,12 +216,16 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                             // gets the diagnosis, not just the verdict (docs/permissions.md):
                             // the failure it answers is a model reading a gated `edit` as a
                             // broken tool and rewriting the file through bash instead.
-                            Approval::Redirect(match policy::missing_grants(&role, call) {
-                                Some(missing) => {
-                                    missing_grant_message(shared.config_path(), &reason, &missing)
-                                }
-                                None => autonomous_gate_message(shared.config_path(), &reason),
-                            })
+                            Approval::Redirect(
+                                match policy::missing_grants(shared.cwd(), &role, call) {
+                                    Some(missing) => missing_grant_message(
+                                        shared.config_path(),
+                                        &reason,
+                                        &missing,
+                                    ),
+                                    None => autonomous_gate_message(shared.config_path(), &reason),
+                                },
+                            )
                         } else {
                             frontend.approve(call).await
                         }

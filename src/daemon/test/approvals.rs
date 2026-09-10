@@ -7,7 +7,7 @@ use super::*;
 /// reason from the log — no side channel. The client renders it inline at the gate.
 #[test]
 fn the_gate_carries_the_spotter_reason() {
-    let (shared, _rx) = Session::new(Log::in_memory());
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let call = bash_call("rm -rf build");
     shared
         .append(

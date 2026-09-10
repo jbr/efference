@@ -16,6 +16,14 @@ Ephemeral control state — a pending approval, current status, live process tai
 
 ## Session: session state and control
 
+Every `Session` constructor requires an absolute working directory, stored
+immutably and exposed by `cwd()`. Policy classification, config-write checks,
+missing-grant diagnosis, probe-ledger replay, and background bash spawning use
+that root rather than the process cwd. Relative config-source paths are joined to
+it before the live config file is opened. The CLI captures cwd before bootstrap:
+config loading, reference commands, MCP credentials, tools, and context resolution
+use that same root. No session changes the process working directory.
+
 `Session` represents one session's state and control surface. The agent loop task and HTTP handlers both hold it as `Arc<Session>`. The daemon registers it as trillium's server-global shared state; handlers retrieve it per-connection. Listener ownership and agent/auxiliary-task wiring live in `src/daemon/serve.rs`, not in the type itself. Its contents:
 
 **`Arc<Mutex<Log>>`** — the persisted, append-only log (see [log-and-projection.md](log-and-projection.md)). The loop appends under this lock via `Session::append`, which also pings the append notifier so SSE tailers wake. The lock is never held across an `await`; code that needs to call the model on a snapshot calls `Session::snapshot()` to clone the entries first.

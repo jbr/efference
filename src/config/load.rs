@@ -59,26 +59,22 @@ impl LoadError {
 /// a missing one is an error. Without it, the [`DEFAULT_PATH`] is probed: if present it loads,
 /// if absent the built-in [`Config::default`] is used ([`ConfigSource::Default`]).
 pub fn load(explicit: Option<&Path>) -> Result<LoadedConfig, LoadError> {
-    match explicit {
-        Some(path) => {
-            let text =
-                std::fs::read_to_string(path).map_err(|e| LoadError::Io(path.to_path_buf(), e))?;
-            Ok(LoadedConfig {
-                role: parse(path, &text)?,
-                source: ConfigSource::Path(path.to_path_buf()),
-            })
+    load_in(Path::new(""), explicit)
+}
+
+/// Load an optional template relative to an explicit session root (docs/permissions.md).
+/// An absent default still selects the built-in configuration; an absent explicit
+/// path remains an error.
+pub fn load_in(cwd: &Path, explicit: Option<&Path>) -> Result<LoadedConfig, LoadError> {
+    let path = cwd.join(explicit.unwrap_or_else(|| Path::new(DEFAULT_PATH)));
+    match std::fs::read_to_string(&path) {
+        Ok(text) => Ok(LoadedConfig {
+            role: parse(&path, &text)?,
+            source: ConfigSource::Path(path),
+        }),
+        Err(e) if explicit.is_none() && e.kind() == std::io::ErrorKind::NotFound => {
+            Ok(LoadedConfig::default())
         }
-        None => {
-            let path = Path::new(DEFAULT_PATH);
-            match std::fs::read_to_string(path) {
-                Ok(text) => Ok(LoadedConfig {
-                    role: parse(path, &text)?,
-                    source: ConfigSource::Path(path.to_path_buf()),
-                }),
-                // The default path is optional: absent → the built-in default config.
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(LoadedConfig::default()),
-                Err(e) => Err(LoadError::Io(path.to_path_buf(), e)),
-            }
-        }
+        Err(e) => Err(LoadError::Io(path, e)),
     }
 }

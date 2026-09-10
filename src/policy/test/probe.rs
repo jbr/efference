@@ -110,8 +110,29 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
         assistant("b", "cargo test"),
         spot("b", Stance::ClearAlways, Some("cargo")), // 2nd sighting + safe vote
     ];
-    let ledger = probe_ledger(&Config::default(), &log);
+    let rooted_role = role("[paths]\n'.' = true\n");
+    let rooted_log = [
+        assistant("c", "cd /work/sub && cargo test"),
+        spot("c", Stance::Clear, None),
+        assistant("d", "cd /work/sub && cargo test"),
+        spot("d", Stance::Clear, None),
+    ];
+    let local = probe_ledger(Path::new("/work"), &rooted_role, &rooted_log);
+    let elsewhere = probe_ledger(Path::new("/elsewhere"), &rooted_role, &rooted_log);
+    assert_eq!(
+        local
+            .next_probe(&rooted_role, &toks("cargo test"))
+            .as_deref(),
+        Some("cargo")
+    );
+    assert_eq!(
+        elsewhere.next_probe(&rooted_role, &toks("cargo test")),
+        None
+    );
+
+    let ledger = probe_ledger(Path::new(CWD), &Config::default(), &log);
     // Two sightings of `cargo` and `cargo test`.
+
     let role = Config::default();
     // `cargo` got one not-safe (Clear) and one safe (ClearAlways) vote → resolved either way;
     // and it reached the safe threshold, so it's ready to promote.
@@ -140,7 +161,7 @@ fn probe_ledger_ignores_fallback_verdicts() {
             probed_prefix: Some("cargo".into()),
         }),
     }];
-    let ledger = probe_ledger(&Config::default(), &log);
+    let ledger = probe_ledger(Path::new(CWD), &Config::default(), &log);
     assert!(
         !ledger.ready_to_promote("cargo"),
         "a fallback casts no vote"

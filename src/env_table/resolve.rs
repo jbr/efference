@@ -151,11 +151,24 @@ impl std::fmt::Debug for Resolver {
 
 impl Default for Resolver {
     fn default() -> Self {
-        Self::new(Box::new(|command| run_command(command, RESOLVE_TIMEOUT)))
+        match std::env::current_dir() {
+            Ok(cwd) => Self::at_cwd(cwd),
+            Err(e) => Self::new(Box::new(move |_| {
+                Err(format!("could not resolve cwd: {e}"))
+            })),
+        }
     }
 }
 
 impl Resolver {
+    /// Reference commands run in this session root, including later config edits (docs/env.md).
+    pub fn at_cwd(cwd: std::path::PathBuf) -> Self {
+        assert!(cwd.is_absolute(), "resolver cwd must be absolute");
+        Self::new(Box::new(move |command| {
+            run_command(&cwd, command, RESOLVE_TIMEOUT)
+        }))
+    }
+
     pub fn new(run: Runner) -> Self {
         Self {
             run,
@@ -230,9 +243,14 @@ impl Resolver {
 /// parking the boot forever. Stderr is quoted back in the failure — a vault's
 /// diagnostic is the thing an operator needs, and this runs before any masking
 /// exists, so it is capped rather than unbounded.
-pub fn run_command(command: &str, timeout: Duration) -> Result<String, String> {
+pub fn run_command(
+    cwd: &std::path::Path,
+    command: &str,
+    timeout: Duration,
+) -> Result<String, String> {
     use std::process::{Command, Stdio};
     let mut child = Command::new("sh")
+        .current_dir(cwd)
         .arg("-c")
         .arg(command)
         .stdin(Stdio::null())

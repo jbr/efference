@@ -73,7 +73,8 @@ impl Session {
         call_id: Option<String>,
     ) -> io::Result<String> {
         let mut cmd = Command::new("bash");
-        cmd.arg("-c")
+        cmd.current_dir(self.cwd())
+            .arg("-c")
             .arg(&command)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

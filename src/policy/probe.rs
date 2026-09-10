@@ -80,7 +80,7 @@ impl ProbeLedger {
 /// Commands are tokenized with [`crate::policy::bash_tokens`], the same lexer the live loop
 /// observes with, so a replayed `cd <dir> && cargo test` counts the bare command exactly as it did
 /// when it ran. `role` is the effective config the grant check for the `cd` target reads.
-pub fn probe_ledger(role: &Config, log: &[LogEntry]) -> ProbeLedger {
+pub fn probe_ledger(cwd: &Path, role: &Config, log: &[LogEntry]) -> ProbeLedger {
     // call_id → the bash command it ran, so a `Spot` can recover the command it judged.
     let mut command_of: HashMap<crate::log::CallId, String> = HashMap::new();
     for entry in log {
@@ -100,7 +100,7 @@ pub fn probe_ledger(role: &Config, log: &[LogEntry]) -> ProbeLedger {
             continue;
         };
         if let Some(cmd) = command_of.get(&spot.call_id)
-            && let Some(tokens) = crate::policy::bash_tokens(role, cmd)
+            && let Some(tokens) = crate::policy::bash_tokens(cwd, role, cmd)
         {
             ledger.observe(&tokens);
         }

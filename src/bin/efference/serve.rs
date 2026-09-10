@@ -159,6 +159,9 @@ pub(crate) async fn serve(
     // Resolve the bind first: a bad flag combination or a missing root should fail
     // before a session dir is minted or a provider is dialed.
     let bind = resolve_bind(bind_flags)?;
+    let cwd = std::env::current_dir()?;
+    let socket = session_dir.join(SOCKET_NAME);
+    let session_dir = cwd.join(session_dir);
     // Daemon logging: RUST_LOG controls verbosity (default: efference at info, deps
     // quiet). The transport (request sizes, full API error bodies), the agent loop
     // (capped tool results), and the distiller (fork-peek fallbacks) emit through `log`.
@@ -172,7 +175,7 @@ pub(crate) async fn serve(
     // its `[env]` table may supply the harness's own credential as a reference
     // (docs/env.md), and because a malformed template or an unresolvable
     // reference should fail before anything is minted or bound.
-    let origin = match efference::config::load(config.as_deref()) {
+    let origin = match efference::config::load_in(&cwd, config.as_deref()) {
         Ok(l) => l,
         Err(e) => {
             e.eprint();
@@ -183,7 +186,7 @@ pub(crate) async fn serve(
     // prompts (1Password's Touch ID) does it here, at session open, never inside
     // a turn. The resolver's cache is shared with the session policy below and
     // with every later config edit, so an unchanged reference never re-prompts.
-    let resolver = std::sync::Arc::new(efference::env_table::Resolver::default());
+    let resolver = std::sync::Arc::new(efference::env_table::Resolver::at_cwd(cwd.clone()));
     let injected = resolve_env_values(&resolver, &origin.role.env)?;
 
     // Provider resolution (docs/transport.md): the declared EFFERENCE_PROVIDER
@@ -390,7 +393,6 @@ pub(crate) async fn serve(
     log.set_masker(env_policy.masker());
     eprintln!("session dir: {}", session_dir.display());
     eprintln!("logging to {}", log_path.display());
-    let socket = session_dir.join(SOCKET_NAME);
     // The dir was just minted, so there is no socket to unlink and no live daemon whose socket
     // this could take away — `mint_session_dir` refused before reaching here if the dir existed.
     let _ = std::fs::remove_file(&socket); // ignore if absent.
@@ -401,8 +403,6 @@ pub(crate) async fn serve(
     // once at boot: the [context] block (files read + exec sections run now, frozen —
     // docs/context.md; orientation rides here as a config exec entry), the role's
     // brief, and the config note.
-    let cwd = std::env::current_dir()?;
-
     // Mount the config-declared connected providers (docs/tools.md) before the
     // first projection, so the session's tools[] is fixed from turn one — and
     // before the system prompt is built, because what did *not* mount is part
@@ -418,7 +418,7 @@ pub(crate) async fn serve(
         .with_image_input(capabilities.supports_image_input);
     // Credentials live in the base dir, not the session dir: an authorization
     // belongs to the operator and the server, not to one session.
-    let store = efference::mcp::auth::store::FileStore::new(Path::new(BASE_DIR));
+    let store = efference::mcp::auth::store::FileStore::new(&cwd.join(BASE_DIR));
     let unmounted = mcp_mount::mount_all(
         &mut toolbox,
         &loaded.role.mcp_servers,

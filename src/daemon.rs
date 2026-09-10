@@ -181,6 +181,8 @@ pub struct ConfigRepair {
 /// The loop and HTTP handlers hold the same `Arc<Session>`; `serve` owns the
 /// listener and wires the agent future and auxiliary tasks.
 pub struct Session {
+    /// Immutable working root for policy and child execution (docs/control-channel.md).
+    cwd: PathBuf,
     /// The loop appends under this lock; handlers snapshot it for `GET /log`.
     /// The lock is only ever held across the
     /// synchronous `project`/append — never an `await`.
@@ -450,37 +452,50 @@ pub struct Session {
 }
 
 impl Session {
-    /// Build the shared state under the built-in default role (no config). The real
-    /// daemon uses [`Session::with_role`]; this convenience keeps the many tests that
-    /// don't exercise role config terse.
-    pub fn new(log: Log) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
-        Self::with_role(log, LoadedConfig::default())
+    /// The root used by policy and child processes (docs/control-channel.md).
+    pub fn cwd(&self) -> &std::path::Path {
+        &self.cwd
+    }
+
+    /// Build state under the default role at an absolute working root
+    /// (docs/control-channel.md). Relative roots are a caller error and panic.
+    pub fn new(cwd: PathBuf, log: Log) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+        Self::with_role(cwd, log, LoadedConfig::default())
     }
 
     /// Build the shared state under a resolved role and hand back the turn-inbox
     /// receiver for the loop.
     pub fn with_role(
+        cwd: PathBuf,
         log: Log,
         role: LoadedConfig,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
-        Self::with_role_and_scratch(log, role, None)
+        Self::with_role_and_scratch(cwd, log, role, None)
     }
 
     /// The full constructor: [`with_role`](Self::with_role) plus the session
     /// scratch dir (docs/tools.md), whose value seeds the structured-tool path
     /// expander and the background spawn env.
     pub fn with_role_and_scratch(
+        cwd: PathBuf,
         log: Log,
         role: LoadedConfig,
         scratch: Option<PathBuf>,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
-        Self::with_role_scratch_and_upstream_failure(log, role, scratch, upstream_failure_state())
+        Self::with_role_scratch_and_upstream_failure(
+            cwd,
+            log,
+            role,
+            scratch,
+            upstream_failure_state(),
+        )
     }
 
     /// The daemon constructor with the upstream client's shared transport
     /// diagnostic (docs/transport.md). Tests normally use the public convenience
     /// constructors above, which allocate an empty cell.
     pub(crate) fn with_role_scratch_and_upstream_failure(
+        cwd: PathBuf,
         log: Log,
         role: LoadedConfig,
         scratch: Option<PathBuf>,
@@ -491,8 +506,14 @@ impl Session {
         // it needs the strip set for the toolbox and the masker for the boot
         // preamble — and passes it to [`Session::full`] so the session has exactly
         // one, whose needle set is append-only for its lifetime.
-        let env_policy = crate::env_table::EnvPolicy::build(&role.role.env).policy;
+        let env_policy = crate::env_table::EnvPolicy::build_with_values(
+            &role.role.env,
+            &[],
+            Arc::new(crate::env_table::Resolver::at_cwd(cwd.clone())),
+        )
+        .policy;
         Self::full(
+            cwd,
             log,
             role,
             scratch,
@@ -508,8 +529,9 @@ impl Session {
     /// the provider at boot and fixed thereafter, so the canonical wire and the
     /// fork's cached prefix project byte-identically (docs/log-and-projection.md).
     pub(crate) fn full(
+        cwd: PathBuf,
         mut log: Log,
-        role: LoadedConfig,
+        mut role: LoadedConfig,
         scratch: Option<PathBuf>,
         upstream_failure: UpstreamFailureState,
         upstream_retry: UpstreamRetryState,
@@ -517,6 +539,10 @@ impl Session {
         image_placement: ImagePlacement,
         env_policy: crate::env_table::EnvPolicy,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+        assert!(cwd.is_absolute(), "session cwd must be absolute");
+        if let ConfigSource::Path(path) = &mut role.source {
+            *path = cwd.join(&*path);
+        }
         // Install the mask before the log takes another append (docs/env.md).
         // Masking is irreversible filtering upstream of the log, so it has to be
         // in force at the choke point rather than applied to a stored entry.
@@ -539,7 +565,7 @@ impl Session {
         let effective = Arc::new(crate::policy::effective_config(&role.role, log.entries()));
         // Fold the probe ledger from a resumed log (no-op for a fresh one), then maintain it
         // incrementally as the loop assesses moves (docs/permissions.md).
-        let probes = crate::policy::probe_ledger(&effective, log.entries());
+        let probes = crate::policy::probe_ledger(&cwd, &effective, log.entries());
         // Seed the process-id mint past every `p#<n>` a resumed log mentions, so a restarted
         // daemon never re-mints an ordinal the durable record already refers to
         // (docs/supervisor.md). Scanned over the serialized entry because
@@ -569,6 +595,7 @@ impl Session {
             ConfigSource::Default => None,
         };
         let shared = Arc::new(Self {
+            cwd,
             log: Mutex::new(log),
             image_placement,
             turns_tx,

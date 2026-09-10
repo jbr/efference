@@ -41,7 +41,7 @@ fn init(shared: Arc<Session>) -> impl trillium::Handler {
 /// virtually hosted at the bind's public name so the gate's Host check sees what a
 /// real conn carries.
 async fn tcp_server(auth: &Arc<TcpAuth>) -> (TestServer<impl trillium::Handler>, TurnsGuard) {
-    let (shared, turns_rx) = Session::new(Log::in_memory());
+    let (shared, turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let server = TestServer::new((
         init(shared),
         handler(

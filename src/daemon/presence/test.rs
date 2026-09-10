@@ -4,7 +4,7 @@ use super::*;
 use crate::persist::Log;
 
 fn shared() -> Arc<Session> {
-    Session::new(Log::in_memory()).0
+    Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0
 }
 
 /// `?presence=` names one of two states; anything else is rejected rather than read
