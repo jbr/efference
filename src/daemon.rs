@@ -985,7 +985,10 @@ use config_edits::{PendingProposal, session_visible_notice};
 use entry_view::EntryView;
 use errors::{ErrorBody, ErrorCode, fail, respond};
 use frames::{Frame, Topic};
-pub use metrics::{COLD_STREAK_WARN, CacheRead, ColdStart, ColdStreak, RequestOrigin, UsageLine};
+pub use metrics::{
+    COLD_STREAK_WARN, CacheRead, ColdStart, ColdStreak, Excess, ExcessUncached, RequestOrigin,
+    UsageLine,
+};
 use metrics::{CostCell, Metrics};
 use notifications::Inbox;
 use pace::Pace;

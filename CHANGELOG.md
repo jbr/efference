@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`dev cache` reports excess uncached tokens beside the warm rate** (docs/log-and-projection.md): `ExcessUncached` measures, per request, the prefix it was entitled to reuse less what it read — a per-lineage watermark raised only by turns, floored to the provider's 128-token reporting block, reset when a consolidation shortens the transcript — so a run of preamble-only hits stops reading as a warm session.
 - **`Config::from_toml`** (docs/permissions.md): parse a config from text through the same decode-and-validate path a file takes; every test that uses a config as an input now writes it as TOML.
 - **`Distilled` is a struct** (docs/log-and-projection.md): `WireState::Distilled(Distilled)` carries the verdict as one value with builders on it, and `render_distilled` takes it, so a field added to the verdict is one setter and one render clause; wire bytes are unchanged.
 - **`intent` is the question, `note` the answer, and triage can ask for a better question** (docs/tools.md, docs/redaction-fork.md): the preamble states that a reader between the agent and the tool keeps what answers the intent, asks for the why when the what is obvious, and says a write's intent is only the why; the `note` ask prefers "it didn't" over summarizing around a miss; a new optional `intent_feedback` on `retain`, scoped to the intent and never the task, reaches the wire and the TUI as `⟢ re your intent: …`.

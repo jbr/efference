@@ -225,6 +225,124 @@ impl ColdStreak {
     }
 }
 
+/// The granularity a provider reports `cache_read_input_tokens` at: every nonzero
+/// read on record, across both dialects, is a multiple of this. An expected read is
+/// floored to it before the shortfall is taken, so a request that matched everything
+/// the provider was able to report reads as zero excess rather than as up to a block
+/// of phantom shortfall on every request.
+const CACHE_BLOCK: u64 = 128;
+
+/// Which prefix a request is measured against (docs/log-and-projection.md). Turns,
+/// the fork peek that borrows their client, and the keepalive all extend one
+/// transcript, so they share a watermark; the spotter's every request is its own
+/// conversation and a separate-model peek is a second lineage over the same
+/// transcript, so each carries its own. Pairing the class with the serving model is
+/// what separates a borrowed peek from a `--triage-model` one without the report
+/// needing to know which flags the session booted with.
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct LineageKey {
+    class: LineageClass,
+    model: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum LineageClass {
+    Main,
+    Spot,
+    Triage,
+}
+
+/// The largest prefix a lineage has been shown, and the largest one the provider has
+/// admitted to reading back.
+#[derive(Default, Clone, Copy)]
+struct Watermark {
+    /// The largest prompt a *turn* has sent. Turn prompts are the only monotonic
+    /// series on the main lineage — a peek's prompt carries a raw result tail that
+    /// never becomes canonical, and the turn after it is shorter again — so only
+    /// turns raise this, and everything else is measured against it.
+    prompt: u64,
+    /// The largest read the provider has granted here. A proven-achievable prefix,
+    /// and the only bound available on a lineage with no turns of its own.
+    read: u64,
+}
+
+/// How much of each request's input a perfect prefix cache would have covered, and
+/// how much of that was paid for anyway (docs/log-and-projection.md).
+///
+/// The read *rate* counts any nonzero read as warm, which a request that matched the
+/// preamble and then paid for 50k of context satisfies. This measures the same
+/// records in tokens: per request, the prefix it was entitled to reuse, less what it
+/// actually read.
+///
+/// Entitlement is the larger of the two bounds above, capped by the request's own
+/// prompt — nothing can be read that was not sent. A *turn* whose prompt is shorter
+/// than the watermark has had its history rewritten under it, which on this harness
+/// means a consolidation ([consolidate.md](../consolidate.md)): the prefix legitimately
+/// moved, so both bounds reset rather than charging every later request for a fold
+/// that was the harness's own decision. A lineage with no turns of its own — the
+/// spotter's, a separate-model peek's — carries only the observed-read bound and so
+/// does not see a consolidation; its excess is a floor rather than an estimate.
+#[derive(Default)]
+pub struct ExcessUncached {
+    lineages: Vec<(LineageKey, Watermark)>,
+}
+
+/// One request's verdict: what a perfect cache would have covered, and the part of
+/// that which was billed as fresh input anyway.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Excess {
+    pub expected: u64,
+    pub paid: u64,
+}
+
+impl ExcessUncached {
+    /// Fold one recorded request in. `prompt` is the whole input side of the request
+    /// — [`crate::api::Usage::prompt_tokens`], so a provider that bills cache writes
+    /// separately still has them counted as sent.
+    pub fn observe(
+        &mut self,
+        origin: RequestOrigin,
+        model: Option<&str>,
+        prompt: u64,
+        cache_read: u64,
+    ) -> Option<Excess> {
+        let class = match origin {
+            RequestOrigin::Turn | RequestOrigin::Peek | RequestOrigin::Keepalive => {
+                LineageClass::Main
+            }
+            RequestOrigin::Spot => LineageClass::Spot,
+            RequestOrigin::Triage => LineageClass::Triage,
+            // All-zero usage is the common shape here (docs/transport.md), so an
+            // aborted attempt says nothing about what the prefix was worth.
+            RequestOrigin::AbortedAttempt | RequestOrigin::Unknown => return None,
+        };
+        let key = LineageKey {
+            class,
+            model: model.map(str::to_string),
+        };
+        let watermark = match self.lineages.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, watermark)) => watermark,
+            None => {
+                self.lineages.push((key, Watermark::default()));
+                &mut self.lineages.last_mut().expect("just pushed").1
+            }
+        };
+        if origin == RequestOrigin::Turn && prompt < watermark.prompt {
+            *watermark = Watermark::default();
+        }
+        let entitled = watermark.prompt.max(watermark.read).min(prompt);
+        let expected = entitled - entitled % CACHE_BLOCK;
+        if origin == RequestOrigin::Turn {
+            watermark.prompt = watermark.prompt.max(prompt);
+        }
+        watermark.read = watermark.read.max(cache_read);
+        Some(Excess {
+            expected,
+            paid: expected.saturating_sub(cache_read),
+        })
+    }
+}
+
 /// One line of `usage.jsonl`: when, which shape, the upstream's own id for the
 /// request, the model that served it, and the four token counts. The model is
 /// per line rather than per file because the session's model can change
