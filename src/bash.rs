@@ -80,6 +80,8 @@ can abort a running command with Ctrl-C.";
 /// incidental *and* deliberate temp files land in the sanctioned, granted,
 /// session-cleaned dir with no agent awareness required.
 pub struct Bash {
+    /// Working root set directly on each child (docs/tools.md).
+    pub cwd: std::path::PathBuf,
     pub tmpdir: Option<std::path::PathBuf>,
     /// Applies when a call names no `background_after` of its own.
     pub background_after: Duration,
@@ -105,6 +107,7 @@ pub const DEFAULT_BACKGROUND_AFTER_MAX: Duration = Duration::from_secs(1800);
 impl Default for Bash {
     fn default() -> Self {
         Self {
+            cwd: std::path::PathBuf::from("."),
             tmpdir: None,
             background_after: DEFAULT_BACKGROUND_AFTER,
             background_after_max: DEFAULT_BACKGROUND_AFTER_MAX,
@@ -216,7 +219,8 @@ impl Bash {
         };
 
         let mut cmd = Command::new("bash");
-        cmd.arg("-c")
+        cmd.current_dir(&self.cwd)
+            .arg("-c")
             .arg(&command)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

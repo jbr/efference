@@ -615,6 +615,7 @@ impl Toolbox {
     pub fn bash_and_mcps(cwd: PathBuf, scratch: Option<PathBuf>) -> anyhow::Result<Self> {
         Ok(Self::new(vec![
             Provider::Bash(Bash {
+                cwd: cwd.clone(),
                 tmpdir: scratch,
                 ..Bash::default()
             }),

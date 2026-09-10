@@ -301,10 +301,9 @@ fn definition_matches_expected_wire_bytes() {
 /// A `Bash` whose deadline fires almost immediately, for the timer tests.
 fn impatient(after: Duration, max: Duration) -> Bash {
     Bash {
-        child_env: crate::env_table::ChildEnv::default(),
-        tmpdir: None,
         background_after: after,
         background_after_max: max,
+        ..Bash::default()
     }
 }
 

@@ -18,8 +18,9 @@ Ephemeral control state — a pending approval, current status, live process tai
 
 Every `Session` constructor requires an absolute working directory, stored
 immutably and exposed by `cwd()`. Policy classification, config-write checks,
-missing-grant diagnosis, probe-ledger replay, and background bash spawning use
-that root rather than the process cwd. Relative config-source paths are joined to
+missing-grant diagnosis, probe-ledger replay, and foreground/background bash spawning use
+that root rather than the process cwd. `Toolbox::bash_and_mcps` supplies the same
+root to `Bash`; a foreground child keeps it when adopted into the supervisor. Relative config-source paths are joined to
 it before the live config file is opened. The CLI captures cwd before bootstrap:
 config loading, reference commands, MCP credentials, tools, and context resolution
 use that same root. No session changes the process working directory.

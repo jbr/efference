@@ -52,6 +52,25 @@ async fn sessions_resolve_policy_config_references_and_children_in_their_own_roo
             .resolve_table(&session.effective_config().env);
         assert!(errors.is_empty(), "{errors:?}");
         assert_eq!(values[0].value, label);
+        let toolbox = crate::tools::Toolbox::bash_and_mcps(cwd.clone(), None).unwrap();
+        let foreground = toolbox
+            .run(
+                &ToolCall::new(
+                    "bash",
+                    "foreground-root",
+                    serde_json::json!({"command": "cat identity.txt"}),
+                ),
+                std::future::pending(),
+                |_| {},
+                |_| {},
+            )
+            .await;
+        let crate::bash::Outcome::Done(result) = foreground else {
+            session.kill_all_bg();
+            panic!("short foreground command unexpectedly detached");
+        };
+        assert!(!result.is_error, "{}", result.content);
+        assert_eq!(result.content, label);
         let handle = session
             .spawn_background("cat identity.txt".into(), None)
             .unwrap();
