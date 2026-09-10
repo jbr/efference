@@ -439,40 +439,23 @@ across 1371 recorded turns, unexplained cold reads formed 28 runs — 24 of leng
 read the cache once. The constant's doc comment carries the full fold.
 
 A read rate is a **request**-level reading, and calls a request warm on any nonzero
-read: one that matched the preamble and then paid for 50k of context counts the same
-as one that matched everything. `ExcessUncached` (`src/daemon/metrics.rs`) measures
-the same records in tokens — per request, the prefix it was entitled to reuse, less
-what it read.
-
-Entitlement is a watermark per **lineage**, keyed by class and serving model: turns,
-a fork peek that borrows their client, and the keepalive extend one transcript; the
-spotter's every request is its own conversation; a `--triage-model` peek is a second
-lineage over the same transcript (redaction-fork.md), and pairing class with model is
-what separates it from a borrowed one without the report knowing which flags the
-session booted with. Two bounds feed it. Only **turns** raise the prompt watermark:
-turn prompts are the one monotonic series, because a peek's prompt carries a raw
-result tail that never becomes canonical and the turn after it is shorter again — a
-watermark that took the peek's prompt would then charge that turn for the whole tail.
-The second bound is the largest read the provider has granted on the lineage, a
-proven-achievable prefix and the only one available where a lineage has no turns of
-its own. A request is entitled to the larger of the two, capped by its own prompt.
-
-Two adjustments keep the number honest. Every nonzero read on record is a multiple of
-**128 tokens**, so the entitlement is floored to that before the shortfall is taken;
-otherwise a request that matched everything the provider could report would still owe
-up to a block, and a long healthy session would accumulate a five-figure phantom
-shortfall. And a **turn whose prompt is shorter than the watermark** has had its
-history rewritten under it, which here means a consolidation (consolidate.md): the
-prefix legitimately moved, so both bounds reset rather than charging every later
-request for a fold that was the harness's own decision. A lineage with no turns never
-sees that signal, so its excess is a floor rather than an estimate.
+read: one that matched the preamble and then paid for the rest of a 50k context counts
+the same as one that matched everything. The report states the uncached input tokens
+beside the rate for that reason — 81% warm turns against 2.07M uncached input is the
+shape a rate alone hides. It is a recorded fact and not a model: what a request was
+*entitled* to reuse depends on where the breakpoint landed, the model's cache policy,
+and the upstream's own behaviour, and none of those are in this record. Asking the
+provider is the better instrument where one exists — the Codex response's
+`usage.attribution` carries per-input-item cached counts, and OpenAI's platform API
+answers `prompt_cache_options.comparison_response_id` with a `prompt_cache_diagnostics`
+reason naming what diverged.
 
 Two surfaces read it. `GET /state` publishes the live count as
 `usage.cold_streak`, which the TUI sidebar states beside the context meter once it
 crosses the threshold and drops when a warm read arrives. `efference dev cache`
 (docs/operating.md) replays a recorded `usage.jsonl` through the same `ColdStreak`
-offline — per-origin read rates, the excess tokens beside them, the explained cold
-starts, and the longest run — for one session, or `--all` for the corpus. It also reports the abort rate (aborted
+offline — per-origin read rates, the explained cold starts, and the longest run —
+for one session, or `--all` for the corpus. It also reports the abort rate (aborted
 attempts as a fraction of turn attempts): classifying `aborted_attempt` as its own
 origin means those lines no longer read as unexplained cold turns in the report.
 

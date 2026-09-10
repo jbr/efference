@@ -10,14 +10,20 @@
 
 use super::*;
 
-use efference::daemon::{
-    CacheRead, ColdStart, ColdStreak, ExcessUncached, RequestOrigin, UsageLine,
-};
+use efference::daemon::{CacheRead, ColdStart, ColdStreak, RequestOrigin, UsageLine};
 
 pub(crate) const USAGE_NAME: &str = "usage.jsonl";
 
-/// Per-origin counts for the table: how many requests of this shape, and how many
-/// of them read a cached prefix.
+/// Per-origin counts for the table: how many requests of this shape, how many of
+/// them read a cached prefix, and what they cost.
+///
+/// [`Self::input`] is the column the rate cannot supply. A read rate calls a request
+/// warm on any nonzero read, so a session that matched its preamble and paid for the
+/// rest of every 50k context reports as warm; the uncached total states what that
+/// came to. It is a recorded fact rather than a model of what a perfect cache would
+/// have covered — the prefix a request was *entitled* to reuse depends on breakpoint
+/// placement, the model's cache policy, and the upstream's own behaviour, none of
+/// which this record carries (docs/log-and-projection.md).
 #[derive(Default, Clone, Copy)]
 pub(crate) struct OriginTally {
     pub(crate) requests: u64,
@@ -25,13 +31,6 @@ pub(crate) struct OriginTally {
     pub(crate) cache_read: u64,
     pub(crate) input: u64,
     pub(crate) output: u64,
-    /// Prefix this origin was entitled to reuse and paid fresh input for anyway
-    /// (`ExcessUncached`). The token-level companion to [`Self::warm`]: a run of
-    /// preamble-only hits keeps the warm rate high and shows up here.
-    pub(crate) excess: u64,
-    /// What a perfect prefix cache would have covered across these requests — the
-    /// denominator [`Self::excess`] is a shortfall against.
-    pub(crate) expected: u64,
 }
 
 /// What one session's usage record says about its cache (docs/log-and-projection.md).
@@ -96,12 +95,8 @@ pub(crate) fn fold_sessions(sessions: &[(String, Vec<UsageLine>)]) -> CacheRepor
         }
         report.sessions += 1;
         let mut streak = ColdStreak::default();
-        let mut excess = ExcessUncached::default();
         for line in lines {
             report.lines += 1;
-            let prompt = line.input + line.cache_read + line.cache_write;
-            let shortfall =
-                excess.observe(line.origin, line.model.as_deref(), prompt, line.cache_read);
             if let Some((_, tally)) = tallies.iter_mut().find(|(o, _)| *o == line.origin) {
                 tally.requests += 1;
                 tally.cache_read += line.cache_read;
@@ -109,10 +104,6 @@ pub(crate) fn fold_sessions(sessions: &[(String, Vec<UsageLine>)]) -> CacheRepor
                 tally.output += line.output;
                 if line.cache_read > 0 {
                     tally.warm += 1;
-                }
-                if let Some(shortfall) = shortfall {
-                    tally.excess += shortfall.paid;
-                    tally.expected += shortfall.expected;
                 }
             }
             let verdict = streak.observe(
@@ -233,8 +224,8 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
         return Ok(());
     }
     println!(
-        "  {:<10} {:>7} {:>7} {:>6} {:>11} {:>11} {:>6}",
-        "origin", "reqs", "warm", "rate", "read tok", "excess tok", "of exp"
+        "  {:<10} {:>7} {:>7} {:>6} {:>11} {:>11}",
+        "origin", "reqs", "warm", "rate", "read tok", "uncached"
     );
     for (origin, tally) in &report.by_origin {
         if tally.requests == 0 {
@@ -249,25 +240,14 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
             (true, _) => GREEN,
             (false, _) => DIM,
         };
-        // The excess share is the token-level reading of the same requests: what
-        // fraction of the prefix they were entitled to reuse they paid for anyway.
-        let share = if tally.expected == 0 {
-            "-".to_string()
-        } else {
-            format!(
-                "{:.0}%",
-                tally.excess as f64 * 100.0 / tally.expected as f64
-            )
-        };
         println!(
-            "  {:<10} {:>7} {:>7} {:>5}% {:>11} {:>11} {:>6}",
+            "  {:<10} {:>7} {:>7} {:>5}% {:>11} {:>11}",
             paint(origin_label(*origin), code, tty),
             tally.requests,
             tally.warm,
             format!("{rate:.0}"),
             tally.cache_read,
-            tally.excess,
-            share
+            tally.input
         );
     }
     println!();
