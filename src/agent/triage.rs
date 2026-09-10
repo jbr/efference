@@ -35,7 +35,7 @@ impl IdleWake {
 pub(super) async fn run_idle_triage(
     client: &Client,
     tools: &[Value],
-    shared: &Arc<Shared>,
+    shared: &Arc<Session>,
     distiller: &ForkPeek,
     turn: &mut Turn,
 ) -> Result<bool, Error> {

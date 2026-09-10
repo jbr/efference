@@ -11,7 +11,7 @@ fn appending_a_config_edit_updates_the_effective_config() {
     let call = bash_call("npm install");
 
     // Empty base role → npm gates.
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     assert_eq!(classify(&shared.effective_config(), &call), Verdict::Gate);
 
     // ConfigEdit `allow "npm"` → the same call now clears, via the incrementally-folded role.
@@ -27,7 +27,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
     let edit = committed_edit;
 
     // A scope edit notifies.
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     assert!(!shared.has_pending_notifications());
     shared
         .append(
@@ -43,7 +43,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
     );
 
     // A path edit notifies.
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared
         .append(
             0,
@@ -60,7 +60,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
     );
 
     // A command edit does not — its effect reaches the model only through the classifier.
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.append(0, allow_grant("npm")).unwrap();
     assert!(
         !shared.has_pending_notifications(),
@@ -76,7 +76,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
 fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
     use crate::policy::{Verdict, classify};
     let call = bash_call("npm install");
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
 
     // Propose: inert in policy, but queued.
     let proposal_seq = shared
@@ -137,7 +137,7 @@ fn reload_emits_committed_edits_for_file_deltas() {
 
     // The file is opened at construction, but effective policy still starts at the base role —
     // the fold happens on refresh, exactly as it does for an edit arriving mid-session.
-    let (shared, _rx) = Shared::with_role(Log::in_memory(), file_role(&path));
+    let (shared, _rx) = Session::with_role(Log::in_memory(), file_role(&path));
     assert_eq!(
         classify(&shared.effective_config(), &bash_call("cargo build")),
         Verdict::Gate
@@ -184,7 +184,7 @@ fn reload_failure_keeps_policy_reverts_file_and_notifies() {
     // here to prove the revert restores bytes, not a re-render of the parsed config.
     let good = "# my config\nscope = \"stay in src/\"\n[commands]\ncargo = true\n";
     std::fs::write(&path, good).unwrap();
-    let (shared, _rx) = Shared::with_role(Log::in_memory(), file_role(&path));
+    let (shared, _rx) = Session::with_role(Log::in_memory(), file_role(&path));
     refresh_and_emit(&shared);
     assert_eq!(
         classify(&shared.effective_config(), &bash_call("cargo build")),
@@ -229,7 +229,7 @@ fn reload_failure_keeps_policy_reverts_file_and_notifies() {
 fn cancelling_a_proposal_drains_the_queue_without_applying() {
     use crate::policy::{Verdict, classify};
     let call = bash_call("npm install");
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
 
     let proposal_seq = shared
         .append(
@@ -271,7 +271,7 @@ fn cancelling_a_proposal_drains_the_queue_without_applying() {
 #[test]
 fn resolve_proposal_decision_commits_and_cancels() {
     use crate::policy::{Verdict, classify};
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
 
     assert!(
         !shared
@@ -340,7 +340,7 @@ fn resumed_log_edits_fold_into_the_initial_effective_config() {
     let mut log = Log::in_memory();
     log.append(0, allow_grant("npm")).unwrap();
 
-    let (shared, _rx) = Shared::new(log);
+    let (shared, _rx) = Session::new(log);
     assert_eq!(
         classify(&shared.effective_config(), &bash_call("npm install")),
         Verdict::Clear
@@ -363,7 +363,7 @@ async fn an_unrepairable_config_parks_the_loop_until_the_file_parses() {
     let good = "# my config\nscope = \"stay in src/\"\n";
     std::fs::write(&path, good).unwrap();
 
-    let (shared, _rx) = Shared::with_role(Log::in_memory(), file_role(&path));
+    let (shared, _rx) = Session::with_role(Log::in_memory(), file_role(&path));
     refresh_and_emit(&shared);
     assert!(
         shared.config_repair().is_none(),

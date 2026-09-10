@@ -1,8 +1,8 @@
 //! When the daemon sends push, and what it says (docs/web-push.md).
 //!
 //! Two moments mean the session is waiting on a person: an approval gate opened
-//! ([`Shared::register_pending`]) and a turn ended with the loop parking
-//! ([`Shared::parking`]). Both call [`Shared::push`], which spawns the send and
+//! ([`Session::register_pending`]) and a turn ended with the loop parking
+//! ([`Session::parking`]). Both call [`Session::push`], which spawns the send and
 //! returns — the turn loop never waits on a push service, and a failed send is a
 //! log line rather than anything the session notices.
 
@@ -14,7 +14,7 @@ use crate::log::{LogEntry, Payload};
 /// one tap away.
 const BODY_MAX_CHARS: usize = 200;
 
-impl Shared {
+impl Session {
     /// What a notification is titled: the event and the session's working
     /// directory — `Gate in ~/code/efference` — which together say what happened
     /// and which session it happened in. The path is home-relative because the
@@ -29,9 +29,9 @@ impl Shared {
 
     /// Fire one push, in the background.
     ///
-    /// When someone is watching the session ([`Shared::watched`],
+    /// When someone is watching the session ([`Session::watched`],
     /// docs/web-push.md), the message is not sent but **stashed** — see
-    /// [`Shared::replay_suppressed`] for when a stashed message goes out after
+    /// [`Session::replay_suppressed`] for when a stashed message goes out after
     /// all. The watched check is an atomic load and goes first, so a session
     /// that never enabled push pays almost nothing per gate.
     ///
@@ -76,7 +76,7 @@ impl Shared {
     }
 
     /// Take the stashed message if it is still worth sending. Split from
-    /// [`Shared::replay_suppressed`] so the window arithmetic is testable without
+    /// [`Session::replay_suppressed`] so the window arithmetic is testable without
     /// observing a send.
     fn take_replayable(&self) -> Option<crate::push::Message> {
         let suppressed = self.suppressed.lock().unwrap().take()?;
@@ -104,7 +104,7 @@ impl Shared {
 
 /// A push that was suppressed because the session looked watched, kept so the
 /// guard that reaps the last watcher can send it after all
-/// ([`Shared::replay_suppressed`]). Only the latest is kept: a newer suppressed
+/// ([`Session::replay_suppressed`]). Only the latest is kept: a newer suppressed
 /// event supersedes an older one the same way a newer notification would.
 pub(super) struct Suppressed {
     at: std::time::Instant,

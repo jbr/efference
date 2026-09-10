@@ -9,11 +9,11 @@ use super::*;
 use crate::persist::Log;
 use std::time::{Duration, Instant};
 
-fn shared() -> Arc<Shared> {
-    Shared::new(Log::in_memory()).0
+fn shared() -> Arc<Session> {
+    Session::new(Log::in_memory()).0
 }
 
-fn stash_of(shared: &Shared) -> Option<String> {
+fn stash_of(shared: &Session) -> Option<String> {
     shared
         .suppressed
         .lock()

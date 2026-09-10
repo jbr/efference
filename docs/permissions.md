@@ -582,7 +582,7 @@ nothing rides along unchecked.
 A `ConfigEdit` projects to nothing on the wire (audit-only, like `Spot`). Its effect reaches
 the model **by key**: a `commands`/`tools` edit only through the classifier, but a
 **session-visible** edit (`scope`, `paths`) *also* surfaces as an `Ambient` notification.
-`Shared::append` is the one choke point — it already folds each `ConfigEdit` into the effective config, so
+`Session::append` is the one choke point — it already folds each `ConfigEdit` into the effective config, so
 it also raises the notification there (`session_visible_notice`), which means **every**
 initiator gets it without extra wiring. The notification is an *optional tail append* through the existing
 inbox/triage machinery: the session learns its perimeter moved without the boot preamble ever
@@ -631,7 +631,7 @@ good config, but the file no longer shows it, and the file is what an operator r
 perimeter a session ran under — so continuing would mean acting under permissions nobody can
 inspect. `refresh_and_emit` therefore sets the **`config_repair` state topic** (`daemon.rs`,
 control-api.md): the path, the parse error, the restore error, and a lead line saying a human must
-fix the file. The loop awaits it (`Shared::await_config_repair`) at every step, not only at a
+fix the file. The loop awaits it (`Session::await_config_repair`) at every step, not only at a
 trajectory's start, because an approved config write can land the condition mid-trajectory; it
 resolves immediately in every other case. The park is an infinite wait on a `Notify` armed before
 the state is read, the same lost-wakeup discipline the pace hold uses.
@@ -646,7 +646,7 @@ always has an owner.
 ## The review-level dial (`src/agent.rs`, `src/daemon/config_edits.rs`)
 
 **Who reviews a call the fast-path didn't clear** is a runtime dial — a [`ReviewLevel`] ordinal on
-`Shared` (`policy.rs`), set over the control channel (`PATCH /loop {review_level}`, `efference control review-level`)
+`Session` (`policy.rs`), set over the control channel (`PATCH /loop {review_level}`, `efference control review-level`)
 and reported on `GET /state`, orthogonal to pace ([operator participation](control-channel.md#operator-participation--the-intervention-points)). Three
 positions of increasing human involvement:
 

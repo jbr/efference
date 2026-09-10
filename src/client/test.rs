@@ -7,7 +7,7 @@ use trillium_router::{Router, RouterConnExt};
 /// the handful of paths the client drives. Proves the `UnixClientConfig`
 /// connector + request/response plumbing end to end without the live API or the
 /// real agent loop — and exercises the same `trillium-router` the daemon uses.
-/// Carried in trillium's server-global state, exactly like the real `Shared`.
+/// Carried in trillium's server-global state, exactly like the real `Session`.
 #[derive(Clone, Default)]
 struct Recorder {
     turns: Arc<Mutex<Vec<String>>>,

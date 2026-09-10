@@ -14,7 +14,7 @@ There is no structure beyond that — the body is prose the model reads directly
 ## Ingestion — out of band
 
 `POST /notifications { source, body, slot?, replaces? }` enqueues the notification into an
-**ephemeral** inbox queue held in `Shared` (the daemon's shared control state). Nothing
+**ephemeral** inbox queue held in `Session` (the daemon's shared control state). Nothing
 is written to the log at arrival; the notification exists only in memory. This is the
 same pattern as pending-approval state (see `control-channel.md`): in-flight inbox state
 is control state until the log needs it.
@@ -93,7 +93,7 @@ The live inbox is the union of two layers:
   Every `Ambient` entry whose `seq` no `Triage` verdict has yet pinned or dismissed is
   active. "Left" notifications — not named in any `Triage` inbox field — stay active and
   resurface at the next gate.
-- **Pending, not yet shown**: the ephemeral queue in `Shared`, layered on top.
+- **Pending, not yet shown**: the ephemeral queue in `Session`, layered on top.
 
 A restart drops only the un-shown layer, which were "never happened" anyway. The
 shown-and-active layer reconstructs from the log.

@@ -110,7 +110,7 @@ fn config_request_sentence(config_path: Option<&Path>) -> String {
 /// rejection is phrased as a *policy* outcome, not a tool malfunction: a model that reads "the
 /// write failed" invents theories about the tool, where a model that reads "your config didn't
 /// parse, here's the error" fixes the TOML.
-pub(super) fn config_write_outcome(shared: &Shared, result: RawResult) -> RawResult {
+pub(super) fn config_write_outcome(shared: &Session, result: RawResult) -> RawResult {
     match crate::daemon::refresh_and_emit(shared) {
         Some(Refreshed::Reverted { error }) => RawResult::error(format!(
             "Your config edit was not adopted: the file did not parse, so it has been restored \
@@ -150,7 +150,7 @@ pub(super) fn config_write_outcome(shared: &Shared, result: RawResult) -> RawRes
 /// A session with no config file (the built-in default role) is the one exception: there is
 /// nothing to diverge from, so the grant lives in the log fold alone.
 pub(super) fn commit_config_edit(
-    shared: &Shared,
+    shared: &Session,
     turn: Turn,
     call: &ToolCall,
     change: ConfigChange,

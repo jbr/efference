@@ -3,8 +3,8 @@
 use super::*;
 use crate::persist::Log;
 
-fn shared() -> Arc<Shared> {
-    Shared::new(Log::in_memory()).0
+fn shared() -> Arc<Session> {
+    Session::new(Log::in_memory()).0
 }
 
 /// `?presence=` names one of two states; anything else is rejected rather than read

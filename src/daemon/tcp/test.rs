@@ -30,7 +30,7 @@ fn armed(root: &str) -> Arc<TcpAuth> {
     auth
 }
 
-fn init(shared: Arc<Shared>) -> impl trillium::Handler {
+fn init(shared: Arc<Session>) -> impl trillium::Handler {
     trillium::Init::new(move |info: trillium::Info| {
         let shared = Arc::clone(&shared);
         async move { info.with_shared_state(shared) }
@@ -41,7 +41,7 @@ fn init(shared: Arc<Shared>) -> impl trillium::Handler {
 /// virtually hosted at the bind's public name so the gate's Host check sees what a
 /// real conn carries.
 async fn tcp_server(auth: &Arc<TcpAuth>) -> (TestServer<impl trillium::Handler>, TurnsGuard) {
-    let (shared, turns_rx) = Shared::new(Log::in_memory());
+    let (shared, turns_rx) = Session::new(Log::in_memory());
     let server = TestServer::new((
         init(shared),
         handler(

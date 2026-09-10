@@ -84,7 +84,7 @@ fn include_parses_classes_and_topics() {
 /// nothing else has to be told the connection ended.
 #[test]
 fn a_live_stream_is_what_makes_a_session_watched() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     assert!(!shared.watched());
 
     let watcher = control_stream(Arc::clone(&shared), Include::default(), 0, Presence::On);
@@ -104,7 +104,7 @@ fn a_live_stream_is_what_makes_a_session_watched() {
 /// `EventSource`'s Last-Event-ID tracks `seq` and is never corrupted by an ephemeral frame.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sse_fields_carry_the_kind_and_the_cursor() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let mut stream = control_stream(Arc::clone(&shared), Include::default(), 0, Presence::On);
     shared.append(1, user("hello")).unwrap();
     shared.publish_delta(StreamDelta::AssistantText {
@@ -144,7 +144,7 @@ async fn sse_fields_carry_the_kind_and_the_cursor() {
 /// renders without a separate `GET /state` call.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_connection_opens_with_a_state_snapshot() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let mut stream = control_stream(
         Arc::clone(&shared),
         Include::parse(Some("state")).unwrap(),
@@ -168,7 +168,7 @@ async fn a_connection_opens_with_a_state_snapshot() {
 /// supplemented.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_fold_of_state_frames_equals_get_state() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     tokio::spawn(watch_topics(Arc::clone(&shared)));
     let mut stream = control_stream(
         Arc::clone(&shared),
@@ -213,7 +213,7 @@ async fn the_fold_of_state_frames_equals_get_state() {
 /// text quoting an entry it had not received.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn no_state_frame_arrives_before_the_log_it_reflects() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     tokio::spawn(watch_topics(Arc::clone(&shared)));
 
     // A backlog of durable history the connection must deliver first.
@@ -259,7 +259,7 @@ async fn no_state_frame_arrives_before_the_log_it_reflects() {
 /// that never advances, which is the degenerate reading of the coherence rule.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn state_only_subscribers_are_not_gated_on_the_log() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     tokio::spawn(watch_topics(Arc::clone(&shared)));
     for i in 0..5 {
         shared.append(1, user(&format!("entry {i}"))).unwrap();
@@ -297,7 +297,7 @@ async fn state_only_subscribers_are_not_gated_on_the_log() {
 /// `absorb_state`'s `try_recv`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_update_arriving_while_parked_is_not_dropped() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     tokio::spawn(watch_topics(Arc::clone(&shared)));
     let mut stream = control_stream(
         Arc::clone(&shared),
@@ -325,7 +325,7 @@ async fn an_update_arriving_while_parked_is_not_dropped() {
 /// the live tail, not load-shedding.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_delta_arriving_while_parked_is_not_dropped() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let mut stream = control_stream(
         Arc::clone(&shared),
         Include::parse(Some("output")).unwrap(),
@@ -352,7 +352,7 @@ async fn a_delta_arriving_while_parked_is_not_dropped() {
 /// introduces that three did not, and the reason the drain order is part of the contract.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_durable_class_is_drained_first() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let mut stream = control_stream(
         Arc::clone(&shared),
         Include::parse(Some("log,output")).unwrap(),
@@ -398,7 +398,7 @@ fn assistant(text: &str) -> Payload {
 /// a turn commits must still reach the client.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_committed_entry_preempts_the_deltas_describing_it() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let mut stream = control_stream(
         Arc::clone(&shared),
         Include::parse(Some("log,output")).unwrap(),
@@ -445,7 +445,7 @@ async fn a_committed_entry_preempts_the_deltas_describing_it() {
 /// entry ends it, so the deltas of the *next* response are delivered normally.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn block_deltas_flow_again_after_the_next_entry() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let mut stream = control_stream(
         Arc::clone(&shared),
         Include::parse(Some("log,output")).unwrap(),

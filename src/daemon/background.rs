@@ -9,7 +9,7 @@ use super::*;
 /// it like any notification. The supervisor lock is taken per chunk and never held
 /// across an await.
 pub(crate) async fn drain_background(
-    shared: Arc<Shared>,
+    shared: Arc<Session>,
     id: u64,
     mut child: tokio::process::Child,
     mut stdout: tokio::process::ChildStdout,
@@ -58,7 +58,7 @@ pub(crate) async fn drain_background(
     }
 }
 
-impl Shared {
+impl Session {
     /// Spawn a backgrounded bash command into the supervisor (docs/supervisor.md). Returns
     /// its `p#<n>` handle immediately; a detached task drains the child's output
     /// into the registry (re-surfaced live at each triage gate) and fires an exit

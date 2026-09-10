@@ -28,11 +28,11 @@ const PREFIX_TOKENS_PER_DISCARDED_TOKEN: u64 = 100;
 /// Pure transport — it reads the prefix and records the usage; the log is never
 /// touched.
 ///
-/// Two clocks ([`Shared::keepalive_clocks`]): ping off the cache-touch clock, give
+/// Two clocks ([`Session::keepalive_clocks`]): ping off the cache-touch clock, give
 /// up off the *real-turn* clock, so a ping can never reset its own deadline.
 pub(crate) async fn keepalive_loop(
     client: Arc<Client>,
-    shared: Arc<Shared>,
+    shared: Arc<Session>,
     tools: Vec<Value>,
     ping_at: Duration,
 ) {

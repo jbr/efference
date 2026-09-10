@@ -10,7 +10,7 @@
 //! - A **missed ping degrades to "late", not to "stale forever and silently"**: the task
 //!   recomputes *all* topics on any wake, so the next ping from any source repairs a topic
 //!   whose own mutation site forgot to signal. That matters because three topics are
-//!   mutated through `Arc`s the mutating code holds *without* a [`Shared`] — the
+//!   mutated through `Arc`s the mutating code holds *without* a [`Session`] — the
 //!   upstream-failure cell (the HTTP client), the cost cell (a spawned fetch), and the
 //!   retry cell (either retry loop) — so they cannot ping `state_changed`. The first two
 //!   move in lockstep with requests, and a request is followed by an append, so waking on
@@ -18,7 +18,7 @@
 //!   a retry pause has no append to ride on and lasts up to thirty seconds, so "late"
 //!   would mean "wrong for the entire time the state is true".
 //! - `GET /state` and the `state` frames come from the **same per-topic functions**
-//!   ([`Shared::topic_json`]), so the fold-equals-snapshot invariant holds by
+//!   ([`Session::topic_json`]), so the fold-equals-snapshot invariant holds by
 //!   construction rather than by two implementations agreeing.
 //!
 //! Per-topic notifies are an optimization available later; nothing here forecloses them.
@@ -44,7 +44,7 @@ pub(crate) struct StateUpdate {
     pub(crate) watermark: Option<u64>,
 }
 
-impl Shared {
+impl Session {
     /// Signal that some state topic may have moved. Cheap and idempotent — the reader
     /// recomputes everything, so an over-eager ping costs one diff and a spurious ping
     /// costs nothing.
@@ -53,7 +53,7 @@ impl Shared {
     }
 
     /// Subscribe to state-topic updates. Every `GET /events` connection takes one of
-    /// these; the sender lives as long as [`Shared`], so a subscriber outlives any
+    /// these; the sender lives as long as [`Session`], so a subscriber outlives any
     /// particular publisher.
     pub(crate) fn subscribe_state(&self) -> broadcast::Receiver<StateUpdate> {
         self.state_tx.subscribe()
@@ -88,7 +88,7 @@ impl Shared {
 ///
 /// Spawned once per daemon by `serve`, and holds an `Arc` for the daemon's lifetime like
 /// the keepalive and config-watch loops do — the process ends when `serve` returns.
-pub(crate) async fn watch_topics(shared: Arc<Shared>) {
+pub(crate) async fn watch_topics(shared: Arc<Session>) {
     // What each topic looked like when last published. A topic absent here has never been
     // published, so its first computed value counts as a change — which is what gives a
     // freshly-connected client a full snapshot.
@@ -106,9 +106,9 @@ pub(crate) async fn watch_topics(shared: Arc<Shared>) {
         let changed = shared.state_changed.notified();
         let appended = shared.appended.notified();
         let settled = shared.settle_changed.notified();
-        // The fourth signal, and the one that is not a `Shared` field's own: the
+        // The fourth signal, and the one that is not a `Session` field's own: the
         // retry cell is written from the fork peek, which holds a `Client` and no
-        // `Shared`, and a retry pause is not followed by an append — so neither
+        // `Session`, and a retry pause is not followed by an append — so neither
         // fallback above would repair it before the pause ended.
         let retried = shared.upstream_retry.changed();
 
@@ -122,7 +122,7 @@ pub(crate) async fn watch_topics(shared: Arc<Shared>) {
             published.insert(update.topic, Arc::clone(&update.json));
             // A send with no subscribers is dropped, which is correct: with no client
             // connected there is nobody to tell, and the next subscriber is sent a full
-            // snapshot from `Shared` rather than from this history.
+            // snapshot from `Session` rather than from this history.
             let _ = shared.state_tx.send(update);
         }
 

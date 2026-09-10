@@ -17,7 +17,7 @@ pub(super) struct Pending {
     pub(super) reason: Option<String>,
 }
 
-impl Shared {
+impl Session {
     /// The spotter's reason for the most recent verdict on `call_id`, read from the log's `Spot`
     /// audit entries (docs/permissions.md). The spotter logs its verdict *before* routing the call
     /// to the human gate, so by the time the gate registers, the reason is already durably in the

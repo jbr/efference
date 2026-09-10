@@ -62,7 +62,7 @@ impl Step {
 /// caller appends after the gate.
 pub(super) async fn run_call<F: Frontend, S: Spotter>(
     frontend: &mut F,
-    shared: &Arc<Shared>,
+    shared: &Arc<Session>,
     spotter: &S,
     toolbox: &Toolbox,
     turn: Turn,

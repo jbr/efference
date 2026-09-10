@@ -51,7 +51,7 @@ would make it more timely than the next event.
 
 ## When it fires, and what it says
 
-`src/daemon/push.rs`. `Shared::push` short-circuits when no root is injected or no
+`src/daemon/push.rs`. `Session::push` short-circuits when no root is injected or no
 runtime is running (every non-serving context — tests, offline verbs — looks like
 that), then spawns the send so the turn loop never waits on a push service.
 
@@ -102,7 +102,7 @@ app); a browser without `PushManager` shows nothing.
 ## No push while someone is watching
 
 A notification about a session the operator is already looking at is noise, so
-`Shared::push` returns without sending when the session is **watched**: the count of
+`Session::push` returns without sending when the session is **watched**: the count of
 live `GET /events` connections is nonzero (`src/daemon/presence.rs`). The check sits
 in `push` rather than at either call site, so a gate and a settle suppress
 identically — they are one notification setting, enabled and disabled together — and

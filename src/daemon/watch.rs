@@ -16,7 +16,7 @@ use super::*;
 /// The debouncer runs `notify` on its own thread and invokes the handler there; we forward each
 /// batch into this async task over a channel, and the task **owns** the debouncer so watching lives
 /// exactly as long as the task (the `Debouncer` guard stops on drop).
-pub(crate) async fn config_watch_loop(shared: Arc<Shared>, path: PathBuf) {
+pub(crate) async fn config_watch_loop(shared: Arc<Session>, path: PathBuf) {
     // A relative `efference.toml` has an empty parent; watch cwd in that case.
     let dir = match path.parent() {
         Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
@@ -81,7 +81,7 @@ pub(crate) async fn config_watch_loop(shared: Arc<Shared>, path: PathBuf) {
 ///
 /// Returns the outcome so the loop — which calls this synchronously after an approved config write
 /// — can put a rejection in that call's tool result, where the author will actually see it.
-pub(crate) fn refresh_and_emit(shared: &Shared) -> Option<Refreshed> {
+pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
     let outcome = shared.refresh_config()?;
     let file_config = match outcome {
         Refreshed::Adopted(config) => config,

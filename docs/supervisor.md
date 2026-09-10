@@ -106,10 +106,10 @@ compressed start→watch→kill turn has been attempted, and a short process can
 exit before the follow-up calls composed in the same turn reach it.
 
 **The running tail** — the last N lines of output plus timing — is a *live,
-re-sampled* view held in an ephemeral `Supervisor` registry inside `Shared` (a
+re-sampled* view held in an ephemeral `Supervisor` registry inside `Session` (a
 sibling to `Inbox` and `Metrics`). It is never written to the log. It is dropped on
 restart, at which point `killpg`-on-teardown reaps the children. The async
-spawn/drain orchestration — which needs `Arc<Shared>` and the `POST /notifications` path
+spawn/drain orchestration — which needs `Arc<Session>` and the `POST /notifications` path
 — lives in `daemon.rs`; `supervisor.rs` holds the state: the registry,
 the bounded per-process capture buffer, and the read projections over it.
 

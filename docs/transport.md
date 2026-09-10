@@ -866,7 +866,7 @@ The parsed `ModelCapabilities` (`context_length`, `max_output_tokens`,
 `supports_reasoning`, `supports_image_input`, `prompt_cache`,
 `supported_efforts`, `default_effort`; grown
 one field per consumer) is transport-only — held
-in `Shared`, never logged or projected. `max_output_tokens` sets the
+in `Session`, never logged or projected. `max_output_tokens` sets the
 per-turn output cap (`Client::with_max_output`): a reasoning model's
 thinking bills against `max_tokens`, and the pre-reasoning 4096 default —
 which stands only when the provider reports no cap — starves a long think,
@@ -1029,7 +1029,7 @@ Assistant prose and tool stdout are the same thing: ephemeral, pre-commit
 output that the committed log entry supersedes once the turn closes. One
 mechanism carries both.
 
-`Shared` holds a **lossy** `broadcast::Sender<StreamDelta>`. `StreamDelta`'s
+`Session` holds a **lossy** `broadcast::Sender<StreamDelta>`. `StreamDelta`'s
 variants: `AssistantText` and `ThinkingText` (fragments from `text_delta` /
 `thinking_delta` events), `ToolCallStart` and `ToolCallInput` (a tool call
 opening, then its arguments arriving), `ToolOutput { call_id, chunk }` (a chunk
@@ -1184,7 +1184,7 @@ and its byte-stability pins do not move.
 
 ### Metrics cell
 
-`Shared` holds a transport-only metrics cell: the latest `Usage`, cumulative
+`Session` holds a transport-only metrics cell: the latest `Usage`, cumulative
 totals, two monotonic `Instant`s, and one wall-clock stamp. Two clocks, two
 jobs: the `Instant`s drive *interval* logic (when to ping, when the keepalive cap
 is reached), where a monotonic clock is correct because an NTP step must not move

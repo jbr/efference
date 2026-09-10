@@ -5,7 +5,7 @@ use super::*;
 /// The validated inputs of one `/events` request, handed from the route's validating
 /// half to its `Sse` half through conn state.
 struct EventsRequest {
-    shared: Arc<Shared>,
+    shared: Arc<Session>,
     include: Include,
     since: u64,
     presence: Presence,

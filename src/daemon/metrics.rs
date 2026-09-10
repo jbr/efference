@@ -46,7 +46,7 @@ pub(super) struct Metrics {
 }
 
 /// Session cost telemetry (docs/transport.md): the endpoint whose accounting
-/// surface prices requests (armed by [`Shared::enable_cost_tracking`], only when
+/// surface prices requests (armed by [`Session::enable_cost_tracking`], only when
 /// the provider has one — OpenRouter today), the running sum of billed USD, and
 /// how many requests couldn't be priced (so the total is legibly an
 /// undercount rather than silently wrong).
@@ -78,7 +78,7 @@ pub enum RequestOrigin {
     /// (all-zero usage) or one that finalized unparseable (real usage;
     /// docs/transport.md). Persisted as its own origin so it is not read as a
     /// real main-loop request: only its non-zero usage is priced
-    /// ([`Shared::spawn_cost_fetch`]) and it never counts as prefix evidence
+    /// ([`Session::spawn_cost_fetch`]) and it never counts as prefix evidence
     /// ([`ColdStreak::observe`]).
     AbortedAttempt,
     /// An origin this build does not recognize — a forward-compat catch-all so a
@@ -109,7 +109,7 @@ const CACHE_TTL: Duration = Duration::from_secs(300);
 pub const COLD_STREAK_WARN: u32 = 4;
 
 /// Seconds to wait before each attempt at pricing a generation
-/// (`Shared::spawn_cost_fetch`, docs/transport.md). The record's arrival lag
+/// (`Session::spawn_cost_fetch`, docs/transport.md). The record's arrival lag
 /// is the upstream's, not OpenRouter's, and ranges from seconds to over a
 /// minute by model; a schedule sized to the fastest prices nothing on the
 /// slowest.
@@ -261,7 +261,7 @@ fn wall_millis() -> u128 {
         .unwrap_or_default()
 }
 
-impl Shared {
+impl Session {
     /// Open (append) the per-request usage record at `path`. Not opening one — tests,
     /// offline verbs — just drops the lines; a failure to open is reported and
     /// likewise degrades to in-memory telemetry only, never a dead daemon.

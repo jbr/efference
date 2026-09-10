@@ -733,7 +733,7 @@ impl Toolbox {
     }
 
     /// Every mounted tool's full definition, keyed by wire name — what the
-    /// daemon snapshots into `Shared` before the toolbox moves into the loop
+    /// daemon snapshots into `Session` before the toolbox moves into the loop
     /// (docs/control-api.md), since the mounted set is fixed for the session
     /// and there is nothing to reconcile later (docs/log-and-projection.md).
     pub fn tool_catalog(&self) -> std::collections::HashMap<String, ToolEntry> {

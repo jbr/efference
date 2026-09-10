@@ -23,7 +23,7 @@ pub(super) struct PendingNotification {
     pub(super) slot: Option<String>,
 }
 
-impl Shared {
+impl Session {
     /// Enqueue an ambient notification (docs/inbox.md — `POST /notifications`). If it names a
     /// `slot` (or an explicit `replaces` id) matching a pending entry, that entry is
     /// **superseded**: archived-and-replaced, never edited (records are immutable,

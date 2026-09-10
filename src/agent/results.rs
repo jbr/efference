@@ -34,9 +34,9 @@ pub(super) fn cap_tool_result(call: &ToolCall, result: RawResult) -> RawResult {
 
 /// Run a harness supervisor/inbox tool (docs/supervisor.md) against daemon state, or `None`
 /// if `call` isn't one (so the caller falls through to the world toolbox). Like
-/// `consolidate` these act on `Shared`, not the world — but unlike it their result
+/// `consolidate` these act on `Session`, not the world — but unlike it their result
 /// distills through the universal fork like any tool (no bypass).
-pub(super) fn supervisor_tool_result(shared: &Arc<Shared>, call: &ToolCall) -> Option<RawResult> {
+pub(super) fn supervisor_tool_result(shared: &Arc<Session>, call: &ToolCall) -> Option<RawResult> {
     let handle = || call.input.get("handle").and_then(Value::as_str);
     match call.name.as_str() {
         supervisor::LIST => Some(RawResult::text(shared.bg_list_text())),

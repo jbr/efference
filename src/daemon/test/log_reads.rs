@@ -25,8 +25,8 @@ fn assistant_calling(call_id: &str, command: &str) -> Payload {
 }
 
 /// A log of `n` user entries, seq 0..n.
-fn log_of(n: u64) -> Arc<Shared> {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+fn log_of(n: u64) -> Arc<Session> {
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     for i in 0..n {
         shared.append(1, user(&format!("entry {i}"))).unwrap();
     }
@@ -192,7 +192,7 @@ async fn one_entry_by_seq_validates_with_an_etag() {
 /// its result harmless.
 #[tokio::test]
 async fn a_tool_call_resolves_by_its_call_id() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     shared.append(1, user("run the tests")).unwrap();
     shared
         .append(1, assistant_calling("toolu_9", "cargo test"))
@@ -240,7 +240,7 @@ const IMAGE_BYTES: &[u8] = &[0x52, 0x49, 0x46, 0x46, 0x00, 0x01, 0x02, 0x03];
 /// through `GET /log/:seq/images/:idx` (entry_view.rs, docs/control-api.md).
 #[tokio::test]
 async fn log_reads_reference_images_instead_of_inlining_them() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     shared.append(1, user("look at this")).unwrap();
     shared.append(1, result_with_image()).unwrap();
     let app = test_server(&shared).await;
@@ -262,7 +262,7 @@ async fn log_reads_reference_images_instead_of_inlining_them() {
 /// malformed addresses are 400s.
 #[tokio::test]
 async fn an_image_resolves_by_seq_and_index() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     shared.append(1, user("look at this")).unwrap();
     shared.append(1, result_with_image()).unwrap();
     let app = test_server(&shared).await;
@@ -295,7 +295,7 @@ async fn an_image_resolves_by_seq_and_index() {
 /// frame ≡ window pin now states (`frames.rs`).
 #[tokio::test]
 async fn an_oversized_result_is_elided_in_the_window_and_whole_by_seq() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let big = "z".repeat(crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES * 2);
     let result = |call_id: &str, content: &str| {
         Payload::tool_result(

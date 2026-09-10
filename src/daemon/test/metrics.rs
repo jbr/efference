@@ -11,7 +11,7 @@ use super::*;
 fn keepalive_advances_touch_clock_not_cap_clock() {
     let log_path = std::env::temp_dir().join("efference-keepalive-test.jsonl");
     let _ = std::fs::remove_file(&log_path);
-    let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
+    let (shared, _turns_rx) = Session::new(Log::create(&log_path).expect("create log"));
 
     // Nothing to keep warm yet → both clocks absent.
     assert_eq!(shared.keepalive_clocks(), (None, None));
@@ -56,7 +56,7 @@ fn recorded_requests_land_in_the_usage_record() {
     let usage_path = dir.join("efference-usage-record-test-usage.jsonl");
     let _ = std::fs::remove_file(&log_path);
     let _ = std::fs::remove_file(&usage_path);
-    let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
+    let (shared, _turns_rx) = Session::new(Log::create(&log_path).expect("create log"));
     shared.attach_usage_log(&usage_path);
 
     let usage = Usage {
@@ -222,7 +222,7 @@ fn aborted_attempts_do_not_count_as_cold_prefix_evidence() {
 fn recorded_requests_move_the_published_cold_streak() {
     let log_path = std::env::temp_dir().join("efference-cold-streak-test.jsonl");
     let _ = std::fs::remove_file(&log_path);
-    let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
+    let (shared, _turns_rx) = Session::new(Log::create(&log_path).expect("create log"));
     let turn = |read| RequestUsage {
         id: None,
         model: Some("claude-haiku-4-5".into()),

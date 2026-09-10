@@ -20,7 +20,7 @@ async fn drain(rx: &mut broadcast::Receiver<StateUpdate>) -> HashMap<Topic, Stat
 /// rather than the reason that subscription exists.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn publishes_the_full_set_once_then_only_changes() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let mut rx = shared.subscribe_state();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
 
@@ -49,7 +49,7 @@ async fn publishes_the_full_set_once_then_only_changes() {
 /// the source: both sides come from `topic_json`, so they cannot drift.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_published_value_equals_that_key_of_get_state() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let mut rx = shared.subscribe_state();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
 
@@ -76,7 +76,7 @@ async fn a_published_value_equals_that_key_of_get_state() {
 /// the failure the read-values-then-`last_seq` order exists to prevent.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn updates_are_stamped_with_the_log_position_they_reflect() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let mut rx = shared.subscribe_state();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
 
@@ -113,14 +113,14 @@ async fn updates_are_stamped_with_the_log_position_they_reflect() {
 /// An append alone wakes the diff, without any mutation site pinging `state_changed`.
 ///
 /// This is what covers the two topics whose mutating code holds an `Arc` but no
-/// [`Shared`] — the upstream-failure cell and the cost cell — and it is why a missed ping
+/// [`Session`] — the upstream-failure cell and the cost cell — and it is why a missed ping
 /// is "late" rather than "stale forever".
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_append_alone_wakes_the_diff() {
     // The upstream-failure cell is reached through its own `Arc`, exactly as the HTTP
-    // client reaches it — no `Shared` in hand, so no way to ping.
+    // client reaches it — no `Session` in hand, so no way to ping.
     let failure = crate::api::upstream_failure_state();
-    let (shared, _turns_rx) = Shared::with_role_scratch_and_upstream_failure(
+    let (shared, _turns_rx) = Session::with_role_scratch_and_upstream_failure(
         Log::in_memory(),
         LoadedConfig::default(),
         None,
@@ -155,7 +155,7 @@ async fn an_append_alone_wakes_the_diff() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_retry_publishes_without_an_append() {
     let retry = crate::api::upstream_retry_state();
-    let (shared, _turns_rx) = Shared::full(
+    let (shared, _turns_rx) = Session::full(
         Log::in_memory(),
         LoadedConfig::default(),
         None,

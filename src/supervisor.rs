@@ -4,14 +4,14 @@
 //! re-sampled fresh at each triage gate, never frozen into the log (forcing a live
 //! tail through the immutable notification model would pile up stale snapshots,
 //! docs/supervisor.md). So this registry is **ephemeral daemon state** — a sibling of the
-//! inbox queue and the cache `Metrics` in [`Shared`](crate::daemon): dropped on
+//! inbox queue and the cache `Metrics` in [`Session`](crate::daemon): dropped on
 //! restart, where killpg-on-teardown reaps the children it owns.
 //!
 //! This module holds the state: the registry, its one bounded per-process
 //! capture buffer, and the read projections over it — [`Supervisor::views`] (the
 //! ambient auto-show the peek renders each gate), [`Supervisor::pin_snapshot`] (a
 //! frozen tail when the model pins), and [`Supervisor::finish`] (the exit
-//! notification). The async spawn/drain orchestration — which needs `Arc<Shared>`
+//! notification). The async spawn/drain orchestration — which needs `Arc<Session>`
 //! and the `POST /notifications` path — lives in `daemon.rs`.
 
 use std::process::ExitStatus;
@@ -325,7 +325,7 @@ pub struct OutputRead {
 }
 
 /// The ephemeral background-process registry (docs/supervisor.md). Held behind a `Mutex` in
-/// [`Shared`](crate::daemon); never logged and never projected, which is what keeps it
+/// [`Session`](crate::daemon); never logged and never projected, which is what keeps it
 /// clear of the cache prefix. (Its stamps *do* reach the control wire — see
 /// [`ProcessState`] — which is harmless: the control API and the projection are
 /// different wires, and only the projection has to stay byte-stable.)

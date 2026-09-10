@@ -26,7 +26,7 @@ file is not.
 ## Listener topology is the trust model
 
 The daemon runs two trillium servers sharing one `Swansong` (one shutdown domain) and
-one `Arc<Shared>`. Both mount the same stack, `handler(transport, app)` in
+one `Arc<Session>`. Both mount the same stack, `handler(transport, app)` in
 `src/daemon/handler.rs` — the only place a handler is assembled, for the daemon, the
 TCP bind, the host, and every test. Its tuple is fixed; each layer that is not always
 present is an `Option`, which trillium runs as a pass-through when `None`, and the

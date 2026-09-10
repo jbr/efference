@@ -8,7 +8,7 @@
 //! editing `config.toml` for immediate effect, on the same machinery (`daemon/watch.rs`).
 //!
 //! Nothing here touches the log. The notification rides the existing inbox rail
-//! (`Shared::notify`), is shown at a triage gate, and is logged as `Ambient` at first-show like
+//! (`Session::notify`), is shown at a triage gate, and is logged as `Ambient` at first-show like
 //! any other — so the bytes stay on disk until the model pulls them, and the byte-stability pins
 //! never see the attachment at all (docs/log-and-projection.md).
 
@@ -31,7 +31,7 @@ const DEBOUNCE: Duration = Duration::from_millis(400);
 /// attachment the previous session already handled would be noise, and the files are still there
 /// to read.
 pub(crate) async fn attachments_watch_loop(
-    shared: Arc<Shared>,
+    shared: Arc<Session>,
     dir: PathBuf,
     display_dir: PathBuf,
 ) {
@@ -88,7 +88,7 @@ fn read_names(dir: &Path) -> std::collections::HashSet<PathBuf> {
 
 /// Describe one arrival and put it on the inbox rail. A file that cannot be statted is skipped
 /// silently — a half-written file is the common case, and the next event describes it whole.
-fn announce(shared: &Shared, display_dir: &Path, path: &Path) {
+fn announce(shared: &Session, display_dir: &Path, path: &Path) {
     let Some(name) = path.file_name() else { return };
     let display = display_dir.join(name).to_string_lossy().into_owned();
     let Ok(arrival) = crate::attachments::inspect(&display, path) else {

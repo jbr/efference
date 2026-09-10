@@ -103,7 +103,7 @@ impl Include {
 
 /// One connection's view of the three sources.
 struct Tail {
-    shared: Arc<Shared>,
+    shared: Arc<Session>,
     include: Include,
     /// The next log `seq` to send. Everything below it has been delivered, which is
     /// exactly what a state watermark is compared against.
@@ -354,7 +354,7 @@ impl From<Frame> for FrameEvent {
 /// Boxed because the `Sse` handler's `EventStream` demands `Unpin`: the raw `unfold`
 /// over an async block is not.
 pub(crate) fn control_stream(
-    shared: Arc<Shared>,
+    shared: Arc<Session>,
     include: Include,
     since: u64,
     presence: Presence,
@@ -379,7 +379,7 @@ pub(crate) fn control_stream(
     }))
 }
 
-impl Shared {
+impl Session {
     /// The current value of each named topic, stamped with one shared watermark.
     ///
     /// Values first, then `last_seq` — the same ordering [`topic_snapshot`] uses and for
@@ -387,7 +387,7 @@ impl Shared {
     /// one that lags them would let a client render state accounting for an entry it has
     /// not been sent.
     ///
-    /// [`topic_snapshot`]: Shared::topic_snapshot
+    /// [`topic_snapshot`]: Session::topic_snapshot
     fn subscribed_snapshot(&self, topics: &[Topic]) -> Vec<StateUpdate> {
         let values: Vec<(Topic, Arc<str>)> = topics
             .iter()

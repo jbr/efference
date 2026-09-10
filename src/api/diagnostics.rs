@@ -7,7 +7,7 @@
 //!   Content-free by design; the bodies live in the log.
 //! - [`UpstreamRetryState`] — a retry in flight, level-triggered: which surface, which
 //!   attempt, of what budget, and when the next attempt fires. Carries its own change
-//!   signal because the fork peek writes it from a code path that holds no `Shared`.
+//!   signal because the fork peek writes it from a code path that holds no `Session`.
 //! - [`UpstreamAttemptQueue`] — failed HTTP attempts the retry handler absorbed, waiting
 //!   for the loop to drain them into durable record-only log entries. The handler sits
 //!   below the loop and cannot append, so the body crosses that boundary here.
@@ -100,8 +100,8 @@ pub struct UpstreamRetry {
 
 /// The retry cell and its change signal.
 ///
-/// The signal is here rather than on `Shared` because the fork peek publishes retry
-/// state from inside `distill`, which holds a `Client` and no `Shared` — and unlike
+/// The signal is here rather than on `Session` because the fork peek publishes retry
+/// state from inside `distill`, which holds a `Client` and no `Session` — and unlike
 /// the upstream-failure cell, a retry is *not* followed by an append, so the
 /// daemon's wake-on-`appended` fallback would leave the topic late for the whole
 /// pause (daemon/topics.rs).

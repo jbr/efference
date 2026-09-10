@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn state_reports_upstream_failure() {
     let failure = crate::api::upstream_failure_state();
-    let (shared, _turns_rx) = Shared::with_role_scratch_and_upstream_failure(
+    let (shared, _turns_rx) = Session::with_role_scratch_and_upstream_failure(
         Log::in_memory(),
         LoadedConfig::default(),
         None,
@@ -34,7 +34,7 @@ fn state_reports_upstream_failure() {
 #[test]
 fn state_reports_the_retry_in_flight() {
     let retry = crate::api::upstream_retry_state();
-    let (shared, _turns_rx) = Shared::full(
+    let (shared, _turns_rx) = Session::full(
         Log::in_memory(),
         LoadedConfig::default(),
         None,
@@ -84,7 +84,7 @@ fn state_reports_the_retry_in_flight() {
 /// apart.
 #[test]
 fn state_reports_a_stalled_trajectory() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
 
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(
@@ -128,7 +128,7 @@ fn state_reports_a_stalled_trajectory() {
 /// offline verb sees.
 #[test]
 fn state_reports_the_session_identity() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
 
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["session_identity"].is_null());
@@ -156,7 +156,7 @@ fn state_reports_the_session_identity() {
 fn state_reports_cache_telemetry() {
     let log_path = std::env::temp_dir().join("efference-usage-test.jsonl");
     let _ = std::fs::remove_file(&log_path);
-    let (shared, _turns_rx) = Shared::new(Log::create(&log_path).expect("create log"));
+    let (shared, _turns_rx) = Session::new(Log::create(&log_path).expect("create log"));
 
     // No request yet: no `last`, no stamp.
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
@@ -223,7 +223,7 @@ fn state_reports_cache_telemetry() {
 /// `input_tokens` alone (that is only the uncached remainder).
 #[test]
 fn state_reports_context_occupancy_against_the_boot_limit() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
 
     // No capabilities fetched → the whole readout is null, not a guessed limit.
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
@@ -282,7 +282,7 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
 /// is what this pins on both sides.
 #[test]
 fn context_occupancy_ignores_side_channel_requests() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     shared.set_capabilities(crate::api::ModelCapabilities {
         context_length: 200_000,
         max_output_tokens: Some(64_000),
@@ -347,7 +347,7 @@ fn context_occupancy_ignores_side_channel_requests() {
 /// `{usd, unpriced}` once armed — `unpriced > 0` marks the total an undercount.
 #[test]
 fn state_reports_session_cost_only_when_armed() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["usage"]["cost"].is_null());
 
@@ -385,7 +385,7 @@ fn state_reports_session_cost_only_when_armed() {
 #[test]
 fn state_reports_effective_role_contents() {
     // Default role (no config file) → null source, empty everywhere.
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["role"]["source"].is_null());
     assert!(v["role"]["scope"].is_null());
@@ -411,7 +411,7 @@ fn state_reports_effective_role_contents() {
         .expect("valid config"),
         source: ConfigSource::Path("efference.toml".into()),
     };
-    let (shared, _rx) = Shared::with_role(Log::in_memory(), loaded);
+    let (shared, _rx) = Session::with_role(Log::in_memory(), loaded);
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["role"]["source"], "efference.toml");
     assert_eq!(v["role"]["scope"], "stay in the repo");
@@ -451,7 +451,7 @@ fn state_reports_effective_role_contents() {
 /// value, not a value plus a partial mirror of it (docs/control-api.md).
 #[test]
 fn state_reports_autonomous_mode() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     assert!(!shared.autonomous());
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["review_level"], "spotter_human");
@@ -468,7 +468,7 @@ fn state_reports_autonomous_mode() {
 #[test]
 fn state_reports_the_review_level_dial() {
     use crate::policy::ReviewLevel;
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
 
     // Default: supervised, not autonomous.
     assert_eq!(shared.review_level(), ReviewLevel::SpotterHuman);
@@ -499,7 +499,7 @@ fn state_reports_the_review_level_dial() {
 /// their return would be a silent regression to a per-chunk firehose.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn state_json_surfaces_running_processes() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     shared
         .spawn_background("sleep 5".into(), None)
         .expect("spawn");
@@ -546,7 +546,7 @@ async fn state_json_surfaces_running_processes() {
 fn state_reports_triage_retention() {
     use crate::log::{Distilled, Keep, RawResult, WireState};
 
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let result = |seq: u64, lines: usize, wire: WireState| {
         let content = (1..=lines)
             .map(|i| format!("line {i}"))
@@ -610,7 +610,7 @@ fn state_reports_triage_retention() {
 /// rather than tolerated by a loose assertion.
 #[test]
 fn state_is_last_seq_plus_exactly_the_topics() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     let keys: std::collections::BTreeSet<&str> =
         v.as_object().unwrap().keys().map(String::as_str).collect();
@@ -638,7 +638,7 @@ fn state_is_last_seq_plus_exactly_the_topics() {
 #[test]
 fn state_reports_plan_windows_under_usage() {
     let plan = crate::api::plan_state();
-    let (shared, _turns_rx) = Shared::full(
+    let (shared, _turns_rx) = Session::full(
         Log::in_memory(),
         LoadedConfig::default(),
         None,

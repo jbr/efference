@@ -9,7 +9,7 @@ use super::*;
 /// model in the loop.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn background_process_drains_and_notifies_on_exit() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let handle = shared
         .spawn_background("echo hello; echo world 1>&2".into(), None)
         .expect("spawn");
@@ -54,7 +54,7 @@ async fn background_process_drains_and_notifies_on_exit() {
 /// process.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn adopt_background_continues_the_drain_and_notifies_on_exit() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     let detach = async {
         tokio::time::sleep(Duration::from_millis(300)).await;
         Interrupt::Detach
@@ -117,7 +117,7 @@ async fn adopt_background_continues_the_drain_and_notifies_on_exit() {
 /// the foreground bash spawn (docs/tools.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn background_spawn_exports_the_scratch_tmpdir() {
-    let (shared, _turns_rx) = Shared::with_role_and_scratch(
+    let (shared, _turns_rx) = Session::with_role_and_scratch(
         Log::in_memory(),
         LoadedConfig::default(),
         Some(PathBuf::from("/scratch/efference-test")),
@@ -142,7 +142,7 @@ async fn background_spawn_exports_the_scratch_tmpdir() {
 /// dropped at the door.
 #[test]
 fn detach_note_is_stashed_and_consumed_once() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     shared.request_detach(Some("check the logs".into()));
     assert_eq!(shared.take_detach_note().as_deref(), Some("check the logs"));
     assert_eq!(shared.take_detach_note(), None, "consumed once");
@@ -154,7 +154,7 @@ fn detach_note_is_stashed_and_consumed_once() {
 /// (and rejects unknown handles), and `inbox_summary` lists pending notifications.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn kill_bg_and_inbox_summary() {
-    let (shared, _turns_rx) = Shared::new(Log::in_memory());
+    let (shared, _turns_rx) = Session::new(Log::in_memory());
     assert!(!shared.kill_bg("p#1"), "unknown handle → false");
 
     let h = shared

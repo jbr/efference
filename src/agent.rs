@@ -7,7 +7,7 @@
 //! Every input — including the first turn — arrives over the `Frontend`, which is
 //! the daemon's HTTP-fed [`RemoteFrontend`] (docs/control-channel.md): the
 //! control socket is the singular authoritative input source. The log lives in the
-//! shared daemon state ([`Shared`]); the loop appends through it, which both
+//! shared daemon state ([`Session`]); the loop appends through it, which both
 //! persists the JSONL line and wakes any SSE tailers.
 
 use std::path::Path;
@@ -19,7 +19,7 @@ use crate::api::{Client, Error, RetrySurface, Streamed, ToolChoice, UpstreamRetr
 use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
-use crate::daemon::{RequestOrigin, Shared, Stall, StallReason, StreamDelta};
+use crate::daemon::{RequestOrigin, Session, Stall, StallReason, StreamDelta};
 use crate::distill::{BgVerdict, ForkPeek, Pending, is_peek_tool};
 use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::{ShownNotification, active_shown};
@@ -88,8 +88,8 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
 /// the `GET /v1/tools/:name` mirror of [`tool_definitions`], the way [`brief`]
 /// already mirrors it for the spotter. Built once, before the loop starts (the
 /// toolbox's mounted set and this harness's own tool family are both fixed for
-/// the session, docs/log-and-projection.md), and snapshotted into `Shared`
-/// ([`crate::daemon::Shared::set_tool_catalog`]).
+/// the session, docs/log-and-projection.md), and snapshotted into `Session`
+/// ([`crate::daemon::Session::set_tool_catalog`]).
 ///
 /// A catalog built from `toolbox.tool_catalog()` alone once missed this whole
 /// family — `check_inbox`, `list_processes`, `consolidate`, the two peek
@@ -240,7 +240,7 @@ pub(crate) fn stalled(
 /// Each entry carries `upstream_failure`, so it projects to nothing and the next
 /// request re-sends byte-identical messages (docs/log-and-projection.md).
 fn record_absorbed_attempts(
-    shared: &Shared,
+    shared: &Session,
     client: &Client,
     turn: &mut Turn,
 ) -> std::io::Result<()> {
@@ -257,12 +257,12 @@ fn record_absorbed_attempts(
     Ok(())
 }
 
-/// Drive the loop until input ends. The log lives in [`Shared`]; the loop appends
+/// Drive the loop until input ends. The log lives in [`Session`]; the loop appends
 /// through it.
 pub async fn run<F: Frontend, S: Spotter>(
     client: &Client,
     frontend: &mut F,
-    shared: Arc<Shared>,
+    shared: Arc<Session>,
     distiller: ForkPeek,
     spotter: S,
     toolbox: Toolbox,

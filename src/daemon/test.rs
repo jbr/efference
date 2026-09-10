@@ -19,7 +19,7 @@ fn bash_call(command: &str) -> ToolCall {
     )
 }
 
-/// A role that resolved from `path`, so `Shared` opens it as the live [`ConfigFile`] — what
+/// A role that resolved from `path`, so `Session` opens it as the live [`ConfigFile`] — what
 /// makes the refresh/revert path reachable in a test without a real daemon boot. The base role
 /// stays default: the file's contents reach effective policy through a refresh, like any edit.
 fn file_role(path: &std::path::Path) -> LoadedConfig {
@@ -64,7 +64,7 @@ fn proposed_edit(change: crate::log::ConfigChange) -> Payload {
 /// one collide, a panicking test leaks it) and Darwin caps a socket path at `SUN_LEN`
 /// (104 bytes), which the harness's long per-session `$TMPDIR` exceeds.
 ///
-/// The shared state the handlers read via `conn.shared_state::<Arc<Shared>>()` is
+/// The shared state the handlers read via `conn.shared_state::<Arc<Session>>()` is
 /// server-global, so it arrives through [`Init`] rather than the `with_shared_state` a
 /// real bind uses (`daemon/serve.rs`) — and `trillium_testing::init` is what *runs* that
 /// init and hands back the resulting context. The bare `trillium_testing::connector`
@@ -74,7 +74,7 @@ fn proposed_edit(change: crate::log::ConfigChange) -> Payload {
 /// Streaming routes are why this returns a [`ControlClient`] rather than a
 /// `TestServer`: that type reads the response body eagerly, which never returns on
 /// `/events`.
-async fn test_client(shared: &Arc<Shared>) -> ControlClient {
+async fn test_client(shared: &Arc<Session>) -> ControlClient {
     let shared = Arc::clone(shared);
     let mut handler = (
         trillium::Init::new(move |info: trillium::Info| {
@@ -93,7 +93,7 @@ async fn test_client(shared: &Arc<Shared>) -> ControlClient {
 /// status, headers, JSON body — rather than the client's rendering of it.
 /// [`test_client`] is the one to use for streams; this one reads bodies eagerly, so it
 /// would never return on `/events`.
-async fn test_server(shared: &Arc<Shared>) -> TestServer<impl trillium::Handler> {
+async fn test_server(shared: &Arc<Session>) -> TestServer<impl trillium::Handler> {
     let shared = Arc::clone(shared);
     TestServer::new((
         trillium::Init::new(move |info: trillium::Info| {

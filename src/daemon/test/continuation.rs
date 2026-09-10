@@ -55,7 +55,7 @@ fn aborted_attempt() -> Payload {
 /// `tool_use` do not.
 #[test]
 fn continuable_tail_is_a_question_about_the_wire() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     // An empty log has no wire to re-prompt.
     assert_eq!(
         shared.request_continue().unwrap_err().message(),
@@ -93,7 +93,7 @@ fn continuable_tail_is_a_question_about_the_wire() {
 /// stalled session continuable rather than "completed".
 #[test]
 fn record_only_entries_do_not_move_the_tail() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.append(1, user("hello")).unwrap();
     shared.append(2, aborted_attempt()).unwrap();
     shared.append(3, aborted_attempt()).unwrap();
@@ -107,7 +107,7 @@ fn record_only_entries_do_not_move_the_tail() {
 /// neither state is control the operator's to hand back.
 #[test]
 fn a_running_or_gated_loop_declines() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.append(1, user("hello")).unwrap();
 
     shared.submit_turn(SubmittedTurn {
@@ -133,7 +133,7 @@ fn a_running_or_gated_loop_declines() {
 /// point until the loop has consumed it.
 #[test]
 fn a_pending_continue_is_not_settled() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.append(1, user("hello")).unwrap();
     assert!(shared.is_settled());
     shared.request_continue().unwrap();
@@ -148,7 +148,7 @@ fn a_pending_continue_is_not_settled() {
 /// lands before the waiter registers, which the flag (not the notify) carries.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn continue_wake_resolves_on_request() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.append(1, user("hello")).unwrap();
 
     let waiter = {
@@ -168,7 +168,7 @@ async fn continue_wake_resolves_on_request() {
 /// either side of the request, which is what "zero-token" means.
 #[test]
 fn a_continue_appends_nothing() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.append(1, user("hello")).unwrap();
     let before = shared.snapshot();
     let wire = serde_json::to_string(&shared.project_messages()).unwrap();
@@ -188,7 +188,7 @@ fn a_continue_appends_nothing() {
 /// in the envelope's `message`.
 #[tokio::test]
 async fn the_route_accepts_and_declines() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.append(1, user("hello")).unwrap();
     let client = test_client(&shared).await;
 
@@ -212,7 +212,7 @@ async fn the_route_accepts_and_declines() {
 /// than on prose.
 #[tokio::test]
 async fn a_decline_carries_the_typed_envelope() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     let server = test_server(&shared).await;
     let conn = server.post("/v1/loop/continue").await;
     conn.assert_status(409);

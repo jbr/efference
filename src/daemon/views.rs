@@ -1,6 +1,6 @@
 //! The JSON readouts served to clients by `/state` and `/log` (docs/control-api.md).
 //!
-//! `/state` is decomposed into one function per [`Topic`], and [`Shared::state_json`] is
+//! `/state` is decomposed into one function per [`Topic`], and [`Session::state_json`] is
 //! their composition over [`Topic::ALL`]. That split is what lets the composite snapshot
 //! and the level-triggered `state` frames come from the same source, so `GET /state`
 //! equals the fold of every state frame since connect rather than merely agreeing with
@@ -12,7 +12,7 @@
 
 use super::*;
 
-impl Shared {
+impl Session {
     /// One topic's entire current value — the body of a `state` frame, and one field of
     /// the composite snapshot.
     pub(super) fn topic_json(&self, topic: Topic) -> Value {

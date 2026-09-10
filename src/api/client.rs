@@ -278,7 +278,7 @@ pub struct Client {
     upstream_failure: UpstreamFailureState,
     /// A retry in flight, written by both retry loops (docs/transport.md). It
     /// rides on the client because the fork peek retries with a `Client` and no
-    /// `Shared` in scope.
+    /// `Session` in scope.
     upstream_retry: UpstreamRetryState,
     /// Failed HTTP attempts the retry handler absorbed, waiting for the agent
     /// loop to drain them into record-only log entries (docs/transport.md).

@@ -118,8 +118,8 @@ pub(crate) struct NotifyBody {
 
 /// Pull the shared daemon state out of a conn's server-global TypeSet, or short
 /// out with a 500 if it's somehow absent (a wiring bug, never seen at runtime).
-pub(crate) fn shared_of(conn: &Conn) -> Option<Arc<Shared>> {
-    conn.shared_state::<Arc<Shared>>().map(Arc::clone)
+pub(crate) fn shared_of(conn: &Conn) -> Option<Arc<Session>> {
+    conn.shared_state::<Arc<Session>>().map(Arc::clone)
 }
 
 /// The answer when the server-global state is absent — the one condition every route
@@ -151,7 +151,7 @@ mod web_push;
 
 /// The control API (docs/control-channel.md): every `(method, path)` the daemon answers,
 /// as one `Router`. Each route is a named `async fn` in a sibling module under `http/`;
-/// they read `Shared` from the server-global state, JSON in, JSON out. The router
+/// they read `Session` from the server-global state, JSON in, JSON out. The router
 /// supplies method-aware dispatch and the path captures (`:call_id`, `:id`, `:seq`).
 /// Mounted only by [`handler`](super::handler::handler).
 ///
@@ -279,7 +279,7 @@ pub(crate) fn wants_wait(query: &str) -> bool {
 /// snapshot — the shared tail of `GET /state?wait=settled` and the write routes' `?wait`. The
 /// body is exactly `/state`'s, so a settled response is just a fresh state read; the client
 /// inspects `gate` to tell a gate from idle.
-pub(crate) async fn settle_and_state(shared: &Arc<Shared>, conn: Conn) -> Conn {
+pub(crate) async fn settle_and_state(shared: &Arc<Session>, conn: Conn) -> Conn {
     let _ = tokio::time::timeout(SETTLE_TIMEOUT, shared.await_settled()).await;
     conn.with_status(200).with_body(shared.state_json()).halt()
 }

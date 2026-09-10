@@ -22,10 +22,10 @@ pub async fn serve<S: Spotter>(
     bind: Option<tcp::TcpBind>,
     env_policy: crate::env_table::EnvPolicy,
 ) -> Result<(), Error> {
-    // The keepalive interval, read off the config before it moves into `Shared`
+    // The keepalive interval, read off the config before it moves into `Session`
     // (docs/transport.md).
     let ping_at = role.role.transport.keepalive_interval;
-    let (shared, turns) = Shared::full(
+    let (shared, turns) = Session::full(
         log,
         role,
         toolbox.scratch_dir().map(std::path::Path::to_path_buf),
@@ -40,7 +40,7 @@ pub async fn serve<S: Spotter>(
     // because the gate reads it on the loop's thread.
     shared.set_autonomous(autonomous);
     // Whether this model has a prompt cache to keep warm at all
-    // (docs/transport.md) — read before the capabilities move into `Shared`.
+    // (docs/transport.md) — read before the capabilities move into `Session`.
     // The keepalive is a Messages-dialect primitive (`max_tokens: 0`); Responses has
     // no established cheap read (backlog: openai-provider/validation.md), so the
     // loop never starts there and the boot line says so.
@@ -79,7 +79,7 @@ pub async fn serve<S: Spotter>(
     // Snapshot the mounted tool catalog for `GET /v1/tools/:name`
     // (docs/control-api.md), before `toolbox` moves into `agent::run` below —
     // the same reason `set_capabilities`/`set_identity` run here rather than
-    // in `Shared::full`.
+    // in `Session::full`.
     shared.set_tool_catalog(&toolbox);
     let mut frontend = RemoteFrontend {
         shared: Arc::clone(&shared),
@@ -199,13 +199,13 @@ pub async fn serve<S: Spotter>(
     // Trillium owns the signal registry: by default it registers SIGINT/SIGTERM and
     // drives graceful shutdown through its `Swansong`. But the future `serve` awaits
     // is `agent::run`, which parks in `read_user_turn` on the turn channel — whose
-    // senders live in the still-alive `Arc<Shared>`, so a C-c that stops the HTTP
+    // senders live in the still-alive `Arc<Session>`, so a C-c that stops the HTTP
     // listener would otherwise leave the loop parked forever (the `kill -9` hang).
     // Hook the *same* Swansong via `interrupt`: it drives the loop normally until
     // shutdown is initiated, then cancels it and resolves to `None`. (`server` is
     // held — not dropped — for the whole await so the listener stays up; it drops on
     // return, after shutdown has already begun.)
-    // Keep a handle for teardown — `run` moves the loop's `Arc<Shared>`.
+    // Keep a handle for teardown — `run` moves the loop's `Arc<Session>`.
     let teardown = Arc::clone(&shared);
     let run = agent::run(&client, &mut frontend, shared, distiller, spotter, toolbox);
     let outcome = match server.swansong().interrupt(run).await {

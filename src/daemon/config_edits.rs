@@ -47,7 +47,7 @@ pub(super) fn session_visible_notice(
     }
 }
 
-impl Shared {
+impl Session {
     /// Drop a pending proposal from the queue once an orchestrator resolves it (commit or cancel).
     /// The committing/cancelling entry references the proposal by its `seq`; a direct commit (the
     /// synchronous human gate, fs-watch) has no queued proposal, so this is a no-op there.

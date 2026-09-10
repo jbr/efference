@@ -8,7 +8,7 @@
 //!
 //! The append-only log is the event store the channel needs (docs/README.md).
 //! `GET /log?since=<seq>` replays durably; ephemeral control state (a pending
-//! approval) lives in [`Shared`] and is reported by `GET /state`.
+//! approval) lives in [`Session`] and is reported by `GET /state`.
 
 use std::collections::HashMap;
 use std::io;
@@ -177,11 +177,10 @@ pub struct ConfigRepair {
     pub restore_error: String,
 }
 
-/// Daemon state shared between the loop task and the HTTP handlers. Held as
-/// `Arc<Shared>` in both the loop and trillium's server-global `shared_state`
-/// (read in handlers via `conn.shared_state::<Arc<Shared>>()`). One server-global
-/// `Shared`; per-conn state is reserved for later multi-agent routing.
-pub struct Shared {
+/// A session's state and control surface (docs/control-channel.md).
+/// The loop and HTTP handlers hold the same `Arc<Session>`; `serve` owns the
+/// listener and wires the agent future and auxiliary tasks.
+pub struct Session {
     /// The loop appends under this lock; handlers snapshot it for `GET /log`.
     /// The lock is only ever held across the
     /// synchronous `project`/append — never an `await`.
@@ -221,25 +220,25 @@ pub struct Shared {
     appended: Notify,
     /// How many live `GET /events` connections are watching (docs/web-push.md) —
     /// every stream connection except those opened with `?presence=off`. Moved only
-    /// by [`Shared::watch`] and the guard it hands back, whose `Drop` runs when the
+    /// by [`Session::watch`] and the guard it hands back, whose `Drop` runs when the
     /// connection's stream is dropped, so the count follows connection lifetime
-    /// exactly (`presence.rs`). Read by [`Shared::push`] to suppress a notification
+    /// exactly (`presence.rs`). Read by [`Session::push`] to suppress a notification
     /// for a session someone is already looking at.
     watchers: std::sync::atomic::AtomicUsize,
     /// The most recent push suppressed because `watchers` was nonzero, kept so
     /// the guard reaping the last watcher can send it after all if the
     /// suppression was recent — the daemon may have been counting a connection
-    /// whose client had already closed it ([`Shared::replay_suppressed`],
+    /// whose client had already closed it ([`Session::replay_suppressed`],
     /// docs/web-push.md).
     suppressed: Mutex<Option<push::Suppressed>>,
     /// Whether the loop is **executing a turn** (vs. parked awaiting one). Together with
     /// `queued`, this drives the `/settle` long-poll's "at a decision point?" predicate
-    /// ([`Shared::is_settled`], docs/permissions.md). The loop owns it:
+    /// ([`Session::is_settled`], docs/permissions.md). The loop owns it:
     /// set true when it dequeues a turn, false when it parks.
     running: AtomicBool,
     /// Turns submitted (`POST /turns`) but not yet dequeued by the loop, in submission order —
     /// the **authority** on what is pending, mirroring what was pushed into `turns_tx`. It closes
-    /// the cross-task race in [`Shared::is_settled`] (a turn exists even in the instant before the
+    /// the cross-task race in [`Session::is_settled`] (a turn exists even in the instant before the
     /// loop marks itself `running`), it is what `GET /state`'s `queued` topic reads, and it is
     /// what a withdraw removes from (docs/control-channel.md). Because the channel cannot be
     /// searched, the loop **claims** each received turn against this queue and drops one that is
@@ -249,15 +248,15 @@ pub struct Shared {
     /// Pinged whenever the daemon may have reached a **settled** state — a gate appeared
     /// ([`register_pending`]) or the loop parked ([`parking`]). The `/settle` long-poll waits on it.
     ///
-    /// [`register_pending`]: Shared::register_pending
-    /// [`parking`]: Shared::parking
+    /// [`register_pending`]: Session::register_pending
+    /// [`parking`]: Session::parking
     settle_changed: Notify,
     /// A `POST /loop/continue` awaiting the loop (docs/control-api.md): the operator
     /// handed control back with no input, so the loop takes another turn on the wire
     /// it already has. A flag rather than a queued message because a continue carries
     /// nothing — two presses are one continue — and because it must survive the gap
     /// between the request and the idle `select!` registering its waiter. Cleared by
-    /// [`Shared::take_continue`] when the loop consumes it; never logged, never
+    /// [`Session::take_continue`] when the loop consumes it; never logged, never
     /// projected (nothing is appended for it at all).
     continue_pending: AtomicBool,
     /// Wakes the idle loop when [`continue_pending`](Self::continue_pending) is set.
@@ -269,7 +268,7 @@ pub struct Shared {
     /// wake-on-notification model that replaced blocking `wait`).
     notified: Notify,
     /// Fan-out for ephemeral pre-commit output deltas (docs/README.md). Producers (the
-    /// loop's `complete` sink and the bash tool) publish via [`Shared::publish_delta`];
+    /// loop's `complete` sink and the bash tool) publish via [`Session::publish_delta`];
     /// each control-stream connection wanting `output` frames subscribes. Lossy by
     /// design — see [`StreamDelta`].
     stream_tx: broadcast::Sender<StreamDelta>,
@@ -313,17 +312,17 @@ pub struct Shared {
     /// transport telemetry above this is **derived from the canonical record**, so a
     /// resumed session reports the whole session's ratio instead of restarting at
     /// zero. The fold is monotone (a result's `wire` is fixed at append), so the
-    /// cursor never needs invalidating — see [`Shared::retention`].
+    /// cursor never needs invalidating — see [`Session::retention`].
     retention: Mutex<(usize, Retention)>,
     /// The selected model's capabilities, fetched from the provider's metadata
     /// endpoint at boot (a required serve step — docs/transport.md) and set once
-    /// via [`Shared::set_capabilities`]. `None` only in tests and offline verbs
+    /// via [`Session::set_capabilities`]. `None` only in tests and offline verbs
     /// that never fetched; `GET /state` then reports `context: null`.
     /// Transport-only: never logged or projected.
     capabilities: Mutex<Option<crate::api::ModelCapabilities>>,
     /// The client's output reservation (`api/reservation.rs`): what the last
     /// request sent as `max_tokens`, subtracted from the window for `GET
-    /// /state`'s context limit. A fresh cell until [`Shared::set_reservation`]
+    /// /state`'s context limit. A fresh cell until [`Session::set_reservation`]
     /// hands over the client's — then the limit tracks what is reserved.
     reservation: Mutex<ReservationState>,
     /// Session cost telemetry (docs/transport.md): the running sum of
@@ -340,7 +339,7 @@ pub struct Shared {
     /// booted a session, which the topic reports as `null`.
     identity: Mutex<Option<SessionIdentity>>,
     /// A trajectory that gave up (docs/transport.md), read by the `stall`
-    /// topic. Written by the loop, which holds a [`Shared`] and signals
+    /// topic. Written by the loop, which holds a [`Session`] and signals
     /// `state_changed` at both sites; `None` whenever a trajectory is running
     /// or last ran to completion. Control state: never logged, never projected
     /// — the durable record of the same event is the record-only entries and
@@ -384,7 +383,7 @@ pub struct Shared {
     /// Behind a lock because grants mutate it mid-session (unlike the frozen base `role`);
     /// the gate takes an `Arc` clone, cheap and safe to hold across the spotter's await.
     ///
-    /// [`append`]: Shared::append
+    /// [`append`]: Session::append
     effective: Mutex<Arc<crate::config::Config>>,
     /// The live config file — the format-preserving document currently on disk plus what it
     /// validates to (docs/permissions.md). `None` when the role resolved
@@ -407,7 +406,7 @@ pub struct Shared {
     env_policy: crate::env_table::EnvPolicy,
     /// The operator's **review level** (docs/permissions.md), stored as an
     /// `AtomicU8` ordinal so it is lock-free and **runtime-mutable** (the `PATCH /loop {review_level}` verb,
-    /// not just a boot flag). The loop's cascade reads it ([`Shared::review_level`]) to decide who
+    /// not just a boot flag). The loop's cascade reads it ([`Session::review_level`]) to decide who
     /// reviews a gated call: `Autonomous` redirects the model instead of blocking on an absent
     /// human; `SpotterHuman` runs the spotter then the human gate; `HumanOnly` skips the spotter
     /// entirely and gates straight to the human. Orthogonal to pace. (The **config-write** gate is
@@ -418,11 +417,11 @@ pub struct Shared {
     /// wall-clock control that is *transparent to the agent*. Pure operator-view state — never a
     /// log entry, never projected — so a held or slowed loop is byte-identical on the wire to a
     /// fast one (that, plus timestamps-never-projected, is the invisibility guarantee). Read at the
-    /// seam by [`Shared::pace_at_seam`].
+    /// seam by [`Session::pace_at_seam`].
     pace: Mutex<Pace>,
-    /// Wakes an in-flight [`pace_at_seam`](Shared::pace_at_seam) sleep so a release or a submitted
+    /// Wakes an in-flight [`pace_at_seam`](Session::pace_at_seam) sleep so a release or a submitted
     /// turn ends the wait *immediately* rather than after the remaining delay. Fired by
-    /// [`submit_turn`](Shared::submit_turn) (submit ⇒ resume, always) and by a release
+    /// [`submit_turn`](Session::submit_turn) (submit ⇒ resume, always) and by a release
     /// (`set_pace` dropping `held`); a pure speed change or a *hold* does not fire it (those take
     /// effect at the next juncture).
     pace_interrupt: Notify,
@@ -439,7 +438,7 @@ pub struct Shared {
     /// The session's full tool catalog, keyed by wire name — every name the
     /// turn's `tools[]` can carry, the toolbox's mounted providers *and* the
     /// harness's own loop-owned family (`consolidate`, the supervisor/inbox
-    /// tools, the two peek tools). Snapshotted by [`Shared::set_tool_catalog`]
+    /// tools, the two peek tools). Snapshotted by [`Session::set_tool_catalog`]
     /// (`agent::tool_catalog`) before the toolbox moves into the loop, and
     /// read back by `GET /v1/tools/:name` (docs/control-api.md). The mounted
     /// set is fixed for the session (docs/log-and-projection.md), so this is
@@ -450,9 +449,9 @@ pub struct Shared {
     tools: Mutex<HashMap<String, crate::tools::ToolEntry>>,
 }
 
-impl Shared {
+impl Session {
     /// Build the shared state under the built-in default role (no config). The real
-    /// daemon uses [`Shared::with_role`]; this convenience keeps the many tests that
+    /// daemon uses [`Session::with_role`]; this convenience keeps the many tests that
     /// don't exercise role config terse.
     pub fn new(log: Log) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
         Self::with_role(log, LoadedConfig::default())
@@ -490,7 +489,7 @@ impl Shared {
         // Tests and the convenience constructors resolve the `[env]` policy from
         // the role they were handed (docs/env.md); `serve` builds one earlier —
         // it needs the strip set for the toolbox and the masker for the boot
-        // preamble — and passes it to [`Shared::full`] so the session has exactly
+        // preamble — and passes it to [`Session::full`] so the session has exactly
         // one, whose needle set is append-only for its lifetime.
         let env_policy = crate::env_table::EnvPolicy::build(&role.role.env).policy;
         Self::full(

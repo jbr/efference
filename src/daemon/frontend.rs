@@ -1,13 +1,13 @@
-//! The loop's [`Frontend`], backed entirely by [`Shared`] — every input arrives
+//! The loop's [`Frontend`], backed entirely by [`Session`] — every input arrives
 //! over HTTP (docs/control-channel.md).
 
 use super::*;
 
-/// The loop's [`Frontend`], backed entirely by [`Shared`]: every input arrives
+/// The loop's [`Frontend`], backed entirely by [`Session`]: every input arrives
 /// over HTTP. The loop is pull-shaped — it blocks at `read_user_turn` / `approve`
 /// — and each pull resolves when a client pushes.
 pub struct RemoteFrontend {
-    pub(super) shared: Arc<Shared>,
+    pub(super) shared: Arc<Session>,
     /// Single-consumer receiver of the turn inbox.
     pub(super) turns: mpsc::UnboundedReceiver<SubmittedTurn>,
 }

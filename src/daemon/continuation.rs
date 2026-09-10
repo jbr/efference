@@ -51,7 +51,7 @@ impl NotContinuable {
     }
 }
 
-impl Shared {
+impl Session {
     /// Ask the idle loop to re-enter its trajectory with nothing appended, or say
     /// why it cannot (docs/control-api.md).
     ///

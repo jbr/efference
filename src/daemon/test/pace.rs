@@ -7,7 +7,7 @@ use super::*;
 /// → busy after the gate resolves → settled again when the loop parks.
 #[test]
 fn settle_predicate_tracks_the_loop_lifecycle() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     assert!(shared.is_settled(), "a fresh daemon is idle");
 
     // Submitted but not yet dequeued — busy (the submit-race guard via the queued count).
@@ -48,7 +48,7 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
 /// `enable()`-before-check ordering means a `parking()` racing the registration isn't lost.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn await_settled_returns_when_the_loop_parks() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.submit_turn(SubmittedTurn {
         text: "hi".into(),
         submission_id: "sub-test".into(),
@@ -82,7 +82,7 @@ async fn await_settled_returns_when_the_loop_parks() {
 /// forever. Without the counter balance the last assertion fails.
 #[test]
 fn drain_injected_turns_delivers_queued_turns_and_balances_settle() {
-    let (shared, turns_rx) = Shared::new(Log::in_memory());
+    let (shared, turns_rx) = Session::new(Log::in_memory());
     let mut frontend = RemoteFrontend {
         shared: Arc::clone(&shared),
         turns: turns_rx,
@@ -126,7 +126,7 @@ fn drain_injected_turns_delivers_queued_turns_and_balances_settle() {
 /// underneath (resume returns to the retained speed, never zero), and `/state` reports both.
 #[test]
 fn set_pace_moves_the_dials_and_retains_speed_under_a_hold() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     // Default: fast, not held.
     assert_eq!(shared.pace_snapshot(), (Duration::ZERO, false));
 
@@ -145,7 +145,7 @@ fn set_pace_moves_the_dials_and_retains_speed_under_a_hold() {
 /// Default pace never blocks the seam (fast path: no hold, zero speed).
 #[tokio::test]
 async fn pace_at_seam_is_a_noop_by_default() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     tokio::time::timeout(Duration::from_millis(200), shared.pace_at_seam())
         .await
         .expect("default pace does not block the seam");
@@ -154,7 +154,7 @@ async fn pace_at_seam_is_a_noop_by_default() {
 /// A hold blocks the seam indefinitely; a **release** ends it immediately (the resume trigger).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hold_blocks_the_seam_until_released() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.set_pace(None, Some(true)); // hold
 
     // While held, the seam does not return.
@@ -180,7 +180,7 @@ async fn hold_blocks_the_seam_until_released() {
 /// wait outright (never pace over pending input).
 #[tokio::test]
 async fn a_submit_resumes_and_skips_the_seam() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.set_pace(None, Some(true));
     assert!(shared.pace_snapshot().1, "held before submit");
 
@@ -200,7 +200,7 @@ async fn a_submit_resumes_and_skips_the_seam() {
 /// making the operator's steer wait out the remaining pace.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_submit_interrupts_a_finite_paced_sleep() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.set_pace(Some(Duration::from_secs(30)), None); // slow, not held
 
     let s2 = Arc::clone(&shared);
@@ -224,7 +224,7 @@ async fn a_submit_interrupts_a_finite_paced_sleep() {
 /// press stops one call and not the turn after it.
 #[test]
 fn an_interrupt_latches_and_is_consumed_exactly_once() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     assert!(!shared.take_interrupt(), "nothing latched at rest");
 
     shared.interrupt(); // no waiter registered — the notify half reaches nobody
@@ -245,7 +245,7 @@ fn an_interrupt_latches_and_is_consumed_exactly_once() {
 /// everything after it, in submission order, and leaves what came before untouched.
 #[test]
 fn withdraw_pops_the_suffix_from_the_named_turn() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     for (text, id) in [("one", "s1"), ("two", "s2"), ("three", "s3")] {
         shared.submit_turn(SubmittedTurn {
             text: text.into(),
@@ -276,7 +276,7 @@ fn withdraw_pops_the_suffix_from_the_named_turn() {
 /// nothing rather than handing back text the model is already being sent.
 #[test]
 fn withdraw_pops_nothing_once_the_loop_has_claimed_the_turn() {
-    let (shared, _rx) = Shared::new(Log::in_memory());
+    let (shared, _rx) = Session::new(Log::in_memory());
     shared.submit_turn(SubmittedTurn {
         text: "sent".into(),
         submission_id: "s1".into(),
@@ -289,7 +289,7 @@ fn withdraw_pops_nothing_once_the_loop_has_claimed_the_turn() {
 /// it unappended — the pending queue, not the channel, is the authority.
 #[tokio::test]
 async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
-    let (shared, turns_rx) = Shared::new(Log::in_memory());
+    let (shared, turns_rx) = Session::new(Log::in_memory());
     let mut frontend = RemoteFrontend {
         shared: Arc::clone(&shared),
         turns: turns_rx,

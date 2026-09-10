@@ -7,7 +7,7 @@
 //! `visibilitychange`), and a client whose connection dies for any other reason stops
 //! counting at the FIN or within the keepalive interval.
 //!
-//! The count is named state on [`Shared`] rather than an inline check in the send
+//! The count is named state on [`Session`] rather than an inline check in the send
 //! path, so a second consumer reads the same value instead of re-deriving it. Push
 //! suppression (`push.rs`) is the only reader today.
 
@@ -53,7 +53,7 @@ impl Presence {
 ///
 /// A `?presence=off` connection holds an inert guard (no `Arc`, nothing to release)
 /// rather than no guard at all, so the caller has one shape to store.
-pub(crate) struct Watching(Option<Arc<Shared>>);
+pub(crate) struct Watching(Option<Arc<Session>>);
 
 impl Drop for Watching {
     fn drop(&mut self) {
@@ -68,7 +68,7 @@ impl Drop for Watching {
     }
 }
 
-impl Shared {
+impl Session {
     /// Count this connection as a watcher for as long as the returned guard lives.
     ///
     /// `Relaxed` throughout: the count is the only thing being communicated — no
@@ -86,7 +86,7 @@ impl Shared {
     }
 
     /// Whether anyone is watching — a live stream connection exists that did not opt
-    /// out. Read by [`Shared::push`](Shared::push) to suppress a notification the
+    /// out. Read by [`Session::push`](Session::push) to suppress a notification the
     /// operator is already looking at.
     pub(crate) fn watched(&self) -> bool {
         self.watchers.load(Ordering::Relaxed) > 0

@@ -84,7 +84,7 @@ pub(super) fn bash_call(command: &str) -> ToolCall {
 #[test]
 pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_speaks_next() {
     use crate::project::ApiBlock;
-    let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
+    let (shared, _rx) = Session::new(crate::persist::Log::in_memory());
     let call = bash_call("cat enormous.log");
     shared
         .append(
@@ -166,7 +166,7 @@ pub(super) fn a_committed_grant_is_written_to_the_config_file() {
     let path =
         std::env::temp_dir().join(format!("efference-writeback-{}.toml", std::process::id()));
     std::fs::write(&path, "# my perimeter\nscope = \"stay in src/\"\n").unwrap();
-    let (shared, _rx) = Shared::with_role(
+    let (shared, _rx) = Session::with_role(
         crate::persist::Log::in_memory(),
         crate::config::LoadedConfig {
             role: crate::config::Config::default(),
@@ -211,7 +211,7 @@ pub(super) fn a_committed_grant_is_written_to_the_config_file() {
 #[test]
 pub(super) fn legislate_grants_then_approves_a_covered_call() {
     use crate::log::ConfigChange;
-    let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
+    let (shared, _rx) = Session::new(crate::persist::Log::in_memory());
     let call = bash_call("npm install");
     assert_eq!(
         policy::classify(&shared.effective_config(), &call),
@@ -241,7 +241,7 @@ pub(super) fn legislate_grants_then_approves_a_covered_call() {
 #[test]
 pub(super) fn legislate_does_not_let_an_uncovered_call_ride_along() {
     use crate::log::ConfigChange;
-    let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
+    let (shared, _rx) = Session::new(crate::persist::Log::in_memory());
     let call = bash_call("npm install");
 
     let approval = commit_config_edit(
@@ -393,7 +393,7 @@ pub(super) fn a_config_write_that_does_not_parse_is_reverted_and_reported_as_an_
     ));
     let good = "# schema in this header\nscope = \"stay in src/\"\n";
     std::fs::write(&path, good).unwrap();
-    let (shared, _rx) = crate::daemon::Shared::with_role(
+    let (shared, _rx) = crate::daemon::Session::with_role(
         crate::persist::Log::in_memory(),
         crate::config::LoadedConfig {
             role: crate::config::Config::default(),
@@ -489,7 +489,7 @@ pub(super) fn cap_head_is_char_boundary_safe() {
 #[test]
 pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
     use crate::project::ApiBlock;
-    let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
+    let (shared, _rx) = Session::new(crate::persist::Log::in_memory());
     let first = ToolCall::new("search", "search_2", serde_json::json!({}));
     let second = ToolCall::new(
         crate::bash::NAME,
@@ -589,7 +589,7 @@ impl Spotter for NeverAsked {
 /// asked a question it has no way to answer (docs/permissions.md, docs/tools.md).
 #[tokio::test]
 async fn a_call_naming_no_tool_is_answered_ahead_of_the_cascade() {
-    let (shared, _rx) = Shared::new(crate::persist::Log::in_memory());
+    let (shared, _rx) = Session::new(crate::persist::Log::in_memory());
     let toolbox = Toolbox::bash_only();
     let call = call("ferritin");
     let decision = run_call(&mut NeverGates, &shared, &NeverAsked, &toolbox, 1, &call)

@@ -16,7 +16,7 @@ pub(super) struct Pace {
     pub(super) held: bool,
 }
 
-impl Shared {
+impl Session {
     pub(super) fn submit_turn(&self, turn: SubmittedTurn) {
         // Record the turn as queued *before* sending, so `is_settled` reads "busy" the instant
         // the turn is accepted — even before the loop dequeues it (the `/settle` submit race,
@@ -76,7 +76,7 @@ impl Shared {
     /// then drops it unappended. `running` is set **before** the removal so [`is_settled`] never
     /// sees an empty queue and a not-running loop while a turn is in flight.
     ///
-    /// [`is_settled`]: Shared::is_settled
+    /// [`is_settled`]: Session::is_settled
     pub(super) fn claim_turn(&self, submission_id: &str, mark_running: bool) -> bool {
         let claimed = {
             let mut q = self.queue.lock().unwrap();
@@ -139,7 +139,7 @@ impl Shared {
     /// Lost-wakeup safe: the interrupt future is armed (`enable`) *before* the state is read, so a
     /// release/submit racing the read still wakes the wait (mirrors [`await_settled`]).
     ///
-    /// [`await_settled`]: Shared::await_settled
+    /// [`await_settled`]: Session::await_settled
     pub async fn pace_at_seam(&self) {
         let interrupt = self.pace_interrupt.notified();
         tokio::pin!(interrupt);
@@ -167,7 +167,7 @@ impl Shared {
     /// re-sets running, so a transient `running == false` with a non-empty queue still reads as
     /// busy.
     ///
-    /// [`claim_turn`]: Shared::claim_turn
+    /// [`claim_turn`]: Session::claim_turn
     pub(super) fn parking(&self) {
         // The swap is what distinguishes the two ways the loop arrives here: a turn
         // just ended (`running` was true) or the daemon booted and has never run one.
@@ -198,7 +198,7 @@ impl Shared {
     /// `parking`/`register_pending` that fires between the check and the await would otherwise be
     /// lost. With the waiter pre-registered, the wake is delivered to the pending future.
     ///
-    /// [`is_settled`]: Shared::is_settled
+    /// [`is_settled`]: Session::is_settled
     pub(super) async fn await_settled(&self) {
         loop {
             let notified = self.settle_changed.notified();

@@ -159,13 +159,13 @@ where
 }
 
 /// Spawn a TCP listener with `handler`, sharing the UDS server's swansong (one shutdown
-/// domain) and its `Shared` state (same `/v1` surface). `without_signals` because the
+/// domain) and its `Session` state (same `/v1` surface). `without_signals` because the
 /// UDS server already registered the signal handlers.
 pub(crate) fn spawn(
     listener: Listener,
     handler: impl trillium::Handler,
     swansong: trillium_tokio::Swansong,
-    shared: Arc<Shared>,
+    shared: Arc<Session>,
 ) -> io::Result<trillium_server_common::ServerHandle> {
     let config = trillium_tokio::config()
         .with_swansong(swansong)
