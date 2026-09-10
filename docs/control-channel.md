@@ -66,6 +66,15 @@ exception: on success it must fall through to the SSE half of its own route.
 
 ## Transport and binding
 
+`SessionPaths` (`src/daemon/paths.rs`) supplies absolute working and storage
+roots to daemon boot. The CLI resolves these before calling `daemon::serve`;
+relative roots are rejected rather than interpreted inside the daemon. Usage
+records and the attachment watcher use the storage root, and attachment labels
+are relative to the session working root when contained within it. `App::session`
+receives that working root explicitly for the web file viewer. The identity topic
+uses the same root. The listener's socket path is a separate input and does not
+determine storage; the CLI still places it in the session directory.
+
 The daemon binds with trillium's `bind_uds(path)`. Each session lives in its own directory — `.efference/<id>/` (the id is `serve --name <id>`, or a generated timestamp) — holding standard-named files: `control.sock`, `log.jsonl`, and (the snapshot) `config.toml` (see [permissions](permissions.md)). A client verb finds the socket by `--name`, or by scanning the session dirs for the single **live** (connectable) one — liveness, not mere existence, so a stale dir from a dead daemon doesn't shadow the running one; `--socket <path>` is an explicit override.
 
 **`serve` mints a session dir; it never reuses one.** The dir is created with `create_dir` (not `create_dir_all`) on the leaf, so an existing `--name` is refused with an error naming the dir and the log inside it, and two `serve`s racing the same name cannot both proceed. A session does not outlive its process: `Log::create` opens the log for append with an empty in-memory `entries`, so a second run over the same file would restart `seq` at 0 and leave a duplicated seq space that every offline reader (`view`, `wire`, the TUI fold) reads as one sequence. The guard also runs before the socket is unlinked, so a second `serve --name X` cannot take the socket away from a running daemon. Resuming a prior session is not implemented; when it is, this guard changes as part of that design.

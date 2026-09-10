@@ -37,6 +37,7 @@ behind a change, see [`journal/`](journal/).
 - **Session cost pricing backs off over minutes** (docs/transport.md): the generation lookup retries across 2s–300s instead of 2s/10s, so an upstream whose record lands late (`meta/muse-spark-1.3`, >60s) no longer leaves every request `unpriced`.
 
 ### Changed
+- Daemon boot takes explicit working/storage roots; usage and attachments no longer derive from the socket, and file serving uses the supplied session root.
 - Rename the session state/control type from `Shared` to `Session`; execution and wire behavior are unchanged.
 - **One handler construction** (docs/web-bind.md): `handler(transport, app)` in `src/daemon/handler.rs` is the only place a trillium stack is assembled — the socket, the TCP bind, the host, and every test mount it, with each transport-dependent layer an `Option`; the control routes are named `async fn`s under `src/daemon/http/`, one file per route family, and the three auxiliary routers are `mint_routes`, `enrollment_routes`, and `host_routes`.
 - **`efference attach` is removed; `open`, `cache`, and `view` move under `efference dev`** (docs/operating.md): the TUI superseded the line REPL, the bootstrap-link mint is a credential-minting verb that must not ride the MCP-exposed `control` group, and the cache report is a developer's instrument until a client shows the rate. `open --qr` is gone pending a TUI or web onboarding flow.

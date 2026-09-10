@@ -81,7 +81,10 @@ async fn test_client(shared: &Arc<Session>) -> ControlClient {
             let shared = Arc::clone(&shared);
             async move { info.with_shared_state(shared) }
         }),
-        handler(Transport::Socket { auth: None }, App::session()),
+        handler(
+            Transport::Socket { auth: None },
+            App::session(std::env::current_dir().unwrap()),
+        ),
     );
     let context = trillium_testing::init(&mut handler).await;
     ControlClient::with_connector(
@@ -100,7 +103,10 @@ async fn test_server(shared: &Arc<Session>) -> TestServer<impl trillium::Handler
             let shared = Arc::clone(&shared);
             async move { info.with_shared_state(shared) }
         }),
-        handler(Transport::Socket { auth: None }, App::session()),
+        handler(
+            Transport::Socket { auth: None },
+            App::session(std::env::current_dir().unwrap()),
+        ),
     ))
     .await
 }

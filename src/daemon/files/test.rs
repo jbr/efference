@@ -57,6 +57,33 @@ async fn server(scratch: &Scratch) -> TestServer<impl trillium::Handler> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn session_apps_keep_independent_file_roots() {
+    let one = Scratch::new("session-one");
+    let two = Scratch::new("session-two");
+    one.write("identity.txt", "one");
+    two.write("identity.txt", "two");
+    let App::Session { files: first } = App::session(one.path()) else {
+        panic!("session app");
+    };
+    let App::Session { files: second } = App::session(two.path()) else {
+        panic!("session app");
+    };
+    let first = TestServer::new(first.handler()).await;
+    let second = TestServer::new(second.handler()).await;
+    first
+        .get("/files/identity.txt")
+        .await
+        .assert_status(200)
+        .assert_body("one");
+    second
+        .get("/files/identity.txt")
+        .await
+        .assert_status(200)
+        .assert_body("two");
+    first.get("/files/identity.txt").await.assert_body("one");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reads_a_text_file_as_plain_text() {
     let scratch = Scratch::new("read");
     scratch.write("index.html", "<h1>not markup here</h1>");

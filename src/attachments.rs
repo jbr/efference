@@ -34,7 +34,7 @@ pub const INLINE_LINE_LIMIT: usize = 12;
 /// small enough that a multi-megabyte drop costs one page read, not a full load.
 const SNIFF_BYTES: usize = 8192;
 
-/// The store directory for a session, given the session dir (the socket's parent).
+/// The store directory for a session, given its session storage directory.
 pub fn dir_for_session(session_dir: &Path) -> PathBuf {
     session_dir.join(DIR_NAME)
 }

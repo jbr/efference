@@ -1004,7 +1004,9 @@ use watch::config_watch_loop;
 mod test;
 
 mod frontend;
+mod paths;
 mod serve;
+pub use paths::SessionPaths;
 
 pub use frontend::RemoteFrontend;
 pub use serve::serve;

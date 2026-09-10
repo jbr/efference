@@ -18,7 +18,7 @@ async fn test_state(cli: bool) -> Control {
         }),
         efference::daemon::handler(
             efference::daemon::Transport::Socket { auth: None },
-            efference::daemon::App::session(),
+            efference::daemon::App::session(std::env::current_dir().unwrap()),
         ),
     );
     let context = trillium_testing::init(&mut handler).await;

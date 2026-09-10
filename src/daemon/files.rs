@@ -35,7 +35,7 @@
 //! ceiling ever lifts, streaming and prefix-only validation arrive together with
 //! the range requests that lifting it would require.
 //!
-//! The root is the process working directory — session-stable, and the same root
+//! The root is the supplied session working directory — the same root
 //! the built-in tools resolve relative paths against (`src/policy.rs`). Path
 //! resolution canonicalizes and then **re-checks containment**, because the
 //! escape worth closing is a symlink inside the root pointing out of it, not `..`.
@@ -87,20 +87,7 @@ pub struct Files {
 }
 
 impl Files {
-    /// Rooted at the process working directory, as the tools are.
-    pub(crate) fn at_cwd() -> Self {
-        match std::env::current_dir() {
-            Ok(cwd) => Self::rooted_at(cwd),
-            Err(_) => Self {
-                root: None,
-                watch: None,
-                ignores: None,
-            },
-        }
-    }
-
-    /// Rooted at an explicit directory — the injection point for tests, which
-    /// serve a scratch directory rather than whatever the test process's cwd is.
+    /// Rooted at the supplied session directory.
     pub(crate) fn rooted_at(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref().canonicalize().ok().map(Arc::new);
         Self {

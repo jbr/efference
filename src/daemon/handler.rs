@@ -40,10 +40,10 @@ pub enum App {
 }
 
 impl App {
-    /// A session over the process's working directory.
-    pub fn session() -> Self {
+    /// A session over its explicitly supplied working directory.
+    pub fn session(cwd: impl AsRef<std::path::Path>) -> Self {
         Self::Session {
-            files: Files::at_cwd(),
+            files: Files::rooted_at(cwd),
         }
     }
 

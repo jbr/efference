@@ -48,7 +48,7 @@ async fn tcp_server(auth: &Arc<TcpAuth>) -> (TestServer<impl trillium::Handler>,
             Transport::Web {
                 auth: Arc::clone(auth),
             },
-            App::session(),
+            App::session(std::env::current_dir().unwrap()),
         ),
     ))
     .await

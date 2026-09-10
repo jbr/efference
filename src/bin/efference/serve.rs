@@ -602,16 +602,11 @@ pub(crate) async fn serve(
         spotter,
         log,
         socket,
+        efference::daemon::SessionPaths::new(cwd.clone(), session_dir.canonicalize()?)?,
         loaded,
         autonomous,
         capabilities,
-        // The session's identity topic (docs/control-api.md): the model resolved
-        // above and the cwd the toolbox and [context] were built from — the two
-        // values a client needs to say which session it is looking at.
-        efference::daemon::SessionIdentity {
-            model: model.to_string(),
-            cwd: cwd.to_string_lossy().into_owned(),
-        },
+        model.to_string(),
         bind,
         env_policy,
     )

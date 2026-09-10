@@ -15,10 +15,11 @@ pub async fn serve<S: Spotter>(
     spotter: S,
     log: Log,
     socket: PathBuf,
+    paths: SessionPaths,
     role: LoadedConfig,
     autonomous: bool,
     capabilities: crate::api::ModelCapabilities,
-    identity: SessionIdentity,
+    model: String,
     bind: Option<tcp::TcpBind>,
     env_policy: crate::env_table::EnvPolicy,
 ) -> Result<(), Error> {
@@ -55,7 +56,10 @@ pub async fn serve<S: Spotter>(
     // What this session is, for a client that has to name it on screen
     // (docs/control-api.md): the resolved model and the working directory, both
     // fixed by the time the caller gets here.
-    shared.set_identity(identity);
+    shared.set_identity(SessionIdentity {
+        model,
+        cwd: paths.cwd().to_string_lossy().into_owned(),
+    });
     // Session cost telemetry (docs/transport.md): armed only where the provider
     // has a per-request accounting surface (OpenRouter's generation endpoint).
     // Direct Anthropic has none, so the readout stays absent rather than modeled.
@@ -63,10 +67,8 @@ pub async fn serve<S: Spotter>(
         shared.enable_cost_tracking(client.endpoint().clone());
     }
     // The per-request usage record (docs/log-and-projection.md) lives beside the
-    // canonical log in the session dir — the socket's parent by construction.
-    if let Some(session_dir) = socket.parent() {
-        shared.attach_usage_log(&session_dir.join("usage.jsonl"));
-    }
+    // canonical log in the explicitly supplied storage directory.
+    shared.attach_usage_log(&paths.usage_log());
     // Share the client between the loop and the keepalive task. `tools` is computed
     // once here for the ping; `agent::run` recomputes the same (byte-stable, docs/log-and-projection.md)
     // definitions internally, so both send an identical prefix.
@@ -105,7 +107,7 @@ pub async fn serve<S: Spotter>(
             Transport::Socket {
                 auth: web_auth.clone(),
             },
-            App::session(),
+            App::session(paths.cwd()),
         ));
     eprintln!("control socket: {}", socket.display());
 
@@ -122,7 +124,7 @@ pub async fn serve<S: Spotter>(
                 Transport::Web {
                     auth: Arc::clone(&auth),
                 },
-                App::session(),
+                App::session(paths.cwd()),
             ),
             server.swansong(),
             Arc::clone(&shared),
@@ -180,21 +182,12 @@ pub async fn serve<S: Spotter>(
     // The attachment store (docs/inbox.md): the same fs-watch affordance, over
     // `.efference/<id>/attachments/`. A file appearing there — pasted, dragged, moved in —
     // becomes a notification naming what arrived; the bytes stay on disk until the model
-    // pulls them, so nothing here enters the log. The session dir is the socket's parent,
-    // by the same construction the usage log uses.
-    if let Some(session_dir) = socket.parent() {
-        let dir = crate::attachments::dir_for_session(session_dir);
-        let display = dir
-            .canonicalize()
-            .ok()
-            .and_then(|abs| {
-                std::env::current_dir()
-                    .ok()
-                    .and_then(|cwd| abs.strip_prefix(cwd).ok().map(std::path::Path::to_path_buf))
-            })
-            .unwrap_or_else(|| dir.clone());
-        tokio::spawn(attachments_watch_loop(Arc::clone(&shared), dir, display));
-    }
+    // pulls them, so nothing here enters the log. Storage is independent of the listener.
+    tokio::spawn(attachments_watch_loop(
+        Arc::clone(&shared),
+        paths.attachments(),
+        paths.attachment_display(),
+    ));
 
     // Trillium owns the signal registry: by default it registers SIGINT/SIGTERM and
     // drives graceful shutdown through its `Swansong`. But the future `serve` awaits
