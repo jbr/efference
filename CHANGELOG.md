@@ -41,6 +41,7 @@ behind a change, see [`journal/`](journal/).
 - `efference host` and the per-session Unix-socket proxy (`trillium-proxy`): the host will own sessions in-process rather than forward to session processes. The `/sessions` gate surface and session-prefixed client routes stay.
 
 ### Changed
+- Session preparation is `boot::prepare` in the library (docs/control-channel.md): the CLI's `serve` resolves flags into a `SessionRequest` and binds listeners; everything from config to client is reusable by a host.
 - Session tasks are owned by a `SessionRuntime` under a child `Swansong` (docs/control-channel.md): the loop, watchers, background reaping, and scratch cleanup stop as one unit, independent of listeners; the loop runs on its own thread.
 - Session boot snapshots the caller environment for provider/reference lookup, subprocesses, and masking; children no longer inherit extra host variables.
 - Session policy, foreground/background commands, config loading, and environment-reference commands now use an explicit session working directory.

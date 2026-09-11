@@ -13,16 +13,16 @@
 //! 3. Anything else, or a second failure, is a mount failure like any other:
 //!    fatal unless the stanza is `optional = true`.
 //!
-//! Only `efference serve` calls this. `efference dev spotter --tool` mounts through
+//! Only session preparation (`crate::boot`) calls this. `efference dev spotter --tool` mounts through
 //! the plain path, so a spotter check can never open a browser — it fails with
 //! a message pointing here instead.
 
 use std::io::IsTerminal;
 
-use efference::mcp::Unmounted;
-use efference::mcp::auth::store::TokenStore;
-use efference::mcp::auth::{self, AuthorizationRequired};
-use efference::tools::Toolbox;
+use crate::mcp::Unmounted;
+use crate::mcp::auth::store::TokenStore;
+use crate::mcp::auth::{self, AuthorizationRequired};
+use crate::tools::Toolbox;
 use trillium_client::Url;
 
 /// Mount every declared server, authorizing any that asks for it.
@@ -30,9 +30,9 @@ use trillium_client::Url;
 /// Returns the servers that did not mount and were allowed not to. A server
 /// that did not mount and was *not* optional returns `Err` — the operator
 /// declared it, so the session should not start pretending it exists.
-pub(crate) async fn mount_all(
+pub async fn mount_all(
     toolbox: &mut Toolbox,
-    servers: &std::collections::BTreeMap<String, efference::config::McpServerEntry>,
+    servers: &std::collections::BTreeMap<String, crate::config::McpServerEntry>,
     cwd: &std::path::Path,
     store: &dyn TokenStore,
     reauth: &[String],
@@ -78,7 +78,7 @@ pub(crate) async fn mount_all(
 async fn mount_one(
     toolbox: &mut Toolbox,
     name: &str,
-    entry: &efference::config::McpServerEntry,
+    entry: &crate::config::McpServerEntry,
     cwd: &std::path::Path,
     store: &dyn TokenStore,
 ) -> anyhow::Result<()> {
@@ -95,9 +95,9 @@ async fn mount_one(
     };
     let challenge = required.challenge.clone();
     let url = match &entry.transport {
-        efference::config::McpTransport::Http { url } => url.clone(),
+        crate::config::McpTransport::Http { url } => url.clone(),
         // Unreachable in practice: a stdio server has no way to answer `401`.
-        efference::config::McpTransport::Stdio { .. } => return Err(e),
+        crate::config::McpTransport::Stdio { .. } => return Err(e),
     };
 
     eprintln!("[mcp: `{name}` requires authorization]");

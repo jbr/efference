@@ -81,9 +81,16 @@ by cancellation — and yields its outcome. `daemon::serve` creates the parent
 one runtime under it; the two-runtimes test in `src/daemon/test/runtime.rs` pins
 the isolation.
 
-Session-dir minting, the config snapshot, and scratch minting stay with the creator
-(the CLI today), as does listener binding. The runtime owns the session's lifetime
-from `start` to teardown and nothing outside it.
+Session preparation — from a `SessionRequest` (root, base environment, session
+dir, config path, model and flags) to a `SessionBoot` — is `boot::prepare`
+(`src/boot.rs`): the origin config and its `[env]` references, the provider and
+capability lookup, minting the session dir and snapshotting the config, scratch,
+the `[env]` policy, the log, the toolbox and MCP mounts (`src/boot/mcp_mount.rs`,
+the one step that may wait for a human), the frozen preamble, the client, the
+spotter, and the fork peek. The CLI builds the request from flags; a host's
+creation handler builds it from a request body. Boot progress prints to stderr
+today. Listener binding stays with whoever runs the runtime. The runtime owns the
+session's lifetime from `start` to teardown and nothing outside it.
 
 ## The route set
 

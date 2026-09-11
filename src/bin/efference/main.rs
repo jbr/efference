@@ -20,8 +20,7 @@ use clap::{Parser, Subcommand};
 use efference::api::Client;
 use efference::client::Client as ControlClient;
 use efference::daemon;
-use efference::distill::{ForkPeek, TriageModel};
-use efference::persist::Log;
+use efference::distill::TriageModel;
 use efference::spotter::ForkSpot;
 #[cfg(feature = "dev")]
 use efference::spotter::Spotter;
@@ -118,7 +117,7 @@ mod cli;
 mod control;
 #[cfg(feature = "dev")]
 mod dev;
-mod mcp_mount;
+
 #[cfg(feature = "dev")]
 mod paint;
 #[cfg(feature = "dev")]

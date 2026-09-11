@@ -8,53 +8,7 @@ pub(crate) const BASE_DIR: &str = efference::daemon::SESSION_BASE;
 
 pub(crate) const SOCKET_NAME: &str = efference::daemon::SOCKET_NAME;
 
-pub(crate) const LOG_NAME: &str = "log.jsonl";
-
-pub(crate) const CONFIG_NAME: &str = "config.toml";
-
-/// Written into a fresh session's `config.toml` when there's no origin to snapshot — a header that
-/// teaches the schema, plus the one default that isn't empty: an `Environment at boot` `[context]`
-/// exec entry, orientation expressed as config rather than hardcoded (docs/context.md). It's a real,
-/// visible line in the session's own file, so a session that `cat`s its config sees it and an
-/// operator can edit or delete it (docs/permissions.md).
-pub(crate) const CONFIG_SCAFFOLD: &str = "\
-# Your session's permissions config. Edit it to request changes — edits are reviewed before they
-# take effect, and a malformed file is rejected wholesale (fail-closed): if an edit doesn't seem to
-# \"take\", check that the file still parses. Unknown keys are rejected. Schema (all keys optional):
-#   scope = \"...\"                       # STRING, top-level — what this session is for (NOT a [scope] table)
-#   watch-for = [\"...\"]                 # hazards the permission spotter should watch for
-#   trust-threshold = 0.5               # where the watch-window/gate cutoffs sit (optional float)
-#   tools = [\"read\", \"list\", \"search\"]  # structured tools you may use
-#   [commands]                          # bash prefixes → clear/watch/gate/deny (true = clear, false = deny),
-#                                       #   e.g. cargo = true, \"git diff\" = true, \"git push\" = \"deny\".
-#                                       #   The longest matching prefix governs, so a broad grant can carry
-#                                       #   carve-outs: git = true with \"git push\" = \"deny\".
-#   [paths]                             # filesystem grants, e.g. \".\" = true or \"/refs\" = { read = true }
-#   [context]                           # knowledge the session boots with (docs/context.md), e.g.
-#                                       #   \"CLAUDE.md\" = true, Label = { exec = \"...\" } (stdout at boot),
-#                                       #   or Label = { builtin = \"guide\" } (the harness's own docs)
-#   [env]                               # per-variable env policy (docs/env.md): strip = keep it out of
-#                                       #   spawned children, mask = never store its value in the log.
-#                                       #   e.g. \"*_KEY\" = { mask = true } or \"CI_*\" = { strip = true }.
-#                                       #   *_KEY/*_SECRET/*_TOKEN/*_PASSWORD/*_CREDENTIALS mask by default.
-#                                       #   An entry may also name the value: RUST_LOG = { value = \"debug\" }
-#                                       #   (literal), SOME_KEY = \"op://Vault/Item/field\" (resolved at boot
-#                                       #   and always masked), or { cmd = \"...\" } for any other vault.
-
-# The one command a session with no project config needs cleared: validating the template it
-# is about to write (docs/operating.md). Everything else goes through the spotter until granted.
-[commands]
-\"efference check\" = true
-
-# Orientation as config: this section's stdout is frozen into the session preamble at boot.
-[context]
-\"Environment at boot\" = { exec = 'echo \"working directory: $PWD\"; echo \"platform: $(uname -sm)\"; echo \"top-level entries:\"; ls' }
-# The harness's own usage documents, listed as read-on-demand stubs. This is what makes a
-# session with no project config recoverable: it starts knowing how to learn everything
-# else, including how to write this file. Delete the line to stop listing them; the
-# documents stay readable at their paths either way.
-EfferenceGuide = { builtin = \"guide\" }
-";
+pub(crate) const LOG_NAME: &str = efference::boot::LOG_NAME;
 
 #[derive(Parser)]
 #[command(name = "efference", about = "An API-backed agentic coding harness.")]
@@ -431,34 +385,4 @@ impl From<ImagesArg> for efference::tui::ImageMode {
             ImagesArg::Off => ImageMode::Off,
         }
     }
-}
-
-/// Mint the per-session scratch dir (docs/tools.md): `<system-temp>/efference-<rand>/`,
-/// mkdtemp-style — a random name and create-or-retry (`create_dir` fails if the name
-/// exists, so there is no check-then-create race), mode `0700` so it is private on a
-/// shared-`/tmp` system (macOS `$TMPDIR` is already per-user). `std::env::temp_dir()`
-/// rather than a literal `/tmp`, which on macOS is a symlink and not the real temp dir.
-pub(crate) fn mint_scratch_dir() -> std::io::Result<PathBuf> {
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let base = std::env::temp_dir();
-    for _ in 0..16 {
-        // `RandomState` seeds from OS entropy — an unpredictable-enough name;
-        // create-or-retry (not check-then-create) is what closes the race.
-        let n = RandomState::new().build_hasher().finish();
-        let candidate = base.join(format!("efference-{n:016x}"));
-        let mut builder = std::fs::DirBuilder::new();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
-        }
-        match builder.create(&candidate) {
-            Ok(()) => return Ok(candidate),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(e),
-        }
-    }
-    Err(std::io::Error::other(
-        "could not mint a scratch dir (16 name collisions)",
-    ))
 }
