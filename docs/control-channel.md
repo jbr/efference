@@ -20,10 +20,16 @@ Every `Session` constructor requires an absolute working directory, stored
 immutably and exposed by `cwd()`. Policy classification, config-write checks,
 missing-grant diagnosis, probe-ledger replay, and foreground/background bash spawning use
 that root rather than the process cwd. `Toolbox::bash_and_mcps` supplies the same
-root to `Bash`; a foreground child keeps it when adopted into the supervisor. Relative config-source paths are joined to
-it before the live config file is opened. The CLI captures cwd before bootstrap:
+root to `Bash`; a foreground child keeps it when adopted into the supervisor.
+Relative config-source paths are joined to it before the live config file is
+opened. The CLI captures cwd before bootstrap:
 config loading, reference commands, MCP credentials, tools, and context resolution
 use that same root. No session changes the process working directory.
+
+Boot also captures an in-memory base environment for provider lookup, reference
+commands, the session's `EnvPolicy`, and every child spawn. Config edits reuse that
+base for masking rather than sampling the host environment. Child inheritance is
+replaced before policy and harness-owned values are applied ([env.md](env.md)).
 
 `Session` represents one session's state and control surface. The agent loop task and HTTP handlers both hold it as `Arc<Session>`. The daemon registers it as trillium's server-global shared state; handlers retrieve it per-connection. Listener ownership and agent/auxiliary-task wiring live in `src/daemon/serve.rs`, not in the type itself. Its contents:
 

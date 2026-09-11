@@ -31,6 +31,12 @@ use serde::Deserialize;
 mod mask;
 pub use mask::{MARKER_PREFIX_CHARS, MASKABILITY_FLOOR, Masker, marker};
 
+mod child;
+pub use child::ChildEnv;
+
+mod snapshot;
+pub use snapshot::EnvSnapshot;
+
 mod resolve;
 pub use resolve::{RESOLVE_TIMEOUT, ResolveError, ResolvedValue, Resolver, SCHEMES, Source};
 
@@ -323,69 +329,13 @@ pub fn glob_match(pattern: &str, name: &str) -> bool {
     true
 }
 
-/// The `[env]` table's effect on a child environment at spawn: names removed
-/// (`strip`), then values set (an entry that names a `value`, a `cmd`, or a
-/// reference). Cloned into each spawn site (`Arc`-backed), so a new site costs
-/// one `apply` call rather than a re-derivation of policy.
-///
-/// Removals run before sets, so a name that is both stripped and injected ends
-/// up with the injected value — injecting it is the point of writing a value.
-#[derive(Debug, Clone, Default)]
-pub struct ChildEnv {
-    strip: Arc<Vec<String>>,
-    inject: Arc<BTreeMap<String, String>>,
-}
-
-impl ChildEnv {
-    pub fn new(strip: Vec<String>) -> Self {
-        Self {
-            strip: Arc::new(strip),
-            inject: Arc::new(BTreeMap::new()),
-        }
-    }
-
-    pub fn with_inject(mut self, inject: BTreeMap<String, String>) -> Self {
-        self.inject = Arc::new(inject);
-        self
-    }
-
-    pub fn names(&self) -> &[String] {
-        &self.strip
-    }
-
-    /// The names this spawn *sets*, without their values — what a display or a
-    /// diagnostic can say out loud.
-    pub fn injected_names(&self) -> impl Iterator<Item = &str> {
-        self.inject.keys().map(String::as_str)
-    }
-
-    /// Apply the policy to a `std::process::Command`'s environment.
-    pub fn apply(&self, cmd: &mut std::process::Command) {
-        for name in self.strip.iter() {
-            cmd.env_remove(name);
-        }
-        for (name, value) in self.inject.iter() {
-            cmd.env(name, value);
-        }
-    }
-
-    /// The `tokio::process::Command` half of [`apply`](Self::apply).
-    pub fn apply_tokio(&self, cmd: &mut tokio::process::Command) {
-        for name in self.strip.iter() {
-            cmd.env_remove(name);
-        }
-        for (name, value) in self.inject.iter() {
-            cmd.env(name, value);
-        }
-    }
-}
-
 /// The resolved `[env]` policy for a session: the effective table, the child
-/// environment derived from it against this process's environment, the session's
+/// environment derived from it against the caller's snapshot, the session's
 /// [`Masker`], and the [`Resolver`] whose cache a later config edit re-reads.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct EnvPolicy {
     table: Table,
+    base: EnvSnapshot,
     child_env: ChildEnv,
     masker: Arc<Masker>,
     resolver: Arc<Resolver>,
@@ -403,33 +353,48 @@ pub struct EnvReport {
     pub forced_mask: Vec<String>,
 }
 
+impl Default for EnvPolicy {
+    fn default() -> Self {
+        Self::build(&BTreeMap::new()).policy
+    }
+}
+
 impl EnvPolicy {
     /// Resolve the table against this process's environment, with no reference
     /// resolution — the shape callers that never spawn a vault command use
-    /// (the daemon's convenience constructors, the dev views). `serve` uses
-    /// [`build_with_values`](Self::build_with_values).
+    /// (the dev views). `serve` uses [`build_snapshot`](Self::build_snapshot).
     pub fn build(user: &BTreeMap<String, EnvEntry>) -> EnvReport {
         Self::build_with_values(user, &[], Arc::new(Resolver::default()))
     }
 
     /// [`build`](Self::build) with the table's values already resolved
-    /// ([`Resolver::resolve_table`]) — what `serve` calls, and where injection
-    /// and masking-by-construction enter the policy.
+    /// ([`Resolver::resolve_table`]), capturing the local process environment.
+    /// Hosted preparation uses [`build_snapshot`](Self::build_snapshot) instead.
     pub fn build_with_values(
         user: &BTreeMap<String, EnvEntry>,
         resolved: &[ResolvedValue],
         resolver: Arc<Resolver>,
     ) -> EnvReport {
-        let mut vars: Vec<(String, String)> = std::env::vars().collect();
-        vars.sort();
-        Self::build_from_with(user, &vars, resolved, resolver)
+        Self::build_snapshot(
+            user,
+            EnvSnapshot::capture().expect("valid local environment"),
+            resolved,
+            resolver,
+        )
     }
 
     /// [`build`](Self::build) over an explicit environment snapshot — the seam
     /// the tests drive, and what keeps resolution a pure function of
     /// `(table, environment, resolved values)`.
     pub fn build_from(user: &BTreeMap<String, EnvEntry>, vars: &[(String, String)]) -> EnvReport {
-        Self::build_from_with(user, vars, &[], Arc::new(Resolver::default()))
+        let base = EnvSnapshot::new(vars.iter().cloned().collect()).expect("valid environment");
+        let resolver = match std::env::current_dir() {
+            Ok(cwd) => Resolver::with_environment(cwd, base.clone()),
+            Err(error) => Resolver::new(Box::new(move |_| {
+                Err(format!("could not resolve cwd: {error}"))
+            })),
+        };
+        Self::build_snapshot(user, base, &[], Arc::new(resolver))
     }
 
     /// The core: table precedence over `vars`, then the resolved values folded
@@ -440,12 +405,27 @@ impl EnvPolicy {
         resolved: &[ResolvedValue],
         resolver: Arc<Resolver>,
     ) -> EnvReport {
+        Self::build_snapshot(
+            user,
+            EnvSnapshot::new(vars.iter().cloned().collect()).expect("valid environment"),
+            resolved,
+            resolver,
+        )
+    }
+
+    /// Resolve against the caller's complete base, retained for later masking edits.
+    pub fn build_snapshot(
+        user: &BTreeMap<String, EnvEntry>,
+        base: EnvSnapshot,
+        resolved: &[ResolvedValue],
+        resolver: Arc<Resolver>,
+    ) -> EnvReport {
         let table = Table::merge(user);
         let mut conflicts = Vec::new();
         let mut below_floor = Vec::new();
         let mut strip = Vec::new();
         let mut to_mask: Vec<(String, String)> = Vec::new();
-        for (name, value) in vars {
+        for (name, value) in base.iter() {
             let (rule, conflict) = table.resolve(name);
             if let Some(conflict) = conflict {
                 conflicts.push(conflict);
@@ -505,7 +485,8 @@ impl EnvPolicy {
         EnvReport {
             policy: Self {
                 table,
-                child_env: ChildEnv::new(strip).with_inject(inject),
+                child_env: ChildEnv::from_snapshot(base.clone(), strip).with_inject(inject),
+                base,
                 masker,
                 resolver,
             },
@@ -515,7 +496,7 @@ impl EnvPolicy {
         }
     }
 
-    /// Re-resolve against a fresh environment snapshot after a config edit and
+    /// Re-resolve against the session's base environment after a config edit and
     /// **add** whatever is newly maskable, including the values of any
     /// references the edited table names. The needle set is append-only for
     /// the session: a value that has since rotated out is still a secret, and
@@ -531,11 +512,11 @@ impl EnvPolicy {
     /// child environment is fixed at boot with the spawn sites that hold it, so
     /// a value added by an edit reaches children on the next `serve`.
     pub fn absorb_config(&self, user: &BTreeMap<String, EnvEntry>) -> Vec<ResolveError> {
-        let mut vars: Vec<(String, String)> = std::env::vars().collect();
-        vars.sort();
         let table = Table::merge(user);
-        let mut to_mask: Vec<(String, String)> = vars
-            .into_iter()
+        let mut to_mask: Vec<(String, String)> = self
+            .base
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
             .filter(|(name, value)| {
                 let masked =
                     table.resolve(name).0.mask || HARNESS_KEY_VARS.contains(&name.as_str());

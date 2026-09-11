@@ -80,6 +80,7 @@ impl Session {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .process_group(0);
+        self.env_policy.child_env().apply_tokio(&mut cmd);
         // The session scratch dir rides `$TMPDIR` into background children too,
         // mirroring the foreground `Bash` spawn (docs/tools.md).
         if let Some(scratch) = &self.scratch {
@@ -88,9 +89,6 @@ impl Session {
         // Mirror the foreground spawn's root strip (docs/web-bind.md): the machine
         // root never reaches a tool child.
         cmd.env_remove(crate::auth::ROOT_ENV);
-        // And the `[env]` table's spawn policy — strip, then the values it names
-        // — as in the foreground spawn (docs/env.md).
-        self.env_policy.child_env().apply_tokio(&mut cmd);
         let mut child = cmd.spawn()?;
         let pgid = child.id();
         let stdout = child.stdout.take().expect("stdout is piped");

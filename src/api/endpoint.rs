@@ -48,16 +48,23 @@ pub struct Endpoint {
 
 /// Where Codex CLI caches its OAuth tokens: `$CODEX_HOME/auth.json`, default
 /// `~/.codex/auth.json`. Read, never written — refresh is Codex CLI's job.
-fn codex_auth_path() -> Option<std::path::PathBuf> {
-    if let Ok(home) = std::env::var("CODEX_HOME") {
-        return Some(std::path::PathBuf::from(home).join("auth.json"));
+fn codex_auth_path(
+    cwd: &std::path::Path,
+    read: &impl Fn(&str) -> Option<String>,
+) -> Option<std::path::PathBuf> {
+    if let Some(home) = read("CODEX_HOME") {
+        return Some(cwd.join(home).join("auth.json"));
     }
-    std::env::home_dir().map(|home| home.join(".codex").join("auth.json"))
+    read("HOME").map(|home| cwd.join(home).join(".codex").join("auth.json"))
 }
 
 /// The access token and account id from Codex CLI's cache.
-fn codex_cached_credentials() -> Result<(String, String), Error> {
-    let path = codex_auth_path().ok_or("no home directory to find ~/.codex/auth.json in")?;
+fn codex_cached_credentials(
+    cwd: &std::path::Path,
+    read: &impl Fn(&str) -> Option<String>,
+) -> Result<(String, String), Error> {
+    let path = codex_auth_path(cwd, read)
+        .ok_or("session environment has neither CODEX_HOME nor HOME to locate Codex credentials")?;
     let text = std::fs::read_to_string(&path).map_err(|e| -> Error {
         format!(
             "EFFERENCE_PROVIDER=openai-codex reads {}: {e}. Run `codex login` first, or set \
@@ -194,11 +201,25 @@ impl Endpoint {
     pub fn from_env_with(
         resolved: &std::collections::BTreeMap<String, String>,
     ) -> Result<Self, Error> {
+        Self::from_snapshot(
+            &std::env::current_dir()?,
+            &crate::env_table::EnvSnapshot::capture()?,
+            resolved,
+        )
+    }
+
+    /// Provider setup from a complete caller environment, never host fallback (docs/env.md).
+    pub fn from_snapshot(
+        cwd: &std::path::Path,
+        base: &crate::env_table::EnvSnapshot,
+        resolved: &std::collections::BTreeMap<String, String>,
+    ) -> Result<Self, Error> {
+        assert!(cwd.is_absolute(), "provider cwd must be absolute");
         let read = |name: &str| {
             resolved
                 .get(name)
                 .cloned()
-                .or_else(|| std::env::var(name).ok())
+                .or_else(|| base.get(name).map(str::to_owned))
         };
         for knob in RETIRED_KNOBS {
             if read(knob).is_some() {
@@ -225,7 +246,7 @@ impl Endpoint {
                             .into(),
                     );
                 }
-                (None, _) => codex_cached_credentials()?,
+                (None, _) => codex_cached_credentials(cwd, &read)?,
             };
             let mut endpoint = Self::resolve(provider, Some(token), None)?;
             endpoint

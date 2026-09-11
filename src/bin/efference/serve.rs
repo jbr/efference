@@ -160,6 +160,7 @@ pub(crate) async fn serve(
     // before a session dir is minted or a provider is dialed.
     let bind = resolve_bind(bind_flags)?;
     let cwd = std::env::current_dir()?;
+    let base_env = efference::env_table::EnvSnapshot::capture()?;
     let socket = session_dir.join(SOCKET_NAME);
     let session_dir = cwd.join(session_dir);
     // Daemon logging: RUST_LOG controls verbosity (default: efference at info, deps
@@ -186,7 +187,10 @@ pub(crate) async fn serve(
     // prompts (1Password's Touch ID) does it here, at session open, never inside
     // a turn. The resolver's cache is shared with the session policy below and
     // with every later config edit, so an unchanged reference never re-prompts.
-    let resolver = std::sync::Arc::new(efference::env_table::Resolver::at_cwd(cwd.clone()));
+    let resolver = std::sync::Arc::new(efference::env_table::Resolver::with_environment(
+        cwd.clone(),
+        base_env.clone(),
+    ));
     let injected = resolve_env_values(&resolver, &origin.role.env)?;
 
     // Provider resolution (docs/transport.md): the declared EFFERENCE_PROVIDER
@@ -194,7 +198,7 @@ pub(crate) async fn serve(
     // alone via EFFERENCE_API_KEY (or the ANTHROPIC_API_KEY fallback) so it can be a
     // whole-value `op://…` reference — either resolved from `[env]` above, or
     // substituted by `op run` into the process environment.
-    let mut endpoint = efference::api::Endpoint::from_env_with(&injected)?;
+    let mut endpoint = efference::api::Endpoint::from_snapshot(&cwd, &base_env, &injected)?;
 
     // The sticky-routing key (docs/transport.md): derived once here, from the session
     // dir, which is fixed for the session's life. It pins the session to one upstream
@@ -350,7 +354,7 @@ pub(crate) async fn serve(
         },
     );
 
-    // The `[env]` table (docs/env.md), resolved once against this process's
+    // The `[env]` table (docs/env.md), resolved against the caller's captured
     // environment: the child-env policy every spawn site applies (strip, and the
     // values the table names), and the session's masker. An unresolvable
     // precedence tie is a startup config error; a value under the maskability
@@ -358,8 +362,9 @@ pub(crate) async fn serve(
     // of the origin, so its references are already in the resolver's cache — no
     // second vault prompt.
     let session_values = resolve_env_table(&resolver, &loaded.role.env)?;
-    let env_report = efference::env_table::EnvPolicy::build_with_values(
+    let env_report = efference::env_table::EnvPolicy::build_snapshot(
         &loaded.role.env,
+        base_env,
         &session_values,
         resolver.clone(),
     );

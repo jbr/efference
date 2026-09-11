@@ -154,6 +154,7 @@ fn an_entry_with_no_value_field_resolves_to_nothing() {
 fn the_runner_returns_stdout_without_its_trailing_newline() {
     let value = run_command(
         &std::env::current_dir().unwrap(),
+        &crate::env_table::EnvSnapshot::capture().unwrap(),
         "echo resolved-value",
         Duration::from_secs(10),
     )
@@ -165,6 +166,7 @@ fn the_runner_returns_stdout_without_its_trailing_newline() {
 fn a_nonzero_exit_is_an_error_carrying_stderr() {
     let error = run_command(
         &std::env::current_dir().unwrap(),
+        &crate::env_table::EnvSnapshot::capture().unwrap(),
         "echo nope 1>&2; exit 3",
         Duration::from_secs(10),
     )
@@ -177,6 +179,7 @@ fn a_nonzero_exit_is_an_error_carrying_stderr() {
 fn a_command_that_outlives_the_timeout_is_killed() {
     let error = run_command(
         &std::env::current_dir().unwrap(),
+        &crate::env_table::EnvSnapshot::capture().unwrap(),
         "sleep 30",
         Duration::from_millis(100),
     )

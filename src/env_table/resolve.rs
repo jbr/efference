@@ -163,9 +163,17 @@ impl Default for Resolver {
 impl Resolver {
     /// Reference commands run in this session root, including later config edits (docs/env.md).
     pub fn at_cwd(cwd: std::path::PathBuf) -> Self {
+        match super::EnvSnapshot::capture() {
+            Ok(base) => Self::with_environment(cwd, base),
+            Err(error) => Self::new(Box::new(move |_| Err(error.clone()))),
+        }
+    }
+
+    /// Fix both command cwd and environment for boot and later edits (docs/env.md).
+    pub fn with_environment(cwd: std::path::PathBuf, base: super::EnvSnapshot) -> Self {
         assert!(cwd.is_absolute(), "resolver cwd must be absolute");
         Self::new(Box::new(move |command| {
-            run_command(&cwd, command, RESOLVE_TIMEOUT)
+            run_command(&cwd, &base, command, RESOLVE_TIMEOUT)
         }))
     }
 
@@ -245,11 +253,14 @@ impl Resolver {
 /// exists, so it is capped rather than unbounded.
 pub fn run_command(
     cwd: &std::path::Path,
+    base: &super::EnvSnapshot,
     command: &str,
     timeout: Duration,
 ) -> Result<String, String> {
     use std::process::{Command, Stdio};
-    let mut child = Command::new("sh")
+    let mut cmd = Command::new("sh");
+    base.apply(&mut cmd);
+    let mut child = cmd
         .current_dir(cwd)
         .arg("-c")
         .arg(command)

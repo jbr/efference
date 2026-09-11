@@ -337,16 +337,17 @@ fn the_needle_set_is_append_only_across_a_config_edit() {
 
 #[test]
 fn a_config_edit_adds_needles_for_a_newly_masked_variable() {
-    // SAFETY: single-threaded within this test; the variable name is unique to it.
-    unsafe { std::env::set_var("EFFERENCE_TEST_LATE_VALUE", "late-secret-value") };
-    let policy = EnvPolicy::build_from(&BTreeMap::new(), &[]).policy;
+    let policy = EnvPolicy::build_from(
+        &BTreeMap::new(),
+        &env(&[("EFFERENCE_TEST_LATE_VALUE", "late-secret-value")]),
+    )
+    .policy;
     assert!(policy.mask("late-secret-value").contains("late-secret"));
     policy.absorb_config(&user(&[(
         "EFFERENCE_TEST_LATE_VALUE",
         entry(Some(true), None),
     )]));
     assert!(!policy.mask("late-secret-value").contains("late-secret"));
-    unsafe { std::env::remove_var("EFFERENCE_TEST_LATE_VALUE") };
 }
 
 // ------------------------------------------------------------------- values

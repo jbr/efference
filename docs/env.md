@@ -32,8 +32,39 @@ string, which names the value (`SOME_KEY = "op://Vault/Item/field"`). A bare
 is a parse error rather than a guess.
 
 Implemented in `src/env_table.rs` (the table, precedence, the child-env policy),
+`src/env_table/child.rs` (spawn replacement),
+`src/env_table/snapshot.rs` (the in-memory base),
 `src/env_table/mask.rs` (needles, the marker, the scan), and
 `src/env_table/resolve.rs` (the scheme registry, the runner, the cache).
+
+## Session base environment
+
+Local `serve` captures the caller's environment once, before reference resolution
+or provider lookup, as an `EnvSnapshot`. It retains the already-applied shell and
+direnv values; it does not load shell configuration or run direnv itself.
+`EnvSnapshot::new` accepts a complete map for callers preparing sessions in-process.
+The snapshot is not merged with the host environment later.
+
+Snapshots are memory-only: no serialization implementation, no state/log/discovery
+field, and Debug reports only the entry count. `ChildEnv` Debug omits injected
+values too. The listener's `EFFERENCE_ROOT_SECRET` is excluded at construction.
+Names/values are UTF-8; local capture fails explicitly on non-UTF-8 rather than
+changing or dropping bytes. Empty names, `=` in names, and NUL bytes are rejected.
+
+`EnvPolicy::build_snapshot` retains this base for masking and constructs the fixed
+child policy from it. At each spawn, `ChildEnv::apply` clears inheritance, installs
+the base, removes stripped names, then injects resolved values. Bash's session
+`TMPDIR` is applied afterward and the root secret is removed last. A stdio MCP
+stanza overlays its own env after the table, with the same final root removal.
+Context exec uses the child policy too. Reference commands use the base directly,
+before table values have been resolved, and never inherit additional host values.
+
+Later config edits reevaluate masking against the retained base, not the host's
+current environment; reference commands continue using the same base and cwd.
+Standalone/offline convenience constructors still capture the local environment
+at construction. This is not a local-host creation protocol yet: transmitting the
+snapshot to a host belongs to the session-creation operation. Remote environment
+recipes are not implemented.
 
 ## Threat model: accidental capture
 
@@ -166,8 +197,8 @@ a **single left-to-right pass** over the assembled final string. The pass
 advances past each emitted marker, which is what keeps a short needle from
 matching inside one — a repeated `replace` could not promise that.
 
-Values are snapshotted at startup and re-snapshotted on a config edit. The
-needle set is **append-only for the session**: a variable an edit stops masking
+Values are captured at startup; config edits reevaluate the retained base and
+resolve any newly named references. The needle set is **append-only for the session**: a variable an edit stops masking
 keeps its needles, because a rotated-out secret is still a secret and still sits
 in files the session may go on to read. There is no zeroize window before exit —
 the values are needed for the entire runtime — so the guarantee is exactly
@@ -242,10 +273,10 @@ corner from a plain variable: `strip = false`, because injecting it is the point
 A name that is somehow both stripped and valued gets the value (removals run
 before sets).
 
-`Resolver::at_cwd` fixes reference commands to the session's working directory.
-The CLI supplies it before resolving the origin table, and later config edits
-reuse the same resolver. The runner sets child cwd directly; this does not load
-shell configuration or direnv, and environment inheritance remains process-based.
+`Resolver::with_environment` fixes reference commands to the session's working
+directory and base environment. The CLI supplies both before resolving the origin
+table, and later config edits reuse that resolver. The runner sets child cwd
+directly and replaces inheritance; it does not load shell configuration or direnv.
 
 **Resolution is eager and cached.** Every reference resolves at boot, before the
 daemon serves, and again whenever a config edit is adopted; the cache is keyed by
@@ -268,11 +299,16 @@ same reason it is always stripped.
 
 The harness's own credential rides this resolver: `EFFERENCE_API_KEY` /
 `ANTHROPIC_API_KEY` / `EFFERENCE_PROVIDER` are read from the resolved table
-first and from the process environment second, so the key can be an `op://`
+first and from the captured base environment second, so the key can be an `op://`
 reference in the config instead of a variable the process was launched with. It
 does **not** retire the unconditional own-key masking below — the key can still
 arrive as a plain variable (`op run`, direnv, an exported shell variable), and on
 that path the `HARNESS_KEY_VARS` list is the only thing that masks it.
+
+Codex cache lookup follows the same lookup order for `CODEX_HOME`, then `HOME`
+for the default `.codex/auth.json`. Relative paths are joined to the session cwd.
+If neither home variable is present, cache lookup fails rather than consulting the
+host account's home directory. Explicit token/account values still bypass the cache.
 
 ### Deliberately not done: memory hardening
 

@@ -37,6 +37,7 @@ behind a change, see [`journal/`](journal/).
 - **Session cost pricing backs off over minutes** (docs/transport.md): the generation lookup retries across 2s–300s instead of 2s/10s, so an upstream whose record lands late (`meta/muse-spark-1.3`, >60s) no longer leaves every request `unpriced`.
 
 ### Changed
+- Session boot snapshots the caller environment for provider/reference lookup, subprocesses, and masking; children no longer inherit extra host variables.
 - Session policy, foreground/background commands, config loading, and environment-reference commands now use an explicit session working directory.
 - Daemon boot takes explicit working/storage roots; usage and attachments no longer derive from the socket, and file serving uses the supplied session root.
 - Rename the session state/control type from `Shared` to `Session`; execution and wire behavior are unchanged.

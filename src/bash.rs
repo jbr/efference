@@ -91,8 +91,8 @@ pub struct Bash {
     pub background_after_max: Duration,
     /// The `[env]` table's spawn-time answer (docs/env.md): variables removed
     /// from this child's environment, and the values the table names set into
-    /// it. Empty by default, so a toolbox built for a dev view (which never runs
-    /// a command) needs no policy.
+    /// it. Standalone defaults capture the local environment; session boot
+    /// supplies the caller's snapshot and resolved policy.
     pub child_env: crate::env_table::ChildEnv,
 }
 
@@ -228,6 +228,7 @@ impl Bash {
             // Lead a fresh process group so one `killpg` reaps the command and
             // anything it spawns (docs/supervisor.md). child pid == pgid.
             .process_group(0);
+        self.child_env.apply_tokio(&mut cmd);
         // The session scratch dir rides `$TMPDIR` into every child (docs/tools.md).
         if let Some(tmpdir) = &self.tmpdir {
             cmd.env("TMPDIR", tmpdir);
@@ -236,10 +237,6 @@ impl Bash {
         // child derives the bearer and drives its own approval gates. Hardcoded
         // self-surface protection, deliberately not an `[env]`-style policy knob.
         cmd.env_remove(crate::auth::ROOT_ENV);
-        // Everything the `[env]` table marks `strip = true`, then the values it
-        // names — a literal, or a reference the harness resolved at boot
-        // (docs/env.md).
-        self.child_env.apply_tokio(&mut cmd);
         let mut child = match cmd.spawn() {
             Ok(child) => child,
             Err(e) => return RawResult::error(format!("failed to spawn bash: {e}")).into(),

@@ -506,12 +506,13 @@ impl Session {
         // it needs the strip set for the toolbox and the masker for the boot
         // preamble — and passes it to [`Session::full`] so the session has exactly
         // one, whose needle set is append-only for its lifetime.
-        let env_policy = crate::env_table::EnvPolicy::build_with_values(
-            &role.role.env,
-            &[],
-            Arc::new(crate::env_table::Resolver::at_cwd(cwd.clone())),
-        )
-        .policy;
+        let base = crate::env_table::EnvSnapshot::capture().expect("valid local environment");
+        let resolver = Arc::new(crate::env_table::Resolver::with_environment(
+            cwd.clone(),
+            base.clone(),
+        ));
+        let env_policy =
+            crate::env_table::EnvPolicy::build_snapshot(&role.role.env, base, &[], resolver).policy;
         Self::full(
             cwd,
             log,

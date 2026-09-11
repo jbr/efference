@@ -143,3 +143,138 @@ fn rooted_config_loading_preserves_optional_default_and_required_explicit_paths(
     );
     assert!(crate::config::load_in(&cwd, Some(std::path::Path::new("missing.toml"))).is_err());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sessions_use_their_own_environment_for_bash_and_context() {
+    use crate::env_table::{EnvPolicy, EnvSnapshot, Resolver};
+    let roots = Roots::new();
+    let mut sessions = Vec::new();
+    for label in ["one", "two"] {
+        let cwd = roots.0.join(label);
+        let scratch = cwd.join("scratch");
+        std::fs::create_dir(&scratch).unwrap();
+        let base = EnvSnapshot::new(
+            [
+                ("IDENTITY".into(), label.into()),
+                ("TMPDIR".into(), "/not-the-session-scratch".into()),
+                (
+                    "EFFERENCE_API_KEY".into(),
+                    format!("private-{label}-credential"),
+                ),
+                (crate::auth::ROOT_ENV.into(), "host-root-secret".into()),
+            ]
+            .into(),
+        )
+        .unwrap();
+        let resolver = Arc::new(Resolver::with_environment(cwd.clone(), base.clone()));
+        let policy = EnvPolicy::build_snapshot(&Default::default(), base, &[], resolver).policy;
+        let toolbox = crate::tools::Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))
+            .unwrap()
+            .with_child_env(policy.child_env());
+        let role = LoadedConfig::default();
+        let (session, _turns) = Session::full(
+            cwd.clone(),
+            Log::in_memory(),
+            role,
+            Some(scratch.clone()),
+            upstream_failure_state(),
+            upstream_retry_state(),
+            crate::api::plan_state(),
+            ImagePlacement::default(),
+            policy,
+        );
+        let state = session.state_json();
+        assert!(!state.contains(&format!("private-{label}-credential")));
+        assert!(!state.contains("host-root-secret"));
+        let command =
+            "printf '%s|%s|%s' \"$IDENTITY\" \"$TMPDIR\" \"${EFFERENCE_ROOT_SECRET-unset}\"";
+        let expected = format!("{label}|{}|unset", scratch.display());
+        let result = toolbox
+            .run(
+                &ToolCall::new("bash", "env-root", serde_json::json!({"command": command})),
+                std::future::pending(),
+                |_| {},
+                |_| {},
+            )
+            .await;
+        let crate::bash::Outcome::Done(result) = result else {
+            panic!("unexpected detach")
+        };
+        assert!(!result.is_error, "{}", result.content);
+        assert_eq!(result.content, expected);
+        let config = crate::config::Config::from_toml(
+            "[context.identity]\nexec = 'printf %s \"$IDENTITY\"'\n",
+        )
+        .unwrap();
+        let context = crate::context::resolve_with_child_env(
+            &config.context,
+            &cwd,
+            &session.env_policy.child_env(),
+        )
+        .unwrap();
+        assert!(context.render().unwrap().contains(label));
+        let handle = session.spawn_background(command.into(), None).unwrap();
+        sessions.push((session, handle, expected));
+    }
+    for (session, handle, expected) in &sessions {
+        let finished = tokio::time::timeout(Duration::from_secs(5), async {
+            while !session
+                .pending_notifications()
+                .iter()
+                .any(|n| n.source == *handle)
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        if finished.is_err() {
+            for (session, _, _) in &sessions {
+                session.kill_all_bg();
+            }
+            panic!("background command did not finish");
+        }
+        assert_eq!(
+            session.process_output_read(1, None).unwrap().content,
+            *expected
+        );
+    }
+}
+
+#[test]
+fn codex_credentials_are_located_from_the_session_snapshot() {
+    let roots = Roots::new();
+    for label in ["one", "two"] {
+        let cwd = roots.0.join(label);
+        std::fs::create_dir_all(cwd.join("home/.codex")).unwrap();
+        std::fs::write(
+            cwd.join("home/.codex/auth.json"),
+            serde_json::json!({
+                "tokens": {"access_token": format!("{label}-token"), "account_id": label}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        for name in ["HOME", "CODEX_HOME"] {
+            let path = if name == "HOME" {
+                "home"
+            } else {
+                "home/.codex"
+            };
+            let base = crate::env_table::EnvSnapshot::new(
+                [
+                    ("EFFERENCE_PROVIDER".into(), "openai-codex".into()),
+                    (name.into(), path.into()),
+                ]
+                .into(),
+            )
+            .unwrap();
+            let endpoint =
+                crate::api::Endpoint::from_snapshot(&cwd, &base, &Default::default()).unwrap();
+            assert_eq!(endpoint.auth_value, format!("Bearer {label}-token"));
+            assert_eq!(
+                endpoint.extra_headers,
+                vec![("ChatGPT-Account-ID".into(), label.into())]
+            );
+        }
+    }
+}
