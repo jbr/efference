@@ -58,8 +58,7 @@ impl StdioTransport {
         child_env.apply_tokio(&mut cmd);
         cmd.envs(env);
         cmd.env_remove(crate::auth::ROOT_ENV);
-        let mut child = cmd
-            .spawn()
+        let mut child = crate::spawn::tokio(&mut cmd)
             .with_context(|| format!("could not spawn `{command}`"))?;
         let stdin = child.stdin.take().expect("stdin was piped");
         let stdout = child.stdout.take().expect("stdout was piped");

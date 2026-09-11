@@ -446,9 +446,8 @@ fn run_exec(
     // (docs/env.md).
     child_env.apply(&mut cmd);
     cmd.env_remove(crate::auth::ROOT_ENV);
-    let child = cmd
-        .spawn()
-        .map_err(|e| err(format!("failed to spawn bash: {e}")))?;
+    let child =
+        crate::spawn::std(&mut cmd).map_err(|e| err(format!("failed to spawn bash: {e}")))?;
     let pgid = child.id();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {

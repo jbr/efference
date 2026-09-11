@@ -237,7 +237,7 @@ impl Bash {
         // child derives the bearer and drives its own approval gates. Hardcoded
         // self-surface protection, deliberately not an `[env]`-style policy knob.
         cmd.env_remove(crate::auth::ROOT_ENV);
-        let mut child = match cmd.spawn() {
+        let mut child = match crate::spawn::tokio(&mut cmd) {
             Ok(child) => child,
             Err(e) => return RawResult::error(format!("failed to spawn bash: {e}")).into(),
         };

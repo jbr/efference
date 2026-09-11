@@ -260,15 +260,14 @@ pub fn run_command(
     use std::process::{Command, Stdio};
     let mut cmd = Command::new("sh");
     base.apply(&mut cmd);
-    let mut child = cmd
-        .current_dir(cwd)
+    cmd.current_dir(cwd)
         .arg("-c")
         .arg(command)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("could not run `{command}`: {e}"))?;
+        .stderr(Stdio::piped());
+    let mut child =
+        crate::spawn::std(&mut cmd).map_err(|e| format!("could not run `{command}`: {e}"))?;
     let mut stdout = child.stdout.take().expect("stdout is piped");
     let mut stderr = child.stderr.take().expect("stderr is piped");
     let drain = |pipe: &mut dyn Read| {

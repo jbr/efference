@@ -91,6 +91,20 @@ is shared between the foreground abort path and the supervisor's kill/teardown p
 The supervisor registry exposes `running_pgids()` — the set of all still-running
 pgids — for the teardown sweep.
 
+## Spawns are serialized
+
+Every child the crate starts — foreground and background bash, `[context]` exec,
+`[env]` reference commands, stdio MCP servers — goes through `crate::spawn`, which
+holds one process-wide lock across `Command::spawn`. `spawn` creates the child's
+stdio pipes and then starts the process, and on platforms without an atomic
+`pipe2(O_CLOEXEC)` (macOS) the pipe is briefly inheritable between its creation and
+the close-on-exec flag. A spawn on another thread inside that window gives its
+child a copy of the pipe's write end; a grandchild that outlives the first command
+(`sleep 30 &`) then keeps that command's stdout open, and the reader waits for EOF
+until the grandchild exits. A hosted process spawns for several sessions at once,
+so the window is not theoretical. The lock covers a few system calls and nothing
+awaits inside it.
+
 ## Three-places decomposition
 
 A backgrounded command is not a single log record; it is a live entity that

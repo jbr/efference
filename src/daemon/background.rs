@@ -89,7 +89,7 @@ impl Session {
         // Mirror the foreground spawn's root strip (docs/web-bind.md): the machine
         // root never reaches a tool child.
         cmd.env_remove(crate::auth::ROOT_ENV);
-        let mut child = cmd.spawn()?;
+        let mut child = crate::spawn::tokio(&mut cmd)?;
         let pgid = child.id();
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");

@@ -25,6 +25,7 @@ pub mod policy;
 pub mod pretty;
 pub mod project;
 pub mod push;
+pub mod spawn;
 pub mod spotter;
 pub mod supervisor;
 pub mod tools;
