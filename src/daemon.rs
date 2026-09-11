@@ -1033,8 +1033,10 @@ mod test;
 
 mod frontend;
 mod paths;
+mod runtime;
 mod serve;
 pub use paths::SessionPaths;
+pub use runtime::{SessionBoot, SessionRuntime};
 
 pub use frontend::RemoteFrontend;
 pub use serve::serve;

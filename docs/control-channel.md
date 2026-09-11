@@ -31,7 +31,7 @@ commands, the session's `EnvPolicy`, and every child spawn. Config edits reuse t
 base for masking rather than sampling the host environment. Child inheritance is
 replaced before policy and harness-owned values are applied ([env.md](env.md)).
 
-`Session` represents one session's state and control surface. The agent loop task and HTTP handlers both hold it as `Arc<Session>`. The daemon registers it as trillium's server-global shared state; handlers retrieve it per-connection. Listener ownership and agent/auxiliary-task wiring live in `src/daemon/serve.rs`, not in the type itself. Its contents:
+`Session` represents one session's state and control surface. The agent loop task and HTTP handlers both hold it as `Arc<Session>`. The daemon registers it as trillium's server-global shared state; handlers retrieve it per-connection. Listener ownership lives in `src/daemon/serve.rs`; the session's own tasks are owned by a `SessionRuntime` (below), not by the type itself. Its contents:
 
 **`Arc<Mutex<Log>>`** — the persisted, append-only log (see [log-and-projection.md](log-and-projection.md)). The loop appends under this lock via `Session::append`, which also pings the append notifier so SSE tailers wake. The lock is never held across an `await`; code that needs to call the model on a snapshot calls `Session::snapshot()` to clone the entries first.
 
@@ -48,6 +48,42 @@ replaced before policy and harness-owned values are applied ([env.md](env.md)).
 **Append `Notify`** — pinged by every `Session::append` call; the `GET /events` tail arms a `Notified` before each catch-up read so an append landing between the read and the await cannot be lost (the lost-wakeup-safe pattern).
 
 **Broadcast for stream deltas** (`broadcast::Sender<StreamDelta>`) — carries ephemeral pre-commit output fragments to the control stream's `output` class. Lossy by design: a consumer that lags past the ring drops the oldest deltas rather than stalling the loop. The committed entry on the `log` class is the authoritative copy; the durable log is the backstop.
+
+## Session runtime: one session's tasks and their shutdown
+
+`SessionBoot` (`src/daemon/runtime.rs`) is the pure-data set of inputs a session
+starts from: the provider client, the mounted toolbox, the fork peek, the spotter,
+the log, the session paths, the loaded role, the review level, the model's
+capabilities and name, the environment policy, and whether to keep scratch. Whoever
+creates the session resolves these; nothing in the struct reads ambient process
+state. The CLI's `serve` builds one; a host's session-creation handler builds the
+same struct.
+
+`SessionRuntime::start(boot, parent)` builds the `Session`, sets its boot-time
+fields (review level, capabilities, reservation, identity, cost tracking, usage log,
+tool catalog), and runs the session's tasks under a child `Swansong` of `parent`.
+The topic differ, cache keepalive, config watcher, and attachment watcher are
+spawned on the current tokio runtime, each wrapped in the child's `interrupt`. The
+agent loop runs on a dedicated thread with its own current-thread tokio runtime,
+because the loop is single-threaded by design: the toolbox holds `RefCell` state and
+the `Frontend`/`Spotter` futures carry no `Send` bound, so it cannot be spawned onto
+a work-stealing runtime. Handlers and watchers reach the session through
+`Arc<Session>` as before; a hosted session therefore costs one thread for its loop.
+
+The child `Swansong` is the runtime's one control handle. `shut_down()` on it
+cancels the loop and the watchers and completes only after teardown has run: the
+loop thread holds a guard until it has reaped background process groups and removed
+the scratch dir (unless `keep_scratch`). Shutting down the parent stops every
+runtime under it the same way; shutting down one runtime does not touch its
+siblings or the parent. `finished()` waits for the loop to return — on its own or
+by cancellation — and yields its outcome. `daemon::serve` creates the parent
+`Swansong`, hands it to the listeners (so SIGINT/SIGTERM reach the loop) and starts
+one runtime under it; the two-runtimes test in `src/daemon/test/runtime.rs` pins
+the isolation.
+
+Session-dir minting, the config snapshot, and scratch minting stay with the creator
+(the CLI today), as does listener binding. The runtime owns the session's lifetime
+from `start` to teardown and nothing outside it.
 
 ## The route set
 

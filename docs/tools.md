@@ -599,7 +599,7 @@ three ways — the env var, the path grant, and the expansion value are all view
 
 The logged `tool_use` keeps the variable form the model wrote; only the in-flight call
 is rewritten, so projection determinism is untouched. Lifecycle: deleted on session
-end; `serve --keep-scratch` retains it as a post-mortem artifact.
+end by the session runtime; `serve --keep-scratch` retains it as a post-mortem artifact.
 
 ## Open items
 

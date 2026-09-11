@@ -1,93 +1,28 @@
-//! Booting the daemon: bind the socket, spawn the watchers, and run the turn
-//! loop (docs/control-channel.md).
+//! Booting one session's daemon: start its runtime, bind the listeners, and
+//! wait for the loop (docs/control-channel.md).
 
 use super::*;
 
-/// Run the daemon: bind the control socket, spawn the HTTP server, and drive the
-/// agent loop with a [`RemoteFrontend`]. The loop blocks until a `POST /turns`
-/// arrives, so an idle daemon simply waits — retiring argv-seeding and the
-/// "backgrounded run can't get its opening prompt" problem (docs/README.md).
-#[allow(clippy::too_many_arguments)] // the daemon's full boot surface; one caller
-pub async fn serve<S: Spotter>(
-    client: Client,
-    toolbox: Toolbox,
-    distiller: crate::distill::ForkPeek,
-    spotter: S,
-    log: Log,
+/// Run the daemon: start the session under the listener's `Swansong`, bind the
+/// control socket (and the optional TCP listener), and wait for the loop. The
+/// loop blocks until a `POST /turns` arrives, so an idle daemon simply waits —
+/// retiring argv-seeding and the "backgrounded run can't get its opening
+/// prompt" problem (docs/README.md).
+pub async fn serve<S: Spotter + Send + 'static>(
+    boot: SessionBoot<S>,
     socket: PathBuf,
-    paths: SessionPaths,
-    role: LoadedConfig,
-    autonomous: bool,
-    capabilities: crate::api::ModelCapabilities,
-    model: String,
     bind: Option<tcp::TcpBind>,
-    env_policy: crate::env_table::EnvPolicy,
 ) -> Result<(), Error> {
-    // The keepalive interval, read off the config before it moves into `Session`
-    // (docs/transport.md).
-    let ping_at = role.role.transport.keepalive_interval;
-    let (shared, turns) = Session::full(
-        paths.cwd().to_path_buf(),
-        log,
-        role,
-        toolbox.scratch_dir().map(std::path::Path::to_path_buf),
-        client.upstream_failure(),
-        client.upstream_retry(),
-        client.plan_state(),
-        client.image_placement(),
-        env_policy,
-    );
-
-    // The boot review level (docs/permissions.md), set before the loop spawns
-    // because the gate reads it on the loop's thread.
-    shared.set_autonomous(autonomous);
-    // Whether this model has a prompt cache to keep warm at all
-    // (docs/transport.md) — read before the capabilities move into `Session`.
-    // The keepalive is a Messages-dialect primitive (`max_tokens: 0`); Responses has
-    // no established cheap read (backlog: openai-provider/validation.md), so the
-    // loop never starts there and the boot line says so.
-    let cacheable = capabilities.prompt_cache.is_supported()
-        && client.dialect() == crate::api::WireDialect::Messages;
-    // The boot-fetched model capabilities (docs/transport.md) — the caller already
-    // treated a failed lookup as fatal, so by here the value always exists.
-    shared.set_capabilities(capabilities);
-    // The client's output reservation (`api/reservation.rs`): the context limit
-    // `GET /state` reports is the window less what the last request reserved.
-    shared.set_reservation(client.reservation());
-    // What this session is, for a client that has to name it on screen
-    // (docs/control-api.md): the resolved model and the working directory, both
-    // fixed by the time the caller gets here.
-    shared.set_identity(SessionIdentity {
-        model,
-        cwd: paths.cwd().to_string_lossy().into_owned(),
-    });
-    // Session cost telemetry (docs/transport.md): armed only where the provider
-    // has a per-request accounting surface (OpenRouter's generation endpoint).
-    // Direct Anthropic has none, so the readout stays absent rather than modeled.
-    if client.endpoint().provider == crate::api::Provider::OpenRouter {
-        shared.enable_cost_tracking(client.endpoint().clone());
-    }
-    // The per-request usage record (docs/log-and-projection.md) lives beside the
-    // canonical log in the explicitly supplied storage directory.
-    shared.attach_usage_log(&paths.usage_log());
-    // Share the client between the loop and the keepalive task. `tools` is computed
-    // once here for the ping; `agent::run` recomputes the same (byte-stable, docs/log-and-projection.md)
-    // definitions internally, so both send an identical prefix.
-    let client = Arc::new(client);
-    // The exact tools[] a real turn sends — world tools + the harness tools
-    // (`consolidate`, the supervisor/inbox tools, docs/supervisor.md, docs/inbox.md). Built from the one source
-    // (`agent::tool_definitions`) so the keepalive ping warms the *same* cache prefix
-    // a real turn reads; any drift here silently breaks idle cache-warming (docs/log-and-projection.md).
-    let tools = agent::tool_definitions(&toolbox);
-    // Snapshot the mounted tool catalog for `GET /v1/tools/:name`
-    // (docs/control-api.md), before `toolbox` moves into `agent::run` below —
-    // the same reason `set_capabilities`/`set_identity` run here rather than
-    // in `Session::full`.
-    shared.set_tool_catalog(&toolbox);
-    let mut frontend = RemoteFrontend {
-        shared: Arc::clone(&shared),
-        turns,
-    };
+    let cwd = boot.paths.cwd().to_path_buf();
+    // Trillium owns the signal registry: it registers SIGINT/SIGTERM against the
+    // `Swansong` the server is configured with and drives graceful shutdown through
+    // it. The session runtime is a child of that same `Swansong`, so a C-c that
+    // stops the listener also cancels the loop — which otherwise parks forever in
+    // `read_user_turn` (the `kill -9` hang) — and the runtime's teardown guard holds
+    // the server's shutdown open until background children are reaped.
+    let swansong = trillium_tokio::Swansong::new();
+    let runtime = SessionRuntime::start(boot, &swansong);
+    let shared = Arc::clone(runtime.session());
 
     // The TCP bind's credential state (docs/web-bind.md), armed before either spawn:
     // the UDS router mounts the host-only credential routes (`/auth/link` & co.), and
@@ -100,6 +35,7 @@ pub async fn serve<S: Spotter>(
     // upgrades to the multi-listener builder (carrying that state over) so we can
     // `bind_uds`.
     let server = trillium_tokio::config()
+        .with_swansong(swansong.clone())
         .with_shared_state(Arc::clone(&shared))
         .listeners()
         .bind_uds(&socket)
@@ -108,7 +44,7 @@ pub async fn serve<S: Spotter>(
             Transport::Socket {
                 auth: web_auth.clone(),
             },
-            App::session(paths.cwd()),
+            App::session(&cwd),
         ));
     eprintln!("control socket: {}", socket.display());
 
@@ -125,9 +61,9 @@ pub async fn serve<S: Spotter>(
                 Transport::Web {
                     auth: Arc::clone(&auth),
                 },
-                App::session(paths.cwd()),
+                App::session(&cwd),
             ),
-            server.swansong(),
+            swansong.clone(),
             Arc::clone(&shared),
         )
         .map_err(|e| -> Error { format!("failed to bind {addr}: {e}").into() })?;
@@ -141,76 +77,10 @@ pub async fn serve<S: Spotter>(
         _tcp_server = Some(handle);
     }
 
-    // The one state-topic differ (docs/control-api.md): recomputes the topics on any
-    // change signal and publishes the ones that moved, so N connected clients cost one
-    // recomputation instead of N polls.
-    tokio::spawn(watch_topics(Arc::clone(&shared)));
-
-    // The cache keepalive runs alongside the loop (docs/log-and-projection.md) — a transport-side
-    // timer that never touches the log, so it composes with the loop without
-    // sharing anything but the read-only client and the telemetry clocks.
-    //
-    // Two gates, either of which keeps it from spawning. **No prompt cache**: the
-    // boot capability lookup found no upstream behind this model that caches
-    // prompts, so a `max_tokens: 0` ping would refresh nothing and re-bill the
-    // whole prefix at the input rate every interval — the ping is only free where
-    // there is an entry to read. **Interval zero**: the operator turned it off.
-    // The runtime tripwire inside the loop stays as well; it catches the endpoint
-    // that claims a cache and reasons on the ping anyway (docs/transport.md).
-    if cacheable && !ping_at.is_zero() {
-        tokio::spawn(keepalive_loop(
-            Arc::clone(&client),
-            Arc::clone(&shared),
-            tools,
-            ping_at,
-        ));
-    } else if client.dialect() == crate::api::WireDialect::Responses {
-        eprintln!("[keepalive off: no established refresh primitive on the Responses dialect]");
-    } else if !cacheable {
-        eprintln!(
-            "[keepalive off: {} reports no prompt cache behind this model]",
-            client.endpoint().provider.name()
-        );
-    }
-
-    // The fs-watch initiator (docs/permissions.md): if the config resolved
-    // from a file, watch it so external edits take effect live as committed `ConfigEdit`s. The
-    // built-in default has no file to watch.
-    if let Some(config_path) = shared.config_path().map(|p| p.to_path_buf()) {
-        tokio::spawn(config_watch_loop(Arc::clone(&shared), config_path));
-    }
-
-    // The attachment store (docs/inbox.md): the same fs-watch affordance, over
-    // `.efference/<id>/attachments/`. A file appearing there — pasted, dragged, moved in —
-    // becomes a notification naming what arrived; the bytes stay on disk until the model
-    // pulls them, so nothing here enters the log. Storage is independent of the listener.
-    tokio::spawn(attachments_watch_loop(
-        Arc::clone(&shared),
-        paths.attachments(),
-        paths.attachment_display(),
-    ));
-
-    // Trillium owns the signal registry: by default it registers SIGINT/SIGTERM and
-    // drives graceful shutdown through its `Swansong`. But the future `serve` awaits
-    // is `agent::run`, which parks in `read_user_turn` on the turn channel — whose
-    // senders live in the still-alive `Arc<Session>`, so a C-c that stops the HTTP
-    // listener would otherwise leave the loop parked forever (the `kill -9` hang).
-    // Hook the *same* Swansong via `interrupt`: it drives the loop normally until
-    // shutdown is initiated, then cancels it and resolves to `None`. (`server` is
-    // held — not dropped — for the whole await so the listener stays up; it drops on
-    // return, after shutdown has already begun.)
-    // Keep a handle for teardown — `run` moves the loop's `Arc<Session>`.
-    let teardown = Arc::clone(&shared);
-    let run = agent::run(&client, &mut frontend, shared, distiller, spotter, toolbox);
-    let outcome = match server.swansong().interrupt(run).await {
-        Some(result) => result,
-        None => {
-            eprintln!("\nshutting down");
-            Ok(())
-        }
-    };
-    // Reap any background children before exiting so a killed daemon doesn't orphan
-    // a process group (docs/supervisor.md, ownership).
-    teardown.kill_all_bg();
+    // `server` is held — not dropped — for the whole await so the listener stays
+    // up; it drops on return, after the loop has ended. A loop that ends on its own
+    // (end of input) leaves the listener to stop with the process.
+    let outcome = runtime.finished().await;
+    drop(server);
     outcome
 }

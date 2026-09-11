@@ -600,32 +600,25 @@ pub(crate) async fn serve(
         }
         None => ForkPeek::shared(),
     };
-    let result = daemon::serve(
-        client,
-        toolbox,
-        distiller,
-        spotter,
-        log,
+    daemon::serve(
+        efference::daemon::SessionBoot {
+            client,
+            toolbox,
+            distiller,
+            spotter,
+            log,
+            paths: efference::daemon::SessionPaths::new(cwd.clone(), session_dir.canonicalize()?)?,
+            role: loaded,
+            autonomous,
+            capabilities,
+            model: model.to_string(),
+            env_policy,
+            keep_scratch,
+        },
         socket,
-        efference::daemon::SessionPaths::new(cwd.clone(), session_dir.canonicalize()?)?,
-        loaded,
-        autonomous,
-        capabilities,
-        model.to_string(),
         bind,
-        env_policy,
     )
-    .await;
-    // Scratch lifecycle (docs/tools.md): cleaned on session end unless retained as
-    // a post-mortem artifact.
-    if keep_scratch {
-        eprintln!("scratch kept: {}", scratch.display());
-    } else if let Err(e) = std::fs::remove_dir_all(&scratch)
-        && e.kind() != std::io::ErrorKind::NotFound
-    {
-        eprintln!("[scratch: could not remove {}: {e}]", scratch.display());
-    }
-    result
+    .await
 }
 
 /// Every mounted tool name, dotted — what the tester prints when `--tool` names
