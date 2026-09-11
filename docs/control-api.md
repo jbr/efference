@@ -12,10 +12,10 @@
 > we can critique and harden it before more clients commit to it. A client
 > should treat its control endpoint as an opaque base URL it joins paths onto:
 > session identity arrives as an additive path prefix in front of these routes,
-> never as a rename of them. `efference host` ([host.md](host.md)) is that
-> prefix — `/sessions/<id>/` in front of everything below, forwarded to the
-> session unchanged — so the same client code addresses a session daemon at a
-> socket root or a host at a prefix, differing only in configuration.
+> never as a rename of them. A multi-session host is that prefix —
+> `/sessions/<id>/` in front of everything below — so the same client code
+> addresses a session daemon at a socket root or a host at a prefix, differing
+> only in configuration. The host itself is planned work (`backlog/host-process.md`).
 
 ## Transport & addressing
 
@@ -31,12 +31,6 @@ operator's read-only view of the working directory, cookie-only and outside the
 version prefix because it is a human surface rather than a control one. Both are
 [web-bind.md](web-bind.md); the UDS stays auth-exempt and everything below is
 unchanged on it.
-
-The same routes are also reachable through `efference host` at
-`/sessions/<id>/v1/…`, forwarded to that session's Unix socket byte-for-byte
-behind the host's own credential ([host.md](host.md)). The host adds one endpoint
-of its own — `GET /sessions`, the live-session listing — and none that translate
-or enrich what is below.
 
 A client finds the socket by:
 

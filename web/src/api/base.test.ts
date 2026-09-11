@@ -69,10 +69,10 @@ test("control paths join onto the base; the listener's own do not", async () => 
   await fetchSessions();
 
   expect(urls).toEqual([
-    // The session's own API, behind the prefix the host forwards.
+    // The session's own API, behind the prefix a host routes.
     "/sessions/work/v1/loop/continue",
     // Auth is the listener's surface, and one credential covers every session
-    // behind a host (docs/host.md).
+    // behind a host (docs/web-client.md).
     "/auth/session",
     // So is discovery.
     "/sessions",

@@ -15,9 +15,9 @@ import { join as joinBase } from "./base.ts";
 import type { ErrorEnvelope } from "./types.ts";
 
 // Joined onto the client's base like every other control path (api/base.ts).
-// `/files` is mounted on a session daemon's own TCP listener only, so under a
-// host these URLs reach the session's socket, which does not serve them — the
-// viewer renders that refusal like any other (docs/host.md).
+// `/files` is mounted on a web listener only (docs/web-bind.md); a listener
+// that does not serve it refuses, and the viewer renders that refusal like any
+// other.
 const fileUrl = (path: string): string =>
   joinBase("/files/" + path.split("/").map(encodeURIComponent).join("/"));
 

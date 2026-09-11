@@ -1,5 +1,5 @@
 // Which binding served this page, and therefore what it shows first
-// (docs/host.md). Two answers: a single session, or the host's list of them.
+// (docs/web-client.md). Two answers: a single session, or a host's list of them.
 //
 // The base decides it when there is one — a page under `/sessions/<id>/` is that
 // session's view, and no request is needed to know it. At a root the base is

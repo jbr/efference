@@ -126,8 +126,8 @@ pub(crate) fn arm_with_ledger(bind: TcpBind, ledger: BurnLedger) -> (Arc<TcpAuth
 }
 
 /// Register a [`Listener`]'s address on `config`: plaintext, or TLS paired with a QUIC
-/// listener on the same port. One function because the host adopts the same listener
-/// shape (docs/host.md) and a second copy of the pairing would drift from this one.
+/// listener on the same port. One function because a host listener adopts the same
+/// shape and a second copy of the pairing would drift from this one.
 ///
 /// Generic over the server type only because `trillium-tokio` does not export the one
 /// it uses; the bounds say what the body needs of it.
@@ -285,16 +285,18 @@ enum CodeRejection {
 
 /// Which surface a gated listener serves — the one thing that differs between the
 /// two binds that share this gate. A session daemon serves the control API and the
-/// operator's file view; the host serves session discovery and the per-session proxy
-/// (docs/host.md). Everything else about the gate is identical, so the difference
-/// lives here rather than in a second gate.
+/// operator's file view; a host serves the session listing and every session's
+/// control API under a `/sessions/<id>` prefix (docs/web-bind.md). Everything else
+/// about the gate is identical, so the difference lives here rather than in a
+/// second gate.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Surface {
     /// `efference serve --bind`: `/v1` takes either credential, `/files` the cookie
     /// only (docs/web-bind.md).
     Session,
-    /// `efference host`: everything under `/sessions` takes either credential — the
-    /// discovery listing and every proxied per-session path alike (docs/host.md).
+    /// A multi-session host: everything under `/sessions` takes either credential —
+    /// the session listing and every session-prefixed control path alike
+    /// (docs/web-bind.md).
     Host,
 }
 
@@ -313,9 +315,9 @@ impl Surface {
     /// index answers, and nothing else (docs/web-client.md).
     ///
     /// A session bind serves the client at its root, so its routes are exactly
-    /// [`SPA_ROUTES`]. The host serves the same client at its root *and* the
+    /// [`SPA_ROUTES`]. A host serves the same client at its root *and* the
     /// single-session view under `/sessions/<id>/`, which is the base that client
-    /// joins its control paths onto (docs/host.md), so every route is answered
+    /// joins its control paths onto (docs/web-client.md), so every route is answered
     /// there too. The enumeration stays exact either way: `/sessions/<id>/anything`
     /// that is not a named route is still a `404`.
     fn spa_route(self, path: &str) -> bool {
@@ -516,21 +518,35 @@ fn host_spa_route(conn: &Conn) -> bool {
 /// The client route inside a `/sessions/<id>` prefix, if the path carries one:
 /// `/sessions/work/tree` → `/tree`, and both `/sessions/work` and `/sessions/work/`
 /// → `/`. `None` when the path is not session-prefixed, or when the id is not a
-/// single plain segment — the same rule the host resolves ids by, so the shell is
-/// offered for exactly the ids the proxy would accept.
+/// single plain segment — the same rule a host resolves ids by, so the shell is
+/// offered for exactly the ids a host would accept.
 fn session_scoped(path: &str) -> Option<&str> {
     let after = path.strip_prefix("/sessions/")?;
     let (id, rest) = after.split_at(after.find('/').unwrap_or(after.len()));
-    crate::host::plain_id(id).then_some(if rest.is_empty() { "/" } else { rest })
+    plain_id(id).then_some(if rest.is_empty() { "/" } else { rest })
+}
+
+/// Whether `id` is a single plain path segment — ASCII alphanumerics, `-`, `_`, `.`,
+/// and neither `.` nor `..`. Anything else names no session: an id arrives from a
+/// URL and is joined onto a filesystem path, so it is validated before the join
+/// rather than trusted. The web client's base derivation (`web/src/api/base.ts`)
+/// accepts the same set.
+pub(crate) fn plain_id(id: &str) -> bool {
+    !id.is_empty()
+        && id != "."
+        && id != ".."
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
 /// The web client (docs/web-client.md): `web/` built and embedded at compile time,
 /// or — under the `dev-proxy` feature — proxied to a spawned Vite dev server with
 /// HMR. Mounted last on a web transport, so it answers exactly the GETs the routes
-/// don't claim; the gate has already let those through anonymously. The host
-/// mounts the same build at its own root (docs/host.md), which is why the index
-/// predicate is surface-dependent: the host also answers the client's routes under
-/// a session prefix, and the session bind does not.
+/// don't claim; the gate has already let those through anonymously. A host
+/// mounts the same build at its own root, which is why the index predicate is
+/// surface-dependent: a host also answers the client's routes under a session
+/// prefix, and the session bind does not.
 pub(crate) fn frontend(surface: Surface) -> impl trillium::Handler {
     trillium_frontend::frontend!("./web")
         .with_client(crate::http::client())

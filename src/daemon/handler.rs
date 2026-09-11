@@ -1,6 +1,6 @@
 //! The one handler construction (docs/web-bind.md "Listener topology is the trust
 //! model"). Every listener this crate binds — a session's Unix socket, a session's
-//! TCP bind, the host's TCP bind — mounts [`handler`], and nothing else assembles a
+//! TCP bind, a host's TCP bind — mounts [`handler`], and nothing else assembles a
 //! stack. Two axes select what the stack contains: the [`Transport`] a listener is,
 //! which decides the trust layers, and the [`App`] behind it, which decides the
 //! routes. Every layer that is not always present is an `Option`, which trillium
@@ -12,7 +12,6 @@ use super::http::control_routes;
 use super::tcp::{
     SecurityHeaders, Surface, TcpAuth, enrollment_routes, frontend, gate, mint_routes,
 };
-use crate::host::{Sessions, host_routes};
 use std::sync::Arc;
 use trillium_caching_headers::Etag;
 use trillium_cookies::CookiesHandler;
@@ -35,8 +34,12 @@ pub enum App {
     /// One session's control API (docs/control-api.md), plus — on a web transport —
     /// the operator's read surface over the working directory (`/files`).
     Session { files: Files },
-    /// The host: the live-session listing and the per-session proxy (docs/host.md).
-    Host { sessions: Sessions },
+    /// A multi-session host's listener: the gate guards `/sessions`, and the web
+    /// client is also served under a `/sessions/<id>` prefix (docs/web-bind.md).
+    /// No routes sit behind it yet; in-process session routing is the host work
+    /// recorded in the backlog, and the proxy that once filled this variant was
+    /// removed rather than extended.
+    Host,
 }
 
 impl App {
@@ -64,9 +67,9 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         Transport::Socket { auth } => (Some(auth), None),
         Transport::Web { auth } => (None, Some(auth)),
     };
-    let (files, sessions) = match app {
-        App::Session { files } => (Some(files), None),
-        App::Host { sessions } => (None, Some(sessions)),
+    let files = match app {
+        App::Session { files } => Some(files),
+        App::Host => None,
     };
     let web = web_auth.is_some();
     (
@@ -89,7 +92,6 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         socket_auth.map(enrollment_routes),
         web_auth.map(mint_routes),
         files.is_some().then(control_routes),
-        sessions.map(host_routes),
         // The operator's read surface over the working directory (docs/web-bind.md),
         // mounted only behind a gate so the socket never serves it. It claims
         // `/files` and passes everything else through.

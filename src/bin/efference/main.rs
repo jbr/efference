@@ -89,22 +89,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             )
             .await
         }
-        Command::Host {
-            bind,
-            host,
-            tls_cert,
-            tls_key,
-            open,
-        } => {
-            host_serve(serve::BindFlags {
-                bind,
-                host,
-                tls_cert,
-                tls_key,
-                open,
-            })
-            .await
-        }
         Command::Control(tools) => control::run_cli(tools, client_socket()?).await,
         Command::Mcp => control::run_stdio(client_socket()?).await,
         #[cfg(feature = "dev")]
@@ -122,7 +106,6 @@ type CliResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
 use check::*;
 use cli::*;
-use host::host as host_serve;
 #[cfg(feature = "dev")]
 use paint::*;
 use serve::serve;
@@ -135,7 +118,6 @@ mod cli;
 mod control;
 #[cfg(feature = "dev")]
 mod dev;
-mod host;
 mod mcp_mount;
 #[cfg(feature = "dev")]
 mod paint;

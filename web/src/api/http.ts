@@ -197,14 +197,14 @@ export const unsubscribePush = (endpoint: string) =>
 export const mintSession = (code: string) =>
   requestAt<{ status: string }>("POST", "/auth/session", { code });
 
-/** One entry of the host's live-session listing (docs/host.md). The id is the
+/** One entry of the host's session listing (docs/web-client.md). The id is the
  * path segment a client joins its control base onto, and the listing carries
  * nothing else: a session's own state is read through its own API. */
 export interface SessionEntry {
   id: string;
 }
 
-// The host's one endpoint of its own (docs/host.md), at its root rather than
+// A host's one endpoint of its own (docs/web-client.md), at its root rather than
 // under the base — a client asking "which sessions are there" is asking the
 // listener, not a session. A session daemon serves no such route, which is how
 // the client tells the two bindings apart (session/entry.ts).

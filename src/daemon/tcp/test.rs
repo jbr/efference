@@ -99,7 +99,7 @@ async fn the_web_client_is_anonymous_and_the_api_is_not() {
     server.get("/tree").await.assert_status(200);
     server.get("/nonexistent").await.assert_status(404);
     server.get("/tree/deeper").await.assert_status(404);
-    // The session-prefixed spellings of those routes are the host's (docs/host.md):
+    // The session-prefixed spellings of those routes are a host's (docs/web-bind.md):
     // this bind serves the client at its own root, so the client's base is empty
     // here and a `/sessions/…` path names nothing.
     server.get("/sessions/work").await.assert_status(404);
@@ -455,4 +455,19 @@ async fn the_shipped_policy_admits_no_unsafe_escape() {
         !csp.contains("unsafe-"),
         "shipped policy must stay strict: {csp:?}"
     );
+}
+
+/// Ids are validated before they are joined onto a path: only a plain segment names
+/// a session, and the session-prefixed client routes are offered for exactly those.
+#[test]
+fn only_plain_ids_name_a_session() {
+    assert!(plain_id("work-1.2"));
+    for bad in ["", ".", "..", "a/b", "/etc", "a b", "wörk"] {
+        assert!(!plain_id(bad), "{bad:?} passed as a session id");
+    }
+    assert_eq!(session_scoped("/sessions/work"), Some("/"));
+    assert_eq!(session_scoped("/sessions/work/"), Some("/"));
+    assert_eq!(session_scoped("/sessions/work/tree"), Some("/tree"));
+    assert_eq!(session_scoped("/sessions/../tree"), None);
+    assert_eq!(session_scoped("/v1/state"), None);
 }

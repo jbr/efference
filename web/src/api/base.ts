@@ -1,7 +1,7 @@
 // Where this client's control endpoint is (docs/control-api.md): a base URL the
 // api layer joins every path onto. A session daemon serves the client at its
-// socket root, the host serves it under `/sessions/<id>/` and forwards that
-// prefix to the session unchanged (docs/host.md) — so the two bindings are the
+// socket root, a host serves it under `/sessions/<id>/` and routes that
+// prefix to the session (docs/web-client.md) — so the two bindings are the
 // same client code with a different base, and nothing above this module names a
 // binding.
 //

@@ -347,45 +347,6 @@ pub(crate) enum Command {
         #[arg(long, requires = "bind")]
         open: bool,
     },
-    /// Serve every session in this directory through one authenticated web front door.
-    ///
-    /// Lists the live sessions at `GET /sessions`, exposes each one's control API
-    /// under `/sessions/<id>/`, and serves the web client at the root. It starts no
-    /// sessions: it adopts whatever `serve` processes are running under `.efference/`
-    /// here, and their Unix sockets stay local.
-    ///
-    /// The bind and auth flags are `serve --bind`'s, with the same env fallbacks and
-    /// the same posture: plaintext only on loopback, TLS wants an explicit public
-    /// name, and EFFERENCE_ROOT_SECRET must be set.
-    Host {
-        /// The address to listen on. Required — a host with no listener is nothing.
-        #[arg(long, value_name = "ADDR:PORT", env = "EFFERENCE_BIND")]
-        bind: Option<String>,
-        /// The public name browsers address the host by — the Host allowlist and the
-        /// hostname in the printed link. Defaults to `localhost` on a loopback bind;
-        /// required with TLS.
-        #[arg(long, value_name = "NAME", env = "EFFERENCE_HOST")]
-        host: Option<String>,
-        /// PEM certificate chain for the bind (the `tailscale cert` output).
-        #[arg(
-            long,
-            value_name = "PEM",
-            requires = "tls_key",
-            env = "EFFERENCE_TLS_CERT"
-        )]
-        tls_cert: Option<PathBuf>,
-        /// PEM private key matching --tls-cert.
-        #[arg(
-            long,
-            value_name = "PEM",
-            requires = "tls_cert",
-            env = "EFFERENCE_TLS_KEY"
-        )]
-        tls_key: Option<PathBuf>,
-        /// Open the operator's browser at the bootstrap link once bound.
-        #[arg(long)]
-        open: bool,
-    },
     /// Drive a running session from a script: send turns, resolve approvals, read state.
     ///
     /// One subcommand per control-API call. These are the same tools `efference mcp`

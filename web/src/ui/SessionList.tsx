@@ -1,5 +1,5 @@
 // The host's root: the live sessions, each a link into its own view
-// (docs/host.md). A row carries the id and nothing else, because the listing
+// (docs/web-client.md). A row carries the id and nothing else, because the listing
 // carries the id and nothing else — a session's state lives behind its own API,
 // so a chip per row would be one `GET /sessions/<id>/v1/state` per session on
 // every load. The cross-session summary a list actually wants is a host-level

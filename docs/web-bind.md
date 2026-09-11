@@ -9,11 +9,12 @@ are its trust model) and remains the CLI verbs' channel. Implemented in
 `src/auth.rs` (the credential arithmetic); the flag resolution is
 `src/bin/efference/serve.rs`.
 
-This is the **one**-session bind, and it stays that: `efference host`
-([host.md](host.md)) is the multi-session front door, and it reuses everything in this
+This is the **one**-session bind. A multi-session host reuses everything in this
 document — the flags, the listener shape, the credential layer, and the gate — rather
 than shipping a second one. The gate's only listener-dependent decision is which
-prefixes it guards, carried as a `Surface`.
+prefixes it guards, carried as a `Surface`: a session bind guards `/v1` and `/files`,
+a host guards `/sessions`. The host `Surface` exists today with nothing mounted
+behind it; in-process session routing is planned work (`backlog/host-process.md`).
 
 The bind is configured by CLI flags — each with an env fallback (`EFFERENCE_BIND`,
 `EFFERENCE_HOST`, `EFFERENCE_TLS_CERT`, `EFFERENCE_TLS_KEY`) so a direnv'd shell can
@@ -43,10 +44,10 @@ present is an `Option`, which trillium runs as a pass-through when `None`, and t
   `/tree`) rather than every unmatched path, which would hand scanner probes a
   `200`; the service worker's offline navigation fallback mirrors that list, and
   new client routing is added there rather than by loosening the predicate. The
-  list is relative to the client's base, so on the host the same routes are also
-  answered under a `/sessions/<id>` prefix ([host.md](host.md)) and the predicate
-  is a function of the listener's `Surface`; on this bind the base is empty and a
-  `/sessions/…` path names nothing.
+  list is relative to the client's base, so on a host the same routes are also
+  answered under a `/sessions/<id>` prefix ([web-client.md](web-client.md)) and the
+  predicate is a function of the listener's `Surface`; on this bind the base is
+  empty and a `/sessions/…` path names nothing.
 
 `head` is `trillium_head::head()`, mounted ahead of everything: HEAD requests are
 rewritten to GET on the way in (so the gate and routers only ever see GET) and the
@@ -152,10 +153,10 @@ Runs before every TCP route, in order:
    shell and hashed assets ([web-client.md](web-client.md)), which reveal nothing
    session-specific — plus `POST /auth/session` (the mint). The guarded prefixes are
    `/v1` and `/files`; a non-GET outside them fails closed rather than 404ing. A
-   client route is anonymous wherever it is served, which on the host means the
+   client route is anonymous wherever it is served, which on a host means the
    single-session view's own route is the one anonymous GET inside a guarded prefix
-   ([host.md](host.md)) — the shell carries no session content, and the page's first
-   act is to authenticate.
+   — the shell carries no session content, and the page's first act is to
+   authenticate.
    `/files` is guarded more narrowly still: it takes the **cookie only**, and a
    valid bearer gets `403 forbidden` there rather than `401`, because the credential
    is fine and presenting it again would not help.
@@ -324,8 +325,8 @@ would follow usefully.
 
 ## Auth routes live beside `/v1`, not under it
 
-The first surface with no per-session home, previewing the host's routing split
-([host.md](host.md), which mounts the same mint at its own listener).
+The first surface with no per-session home, previewing a host's routing split:
+a host listener mounts the same mint.
 
 On the TCP listener (anonymous): `POST /auth/session` — `{"code":"123456"}` →
 `Set-Cookie` on success.

@@ -127,13 +127,15 @@ The client treats its control endpoint as an opaque base URL and joins every pat
 onto it ([control-api.md](control-api.md)). `api/base.ts` derives that base from
 the page's own location, because the page was served *from* its base: a path under
 `/sessions/<id>/` yields `/sessions/<id>`, anything else yields `""`. A session
-daemon at a socket root and a host at a prefix ([host.md](host.md)) are then the
-same client code, and nothing above `api/` names a binding. `/auth/…` and
+daemon at a socket root and a host at a prefix are then the same client code, and
+nothing above `api/` names a binding. No host serves the page today; the session
+list view and the prefixed base are held for the in-process host
+(`backlog/host-process.md`). `/auth/…` and
 `/sessions` are deliberately *not* joined: they are the listener's own surfaces,
 at its root under either binding — one credential covers every session behind a
 host.
 
-The id set the derivation accepts mirrors the host's (`plain_id`, `src/host.rs`):
+The id set the derivation accepts mirrors the gate's (`plain_id`, `src/daemon/tcp.rs`):
 a path whose second segment is not a plain segment is not a prefix, and addresses
 the root instead.
 
@@ -150,7 +152,7 @@ failure screen would only restate it.
 is the ids and nothing else. Model, stall, and gate chips per row would be one
 `GET /sessions/<id>/v1/state` per session on every load — acceptable at three
 sessions, and the wrong shape at thirty; the cross-session summary the list actually
-wants is a host-level resource that is not built ([host.md](host.md)).
+wants is a host-level resource that is not built (`backlog/host-process.md`).
 
 **Entering a session is a navigation, not client-side state.** A row is an `<a href>`
 to `/sessions/<id>/`, and the back affordance in the top bar is a link to `/`, shown
@@ -1350,9 +1352,9 @@ the bootstrap dance: read `#token=` from the URL fragment, trade it at
 `POST /auth/session`, scrub the fragment; render the six-digit field on a bare visit
 or a failed trade. The SPA index answers the client's named routes and nothing else
 (`SPA_ROUTES`, `src/daemon/tcp.rs`) — a broader index fallback would answer scanner
-probes `200`. On the host those routes are also answered under a session prefix,
+probes `200`. On a host those routes are also answered under a session prefix,
 which is the one place the anonymous shell sits inside a guarded prefix
-([host.md](host.md)).
+([web-bind.md](web-bind.md)).
 
 ## Development
 

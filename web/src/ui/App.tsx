@@ -2,7 +2,7 @@
 // session's view is the answer under a session prefix and at a session daemon's
 // root; the host's root is the list of live sessions instead, and entering one
 // from it is a navigation — the base changes, so the page loads again against a
-// different control endpoint (docs/host.md). Nothing here is a router: there is
+// different control endpoint (docs/web-client.md). Nothing here is a router: there is
 // no client-side transition between the two, because there is no shared client
 // state that could survive one.
 

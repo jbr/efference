@@ -52,11 +52,6 @@ trillium-tokio = "0.6.4"
 # StreamExt for consuming the SSE EventStream; already in-tree via trillium.
 futures-lite = "2.6.1"
 trillium-router = "0.5.3"
-# The host's session proxy (docs/host.md): `/sessions/<id>/…` forwarded to that
-# session's Unix socket. Chosen over a hand-rolled forward for the two properties
-# the control API needs — a streamed response body (so SSE flushes through instead
-# of buffering) and upgrade forwarding.
-trillium-proxy = "0.8.5"
 # Already in-tree under trillium-tokio; a direct dependency only to *name* the
 # `ServerHandle` the TCP bind's spawn returns (docs/web-bind.md).
 trillium-server-common = "0.7"

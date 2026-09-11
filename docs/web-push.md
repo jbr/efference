@@ -2,7 +2,7 @@
 
 Two moments mean a session is waiting on a person: an approval gate opened, and a turn
 settled. Both happen inside a live daemon, so each daemon sends push for its own events
-— there is no watcher process, and the host ([host.md](host.md)) is not involved.
+— there is no watcher process.
 Delivery is the Web Push triangle (RFC 8030): the browser's push service holds an
 opaque endpoint per subscription, and the daemon POSTs an encrypted payload to it;
 nothing ever connects inbound. Crash and stall notices are out of scope by design — a
@@ -68,10 +68,10 @@ that), then spawns the send so the turn loop never waits on a push service.
 
 Titles are `<event> in <cwd>` — `Gate in ~/code/efference` — with the home directory
 tilde-abbreviated; the event stands alone before `serve` sets an identity. The path in
-the payload is `/` today, the session bind's own root; when the host grows its push
-step ([../backlog/host-process.md](../backlog/host-process.md)) the sender carries the
-session-prefixed path instead, and nothing else changes — the service worker opens
-whatever path it is named.
+the payload is `/` today, the session bind's own root; when a host serves sessions
+under a prefix ([../backlog/host-process.md](../backlog/host-process.md)) the sender
+carries the session-prefixed path instead, and nothing else changes — the service
+worker opens whatever path it is named.
 
 ## The routes
 
