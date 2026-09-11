@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`efference host`** (docs/control-channel.md, docs/control-api.md): one process hosting many sessions as their control endpoint — `GET /sessions`, `POST /sessions` on the Unix socket (the body carries the session's cwd and environment), `DELETE /sessions/:id`, and each session's own API under `/sessions/<id>/`, routed in-process into the same handlers a session bind serves.
 - **`dev cache` states uncached input tokens beside the warm rate** (docs/log-and-projection.md): the rate counts any nonzero read as warm, so a session of preamble-only hits reads as healthy; the token column is what makes 81% warm against 2.07M uncached input legible.
 - **`Config::from_toml`** (docs/permissions.md): parse a config from text through the same decode-and-validate path a file takes; every test that uses a config as an input now writes it as TOML.
 - **`Distilled` is a struct** (docs/log-and-projection.md): `WireState::Distilled(Distilled)` carries the verdict as one value with builders on it, and `render_distilled` takes it, so a field added to the verdict is one setter and one render clause; wire bytes are unchanged.

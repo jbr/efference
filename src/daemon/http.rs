@@ -116,10 +116,13 @@ pub(crate) struct NotifyBody {
     pub(crate) replaces: Option<u64>,
 }
 
-/// Pull the shared daemon state out of a conn's server-global TypeSet, or short
-/// out with a 500 if it's somehow absent (a wiring bug, never seen at runtime).
+/// The session a conn addresses: the one a host's `/sessions/:id` stage put into
+/// conn state, else the server-global one a session bind registered
+/// (docs/control-channel.md). `None` only on a wiring bug, answered as a 500.
 pub(crate) fn shared_of(conn: &Conn) -> Option<Arc<Session>> {
-    conn.shared_state::<Arc<Session>>().map(Arc::clone)
+    conn.state::<Arc<Session>>()
+        .or_else(|| conn.shared_state::<Arc<Session>>())
+        .map(Arc::clone)
 }
 
 /// The answer when the server-global state is absent — the one condition every route

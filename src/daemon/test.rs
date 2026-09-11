@@ -144,5 +144,6 @@ mod push;
 mod tools;
 mod views;
 
+mod host;
 mod roots;
 mod runtime;

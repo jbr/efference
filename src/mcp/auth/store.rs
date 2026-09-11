@@ -65,7 +65,7 @@ pub struct StoredAuth {
 /// has in hand at mount time, before any discovery has run. The issuer is
 /// checked *after* loading, against what discovery lands on
 /// ([`StoredAuth::issuer`]).
-pub trait TokenStore {
+pub trait TokenStore: Send + Sync {
     fn load(&self, server: &str) -> anyhow::Result<Option<StoredAuth>>;
     fn save(&self, server: &str, auth: &StoredAuth) -> anyhow::Result<()>;
     /// Forget one server's credentials — a revoked grant, or `--reauth`.

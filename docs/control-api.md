@@ -51,6 +51,32 @@ It is **not** wired as a default and carries **no authentication model** today
 Content type is `application/json` for all request and response bodies except
 the two SSE streams (`text/event-stream`).
 
+### A host: the same routes under `/sessions/<id>/`
+
+`efference host` ([control-channel.md](control-channel.md)) serves several
+sessions from one process. Its own routes are the listener's, not a session's:
+
+- `GET /sessions` — `[{"id": …}, …]`, the hosted sessions, sorted by id.
+- `POST /sessions` — create a session. The body is the session request: `cwd`
+  (absolute, always sent), `env` (the complete base environment, [env.md](env.md)),
+  `model`, and optionally `name`, `config`, `spotter_model`, `triage`,
+  `temperature`, `effort`, `upstream`, `autonomous`, `reauth`, `keep_scratch`.
+  `201 {"id": …}`; `400` with the reason when the body, the name, the cwd, or
+  preparation is unusable, in which case nothing was minted. Accepted on the
+  host's Unix socket only: a network listener answers `403`, because remote
+  creation has no environment source yet (backlog/host-process.md). The
+  environment is applied and dropped, never logged or echoed.
+- `DELETE /sessions/:id` — end the session. Answers `200` once its teardown has
+  run (background children reaped, scratch removed); the id leaves the list once
+  the loop has returned. `404` for an id that is not hosted.
+- `/sessions/:id/v1/…` and, on the web listener, `/sessions/:id/files/…` — that
+  session's own routes, unchanged. The host resolves the session into conn state
+  and dispatches into the same route table a session bind serves at its root;
+  `404 not_found` for an unhosted id.
+
+A client treats its control endpoint as an opaque base, so the session-prefixed
+form and the socket-root form are the same client code with a different base.
+
 ## Connection lifecycle (how a client catches up and stays live)
 
 Two requests, one of them long-lived:

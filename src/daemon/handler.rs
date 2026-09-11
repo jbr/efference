@@ -8,6 +8,7 @@
 //! bind time, and never a per-conn guess about which listener a request arrived on.
 
 use super::files::Files;
+use super::host::host_routes;
 use super::http::control_routes;
 use super::tcp::{
     SecurityHeaders, Surface, TcpAuth, enrollment_routes, frontend, gate, mint_routes,
@@ -34,12 +35,12 @@ pub enum App {
     /// One session's control API (docs/control-api.md), plus — on a web transport —
     /// the operator's read surface over the working directory (`/files`).
     Session { files: Files },
-    /// A multi-session host's listener: the gate guards `/sessions`, and the web
-    /// client is also served under a `/sessions/<id>` prefix (docs/web-bind.md).
-    /// No routes sit behind it yet; in-process session routing is the host work
-    /// recorded in the backlog, and the proxy that once filled this variant was
-    /// removed rather than extended.
-    Host,
+    /// A multi-session host's listener (docs/control-channel.md): the session
+    /// list, each session's control API under `/sessions/<id>/`, and — with
+    /// `create` — `POST /sessions`. The gate guards `/sessions`, and the web
+    /// client is also served under a session prefix (docs/web-bind.md). The
+    /// server-global state is the `Arc<Host>`.
+    Host { create: bool },
 }
 
 impl App {
@@ -67,9 +68,9 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         Transport::Socket { auth } => (Some(auth), None),
         Transport::Web { auth } => (None, Some(auth)),
     };
-    let files = match app {
-        App::Session { files } => Some(files),
-        App::Host => None,
+    let (files, host) = match app {
+        App::Session { files } => (Some(files), None),
+        App::Host { create } => (None, Some(create)),
     };
     let web = web_auth.is_some();
     (
@@ -92,6 +93,7 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         socket_auth.map(enrollment_routes),
         web_auth.map(mint_routes),
         files.is_some().then(control_routes),
+        host.map(|create| host_routes(create, web)),
         // The operator's read surface over the working directory (docs/web-bind.md),
         // mounted only behind a gate so the socket never serves it. It claims
         // `/files` and passes everything else through.

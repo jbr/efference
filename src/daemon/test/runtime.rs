@@ -31,7 +31,7 @@ impl Drop for Roots {
 
 /// A boot that never reaches a provider: the loop parks in `read_user_turn`
 /// until shutdown, which is the state a hosted idle session sits in.
-fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
+pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
     let scratch = cwd.join("scratch");
     let endpoint = Endpoint {
         provider: Provider::Anthropic,

@@ -92,6 +92,32 @@ creation handler builds it from a request body. Boot progress prints to stderr
 today. Listener binding stays with whoever runs the runtime. The runtime owns the
 session's lifetime from `start` to teardown and nothing outside it.
 
+## The host: several sessions in one process
+
+`Host` (`src/daemon/host.rs`) is a map of session ids to started runtimes under
+one root `Swansong`; `serve_host` binds the control socket (`.efference/host.sock`
+under the host's cwd, for now) and the optional TCP listener with that `Swansong`,
+so a signal stops the listeners and every session. `Host::adopt` registers a
+runtime started under the host's `Swansong` and spawns a watcher that removes the
+entry once the runtime has finished, whether by `DELETE /sessions/:id`, its own
+end of input, or host shutdown. That watcher is the host's supervision of session
+completion.
+
+Routing is per-conn state: the `/sessions/:id/*` stage looks the id up, puts the
+session's `Arc<Session>` (and its `Files` view) into conn state, and dispatches
+into the unchanged control routes, whose one accessor reads conn state first and
+the server-global session second. A session bind still registers its session as
+server-global state; a host registers the `Arc<Host>` there instead. Nothing is
+forwarded and there is no per-session process.
+
+Creation is a route on the socket handler tuple and a refusal on the web tuple:
+listener topology decides where a session request — which carries the caller's
+environment — is accepted, rather than a per-conn check. `POST /sessions` builds a
+`SessionRequest`, runs `boot::prepare`, starts the runtime, and adopts it. Its
+boot report goes to the host's stderr, and an MCP authorization opens a browser
+on the host's machine, as at `serve`; an island host launched by a TUI will need
+that output captured (backlog/host-process.md).
+
 ## The route set
 
 Every route is served under the `/v1` prefix; the paths here omit it

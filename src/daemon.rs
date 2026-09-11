@@ -1032,9 +1032,11 @@ use watch::config_watch_loop;
 mod test;
 
 mod frontend;
+mod host;
 mod paths;
 mod runtime;
 mod serve;
+pub use host::{Host, serve_host};
 pub use paths::SessionPaths;
 pub use runtime::{SessionBoot, SessionRuntime};
 

@@ -88,6 +88,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             )
             .await
         }
+        Command::Host {
+            bind,
+            host,
+            tls_cert,
+            tls_key,
+            open,
+        } => {
+            serve::host(serve::BindFlags {
+                bind,
+                host,
+                tls_cert,
+                tls_key,
+                open,
+            })
+            .await
+        }
         Command::Control(tools) => control::run_cli(tools, client_socket()?).await,
         Command::Mcp => control::run_stdio(client_socket()?).await,
         #[cfg(feature = "dev")]

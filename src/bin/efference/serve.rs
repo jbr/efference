@@ -300,3 +300,23 @@ pub(crate) async fn spotter_check(
     }
     Ok(())
 }
+
+/// The host socket's name under the base dir: one per hosting process, beside
+/// the session dirs it creates (docs/control-channel.md).
+pub(crate) const HOST_SOCKET_NAME: &str = "host.sock";
+
+/// `efference host`: a hosting process with no sessions until `POST /sessions`.
+pub(crate) async fn host(bind_flags: BindFlags) -> CliResult {
+    let bind = resolve_bind(bind_flags)?;
+    // The socket keeps its relative spelling (Darwin's socket path limit); the
+    // base dir is created so the bind has somewhere to land.
+    std::fs::create_dir_all(BASE_DIR)?;
+    let socket = Path::new(BASE_DIR).join(HOST_SOCKET_NAME);
+    let _ = std::fs::remove_file(&socket);
+    let _ = env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("warn,efference=info"),
+    )
+    .try_init();
+    daemon::serve_host(efference::daemon::Host::new(), socket, bind).await?;
+    Ok(())
+}
