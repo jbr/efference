@@ -38,6 +38,25 @@ async fn host_server(host: &Arc<Host>, create: bool) -> TestServer<impl trillium
     .await
 }
 
+/// The host's socket stack as a streaming client under one session's prefix — the
+/// `test_client` pattern, because `TestServer` reads bodies eagerly and never
+/// returns on `/events`.
+async fn host_client(host: &Arc<Host>, id: &str) -> ControlClient {
+    let host = Arc::clone(host);
+    let mut handler = (
+        trillium::Init::new(move |info: trillium::Info| {
+            let host = Arc::clone(&host);
+            async move { info.with_shared_state(host) }
+        }),
+        handler(Transport::Socket { auth: None }, App::Host { create: true }),
+    );
+    let context = trillium_testing::init(&mut handler).await;
+    ControlClient::with_connector(
+        trillium_testing::ServerConnector::new(handler).with_context(context),
+    )
+    .with_prefix(&format!("/sessions/{id}"))
+}
+
 fn json(body: &str) -> Value {
     serde_json::from_str(body).unwrap_or_else(|e| panic!("{e}: {body}"))
 }
@@ -108,6 +127,40 @@ async fn a_host_routes_each_prefix_to_its_own_session() {
         .await
         .assert_status(200);
     server.delete("/sessions/one").await.assert_status(404);
+
+    host.swansong().shut_down().await;
+}
+
+/// The event stream a TUI lives on works through the prefix dispatch: a client based
+/// at `/sessions/<id>` opens `/v1/events` and receives that session's frames, replay
+/// and live tail alike, with the frame envelope intact.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_prefixed_client_streams_its_sessions_events() {
+    let roots = Roots::new();
+    let host = Host::new();
+    let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
+    let session = Arc::clone(runtime.session());
+    host.adopt("one".into(), runtime);
+    session.append(1, user("first")).unwrap();
+
+    let client = host_client(&host, "one").await;
+    let mut events = client
+        .events(Some(0), Some("log"))
+        .await
+        .expect("open events under the prefix");
+    let (id, kind, data) = next_event(&mut events).await;
+    assert_eq!(id.as_deref(), Some("0"));
+    assert_eq!(kind.as_deref(), Some("user"));
+    let frame: Value = serde_json::from_str(&data).unwrap();
+    assert_eq!(frame["class"], "log");
+    assert!(frame["data"].to_string().contains("first"));
+    session.append(2, user("second")).unwrap();
+    let (id, _, data) = next_event(&mut events).await;
+    assert_eq!(id.as_deref(), Some("1"));
+    assert!(data.contains("second"));
+
+    let state = client.state().await.unwrap();
+    assert!(state.contains("\"cwd\""), "{state}");
 
     host.swansong().shut_down().await;
 }

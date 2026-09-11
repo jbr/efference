@@ -39,19 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client_socket = || resolve_client_socket(name.as_deref(), socket_override.clone());
     match cli.command {
         Command::Serve {
-            model,
-            spotter_model,
-            triage_model,
-            triage_thinking,
-            triage_auto_choice,
-            triage_effort,
-            config,
-            temperature,
-            effort,
-            upstream,
-            autonomous,
-            reauth,
-            keep_scratch,
+            session,
             bind,
             host,
             tls_cert,
@@ -63,21 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let id = cli.name.unwrap_or_else(default_session_id);
             serve(
                 session_dir(&id),
-                &model,
-                spotter_model.as_deref(),
-                triage_model.map(|model| TriageModel {
-                    model,
-                    thinking: triage_thinking,
-                    auto_choice: triage_auto_choice,
-                    effort: triage_effort,
-                }),
-                config,
-                temperature,
-                effort,
-                upstream,
-                autonomous,
-                reauth,
-                keep_scratch,
+                session,
                 serve::BindFlags {
                     bind,
                     host,
@@ -110,10 +84,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::Dev(command) => dev::run(command, name.clone(), client_socket).await,
         Command::Check { path } => check(path).await,
         Command::Tui {
+            new: true,
+            host_socket,
+            session,
             theme,
             images,
             frame_cost,
-        } => tui(client_socket()?, theme, images.into(), frame_cost).await,
+        } => {
+            let host_socket =
+                host_socket.unwrap_or_else(|| Path::new(BASE_DIR).join(serve::HOST_SOCKET_NAME));
+            tui_new(
+                host_socket,
+                cli.name.clone(),
+                session,
+                theme,
+                images.into(),
+                frame_cost,
+            )
+            .await
+        }
+        Command::Tui {
+            new: false,
+            session,
+            theme,
+            images,
+            frame_cost,
+            ..
+        } => {
+            if session.any_given() {
+                return Err("session flags (--model, --config, …) need --new: \
+                     without it `tui` attaches to a running session"
+                    .into());
+            }
+            tui(client_socket()?, theme, images.into(), frame_cost).await
+        }
     }
 }
 

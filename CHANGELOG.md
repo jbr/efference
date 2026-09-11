@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`efference tui --new`** (docs/operating.md, docs/control-api.md): create a session on a running host — this directory as its root, this shell's environment as its base, `--name` as its id, `serve`'s session flags — and attach under `/sessions/<id>/`; quitting detaches. The control client takes a path prefix (`Client::at`) that joins `/v1` routes only, and `CreateSession` is the one body type both ends share.
 - **`efference host`** (docs/control-channel.md, docs/control-api.md): one process hosting many sessions as their control endpoint — `GET /sessions`, `POST /sessions` on the Unix socket (the body carries the session's cwd and environment), `DELETE /sessions/:id`, and each session's own API under `/sessions/<id>/`, routed in-process into the same handlers a session bind serves.
 - **`dev cache` states uncached input tokens beside the warm rate** (docs/log-and-projection.md): the rate counts any nonzero read as warm, so a session of preamble-only hits reads as healthy; the token column is what makes 81% warm against 2.07M uncached input legible.
 - **`Config::from_toml`** (docs/permissions.md): parse a config from text through the same decode-and-validate path a file takes; every test that uses a config as an input now writes it as TOML.

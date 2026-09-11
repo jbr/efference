@@ -1036,7 +1036,7 @@ mod host;
 mod paths;
 mod runtime;
 mod serve;
-pub use host::{Host, serve_host};
+pub use host::{CreateSession, Host, serve_host};
 pub use paths::SessionPaths;
 pub use runtime::{SessionBoot, SessionRuntime};
 

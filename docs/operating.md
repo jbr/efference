@@ -86,7 +86,12 @@ Three reads, at three grains.
   stream never needs to poll.
 
 `efference tui` is the interactive view of all three; `efference dev view <session>` opens a
-recorded log in the same rendering, inert.
+recorded log in the same rendering, inert. `efference tui --new` first creates a session on a
+running `efference host` (`--host-socket`, default `.efference/host.sock` here) from this
+directory, this shell's environment, `--name`, and the same session flags `serve` takes,
+then attaches under `/sessions/<id>/`; quitting detaches, and the session stays on the host
+([control-api.md](control-api.md)). Without `--new`, a session flag is an error rather than
+silently ignored.
 
 A fourth read is offline, about spend rather than content, and a developer's instrument
 rather than an operator's: **`efference dev cache`** folds a

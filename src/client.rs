@@ -17,6 +17,7 @@ use anyhow::{Context, Result, anyhow};
 use trillium_client::{Client as HttpClient, Connector};
 use trillium_tokio::UnixClientConfig;
 
+use crate::daemon::CreateSession;
 use crate::frontend::Approval;
 
 /// A client bound to one daemon control socket. Cheap to [`Clone`] (the inner
@@ -25,6 +26,9 @@ use crate::frontend::Approval;
 #[derive(Clone)]
 pub struct Client {
     http: HttpClient,
+    /// The path the session's `/v1` routes sit under: empty at a session bind's
+    /// root, `/sessions/<id>` on a host (docs/control-api.md).
+    prefix: String,
 }
 
 impl Client {
@@ -32,6 +36,26 @@ impl Client {
     /// the [`UnixClientConfig`] connector; nothing connects until a verb is called.
     pub fn new(socket: impl Into<PathBuf>) -> Self {
         Self::with_connector(UnixClientConfig::new(socket))
+    }
+
+    /// Bind a client to one session hosted behind a prefix — `/sessions/<id>` on
+    /// a host's socket (docs/control-api.md). Every `/v1` verb joins onto the
+    /// prefix; the `/auth/*` family does not, since credentials are the
+    /// listener's, not a session's. The prefix is normalized to a leading slash
+    /// and no trailing one, so `sessions/x/` and `/sessions/x` are the same base.
+    pub fn at(socket: impl Into<PathBuf>, prefix: &str) -> Self {
+        Self::with_connector(UnixClientConfig::new(socket)).with_prefix(prefix)
+    }
+
+    /// Re-base this client under `prefix` (see [`at`](Self::at)); the transport
+    /// is unchanged, so a test can pair it with an in-memory connector.
+    pub fn with_prefix(mut self, prefix: &str) -> Self {
+        let trimmed = prefix.trim_matches('/');
+        self.prefix = match trimmed.is_empty() {
+            true => String::new(),
+            false => format!("/{trimmed}"),
+        };
+        self
     }
 
     /// Bind a client to an arbitrary [`Connector`] rather than to a socket path.
@@ -49,7 +73,10 @@ impl Client {
         // base is still needed to form request URLs. `localhost` is a placeholder that
         // only supplies the `Host` header (UnixClientConfig docs).
         let http = HttpClient::new(connector).with_base("http://localhost/");
-        Self { http }
+        Self {
+            http,
+            prefix: String::new(),
+        }
     }
 
     /// Enqueue a user turn (`POST /turns`). Seeds turn 1 on an idle daemon. The
@@ -135,7 +162,7 @@ impl Client {
     /// says which case. Errors are reserved for a request that didn't get an
     /// answer.
     pub async fn continue_loop(&self) -> Result<ContinueOutcome> {
-        let path = versioned("/loop/continue");
+        let path = self.versioned("/loop/continue");
         let path = path.as_str();
         let mut conn = self
             .http
@@ -345,14 +372,33 @@ impl Client {
             .chain(include.map(|i| format!("include={i}")))
             .collect();
         let path = match query.is_empty() {
-            true => versioned("/events"),
-            false => versioned(&format!("/events?{}", query.join("&"))),
+            true => self.versioned("/events"),
+            false => self.versioned(&format!("/events?{}", query.join("&"))),
         };
         self.http
             .get(path.as_str())
             .into_sse()
             .await
             .map_err(|e| anyhow!("opening the event stream at {path}: {e}"))
+    }
+
+    /// Create a session on a host (`POST /sessions`, docs/control-api.md) and
+    /// return its id. A listener route, not a session's: it sits at the socket
+    /// root regardless of this client's prefix, so the usual pairing is a
+    /// prefix-less client for creation and [`at`](Self::at) for what follows.
+    /// The request carries the caller's environment; it is written to the wire
+    /// and to nothing else, and an error quotes the response, not the request.
+    pub async fn create_session(&self, request: &CreateSession) -> Result<String> {
+        let body = serde_json::to_string(request).context("encoding the session request")?;
+        let path = "/sessions";
+        let conn = self
+            .http
+            .post(path)
+            .with_request_header("content-type", "application/json; charset=utf-8")
+            .with_body(body)
+            .await
+            .with_context(|| format!("POST {path} to the host socket"))?;
+        json_field(&read_2xx(conn, "POST", path).await?, "id")
     }
 
     /// A fresh bootstrap link from the daemon's TCP bind (`GET /auth/link`,
@@ -391,7 +437,7 @@ impl Client {
     /// POST a JSON body to `path`, returning the response body on a 2xx and an
     /// error carrying the status + body otherwise.
     async fn post(&self, path: &str, body: String) -> Result<String> {
-        let path = versioned(path);
+        let path = self.versioned(path);
         let path = path.as_str();
         let conn = self
             .http
@@ -405,7 +451,7 @@ impl Client {
 
     /// PATCH a JSON body to `path` — same contract as [`post`](Self::post).
     async fn patch(&self, path: &str, body: String) -> Result<String> {
-        let path = versioned(path);
+        let path = self.versioned(path);
         let path = path.as_str();
         let conn = self
             .http
@@ -419,7 +465,7 @@ impl Client {
 
     /// PUT a JSON body to `path` — same contract as [`post`](Self::post).
     async fn put(&self, path: &str, body: String) -> Result<String> {
-        let path = versioned(path);
+        let path = self.versioned(path);
         let path = path.as_str();
         let conn = self
             .http
@@ -433,7 +479,7 @@ impl Client {
 
     /// DELETE `path` — same contract as [`post`](Self::post).
     async fn delete(&self, path: &str) -> Result<String> {
-        let path = versioned(path);
+        let path = self.versioned(path);
         let path = path.as_str();
         let conn = self
             .http
@@ -454,7 +500,7 @@ impl Client {
     /// non-JSON resource (image bytes); everything else reads through
     /// [`get`](Self::get).
     async fn get_bytes(&self, path: &str) -> Result<Vec<u8>> {
-        let path = versioned(path);
+        let path = self.versioned(path);
         let path = path.as_str();
         let mut conn = self
             .http
@@ -478,7 +524,7 @@ impl Client {
     /// GET `path`, returning the response body on a 2xx (else an error with the
     /// status + body).
     async fn get(&self, path: &str) -> Result<String> {
-        let path = versioned(path);
+        let path = self.versioned(path);
         let path = path.as_str();
         let conn = self
             .http
@@ -523,11 +569,14 @@ fn json_field(body: &str, field: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("no {field:?} in response: {body}"))
 }
 
-/// Join the API version onto a verb's path (docs/control-api.md): every route is
-/// served under `/v1`, and prefixing here — the one place every request passes
-/// through — keeps the verbs above reading like the API they document.
-fn versioned(path: &str) -> String {
-    format!("/v1{path}")
+impl Client {
+    /// Join the base prefix and the API version onto a verb's path
+    /// (docs/control-api.md): every session route is served under `/v1`, and
+    /// prefixing here — the one place every request passes through — keeps the
+    /// verbs above reading like the API they document.
+    fn versioned(&self, path: &str) -> String {
+        format!("{}/v1{path}", self.prefix)
+    }
 }
 
 /// The JSON body for an approval decision — the four-valued [`Approval`] the loop consumes

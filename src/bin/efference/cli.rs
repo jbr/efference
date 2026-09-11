@@ -160,6 +160,134 @@ pub(crate) fn session_listing() -> String {
     listing
 }
 
+/// The session request as a person types it — the flags `serve` and `tui --new`
+/// share, one per `SessionRequest` field (docs/control-api.md). Listener flags
+/// (`--bind` and its family) are not here: they belong to whoever binds, never
+/// to a session.
+#[derive(clap::Args, Default, PartialEq, Eq)]
+pub(crate) struct SessionFlags {
+    /// Model to use for the agent. Defaults to claude-haiku-4-5.
+    #[arg(long)]
+    pub(crate) model: Option<String>,
+    /// Model for the spotter permission rung.
+    ///
+    /// Independent of the agent model — the spotter is volume work, so it defaults to the
+    /// provider's cheap band regardless of what the agent runs: claude-haiku-4-5 on
+    /// Anthropic and OpenRouter, gpt-5.6-luna on OpenAI and OpenAI-Codex.
+    #[arg(long)]
+    pub(crate) spotter_model: Option<String>,
+    /// Model for the fork peek that triages every tool result.
+    ///
+    /// Experimental. Omitted, or equal to --model, the peek runs on the agent's own
+    /// client and reads the agent's prompt cache. A different model runs the peek
+    /// on its own client: its own system prompt, its own session key, and only the
+    /// two peek tools offered. Its cache is a separate lineage over the same
+    /// transcript, paid at that model's rate.
+    #[arg(long)]
+    pub(crate) triage_model: Option<String>,
+    /// Let the triage model think. Off by default: the peek's reasoning is discarded
+    /// with the fork, so thinking there is latency and tokens per tool result. Only
+    /// meaningful with --triage-model.
+    #[arg(long)]
+    pub(crate) triage_thinking: bool,
+    /// Send the triage model's ask under `tool_choice: auto` instead of forcing the
+    /// peek tool. Forced is the default: an unforced small model answers the ask
+    /// with an invented work call. Only meaningful with --triage-model.
+    #[arg(long)]
+    pub(crate) triage_auto_choice: bool,
+    /// Reasoning level for the triage model, in its own vocabulary (validated like
+    /// --effort). Implies --triage-thinking: for a model that can be turned down
+    /// rather than off.
+    #[arg(long, value_name = "LEVEL")]
+    pub(crate) triage_effort: Option<String>,
+    /// Path to the config file. Defaults to `efference.toml` in the current directory.
+    ///
+    /// With no file present the built-in default config is used. An explicit path that doesn't exist is an error. The resolved path is
+    /// reported on `GET /state`.
+    #[arg(long, short = 'c')]
+    pub(crate) config: Option<PathBuf>,
+    /// Sampling temperature on a 0–100 scale; 50 is each provider's default.
+    ///
+    /// Integer to avoid float serialization drift and the two-provider-scale confusion: 50 is mid-scale
+    /// and maps to each provider's default (1.0). Omitted → the field is left out
+    /// of the wire entirely, and the API uses its own default (1.0).
+    #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
+    pub(crate) temperature: Option<u8>,
+    /// How much effort the model spends per turn, e.g. high, xhigh, max.
+    ///
+    /// Accepted as given and validated at boot against
+    /// the levels the model's metadata declares — an unsupported level is
+    /// refused there with the list, because OpenRouter maps one to the nearest
+    /// supported silently. Overrides `[transport] effort` in the config;
+    /// omitted with no config key → the field is left off the wire and the
+    /// provider's own default stands (the boot line prints it when the
+    /// metadata names one). Boot-time only — there is no runtime toggle, since
+    /// changing a thinking parameter mid-session invalidates the message-tier
+    /// cache. `xhigh`/`max` require thinking, so pairing either with
+    /// EFFERENCE_THINKING=off is refused at startup.
+    #[arg(long, value_name = "LEVEL")]
+    pub(crate) effort: Option<String>,
+    /// Pin which upstream endpoint serves the model, for an OpenRouter session.
+    ///
+    /// An endpoint slug such as `google-ai-studio` or `google-vertex/global`
+    /// (OpenRouter's model page lists them). Repeatable — the
+    /// order is the preference order, and fallbacks past it are disabled, so
+    /// a pinned session either gets one of these or fails rather than
+    /// silently rerouting.
+    ///
+    /// Distinct from the anthropic-vs-openrouter choice, which is the
+    /// `EFFERENCE_PROVIDER` env var. Ignored on Anthropic, which has no such
+    /// choice. Applies to the agent's own requests (turns and fork peeks),
+    /// not the spotter: slugs are per-model and the spotter runs a different
+    /// one. Endpoints behind one model slug differ in uptime and latency
+    /// tail, so a controlled run should pin one and record it.
+    #[arg(long, value_name = "SLUG")]
+    pub(crate) upstream: Vec<String>,
+    /// Run with no human at the approval gate.
+    ///
+    /// A spotter `Watch`/`Gate` becomes a redirect that hands the call back to the model, pointing it at its config
+    /// file to request access, instead of blocking on an absent human. A config-file write
+    /// still gates — held for the orchestrator above to review over the control channel.
+    #[arg(long)]
+    pub(crate) autonomous: bool,
+    /// Re-authorize this MCP server, discarding its stored credentials first. Repeatable.
+    ///
+    /// The recovery path when a grant
+    /// has been revoked or the server has changed authorization servers — otherwise
+    /// a stored token is reused until it fails.
+    #[arg(long, value_name = "SERVER")]
+    pub(crate) reauth: Vec<String>,
+    /// Keep the per-session `$TMPDIR` scratch directory on exit, for post-mortem analysis.
+    #[arg(long)]
+    pub(crate) keep_scratch: bool,
+}
+
+/// `--model` when not given.
+pub(crate) const DEFAULT_MODEL: &str = "claude-haiku-4-5";
+
+impl SessionFlags {
+    /// `--model`, or the default.
+    pub(crate) fn model(&self) -> &str {
+        self.model.as_deref().unwrap_or(DEFAULT_MODEL)
+    }
+
+    /// `--triage-model` and its knobs as the one value the request carries.
+    pub(crate) fn triage(&self) -> Option<TriageModel> {
+        self.triage_model.clone().map(|model| TriageModel {
+            model,
+            thinking: self.triage_thinking,
+            auto_choice: self.triage_auto_choice,
+            effort: self.triage_effort.clone(),
+        })
+    }
+
+    /// Whether any session flag was given, for a verb that only accepts them in
+    /// one mode. `--model` carries a default and so is compared against it.
+    pub(crate) fn any_given(&self) -> bool {
+        *self != Self::default()
+    }
+}
+
 #[derive(Subcommand)]
 pub(crate) enum Command {
     /// Start a session: run the agent loop in this directory.
@@ -170,100 +298,8 @@ pub(crate) enum Command {
     /// web client over `--bind`, and `efference control`/`efference mcp` for scripts and
     /// other agents. Nothing happens until a client sends the first turn.
     Serve {
-        /// Model to use for the agent. Defaults to claude-haiku-4-5.
-        #[arg(long, default_value = "claude-haiku-4-5")]
-        model: String,
-        /// Model for the spotter permission rung.
-        ///
-        /// Independent of the agent model — the spotter is volume work, so it defaults to the
-        /// provider's cheap band regardless of what the agent runs: claude-haiku-4-5 on
-        /// Anthropic and OpenRouter, gpt-5.6-luna on OpenAI and OpenAI-Codex.
-        #[arg(long)]
-        spotter_model: Option<String>,
-        /// Model for the fork peek that triages every tool result.
-        ///
-        /// Experimental. Omitted, or equal to --model, the peek runs on the agent's own
-        /// client and reads the agent's prompt cache. A different model runs the peek
-        /// on its own client: its own system prompt, its own session key, and only the
-        /// two peek tools offered. Its cache is a separate lineage over the same
-        /// transcript, paid at that model's rate.
-        #[arg(long)]
-        triage_model: Option<String>,
-        /// Let the triage model think. Off by default: the peek's reasoning is discarded
-        /// with the fork, so thinking there is latency and tokens per tool result. Only
-        /// meaningful with --triage-model.
-        #[arg(long)]
-        triage_thinking: bool,
-        /// Send the triage model's ask under `tool_choice: auto` instead of forcing the
-        /// peek tool. Forced is the default: an unforced small model answers the ask
-        /// with an invented work call. Only meaningful with --triage-model.
-        #[arg(long)]
-        triage_auto_choice: bool,
-        /// Reasoning level for the triage model, in its own vocabulary (validated like
-        /// --effort). Implies --triage-thinking: for a model that can be turned down
-        /// rather than off.
-        #[arg(long, value_name = "LEVEL")]
-        triage_effort: Option<String>,
-        /// Path to the config file. Defaults to `efference.toml` in the current directory.
-        ///
-        /// With no file present the built-in default config is used. An explicit path that doesn't exist is an error. The resolved path is
-        /// reported on `GET /state`.
-        #[arg(long, short = 'c')]
-        config: Option<PathBuf>,
-        /// Sampling temperature on a 0–100 scale; 50 is each provider's default.
-        ///
-        /// Integer to avoid float serialization drift and the two-provider-scale confusion: 50 is mid-scale
-        /// and maps to each provider's default (1.0). Omitted → the field is left out
-        /// of the wire entirely, and the API uses its own default (1.0).
-        #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
-        temperature: Option<u8>,
-        /// How much effort the model spends per turn, e.g. high, xhigh, max.
-        ///
-        /// Accepted as given and validated at boot against
-        /// the levels the model's metadata declares — an unsupported level is
-        /// refused there with the list, because OpenRouter maps one to the nearest
-        /// supported silently. Overrides `[transport] effort` in the config;
-        /// omitted with no config key → the field is left off the wire and the
-        /// provider's own default stands (the boot line prints it when the
-        /// metadata names one). Boot-time only — there is no runtime toggle, since
-        /// changing a thinking parameter mid-session invalidates the message-tier
-        /// cache. `xhigh`/`max` require thinking, so pairing either with
-        /// EFFERENCE_THINKING=off is refused at startup.
-        #[arg(long, value_name = "LEVEL")]
-        effort: Option<String>,
-        /// Pin which upstream endpoint serves the model, for an OpenRouter session.
-        ///
-        /// An endpoint slug such as `google-ai-studio` or `google-vertex/global`
-        /// (OpenRouter's model page lists them). Repeatable — the
-        /// order is the preference order, and fallbacks past it are disabled, so
-        /// a pinned session either gets one of these or fails rather than
-        /// silently rerouting.
-        ///
-        /// Distinct from the anthropic-vs-openrouter choice, which is the
-        /// `EFFERENCE_PROVIDER` env var. Ignored on Anthropic, which has no such
-        /// choice. Applies to the agent's own requests (turns and fork peeks),
-        /// not the spotter: slugs are per-model and the spotter runs a different
-        /// one. Endpoints behind one model slug differ in uptime and latency
-        /// tail, so a controlled run should pin one and record it.
-        #[arg(long, value_name = "SLUG")]
-        upstream: Vec<String>,
-        /// Run with no human at the approval gate.
-        ///
-        /// A spotter `Watch`/`Gate` becomes a redirect that hands the call back to the model, pointing it at its config
-        /// file to request access, instead of blocking on an absent human. A config-file write
-        /// still gates — held for the orchestrator above to review over the control channel.
-        #[arg(long)]
-        autonomous: bool,
-        /// Re-authorize this MCP server, discarding its stored credentials first. Repeatable.
-        ///
-        /// The recovery path when a grant
-        /// has been revoked or the server has changed authorization servers — otherwise
-        /// a stored token is reused until it fails.
-        #[arg(long, value_name = "SERVER")]
-        reauth: Vec<String>,
-        /// Keep the per-session `$TMPDIR` scratch directory on exit, for post-mortem analysis.
-        #[arg(long)]
-        keep_scratch: bool,
+        #[command(flatten)]
+        session: SessionFlags,
         /// Also listen on a TCP address: the web client's front door.
         ///
         /// Loopback may be plaintext; any other address
@@ -357,12 +393,25 @@ pub(crate) enum Command {
     #[cfg(feature = "dev")]
     #[command(subcommand)]
     Dev(dev::DevCommand),
-    /// efference in your terminal: attach to a running session.
+    /// efference in your terminal: attach to a running session, or create one on a host.
     ///
     /// The terminal counterpart to the web client. Connects to the session `serve`
     /// started here (or the one named by `--name`) and shows the transcript live,
     /// with a composer for turns and approvals. Press ? inside for the keys.
+    ///
+    /// With `--new`, creates a session on a running `efference host` first — this
+    /// directory as its working root, this shell's environment as its base, `--name`
+    /// as its id — and attaches to it. The session flags are `serve`'s. Quitting
+    /// detaches; the session keeps running on the host.
     Tui {
+        /// Create a session on the host at --host-socket, then attach to it.
+        #[arg(long)]
+        new: bool,
+        /// The host's control socket. Defaults to `.efference/host.sock` here.
+        #[arg(long, value_name = "PATH", requires = "new")]
+        host_socket: Option<PathBuf>,
+        #[command(flatten)]
+        session: SessionFlags,
         /// Syntax/UI theme: a built-in theme name (e.g. "Catppuccin Frappe",
         /// "Nord", "gruvbox-dark") or a path to a `.tmTheme` file. An unknown name
         /// lists the available ones. Defaults to "Catppuccin Frappe".

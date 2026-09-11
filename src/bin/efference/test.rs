@@ -17,6 +17,60 @@ fn name_resolves_to_its_colocated_socket() {
     assert_eq!(got, Path::new(".efference/foo/control.sock"));
 }
 
+/// The session flags are one clap group shared by `serve` and `tui --new`; on the
+/// TUI they are refused without `--new`, since a plain `tui` attaches and would
+/// otherwise silently drop them. `--model` carries a default and counts as
+/// "given" only when spelled.
+#[test]
+fn tui_session_flags_need_new() {
+    use clap::Parser;
+    let parse = |argv: &[&str]| Cli::try_parse_from(argv);
+    let Command::Tui { new, session, .. } = parse(&["efference", "tui"]).unwrap().command else {
+        panic!("tui")
+    };
+    assert!(!new && !session.any_given());
+    let Command::Tui { new, session, .. } = parse(&["efference", "tui", "--model", "x"])
+        .unwrap()
+        .command
+    else {
+        panic!("tui")
+    };
+    assert!(!new && session.any_given());
+    let Command::Tui {
+        new,
+        session,
+        host_socket,
+        ..
+    } = parse(&["efference", "tui", "--new", "--effort", "high"])
+        .unwrap()
+        .command
+    else {
+        panic!("tui")
+    };
+    assert!(new && host_socket.is_none());
+    assert_eq!(session.model(), DEFAULT_MODEL);
+    assert_eq!(session.effort.as_deref(), Some("high"));
+    assert!(session.triage().is_none());
+    assert!(
+        parse(&["efference", "tui", "--host-socket", "/tmp/h.sock"]).is_err(),
+        "--host-socket requires --new"
+    );
+    let Command::Serve { session, .. } = parse(&[
+        "efference",
+        "serve",
+        "--triage-model",
+        "t",
+        "--triage-thinking",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("serve")
+    };
+    let triage = session.triage().unwrap();
+    assert!(triage.model == "t" && triage.thinking && !triage.auto_choice);
+}
+
 #[test]
 fn session_dir_is_under_the_base() {
     assert_eq!(session_dir("abc"), Path::new(".efference/abc"));

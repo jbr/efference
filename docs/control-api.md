@@ -76,6 +76,12 @@ sessions from one process. Its own routes are the listener's, not a session's:
 
 A client treats its control endpoint as an opaque base, so the session-prefixed
 form and the socket-root form are the same client code with a different base.
+In the Rust client that base is `Client::at(socket, "/sessions/<id>")`: the
+prefix joins onto `/v1/…` only, while `POST /sessions` and the `/auth/*` family
+are addressed at the socket root under either base, as the web client's base
+joining does. The creation body is one type, `daemon::CreateSession`, serialized
+by the client and deserialized by the host, so a new session knob is one field;
+it has no Debug, because it carries the environment.
 
 ## Connection lifecycle (how a client catches up and stays live)
 

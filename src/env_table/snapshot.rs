@@ -45,6 +45,14 @@ impl EnvSnapshot {
         Ok(Self(Arc::new(values)))
     }
 
+    /// The entries, for the one place a snapshot leaves the process: the body of
+    /// a session-creation request (docs/control-api.md). Consuming, so the map is
+    /// handed to a request builder rather than kept around; the type itself stays
+    /// without Debug or Serialize.
+    pub fn into_entries(self) -> BTreeMap<String, String> {
+        Arc::try_unwrap(self.0).unwrap_or_else(|shared| (*shared).clone())
+    }
+
     pub fn get(&self, name: &str) -> Option<&str> {
         self.0.get(name).map(String::as_str)
     }

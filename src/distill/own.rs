@@ -8,7 +8,7 @@ use std::time::Duration;
 
 /// `--triage-model` and its two knobs, as the CLI collects them and as a host's
 /// creation body spells them.
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TriageModel {
     pub model: String,
     #[serde(default)]

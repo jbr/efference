@@ -77,19 +77,9 @@ pub(crate) fn resolve_bind(
     }))
 }
 
-#[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
 pub(crate) async fn serve(
     session_dir: PathBuf,
-    model: &str,
-    spotter_model: Option<&str>,
-    triage: Option<TriageModel>,
-    config: Option<PathBuf>,
-    temperature: Option<u8>,
-    effort: Option<String>,
-    upstream: Vec<String>,
-    autonomous: bool,
-    reauth: Vec<String>,
-    keep_scratch: bool,
+    flags: SessionFlags,
     bind_flags: BindFlags,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Resolve the bind first: a bad flag combination or a missing root should fail
@@ -108,13 +98,26 @@ pub(crate) async fn serve(
     )
     .try_init();
 
+    let triage = flags.triage();
+    let model = flags.model().to_string();
+    let SessionFlags {
+        spotter_model,
+        config,
+        temperature,
+        effort,
+        upstream,
+        autonomous,
+        reauth,
+        keep_scratch,
+        ..
+    } = flags;
     let boot = efference::boot::prepare(efference::boot::SessionRequest {
         cwd,
         base_env,
         session_dir,
         config,
-        model: model.to_string(),
-        spotter_model: spotter_model.map(str::to_string),
+        model,
+        spotter_model,
         triage,
         temperature,
         effort,

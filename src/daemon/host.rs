@@ -12,6 +12,7 @@ use super::files::Files;
 use super::http::control_routes;
 use super::runtime::SessionRuntime;
 use super::*;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use trillium::Handler;
 use trillium_tokio::Swansong;
@@ -198,36 +199,38 @@ fn no_such_session(conn: Conn, id: &str) -> Conn {
 }
 
 /// Body of `POST /sessions` (docs/control-api.md): a `SessionRequest` as a
-/// client spells it. `env` is the session's complete base environment
-/// (docs/env.md); it is applied and dropped, never logged or echoed.
-#[derive(Deserialize)]
-struct CreateBody {
+/// client spells it. One type on both ends — the control client serializes it,
+/// the host deserializes it — so a new session knob is one field here. `env` is
+/// the session's complete base environment (docs/env.md); it is applied and
+/// dropped, never logged or echoed, which is why the type has no Debug.
+#[derive(Serialize, Deserialize)]
+pub struct CreateSession {
     /// The session id; a generated timestamp when absent. A single plain path
     /// segment, as the gate's `plain_id` requires.
-    #[serde(default)]
-    name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// The session's working root. Absolute, always sent.
-    cwd: PathBuf,
+    pub cwd: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<PathBuf>,
+    pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spotter_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub triage: Option<crate::distill::TriageModel>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
     #[serde(default)]
-    config: Option<PathBuf>,
-    model: String,
+    pub upstream: Vec<String>,
     #[serde(default)]
-    spotter_model: Option<String>,
+    pub autonomous: bool,
     #[serde(default)]
-    triage: Option<crate::distill::TriageModel>,
+    pub reauth: Vec<String>,
     #[serde(default)]
-    temperature: Option<u8>,
-    #[serde(default)]
-    effort: Option<String>,
-    #[serde(default)]
-    upstream: Vec<String>,
-    #[serde(default)]
-    autonomous: bool,
-    #[serde(default)]
-    reauth: Vec<String>,
-    #[serde(default)]
-    keep_scratch: bool,
-    env: BTreeMap<String, String>,
+    pub keep_scratch: bool,
+    pub env: BTreeMap<String, String>,
 }
 
 /// `POST /sessions` on the Unix socket: prepare and start a session from the
@@ -238,7 +241,7 @@ async fn create_session(mut conn: Conn) -> Conn {
         return missing_host(conn);
     };
     let body = conn.request_body_string().await.unwrap_or_default();
-    let body: CreateBody = match serde_json::from_str(&body) {
+    let body: CreateSession = match serde_json::from_str(&body) {
         Ok(body) => body,
         Err(e) => return fail(conn, ErrorCode::BadRequest, format!("invalid body: {e}")),
     };

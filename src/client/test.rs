@@ -13,6 +13,7 @@ struct Recorder {
     turns: Arc<Mutex<Vec<String>>>,
     approvals: Arc<Mutex<Vec<(String, String)>>>,
     interrupts: Arc<Mutex<u32>>,
+    creations: Arc<Mutex<Vec<String>>>,
 }
 
 fn rec_of(conn: &Conn) -> Recorder {
@@ -53,6 +54,22 @@ fn stub_router() -> Router {
             // Echo the querystring so the test can assert `since` made the trip.
             let q = conn.querystring().to_string();
             conn.with_status(200).with_body(format!(r#"{{"q":"{q}"}}"#))
+        })
+        // A host's surface: creation at the root, one session's routes under its prefix,
+        // and the credential routes at the root under either base.
+        .post("/sessions", |mut conn: Conn| async move {
+            let rec = rec_of(&conn);
+            let body = conn.request_body_string().await.unwrap_or_default();
+            rec.creations.lock().unwrap().push(body);
+            conn.with_status(201).with_body(r#"{"id":"minted"}"#)
+        })
+        .get("/sessions/minted/v1/state", |conn: Conn| async move {
+            conn.with_status(200)
+                .with_body(r#"{"last_seq":9,"gate":null}"#)
+        })
+        .get("/auth/bearer", |conn: Conn| async move {
+            conn.with_status(200)
+                .with_body(r#"{"bearer":"root-level"}"#)
         })
 }
 
@@ -153,6 +170,50 @@ async fn non_2xx_surfaces_the_daemon_error_body() {
     let msg = format!("{err}");
     assert!(msg.contains("404"), "status in error: {msg}");
     assert!(msg.contains("no pending approval"), "body in error: {msg}");
+
+    let _ = std::fs::remove_file(&socket);
+}
+
+/// A prefixed client (docs/control-api.md): `/v1` verbs join onto `/sessions/<id>`,
+/// while creation and the `/auth/*` family stay at the socket root under either base.
+/// The environment map travels in the creation body and the id comes back.
+#[tokio::test]
+async fn a_prefixed_client_joins_v1_only() {
+    let rec = Recorder::default();
+    let socket = spawn_stub(rec.clone());
+
+    let request = CreateSession {
+        name: Some("minted".into()),
+        cwd: PathBuf::from("/work"),
+        config: None,
+        model: "m".into(),
+        spotter_model: None,
+        triage: None,
+        temperature: None,
+        effort: None,
+        upstream: vec![],
+        autonomous: false,
+        reauth: vec![],
+        keep_scratch: false,
+        env: [("HOME".to_string(), "/h".to_string())].into(),
+    };
+    let id = Client::new(&socket).create_session(&request).await.unwrap();
+    assert_eq!(id, "minted");
+    let sent: serde_json::Value = serde_json::from_str(&rec.creations.lock().unwrap()[0]).unwrap();
+    assert_eq!(sent["env"]["HOME"], "/h");
+    assert_eq!(sent["cwd"], "/work");
+    assert!(
+        sent.get("config").is_none(),
+        "absent knobs are omitted: {sent}"
+    );
+
+    let client = Client::at(&socket, "sessions/minted/");
+    let state = client.state().await.unwrap();
+    assert!(state.contains(r#""last_seq":9"#), "{state}");
+    assert_eq!(client.auth_bearer().await.unwrap(), "root-level");
+    // Root-based requests do not reach the prefixed session.
+    let unprefixed = Client::new(&socket).state().await.unwrap();
+    assert!(unprefixed.contains(r#""last_seq":3"#), "{unprefixed}");
 
     let _ = std::fs::remove_file(&socket);
 }
