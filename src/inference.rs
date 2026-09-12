@@ -14,7 +14,9 @@ use crate::api::{Endpoint, Error, Provider};
 use crate::distill::TriageModel;
 use crate::env_table::EnvSnapshot;
 
-const CONFIG_RELATIVE_PATH: &str = ".efference/config.toml";
+/// Where the user configuration lives under `HOME`; `efference setup` writes
+/// it and every host and offline verb reads it.
+pub const CONFIG_RELATIVE_PATH: &str = ".efference/config.toml";
 const BUILTIN_CONNECTION_NAMES: [&str; 5] =
     ["anthropic", "openrouter", "openai", "openai-codex", "codex"];
 
@@ -160,8 +162,8 @@ impl InferenceRegistry {
             Ok(text) => text,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Err(format!(
-                    "no inference config at {}: create it with a [defaults] table and one \
-                     [connections.<name>] per provider (docs/operating.md)",
+                    "no inference config at {}: run `efference setup` to create it \
+                     (docs/operating.md)",
                     path.display()
                 )
                 .into());

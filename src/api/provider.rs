@@ -151,10 +151,12 @@ impl Provider {
     /// on OpenAI. An explicit `--spotter-model` replaces it and still passes the
     /// provider's capability check.
     pub fn default_spotter_model(&self) -> &'static str {
-        if self.uses_openai_catalog() {
-            openai::CHEAPEST_MODEL
-        } else {
-            "claude-haiku-4-5"
+        match self {
+            Self::Anthropic => "claude-haiku-4-5",
+            // OpenRouter ids carry the author: the bare id fails its metadata
+            // route before the first request.
+            Self::OpenRouter => "anthropic/claude-haiku-4-5",
+            Self::OpenAI | Self::OpenAICodex => openai::CHEAPEST_MODEL,
         }
     }
 
@@ -393,6 +395,20 @@ impl Provider {
             Self::OpenAI | Self::OpenAICodex => Err("OpenAI capabilities come from the \
                                                     compiled catalog, not a metadata URL"
                 .into()),
+        }
+    }
+
+    /// A GET that answers 2xx only to a valid credential, for `efference setup`'s
+    /// live check (docs/operating.md): Anthropic's and OpenAI's model listings
+    /// both require the key, and OpenRouter's key-info route describes the key
+    /// itself. The Codex backend has no cheap authenticated read and answers
+    /// `None`.
+    pub(super) fn key_check_url(&self) -> Option<&'static str> {
+        match self {
+            Self::Anthropic => Some("https://api.anthropic.com/v1/models?limit=1"),
+            Self::OpenRouter => Some("https://openrouter.ai/api/v1/key"),
+            Self::OpenAI => Some("https://api.openai.com/v1/models"),
+            Self::OpenAICodex => None,
         }
     }
 
@@ -979,6 +995,46 @@ impl Endpoint {
     /// per lookup for the life of the process. Sharing it with the agent's
     /// `Client` also means these lookups multiplex onto the HTTP/2 connection the
     /// turn stream already holds open to the same host (docs/transport.md).
+    /// Whether the credential is accepted, via [`Provider::key_check_url`]. A
+    /// provider with no such route is `Ok(None)`: unchecked, not rejected. The
+    /// returned text is the route's body for the caller to describe (OpenRouter's
+    /// key label, for one).
+    pub async fn check_key(&self) -> Result<Option<String>, Error> {
+        match self.provider.key_check_url() {
+            Some(url) => self.authed_get(url).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// The models an Anthropic key can see, `(id, display name)` in the
+    /// listing's order. Only Anthropic's listing is short and curated enough to
+    /// offer as a menu; the other providers answer an empty list and the caller
+    /// asks for an id instead.
+    pub async fn list_models(&self) -> Result<Vec<(String, String)>, Error> {
+        if self.provider != Provider::Anthropic {
+            return Ok(Vec::new());
+        }
+        let body = self
+            .authed_get("https://api.anthropic.com/v1/models?limit=100")
+            .await?;
+        #[derive(Deserialize)]
+        struct Listing {
+            data: Vec<Entry>,
+        }
+        #[derive(Deserialize)]
+        struct Entry {
+            id: String,
+            #[serde(default)]
+            display_name: String,
+        }
+        let listing: Listing = serde_json::from_str(&body)?;
+        Ok(listing
+            .data
+            .into_iter()
+            .map(|entry| (entry.id, entry.display_name))
+            .collect())
+    }
+
     async fn authed_get(&self, url: &str) -> Result<String, Error> {
         let http = crate::http::client();
         let mut conn = http

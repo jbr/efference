@@ -19,8 +19,10 @@ pub(crate) struct Cli {
     /// Explicit control-socket path; overrides `--name` and discovery.
     #[arg(long, global = true)]
     pub(crate) socket: Option<PathBuf>,
+    /// Omitted, `efference` runs `setup` when there is no host configuration
+    /// yet, and otherwise says what to run next.
     #[command(subcommand)]
-    pub(crate) command: Command,
+    pub(crate) command: Option<Command>,
 }
 
 /// The directory for a session id (`.efference/<id>`).
@@ -264,8 +266,8 @@ pub(crate) struct SessionFlags {
     ///
     /// Independent of the agent model — the spotter is volume work, so it defaults to
     /// the host's `[defaults].spotter`, else the agent connection's cheap band:
-    /// claude-haiku-4-5 on Anthropic and OpenRouter, gpt-5.6-luna on OpenAI and
-    /// OpenAI-Codex.
+    /// claude-haiku-4-5 on Anthropic (anthropic/claude-haiku-4-5 on OpenRouter),
+    /// gpt-5.6-luna on OpenAI and OpenAI-Codex.
     #[arg(long)]
     pub(crate) spotter_model: Option<String>,
     /// Model for the fork peek that triages every tool result, selected like --model.
@@ -464,6 +466,17 @@ pub(crate) enum Command {
         /// instrumentation for the streaming render.
         #[arg(long)]
         frame_cost: bool,
+    },
+    /// Configure inference connections interactively: the first-run path.
+    ///
+    /// Asks which provider, where its credential comes from, and which models,
+    /// checking what it can live, and writes the secret-free
+    /// `~/.efference/config.toml` that `efference host` loads. Run again to add a
+    /// connection; the file's existing entries and comments are kept.
+    Setup {
+        /// Write this file instead of `~/.efference/config.toml`.
+        #[arg(long, value_name = "PATH")]
+        config: Option<PathBuf>,
     },
     /// Validate an efference.toml without starting a session.
     ///

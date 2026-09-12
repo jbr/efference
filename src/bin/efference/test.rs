@@ -42,13 +42,15 @@ fn a_hosted_target_finds_its_session_dir() {
 fn tui_session_flags_need_new() {
     use clap::Parser;
     let parse = |argv: &[&str]| Cli::try_parse_from(argv);
-    let Command::Tui { new, session, .. } = parse(&["efference", "tui"]).unwrap().command else {
+    let Command::Tui { new, session, .. } = parse(&["efference", "tui"]).unwrap().command.unwrap()
+    else {
         panic!("tui")
     };
     assert!(!new && !session.any_given());
     let Command::Tui { new, session, .. } = parse(&["efference", "tui", "--model", "x"])
         .unwrap()
         .command
+        .unwrap()
     else {
         panic!("tui")
     };
@@ -61,6 +63,7 @@ fn tui_session_flags_need_new() {
     } = parse(&["efference", "tui", "--new", "--effort", "high"])
         .unwrap()
         .command
+        .unwrap()
     else {
         panic!("tui")
     };
@@ -82,7 +85,7 @@ fn tui_session_flags_need_new() {
     ])
     .unwrap()
     .command
-    else {
+    .unwrap() else {
         panic!("tui")
     };
     let triage = session.triage().unwrap();

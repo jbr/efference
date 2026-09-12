@@ -102,8 +102,28 @@ every session the host will create ([transport.md](transport.md)). A creating TU
 passes model selections (`--model work/anthropic/claude-sonnet-4-5`, or a native id
 on the default connection) and no inference credentials; with no `--model`, the
 host's `[defaults].model` applies, and with none configured, creation says so. A
-host with no config file refuses to start, naming the path to create.
+host with no config file refuses to start, naming `efference setup`.
 The boot report and the sidebar's SESSION section name each role by connection.
+
+**First run: `efference setup`** (`src/setup.rs`). A bare `efference` on a machine
+with no `~/.efference/config.toml` runs it; with one, it says what to run next.
+Setup is a sequence of inline terminal prompts, not a full-screen view, and it
+needs no host and no model: it is the one path that has to work before any
+inference is configured. Per connection it asks the provider, a name, where the
+credential comes from, the agent model, and the spotter model, then whether to
+add another, and which connection sessions default to when there is a choice.
+The credential source is an environment variable (prefilled with the provider's
+conventional name) or, for Codex, the CLI's cached login; pasting a key into the
+OS keychain is listed and refused until the binary is signed, since a keychain
+item binds to the binary that stored it. What can be checked is checked live: a
+variable that is set in setup's own shell is tried against the provider, an
+unset one can be pasted for the check alone (sent to the provider, never
+written), Anthropic offers its model listing as a menu, and a chosen model is
+described from the same metadata boot reads. A rejected key or an unknown model
+is said and can be kept. The file is written `0600` under the owner; an existing
+file keeps its entries, comments, and standing `[defaults]`, and a name already
+in it is refused at the prompt. Esc or Ctrl-C at any prompt cancels with nothing
+written. `--config <path>` writes elsewhere.
 
 ```toml ~/.efference/config.toml
 [defaults]

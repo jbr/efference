@@ -8,10 +8,14 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`efference setup`** (docs/operating.md): the first-run path, which a bare `efference` runs when `~/.efference/config.toml` is missing — inline terminal prompts for provider, connection name, credential source (an environment variable, or Codex CLI's cached login; the OS keychain is listed and refused until the binary is signed), agent and spotter models, with live key and model checks where a key is on hand, and a file written `0600` that keeps an existing file's entries and comments.
 - **Host-owned inference connections** (docs/transport.md, docs/operating.md): `efference host` loads named provider connections from `~/.efference/config.toml` (required) and their credentials from its own startup environment (`env` key or the Codex cache), once; a session selects `<connection>/<native model>` per role — main, spotter, and an own-client triage that must share the main dialect — with `[defaults]` filling omissions. Host secrets are masked by name in every session that holds them and never enter a child environment; `session_identity.inference` reports each role's connection, and the TUI sidebar and web top bar show it.
 
 - **Interrupt ends a generation in flight** (docs/control-channel.md): `POST /loop/interrupt` — the TUI's second `Esc`, `efference control interrupt`, the MCP tool — now also ends a model read that is streaming or hung: the stream is dropped, what streamed is kept as a record-only entry marked `Aborted` (counted against no retry budget), and the loop returns to idle where a queued turn lands at once. An interrupted own-model peek withholds its verdict.
 - **`--name` reaches hosted sessions** (docs/control-channel.md): `tui`, `control`, and `mcp` resolve a name to its own socket or to `/sessions/<id>` on the host, and discovery counts hosted sessions; a name nothing serves is an error, and the TUI connects before taking the terminal instead of opening an empty screen.
+
+### Fixed
+- **OpenRouter's default spotter is a slug**: with no `[defaults].spotter`, an OpenRouter main connection now defaults the spotter to `anthropic/claude-haiku-4-5`; the bare id failed the metadata query at boot.
 
 ### Removed
 - **`efference serve`** and provider selection from the environment: `EFFERENCE_PROVIDER`, `EFFERENCE_API_KEY`, `EFFERENCE_CHATGPT_ACCOUNT_ID`, the `ANTHROPIC_API_KEY` fallback, and the unconditional masking of those names. A host is the only way to boot a session; the dev verbs that dial a provider (`dev wire`, `dev peek`, `dev spotter`, `dev spotter-eval`) resolve `--model` through the same config.

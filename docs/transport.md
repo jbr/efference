@@ -705,8 +705,8 @@ daemon never starts the loop on Responses (backlog: openai-provider/validation.m
 OpenAI exposes no per-generation cost endpoint, so cost tracking stays off. The
 spotter model must be one its connection's metadata source knows: with no
 `[defaults].spotter`, the main connection's cheap band applies
-(`Provider::default_spotter_model`, gpt-5.6-luna here, claude-haiku-4-5 on the
-Messages providers), and an explicit `--spotter-model` passes its own provider's
+(`Provider::default_spotter_model`, gpt-5.6-luna here, claude-haiku-4-5 on
+Anthropic and its `anthropic/` slug on OpenRouter), and an explicit `--spotter-model` passes its own provider's
 check. The catalog
 (`api/provider/openai.rs`) is exact per model: GPT-5.6 and its sol/terra/luna
 variants, and GPT-6 Astra, which takes no `none` effort and no `temperature` —
@@ -731,7 +731,7 @@ credential and extra headers.
 
 **Host-owned connections (`src/inference.rs`).** A host names its connections in
 `~/.efference/config.toml`, read from the host's startup `HOME` — a secret-free
-file: each `[connections.<name>]` declares a `provider` and where its credential
+file `efference setup` writes interactively ([operating.md](operating.md)): each `[connections.<name>]` declares a `provider` and where its credential
 comes from (`auth = { kind = "env", key = "VAR" }` reads the named variable from
 the host's startup environment, ordinarily supplied by `op run`; `auth = { kind =
 "codex-cache" }` reads Codex CLI's `auth.json` once, under the host's `CODEX_HOME`

@@ -1,0 +1,93 @@
+//! A [`Draft`] as the TOML `src/inference.rs` reads (docs/operating.md).
+//!
+//! Rendering goes through a format-preserving document so an existing file keeps
+//! its comments and order: new `[connections.<name>]` tables are appended, and
+//! `[defaults]` is set only when the draft chose one. A fresh file gets a short
+//! header saying what the file is and what it never holds.
+
+use std::path::Path;
+
+use toml_edit::{DocumentMut, InlineTable, Item, Table, value};
+
+use super::*;
+
+const HEADER: &str = "\
+# efference host configuration, written by `efference setup`.
+# Connections name a provider and where its credential comes from; the
+# credential itself is never in this file. Sessions select a model as
+# <connection>/<native model>; [defaults] fills what a session omits.
+# Reference: docs/operating.md.
+
+";
+
+/// Fold `draft` into `existing_text` (an empty string for no file) and return
+/// the new file contents. Errors only if the existing text is not TOML.
+pub fn render(existing_text: &str, draft: &Draft) -> Result<String, String> {
+    let fresh = existing_text.trim().is_empty();
+    let mut doc: DocumentMut = existing_text
+        .parse()
+        .map_err(|error: toml_edit::TomlError| error.to_string())?;
+    if let Some(name) = &draft.default_connection {
+        let (_, connection) = draft
+            .connections
+            .iter()
+            .find(|(candidate, _)| candidate == name)
+            .ok_or_else(|| format!("default connection {name:?} is not in the draft"))?;
+        if doc.get("defaults").is_none() {
+            // A new [defaults] reads first; an existing one stays where it was.
+            let mut defaults = Table::new();
+            defaults.set_position(Some(0));
+            doc.insert("defaults", Item::Table(defaults));
+        }
+        doc["defaults"]["model"] = value(format!("{name}/{}", connection.model));
+        doc["defaults"]["spotter"] = value(format!("{name}/{}", connection.spotter));
+    }
+    if doc.get("connections").is_none() {
+        let mut connections = Table::new();
+        connections.set_implicit(true);
+        doc.insert("connections", Item::Table(connections));
+    }
+    let connections = doc["connections"]
+        .as_table_mut()
+        .ok_or("[connections] is not a table")?;
+    for (name, connection) in &draft.connections {
+        let mut table = Table::new();
+        table["provider"] = value(connection.provider.name());
+        let mut auth = InlineTable::new();
+        match &connection.auth {
+            AuthSource::Env { key } => {
+                auth.insert("kind", "env".into());
+                auth.insert("key", key.as_str().into());
+            }
+            AuthSource::CodexCache => {
+                auth.insert("kind", "codex-cache".into());
+            }
+        }
+        table["auth"] = value(auth);
+        connections.insert(name, Item::Table(table));
+    }
+    let body = doc.to_string();
+    Ok(if fresh {
+        format!("{HEADER}{body}")
+    } else {
+        body
+    })
+}
+
+/// Write `contents` at `path`, creating the parent directory, with permissions
+/// that keep the file to its owner. The file holds no secret, but it names
+/// where they are, which is enough to keep private.
+pub fn write(path: &Path, contents: &str) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    use std::io::Write as _;
+    options.open(path)?.write_all(contents.as_bytes())
+}

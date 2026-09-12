@@ -36,7 +36,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let name = cli.name.clone();
     let socket_override = cli.socket.clone();
     let client_target = || resolve_client_target(name.as_deref(), socket_override.clone());
-    match cli.command {
+    let command = match cli.command {
+        Some(command) => command,
+        None => return setup::default_verb().await,
+    };
+    match command {
+        Command::Setup { config } => setup::run(config).await,
         Command::Host {
             bind,
             host,
@@ -117,6 +122,7 @@ mod paint;
 #[cfg(feature = "dev")]
 mod peek_replay;
 mod serve;
+mod setup;
 #[cfg(feature = "dev")]
 mod spot_report;
 #[cfg(feature = "dev")]

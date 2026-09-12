@@ -1883,7 +1883,7 @@ fn openai_gpt_5_6_capability_profiles_are_exact() {
     );
     assert_eq!(
         Provider::OpenRouter.default_spotter_model(),
-        "claude-haiku-4-5"
+        "anthropic/claude-haiku-4-5"
     );
 
     let error = super::provider::openai_model_capabilities("gpt-5.7-luna")
