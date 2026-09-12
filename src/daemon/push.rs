@@ -84,12 +84,12 @@ impl Session {
     }
 
     /// Spawn the actual send, or do nothing in the two contexts where there is
-    /// nothing to do: no root secret is injected (push credentials derive from it,
-    /// and its absence is also what every non-serving context looks like — tests,
-    /// offline verbs), and no tokio runtime is running. Both checks happen before
-    /// the store is touched.
+    /// nothing to do: no root is installed (push credentials derive from it, and
+    /// only a binding host installs one — tests, offline verbs, and a socket-only
+    /// host look alike here), and no tokio runtime is running. Both checks happen
+    /// before the store is touched.
     fn spawn_send(&self, message: crate::push::Message) {
-        let Some(root) = crate::auth::Root::from_env() else {
+        let Some(root) = crate::auth::Root::installed() else {
             return;
         };
         let Ok(handle) = tokio::runtime::Handle::try_current() else {

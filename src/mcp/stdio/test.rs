@@ -12,18 +12,18 @@ async fn stdio_env_is_snapshot_then_stanza_with_root_removed_last() {
     .unwrap();
     let child_env = crate::env_table::ChildEnv::from_snapshot(base, vec![])
         .with_inject([("IDENTITY".into(), "table".into())].into());
-    let stanza = [
-        ("IDENTITY".into(), "stanza".into()),
-        (crate::auth::ROOT_ENV.into(), "forbidden-root".into()),
-    ]
-    .into();
+    let stanza = [("IDENTITY".into(), "stanza".into())].into();
     let mut transport = StdioTransport::spawn(
         "/bin/sh",
-        &["-c".into(), "printf '%s|%s|%s|%s\\n' \"$IDENTITY\" \"$KEPT\" \"${EFFERENCE_ROOT_SECRET-unset}\" \"${EFFERENCE_PROVIDER-unset}\"".into()],
+        &[
+            "-c".into(),
+            "printf '%s|%s|%s\\n' \"$IDENTITY\" \"$KEPT\" \"${EFFERENCE_PROVIDER-unset}\"".into(),
+        ],
         &stanza,
         &std::env::current_dir().unwrap(),
         &child_env,
-    ).unwrap();
+    )
+    .unwrap();
     let mut line = String::new();
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
@@ -32,6 +32,6 @@ async fn stdio_env_is_snapshot_then_stanza_with_root_removed_last() {
     .await
     .unwrap()
     .unwrap();
-    assert_eq!(line, "stanza|from-snapshot|unset|unset\n");
+    assert_eq!(line, "stanza|from-snapshot|unset\n");
     assert!(transport._child.wait().await.unwrap().success());
 }

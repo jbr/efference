@@ -96,9 +96,10 @@ the single live session if there is exactly one. Without `--new`, a session flag
 silently ignored.
 
 The host owns inference: `~/.efference/config.toml` names its connections and
-where each credential comes from, and `efference host` loads them once at launch
-from its own environment — `op run -- efference host` unlocks the vault once for
-every session the host will create ([transport.md](transport.md)). A creating TUI
+where each credential comes from, and `efference host` loads them once at launch —
+from the secret store, or from its own environment, where `op run -- efference host`
+unlocks the vault once for every session the host will create
+([transport.md](transport.md)). A creating TUI
 passes model selections (`--model work/anthropic/claude-sonnet-4-5`, or a native id
 on the default connection) and no inference credentials; with no `--model`, the
 host's `[defaults].model` applies, and with none configured, creation says so. A

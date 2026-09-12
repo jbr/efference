@@ -16,7 +16,7 @@ credential does ([web-bind.md](web-bind.md), `src/auth.rs`): HKDF under
 `vapid v1 attempt-<n>`, where the counter increments until the 32 derived bytes are a
 valid P-256 scalar (a uniform string exceeds the group order with probability ~2⁻³²;
 the loop is deterministic per root). Every daemon under one root derives the identical
-key with no coordination and nothing on disk. Rotating the root rotates the key, which
+key with no coordination. Rotating the root rotates the key, which
 strands existing subscriptions until the service worker resubscribes on its next page
 open — the same blast radius the cookie/bearer/TOTP family already has.
 
@@ -51,9 +51,10 @@ would make it more timely than the next event.
 
 ## When it fires, and what it says
 
-`src/daemon/push.rs`. `Session::push` short-circuits when no root is injected or no
-runtime is running (every non-serving context — tests, offline verbs — looks like
-that), then spawns the send so the turn loop never waits on a push service.
+`src/daemon/push.rs`. `Session::push` short-circuits when no root is installed
+(only a binding host installs one — tests, offline verbs, and a socket-only host look
+alike) or no runtime is running, then spawns the send so the turn loop never waits
+on a push service.
 
 - **Gate** — the end of `register_pending` (`src/daemon/approvals.rs`). Body: the
   call's name and its `intent` — the model's own statement of purpose

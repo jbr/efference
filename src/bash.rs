@@ -233,10 +233,6 @@ impl Bash {
         if let Some(tmpdir) = &self.tmpdir {
             cmd.env("TMPDIR", tmpdir);
         }
-        // The machine root never reaches a tool child (docs/web-bind.md): with it, a
-        // child derives the bearer and drives its own approval gates. Hardcoded
-        // self-surface protection, deliberately not an `[env]`-style policy knob.
-        cmd.env_remove(crate::auth::ROOT_ENV);
         let mut child = match crate::spawn::tokio(&mut cmd) {
             Ok(child) => child,
             Err(e) => return RawResult::error(format!("failed to spawn bash: {e}")).into(),

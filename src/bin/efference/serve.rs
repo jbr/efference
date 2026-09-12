@@ -62,12 +62,10 @@ pub(crate) fn resolve_bind(
             );
         }
     };
-    let root = efference::auth::Root::from_env().ok_or_else(|| {
-        format!(
-            "--bind requires {} (inject it with the op env-file pattern, like provider keys)",
-            efference::auth::ROOT_ENV
-        )
-    })?;
+    // The bind's credentials all derive from the stored root (docs/web-bind.md):
+    // read it, or mint it if this is the first bind on this machine.
+    let root = efference::auth::Root::load(&efference::secrets::Secrets::detect()?)?;
+    efference::auth::Root::install(Some(root.clone()));
     Ok(Some(efference::daemon::TcpBind {
         addr,
         tls,

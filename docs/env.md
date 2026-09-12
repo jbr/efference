@@ -47,7 +47,7 @@ The snapshot is not merged with the host environment later.
 
 Snapshots are memory-only: no serialization implementation, no state/log/discovery
 field, and Debug reports only the entry count. `ChildEnv` Debug omits injected
-values too. The listener's `EFFERENCE_ROOT_SECRET` is excluded at construction.
+values too.
 Names/values are UTF-8; local capture fails explicitly on non-UTF-8 rather than
 changing or dropping bytes. Empty names, `=` in names, and NUL bytes are rejected.
 
@@ -227,12 +227,6 @@ Disabling is possible, but only by saying `mask = false`.
    rather than silently empty.)
 
 Never file order: TOML tables are semantically unordered.
-
-`EFFERENCE_ROOT_SECRET` is **not** a table entry ([web-bind.md](web-bind.md)).
-Its strip is hardcoded self-surface protection at the spawn sites, like the
-session-dir path deny: with it, a tool child could derive the bearer and drive
-its own approval gates. If it ever appears in an effective-table display for
-visibility, it must not be overridable downward.
 
 ## Values and references
 

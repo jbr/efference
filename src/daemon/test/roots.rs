@@ -161,7 +161,6 @@ async fn sessions_use_their_own_environment_for_bash_and_context() {
                     "EFFERENCE_API_KEY".into(),
                     format!("private-{label}-credential"),
                 ),
-                (crate::auth::ROOT_ENV.into(), "host-root-secret".into()),
             ]
             .into(),
         )

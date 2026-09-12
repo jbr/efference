@@ -1,12 +1,13 @@
 //! Root-derived credentials for the TCP bind (docs/web-bind.md).
 //!
-//! One machine-scoped root secret is injected at daemon start (`EFFERENCE_ROOT_SECRET`,
-//! the same op env-file pattern as provider keys) and held only in memory; HKDF with
-//! per-purpose context strings derives everything else — the cookie-HMAC key, the TOTP
-//! secret, the program bearer, the VAPID push-signing keypair (docs/web-push.md). Same
-//! root in, same credentials out, every boot:
-//! enrollments and cookies survive restarts with nothing secret on disk, and revocation
-//! is root rotation. The only stored state is the burn ledger of accepted TOTP
+//! One machine-scoped root secret lives in the secret store (docs/secrets.md) as the
+//! `root` item: minted from the OS random source the first time a bind needs it, read
+//! every boot after, and held only in memory. HKDF with per-purpose context strings
+//! derives everything else — the cookie-HMAC key, the TOTP secret, the program bearer,
+//! the VAPID push-signing keypair (docs/web-push.md). Same root in, same credentials
+//! out, every boot: enrollments and cookies survive restarts, and revocation is
+//! rotation — deleting the item, so the next bind mints another. Nobody supplies or
+//! sees the root; the only stored state beside it is the burn ledger of accepted TOTP
 //! timesteps, which are counters, not secrets.
 //!
 //! Everything here is pure credential arithmetic; which conns it gates — and which
@@ -21,25 +22,53 @@ use sha2::Sha256;
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
+use std::sync::RwLock;
 use std::time::{Duration, Instant, SystemTime};
+
+use crate::secrets::{SecretError, Secrets};
 
 #[cfg(test)]
 mod test;
 
-/// The env var carrying the machine-scoped root secret. Required when `host` is asked
-/// to bind TCP; irrelevant otherwise. It is stripped from every tool-child environment
-/// at the spawn sites — with it, a child could derive the bearer and drive its own
-/// approval gates.
-pub const ROOT_ENV: &str = "EFFERENCE_ROOT_SECRET";
+/// The secret store item holding the root (docs/secrets.md).
+pub const ROOT_ITEM: &str = "root";
 
-/// The machine-scoped root, HKDF-extracted and ready to expand. Constructed once at
-/// daemon boot from [`ROOT_ENV`]; every derived credential comes off this by a
+/// What replacing the root does, in the words every message about it uses.
+pub const ROTATION_CONSEQUENCES: &str = "signs out every browser, invalidates the \
+    authenticator enrollment, and drops every push subscription";
+
+/// The root could not be read. Absence is not this — an absent item is minted — so
+/// this is a store that answered with an error, where minting would silently be a
+/// rotation. Names the store's complaint and the way out.
+#[derive(Debug)]
+pub struct RootError(pub String);
+
+impl std::fmt::Display for RootError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}; `efference auth rotate` replaces it, which {ROTATION_CONSEQUENCES}",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for RootError {}
+
+/// The machine-scoped root, HKDF-extracted and ready to expand. Loaded once at
+/// daemon boot from the secret store; every derived credential comes off this by a
 /// per-purpose context string, so adding a purpose never moves an existing one.
+#[derive(Clone)]
 pub struct Root(hkdf::Hkdf<Sha256>);
 
+/// The root the running process binds with, for the routes and the push sender
+/// that derive from it outside the listener's own state. `None` in every
+/// non-serving context — tests, offline verbs, a host with no bind.
+static INSTALLED: RwLock<Option<Root>> = RwLock::new(None);
+
 impl Root {
-    /// Extract from the raw injected secret. Whitespace is trimmed so an env-file
-    /// trailing newline doesn't silently derive a different credential family.
+    /// Extract from the stored secret. Whitespace is trimmed so a stray trailing
+    /// newline doesn't silently derive a different credential family.
     pub fn new(secret: &str) -> Self {
         Self(hkdf::Hkdf::new(
             Some(b"efference-root v1"),
@@ -47,13 +76,39 @@ impl Root {
         ))
     }
 
-    /// Read [`ROOT_ENV`], `None` if unset or blank. The caller decides whether absence
-    /// is fatal (a TCP bind was requested) or irrelevant (UDS-only serve).
-    pub fn from_env() -> Option<Self> {
-        std::env::var(ROOT_ENV)
-            .ok()
-            .filter(|s| !s.trim().is_empty())
-            .map(|s| Self::new(&s))
+    /// The stored root, minting one when there is none. A store that fails to
+    /// answer is an error rather than a mint: minting over an unreadable item
+    /// would be a rotation nobody asked for.
+    pub fn load(secrets: &Secrets) -> Result<Self, RootError> {
+        match secrets.get(ROOT_ITEM) {
+            Ok(Some(secret)) => Ok(Self::new(&secret)),
+            Ok(None) => {
+                let mut bytes = [0u8; 32];
+                rand::fill(&mut bytes);
+                let secret = URL_SAFE_NO_PAD.encode(bytes);
+                secrets
+                    .set(ROOT_ITEM, &secret)
+                    .map_err(|error| RootError(error.to_string()))?;
+                Ok(Self::new(&secret))
+            }
+            Err(error) => Err(RootError(error.to_string())),
+        }
+    }
+
+    /// Delete the stored root; the next bind mints a fresh one. This is the
+    /// revocation for everything derived — [`ROTATION_CONSEQUENCES`].
+    pub fn rotate(secrets: &Secrets) -> Result<(), SecretError> {
+        secrets.delete(ROOT_ITEM)
+    }
+
+    /// Make `root` the process's root for [`installed`](Self::installed).
+    pub fn install(root: Option<Self>) {
+        *INSTALLED.write().unwrap() = root;
+    }
+
+    /// The root this process binds with, if it binds.
+    pub fn installed() -> Option<Self> {
+        INSTALLED.read().unwrap().clone()
     }
 
     /// HKDF-Expand under a context string. The output length is part of the derivation,

@@ -478,6 +478,11 @@ pub(crate) enum Command {
         #[arg(long, value_name = "PATH")]
         config: Option<PathBuf>,
     },
+    /// The web bind's credentials (docs/web-bind.md).
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommand,
+    },
     /// Validate an efference.toml without starting a session.
     ///
     /// Parses the file, applies the same checks a session boot applies, resolves
@@ -491,6 +496,18 @@ pub(crate) enum Command {
         /// The file to check. Defaults to `efference.toml` in the current directory.
         path: Option<PathBuf>,
     },
+}
+
+/// `efference auth <verb>`.
+#[derive(Subcommand)]
+pub(crate) enum AuthCommand {
+    /// Replace the machine root every bind credential derives from.
+    ///
+    /// Deletes the stored root; the next `efference host --bind` mints a new one.
+    /// This signs out every browser, invalidates the authenticator enrollment,
+    /// and drops every push subscription. Run it when the root may have leaked,
+    /// or when the secret store reports it unreadable.
+    Rotate,
 }
 
 /// The `--images` value for the TUI verbs — the CLI face of

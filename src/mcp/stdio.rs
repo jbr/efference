@@ -53,11 +53,8 @@ impl StdioTransport {
         // The table first, then the stanza's own `env` — a server explicitly
         // handed a variable in its own config is being given it deliberately, and
         // the table's blanket strip should not silently undo that (docs/env.md).
-        // The machine root is the exception the table cannot reach: it is removed
-        // unconditionally, exactly as at the bash spawns (docs/web-bind.md).
         child_env.apply_tokio(&mut cmd);
         cmd.envs(env);
-        cmd.env_remove(crate::auth::ROOT_ENV);
         let mut child = crate::spawn::tokio(&mut cmd)
             .with_context(|| format!("could not spawn `{command}`"))?;
         let stdin = child.stdin.take().expect("stdin was piped");

@@ -441,11 +441,9 @@ fn run_exec(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .process_group(0);
-    // The machine root never reaches a spawned child (docs/web-bind.md), and the
-    // `[env]` table's spawn policy applies here as at every other spawn
+    // The `[env]` table's spawn policy applies here as at every other spawn
     // (docs/env.md).
     child_env.apply(&mut cmd);
-    cmd.env_remove(crate::auth::ROOT_ENV);
     let child =
         crate::spawn::std(&mut cmd).map_err(|e| err(format!("failed to spawn bash: {e}")))?;
     let pgid = child.id();

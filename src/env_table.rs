@@ -437,12 +437,6 @@ impl EnvPolicy {
         let mut forced_mask = Vec::new();
         let mut inject: BTreeMap<String, String> = BTreeMap::new();
         for value in resolved {
-            // The machine root is not injectable for the same reason it is
-            // always stripped (docs/web-bind.md): a child holding it can drive
-            // this session's approval gates.
-            if value.name == crate::auth::ROOT_ENV {
-                continue;
-            }
             let rule = table.resolve(&value.name).0;
             let masked = value.secret || rule.mask;
             // Overruling is only worth saying out loud when the operator asked
@@ -458,13 +452,6 @@ impl EnvPolicy {
                 }
             }
             inject.insert(value.name.clone(), value.value.clone());
-        }
-        // The machine root's strip is hardcoded self-surface protection
-        // (docs/web-bind.md), not a table entry: a `strip = false` on it would
-        // be a hole in the harness's own perimeter, so the table cannot
-        // override it downward.
-        if !strip.iter().any(|n| n == crate::auth::ROOT_ENV) {
-            strip.push(crate::auth::ROOT_ENV.to_string());
         }
         strip.sort();
         strip.dedup();

@@ -69,9 +69,11 @@ plaintext loopback bind, required with TLS).
 
 ## Credentials: one root, everything derived
 
-One machine-scoped root secret arrives in `EFFERENCE_ROOT_SECRET` at boot (the op
-env-file pattern used for provider keys) and is held only in memory. `src/auth.rs`
-derives everything else by HKDF-SHA256 with per-purpose context strings:
+One machine-scoped root secret lives in the secret store ([secrets.md](secrets.md))
+as the `root` item: 32 bytes from the OS random source, minted the first time a
+bind needs it and read at every bind after, held only in memory. Nobody supplies
+it and nothing prints it. `src/auth.rs` derives everything else by HKDF-SHA256
+with per-purpose context strings:
 
 | derived | context | purpose |
 | --- | --- | --- |
@@ -81,10 +83,16 @@ derives everything else by HKDF-SHA256 with per-purpose context strings:
 | VAPID keypair | `vapid v1 attempt-<n>` | the web-push sender identity ([web-push.md](web-push.md)); the counter increments until the bytes are a valid P-256 scalar |
 
 Same root in, same credentials out, every boot: enrollments and cookies survive
-restarts with nothing secret on disk, and revocation is root rotation (a mass logout —
-the right granularity for a single-operator daemon). Received secrets that cannot be
-re-derived (OAuth tokens) are out of scope here and stay with
-[mcp-auth.md](mcp-auth.md).
+restarts, and revocation is root rotation — `efference auth rotate` deletes the item
+and the next bind mints another, which signs out every browser, invalidates the
+authenticator enrollment, and drops every push subscription (a mass logout — the
+right granularity for a single-operator daemon). A store that answers a read with
+an error is not treated as absent: minting over it would be an unasked rotation, so
+the bind fails with the store's complaint and names the rotate verb. Received
+secrets that cannot be re-derived (OAuth tokens) are out of scope here and stay with
+[mcp-auth.md](mcp-auth.md). 32 bytes is the size the derivations can use: HKDF's
+extract is 256-bit, the HMAC keys and bearer are 256-bit, TOTP is bounded by its
+six-digit codes and P-256 by its 128-bit level.
 
 Two credential kinds because `EventSource` cannot set an `Authorization` header — the
 browser's ambient cookie is forced, not stylistic. The cookie
@@ -94,13 +102,11 @@ id, no scopes, no server-side session store. Cookies ignore ports, so one daemon
 cookie authenticates to every daemon on the host: correct under the machine-scoped
 key, which makes "authed" a property of the machine, not the port.
 
-**The root never reaches tool children.** Both spawn sites (`src/bash.rs`,
-`src/daemon/background.rs`) `env_remove` it: with the root, a child derives the bearer
-and drives its own approval gates. This is hardcoded self-surface protection like the
-session-dir path deny — deliberately not an `[env]`-style policy knob. (Same-user
-processes can still read the daemon's environment via `ps`/`/proc`; the strip removes
-the ambient path, so reaching the root requires a visibly suspicious gated command.
-The gate is the enforcement; the strip closes the accident.)
+**The root is not in any environment.** It is read from the store into the binding
+process and nowhere else, so no spawn site has to strip it. A tool child that wants
+it must read the store itself, which on every backend is a visibly gated command
+(`security`, or a keychain prompt against the signed binary); the gate is the
+enforcement ([secrets.md](secrets.md)).
 
 ## The bootstrap dance
 

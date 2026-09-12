@@ -24,9 +24,7 @@ async fn push_key_is_the_derived_vapid_public_key() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let server = test_server(&shared).await;
 
-    // SAFETY: this test is the only reader or writer of this variable in the suite,
-    // and the route reads it synchronously within the awaited request.
-    unsafe { std::env::set_var(crate::auth::ROOT_ENV, "a test root") };
+    crate::auth::Root::install(Some(crate::auth::Root::new("a test root")));
     let conn = server.get("/v1/push").await;
     conn.assert_status(200);
     conn.assert_json_body_with(|body: &Value| {
@@ -42,7 +40,7 @@ async fn push_key_is_the_derived_vapid_public_key() {
         assert_eq!(point[0], 0x04, "the uncompressed point tag");
     });
 
-    unsafe { std::env::remove_var(crate::auth::ROOT_ENV) };
+    crate::auth::Root::install(None);
     let conn = server.get("/v1/push").await;
     conn.assert_status(500);
     conn.assert_json_body_with(|body: &Value| assert_eq!(body["code"], "internal"));

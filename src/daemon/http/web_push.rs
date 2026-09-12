@@ -7,7 +7,7 @@ use super::*;
 /// Under `/v1` with everything else, so the service worker's never-cache
 /// rule and the TCP gate cover it without either learning a new prefix.
 pub(super) async fn read_push_key(conn: Conn) -> Conn {
-    let Some(root) = crate::auth::Root::from_env() else {
+    let Some(root) = crate::auth::Root::installed() else {
         return fail(conn, ErrorCode::Internal, NO_ROOT);
     };
     let body = serde_json::json!({ "key": crate::push::public_key(&root.vapid_key()) });

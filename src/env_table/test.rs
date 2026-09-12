@@ -180,23 +180,6 @@ fn built_in_defaults_mask_the_five_suffixes() {
     assert!(!table.resolve("PATH").0.mask);
 }
 
-#[test]
-fn the_root_secret_strip_is_not_overridable_downward() {
-    let report = EnvPolicy::build_from(
-        &user(&[(crate::auth::ROOT_ENV, entry(Some(false), Some(false)))]),
-        &env(&[(crate::auth::ROOT_ENV, "root-secret-material")]),
-    );
-    assert!(
-        report
-            .policy
-            .child_env()
-            .names()
-            .iter()
-            .any(|n| n == crate::auth::ROOT_ENV),
-        "the machine root is stripped at spawn whatever the table says"
-    );
-}
-
 // ------------------------------------------------------------- marker & floor
 
 #[test]
@@ -437,23 +420,6 @@ fn mask_false_on_a_reference_is_overruled_and_reported() {
 }
 
 #[test]
-fn the_machine_root_is_never_injected_and_stays_stripped() {
-    let report = EnvPolicy::build_from_with(
-        &BTreeMap::new(),
-        &[],
-        &[resolved(
-            crate::auth::ROOT_ENV,
-            "root-secret-material",
-            true,
-        )],
-        Arc::new(Resolver::default()),
-    );
-    let child = report.policy.child_env();
-    assert!(child.injected_names().next().is_none());
-    assert!(child.names().iter().any(|n| n == crate::auth::ROOT_ENV));
-}
-
-#[test]
 fn a_config_edit_needles_a_newly_named_reference() {
     let policy = EnvPolicy::build_from_with(
         &BTreeMap::new(),
@@ -641,7 +607,7 @@ fn the_log_append_choke_point_filters_every_entry() {
 fn glob_matching_is_star_only() {
     assert!(glob_match("*_KEY", "OPENAI_API_KEY"));
     assert!(!glob_match("*_KEY", "KEYRING"));
-    assert!(glob_match("EFFERENCE_*", "EFFERENCE_ROOT_SECRET"));
+    assert!(glob_match("EFFERENCE_*", "EFFERENCE_BIND"));
     assert!(glob_match("A*C", "ABC"));
     assert!(glob_match("A*C", "AC"));
     assert!(!glob_match("A*C", "ABD"));

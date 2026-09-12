@@ -63,6 +63,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         #[cfg(feature = "dev")]
         Command::Dev(command) => dev::run(command, name.clone(), client_target).await,
         Command::Check { path } => check(path).await,
+        Command::Auth {
+            command: AuthCommand::Rotate,
+        } => {
+            let secrets = efference::secrets::Secrets::detect()?;
+            efference::auth::Root::rotate(&secrets)?;
+            eprintln!(
+                "Rotated: the root is gone from {}, and the next `efference host --bind` \
+                 mints another. This {}.",
+                secrets.describe(),
+                efference::auth::ROTATION_CONSEQUENCES
+            );
+            Ok(())
+        }
         Command::Tui {
             new: true,
             host_socket,

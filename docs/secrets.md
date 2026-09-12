@@ -9,13 +9,14 @@ and a host reads both at launch.
 
 ## Names
 
-Two populations share the store under prefixes, so a listing in the OS's own UI
-reads and neither can shadow the other:
+Three populations share the store, two under prefixes, so a listing in the OS's own UI
+reads and none can shadow another:
 
 | name | value | written by | read by |
 | --- | --- | --- | --- |
 | `inference:<connection>` | the provider API key | `efference setup` | `InferenceRegistry` at host launch, for `auth = { kind = "keychain" }` ([transport.md](transport.md)) |
 | `mcp:<server>` | the `StoredAuth` record as JSON | the authorization flow, and each refresh | session boot, before mounting ([mcp-auth.md](mcp-auth.md)) |
+| `root` | 32 random bytes, base64url | the first `host --bind` on the machine; `efference auth rotate` deletes it | every bind, to derive the web credentials ([web-bind.md](web-bind.md)) |
 
 Items are per user, not per project. A grant belongs to the operator and the
 server; a second checkout of the same project reuses it rather than registering

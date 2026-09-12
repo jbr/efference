@@ -13,11 +13,7 @@ fn snapshot(entries: &[(&str, &str)]) -> EnvSnapshot {
 
 #[tokio::test]
 async fn child_policy_replaces_inheritance_in_std_and_tokio() {
-    let base = snapshot(&[
-        ("KEEP", "base"),
-        ("REMOVE", "stripped"),
-        (crate::auth::ROOT_ENV, "host-only-secret"),
-    ]);
+    let base = snapshot(&[("KEEP", "base"), ("REMOVE", "stripped")]);
     let child = ChildEnv::from_snapshot(base, vec!["REMOVE".into()]).with_inject(
         [
             ("KEEP".into(), "override".into()),
@@ -42,11 +38,7 @@ async fn child_policy_replaces_inheritance_in_std_and_tokio() {
 
 #[test]
 fn snapshots_validate_and_debug_never_prints_values() {
-    let base = snapshot(&[
-        ("IDENTITY", "private-value"),
-        (crate::auth::ROOT_ENV, "root-secret"),
-    ]);
-    assert_eq!(base.get(crate::auth::ROOT_ENV), None);
+    let base = snapshot(&[("IDENTITY", "private-value")]);
     assert_eq!(base.get("IDENTITY"), Some("private-value"));
     let child = ChildEnv::from_snapshot(base.clone(), vec![])
         .with_inject([("INJECTED".into(), "injected-secret".into())].into());

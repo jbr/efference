@@ -33,15 +33,12 @@ impl EnvSnapshot {
         Self::new(values)
     }
 
-    pub fn new(mut values: BTreeMap<String, String>) -> Result<Self, String> {
+    pub fn new(values: BTreeMap<String, String>) -> Result<Self, String> {
         for (name, value) in &values {
             if name.is_empty() || name.contains(['=', '\0']) || value.contains('\0') {
                 return Err("environment contains an invalid name or NUL byte".into());
             }
         }
-        // Listener credentials are not session inputs, even when the local
-        // caller also launched the listener (docs/web-bind.md).
-        values.remove(crate::auth::ROOT_ENV);
         Ok(Self(Arc::new(values)))
     }
 

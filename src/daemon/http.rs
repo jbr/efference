@@ -102,7 +102,7 @@ pub(crate) struct PushUnsubscribeBody {
 /// keypair derives from it (`auth.rs`), so without one there is no sender
 /// identity to hand out or sign with. Unreachable from a browser, which can only
 /// reach the daemon over the TCP bind, and that bind requires the root.
-const NO_ROOT: &str = "no root secret is injected, so push has no signing key";
+const NO_ROOT: &str = "no root is installed, so push has no signing key";
 
 #[derive(Deserialize)]
 pub(crate) struct NotifyBody {

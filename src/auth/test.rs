@@ -13,6 +13,44 @@ fn scratch_ledger() -> BurnLedger {
     BurnLedger::new(std::env::temp_dir().join(format!("efference-burn-test-{n:016x}")))
 }
 
+// ---- the stored root ----
+
+/// The first load mints; every load after reads the same item back.
+#[test]
+fn the_root_is_minted_once_and_read_after() {
+    let secrets = Secrets::in_memory();
+    assert_eq!(secrets.get(ROOT_ITEM).unwrap(), None);
+    let first = Root::load(&secrets).unwrap();
+    let stored = secrets.get(ROOT_ITEM).unwrap().expect("minted");
+    // 32 random bytes, base64url without padding.
+    assert_eq!(stored.len(), 43, "{stored}");
+    let second = Root::load(&secrets).unwrap();
+    assert_eq!(first.bearer(), second.bearer());
+    assert_eq!(first.bearer(), Root::new(&stored).bearer());
+}
+
+/// Two mints differ: the root is random, not derived from anything.
+#[test]
+fn rotation_deletes_the_item_and_the_next_load_mints_a_different_root() {
+    let secrets = Secrets::in_memory();
+    let before = Root::load(&secrets).unwrap();
+    Root::rotate(&secrets).unwrap();
+    assert_eq!(secrets.get(ROOT_ITEM).unwrap(), None);
+    let after = Root::load(&secrets).unwrap();
+    assert_ne!(before.bearer(), after.bearer());
+    assert_ne!(before.totp_secret(), after.totp_secret());
+}
+
+/// An unreadable store names the way out and what it costs.
+#[test]
+fn an_unreadable_root_points_at_rotation() {
+    let error = RootError("could not read secret `root`: keychain locked".into());
+    let text = error.to_string();
+    assert!(text.starts_with("could not read secret `root`: keychain locked; "));
+    assert!(text.contains("`efference auth rotate`"));
+    assert!(text.contains("signs out every browser"));
+}
+
 // ---- derivation ----
 
 #[test]
