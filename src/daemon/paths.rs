@@ -34,6 +34,14 @@ impl SessionPaths {
         &self.storage
     }
 
+    /// The session id: the storage directory's name (docs/session-title.md).
+    pub fn id(&self) -> &str {
+        self.storage
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+    }
+
     pub(crate) fn usage_log(&self) -> PathBuf {
         self.storage.join("usage.jsonl")
     }

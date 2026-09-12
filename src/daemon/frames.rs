@@ -310,6 +310,7 @@ pub(crate) fn payload_kind(payload: &Payload) -> &'static str {
         Payload::ProcessEvent(_) => "process_event",
         Payload::ConfigEdit(_) => "config_edit",
         Payload::Preamble { .. } => "preamble",
+        Payload::Title(_) => "title",
     }
 }
 

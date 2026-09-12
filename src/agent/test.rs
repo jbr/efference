@@ -667,3 +667,54 @@ pub(super) fn callable_names_are_the_advertised_ones_minus_the_peek_tools() {
         );
     }
 }
+
+/// The title peek's trigger (docs/session-title.md): ask when no title exists,
+/// once after each user turn, and on the trajectory-count fallback otherwise.
+#[test]
+fn title_is_solicited_after_a_user_turn_and_on_the_fallback() {
+    use crate::log::{LogEntry, Timestamp, Title, TitleAuthor};
+    fn entry(seq: u64, payload: Payload) -> LogEntry {
+        LogEntry {
+            seq,
+            turn: 0,
+            at: Timestamp(seq),
+            submission_id: None,
+            payload,
+        }
+    }
+    let user = || Payload::User(vec![ContentBlock::Text("go".into())]);
+    let assistant = || Payload::Assistant {
+        output: AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![ContentBlock::Text("done".into())],
+            vec![],
+        ),
+        upstream_failure: None,
+    };
+    let title = || {
+        Payload::Title(Title {
+            text: "t".into(),
+            author: TitleAuthor::Triage,
+        })
+    };
+
+    // Never titled: ask.
+    let mut log = vec![entry(0, user()), entry(1, assistant())];
+    assert!(should_solicit_title(&log));
+    // Titled after that answer: nothing new to ask about.
+    log.push(entry(2, title()));
+    assert!(!should_solicit_title(&log));
+    // Autonomous continuation without a user turn: not until the fallback.
+    for seq in 3..3 + (TITLE_FALLBACK_TRAJECTORIES as u64 - 1) {
+        log.push(entry(seq, assistant()));
+        assert!(!should_solicit_title(&log), "{seq}");
+    }
+    log.push(entry(100, assistant()));
+    assert!(should_solicit_title(&log), "the fallback count is reached");
+    // A kept title resets the fallback; a user turn after it asks again.
+    log.push(entry(101, title()));
+    assert!(!should_solicit_title(&log));
+    log.push(entry(102, user()));
+    log.push(entry(103, assistant()));
+    assert!(should_solicit_title(&log));
+}

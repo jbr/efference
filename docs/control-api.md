@@ -56,12 +56,15 @@ the two SSE streams (`text/event-stream`).
 `efference host` ([control-channel.md](control-channel.md)) serves several
 sessions from one process. Its own routes are the listener's, not a session's:
 
-- `GET /sessions` — `[{"id": …}, …]`, the hosted sessions, sorted by id.
+- `GET /sessions` — `[{"id": …, "title"?: …}, …]`, the hosted sessions, sorted
+  by id, each with its current title once one has been written
+  ([session-title.md](session-title.md)).
 - `POST /sessions` — create a session. The body is the session request: `cwd`
   (absolute, always sent), `env` (the complete base environment, [env.md](env.md)),
   `model`, and optionally `name`, `config`, `spotter_model`, `triage`,
   `temperature`, `effort`, `upstream`, `autonomous`, `reauth`, `keep_scratch`.
-  `201 {"id": …}`; `400` with the reason when the body, the name, the cwd, or
+  `name` omitted mints an `adjective-noun` id free on the host and under the
+  session base ([session-title.md](session-title.md)). `201 {"id": …}`; `400` with the reason when the body, the name, the cwd, or
   preparation is unusable, in which case nothing was minted. Accepted on the
   host's Unix socket only: a network listener answers `403`, because remote
   creation has no environment source yet (backlog/host-process.md). The
@@ -182,6 +185,17 @@ and are byte-identical to — their state topics: `pace` (`{speed_ms, held}`),
 - `PATCH` → `200` with the full resource representation.
 - `400 bad_request` — bad body, or a `review_level` outside
   `autonomous | spotter_human | human_only`.
+
+#### `PUT /title`
+Set the session's title by hand ([session-title.md](session-title.md)): one
+`Title` log entry with `author: "operator"`, and the `session_identity` topic
+moves with it. The title peek reads the new text as the standing title at its
+next ask. Body `{ "title": "<one line>" }`; whitespace-trimmed, refused empty or
+over the peek's own length cap, so both authors are held to one shape.
+
+- `200` with the `session_identity` topic as it now reads.
+- `400 bad_request` — bad body, empty title, or one over the cap; also a session
+  no daemon booted, which has no identity to title.
 
 #### `POST /loop/continue`
 Hand control back with **no input**: the idle loop takes another turn on the
@@ -467,6 +481,8 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "restore_error": "…"           // why writing the last good content back also failed
   },
   "session_identity": {           // null until boot sets it (tests, offline verbs)
+    "id": "amber-heron",                 // the session id — directory, --name, address (session-title.md)
+    "title": "Session names: slugs and titles",  // the last Title entry's text; absent until one is written
     "model": "anthropic/claude-opus-4",  // the native model id, verbatim
     "cwd": "/Users/jbr/code/efference",  // absolute; shortening it is presentation
     "inference": {                       // hosted sessions only (docs/transport.md)
@@ -517,13 +533,12 @@ the file, fs-watch adopts it, and the topic goes `null` as the loop wakes. A
 supervisor distinguishes it from `stall` on exactly that: `stall` names a
 recovery it can perform, `config_repair` names one it cannot.
 
-**`session_identity` names what the session is** — the model it was configured
-with (the same string the system prompt's identity line states,
-[context.md](context.md)) and the directory it runs in. Both are fixed at boot
-today, so the topic is delivered on the connect snapshot and then stays put; it
-is a topic rather than a one-shot read so a client learns it the way it learns
-everything else, and so a value that ever moves reaches clients without a new
-mechanism. Nothing else on `/v1` carries either, so without it a client cannot
+**`session_identity` names what the session is** — its id and title
+([session-title.md](session-title.md)), the model it was configured with (the
+same string the system prompt's identity line states, [context.md](context.md)),
+and the directory it runs in. All but the title are fixed at boot; the topic is
+delivered on the connect snapshot and republished whole whenever the title moves,
+so a client learns it the way it learns everything else. Nothing else on `/v1` carries either, so without it a client cannot
 say which session is on screen. Under a host, `inference` names the connection,
 provider kind, and native model behind each role, and whether triage rides the
 main client (`shared`, in which case the selection repeats main's, so two accounts

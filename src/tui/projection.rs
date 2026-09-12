@@ -264,6 +264,9 @@ pub(crate) fn entry_nodes(
             // The boot preamble snapshot (docs/context.md) — session boot record,
             // not conversation; the human inspects it via `efference dev wire`, not the transcript.
             Payload::Preamble { .. } => {}
+            // The session title (docs/session-title.md) is sidebar state, carried by
+            // the `session_identity` topic — it draws nothing in the transcript.
+            Payload::Title(_) => {}
         }
     }
     nodes

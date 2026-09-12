@@ -148,6 +148,14 @@ impl Client {
 
     /// Interrupt a running tool (`POST /loop/interrupt`) — the SIGINT equivalent that
     /// kills the tool's process group (docs/supervisor.md).
+    /// Set the session's title (`PUT /title`, docs/session-title.md). Answers
+    /// with the `session_identity` topic as it now reads.
+    pub async fn set_title(&self, title: &str) -> Result<serde_json::Value> {
+        let body = serde_json::json!({ "title": title }).to_string();
+        let resp = self.put("/title", body).await?;
+        serde_json::from_str(&resp).map_err(|_| anyhow!("bad /title response: {resp}"))
+    }
+
     pub async fn interrupt(&self) -> Result<()> {
         self.post("/loop/interrupt", String::new()).await.map(drop)
     }

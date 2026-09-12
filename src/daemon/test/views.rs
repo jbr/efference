@@ -136,6 +136,8 @@ fn state_reports_the_session_identity() {
     assert!(v["session_identity"].is_null());
 
     shared.set_identity(SessionIdentity {
+        id: "amber-heron".into(),
+        title: None,
         model: "anthropic/claude-opus-4".into(),
         cwd: "/Users/jbr/code/efference".into(),
         inference: None,
@@ -144,9 +146,29 @@ fn state_reports_the_session_identity() {
     assert_eq!(
         v["session_identity"],
         serde_json::json!({
+            "id": "amber-heron",
             "model": "anthropic/claude-opus-4",
             "cwd": "/Users/jbr/code/efference",
         })
+    );
+
+    // A title decision (docs/session-title.md) lands in the log and on the topic.
+    let seq = shared
+        .set_title(crate::log::Title {
+            text: "Session names: a random slug and a triage-kept title".into(),
+            author: crate::log::TitleAuthor::Operator,
+        })
+        .unwrap()
+        .expect("an identity was set");
+    let entries = shared.snapshot();
+    assert!(matches!(
+        &entries[seq as usize].payload,
+        Payload::Title(t) if t.author == crate::log::TitleAuthor::Operator
+    ));
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(
+        v["session_identity"]["title"],
+        "Session names: a random slug and a triage-kept title"
     );
 }
 

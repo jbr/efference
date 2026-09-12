@@ -116,8 +116,7 @@ pub(crate) fn spots_in(
 
 /// Resolve which session logs the survey reads. An explicit path is either a `log.jsonl` file
 /// (used directly) or a session dir (→ its `LOG_NAME`); omitting it scans every
-/// `.efference/*/log.jsonl` under the cwd. Returns `(session id, log path)` pairs, sorted by id
-/// (the timestamp id sorts oldest→newest).
+/// `.efference/*/log.jsonl` under the cwd. Returns `(session id, log path)` pairs, sorted by id.
 pub(crate) fn resolve_spotter_logs(
     path: Option<PathBuf>,
 ) -> std::io::Result<Vec<(String, PathBuf)>> {

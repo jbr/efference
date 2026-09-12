@@ -25,9 +25,14 @@ pub(super) struct PeekRecord {
     pub(super) thinking: Vec<String>,
 }
 
+/// The renewal sentence for a peek that asks for `tool` (docs/redaction-fork.md).
+pub(super) fn call_now(tool: &str) -> String {
+    format!("Call `{tool}` now, as instructed above.")
+}
+
 /// Run one peek to a usable verdict, with bounded in-fork retries
-/// (docs/redaction-fork.md). `tool` is the asked-for tool (`retain` or `triage`);
-/// `parse` decodes a usable verdict out of a completion, or says why it couldn't —
+/// (docs/redaction-fork.md). `renew` is the sentence that re-asks after a
+/// non-compliant attempt ([`call_now`] for a tool ask); `parse` decodes a usable verdict out of a completion, or says why it couldn't —
 /// the `Err` doubles as the retry nudge and, on exhaustion, the failure breadcrumb.
 /// Every request's [`RequestUsage`] is pushed onto `record.usage` whether or not its
 /// verdict was usable (the request happened and slid the prefix's TTL; only a transport error
@@ -56,7 +61,7 @@ pub(super) async fn peek_with_retries<T>(
     mut messages: Vec<WireTurn>,
     tools: &[Value],
     choice: ToolChoice,
-    tool: &'static str,
+    renew: &str,
     parse: impl Fn(&Completion) -> Result<T, String>,
     record: &mut PeekRecord,
 ) -> Result<T, String> {
@@ -74,7 +79,7 @@ pub(super) async fn peek_with_retries<T>(
                     .retries
                     .push(format!("attempt {attempt} of {PEEK_ATTEMPTS}: {why}"));
                 if attempt == PEEK_ATTEMPTS
-                    || !extend_with_retry(&mut messages, &completion.assistant, &why, tool)
+                    || !extend_with_retry(&mut messages, &completion.assistant, &why, renew)
                 {
                     return Err(format!("{why} (attempt {attempt} of {PEEK_ATTEMPTS})"));
                 }
@@ -177,15 +182,15 @@ pub(super) async fn peek_completion(
 
 /// Extend the fork's throwaway tail past a non-compliant response, keeping the
 /// conversation API-valid: the assistant turn is replayed verbatim, every `tool_use` it
-/// made is answered with an error `tool_result` carrying `why`, and a renewed ask
-/// closes the tail. Returns `false` when nothing appendable came back (no assistant
+/// made is answered with an error `tool_result` carrying `why`, and `renew` closes
+/// the tail as the re-ask. Returns `false` when nothing appendable came back (no assistant
 /// payload, or an empty one) — the caller treats that as terminal rather than sending
 /// an invalid message.
 pub(super) fn extend_with_retry(
     messages: &mut Vec<WireTurn>,
     assistant: &Payload,
     why: &str,
-    tool: &str,
+    renew: &str,
 ) -> bool {
     let Payload::Assistant { output, .. } = assistant else {
         return false;
@@ -211,7 +216,7 @@ pub(super) fn extend_with_retry(
         })
         .collect();
     reply.push(UserPart::Text(format!(
-        "That response didn't answer the ask. Call `{tool}` now, as instructed above."
+        "That response didn't answer the ask. {renew}"
     )));
     messages.push(WireTurn::User(reply));
     true

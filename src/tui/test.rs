@@ -128,16 +128,31 @@ fn parses_session_identity_with_a_home_relative_cwd() {
     let home = std::env::home_dir().expect("a home directory");
     let cwd = home.join("code/efference");
     let topic = serde_json::json!({
+        "id": "amber-heron",
         "model": "anthropic/claude-opus-4",
         "cwd": cwd.to_string_lossy(),
     });
     let identity = parse_session_identity(&topic).expect("session identity");
+    assert_eq!(identity.id, "amber-heron");
+    assert_eq!(identity.title, None);
     assert_eq!(identity.model, "anthropic/claude-opus-4");
     assert_eq!(identity.cwd, "~/code/efference");
 
+    // The title arrives on the same topic once one is written (docs/session-title.md).
+    let titled = serde_json::json!({
+        "id": "amber-heron",
+        "title": "Session names",
+        "model": "m",
+        "cwd": "/srv/build",
+    });
+    assert_eq!(
+        parse_session_identity(&titled).unwrap().title.as_deref(),
+        Some("Session names")
+    );
+
     // A path outside home keeps its absolute form — a partial component match
     // ("/home/jbrx") must not be rewritten either.
-    let elsewhere = serde_json::json!({ "model": "m", "cwd": "/srv/build" });
+    let elsewhere = serde_json::json!({ "id": "x", "model": "m", "cwd": "/srv/build" });
     assert_eq!(
         parse_session_identity(&elsewhere).unwrap().cwd,
         "/srv/build"

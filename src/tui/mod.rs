@@ -351,6 +351,11 @@ pub(crate) struct StallView {
 /// sessions needs the current one named.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SessionIdentityView {
+    /// The session id — its address (docs/session-title.md); what to type into
+    /// `--name` or hand to a peer.
+    pub id: String,
+    /// The current title, once one has been written.
+    pub title: Option<String>,
     pub model: String,
     /// The working directory, already shortened against `$HOME` at parse time —
     /// derivation stays out of the render path, as with the usage stats.

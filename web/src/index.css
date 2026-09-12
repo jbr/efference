@@ -211,6 +211,23 @@ input[type="checkbox"] {
   background: var(--bg-raised);
 }
 
+/* A row is the id, then its title once one is written (docs/session-title.md). */
+.session-list a {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+}
+
+.session-list-id {
+  white-space: nowrap;
+}
+
+.session-list-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .wordmark {
   font-family: var(--font-prose);
   font-size: 1.6em;
@@ -218,15 +235,23 @@ input[type="checkbox"] {
   letter-spacing: -0.01em;
 }
 
-/* What the session is (docs/web-client.md "The top bar"): the model answering,
-   then its working directory. Mono, because both are identifiers. Each shrinks
-   with an ellipsis rather than pushing the meter off the bar; the cwd yields
-   first, since the model name is the element the mixed-model case needs. */
+/* What the session is (docs/web-client.md "The top bar"): its title (or id
+   until one is written), the model answering, then its working directory.
+   Mono, because all are identifiers. Each shrinks with an ellipsis rather than
+   pushing the meter off the bar; the cwd yields first, since the model name is
+   the element the mixed-model case needs. */
 .session-id {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
   min-width: 0;
+}
+
+.session-name {
+  color: var(--fg-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .session-model {

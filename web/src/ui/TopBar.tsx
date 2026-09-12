@@ -79,13 +79,17 @@ function UpstreamChip({
   );
 }
 
-/** What this session is: the model answering and where it is working. Which
- * model is running is not derivable from the transcript, and it matters most
- * when cheap and flagship models mix across sessions. The cwd's shortening is
- * `ui/identity.ts`'s, so nothing about paths lives here. */
+/** What this session is: its id and title (docs/session-title.md), the model
+ * answering, and where it is working. Which model is running is not derivable
+ * from the transcript, and it matters most when cheap and flagship models mix
+ * across sessions. The cwd's shortening is `ui/identity.ts`'s, so nothing
+ * about paths lives here. */
 function SessionLabel({ identity }: { identity: SessionIdentity }) {
   return (
     <span className="session-id">
+      <span className="session-name" title={identity.id}>
+        {identity.title ?? identity.id}
+      </span>
       <span
         className="session-model"
         title={

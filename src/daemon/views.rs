@@ -247,7 +247,7 @@ impl Session {
     /// What this session is (docs/control-api.md): the configured model id and the
     /// working directory. Set once at boot, so this value does not move during a
     /// session; `null` where no session booted (tests, offline verbs).
-    fn session_identity_json(&self) -> Value {
+    pub(super) fn session_identity_json(&self) -> Value {
         serde_json::to_value(self.identity.lock().unwrap().clone()).unwrap_or(Value::Null)
     }
 

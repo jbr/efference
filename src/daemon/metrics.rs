@@ -70,6 +70,9 @@ pub enum RequestOrigin {
     Peek,
     /// A standalone idle-triage peek (docs/supervisor.md).
     Triage,
+    /// A title peek (docs/session-title.md) — the triage model asked, off the
+    /// cached prefix, what the session is for.
+    Title,
     /// A spotter assessment (docs/permissions.md) — its own prefix, its own lineage.
     Spot,
     /// A cache keepalive ping (docs/log-and-projection.md).

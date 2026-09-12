@@ -104,6 +104,8 @@ impl SessionRuntime {
         // (docs/control-api.md): the resolved model and the working directory, both
         // fixed by the time the caller gets here.
         session.set_identity(SessionIdentity {
+            id: paths.id().to_string(),
+            title: crate::log::latest_title(&session.snapshot()).map(str::to_string),
             model,
             cwd: paths.cwd().to_string_lossy().into_owned(),
             inference,

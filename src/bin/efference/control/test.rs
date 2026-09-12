@@ -108,6 +108,7 @@ fn tools_list_is_ordered_and_annotated() {
             "image",
             "state",
             "log",
+            "title",
         ]
     );
 

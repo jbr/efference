@@ -1,8 +1,8 @@
 // The host's root: the live sessions, each a link into its own view
-// (docs/web-client.md). A row carries the id and nothing else, because the listing
-// carries the id and nothing else — a session's state lives behind its own API,
-// so a chip per row would be one `GET /sessions/<id>/v1/state` per session on
-// every load. The cross-session summary a list actually wants is a host-level
+// (docs/web-client.md). A row carries the id and the title, because that is
+// what the listing carries — a session's state lives behind its own API, so
+// any other chip per row would be one `GET /sessions/<id>/v1/state` per
+// session on every load. The cross-session summary a list actually wants is a host-level
 // resource that is not built (backlog/host-process.md); until it is, the honest
 // list is the one the endpoint can answer.
 //
@@ -43,7 +43,14 @@ export function SessionList({
           <ul>
             {sessions.map((session) => (
               <li key={session.id}>
-                <a href={sessionHref(session.id)}>{session.id}</a>
+                <a href={sessionHref(session.id)}>
+                  <span className="session-list-id">{session.id}</span>
+                  {session.title !== undefined && (
+                    <span className="session-list-title dim">
+                      {session.title}
+                    </span>
+                  )}
+                </a>
               </li>
             ))}
           </ul>

@@ -149,6 +149,7 @@ Read top-down; open the subsystem doc you need.
 | Tools (in-process `Tool` trait; in-process MCP; per-call telemetry) | [tools.md](tools.md) | `src/tools.rs`, `src/bash.rs`, `src/agent/telemetry.rs` |
 | Trajectory consolidation (compaction as a fold over a span) | [consolidate.md](consolidate.md) | `src/consolidate.rs`, `src/agent.rs` |
 | Ambient notifications — the inbox (enqueue then triage), and the attachment store | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon/notifications.rs`, `src/attachments.rs`, `src/daemon/attachments.rs` |
+| Session id and title — the minted word-pair address, and the triage-kept one-line title | [session-title.md](session-title.md) | `src/daemon/slug.rs`, `src/agent/title.rs`, `src/distill/title.rs` |
 | Background processes — the supervisor | [supervisor.md](supervisor.md) | `src/supervisor.rs`, `src/bash.rs`, `src/daemon/background.rs` |
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs` (+ `src/daemon/`), `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
 | Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/config.rs`, `src/policy.rs`, `src/agent.rs`, `src/daemon/config_edits.rs` |
@@ -172,7 +173,7 @@ concern; each module's tests live in its own `test.rs`.
 The turn engine that ties it together is `src/agent.rs`; the CLI binary is
 `src/bin/efference/`, whose `host` verb boots the daemon. Its command tree is three
 groups ([operating.md](operating.md)): the human verbs at the top level, `efference
-control <tool>` for the twelve calls that drive a running session — the same tools
+control <tool>` for the thirteen calls that drive a running session — the same tools
 `efference mcp` serves over MCP, written once in `src/bin/efference/control/` — and
 `efference dev <verb>` for the instruments that develop the harness itself, behind the
 `dev` cargo feature.

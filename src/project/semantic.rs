@@ -290,6 +290,10 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
             // the system prompt rides the request's preamble slot, never the turn
             // list, so the snapshot projects to nothing.
             Payload::Preamble { .. } => {}
+            // The session title (docs/session-title.md) is presentation for the
+            // clients, never for the model: it projects to nothing, so a title
+            // written mid-session cannot move the cached prefix.
+            Payload::Title(_) => {}
             // A fork verdict emits a block per **pinned** notification and per
             // **surfaced** context item at its own position — notification bodies
             // looked up from the `Ambient` arrival (docs/inbox.md), surfaced items

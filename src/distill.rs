@@ -361,7 +361,7 @@ impl ForkPeek {
             messages,
             self.tools(agent_tools),
             self.choice(RETAIN),
-            RETAIN,
+            &call_now(RETAIN),
             |c| {
                 let verdict = parse_retain(c, &offered).ok_or_else(|| unusable(c, RETAIN))?;
                 let verdict = require_coverage(verdict, &offered)?;
@@ -494,7 +494,7 @@ impl ForkPeek {
             messages,
             self.tools(agent_tools),
             self.choice(TRIAGE),
-            TRIAGE,
+            &call_now(TRIAGE),
             |c| parse_dispositions(c, TRIAGE).ok_or_else(|| unusable(c, TRIAGE)),
             &mut record,
         )
@@ -547,6 +547,7 @@ mod peek;
 mod prompt;
 mod replay;
 mod schema;
+mod title;
 mod validate;
 
 use handles::*;
@@ -558,3 +559,4 @@ use validate::*;
 pub use own::TriageModel;
 pub use replay::{PeekAttempt, ReplayVerdict, peek_request};
 pub use schema::{retain_tool, triage_tool};
+pub use title::{TITLE_MAX_CHARS, TitlePeek};

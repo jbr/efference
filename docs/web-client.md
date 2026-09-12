@@ -148,8 +148,9 @@ daemon that went away — reads as a session, which is what a root has always be
 the session view's own connection banner reports the network state, where a second
 failure screen would only restate it.
 
-**The list is the ids and nothing else** (`ui/SessionList.tsx`), because the listing
-is the ids and nothing else. Model, stall, and gate chips per row would be one
+**The list is the ids and titles and nothing else** (`ui/SessionList.tsx`), because
+the listing carries the id and the current title and nothing else
+([session-title.md](session-title.md)). Model, stall, and gate chips per row would be one
 `GET /sessions/<id>/v1/state` per session on every load — acceptable at three
 sessions, and the wrong shape at thirty; the cross-session summary the list actually
 wants is a host-level resource that is not built (`backlog/host-process.md`).
@@ -821,8 +822,9 @@ driving a ticking value. Deliberately minimal otherwise — the mock's bar is a
 dumping ground of imagined status items, and additions happen one argued
 element at a time. Loop state is not restated here: the dot breathes, and
 the banner, the gate cue, and the composer's turn-state carry the rest.
-Beside the dot it names **what the session is** — the model and the working
-directory, from the `session_identity` topic
+Beside the dot it names **what the session is** — the title, or the id until
+one is written ([session-title.md](session-title.md)), then the model and the
+working directory, from the `session_identity` topic
 ([control-api.md](control-api.md)). Which model is answering is not derivable
 from the transcript, and it is what a reader needs when cheap and flagship
 models mix across sessions. The wire carries the cwd absolute; `ui/identity.ts`

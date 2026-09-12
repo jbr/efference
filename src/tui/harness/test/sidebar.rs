@@ -177,14 +177,37 @@ fn sidebar_names_the_model_and_working_directory() {
     );
 
     play.event(TuiEvent::SessionIdentity(Some(SessionIdentityView {
+        id: "amber-heron".into(),
+        title: None,
         model: "anthropic/claude-opus-4".into(),
         cwd: "~/code/efference".into(),
         roles: None,
     })));
     let after = play.sidebar_grid();
     assert!(after.contains("SESSION"), "{after}");
+    assert!(after.contains("amber-heron"), "{after}");
     assert!(after.contains("anthropic/claude-opus-4"), "{after}");
     assert!(after.contains("~/code/efference"), "{after}");
+
+    // A title, once written, leads the section (docs/session-title.md); the
+    // topic is re-delivered whole, so the view is replaced rather than patched.
+    play.event(TuiEvent::SessionIdentity(Some(SessionIdentityView {
+        id: "amber-heron".into(),
+        title: Some("Session names: slug ids and titles".into()),
+        model: "anthropic/claude-opus-4".into(),
+        cwd: "~/code/efference".into(),
+        roles: None,
+    })));
+    let titled = play.sidebar_grid();
+    let title_row = titled
+        .lines()
+        .position(|l| l.contains("Session names: slug ids and titles"))
+        .expect("the title renders");
+    let id_row = titled
+        .lines()
+        .position(|l| l.contains("amber-heron"))
+        .expect("the id renders");
+    assert!(title_row < id_row, "{titled}");
 }
 
 /// A hosted session names each role by connection: the main line becomes the
@@ -195,6 +218,8 @@ fn sidebar_names_hosted_roles_by_connection() {
     let mut play = Screenplay::new(110, 16);
     play.user("go");
     play.event(TuiEvent::SessionIdentity(Some(SessionIdentityView {
+        id: "amber-heron".into(),
+        title: None,
         model: "claude-opus-4".into(),
         cwd: "~/code/efference".into(),
         roles: Some(SessionRolesView {

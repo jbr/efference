@@ -461,10 +461,16 @@ export interface Stall {
   detail: string;
 }
 
-// What this session is: the model it was configured with and the directory it
-// runs in (docs/control-api.md). Static per session today — it arrives on the
-// connect snapshot — but a topic, so a value that ever moves arrives the same way.
+// What this session is: its id and title, the model it was configured with,
+// and the directory it runs in (docs/control-api.md). It arrives on the connect
+// snapshot and again whenever the title moves.
 export interface SessionIdentity {
+  // The session id (docs/session-title.md): its directory name, the `--name` a
+  // client resolves, the address a peer messages. Fixed at creation.
+  id: string;
+  // The current title — the last title entry's text — once one is written.
+  // The one identity field that moves.
+  title?: string;
   // The model id `serve` resolved, verbatim; the provider's own spelling.
   model: string;
   // The session's working directory, absolute. Shortening it against a home

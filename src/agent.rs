@@ -608,6 +608,13 @@ pub async fn run<F: Frontend, S: Spotter>(
             }
 
             if calls.is_empty() {
+                // The trajectory is ending: the moment the title peek reads the
+                // whole of it (docs/session-title.md). Off the prefix this turn
+                // just cached, so it costs one warm read; presentation only, so
+                // it never blocks or fails the loop.
+                if should_solicit_title(&shared.snapshot()) {
+                    solicit_title(client, &tools, &shared, &distiller).await;
+                }
                 break; // model is done with this turn → wait for the next.
             }
 
@@ -895,9 +902,11 @@ mod config_edit;
 mod results;
 mod step;
 mod telemetry;
+mod title;
 mod triage;
 
 use config_edit::*;
 use results::*;
 use step::*;
+use title::*;
 use triage::*;

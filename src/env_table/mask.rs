@@ -346,6 +346,9 @@ impl Masker {
                 self.mask_in_place(system);
                 self.mask_context(context);
             }
+            // Model- or operator-written prose about the session; a secret could
+            // be quoted into it like any other text.
+            Payload::Title(title) => self.mask_in_place(&mut title.text),
         }
     }
 

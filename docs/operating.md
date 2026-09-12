@@ -12,11 +12,11 @@ driven, and it is refined from use rather than written ahead of it.
 
 `efference --help` lists only what a person types: `host`, `tui`, `check`. The rest is grouped by who it is for.
 
-- **`efference control <tool>`** — the twelve calls that drive a *running* session:
+- **`efference control <tool>`** — the thirteen calls that drive a *running* session:
   `turn`, `approve`, `settle`, `interrupt`, `background`, `pace`, `review-level`,
-  `notify`, `dismiss`, `image`, `state`, `log`. Each is one control-API call over the
+  `notify`, `dismiss`, `image`, `state`, `log`, `title`. Each is one control-API call over the
   session's socket ([control-channel.md](control-channel.md)).
-- **`efference mcp`** — the same twelve, served as an MCP server over stdin/stdout
+- **`efference mcp`** — the same thirteen, served as an MCP server over stdin/stdout
   (below). One definition, two entry points: they are written once as mcplease tools
   (`src/bin/efference/control/`, one file per tool) and mounted both ways, so the
   command line and a mounting harness cannot drift apart.
@@ -59,7 +59,10 @@ working" from "the socket broke".
 
 ## Where a session lives
 
-Creating a session mints `.efference/<id>/` and never reuses one. It holds:
+Creating a session mints `.efference/<id>/` and never reuses one. The id is an
+`adjective-noun` pair unless `--name` supplied one, and it never changes; the
+one-line title beside it in the sidebar and the session list does
+([session-title.md](session-title.md)). The directory holds:
 
 - `control.sock` — the HTTP control channel, the only input path into the loop.
 - `log.jsonl` — the append-only record; every entry, raw.

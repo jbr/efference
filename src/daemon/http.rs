@@ -149,6 +149,7 @@ mod notifications;
 mod processes;
 mod proposals;
 mod state;
+mod title;
 mod turns;
 mod web_push;
 
@@ -179,6 +180,7 @@ pub(crate) fn control_routes_with_heartbeat(heartbeat: Duration) -> Router {
         .delete("/v1/notifications/:id", notifications::dismiss_notification)
         .get("/v1/proposals", proposals::list_proposals)
         .patch("/v1/proposals/:seq", proposals::patch_proposal)
+        .put("/v1/title", title::put_title)
         .get("/v1/state", state::read_state)
         .get("/v1/log", log_reads::read_log_window)
         .get("/v1/log/:seq", log_reads::read_log_entry)

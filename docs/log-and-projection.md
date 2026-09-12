@@ -40,6 +40,7 @@ enum Payload {
     ProcessEvent(ProcessEvent),    // a background process's mint or exit (see supervisor.md)
     ConfigEdit(ConfigEdit),  // one durable policy change — folded by the classifier (see permissions.md)
     Preamble { system: String },  // the boot preamble snapshot — replay/audit only (see context.md)
+    Title(Title),      // the session's one-line title — presentation only, never projected (see session-title.md)
     // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)
     // for compaction. Kept here as a forward marker — types land ahead of the
     // feature that constructs them — not present in the code today.

@@ -1,3 +1,4 @@
+use super::title::{parse_title, title_instruction};
 use super::*;
 use crate::api::Usage;
 use crate::log::Triage;
@@ -198,7 +199,7 @@ fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
         &mut messages,
         &completion.assistant,
         &why,
-        RETAIN
+        &call_now(RETAIN)
     ));
     assert_eq!(messages.len(), 3, "assistant turn + reply appended");
     let messages = wire(&messages);
@@ -263,7 +264,7 @@ fn a_prose_only_response_retries_with_just_the_renewed_ask() {
         &mut messages,
         &completion.assistant,
         "peek called no tool",
-        TRIAGE
+        &call_now(TRIAGE)
     ));
     assert_eq!(messages.len(), 2);
     let messages = wire(&messages);
@@ -285,7 +286,7 @@ fn an_empty_response_is_terminal_not_an_invalid_retry() {
         &mut messages,
         &empty,
         "peek called no tool",
-        RETAIN
+        &call_now(RETAIN)
     ));
     assert!(messages.is_empty());
 }
@@ -1450,4 +1451,77 @@ fn the_ask_scopes_intent_feedback_to_the_intent_and_prefers_it_didnt() {
     let props = &schema["input_schema"]["properties"];
     assert!(props["intent_feedback"].is_object());
     assert!(props["results"]["items"]["properties"]["intent_feedback"].is_object());
+}
+
+/// A `Completion` whose assistant turn is prose only — the title peek's answer
+/// shape (docs/session-title.md).
+fn text_completion(text: &str) -> Completion {
+    Completion {
+        assistant: Payload::Assistant {
+            output: AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![crate::log::ContentBlock::Text(text.into())],
+                vec![],
+            ),
+            upstream_failure: None,
+        },
+        id: None,
+        model: "test".into(),
+        stop_reason: None,
+        usage: Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        },
+        failure_class: crate::api::FailureClass::Transient,
+    }
+}
+
+/// The title is the first non-empty text line, unwrapped (docs/session-title.md):
+/// quotes, backticks, a `Title:` label, and a trailing period are the model's
+/// framing, not the title. A tool call, no text, or an over-long line is unusable,
+/// and the `Err` is the retry nudge.
+#[test]
+fn parse_title_takes_the_first_line_unwrapped_and_rejects_the_unusable() {
+    for (raw, want) in [
+        (
+            "Session names: slugs and titles",
+            "Session names: slugs and titles",
+        ),
+        (
+            "\"Session names: slugs and titles.\"",
+            "Session names: slugs and titles",
+        ),
+        ("`Session names`\n\nsecond line ignored", "Session names"),
+        ("\n  Title: Session names  \n", "Session names"),
+        ("**Session names**", "Session names"),
+    ] {
+        assert_eq!(
+            parse_title(&text_completion(raw)).as_deref(),
+            Ok(want),
+            "{raw:?}"
+        );
+    }
+    assert!(parse_title(&text_completion("")).is_err());
+    assert!(parse_title(&text_completion("\"\"")).is_err());
+    assert!(parse_title(&text_completion(&"x".repeat(TITLE_MAX_CHARS + 1))).is_err());
+    assert!(
+        parse_title(&retain_completion("retain", json!({"keep": "1"}))).is_err(),
+        "a tool call is not a title"
+    );
+}
+
+/// The ask quotes the standing title and says to keep it unless the purpose
+/// moved; with none, it says so — the two tails differ only there.
+#[test]
+fn title_instruction_quotes_the_standing_title() {
+    let fresh = title_instruction(None);
+    assert!(fresh.contains("no title yet"), "{fresh}");
+    let kept = title_instruction(Some("Session names"));
+    assert!(
+        kept.contains("The current title is: Session names"),
+        "{kept}"
+    );
+    assert!(kept.contains("Keep it verbatim"), "{kept}");
 }

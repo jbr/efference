@@ -102,6 +102,14 @@ pub enum StreamDelta {
 /// mechanism that already delivers whole-topic replacements.
 #[derive(Clone, Debug, Serialize)]
 pub struct SessionIdentity {
+    /// The session id (docs/session-title.md): its directory name under
+    /// `.efference/`, the `--name` a client resolves, the address a peer
+    /// messages. Fixed at creation.
+    pub id: String,
+    /// The current title — the last `Title` entry's text (docs/session-title.md),
+    /// `None` before the first is written. The one identity field that moves.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     /// The native model id boot resolved — the same string the system prompt's
     /// identity line states (docs/context.md).
     pub model: String,
@@ -709,6 +717,28 @@ impl Session {
         self.touch_state();
     }
 
+    /// What this session is, as the `session_identity` topic reports it; `None`
+    /// where no session booted.
+    pub fn identity(&self) -> Option<SessionIdentity> {
+        self.identity.lock().unwrap().clone()
+    }
+
+    /// Record a title decision (docs/session-title.md): append the `Title` entry
+    /// and move the identity's `title`, so the topic republishes. `Ok(None)` when
+    /// no identity was set (a session read with no daemon behind it), in which
+    /// case nothing is appended either.
+    pub fn set_title(&self, title: crate::log::Title) -> io::Result<Option<Seq>> {
+        let mut guard = self.identity.lock().unwrap();
+        let Some(identity) = guard.as_mut() else {
+            return Ok(None);
+        };
+        let seq = self.append(self.latest_turn(), Payload::Title(title.clone()))?;
+        identity.title = Some(title.text);
+        drop(guard);
+        self.touch_state();
+        Ok(Some(seq))
+    }
+
     /// Record that the trajectory gave up (docs/transport.md) — the loop is
     /// returning to idle without finishing. Read back by the `stall` topic.
     pub(crate) fn set_stall(&self, stall: Stall) {
@@ -1041,6 +1071,7 @@ mod frontend;
 mod host;
 mod paths;
 mod runtime;
+pub mod slug;
 pub use host::{CreateSession, Host, serve_host};
 pub use paths::SessionPaths;
 pub use runtime::{SessionBoot, SessionRuntime};

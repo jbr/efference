@@ -131,7 +131,8 @@ fn missing_host(conn: Conn) -> Conn {
     fail(conn, ErrorCode::Internal, "missing host state")
 }
 
-/// `GET /sessions`: the hosted ids, as `[{"id": …}, …]`, sorted.
+/// `GET /sessions`: the hosted ids, sorted, each with its current title when one
+/// has been written (docs/session-title.md): `[{"id": …, "title": …}, …]`.
 async fn list_sessions(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
@@ -139,7 +140,16 @@ async fn list_sessions(conn: Conn) -> Conn {
     let ids: Vec<_> = host
         .ids()
         .into_iter()
-        .map(|id| serde_json::json!({ "id": id }))
+        .map(|id| {
+            let title = host
+                .session(&id)
+                .and_then(|session| session.identity())
+                .and_then(|identity| identity.title);
+            match title {
+                Some(title) => serde_json::json!({ "id": id, "title": title }),
+                None => serde_json::json!({ "id": id }),
+            }
+        })
         .collect();
     conn.with_status(200)
         .with_body(serde_json::Value::Array(ids).to_string())
@@ -207,8 +217,9 @@ fn no_such_session(conn: Conn, id: &str) -> Conn {
 /// dropped, never logged or echoed, which is why the type has no Debug.
 #[derive(Serialize, Deserialize)]
 pub struct CreateSession {
-    /// The session id; a generated timestamp when absent. A single plain path
-    /// segment, as the gate's `plain_id` requires.
+    /// The session id; a minted adjective-noun pair when absent
+    /// (docs/session-title.md). A single plain path segment, as the gate's
+    /// `plain_id` requires.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// The session's working root. Absolute, always sent.
@@ -248,7 +259,13 @@ async fn create_session(mut conn: Conn) -> Conn {
         Ok(body) => body,
         Err(e) => return fail(conn, ErrorCode::BadRequest, format!("invalid body: {e}")),
     };
-    let id = body.name.unwrap_or_else(default_session_id);
+    // The session base is what an unnamed id must be free in, on disk and in
+    // the live map — a dead session's directory still holds its name
+    // (docs/session-title.md).
+    let base = body.cwd.join(SESSION_BASE);
+    let id = body
+        .name
+        .unwrap_or_else(|| slug::mint(|id| host.session(id).is_some() || base.join(id).exists()));
     if !super::tcp::plain_id(&id) {
         return fail(
             conn,
@@ -320,15 +337,6 @@ async fn refuse_remote_create(conn: Conn) -> Conn {
         ErrorCode::Forbidden,
         "session creation is accepted on the host's Unix socket only",
     )
-}
-
-/// A session id when none was named: timestamp millis.
-fn default_session_id() -> String {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock before Unix epoch")
-        .as_millis()
-        .to_string()
 }
 
 /// Run a host: bind the control socket and the optional TCP listener over

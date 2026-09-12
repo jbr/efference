@@ -47,7 +47,8 @@ mcplease::tools!(
     (Dismiss, dismiss, "dismiss"),
     (Image, read_image, "image"),
     (State, state, "state"),
-    (Log, read_log, "log")
+    (Log, read_log, "log"),
+    (Title, title, "title")
 );
 
 /// What a mounting harness is told about this server, verbatim from

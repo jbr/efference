@@ -227,6 +227,41 @@ pub enum Payload {
         #[serde(default)]
         context: crate::context::Resolved,
     },
+    /// The session's title — one line saying what the session is for
+    /// (docs/session-title.md). Written by the title peek after a trajectory ends,
+    /// or by an operator over the control channel; the latest entry is the current
+    /// title, which the `session_identity` topic carries. Appended even when the
+    /// peek kept the previous text, so the log records that the question was asked.
+    /// Log metadata: it projects to nothing, like [`ToolTelemetry`], and never
+    /// touches the wire or the cached prefix (docs/log-and-projection.md).
+    ///
+    /// [`ToolTelemetry`]: Payload::ToolTelemetry
+    Title(Title),
+}
+
+/// One title decision (docs/session-title.md): the text and who wrote it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Title {
+    pub text: String,
+    pub author: TitleAuthor,
+}
+
+/// Who set a [`Title`]: the triage model's peek, or an operator over the control
+/// channel (docs/session-title.md).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TitleAuthor {
+    Triage,
+    Operator,
+}
+
+/// The current title: the text of the last [`Payload::Title`] in `entries`, or
+/// `None` before any was written (docs/session-title.md).
+pub fn latest_title(entries: &[LogEntry]) -> Option<&str> {
+    entries.iter().rev().find_map(|e| match &e.payload {
+        Payload::Title(t) => Some(t.text.as_str()),
+        _ => None,
+    })
 }
 
 impl Payload {

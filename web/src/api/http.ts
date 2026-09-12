@@ -202,6 +202,8 @@ export const mintSession = (code: string) =>
  * nothing else: a session's own state is read through its own API. */
 export interface SessionEntry {
   id: string;
+  // The session's current title, once one has been written (docs/session-title.md).
+  title?: string;
 }
 
 // A host's one endpoint of its own (docs/web-client.md), at its root rather than

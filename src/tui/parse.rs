@@ -284,6 +284,11 @@ pub(super) fn parse_session_identity(value: &serde_json::Value) -> Option<Sessio
         return None;
     }
     Some(SessionIdentityView {
+        id: value.get("id")?.as_str()?.to_string(),
+        title: value
+            .get("title")
+            .and_then(|t| t.as_str())
+            .map(str::to_string),
         model: value.get("model")?.as_str()?.to_string(),
         cwd: home_relative(value.get("cwd")?.as_str()?),
         roles: value.get("inference").and_then(parse_session_roles),
