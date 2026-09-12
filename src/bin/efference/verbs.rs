@@ -1,7 +1,7 @@
 //! The human top-level verbs that talk to a running daemon or read a recorded
 //! session (docs/operating.md).
 //!
-//! The thirteen verbs that *drive* a session live in `control/` instead, as one
+//! The verbs that *drive* a session live in `control/` instead, as one
 //! mcplease tool each; what is left here is what a person types: the two TUI
 //! entry points and the bootstrap-link minter.
 

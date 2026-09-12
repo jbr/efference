@@ -171,9 +171,9 @@ holds the subsystem's vocabulary and public surface and the directory holds one 
 concern; each module's tests live in its own `test.rs`.
 
 The turn engine that ties it together is `src/agent.rs`; the CLI binary is
-`src/bin/efference/`, whose `host` verb boots the daemon. Its command tree is three
-groups ([operating.md](operating.md)): the human verbs at the top level, `efference
-control <tool>` for the thirteen calls that drive a running session — the same tools
+`src/bin/efference/`, whose `host` verb boots the daemon. Its command tree is grouped by
+who each command is for ([operating.md](operating.md)): the human verbs at the top level, `efference
+control <tool>` for the calls that drive a running session — the same tools
 `efference mcp` serves over MCP, written once in `src/bin/efference/control/` — and
 `efference dev <verb>` for the instruments that develop the harness itself, behind the
 `dev` cargo feature.
@@ -187,7 +187,7 @@ inbox), `background.rs` (the supervisor), plus `pace.rs`, `approvals.rs`, `metri
 
 ## Repository layout
 
-Everything is one crate in one repository — daemon, clients, CLI, and the four records.
+Everything is one crate in one repository — daemon, clients, CLI, and the written records.
 A workspace split waits for a build target that cannot link the full dependency set; none
 currently exists, because rendering for thin clients is daemon-side (the human-wire render
 document) rather than a shared client library. Two roads considered and not taken: a

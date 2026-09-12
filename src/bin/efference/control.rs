@@ -1,6 +1,6 @@
 //! The session-control tools: one definition, two entry points (docs/operating.md).
 //!
-//! Each of the twelve verbs that drive a *running* session is one control-API call
+//! Each verb that drives a *running* session is one control-API call
 //! over the session's socket (docs/control-channel.md), written once here as an
 //! [mcplease](mcplease) tool. The `tools!` macro below turns them into a single
 //! `Tools` enum that is simultaneously

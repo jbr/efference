@@ -8,15 +8,15 @@ same surface serves both.
 The rest of `docs/` describes how the harness is built. This one describes how it is
 driven, and it is refined from use rather than written ahead of it.
 
-## Three groups of commands
+## The command groups
 
 `efference --help` lists only what a person types: `host`, `tui`, `check`. The rest is grouped by who it is for.
 
-- **`efference control <tool>`** — the thirteen calls that drive a *running* session:
+- **`efference control <tool>`** — the calls that drive a *running* session:
   `turn`, `approve`, `settle`, `interrupt`, `background`, `pace`, `review-level`,
   `notify`, `dismiss`, `image`, `state`, `log`, `title`. Each is one control-API call over the
   session's socket ([control-channel.md](control-channel.md)).
-- **`efference mcp`** — the same thirteen, served as an MCP server over stdin/stdout
+- **`efference mcp`** — the same calls, served as an MCP server over stdin/stdout
   (below). One definition, two entry points: they are written once as mcplease tools
   (`src/bin/efference/control/`, one file per tool) and mounted both ways, so the
   command line and a mounting harness cannot drift apart.
@@ -75,7 +75,7 @@ skipped, so discovery finds the running session rather than the most recent one.
 
 ## Reading the session
 
-Three reads, at three grains.
+Each read is at its own grain.
 
 - **`efference control state`** — the whole ephemeral picture in one JSON object: the pending gate,
   the inbox, running processes, token usage and cost, the pace and review-level dials, the

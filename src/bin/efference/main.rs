@@ -1,7 +1,7 @@
 //! The binary — the control-channel daemon entry point.
 //!
-//! The CLI is three groups (docs/operating.md): the human verbs at the top level,
-//! `efference control <tool>` / `efference mcp` for the thirteen calls that drive a
+//! The CLI is grouped by who each command is for (docs/operating.md): the human verbs at the top level,
+//! `efference control <tool>` / `efference mcp` for the calls that drive a
 //! running session, and `efference dev <verb>` for the instruments that develop the
 //! harness itself.
 //!
