@@ -18,6 +18,10 @@ pub enum FailureClass {
     Transient,
     /// No retry can change it: stall at once, with the provider's words.
     Terminal,
+    /// The operator ended the read (`POST /loop/interrupt` mid-generation): no
+    /// retry, no stall — the turn ends and the loop returns to idle. Counts
+    /// against nothing.
+    Aborted,
 }
 
 /// Names a provider attaches to failures that a retry cannot change: quota and

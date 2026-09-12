@@ -131,6 +131,16 @@ pub(super) async fn peek_completion(
             client.upstream_retry().clear(RetrySurface::Peek);
             return Ok(completion);
         };
+        if completion.operator_abort() {
+            // The operator interrupted during the peek (docs/control-channel.md):
+            // the verdict is withheld, and the latch the press set stops the turn
+            // at the next juncture.
+            record
+                .retries
+                .push(format!("peek ended by the operator: {why}"));
+            client.upstream_retry().clear(RetrySurface::Peek);
+            return Err("peek ended by the operator's interrupt".to_string());
+        }
         aborted += 1;
         if completion.terminal_failure().is_some() {
             // Named by the provider as unretryable (`api/failure.rs`): withhold now

@@ -53,9 +53,9 @@ impl SessionRuntime {
     /// runtime. Handlers and watchers share `Session` through `Arc` as before.
     pub fn start<S: Spotter + Send + 'static>(boot: SessionBoot<S>, parent: &Swansong) -> Self {
         let SessionBoot {
-            client,
+            mut client,
             toolbox,
-            distiller,
+            mut distiller,
             spotter,
             log,
             paths,
@@ -117,6 +117,11 @@ impl SessionRuntime {
         // The per-request usage record (docs/log-and-projection.md) lives beside the
         // canonical log in the explicitly supplied storage directory.
         session.attach_usage_log(&paths.usage_log());
+        // The operator's interrupt ends a generation in flight (docs/control-channel.md):
+        // the agent client and the own-triage client both read against it. The
+        // spotter does not — an interrupt during a gate is the tool's kill.
+        client.set_abort(session.interrupt_signal());
+        distiller.set_abort(session.interrupt_signal());
         // Share the client between the loop and the keepalive task. `tools` is computed
         // once here for the ping; `agent::run` recomputes the same (byte-stable,
         // docs/log-and-projection.md) definitions internally, so both send an

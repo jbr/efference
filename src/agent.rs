@@ -432,6 +432,24 @@ pub async fn run<F: Frontend, S: Spotter>(
                         let Some(why) = completion.upstream_failure().map(str::to_string) else {
                             break Some(completion);
                         };
+                        if completion.operator_abort() {
+                            // The operator ended the generation (docs/control-channel.md).
+                            // What streamed is kept as the record-only entry an aborted
+                            // attempt writes, the retry budget is untouched, and the
+                            // trajectory returns to idle: unlike a killed tool there is
+                            // no result to continue from. The latch this press set is
+                            // consumed here, so the next turn's first call is not stopped
+                            // by it.
+                            turn += 1;
+                            shared.record_request(
+                                RequestOrigin::AbortedAttempt,
+                                completion.request_usage(),
+                            );
+                            shared.append(turn, completion.assistant)?;
+                            shared.take_interrupt();
+                            eprintln!("[generation ended by the operator]");
+                            break None;
+                        }
                         aborted_attempts += 1;
                         turn += 1;
                         shared.record_request(

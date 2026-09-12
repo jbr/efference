@@ -10,6 +10,7 @@ behind a change, see [`journal/`](journal/).
 ### Added
 - **Host-owned inference connections** (docs/transport.md, docs/operating.md): `efference host` loads named provider connections from `~/.efference/config.toml` (required) and their credentials from its own startup environment (`env` key or the Codex cache), once; a session selects `<connection>/<native model>` per role — main, spotter, and an own-client triage that must share the main dialect — with `[defaults]` filling omissions. Host secrets are masked by name in every session that holds them and never enter a child environment; `session_identity.inference` reports each role's connection, and the TUI sidebar and web top bar show it.
 
+- **Interrupt ends a generation in flight** (docs/control-channel.md): `POST /loop/interrupt` — the TUI's second `Esc`, `efference control interrupt`, the MCP tool — now also ends a model read that is streaming or hung: the stream is dropped, what streamed is kept as a record-only entry marked `Aborted` (counted against no retry budget), and the loop returns to idle where a queued turn lands at once. An interrupted own-model peek withholds its verdict.
 - **`--name` reaches hosted sessions** (docs/control-channel.md): `tui`, `control`, and `mcp` resolve a name to its own socket or to `/sessions/<id>` on the host, and discovery counts hosted sessions; a name nothing serves is an error, and the TUI connects before taking the terminal instead of opening an empty screen.
 
 ### Removed

@@ -261,6 +261,12 @@ pub struct Client {
     /// so it cannot move the cached prefix. Both stream surfaces ride it: the
     /// turn loop and the fork peek call the same [`Self::complete`].
     stream_ceiling: Duration,
+    /// The operator's interrupt, when this client's reads answer to one
+    /// (docs/control-channel.md): `POST /loop/interrupt` fires it, and a read in
+    /// flight ends there — the stream is dropped, which is what frees a hung
+    /// socket, and the partial comes back marked [`FailureClass::Aborted`].
+    /// `None` for clients nothing interrupts (the spotter, the dev verbs).
+    abort: Option<Arc<tokio::sync::Notify>>,
     /// The session's effort level, when one is set (docs/transport.md). Rides
     /// the shared envelope only — [`Self::complete`], which both the turn loop
     /// and the fork peek call, so the peek's prefix still matches the agent
@@ -387,6 +393,7 @@ impl Client {
             context_length: None,
             reservation: reservation_state(),
             stream_ceiling: DEFAULT_STREAM_CEILING,
+            abort: None,
             effort: None,
             upstream: None,
             prompt_cache: PromptCachePolicy::None,
@@ -570,6 +577,13 @@ impl Client {
     pub fn with_stream_ceiling(mut self, ceiling: Duration) -> Self {
         self.stream_ceiling = ceiling;
         self
+    }
+
+    /// Make this client's reads answer to the operator's interrupt
+    /// (docs/control-channel.md). Set by the runtime once the session exists,
+    /// on the agent client and the own-triage client alike.
+    pub fn set_abort(&mut self, abort: Arc<tokio::sync::Notify>) {
+        self.abort = Some(abort);
     }
 
     /// Raise the per-turn output budget to the model's reported cap
@@ -772,17 +786,36 @@ impl Client {
         // death: the partial is kept, `finish` folds the reason into the
         // completion's `upstream_failure`, and the caller's abort-retry budget
         // decides what happens next.
+        //
+        // The operator's interrupt (docs/control-channel.md) is the other way out:
+        // registered before the first read so a press between events is not lost
+        // (`notify_waiters` stores no permit), it ends the read the same way, and
+        // `Aborted` tells the caller not to retry.
+        let idle = Arc::new(tokio::sync::Notify::new());
+        let abort = self.abort.as_ref().unwrap_or(&idle).notified();
+        tokio::pin!(abort);
+        abort.as_mut().enable();
+        let mut operator_abort = false;
         let deadline = tokio::time::Instant::now() + self.stream_ceiling;
-        while let Some(event) = match tokio::time::timeout_at(deadline, events.next()).await {
-            Ok(event) => event,
-            Err(_) => {
-                let why = format!(
-                    "upstream SSE stream stayed open past the {}s ceiling without \
-                     finalizing ([transport] stream-ceiling)",
-                    self.stream_ceiling.as_secs()
-                );
-                log::error!("{why}");
+        while let Some(event) = tokio::select! {
+            next = tokio::time::timeout_at(deadline, events.next()) => match next {
+                Ok(event) => event,
+                Err(_) => {
+                    let why = format!(
+                        "upstream SSE stream stayed open past the {}s ceiling without \
+                         finalizing ([transport] stream-ceiling)",
+                        self.stream_ceiling.as_secs()
+                    );
+                    log::error!("{why}");
+                    assembler.fail(why);
+                    None
+                }
+            },
+            _ = &mut abort => {
+                let why = "generation ended by the operator's interrupt".to_string();
+                log::info!("{why}");
                 assembler.fail(why);
+                operator_abort = true;
                 None
             }
         } {
@@ -806,7 +839,13 @@ impl Client {
                 }
             }
         }
-        let completion = assembler.finish();
+        // Dropping the stream closes its connection: a hung socket is freed here,
+        // not when the provider decides.
+        drop(events);
+        let mut completion = assembler.finish();
+        if operator_abort && let Ok(completion) = &mut completion {
+            completion.failure_class = FailureClass::Aborted;
+        }
         // Anchor the next estimate to this response's exact prompt count
         // (`api/reservation.rs`). An attempt that died with zero usage
         // counted nothing and teaches nothing.

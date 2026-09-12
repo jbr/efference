@@ -219,9 +219,12 @@ identical wire produces anything but "I'm done" is an open question, and the
 daemon declines rather than spending a round-trip on it.
 
 #### `POST /loop/interrupt`
-Signal the running tool (the SIGINT equivalent; kills its process group). A
-verb-route on the loop resource because it *is* a verb — it signals, it doesn't
-delete state. No body.
+Stop what the loop is doing now: a running tool is signalled (the SIGINT
+equivalent; kills its process group) and the turn continues from its withheld
+result; a generation in flight is ended — the stream is dropped, what streamed is
+kept as a record-only entry, and the loop returns to idle, where a queued turn
+lands at once. A no-op only when the loop is idle. A verb-route on the loop
+resource because it *is* a verb — it signals, it doesn't delete state. No body.
 
 - `200 {"status":"interrupted"}`
 

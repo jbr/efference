@@ -408,6 +408,17 @@ while it waits, and lands on `stall` if the budget runs out. It is never a silen
 kill. Because `complete` is the one read loop, **both** stream surfaces are
 bounded by it: a turn and a fork peek alike.
 
+The operator does not have to wait for it: `POST /loop/interrupt` (the TUI's
+second `Esc`) ends a read in flight the same way, marked `Aborted` rather than
+retryable, and the loop returns to idle ([control-channel.md](control-channel.md)).
+An unattended hang still waits on the ceiling. Two shorter clocks are possible
+and bound different hangs (backlog/hung-stream-abort.md): a transport-level idle
+timeout catches a dead socket, but OpenRouter's `: OPENROUTER PROCESSING`
+comment keepalives reset it — the decoder consumes them without yielding an
+event — so a live edge in front of a dead upstream is bounded only by a clock on
+*events*, which is safe on Messages (thinking streams as deltas) and not on
+Responses (Codex may send nothing while reasoning). Neither is implemented.
+
 The value is operator-set — `[transport] stream-ceiling`, in seconds, alongside
 `[bash]`'s knobs (`config::TransportLimits`) — because the right one is
 workload-dependent: a long think and a hung gateway look identical from outside

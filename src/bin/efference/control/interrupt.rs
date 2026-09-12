@@ -6,9 +6,11 @@ use mcplease::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Kill the tool the session is running, and its process group. The turn continues
-/// from the killed call's result. No-op when nothing is mid-tool. To keep a
-/// long-running command instead of killing it, use `background`.
+/// Stop what the session is doing now. A running tool is killed with its process
+/// group and the turn continues from the killed call's result; a generation in
+/// flight is ended and the loop returns to idle, where a queued turn lands at once.
+/// No-op only when the loop is idle. To keep a long-running command instead of
+/// killing it, use `background`.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "interrupt")]
 pub struct Interrupt {

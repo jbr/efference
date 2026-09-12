@@ -203,8 +203,9 @@ pub struct Session {
     /// The single pending approval, surfaced by `GET /state` (the loop is
     /// sequential — one gate at a time, docs/README.md).
     pending: Mutex<Option<Pending>>,
-    /// Fired by `POST /loop/interrupt`; the future `interrupted()` races a running tool.
-    interrupt: Notify,
+    /// Fired by `POST /loop/interrupt`; the future `interrupted()` races a running tool,
+    /// and the agent client's read loop races it against the stream (docs/control-channel.md).
+    interrupt: Arc<Notify>,
     /// The **latched** half of `POST /loop/interrupt` (docs/control-channel.md). `Notify::notify_waiters`
     /// wakes only a *currently registered* waiter and stores no permit, so during a call no backend
     /// awaits the abort future — every non-bash tool (`src/tools.rs`) — the wakeup has nowhere to
@@ -607,7 +608,7 @@ impl Session {
             turns_tx,
             approvals: Mutex::new(HashMap::new()),
             pending: Mutex::new(None),
-            interrupt: Notify::new(),
+            interrupt: Arc::new(Notify::new()),
             interrupt_latch: AtomicBool::new(false),
             detach: Notify::new(),
             detach_note: Mutex::new(None),

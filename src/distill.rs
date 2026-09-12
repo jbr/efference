@@ -240,6 +240,14 @@ struct OwnPeek {
 pub const PEEK_MAX_OUTPUT: u64 = 16_384;
 
 impl ForkPeek {
+    /// Make the own-model peek's reads answer to the operator's interrupt
+    /// (docs/control-channel.md); the shared peek already rides the agent client.
+    pub fn set_abort(&mut self, abort: std::sync::Arc<tokio::sync::Notify>) {
+        if let Some(own) = &mut self.own {
+            own.client.set_abort(abort);
+        }
+    }
+
     /// The shared-lineage peek: the agent's client and `tools[]`, borrowed per call.
     pub fn shared() -> Self {
         ForkPeek { own: None }

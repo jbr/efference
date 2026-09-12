@@ -2348,6 +2348,88 @@ async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
     server.join().unwrap();
 }
 
+/// The operator's interrupt ends a read in flight (docs/control-channel.md): the
+/// server holds an unfinalized stream open, the notifier fires, and `complete`
+/// returns at once with the partial marked `Aborted` — record-only like any
+/// aborted attempt, but a class the retry loops do not retry. The notifier is
+/// registered before the first read, so a press that lands between events is
+/// not lost to `notify_waiters`' no-permit semantics.
+#[tokio::test]
+async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let held = std::sync::Arc::clone(&done);
+    let server = std::thread::spawn(move || {
+        let (mut sock, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 8192];
+        let _ = sock.read(&mut buf);
+        let event = "event: message_start\ndata: {\"message\":{\"model\":\"m\",\
+                     \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
+        sock.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                 transfer-encoding: chunked\r\n\r\n{:x}\r\n{event}\r\n",
+                event.len()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        sock.flush().unwrap();
+        sock.set_read_timeout(Some(std::time::Duration::from_millis(50)))
+            .unwrap();
+        while !held.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = sock.read(&mut buf);
+        }
+    });
+
+    let endpoint = Endpoint {
+        provider: Provider::Anthropic,
+        url: format!("http://{addr}/v1/messages"),
+        auth_header: "x-api-key".into(),
+        auth_value: "k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+    };
+    let interrupt = std::sync::Arc::new(tokio::sync::Notify::new());
+    let mut client = Client::new(endpoint, "m", "sys", None)
+        .with_stream_ceiling(std::time::Duration::from_secs(30));
+    client.set_abort(std::sync::Arc::clone(&interrupt));
+    let presser = std::sync::Arc::clone(&interrupt);
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        presser.notify_waiters();
+    });
+    let started = std::time::Instant::now();
+    let completion = client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .expect("an interrupt is not an open failure — it assembles a partial");
+    done.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "the read ended on the interrupt, not the ceiling"
+    );
+    assert!(completion.operator_abort());
+    assert_eq!(completion.failure_class, FailureClass::Aborted);
+    assert!(completion.terminal_failure().is_none());
+    let why = completion.upstream_failure().unwrap();
+    assert!(why.contains("interrupt"), "{why}");
+    assert!(
+        matches!(
+            &completion.assistant,
+            Payload::Assistant {
+                upstream_failure: Some(_),
+                ..
+            }
+        ),
+        "the partial is record-only"
+    );
+    server.join().unwrap();
+}
+
 /// End to end over a socket: the diagnostics come off the *response*, so the
 /// hook is in `complete` — the status handler cannot serve this path, an empty
 /// stream being a 200 it early-returns on. The server here answers exactly as a

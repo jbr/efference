@@ -212,6 +212,12 @@ impl Session {
         }
     }
 
+    /// The interrupt notifier, for a client whose reads should end on it
+    /// (`Client::set_abort`, docs/control-channel.md).
+    pub fn interrupt_signal(&self) -> Arc<Notify> {
+        Arc::clone(&self.interrupt)
+    }
+
     pub(super) fn interrupt(&self) {
         // Latch first, then wake: a bash tool racing the abort future must never
         // resolve and reach the loop's juncture check before the flag is visible.

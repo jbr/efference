@@ -84,18 +84,17 @@ impl<'a> InteractiveState<'a> {
 
     /// The interrupt step of graduated Esc (docs/tui.md): fire `POST /loop/interrupt`, which stops the
     /// loop at the next juncture and withholds the in-flight call's output from the model
-    /// (docs/control-channel.md) — plus, on a foreground bash, kills the running process group.
-    /// Reaches the one point pace can't (mid-tool). The hint names whichever promise applies, and
-    /// both end the same way: the operator's next message is what the model reads.
+    /// (docs/control-channel.md) — plus, on a foreground bash, kills the running process group;
+    /// with no call in flight it ends the generation itself. The hint names whichever promise
+    /// applies, and all end the same way: the operator's next message is what the model reads.
     pub(in crate::tui) fn esc_interrupt(&mut self) {
         let _ = self.interrupt_tx.send(Interrupt::Kill);
-        self.ui.debug_message = if self
-            .in_flight_call()
-            .is_some_and(|call| crate::bash::is_foreground_call(&call))
-        {
-            "interrupting — killing the running command · type to steer".into()
-        } else {
-            "interrupting — its output won't reach the model · type to steer".into()
+        self.ui.debug_message = match self.in_flight_call() {
+            Some(call) if crate::bash::is_foreground_call(&call) => {
+                "interrupting — killing the running command · type to steer".into()
+            }
+            Some(_) => "interrupting — its output won't reach the model · type to steer".into(),
+            None => "interrupting — ending this generation · type to steer".into(),
         };
         self.dirty = true;
     }

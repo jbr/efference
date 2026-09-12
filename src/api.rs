@@ -297,6 +297,12 @@ impl Completion {
             .flatten()
     }
 
+    /// Whether the operator ended this read (docs/control-channel.md): the partial
+    /// is a record-only entry like any aborted attempt, but nothing retries it.
+    pub fn operator_abort(&self) -> bool {
+        self.failure_class == FailureClass::Aborted && self.upstream_failure().is_some()
+    }
+
     /// This completion's [`RequestUsage`] — the per-request record the daemon persists.
     pub fn request_usage(&self) -> RequestUsage {
         RequestUsage {
