@@ -10,6 +10,9 @@ use serde_json::Value;
 
 mod process;
 mod upstream;
+
+#[cfg(test)]
+mod test;
 pub use process::{ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn};
 pub use upstream::{
     CAPTURED_HEADERS, FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord,
