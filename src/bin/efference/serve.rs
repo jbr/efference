@@ -1,4 +1,4 @@
-//! `efference serve` — boot the session dir, wire the toolbox, and run the daemon (docs/README.md).
+//! `efference host` — bind the control socket and host sessions created over it (docs/control-channel.md).
 
 use super::*;
 
@@ -77,59 +77,6 @@ pub(crate) fn resolve_bind(
     }))
 }
 
-pub(crate) async fn serve(
-    session_dir: PathBuf,
-    flags: SessionFlags,
-    bind_flags: BindFlags,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Resolve the bind first: a bad flag combination or a missing root should fail
-    // before a session dir is minted or a provider is dialed.
-    let bind = resolve_bind(bind_flags)?;
-    let cwd = std::env::current_dir()?;
-    let base_env = efference::env_table::EnvSnapshot::capture()?;
-    let socket = session_dir.join(SOCKET_NAME);
-    let session_dir = cwd.join(session_dir);
-    // Daemon logging: RUST_LOG controls verbosity (default: efference at info, deps
-    // quiet). The transport (request sizes, full API error bodies), the agent loop
-    // (capped tool results), and the distiller (fork-peek fallbacks) emit through `log`.
-    // `try_init` so a second `serve` in-process (tests) doesn't panic.
-    let _ = env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("warn,efference=info"),
-    )
-    .try_init();
-
-    let triage = flags.triage();
-    let model = flags.model().to_string();
-    let SessionFlags {
-        spotter_model,
-        config,
-        temperature,
-        effort,
-        upstream,
-        autonomous,
-        reauth,
-        keep_scratch,
-        ..
-    } = flags;
-    let boot = efference::boot::prepare(efference::boot::SessionRequest {
-        cwd,
-        base_env,
-        session_dir,
-        config,
-        model,
-        spotter_model,
-        triage,
-        temperature,
-        effort,
-        upstream,
-        autonomous,
-        reauth,
-        keep_scratch,
-    })
-    .await?;
-    daemon::serve(boot, socket, bind).await
-}
-
 /// Every mounted tool name, dotted — what the tester prints when `--tool` names
 /// something no provider owns.
 #[cfg(feature = "dev")]
@@ -160,7 +107,7 @@ pub(crate) async fn spotter_check(
     scope: Option<String>,
     watch_for: Vec<String>,
     paths: Vec<String>,
-    model: &str,
+    model: Option<&str>,
     probe: Option<String>,
     tool: Option<String>,
     input: String,
@@ -210,14 +157,14 @@ pub(crate) async fn spotter_check(
     let toolbox = match &tool {
         Some(_) => {
             let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), None)?;
-            // Unlike `serve`, a mount failure is fatal here: the whole point is judging
+            // Unlike a session boot, a mount failure is fatal here: the whole point is judging
             // against that server's real definition, and a skipped mount would silently
             // downgrade the check to a name with no brief.
             for (name, server) in &role.mcp_servers {
                 toolbox
                     // No stored credentials and no dance: a spotter check must
                     // never open a browser (docs/mcp-auth.md). A server needing
-                    // authorization fails here, pointing at `efference serve`.
+                    // authorization fails here, pointing at a hosted session.
                     .mount_connected(name, &server.transport, &cwd, None)
                     .await
                     .map_err(|e| format!("could not mount `{name}`: {e}"))?;
@@ -271,7 +218,7 @@ pub(crate) async fn spotter_check(
     // Credentials are resolved last, after the config, the mount, and the brief: a typo'd
     // tool name or an unreachable server should fail on its own terms, and the move
     // preview is useful with no key at all.
-    let endpoint = efference::api::Endpoint::from_env()?;
+    let (model, endpoint) = crate::inference::spotter_endpoint(model)?;
     let spotting = ForkSpot::new(endpoint, model)
         .with_cwd(cwd)
         .assess(&role, &call, sent, probe.as_deref())
@@ -304,22 +251,21 @@ pub(crate) async fn spotter_check(
     Ok(())
 }
 
-/// The host socket's name under the base dir: one per hosting process, beside
-/// the session dirs it creates (docs/control-channel.md).
-pub(crate) const HOST_SOCKET_NAME: &str = "host.sock";
-
 /// `efference host`: a hosting process with no sessions until `POST /sessions`.
 pub(crate) async fn host(bind_flags: BindFlags) -> CliResult {
     let bind = resolve_bind(bind_flags)?;
     // The socket keeps its relative spelling (Darwin's socket path limit); the
     // base dir is created so the bind has somewhere to land.
     std::fs::create_dir_all(BASE_DIR)?;
-    let socket = Path::new(BASE_DIR).join(HOST_SOCKET_NAME);
+    let socket = host_socket();
     let _ = std::fs::remove_file(&socket);
     let _ = env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("warn,efference=info"),
     )
     .try_init();
-    daemon::serve_host(efference::daemon::Host::new(), socket, bind).await?;
+    let host_cwd = std::env::current_dir()?;
+    let host_env = efference::env_table::EnvSnapshot::capture()?;
+    let inference = efference::inference::InferenceRegistry::load(&host_cwd, host_env)?;
+    daemon::serve_host(efference::daemon::Host::new(inference), socket, bind).await?;
     Ok(())
 }

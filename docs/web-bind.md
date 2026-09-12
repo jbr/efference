@@ -1,6 +1,6 @@
 # The TCP bind — the web client's front door
 
-`efference serve --bind <addr:port>` adds a TCP listener beside the Unix socket. Both
+`efference host --bind <addr:port>` adds a TCP listener beside the Unix socket. Both
 serve the same `/v1` routes ([control-api.md](control-api.md)); the TCP listener wraps
 them in a hardening + auth gate, while the UDS stays auth-exempt (filesystem permissions
 are its trust model) and remains the CLI verbs' channel. Implemented in
@@ -104,12 +104,11 @@ The gate is the enforcement; the strip closes the accident.)
 
 ## The bootstrap dance
 
-`serve --bind` prints `https://<host>:<port>/#token=<current code>`; `--open` also
+`host --bind` prints `https://<host>:<port>/#token=<current code>`; `--open` also
 launches the browser. `efference dev open` re-mints against a running daemon — the re-auth
 path when at the host, and the answer to lost scrollback. It is a `dev` verb rather than a
 `control` tool because it mints credentials for the HTTP surface, and `control` is the set
-`efference mcp` exposes to whatever mounts it; the re-mint is expected to move into the TUI
-or `serve` when host and serve merge. The code rides the URL
+`efference mcp` exposes to whatever mounts it; the re-mint is expected to move into the TUI. The code rides the URL
 *fragment*: it never reaches server or proxy logs, and burned codes make
 browser-history residue inert. The web client's login view
 ([web-client.md](web-client.md), `web/src/ui/Login.tsx`) reads the hash,

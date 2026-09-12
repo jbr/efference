@@ -4,16 +4,15 @@ use super::*;
 
 /// The provider endpoint (docs/transport.md): the URL, auth header name, and
 /// scheme prefix all derived from the declared [`Provider`] rather than
-/// configured separately. Resolved once at boot and shared by the agent
-/// [`Client`] and the fork's spotter client, so both hit the same endpoint over
-/// the same cached prefix.
+/// configured separately. Built once per host connection from resolved
+/// credentials and cloned per session and role.
 ///
-/// `session_id` is attached after resolution, by the daemon's `serve`, and is
-/// absent in offline verbs that have no conversation to pin. Whether it actually
+/// `session_id` is attached by boot, per session and role, and is absent in
+/// offline verbs that have no conversation to pin. Whether it actually
 /// rides a request is the *provider's* call ([`Provider::session_header`]) — the
 /// field carries this session's key regardless, so the derivation stays in one
 /// place.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Endpoint {
     /// The declared API family — also the source of the model-metadata query
     /// (`Endpoint::fetch_capabilities`, docs/transport.md).
@@ -46,6 +45,19 @@ pub struct Endpoint {
     pub extra_headers: Vec<(String, String)>,
 }
 
+impl std::fmt::Debug for Endpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Endpoint")
+            .field("provider", &self.provider)
+            .field("url", &self.url)
+            .field("auth_header", &self.auth_header)
+            .field("auth_value", &"[redacted]")
+            .field("session_id", &self.session_id)
+            .field("extra_headers", &"[redacted]")
+            .finish()
+    }
+}
+
 /// Where Codex CLI caches its OAuth tokens: `$CODEX_HOME/auth.json`, default
 /// `~/.codex/auth.json`. Read, never written — refresh is Codex CLI's job.
 fn codex_auth_path(
@@ -59,16 +71,16 @@ fn codex_auth_path(
 }
 
 /// The access token and account id from Codex CLI's cache.
-fn codex_cached_credentials(
+pub(crate) fn codex_cached_credentials(
     cwd: &std::path::Path,
     read: &impl Fn(&str) -> Option<String>,
 ) -> Result<(String, String), Error> {
-    let path = codex_auth_path(cwd, read)
-        .ok_or("session environment has neither CODEX_HOME nor HOME to locate Codex credentials")?;
+    let path = codex_auth_path(cwd, read).ok_or(
+        "the host environment has neither CODEX_HOME nor HOME to locate Codex credentials",
+    )?;
     let text = std::fs::read_to_string(&path).map_err(|e| -> Error {
         format!(
-            "EFFERENCE_PROVIDER=openai-codex reads {}: {e}. Run `codex login` first, or set \
-             EFFERENCE_API_KEY (the access token) and EFFERENCE_CHATGPT_ACCOUNT_ID",
+            "could not read {}: {e}. Run `codex login` first",
             path.display()
         )
         .into()
@@ -168,148 +180,36 @@ fn truncate_on_char_boundary(s: &str, max: usize) -> &str {
     &s[..end]
 }
 
-/// The env knobs the provider enum replaced. Set ones are a hard error naming
-/// the replacement — silently ignoring them would post to a different URL than
-/// the operator's environment says (docs/transport.md).
-const RETIRED_KNOBS: [&str; 3] = [
-    "EFFERENCE_ENDPOINT",
-    "EFFERENCE_AUTH_HEADER",
-    "EFFERENCE_AUTH_PREFIX",
-];
-
 impl Endpoint {
-    /// Resolve the endpoint from the environment:
-    ///
-    /// - `EFFERENCE_PROVIDER` — `anthropic` (default when unset), `openrouter`, or `openai`.
-    /// - `EFFERENCE_API_KEY` — the **raw secret**, nothing else; header name and
-    ///   scheme prefix come from the provider.
-    ///
-    /// When `EFFERENCE_API_KEY` is absent, an `ANTHROPIC_API_KEY` fallback
-    /// covers the Anthropic provider only — an Anthropic key is the wrong
-    /// secret for any other provider, so failing early beats a confusing 401.
-    pub fn from_env() -> Result<Self, Error> {
-        Self::from_env_with(&std::collections::BTreeMap::new())
-    }
-
-    /// [`from_env`](Self::from_env) with the config's resolved `[env]` values
-    /// consulted **first** (docs/env.md): the harness's own credential can be an
-    /// `op://…` reference in `efference.toml` rather than a variable the process
-    /// was launched with, and an explicit config entry beats an ambient
-    /// variable. The value is masked either way — by construction for a resolved
-    /// reference, and by `env_table::HARNESS_KEY_VARS` for the plain-variable
-    /// path, which this does not retire.
-    pub fn from_env_with(
-        resolved: &std::collections::BTreeMap<String, String>,
+    /// Construct an endpoint from credentials the host resolved. The endpoint
+    /// remains provider-derived: callers supply neither a URL nor an auth-header
+    /// shape.
+    pub fn from_credentials(
+        provider: Provider,
+        token: String,
+        account_id: Option<String>,
     ) -> Result<Self, Error> {
-        Self::from_snapshot(
-            &std::env::current_dir()?,
-            &crate::env_table::EnvSnapshot::capture()?,
-            resolved,
-        )
-    }
-
-    /// Provider setup from a complete caller environment, never host fallback (docs/env.md).
-    pub fn from_snapshot(
-        cwd: &std::path::Path,
-        base: &crate::env_table::EnvSnapshot,
-        resolved: &std::collections::BTreeMap<String, String>,
-    ) -> Result<Self, Error> {
-        assert!(cwd.is_absolute(), "provider cwd must be absolute");
-        let read = |name: &str| {
-            resolved
-                .get(name)
-                .cloned()
-                .or_else(|| base.get(name).map(str::to_owned))
-        };
-        for knob in RETIRED_KNOBS {
-            if read(knob).is_some() {
-                return Err(format!(
-                    "{knob} is no longer read: the provider is declared, not assembled — \
-                     set EFFERENCE_PROVIDER=anthropic|openrouter|openai and unset {knob} \
-                     (docs/transport.md)"
-                )
-                .into());
-            }
-        }
-        let provider = read("EFFERENCE_PROVIDER");
-        if Provider::parse(provider.as_deref())? == Provider::OpenAICodex {
-            let (token, account) = match (
-                read("EFFERENCE_API_KEY"),
-                read("EFFERENCE_CHATGPT_ACCOUNT_ID"),
-            ) {
-                (Some(token), Some(account)) => (token, account),
-                (Some(_), None) => {
-                    return Err(
-                        "EFFERENCE_PROVIDER=openai-codex with EFFERENCE_API_KEY also \
-                                needs EFFERENCE_CHATGPT_ACCOUNT_ID (or unset both to read \
-                                ~/.codex/auth.json)"
-                            .into(),
-                    );
-                }
-                (None, _) => codex_cached_credentials(cwd, &read)?,
-            };
-            let mut endpoint = Self::resolve(provider, Some(token), None)?;
-            endpoint
-                .extra_headers
-                .push(("ChatGPT-Account-ID".to_string(), account));
-            return Ok(endpoint);
-        }
-        Self::resolve(
-            provider,
-            read("EFFERENCE_API_KEY"),
-            read("ANTHROPIC_API_KEY"),
-        )
-    }
-
-    /// The pure core of [`Self::from_env`], factored out so provider parsing,
-    /// key precedence, and header assembly are unit-testable without touching
-    /// process env.
-    pub(super) fn resolve(
-        provider: Option<String>,
-        api_key: Option<String>,
-        anthropic_key: Option<String>,
-    ) -> Result<Self, Error> {
-        let provider = Provider::parse(provider.as_deref())?;
-        let key = match (provider, api_key, anthropic_key) {
-            (_, Some(key), _) => key,
-            (Provider::Anthropic, None, Some(key)) => key,
-            (Provider::OpenRouter, None, Some(_)) => {
-                return Err("EFFERENCE_PROVIDER=openrouter needs EFFERENCE_API_KEY (an \
-                            OpenRouter `sk-or-…` secret); ANTHROPIC_API_KEY is the wrong \
-                            credential for OpenRouter"
-                    .into());
-            }
-            (Provider::OpenAI, None, Some(_)) => {
-                return Err(
-                    "EFFERENCE_PROVIDER=openai needs EFFERENCE_API_KEY (an OpenAI \
-                            `sk-…` secret); ANTHROPIC_API_KEY is the wrong credential for \
-                            OpenAI"
-                        .into(),
-                );
-            }
-            (Provider::OpenAICodex, None, Some(_)) => {
-                return Err(
-                    "EFFERENCE_PROVIDER=openai-codex needs a Codex access token \
-                            (from ~/.codex/auth.json or EFFERENCE_API_KEY); ANTHROPIC_API_KEY \
-                            is the wrong credential"
-                        .into(),
-                );
-            }
-            (_, None, None) => {
-                return Err("no API credentials: set EFFERENCE_API_KEY (with \
-                            EFFERENCE_PROVIDER=anthropic|openrouter|openai), or ANTHROPIC_API_KEY \
-                            for the default Anthropic provider"
-                    .into());
-            }
-        };
-        Ok(Self {
+        let mut endpoint = Self {
             provider,
             url: provider.messages_url().to_string(),
             auth_header: provider.auth_header().to_string(),
-            auth_value: format!("{}{}", provider.auth_prefix(), key),
+            auth_value: format!("{}{}", provider.auth_prefix(), token),
             session_id: None,
             extra_headers: Vec::new(),
-        })
+        };
+        match (provider, account_id) {
+            (Provider::OpenAICodex, Some(account)) => endpoint
+                .extra_headers
+                .push(("ChatGPT-Account-ID".to_string(), account)),
+            (Provider::OpenAICodex, None) => {
+                return Err("openai-codex credentials need a ChatGPT account ID".into());
+            }
+            (_, Some(_)) => {
+                return Err("only openai-codex credentials accept a ChatGPT account ID".into());
+            }
+            (_, None) => {}
+        }
+        Ok(endpoint)
     }
 
     /// The same endpoint under a **distinct** sticky key, for the spotter's client

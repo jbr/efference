@@ -39,7 +39,7 @@ Implemented in `src/env_table.rs` (the table, precedence, the child-env policy),
 
 ## Session base environment
 
-Local `serve` captures the caller's environment once, before reference resolution
+A local creation captures the caller's environment once, before reference resolution
 or provider lookup, as an `EnvSnapshot`. It retains the already-applied shell and
 direnv values; it does not load shell configuration or run direnv itself.
 `EnvSnapshot::new` accepts a complete map for callers preparing sessions in-process.
@@ -61,10 +61,11 @@ before table values have been resolved, and never inherit additional host values
 
 Later config edits reevaluate masking against the retained base, not the host's
 current environment; reference commands continue using the same base and cwd.
-Standalone/offline convenience constructors still capture the local environment
-at construction. This is not a local-host creation protocol yet: transmitting the
-snapshot to a host belongs to the session-creation operation. Remote environment
-recipes are not implemented.
+Offline convenience constructors still capture the local environment at
+construction. `tui --new` captures the caller's snapshot and sends its entries
+in `CreateSession` over the host's Unix socket. The host constructs an `EnvSnapshot`
+from those entries before preparation; the creation response does not echo them.
+Remote creation is refused; remote environment recipes are not implemented.
 
 ## Threat model: accidental capture
 
@@ -134,7 +135,7 @@ body, and frames); `ToolResult`'s
 One string is masked *before* the append as well as at it: the boot preamble.
 It both rides the request's `system` field and is snapshotted into the log, and
 the point of the `Preamble` entry is that those two are byte-identical
-([context.md](context.md)) — so `serve` masks the resolved `[context]` listing
+([context.md](context.md)) — so boot masks the resolved `[context]` listing
 and the rendered `system` string, and the choke point's re-scan is then a no-op.
 
 ### It is not a `WireState`
@@ -227,10 +228,6 @@ Disabling is possible, but only by saying `mask = false`.
 
 Never file order: TOML tables are semantically unordered.
 
-Efference's own upstream credential (`EFFERENCE_API_KEY`, `ANTHROPIC_API_KEY`)
-is masked with zero config and independently of the table, so overriding the
-`*_KEY` glob cannot silently unmask the key this process authenticates with.
-
 `EFFERENCE_ROOT_SECRET` is **not** a table entry ([web-bind.md](web-bind.md)).
 Its strip is hardcoded self-surface protection at the spawn sites, like the
 session-dir path deny: with it, a tool child could derive the bearer and drive
@@ -282,10 +279,10 @@ directly and replaces inheritance; it does not load shell configuration or diren
 daemon serves, and again whenever a config edit is adopted; the cache is keyed by
 command string and lives for the session. That makes a vault prompt (1Password's
 Touch ID) one predictable interaction at session open rather than a block inside
-a turn, and it means `serve` — which resolves the origin table to find its own
-credential and then the identical session snapshot — prompts once, not twice.
+a turn, and it means the config edit that re-adopts an unchanged reference does
+not prompt again.
 
-**Failure is loud.** At boot, an unresolvable reference fails `serve` with the
+**Failure is loud.** At boot, an unresolvable reference fails creation with the
 reference string in the error (a pointer is safe to print). At config-edit time
 the failure is announced to the session on its own notification slot, with the
 rest of the edit adopted. What it is never allowed to be is silent: a value that
@@ -294,19 +291,22 @@ nothing connecting the two.
 
 Injection, like strip, is **fixed at boot** with the spawn sites that hold it, so
 a reference added by a config edit is resolved (and masked) immediately but
-reaches children on the next `serve`. The machine root is not injectable for the
+reaches children on the next session. The machine root is not injectable for the
 same reason it is always stripped.
 
-The harness's own credential rides this resolver: `EFFERENCE_API_KEY` /
-`ANTHROPIC_API_KEY` / `EFFERENCE_PROVIDER` are read from the resolved table
-first and from the captured base environment second, so the key can be an `op://`
-reference in the config instead of a variable the process was launched with. It
-does **not** retire the unconditional own-key masking below — the key can still
-arrive as a plain variable (`op run`, direnv, an exported shell variable), and on
-that path the `HARNESS_KEY_VARS` list is the only thing that masks it.
+A session's inference credential does **not** ride this resolver: the host holds
+it ([transport.md](transport.md)). The selected roles' secrets are registered
+with the session masker by `Masker::absorb_secret` before the first append, under a
+marker that names the connection and source (`⟦work (WORK_KEY): elided by harness⟧`)
+with no value prefix and no minimum length — a short credential is still a
+credential. They are never injected: not into the snapshot, the child environment,
+the log, `[context]` output, state, or the creation response. No `[env]` variable
+selects a provider or key: an `ANTHROPIC_API_KEY` there is an ordinary tool
+credential the project injects, masked by the `*_KEY` glob like any other. Host
+ownership does not make the snapshot secret-free — a caller's shell can carry any
+project secret — and it does not sandbox an agent with the same user's shell
+access; it keeps the host's keys out of what the session emits.
 
-Codex cache lookup follows the same lookup order for `CODEX_HOME`, then `HOME`
-for the default `.codex/auth.json`. Relative paths are joined to the session cwd.
 If neither home variable is present, cache lookup fails rather than consulting the
 host account's home directory. Explicit token/account values still bypass the cache.
 

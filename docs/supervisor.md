@@ -74,7 +74,7 @@ are recycled and the log is durable — a logged pid stops resolving after reuse
 resumption, or a reboot.
 
 The mint counter **seeds from the log at boot** (`max_handle_mention` over each
-serialized entry). Today that scan always runs over an empty log — `serve` mints
+serialized entry). Today that scan always runs over an empty log — creation mints
 a fresh session dir and refuses an existing one ([control-channel](control-channel.md)),
 so no boot ever starts from a prior session's entries; the seeding is what would
 keep a resumed daemon from re-minting an id the durable record already refers to.

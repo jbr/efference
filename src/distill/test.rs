@@ -1356,11 +1356,12 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
 /// only the two peek tools.
 #[test]
 fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
-    let resolved = std::collections::BTreeMap::from([(
-        "ANTHROPIC_API_KEY".to_string(),
-        "sk-ant-xyz".to_string(),
-    )]);
-    let endpoint = crate::api::Endpoint::from_env_with(&resolved).unwrap();
+    let endpoint = crate::api::Endpoint::from_credentials(
+        crate::api::Provider::Anthropic,
+        "sk-ant-xyz".into(),
+        None,
+    )
+    .unwrap();
     let agent = Client::new(endpoint.clone(), "big", "sys", None);
     let agent_tools = vec![json!({"name": "read"}), retain_tool(), triage_tool()];
 

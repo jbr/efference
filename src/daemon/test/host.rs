@@ -26,6 +26,28 @@ impl Drop for Roots {
 }
 
 /// The host's socket stack over `host`, as `serve_host` mounts it.
+/// A host registry with one env-backed connection, so creation gets past role
+/// resolution and into `boot::prepare`. The credential never reaches a provider:
+/// every case here fails before the first request.
+fn one_connection_registry() -> crate::inference::InferenceRegistry {
+    let config = crate::inference::InferenceConfig::from_toml(
+        r#"
+[defaults]
+model = "test/m"
+
+[connections.test]
+provider = "anthropic"
+auth = { kind = "env", key = "TEST_KEY" }
+"#,
+    )
+    .unwrap();
+    let env = crate::env_table::EnvSnapshot::new(
+        [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
+    )
+    .unwrap();
+    crate::inference::InferenceRegistry::from_config(config, Path::new("/host"), env).unwrap()
+}
+
 async fn host_server(host: &Arc<Host>, create: bool) -> TestServer<impl trillium::Handler> {
     let host = Arc::clone(host);
     TestServer::new((
@@ -67,7 +89,7 @@ fn json(body: &str) -> Value {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_host_routes_each_prefix_to_its_own_session() {
     let roots = Roots::new();
-    let host = Host::new();
+    let host = Host::new(crate::inference::InferenceRegistry::empty());
     for label in ["one", "two"] {
         let runtime = SessionRuntime::start(runtime::boot(&roots.0.join(label)), host.swansong());
         host.adopt(label.into(), runtime);
@@ -137,7 +159,7 @@ async fn a_host_routes_each_prefix_to_its_own_session() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_prefixed_client_streams_its_sessions_events() {
     let roots = Roots::new();
-    let host = Host::new();
+    let host = Host::new(crate::inference::InferenceRegistry::empty());
     let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
     let session = Arc::clone(runtime.session());
     host.adopt("one".into(), runtime);
@@ -172,7 +194,7 @@ async fn a_prefixed_client_streams_its_sessions_events() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn creation_validates_its_body_and_is_socket_only() {
     let roots = Roots::new();
-    let host = Host::new();
+    let host = Host::new(one_connection_registry());
     host.adopt(
         "one".into(),
         SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong()),
@@ -181,7 +203,7 @@ async fn creation_validates_its_body_and_is_socket_only() {
     let base = |name: &str, cwd: &Path| {
         serde_json::json!({
             "name": name, "cwd": cwd, "model": "m",
-            "env": {"EFFERENCE_PROVIDER": "anthropic", "EFFERENCE_API_KEY": "k"},
+            "env": {"HOME": "/h"},
         })
     };
     let cases: Vec<(Value, &str)> = vec![
@@ -219,6 +241,201 @@ async fn creation_validates_its_body_and_is_socket_only() {
         .await
         .assert_status(403)
         .assert_body_contains("Unix socket only");
+
+    host.swansong().shut_down().await;
+}
+
+/// Two hosted sessions select different provider/auth/model tuples from the one
+/// host registry, `session_identity` names every role by connection, a triage
+/// selection on a foreign dialect is refused before anything is minted, and the
+/// host's credentials reach neither the log, the state, nor a tool child's
+/// environment (docs/transport.md, docs/env.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hosted_sessions_select_roles_from_the_host_registry() {
+    let roots = Roots::new();
+    let home = roots.0.join("home");
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    std::fs::write(
+        home.join(".codex/auth.json"),
+        serde_json::json!({
+            "tokens": {"access_token": "codex-canary-token", "account_id": "acct-1"}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let config_path = home.join(".efference/config.toml");
+    std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &config_path,
+        r#"
+[defaults]
+model = "codex/gpt-5.6-terra"
+
+[connections.codex]
+provider = "openai-codex"
+auth = { kind = "codex-cache" }
+
+[connections.platform]
+provider = "openai"
+auth = { kind = "env", key = "PLATFORM_KEY" }
+
+[connections.messages]
+provider = "anthropic"
+auth = { kind = "env", key = "MESSAGES_KEY" }
+"#,
+    )
+    .unwrap();
+    let host_env = crate::env_table::EnvSnapshot::new(
+        [
+            ("HOME".to_string(), home.to_string_lossy().into_owned()),
+            (
+                "PLATFORM_KEY".to_string(),
+                "platform-canary-secret".to_string(),
+            ),
+            (
+                "MESSAGES_KEY".to_string(),
+                "messages-canary-secret".to_string(),
+            ),
+        ]
+        .into(),
+    )
+    .unwrap();
+    let registry =
+        crate::inference::InferenceRegistry::load(&roots.0, host_env).expect("host registry");
+    let host = Host::new(registry);
+    let server = host_server(&host, true).await;
+
+    // Each project's `[context]` runs `env` in a tool child, so a host secret that
+    // leaked into the child environment would land — masked — in the boot preamble.
+    for label in ["one", "two"] {
+        std::fs::write(
+            roots.0.join(label).join("efference.toml"),
+            "scope = 'test'\ntools = ['read']\n[paths]\n'.' = true\n[context]\nChildEnv = { exec = \"env\" }\n",
+        )
+        .unwrap();
+    }
+    let caller_env = serde_json::json!({
+        "HOME": roots.0.join("caller-home"),
+        "PATH": std::env::var("PATH").unwrap_or_default(),
+    });
+
+    server
+        .post("/sessions")
+        .with_json_body(&serde_json::json!({
+            "name": "a", "cwd": roots.0.join("one"), "env": caller_env,
+        }))
+        .await
+        .assert_status(201);
+    server
+        .post("/sessions")
+        .with_json_body(&serde_json::json!({
+            "name": "b", "cwd": roots.0.join("two"), "env": caller_env,
+            "model": "platform/gpt-5.6",
+            "spotter_model": "codex/gpt-5.6-luna",
+            "triage": {"model": "platform/gpt-5.6-luna"},
+        }))
+        .await
+        .assert_status(201);
+
+    let state_a = server.get("/sessions/a/v1/state").await;
+    state_a.assert_status(200);
+    let body_a = state_a.body().to_string();
+    assert_eq!(
+        json(&body_a)["session_identity"]["inference"],
+        serde_json::json!({
+            "main": {"connection": "codex", "provider": "openai-codex", "model": "gpt-5.6-terra"},
+            "spotter": {"connection": "codex", "provider": "openai-codex", "model": "gpt-5.6-luna"},
+            "triage": {"shared": true, "connection": "codex", "provider": "openai-codex", "model": "gpt-5.6-terra"},
+        })
+    );
+    assert_eq!(json(&body_a)["session_identity"]["model"], "gpt-5.6-terra");
+    let state_b = server.get("/sessions/b/v1/state").await;
+    state_b.assert_status(200);
+    let body_b = state_b.body().to_string();
+    assert_eq!(
+        json(&body_b)["session_identity"]["inference"],
+        serde_json::json!({
+            "main": {"connection": "platform", "provider": "openai", "model": "gpt-5.6"},
+            "spotter": {"connection": "codex", "provider": "openai-codex", "model": "gpt-5.6-luna"},
+            "triage": {"shared": false, "connection": "platform", "provider": "openai", "model": "gpt-5.6-luna"},
+        })
+    );
+
+    // A triage on the Messages dialect cannot replay a Responses transcript: refused
+    // at resolution, naming both roles, before a session dir exists.
+    let refused = server
+        .post("/sessions")
+        .with_json_body(&serde_json::json!({
+            "name": "c", "cwd": roots.0.join("two"), "env": caller_env,
+            "triage": {"model": "messages/claude-haiku-4-5"},
+        }))
+        .await;
+    refused
+        .assert_status(400)
+        .assert_body_contains("dialects differ");
+    assert!(!roots.0.join("two/.efference/c").exists());
+    // A connection that exists but is unconfigured is named as such, not resolved
+    // on the default connection.
+    server
+        .post("/sessions")
+        .with_json_body(&serde_json::json!({
+            "name": "d", "cwd": roots.0.join("two"), "env": caller_env,
+            "model": "openrouter/anthropic/claude-sonnet-4-5",
+        }))
+        .await
+        .assert_status(400)
+        .assert_body_contains("not configured");
+
+    // Canaries: no host credential in state, the log (which holds the child's
+    // `env` output), or the session config. A secret that does reach a log by
+    // another route is masked by name, without a value prefix — for every role
+    // the session selected, and only those: session A never held the platform key.
+    let log = |cwd: &str, id: &str| {
+        std::fs::read_to_string(
+            roots
+                .0
+                .join(cwd)
+                .join(".efference")
+                .join(id)
+                .join(crate::boot::LOG_NAME),
+        )
+        .unwrap()
+    };
+    for haystack in [&body_a, &body_b, &log("one", "a"), &log("two", "b")] {
+        for canary in [
+            "codex-canary-token",
+            "platform-canary-secret",
+            "messages-canary-secret",
+            "PLATFORM_KEY",
+            "MESSAGES_KEY",
+        ] {
+            assert!(!haystack.contains(canary), "{canary} leaked:\n{haystack}");
+        }
+    }
+    host.session("a")
+        .unwrap()
+        .append(1, user("token codex-canary-token"))
+        .unwrap();
+    host.session("b")
+        .unwrap()
+        .append(
+            1,
+            user("token codex-canary-token and key platform-canary-secret"),
+        )
+        .unwrap();
+    let log_a = log("one", "a");
+    let log_b = log("two", "b");
+    assert!(
+        log_a.contains("token ⟦codex (Codex cache): elided by harness⟧"),
+        "{log_a}"
+    );
+    assert!(
+        log_b.contains(
+            "token ⟦codex (Codex cache): elided by harness⟧ and key \
+             ⟦platform (PLATFORM_KEY): elided by harness⟧"
+        ),
+        "{log_b}"
+    );
 
     host.swansong().shut_down().await;
 }

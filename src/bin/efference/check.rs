@@ -1,7 +1,7 @@
 //! `efference check` — validate a config template and enumerate the trust
 //! perimeter it establishes (docs/permissions.md, docs/context.md, docs/tools.md).
 //!
-//! The same two steps `serve` performs before it mints a session: parse and
+//! The same two steps boot performs before it mints a session: parse and
 //! validate the file (unknown keys, unsound `[commands]` keys, malformed
 //! `[context]` entries), then resolve every `[context]` entry from the current
 //! directory — a listed file that cannot be read, or an `exec` entry that fails,
@@ -11,7 +11,7 @@
 //! onboarding agent writes the grant with the tool table in front of it.
 //!
 //! Mounting reuses stored credentials (`auth::stored_header` against the same
-//! `FileStore` `serve` uses) and never runs the authorization dance: a server
+//! `FileStore` boot uses) and never runs the authorization dance: a server
 //! that answers `401` is reported as requiring authorization — run
 //! `efference serve` — and counts as not mounted. A required server that does
 //! not mount fails the check, same as boot; an `optional = true` one is

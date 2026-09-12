@@ -5,16 +5,15 @@
 //! running session, and `efference dev <verb>` for the instruments that develop the
 //! harness itself.
 //!
-//! `efference serve` opens a JSONL session log, binds the control socket, and runs
+//! `efference host` binds a control socket and creates sessions over it; each runs
 //! the agent loop with the HTTP-fed [`RemoteFrontend`] (docs/README.md, docs/control-channel.md):
 //! the socket is the singular authoritative input source — the first user turn
-//! arrives via `POST /turns`, not argv. `--model` defaults to the Haiku band, which keeps
-//! the blast radius of an unconfigured run cheap; an operator names the band they want.
+//! arrives via `POST /turns`, not argv. `--model` selects from the host's
+//! configured connections; omitted, the host's default applies.
 //!
 //! [`RemoteFrontend`]: efference::daemon::RemoteFrontend
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use efference::api::Client;
@@ -36,32 +35,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // lazily, per arm, so an offline verb never triggers discovery.
     let name = cli.name.clone();
     let socket_override = cli.socket.clone();
-    let client_socket = || resolve_client_socket(name.as_deref(), socket_override.clone());
+    let client_target = || resolve_client_target(name.as_deref(), socket_override.clone());
     match cli.command {
-        Command::Serve {
-            session,
-            bind,
-            host,
-            tls_cert,
-            tls_key,
-            open,
-        } => {
-            // `serve` owns the session dir: `--name` or a generated timestamp id → `.efference/<id>/`,
-            // with the socket/log/config colocated inside.
-            let id = cli.name.unwrap_or_else(default_session_id);
-            serve(
-                session_dir(&id),
-                session,
-                serve::BindFlags {
-                    bind,
-                    host,
-                    tls_cert,
-                    tls_key,
-                    open,
-                },
-            )
-            .await
-        }
         Command::Host {
             bind,
             host,
@@ -78,10 +53,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })
             .await
         }
-        Command::Control(tools) => control::run_cli(tools, client_socket()?).await,
-        Command::Mcp => control::run_stdio(client_socket()?).await,
+        Command::Control(tools) => control::run_cli(tools, client_target().await?).await,
+        Command::Mcp => control::run_stdio(client_target().await?).await,
         #[cfg(feature = "dev")]
-        Command::Dev(command) => dev::run(command, name.clone(), client_socket).await,
+        Command::Dev(command) => dev::run(command, name.clone(), client_target).await,
         Command::Check { path } => check(path).await,
         Command::Tui {
             new: true,
@@ -91,8 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             images,
             frame_cost,
         } => {
-            let host_socket =
-                host_socket.unwrap_or_else(|| Path::new(BASE_DIR).join(serve::HOST_SOCKET_NAME));
+            let host_socket = host_socket.unwrap_or_else(cli::host_socket);
             tui_new(
                 host_socket,
                 cli.name.clone(),
@@ -116,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                      without it `tui` attaches to a running session"
                     .into());
             }
-            tui(client_socket()?, theme, images.into(), frame_cost).await
+            tui(client_target().await?, theme, images.into(), frame_cost).await
         }
     }
 }
@@ -127,7 +101,6 @@ use check::*;
 use cli::*;
 #[cfg(feature = "dev")]
 use paint::*;
-use serve::serve;
 use verbs::*;
 
 #[cfg(feature = "dev")]
@@ -137,6 +110,7 @@ mod cli;
 mod control;
 #[cfg(feature = "dev")]
 mod dev;
+mod inference;
 
 #[cfg(feature = "dev")]
 mod paint;

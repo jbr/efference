@@ -26,7 +26,7 @@ use std::time::{Duration, Instant, SystemTime};
 #[cfg(test)]
 mod test;
 
-/// The env var carrying the machine-scoped root secret. Required when `serve` is asked
+/// The env var carrying the machine-scoped root secret. Required when `host` is asked
 /// to bind TCP; irrelevant otherwise. It is stripped from every tool-child environment
 /// at the spawn sites — with it, a child could derive the bearer and drive its own
 /// approval gates.

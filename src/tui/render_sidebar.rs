@@ -69,16 +69,31 @@ impl<'a> InteractiveState<'a> {
         {
             put(buf, x0, y, max_w, "▾ SESSION", header);
             y += 1;
+            // Hosted: the main role is named by connection; the spotter and
+            // triage rows follow, since which account answers a permission check
+            // or a triage peek is as invisible in the transcript as the model.
+            let model = identity
+                .roles
+                .as_ref()
+                .map_or(identity.model.clone(), |roles| roles.main.clone());
             if y < bottom {
-                put(
-                    buf,
-                    x0 + 1,
-                    y,
-                    max_w.saturating_sub(1),
-                    &identity.model,
-                    text,
-                );
+                put(buf, x0 + 1, y, max_w.saturating_sub(1), &model, text);
                 y += 1;
+            }
+            if let Some(roles) = &identity.roles {
+                for (label, value) in [("spotter", &roles.spotter), ("triage", &roles.triage)] {
+                    if y < bottom {
+                        put(
+                            buf,
+                            x0 + 1,
+                            y,
+                            max_w.saturating_sub(1),
+                            &format!("{label} {value}"),
+                            muted,
+                        );
+                        y += 1;
+                    }
+                }
             }
             if y < bottom {
                 put(

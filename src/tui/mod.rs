@@ -355,6 +355,19 @@ pub(crate) struct SessionIdentityView {
     /// The working directory, already shortened against `$HOME` at parse time —
     /// derivation stays out of the render path, as with the usage stats.
     pub cwd: String,
+    /// The hosted role selections (`session_identity.inference`), or `None` for a
+    /// standalone session that has no connection catalog to name.
+    pub roles: Option<SessionRolesView>,
+}
+
+/// The three inference roles as the sidebar prints them: each a qualified
+/// `<connection>/<native model>`, derived at parse time so the renderer stays a
+/// pure function of state. Triage reads `shared` when it rides the main client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionRolesView {
+    pub main: String,
+    pub spotter: String,
+    pub triage: String,
 }
 
 /// One line in the sidebar's POLICY section: a committed grant, or a *proposed* one

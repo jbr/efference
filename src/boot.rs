@@ -9,16 +9,16 @@
 //! provider client, the spotter, and the fork peek. Listeners and the control
 //! socket are not prepared here; they belong to whoever runs the runtime.
 //!
-//! The CLI's `serve` builds a request from its flags and calls this; a host's
-//! session-creation handler builds the same request from a control-channel body.
-//! Boot progress is reported on stderr, which is the CLI's surface; a hosted
-//! creation will need that report returned instead (backlog/host-process.md).
+//! A host's session-creation handler builds the request from a control-channel
+//! body after resolving its role selections against the host's connections.
+//! Boot progress is reported on stderr, the host's surface; a hosted creation
+//! will need that report returned instead (backlog/host-process.md).
 
 use std::path::{Path, PathBuf};
 
 use crate::api::{Client, Error};
 use crate::daemon::SessionBoot;
-use crate::distill::{ForkPeek, TriageModel};
+use crate::distill::ForkPeek;
 use crate::persist::Log;
 use crate::spotter::ForkSpot;
 use crate::tools::Toolbox;
@@ -89,9 +89,9 @@ pub struct SessionRequest {
     pub session_dir: PathBuf,
     /// `--config`: the origin config to snapshot, or `None` for the default probe.
     pub config: Option<PathBuf>,
-    pub model: String,
-    pub spotter_model: Option<String>,
-    pub triage: Option<TriageModel>,
+    /// The resolved role selections: each role's endpoint and native model, and
+    /// the credential needles the session masker absorbs (docs/transport.md).
+    pub inference: crate::inference::SessionInference,
     pub temperature: Option<u8>,
     pub effort: Option<String>,
     pub upstream: Vec<String>,
@@ -110,9 +110,7 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
         base_env,
         session_dir,
         config,
-        model,
-        spotter_model,
-        triage,
+        inference,
         temperature,
         effort,
         upstream,
@@ -122,8 +120,8 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
     } = request;
     assert!(cwd.is_absolute(), "session cwd must be absolute");
     assert!(session_dir.is_absolute(), "session dir must be absolute");
-    let model = model.as_str();
-    let spotter_model = spotter_model.as_deref();
+    let (main_selection, mut endpoint) = inference.main();
+    let model = main_selection.model.as_str();
     // The origin config is read here — before the session dir is minted — because
     // its `[env]` table may supply the harness's own credential as a reference
     // (docs/env.md), and because a malformed template or an unresolvable
@@ -143,14 +141,9 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
         cwd.clone(),
         base_env.clone(),
     ));
-    let injected = resolve_env_values(&resolver, &origin.role.env)?;
-
-    // Provider resolution (docs/transport.md): the declared EFFERENCE_PROVIDER
-    // (default anthropic) implies the messages URL and auth shape; the secret arrives
-    // alone via EFFERENCE_API_KEY (or the ANTHROPIC_API_KEY fallback) so it can be a
-    // whole-value `op://…` reference — either resolved from `[env]` above, or
-    // substituted by `op run` into the process environment.
-    let mut endpoint = crate::api::Endpoint::from_snapshot(&cwd, &base_env, &injected)?;
+    // Every value is resolved here so a failing reference fails creation, before
+    // anything is minted; the policy below re-reads them from the shared cache.
+    resolve_env_values(&resolver, &origin.role.env)?;
 
     // The sticky-routing key (docs/transport.md): derived once here, from the session
     // dir, which is fixed for the session's life. It pins the session to one upstream
@@ -347,6 +340,7 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
     // In force before the first append — the boot `Preamble` below is the first
     // entry, and its `[context]` exec snapshot is exactly the kind of env capture
     // masking exists for.
+    inference.absorb_secrets(&env_policy.masker());
     log.set_masker(env_policy.masker());
     eprintln!("session dir: {}", session_dir.display());
     eprintln!("logging to {}", log_path.display());
@@ -474,25 +468,33 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
     client = client.with_context_window(capabilities.context_length);
     let client = client;
 
-    // The independent permission rung (docs/permissions.md): a fresh-context spotter
-    // on its own Haiku-band client, built from the same endpoint. It re-decides the calls
-    // the deterministic fast-path can't clear, before the human gate. It learns the
-    // scratch dir so its scope block can alias `$TMPDIR` to the granted path, and this
-    // session's cwd so relative grants and relative moves resolve the same way the
-    // deterministic rung resolves them. Its own
-    // sticky key (`for_spotter`): same endpoint, but a prefix the agent lineage never
-    // shares, so pointing both at one model doesn't pin them to one route.
-    // The spotter shares the endpoint, so its model must be one the provider serves:
-    // omitted, it is the provider's cheap band; explicit, it still passes the catalog
-    // check the main model already passed (docs/transport.md).
-    let spotter_model = spotter_model.unwrap_or_else(|| endpoint.provider.default_spotter_model());
-    eprintln!("spotter: {spotter_model}");
-    if endpoint.provider.uses_openai_catalog()
-        && let Err(e) = crate::api::openai_model_capabilities(spotter_model)
+    // The independent permission rung (docs/permissions.md) has its own connection
+    // and model. It keeps a distinct sticky key even when it shares the main
+    // connection.
+    let (spotter_selection, mut spotter_endpoint) = inference.spotter();
+    let spotter_model = spotter_selection.model.clone();
+    eprintln!(
+        "spotter: {}/{} ({})",
+        spotter_selection.connection, spotter_selection.model, spotter_selection.provider
+    );
+    spotter_endpoint.session_id = endpoint.session_id.clone();
+    // The spotter's model is validated against *its* provider's metadata source,
+    // not the main model's: a hosted spotter may sit on a different connection and
+    // dialect. Its own capabilities are not applied to its client today — the
+    // spotter sends a short fresh prompt with no thinking, effort, or temperature —
+    // so the lookup is the existence check that fails boot instead of the first
+    // permission decision.
+    if let Err(error) = spotter_endpoint
+        .fetch_capabilities(&spotter_model, &[])
+        .await
     {
-        return Err(format!("--spotter-model {spotter_model:?}: {e}").into());
+        return Err(format!(
+            "spotter model {spotter_model:?} on {}: {error}",
+            spotter_endpoint.provider
+        )
+        .into());
     }
-    let spotter = ForkSpot::new(endpoint.for_spotter(), spotter_model)
+    let spotter = ForkSpot::new(spotter_endpoint.for_spotter(), &spotter_model)
         .with_scratch(Some(scratch.clone()))
         .with_cwd(cwd.clone());
 
@@ -508,46 +510,44 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
              config file; config writes still gate for the orchestrator-above"
         );
     }
-    // The fork peek's model (docs/redaction-fork.md): the agent's own client unless
-    // `--triage-model` names a different model, in which case the peek gets its own
-    // client — own identity and persona over the same [context] block, own sticky
-    // key, thinking off unless asked for, and none of the agent client's effort,
-    // temperature, or upstream pin (endpoint slugs are per-model, as for the
-    // spotter). Its context window is looked up like the agent's; nothing yet acts
-    // on it being smaller (backlog/distiller-experiment.md).
-    let distiller = match &triage {
-        Some(t) if t.model != model => {
+    // Sharing is explicit (docs/redaction-fork.md): an omitted triage selection
+    // uses the main client; a configured selection always gets its own endpoint
+    // and retry state, even when it names the same native model.
+    let distiller = match inference.triage() {
+        Some((selection, mut triage_endpoint, triage)) => {
+            triage_endpoint.session_id = endpoint.session_id.clone();
             let system = env_policy.mask(&crate::env::triage_system_prompt(
-                &t.model,
+                &triage.model,
                 model,
                 context_block.as_deref(),
             ));
             let (peek, caps) = ForkPeek::for_triage_model(
-                &endpoint,
-                t,
+                &triage_endpoint,
+                triage,
                 system,
                 loaded.role.transport.stream_ceiling,
             )
             .await
-            .map_err(|e| format!("--triage-model: {e}"))?;
+            .map_err(|error| format!("triage model: {error}"))?;
             eprintln!(
-                "triage: {} · context {} tokens · thinking {} · tool choice {}",
-                t.model,
+                "triage: {}/{} ({}) · context {} tokens · thinking {} · tool choice {}",
+                selection.connection,
+                selection.model,
+                selection.provider,
                 caps.context_length,
-                match (&t.effort, t.thinking) {
+                match (&triage.effort, triage.thinking) {
                     (Some(effort), _) => format!("on, effort {effort}"),
                     (None, true) => "on".into(),
                     (None, false) => "off".into(),
                 },
-                if t.auto_choice { "auto" } else { "forced" }
+                if triage.auto_choice { "auto" } else { "forced" }
             );
             peek
         }
-        Some(_) => {
-            eprintln!("triage: {model} (same as the agent; shared peek)");
+        None => {
+            eprintln!("triage: {model} (shared main client)");
             ForkPeek::shared()
         }
-        None => ForkPeek::shared(),
     };
     Ok(SessionBoot {
         client,
@@ -560,6 +560,7 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
         autonomous,
         capabilities,
         model: model.to_string(),
+        inference: Some(inference.identity()),
         env_policy,
         keep_scratch,
     })
@@ -575,7 +576,7 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
 /// than gaining exceptions.
 ///
 /// `create_dir` rather than `create_dir_all` on the leaf: the leaf creation is the exclusive
-/// one, so two `serve`s racing the same name cannot both pass the check. The parent
+/// one, so two creations racing the same name cannot both pass the check. The parent
 /// (`.efference/`) is still created recursively — it is shared by every session.
 pub fn mint_session_dir(session_dir: &Path) -> Result<(), Error> {
     if let Some(parent) = session_dir.parent() {
@@ -584,7 +585,7 @@ pub fn mint_session_dir(session_dir: &Path) -> Result<(), Error> {
     match std::fs::create_dir(session_dir) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(format!(
-            "session dir {} already exists — `serve` mints a new session and does not resume one. \
+            "session dir {} already exists — creation mints a new session and does not resume one. \
              Pick another --name; the existing session's log is intact at {}.",
             session_dir.display(),
             session_dir.join(LOG_NAME).display()

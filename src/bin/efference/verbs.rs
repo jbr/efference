@@ -24,8 +24,8 @@ pub(crate) async fn tui_new(
     let cwd = std::env::current_dir()?;
     let env = efference::env_table::EnvSnapshot::capture()?.into_entries();
     let triage = flags.triage();
-    let model = flags.model().to_string();
     let SessionFlags {
+        model,
         spotter_model,
         config,
         temperature,
@@ -56,7 +56,7 @@ pub(crate) async fn tui_new(
         .create_session(&request)
         .await?;
     // The session dir is where the host minted it: `<cwd>/.efference/<id>`, the
-    // same layout `serve` uses (docs/control-channel.md), so the attachment store
+    // same layout boot uses (docs/control-channel.md), so the attachment store
     // resolves as at a socket attach.
     let attachments = efference::attachments::dir_for_session(&cwd.join(session_dir(&id)));
     efference::tui::run(
@@ -74,22 +74,17 @@ pub(crate) async fn tui_new(
 /// lives in `efference::tui`; here we just hand it a control client and the
 /// optional theme override.
 pub(crate) async fn tui(
-    socket: PathBuf,
+    target: ClientTarget,
     theme: Option<String>,
     images: efference::tui::ImageMode,
     frame_cost: bool,
 ) -> CliResult {
-    // The attachment store lives beside the socket in the session dir (docs/inbox.md), so a
-    // paste past the inline threshold has somewhere local to land. A socket with no parent
+    // The attachment store lives in the session dir (docs/inbox.md), so a paste past
+    // the inline threshold has somewhere local to land. A socket with no parent
     // leaves the TUI storeless and pasting inline.
-    let attachments = socket.parent().map(efference::attachments::dir_for_session);
-    efference::tui::run(
-        ControlClient::new(socket),
-        theme,
-        images,
-        frame_cost,
-        attachments,
-    )
-    .await?;
+    let attachments = target
+        .session_dir()
+        .map(|dir| efference::attachments::dir_for_session(&dir));
+    efference::tui::run(target.client(), theme, images, frame_cost, attachments).await?;
     Ok(())
 }

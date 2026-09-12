@@ -366,6 +366,7 @@ pub use diagnostics::{
     drain_upstream_attempts, push_upstream_attempt, turn_routing_state, upstream_attempt_queue,
     upstream_failure_state, upstream_retry_state,
 };
+pub(crate) use endpoint::codex_cached_credentials;
 pub use endpoint::{Endpoint, sticky_session_id};
 pub use failure::FailureClass;
 pub use plan::{PlanSnapshot, PlanState, PlanWindow, plan_state};

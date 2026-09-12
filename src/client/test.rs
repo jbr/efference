@@ -186,7 +186,7 @@ async fn a_prefixed_client_joins_v1_only() {
         name: Some("minted".into()),
         cwd: PathBuf::from("/work"),
         config: None,
-        model: "m".into(),
+        model: Some("m".into()),
         spotter_model: None,
         triage: None,
         temperature: None,

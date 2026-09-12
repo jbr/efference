@@ -83,26 +83,3 @@ fn references_and_masking_edits_use_each_sessions_base() {
         assert!(!policy.mask(&format!("{identity}-later")).contains(identity));
     }
 }
-
-#[test]
-fn provider_lookup_does_not_fall_back_to_host_credentials() {
-    let cwd = std::env::current_dir().unwrap();
-    let empty = EnvSnapshot::default();
-    assert!(crate::api::Endpoint::from_snapshot(&cwd, &empty, &BTreeMap::new()).is_err());
-    let base = snapshot(&[
-        ("EFFERENCE_PROVIDER", "openrouter"),
-        ("EFFERENCE_API_KEY", "caller-key"),
-    ]);
-    let endpoint = crate::api::Endpoint::from_snapshot(&cwd, &base, &BTreeMap::new()).unwrap();
-    assert_eq!(endpoint.auth_value, "Bearer caller-key");
-    let resolved = [
-        ("EFFERENCE_PROVIDER".into(), "anthropic".into()),
-        ("EFFERENCE_API_KEY".into(), "resolved-key".into()),
-    ]
-    .into();
-    let endpoint = crate::api::Endpoint::from_snapshot(&cwd, &base, &resolved).unwrap();
-    assert_eq!(endpoint.auth_value, "resolved-key");
-    let codex = snapshot(&[("EFFERENCE_PROVIDER", "openai-codex")]);
-    let error = crate::api::Endpoint::from_snapshot(&cwd, &codex, &BTreeMap::new()).unwrap_err();
-    assert!(error.to_string().contains("neither CODEX_HOME nor HOME"));
-}

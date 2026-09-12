@@ -213,7 +213,7 @@ unknown fields, so a renamed key fails there), every tool name a document declar
   into the cached prefix; a later edit to a listed file never re-renders the preamble
   (the same discipline as scope: never mutate behind a cache breakpoint).
 - **Snapshotted into the log.** Because the preamble folds in file contents that drift on
-  disk, it is no longer reconstructable from `config + current files` — so `serve` appends
+  disk, it is no longer reconstructable from `config + current files` — so boot appends
   the full rendered system prompt as a `Payload::Preamble` entry once at boot
   ([log-and-projection.md](log-and-projection.md)). The log stays the complete record; `efference dev wire`
   reads the snapshot back instead of re-resolving; and once order is baked into the

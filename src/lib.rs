@@ -18,6 +18,7 @@ pub mod fswatch;
 pub mod guide;
 pub mod http;
 pub mod inbox;
+pub mod inference;
 pub mod log;
 pub mod mcp;
 pub mod oauth;

@@ -172,18 +172,6 @@ pub const BUILT_IN: &[(&str, EnvRule)] = &[
     ),
 ];
 
-/// The harness's own upstream credential (`src/api/endpoint.rs`). Masked with
-/// zero config and independently of the table: the built-in `*_KEY` glob
-/// already covers both names, but an operator who overrides that glob should
-/// not silently unmask the key this process authenticates with. An exact entry
-/// naming one of these still wins for *strip*; masking is unconditional here.
-///
-/// The reference resolver does not retire this. A key supplied by an `[env]`
-/// reference is masked by construction, but the key can still arrive as a plain
-/// process variable (`op run`, direnv, an exported shell variable), and on that
-/// path this list is the only thing that masks it.
-pub const HARNESS_KEY_VARS: &[&str] = &["EFFERENCE_API_KEY", "ANTHROPIC_API_KEY"];
-
 /// The merged table — built-ins first, then the operator's entries folded in at
 /// their keys. Resolution is by [`Table::resolve`], never by file order (TOML
 /// tables are semantically unordered).
@@ -362,7 +350,7 @@ impl Default for EnvPolicy {
 impl EnvPolicy {
     /// Resolve the table against this process's environment, with no reference
     /// resolution — the shape callers that never spawn a vault command use
-    /// (the dev views). `serve` uses [`build_snapshot`](Self::build_snapshot).
+    /// (the dev views). Boot uses [`build_snapshot`](Self::build_snapshot).
     pub fn build(user: &BTreeMap<String, EnvEntry>) -> EnvReport {
         Self::build_with_values(user, &[], Arc::new(Resolver::default()))
     }
@@ -433,7 +421,7 @@ impl EnvPolicy {
             if rule.strip {
                 strip.push(name.clone());
             }
-            let masked = rule.mask || HARNESS_KEY_VARS.contains(&name.as_str());
+            let masked = rule.mask;
             if masked {
                 if value.chars().count() < MASKABILITY_FLOOR {
                     below_floor.push(name.clone());
@@ -456,7 +444,7 @@ impl EnvPolicy {
                 continue;
             }
             let rule = table.resolve(&value.name).0;
-            let masked = value.secret || rule.mask || HARNESS_KEY_VARS.contains(&&*value.name);
+            let masked = value.secret || rule.mask;
             // Overruling is only worth saying out loud when the operator asked
             // for the opposite in as many words.
             if value.secret && user.get(&value.name).and_then(|e| e.mask) == Some(false) {
@@ -510,7 +498,7 @@ impl EnvPolicy {
     ///
     /// Injection is *not* re-derived here, for the same reason strip is not: the
     /// child environment is fixed at boot with the spawn sites that hold it, so
-    /// a value added by an edit reaches children on the next `serve`.
+    /// a value added by an edit reaches children on the next session.
     pub fn absorb_config(&self, user: &BTreeMap<String, EnvEntry>) -> Vec<ResolveError> {
         let table = Table::merge(user);
         let mut to_mask: Vec<(String, String)> = self
@@ -518,9 +506,7 @@ impl EnvPolicy {
             .iter()
             .map(|(name, value)| (name.clone(), value.clone()))
             .filter(|(name, value)| {
-                let masked =
-                    table.resolve(name).0.mask || HARNESS_KEY_VARS.contains(&name.as_str());
-                masked && value.chars().count() >= MASKABILITY_FLOOR
+                table.resolve(name).0.mask && value.chars().count() >= MASKABILITY_FLOOR
             })
             .collect();
         let (resolved, errors) = self.resolver.resolve_table(user);

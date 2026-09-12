@@ -401,6 +401,30 @@ impl Client {
         json_field(&read_2xx(conn, "POST", path).await?, "id")
     }
 
+    /// The sessions a host holds (`GET /sessions`, docs/control-api.md), by id.
+    /// A listener route at the socket root, like [`create_session`](Self::create_session).
+    pub async fn list_sessions(&self) -> Result<Vec<String>> {
+        let path = "/sessions";
+        let conn = self
+            .http
+            .get(path)
+            .await
+            .with_context(|| format!("GET {path} on the host socket"))?;
+        let body = read_2xx(conn, "GET", path).await?;
+        let listed: Vec<serde_json::Value> =
+            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
+        listed
+            .iter()
+            .map(|entry| {
+                entry
+                    .get("id")
+                    .and_then(|id| id.as_str())
+                    .map(str::to_string)
+                    .ok_or_else(|| anyhow!("GET {path}: an entry without an id: {entry}"))
+            })
+            .collect()
+    }
+
     /// A fresh bootstrap link from the daemon's TCP bind (`GET /auth/link`,
     /// docs/web-bind.md) — current TOTP code in the fragment. The `/auth/*`
     /// credential routes answer only over the Unix socket (host possession is the

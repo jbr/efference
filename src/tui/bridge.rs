@@ -8,8 +8,11 @@ use super::*;
 /// live-tail deltas, and `state` frames the sidebar/status chrome. The stream delivers
 /// a snapshot of every topic on connect and a whole-topic replacement on each change,
 /// coherent with the log frames around it, so there is nothing to poll.
-pub(super) async fn bridge(client: Client, tx: Sender<TuiEvent>) -> Result<()> {
-    let mut events = client.events(Some(0), Some("log,output,state")).await?;
+pub(super) async fn bridge(
+    client: Client,
+    mut events: trillium_client::sse::EventStream,
+    tx: Sender<TuiEvent>,
+) -> Result<()> {
     // The three policy-shaped topics are merged into one PolicyView for the sidebar's
     // convenience (docs/permissions.md), so the bridge holds the latest value of each
     // and re-merges when any of them moves.

@@ -1358,7 +1358,7 @@ which is the one place the anonymous shell sits inside a guarded prefix
 
 ## Development
 
-- `cargo run --features dev-proxy -- serve --bind …` — the daemon spawns Vite and
+- `cargo run --features dev-proxy -- host --bind …` — the daemon spawns Vite and
   proxies to it; HMR works through the gate (upgrades are GETs outside `/v1`).
 - Without the feature, the build embeds: the `frontend!` macro runs `vite build` at
   compile time, so building the crate needs `pnpm` on PATH and `web/node_modules`

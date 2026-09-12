@@ -153,7 +153,7 @@ never elided today — that's a deferred generalization of the redaction model
 
 `output_config: { effort }` is the second reasoning knob, orthogonal to
 `thinking`: `thinking` is the **type** (whether and when the model thinks),
-`effort` is the **level**. It is set at boot from `serve --effort` or
+`effort` is the **level**. It is set at boot from `--effort` or
 `[transport] effort` (the flag wins), and there is no runtime mutation path:
 changing a thinking parameter mid-session invalidates the message-tier cache on
 Anthropic, and a replayed thinking block's signature under a changed config is
@@ -174,7 +174,7 @@ no declared levels). A level the metadata invents is validated against that
 list and sent as spelled, not rejected by a local list that cannot know it.
 
 **Boot validation, per provider** (`Provider::validates_effort_levels` →
-`ModelCapabilities::check_effort`, called from `serve`). OpenRouter refuses a
+`ModelCapabilities::check_effort`, called from boot). OpenRouter refuses a
 configured level the metadata does not affirmatively declare, because it maps
 an unsupported level to the nearest supported one **silently** — a session
 could otherwise believe it set a knob that did nothing (observed 2026-08-29:
@@ -191,7 +191,7 @@ do without a probe.
 (`xhigh`, `max`) require thinking enabled, and the pairing is a 400 from
 Anthropic. `EFFERENCE_THINKING=off` is what can take thinking away for a whole
 session, so that combination is refused at boot (`api::check_effort_thinking`,
-called from `serve`) rather than forwarded as a provider error on the first
+called from boot) rather than forwarded as a provider error on the first
 turn. A level outside those two spellings has no known coupling and passes
 through.
 
@@ -646,8 +646,8 @@ Codex CLI does send, and paid for it in cache misses. Auth is the OAuth access
 token Codex CLI caches in `~/.codex/auth.json` (`$CODEX_HOME` honoured) sent as
 `authorization: Bearer`, plus `ChatGPT-Account-ID` from the same file and an
 `originator: efference` header. efference reads that file and never writes it;
-refreshing an expired token is `codex login`'s job. `EFFERENCE_API_KEY` plus
-`EFFERENCE_CHATGPT_ACCOUNT_ID` override the file. Both profiles have a byte pin.
+refreshing an expired token is `codex login`'s job (backlog/openai-provider/chatgpt-oauth.md).
+Both profiles have a byte pin.
 
 The Codex backend streams with **no `content-type` header** (verified with curl,
 2026-09-06). `into_sse` refuses an absent header the way a browser `EventSource`
@@ -692,10 +692,11 @@ openai-provider/validation.md).
 **Not on this dialect.** The `max_tokens: 0` keepalive is a Messages primitive; the
 daemon never starts the loop on Responses (backlog: openai-provider/validation.md).
 OpenAI exposes no per-generation cost endpoint, so cost tracking stays off. The
-spotter model must be one the compiled OpenAI catalog knows: a bare `serve` takes
-the provider's cheap band (`Provider::default_spotter_model`, gpt-5.6-luna here,
-claude-haiku-4-5 on the Messages providers), and an explicit `--spotter-model`
-passes the same catalog check the main model did. The catalog
+spotter model must be one its connection's metadata source knows: with no
+`[defaults].spotter`, the main connection's cheap band applies
+(`Provider::default_spotter_model`, gpt-5.6-luna here, claude-haiku-4-5 on the
+Messages providers), and an explicit `--spotter-model` passes its own provider's
+check. The catalog
 (`api/provider/openai.rs`) is exact per model: GPT-5.6 and its sol/terra/luna
 variants, and GPT-6 Astra, which takes no `none` effort and no `temperature` —
 `ModelCapabilities::accepts_temperature` is what makes an explicit
@@ -711,29 +712,43 @@ semantic fold, and the cache-frontier model are provider-independent. What varie
 between providers is the **dialect**, **where** the POST goes, **how** it
 authenticates, and **which metadata source** answers questions about the selected
 model. All derive from one declared identity: `api::Provider`, a closed enum
-(`anthropic`, `openrouter`, `openai`, `openai-codex`) set by `EFFERENCE_PROVIDER`
-and grown in code as providers are added. Identity is an
-input, never inferred from URL shape (sniffing fails for proxies and custom
-URLs). `api::Endpoint` carries the derived `url` + `auth_header` + `auth_value`
-alongside the provider, resolved once at boot and shared by the agent `Client`
-and the fork's spotter client so both hit the same endpoint over the same
-cached prefix.
+(`anthropic`, `openrouter`, `openai`, `openai-codex`) grown in code as providers
+are added. Identity is an input, never inferred from URL shape (sniffing fails for
+proxies and custom URLs). `api::Endpoint` carries the derived `url` +
+`auth_header` + `auth_value` alongside the provider; its `Debug` redacts the
+credential and extra headers.
 
-Env knobs:
+**Host-owned connections (`src/inference.rs`).** A host names its connections in
+`~/.efference/config.toml`, read from the host's startup `HOME` — a secret-free
+file: each `[connections.<name>]` declares a `provider` and where its credential
+comes from (`auth = { kind = "env", key = "VAR" }` reads the named variable from
+the host's startup environment, ordinarily supplied by `op run`; `auth = { kind =
+"codex-cache" }` reads Codex CLI's `auth.json` once, under the host's `CODEX_HOME`
+or `HOME`). Credentials load once at host launch, each connection independently:
+an unavailable one carries its reason and fails only the sessions that select it.
+Nothing re-reads a caller's environment, re-runs a secret command, or re-opens the
+cache per session, and the host's environment is never overlaid onto a session's
+snapshot or a tool child.
 
-- `EFFERENCE_PROVIDER` — `anthropic` (the default when unset), `openrouter`,
-  `openai`, or `openai-codex`. An unrecognized value is a hard error naming the
-  valid ones, never a silent fallback to a host the key doesn't belong to.
-- `EFFERENCE_API_KEY` — the **raw secret**, and nothing else. The auth header
-  name and any scheme prefix come from the provider (`x-api-key` for Anthropic;
-  `authorization` + `"Bearer "` for OpenRouter), so the secret stays a **whole
-  value** — a 1Password reference that `op run` resolves (`op run` only
-  substitutes an `op://…` reference that is the entire value, never one
-  embedded mid-string).
-- `ANTHROPIC_API_KEY` — fallback secret for the Anthropic provider only. Under
-  `openrouter` or `openai` it is rejected at resolve with a message naming
-  `EFFERENCE_API_KEY`: an Anthropic key is the wrong credential there, and the
-  early error beats a confusing 401.
+A session selects a model per role as `<connection>/<native model>`. A built-in
+provider name is always a connection prefix, configured or not (`anthropic/…` on a
+host without an `anthropic` connection names the missing connection, never a
+native id on the default). Any other id, slashes included, resolves through
+`[defaults].model`'s connection; a native id equal to a connection name must be
+written qualified. Omitted `--model` takes `[defaults].model`; an omitted spotter
+takes `[defaults].spotter`, else the main connection's cheap band; an omitted
+triage takes `[defaults].triage`, else shares the main client. Defaults are
+written fully qualified, so adding a connection cannot reinterpret one. All three
+roles resolve before a session directory exists; a main/triage pair on different
+dialects is refused there, naming both. Each role gets its own clone of the
+connection's endpoint with its own sticky key, so two sessions on one connection
+share a credential, not a client. The native id alone is what a request carries;
+the connection name appears only in boot output and `session_identity`.
+
+The dev verbs that dial a provider without a host (`dev wire`, `dev peek`, `dev
+spotter`, `dev spotter-eval`) load the same file from their own environment and
+resolve their `--model` through it; nothing reads a provider from environment
+variables.
 
 **OpenAI capabilities** come from a compiled catalog (`api/provider/openai.rs`)
 rather than a metadata GET: the Models endpoint reports none of the limits the
@@ -831,13 +846,13 @@ unanswerable without knowing which metadata endpoint to ask. Those knobs
 now hard errors naming the replacement — silently ignoring a set one would
 post somewhere other than where the operator's environment says.
 
-**The boot capability query.** `serve` fetches the selected model's metadata
+**The boot capability query.** Boot fetches the selected model's metadata
 from the provider before the daemon starts (`Endpoint::fetch_capabilities`,
 `api::provider`), and a failed lookup — network, non-2xx, missing fields —
 **aborts startup** with the URL and body in the message. The query is required
 rather than best-effort because capability conditionals hang off the result
 and "unknown" would silently disable them; there is no offline mode to
-regress (serve already requires the live messages endpoint). Anthropic asks
+regress (boot already requires the live messages endpoint). Anthropic asks
 one route; OpenRouter asks two, both fatal at boot — the effort-levels route
 is what the boot validation validates against, so "the entry route didn't
 answer" must not degrade into no validation. Per provider:
@@ -964,8 +979,8 @@ per-request cost surface (the Models API has no pricing; the Usage & Cost
 Admin API reports realized org costs in daily buckets under a separate admin
 key) — `usage.cost` is null there and the sidebar omits the line.
 
-**OpenRouter** is reached by declaring it: `EFFERENCE_PROVIDER=openrouter`,
-`EFFERENCE_API_KEY=sk-or-…`, and a provider-scoped model slug
+**OpenRouter** is reached by declaring a connection on it and a provider-scoped
+model slug
 (`anthropic/claude-haiku-4.5` — the `author/slug` shape is also what the
 metadata route takes as path segments; a slash-less model id fails the boot
 lookup before any request). Its `/api/v1/messages` skin is the Anthropic
@@ -1223,7 +1238,7 @@ shared canonical prefix and therefore slides the cache TTL.
 
 ### keepalive_loop: two clocks
 
-`keepalive_loop` is spawned in `serve`. It fires `Client::keepalive` when the
+`keepalive_loop` is spawned by the session runtime. It fires `Client::keepalive` when the
 cache nears eviction at idle.
 
 Two clocks keep this correct:

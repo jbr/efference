@@ -2,25 +2,42 @@ use super::*;
 use efference::boot::CONFIG_SCAFFOLD;
 use efference::persist::Log;
 
-/// Socket resolution precedence (docs/permissions.md):
-/// an explicit `--socket` wins over everything; a `--name` resolves to that session's colocated
-/// socket. (The no-name discovery branch scans the filesystem and is exercised live.)
-#[test]
-fn socket_override_beats_name() {
-    let got = resolve_client_socket(Some("foo"), Some(PathBuf::from("/tmp/x.sock"))).unwrap();
-    assert_eq!(got, PathBuf::from("/tmp/x.sock"));
+/// Target resolution (docs/permissions.md): an explicit `--socket` wins over
+/// everything and needs no listener; a `--name` with neither its own live socket nor
+/// a host listing it is an error, not a blank UI. (Live discovery is exercised live.)
+#[tokio::test]
+async fn socket_override_beats_name() {
+    let got = resolve_client_target(Some("foo"), Some(PathBuf::from("/tmp/x.sock")))
+        .await
+        .unwrap();
+    assert_eq!(got.socket, PathBuf::from("/tmp/x.sock"));
+    assert_eq!(got.prefix, None);
+    assert_eq!(got.session_dir(), Some(PathBuf::from("/tmp")));
 }
 
-#[test]
-fn name_resolves_to_its_colocated_socket() {
-    let got = resolve_client_socket(Some("foo"), None).unwrap();
-    assert_eq!(got, Path::new(".efference/foo/control.sock"));
+#[tokio::test]
+async fn a_name_nothing_serves_is_an_error() {
+    let err = resolve_client_target(Some("definitely-not-live"), None)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("no live session"), "{err}");
+    assert!(err.contains("definitely-not-live"), "{err}");
 }
 
-/// The session flags are one clap group shared by `serve` and `tui --new`; on the
-/// TUI they are refused without `--new`, since a plain `tui` attaches and would
-/// otherwise silently drop them. `--model` carries a default and counts as
-/// "given" only when spelled.
+/// A hosted target's attachment store is the session dir beside the host socket.
+#[test]
+fn a_hosted_target_finds_its_session_dir() {
+    let target = ClientTarget {
+        socket: PathBuf::from(".efference/host.sock"),
+        prefix: Some("/sessions/b".into()),
+    };
+    assert_eq!(target.session_dir(), Some(PathBuf::from(".efference/b")));
+}
+
+/// The session flags are refused without `--new`, since a plain `tui` attaches and
+/// would otherwise silently drop them. `--model` has no default: omitted, the
+/// host's applies.
 #[test]
 fn tui_session_flags_need_new() {
     use clap::Parser;
@@ -48,16 +65,17 @@ fn tui_session_flags_need_new() {
         panic!("tui")
     };
     assert!(new && host_socket.is_none());
-    assert_eq!(session.model(), DEFAULT_MODEL);
+    assert!(session.model.is_none());
     assert_eq!(session.effort.as_deref(), Some("high"));
     assert!(session.triage().is_none());
     assert!(
         parse(&["efference", "tui", "--host-socket", "/tmp/h.sock"]).is_err(),
         "--host-socket requires --new"
     );
-    let Command::Serve { session, .. } = parse(&[
+    let Command::Tui { session, .. } = parse(&[
         "efference",
-        "serve",
+        "tui",
+        "--new",
         "--triage-model",
         "t",
         "--triage-thinking",
@@ -65,7 +83,7 @@ fn tui_session_flags_need_new() {
     .unwrap()
     .command
     else {
-        panic!("serve")
+        panic!("tui")
     };
     let triage = session.triage().unwrap();
     assert!(triage.model == "t" && triage.thinking && !triage.auto_choice);

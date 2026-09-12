@@ -179,11 +179,34 @@ fn sidebar_names_the_model_and_working_directory() {
     play.event(TuiEvent::SessionIdentity(Some(SessionIdentityView {
         model: "anthropic/claude-opus-4".into(),
         cwd: "~/code/efference".into(),
+        roles: None,
     })));
     let after = play.sidebar_grid();
     assert!(after.contains("SESSION"), "{after}");
     assert!(after.contains("anthropic/claude-opus-4"), "{after}");
     assert!(after.contains("~/code/efference"), "{after}");
+}
+
+/// A hosted session names each role by connection: the main line becomes the
+/// qualified selection, and the spotter and triage rows follow it.
+#[test]
+fn sidebar_names_hosted_roles_by_connection() {
+    use crate::tui::{SessionIdentityView, SessionRolesView, TuiEvent};
+    let mut play = Screenplay::new(110, 16);
+    play.user("go");
+    play.event(TuiEvent::SessionIdentity(Some(SessionIdentityView {
+        model: "claude-opus-4".into(),
+        cwd: "~/code/efference".into(),
+        roles: Some(SessionRolesView {
+            main: "work/claude-opus-4".into(),
+            spotter: "personal/claude-haiku-4-5".into(),
+            triage: "shared".into(),
+        }),
+    })));
+    let grid = play.sidebar_grid();
+    assert!(grid.contains("work/claude-opus-4"), "{grid}");
+    assert!(grid.contains("spotter personal/claude-haiku-4-5"), "{grid}");
+    assert!(grid.contains("triage shared"), "{grid}");
 }
 
 /// The sidebar-only screenshot slice (`Alt-S`) frames just the sidebar columns:

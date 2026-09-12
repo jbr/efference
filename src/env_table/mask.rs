@@ -43,6 +43,13 @@ pub fn marker(name: &str, value: &str) -> String {
     format!("⟦{name}: {prefix}… elided by harness⟧")
 }
 
+/// The marker for a value registered by [`Masker::absorb_secret`]: the name
+/// alone. A host inference credential is short enough that the ordinary
+/// four-character prefix could be most of it.
+pub fn secret_marker(name: &str) -> String {
+    format!("⟦{name}: elided by harness⟧")
+}
+
 /// The session's needle set. Append-only for the session's lifetime: a value
 /// that has since rotated out is still a secret, and still sits in files the
 /// session may read, so there is never a removal.
@@ -75,10 +82,25 @@ impl Masker {
     /// Add every needle derived from `values` (`(name, value)` pairs already
     /// filtered to the maskable ones). Idempotent, and never removes.
     pub fn absorb(&self, values: &[(String, String)]) {
+        self.absorb_with_floor(values, true);
+    }
+
+    /// Register secret values that must be redacted even when too short for the
+    /// ordinary output-noise threshold. Host-owned inference credentials use this
+    /// path: a short credential is still a credential, not a reason to print it.
+    pub fn absorb_secret(&self, values: &[(String, String)]) {
+        self.absorb_with_floor(values, false);
+    }
+
+    fn absorb_with_floor(&self, values: &[(String, String)], apply_floor: bool) {
         let mut needles = self.needles.write().unwrap();
         for (name, value) in values {
-            let marker = marker(name, value);
-            for needle in needles_for(value) {
+            let marker = if apply_floor {
+                marker(name, value)
+            } else {
+                secret_marker(name)
+            };
+            for needle in needles_for(value, apply_floor) {
                 if needles.seen.insert(needle.clone()) {
                     needles.first[needle.as_bytes()[0] as usize] = true;
                     needles.entries.push((needle, marker.clone()));
@@ -381,9 +403,9 @@ impl Masker {
 ///
 /// Ordering here does not matter; [`Masker::absorb`] imposes the total order
 /// the scan depends on.
-fn needles_for(value: &str) -> Vec<String> {
+fn needles_for(value: &str, apply_floor: bool) -> Vec<String> {
     let mut out = Vec::new();
-    if value.chars().count() < MASKABILITY_FLOOR {
+    if apply_floor && value.chars().count() < MASKABILITY_FLOOR {
         return out;
     }
     let mut push = |needle: String| {

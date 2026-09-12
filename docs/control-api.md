@@ -20,10 +20,10 @@
 ## Transport & addressing
 
 The daemon speaks **HTTP/1.1 over a Unix domain socket**. Each session owns a
-directory `.efference/<id>/` (the id is `serve --name <id>`, or a generated
+directory `.efference/<id>/` (the id is `--name <id>`, or a generated
 timestamp) holding `control.sock`, `log.jsonl`, and `config.toml`.
 
-With `serve --bind`, the same routes are also served on a TCP listener behind a
+With `host --bind`, the same routes are also served on a TCP listener behind a
 hardening + auth gate — cookie or bearer, plus `401 unauthorized` /
 `403 forbidden` / `429 rate_limited` in the standard error envelope, and the
 `/auth/*` routes beside `/v1`. That listener also carries `/files` — the
@@ -463,9 +463,14 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "parse_error": "…",            // why the file did not parse
     "restore_error": "…"           // why writing the last good content back also failed
   },
-  "session_identity": {           // null until `serve` sets it (tests, offline verbs)
-    "model": "anthropic/claude-opus-4",  // the model id serve resolved, verbatim
-    "cwd": "/Users/jbr/code/efference"   // absolute; shortening it is presentation
+  "session_identity": {           // null until boot sets it (tests, offline verbs)
+    "model": "anthropic/claude-opus-4",  // the native model id, verbatim
+    "cwd": "/Users/jbr/code/efference",  // absolute; shortening it is presentation
+    "inference": {                       // hosted sessions only (docs/transport.md)
+      "main":    {"connection": "work", "provider": "openrouter", "model": "anthropic/claude-opus-4"},
+      "spotter": {"connection": "work", "provider": "openrouter", "model": "anthropic/claude-haiku-4-5"},
+      "triage":  {"shared": true, "connection": "work", "provider": "openrouter", "model": "anthropic/claude-opus-4"}
+    }
   }
 }
 ```
@@ -516,7 +521,11 @@ today, so the topic is delivered on the connect snapshot and then stays put; it
 is a topic rather than a one-shot read so a client learns it the way it learns
 everything else, and so a value that ever moves reaches clients without a new
 mechanism. Nothing else on `/v1` carries either, so without it a client cannot
-say which session is on screen.
+say which session is on screen. Under a host, `inference` names the connection,
+provider kind, and native model behind each role, and whether triage rides the
+main client (`shared`, in which case the selection repeats main's, so two accounts
+on one model stay distinguishable); a standalone session omits the field. The TUI
+sidebar and the web top bar print the roles from it.
 
 #### `GET /log`
 JSON array of `LogEntry`. The catch-up read. Unbounded by default — the whole

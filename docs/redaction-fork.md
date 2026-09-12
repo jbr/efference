@@ -189,7 +189,7 @@ which holds whichever model writes it.
 
 **Evaluating a candidate offline.** `efference dev peek <session> --triage-model X`
 replays every recorded gate under the separate-model shape — the same constructor
-`serve` boots (`ForkPeek::for_triage_model`), the session's own preamble context and
+boot uses (`ForkPeek::for_triage_model`), the session's own preamble context and
 model name in the triage system prompt — and compares each draw's verdict against the
 **recorded** one, line for line after the cap. The reference is what the session's own
 peek chose to see, not an operator's idea of the right keep: the agent doing the work

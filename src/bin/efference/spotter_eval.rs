@@ -15,7 +15,6 @@
 //! totals are reported either way.
 
 use super::*;
-use efference::api::Endpoint;
 use efference::config::Perms;
 use efference::log::{Origin, Stance};
 use efference::spotter::{ForkSpot, Spotter};
@@ -184,7 +183,7 @@ pub(crate) async fn spotter_eval(
         Some(path) => Some(std::fs::read_to_string(&path)?),
         None => None,
     };
-    let endpoint = Endpoint::from_env()?;
+    let (model, endpoint) = crate::inference::spotter_endpoint(Some(&model))?;
     // Briefs come from the same lookup a live gate uses; connected-server tools
     // in recorded cases have no mount here and run brief-less, which matches
     // how most were recorded.

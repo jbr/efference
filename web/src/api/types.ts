@@ -470,6 +470,24 @@ export interface SessionIdentity {
   // The session's working directory, absolute. Shortening it against a home
   // directory is presentation (`ui/identity.ts`), not wire.
   cwd: string;
+  // The host connection behind each role; absent under standalone `serve`.
+  inference?: InferenceIdentity;
+}
+
+// One role's selection: the host connection name, its provider kind, and the
+// native model id the wire carries.
+export interface ModelSelection {
+  connection: string;
+  provider: "anthropic" | "openrouter" | "openai" | "openai-codex";
+  model: string;
+}
+
+export interface InferenceIdentity {
+  main: ModelSelection;
+  spotter: ModelSelection;
+  // `shared: true` means triage rides the main client; the selection then
+  // repeats main's.
+  triage: ModelSelection & { shared: boolean };
 }
 
 // One optional field per state topic, each named by its topic; `null` is a

@@ -86,7 +86,21 @@ function UpstreamChip({
 function SessionLabel({ identity }: { identity: SessionIdentity }) {
   return (
     <span className="session-id">
-      <span className="session-model">{identity.model}</span>
+      <span
+        className="session-model"
+        title={
+          identity.inference &&
+          `spotter ${identity.inference.spotter.connection}/${identity.inference.spotter.model} · triage ${
+            identity.inference.triage.shared
+              ? "shared"
+              : `${identity.inference.triage.connection}/${identity.inference.triage.model}`
+          }`
+        }
+      >
+        {identity.inference
+          ? `${identity.inference.main.connection}/${identity.model}`
+          : identity.model}
+      </span>
       <span className="session-cwd dim" title={identity.cwd}>
         {homeRelative(identity.cwd)}
       </span>

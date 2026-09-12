@@ -13,7 +13,7 @@ pub(crate) const LOG_NAME: &str = efference::boot::LOG_NAME;
 #[derive(Parser)]
 #[command(name = "efference", about = "An API-backed agentic coding harness.")]
 pub(crate) struct Cli {
-    /// Session name. Defaults to a timestamp (`serve`) or the session running at this path.
+    /// Session name. Defaults to a timestamp (`tui --new`) or the session running at this path.
     #[arg(long, global = true)]
     pub(crate) name: Option<String>,
     /// Explicit control-socket path; overrides `--name` and discovery.
@@ -28,63 +28,152 @@ pub(crate) fn session_dir(id: &str) -> PathBuf {
     Path::new(BASE_DIR).join(id)
 }
 
-/// A default session id when `--name` is omitted: timestamp millis — sortable, human-meaningful,
-/// and matching the old flat `session-<millis>` naming.
-pub(crate) fn default_session_id() -> String {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before Unix epoch")
-        .as_millis()
-        .to_string()
+/// The host socket's name under the base dir: one per hosting process, beside
+/// the session dirs it creates (docs/control-channel.md).
+pub(crate) const HOST_SOCKET_NAME: &str = "host.sock";
+
+/// The default host socket, `.efference/host.sock` here.
+pub(crate) fn host_socket() -> PathBuf {
+    Path::new(BASE_DIR).join(HOST_SOCKET_NAME)
 }
 
-/// Resolve the control socket a *client* verb should talk to: an explicit `--socket`, else the
-/// named session's socket, else the single **live** daemon discovered by scanning the session dirs
-/// (docs/permissions.md).
-pub(crate) fn resolve_client_socket(
-    name: Option<&str>,
-    socket: Option<PathBuf>,
-) -> Result<PathBuf, CliError> {
-    if let Some(socket) = socket {
-        return Ok(socket);
-    }
-    if let Some(name) = name {
-        return Ok(session_dir(name).join(SOCKET_NAME));
-    }
-    discover_live_socket()
+/// Where a *client* verb's session lives: a socket, and the prefix under it when
+/// the session is one of several a host serves (docs/control-channel.md).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ClientTarget {
+    pub(crate) socket: PathBuf,
+    /// `/sessions/<id>` on a host socket; `None` for a socket that is one session.
+    pub(crate) prefix: Option<String>,
 }
 
-/// Scan `.efference/*/control.sock` for a **live** (connectable) socket — liveness, not mere
-/// existence, so a stale dir from a dead daemon never shadows the running one. A successful
-/// `UnixStream::connect` means a listener is bound; a leftover socket file with no listener refuses
-/// the connection. Exactly one live daemon → use it; zero or several → a helpful error.
-pub(crate) fn discover_live_socket() -> Result<PathBuf, CliError> {
-    let base = Path::new(BASE_DIR);
-    let mut live = Vec::new();
-    if base.is_dir() {
-        for entry in std::fs::read_dir(base)? {
-            let sock = entry?.path().join(SOCKET_NAME);
-            if std::os::unix::net::UnixStream::connect(&sock).is_ok() {
-                live.push(sock);
-            }
+impl ClientTarget {
+    fn socket(socket: PathBuf) -> Self {
+        Self {
+            socket,
+            prefix: None,
         }
     }
+
+    fn hosted(socket: PathBuf, id: &str) -> Self {
+        Self {
+            socket,
+            prefix: Some(format!("/sessions/{id}")),
+        }
+    }
+
+    pub(crate) fn client(&self) -> ControlClient {
+        match &self.prefix {
+            Some(prefix) => ControlClient::at(&self.socket, prefix),
+            None => ControlClient::new(&self.socket),
+        }
+    }
+
+    /// The session dir the attachment store lives beside (docs/inbox.md): the
+    /// socket's own dir, or `.efference/<id>` next to the host socket. `None` for
+    /// an explicit socket with no parent.
+    pub(crate) fn session_dir(&self) -> Option<PathBuf> {
+        match &self.prefix {
+            Some(prefix) => {
+                let id = prefix.rsplit('/').next()?;
+                Some(self.socket.parent()?.join(id))
+            }
+            None => self.socket.parent().map(Path::to_path_buf),
+        }
+    }
+}
+
+/// Whether a listener is bound at `socket`: a successful connect, not mere
+/// existence, so a leftover file from a dead process never shadows a live one.
+fn is_live(socket: &Path) -> bool {
+    std::os::unix::net::UnixStream::connect(socket).is_ok()
+}
+
+/// Resolve the session a *client* verb should talk to: an explicit `--socket`; else
+/// the named session — its own live socket, or the host at `.efference/host.sock`
+/// if it lists that id; else the single live session found by scanning the session
+/// dirs and asking the host (docs/permissions.md). Anything that is not live is an
+/// error here, before a UI opens or a call is made.
+pub(crate) async fn resolve_client_target(
+    name: Option<&str>,
+    socket: Option<PathBuf>,
+) -> Result<ClientTarget, CliError> {
+    if let Some(socket) = socket {
+        return Ok(ClientTarget::socket(socket));
+    }
+    let host = host_socket();
+    let hosted: Vec<String> = if is_live(&host) {
+        ControlClient::new(&host)
+            .list_sessions()
+            .await
+            .map_err(|e| format!("listing {}: {e}", host.display()))?
+    } else {
+        Vec::new()
+    };
+    if let Some(name) = name {
+        let own = session_dir(name).join(SOCKET_NAME);
+        if is_live(&own) {
+            return Ok(ClientTarget::socket(own));
+        }
+        if hosted.iter().any(|id| id == name) {
+            return Ok(ClientTarget::hosted(host, name));
+        }
+        return Err(format!(
+            "no live session {name:?}: nothing listens at {} and the host{} does not list it",
+            own.display(),
+            if is_live(&host) {
+                String::new()
+            } else {
+                format!(" at {} is not running", host.display())
+            }
+        )
+        .into());
+    }
+    let mut live: Vec<ClientTarget> = discover_live_sockets()?
+        .into_iter()
+        .map(ClientTarget::socket)
+        .collect();
+    live.extend(
+        hosted
+            .iter()
+            .map(|id| ClientTarget::hosted(host.clone(), id)),
+    );
     match live.len() {
         0 => Err(
-            "no live efference daemon found — start one with `serve`, or pass --name/--socket"
+            "no live efference session found — create one with `tui --new`, or pass --name/--socket"
                 .into(),
         ),
         1 => Ok(live.pop().unwrap()),
         _ => {
-            live.sort();
-            let names: Vec<String> = live.iter().map(|p| p.display().to_string()).collect();
+            let names: Vec<String> = live
+                .iter()
+                .map(|target| match &target.prefix {
+                    Some(prefix) => format!("{} ({})", target.socket.display(), prefix),
+                    None => target.socket.display().to_string(),
+                })
+                .collect();
             Err(format!(
-                "multiple live daemons ({}); pass --name to choose",
+                "multiple live sessions ({}); pass --name to choose",
                 names.join(", ")
             )
             .into())
         }
     }
+}
+
+/// Every `.efference/*/control.sock` with a listener bound, sorted.
+fn discover_live_sockets() -> Result<Vec<PathBuf>, CliError> {
+    let base = Path::new(BASE_DIR);
+    let mut live = Vec::new();
+    if base.is_dir() {
+        for entry in std::fs::read_dir(base)? {
+            let sock = entry?.path().join(SOCKET_NAME);
+            if is_live(&sock) {
+                live.push(sock);
+            }
+        }
+    }
+    live.sort();
+    Ok(live)
 }
 
 #[cfg(feature = "dev")]
@@ -160,29 +249,33 @@ pub(crate) fn session_listing() -> String {
     listing
 }
 
-/// The session request as a person types it — the flags `serve` and `tui --new`
+/// The session request as a person types it — the flags `tui --new`
 /// share, one per `SessionRequest` field (docs/control-api.md). Listener flags
 /// (`--bind` and its family) are not here: they belong to whoever binds, never
 /// to a session.
 #[derive(clap::Args, Default, PartialEq, Eq)]
 pub(crate) struct SessionFlags {
-    /// Model to use for the agent. Defaults to claude-haiku-4-5.
+    /// Model for the agent, as `<connection>/<native model>` or a native id on the
+    /// host's default connection. Omitted, the host's `[defaults].model` applies
+    /// (~/.efference/config.toml).
     #[arg(long)]
     pub(crate) model: Option<String>,
-    /// Model for the spotter permission rung.
+    /// Model for the spotter permission rung, selected like --model.
     ///
-    /// Independent of the agent model — the spotter is volume work, so it defaults to the
-    /// provider's cheap band regardless of what the agent runs: claude-haiku-4-5 on
-    /// Anthropic and OpenRouter, gpt-5.6-luna on OpenAI and OpenAI-Codex.
+    /// Independent of the agent model — the spotter is volume work, so it defaults to
+    /// the host's `[defaults].spotter`, else the agent connection's cheap band:
+    /// claude-haiku-4-5 on Anthropic and OpenRouter, gpt-5.6-luna on OpenAI and
+    /// OpenAI-Codex.
     #[arg(long)]
     pub(crate) spotter_model: Option<String>,
-    /// Model for the fork peek that triages every tool result.
+    /// Model for the fork peek that triages every tool result, selected like --model.
     ///
-    /// Experimental. Omitted, or equal to --model, the peek runs on the agent's own
-    /// client and reads the agent's prompt cache. A different model runs the peek
-    /// on its own client: its own system prompt, its own session key, and only the
-    /// two peek tools offered. Its cache is a separate lineage over the same
-    /// transcript, paid at that model's rate.
+    /// Experimental. Omitted, the peek runs on the agent's own client and reads the
+    /// agent's prompt cache (on a host, unless `[defaults].triage` is set). Given, the
+    /// peek runs on its own client even when it names the agent's model: its own
+    /// system prompt, its own session key, and only the two peek tools offered. Its
+    /// cache is a separate lineage over the same transcript, paid at that model's
+    /// rate. Must share the agent's wire dialect.
     #[arg(long)]
     pub(crate) triage_model: Option<String>,
     /// Let the triage model think. Off by default: the peek's reasoning is discarded
@@ -262,15 +355,7 @@ pub(crate) struct SessionFlags {
     pub(crate) keep_scratch: bool,
 }
 
-/// `--model` when not given.
-pub(crate) const DEFAULT_MODEL: &str = "claude-haiku-4-5";
-
 impl SessionFlags {
-    /// `--model`, or the default.
-    pub(crate) fn model(&self) -> &str {
-        self.model.as_deref().unwrap_or(DEFAULT_MODEL)
-    }
-
     /// `--triage-model` and its knobs as the one value the request carries.
     pub(crate) fn triage(&self) -> Option<TriageModel> {
         self.triage_model.clone().map(|model| TriageModel {
@@ -282,7 +367,7 @@ impl SessionFlags {
     }
 
     /// Whether any session flag was given, for a verb that only accepts them in
-    /// one mode. `--model` carries a default and so is compared against it.
+    /// one mode.
     pub(crate) fn any_given(&self) -> bool {
         *self != Self::default()
     }
@@ -290,59 +375,12 @@ impl SessionFlags {
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
-    /// Start a session: run the agent loop in this directory.
-    ///
-    /// The session daemon binds a control socket under `.efference/<id>/` and runs the
-    /// whole agentic loop — turns, tool calls, approvals — for as long as it lives.
-    /// Everything else talks to it over that socket: `efference tui` in a terminal, the
-    /// web client over `--bind`, and `efference control`/`efference mcp` for scripts and
-    /// other agents. Nothing happens until a client sends the first turn.
-    Serve {
-        #[command(flatten)]
-        session: SessionFlags,
-        /// Also listen on a TCP address: the web client's front door.
-        ///
-        /// Loopback may be plaintext; any other address
-        /// requires --tls-cert/--tls-key (never cleartext on a routable interface),
-        /// and either way EFFERENCE_ROOT_SECRET must be set (the op env-file
-        /// pattern). Deliberately a flag/env, not a config key: the session config
-        /// is model-proposable, and network exposure must not be. The env fallbacks
-        /// on this flag family are for a direnv'd default (the operator's shell),
-        /// same trust as typing them; `--bind ""` overrides such a default back to
-        /// UDS-only (a second concurrent session, or the port is busy).
-        #[arg(long, value_name = "ADDR:PORT", env = "EFFERENCE_BIND")]
-        bind: Option<String>,
-        /// The public name browsers address the bind by — the Host allowlist and the
-        /// hostname in the printed link (your ts.net name). Defaults to `localhost`
-        /// on a loopback bind; required with TLS.
-        #[arg(long, value_name = "NAME", requires = "bind", env = "EFFERENCE_HOST")]
-        host: Option<String>,
-        /// PEM certificate chain for the bind (the `tailscale cert` output).
-        #[arg(
-            long,
-            value_name = "PEM",
-            requires = "tls_key",
-            env = "EFFERENCE_TLS_CERT"
-        )]
-        tls_cert: Option<PathBuf>,
-        /// PEM private key matching --tls-cert.
-        #[arg(
-            long,
-            value_name = "PEM",
-            requires = "tls_cert",
-            env = "EFFERENCE_TLS_KEY"
-        )]
-        tls_key: Option<PathBuf>,
-        /// Open the operator's browser at the bootstrap link once bound.
-        #[arg(long, requires = "bind")]
-        open: bool,
-    },
     /// Host sessions in this process: bind a control socket (and optionally a web
     /// front door), start with none, and create them over the socket.
     ///
     /// `POST /sessions` on the socket creates a session from a request body that
     /// carries its working directory and environment; each session's control API is
-    /// then at `/sessions/<id>/`. The bind and auth flags are `serve --bind`'s.
+    /// then at `/sessions/<id>/`.
     Host {
         /// Also listen on a TCP address: the web client's front door.
         #[arg(long, value_name = "ADDR:PORT", env = "EFFERENCE_BIND")]
@@ -395,13 +433,13 @@ pub(crate) enum Command {
     Dev(dev::DevCommand),
     /// efference in your terminal: attach to a running session, or create one on a host.
     ///
-    /// The terminal counterpart to the web client. Connects to the session `serve`
-    /// started here (or the one named by `--name`) and shows the transcript live,
+    /// The terminal counterpart to the web client. Connects to the session running
+    /// here (or the one named by `--name`) and shows the transcript live,
     /// with a composer for turns and approvals. Press ? inside for the keys.
     ///
     /// With `--new`, creates a session on a running `efference host` first — this
     /// directory as its working root, this shell's environment as its base, `--name`
-    /// as its id — and attaches to it. The session flags are `serve`'s. Quitting
+    /// as its id — and attaches to it. Quitting
     /// detaches; the session keeps running on the host.
     Tui {
         /// Create a session on the host at --host-socket, then attach to it.
@@ -429,7 +467,7 @@ pub(crate) enum Command {
     },
     /// Validate an efference.toml without starting a session.
     ///
-    /// Parses the file, applies the same checks `serve` applies at boot, resolves
+    /// Parses the file, applies the same checks a session boot applies, resolves
     /// its `[context]` entries from the current directory (`exec` entries run), and
     /// mounts each `[mcp.servers.*]` stanza to list the server's tools against the
     /// file's `tools` grants. Prints what the file grants and how many preamble

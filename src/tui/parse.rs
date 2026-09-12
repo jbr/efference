@@ -286,6 +286,29 @@ pub(super) fn parse_session_identity(value: &serde_json::Value) -> Option<Sessio
     Some(SessionIdentityView {
         model: value.get("model")?.as_str()?.to_string(),
         cwd: home_relative(value.get("cwd")?.as_str()?),
+        roles: value.get("inference").and_then(parse_session_roles),
+    })
+}
+
+/// `session_identity.inference` → one qualified label per role. A malformed
+/// object drops the roles and keeps the identity: the model line still renders.
+fn parse_session_roles(value: &serde_json::Value) -> Option<SessionRolesView> {
+    let qualified = |role: &serde_json::Value| -> Option<String> {
+        Some(format!(
+            "{}/{}",
+            role.get("connection")?.as_str()?,
+            role.get("model")?.as_str()?
+        ))
+    };
+    let triage = value.get("triage")?;
+    Some(SessionRolesView {
+        main: qualified(value.get("main")?)?,
+        spotter: qualified(value.get("spotter")?)?,
+        triage: if triage.get("shared")?.as_bool()? {
+            "shared".to_string()
+        } else {
+            qualified(triage)?
+        },
     })
 }
 

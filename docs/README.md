@@ -21,7 +21,7 @@ positions behind it are in [positions.md](positions.md); planned work lives in
 
 ## What this is
 
-efference is a daemon (`efference serve`) that runs the agent turn loop against an
+efference is a daemon (`efference host`) that runs the agent turn loop against an
 Anthropic-Messages-compatible endpoint, driven entirely through an HTTP control
 channel that the TUI, the CLI verbs, scripts, and other agents share as equal
 clients. It is one take on the harness category — a small, deliberately curated
@@ -156,6 +156,7 @@ Read top-down; open the subsystem doc you need.
 | Operating a session — what an operator can see, change, and say (usage, not architecture) | [operating.md](operating.md) | `src/client.rs`, `src/bin/efference/verbs.rs`, `src/guide.rs` |
 | The `[env]` table — stripping and injecting env vars at spawn, masking them at append, resolving vault references | [env.md](env.md) | `src/env_table.rs`, `src/env_table/resolve.rs`, `src/persist.rs`, `src/bash.rs` |
 | Transport & streaming (upstream SSE, deltas, keepalive, the shared HTTP client) | [transport.md](transport.md) | `src/api.rs`, `src/http.rs` |
+| Host-owned inference — named connections, credential loading, per-role model selection | [transport.md](transport.md) | `src/inference.rs`, `src/boot.rs`, `src/daemon/host.rs` |
 | MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/http.rs` |
 | The TCP bind — the web client's front door (root-derived credentials, TOTP bootstrap, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/daemon/handler.rs`, `src/daemon/tcp.rs` |
 | The web client | [web-client.md](web-client.md) | `web/`, `src/daemon/tcp.rs` |
@@ -168,7 +169,7 @@ holds the subsystem's vocabulary and public surface and the directory holds one 
 concern; each module's tests live in its own `test.rs`.
 
 The turn engine that ties it together is `src/agent.rs`; the CLI binary is
-`src/bin/efference/`, whose `serve` verb boots the daemon. Its command tree is three
+`src/bin/efference/`, whose `host` verb boots the daemon. Its command tree is three
 groups ([operating.md](operating.md)): the human verbs at the top level, `efference
 control <tool>` for the twelve calls that drive a running session — the same tools
 `efference mcp` serves over MCP, written once in `src/bin/efference/control/` — and

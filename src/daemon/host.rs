@@ -20,6 +20,7 @@ use trillium_tokio::Swansong;
 /// One process's sessions and the `Swansong` they all hang under.
 pub struct Host {
     swansong: Swansong,
+    inference: crate::inference::InferenceRegistry,
     sessions: Mutex<BTreeMap<String, Hosted>>,
 }
 
@@ -33,9 +34,10 @@ struct Hosted {
 }
 
 impl Host {
-    pub fn new() -> Arc<Self> {
+    pub fn new(inference: crate::inference::InferenceRegistry) -> Arc<Self> {
         Arc::new(Self {
             swansong: Swansong::new(),
+            inference,
             sessions: Mutex::new(BTreeMap::new()),
         })
     }
@@ -213,7 +215,8 @@ pub struct CreateSession {
     pub cwd: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<PathBuf>,
-    pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spotter_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -235,7 +238,7 @@ pub struct CreateSession {
 
 /// `POST /sessions` on the Unix socket: prepare and start a session from the
 /// body. Preparation reports to this process's stderr and may open a browser
-/// for an MCP authorization, both as at `serve` (backlog/host-process.md).
+/// for an MCP authorization, on the host (backlog/host-process.md).
 async fn create_session(mut conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
@@ -271,14 +274,20 @@ async fn create_session(mut conn: Conn) -> Conn {
         Ok(base) => base,
         Err(e) => return fail(conn, ErrorCode::BadRequest, format!("env: {e}")),
     };
+    let inference = match host.inference.resolve(
+        body.model.as_deref(),
+        body.spotter_model.as_deref(),
+        body.triage,
+    ) {
+        Ok(inference) => inference,
+        Err(error) => return fail(conn, ErrorCode::BadRequest, error.to_string()),
+    };
     let request = crate::boot::SessionRequest {
         session_dir: body.cwd.join(SESSION_BASE).join(&id),
         cwd: body.cwd,
         base_env,
         config: body.config,
-        model: body.model,
-        spotter_model: body.spotter_model,
-        triage: body.triage,
+        inference,
         temperature: body.temperature,
         effort: body.effort,
         upstream: body.upstream,
@@ -313,7 +322,7 @@ async fn refuse_remote_create(conn: Conn) -> Conn {
     )
 }
 
-/// A session id when none was named: timestamp millis, as `serve` mints.
+/// A session id when none was named: timestamp millis.
 fn default_session_id() -> String {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -13,8 +13,8 @@ use tokio::sync::oneshot;
 use trillium_tokio::Swansong;
 
 /// Everything a session starts from, resolved by whoever creates it. Pure data:
-/// the CLI's `serve` builds one today, and a host's session-creation handler
-/// builds the same struct. Nothing here reads ambient process state.
+/// a host's session-creation handler builds it from `boot::prepare`, and tests
+/// build it by hand. Nothing here reads ambient process state.
 pub struct SessionBoot<S: Spotter> {
     pub client: Client,
     pub toolbox: Toolbox,
@@ -26,6 +26,8 @@ pub struct SessionBoot<S: Spotter> {
     pub autonomous: bool,
     pub capabilities: ModelCapabilities,
     pub model: String,
+    /// The role selections behind `model`; `None` only for a boot built by hand (tests).
+    pub inference: Option<crate::inference::InferenceIdentity>,
     pub env_policy: crate::env_table::EnvPolicy,
     /// Leave the scratch dir on disk when the session ends (docs/tools.md).
     pub keep_scratch: bool,
@@ -61,6 +63,7 @@ impl SessionRuntime {
             autonomous,
             capabilities,
             model,
+            inference,
             env_policy,
             keep_scratch,
         } = boot;
@@ -103,6 +106,7 @@ impl SessionRuntime {
         session.set_identity(SessionIdentity {
             model,
             cwd: paths.cwd().to_string_lossy().into_owned(),
+            inference,
         });
         // Session cost telemetry (docs/transport.md): armed only where the provider
         // has a per-request accounting surface (OpenRouter's generation endpoint).

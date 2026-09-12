@@ -16,14 +16,27 @@ fn call(name: &str, input: serde_json::Value) -> ToolCall {
 /// Every fenced ```toml block in a guide has to parse and validate as a real config. This
 /// is the config-key half of the reference check, and it needs no separate list of keys:
 /// the schema rejects unknown fields, so a renamed key fails here the moment the document
-/// still shows the old spelling.
+/// still shows the old spelling. A fence titled ```toml ~/.efference/config.toml is the
+/// host's inference config and validates against that schema instead.
 #[test]
 fn every_toml_block_in_a_guide_is_a_valid_config() {
     let mut checked = 0;
     for document in DOCUMENTS {
-        for block in toml_blocks(document.body) {
+        for (title, block) in toml_blocks(document.body) {
             checked += 1;
-            if let Err(e) = crate::config::try_parse_text(&block) {
+            let parsed = match title {
+                "" => crate::config::try_parse_text(&block)
+                    .map(drop)
+                    .map_err(|e| e.to_string()),
+                "~/.efference/config.toml" => crate::inference::InferenceConfig::from_toml(&block)
+                    .map(drop)
+                    .map_err(|e| e.to_string()),
+                other => panic!(
+                    "unknown toml fence title {other:?} in `{}`",
+                    path(document.slug)
+                ),
+            };
+            if let Err(e) = parsed {
                 panic!(
                     "a ```toml block in `{}` is not a valid config: {e}\n---\n{block}",
                     path(document.slug)
@@ -267,15 +280,26 @@ fn the_prefix_is_read_granted_and_never_write_granted() {
 }
 
 /// Extract the contents of every ```toml fence in a document.
-fn toml_blocks(body: &str) -> Vec<String> {
+/// Each ```toml fence with its title (the text after `toml`, trimmed; empty for
+/// a plain fence) and its body.
+fn toml_blocks(body: &str) -> Vec<(&str, String)> {
     let mut blocks = Vec::new();
-    let mut current: Option<Vec<&str>> = None;
+    let mut current: Option<(&str, Vec<&str>)> = None;
     for line in body.lines() {
-        match (&mut current, line.trim_end()) {
-            (None, "```toml") => current = Some(Vec::new()),
-            (Some(_), "```") => blocks.push(current.take().unwrap().join("\n")),
-            (Some(lines), line) => lines.push(line),
-            (None, _) => {}
+        let line = line.trim_end();
+        match &mut current {
+            None => {
+                if let Some(title) = line.strip_prefix("```toml")
+                    && (title.is_empty() || title.starts_with(' '))
+                {
+                    current = Some((title.trim(), Vec::new()));
+                }
+            }
+            Some(_) if line == "```" => {
+                let (title, lines) = current.take().unwrap();
+                blocks.push((title, lines.join("\n")));
+            }
+            Some((_, lines)) => lines.push(line),
         }
     }
     blocks

@@ -1,8 +1,8 @@
 //! Provider identity and the model-metadata (capability) query it answers
 //! (docs/transport.md).
 //!
-//! The provider is **declared** via `EFFERENCE_PROVIDER`, never inferred from a
-//! URL shape (sniffing fails for proxies and custom URLs). It is a closed enum,
+//! The provider is **declared** by a host connection's configuration, never
+//! inferred from a URL shape (sniffing fails for proxies and custom URLs). It is a closed enum,
 //! grown in code as providers are added — an externally-defined provider would
 //! have to supply everything a variant supplies (endpoint, auth shape,
 //! capability source, a known-models map), and that interface is deferred until
@@ -70,23 +70,30 @@ impl std::fmt::Display for WireDialect {
 /// Which API family fronts the messages endpoint. Each variant knows its
 /// messages URL, its auth header shape, and its model-metadata endpoint — the
 /// operator declares one word and everything else is derived.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Serializes as its lowercase name, for state and boot reports; a request
+/// body never carries it (the dialect encoder is what a provider selects).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum Provider {
     /// Anthropic's own API: `x-api-key` auth, metadata at `GET /v1/models/{model}`.
+    #[serde(rename = "anthropic")]
     Anthropic,
     /// OpenRouter's Anthropic-Messages skin (`/api/v1/messages`): `authorization:
     /// Bearer` auth, metadata at `GET /api/v1/models/{author}/{slug}/endpoints`
     /// (ceilings) plus `GET /api/v1/model/{author}/{slug}` (effort levels).
+    #[serde(rename = "openrouter")]
     OpenRouter,
     /// OpenAI's Responses API (`/v1/responses`): `authorization: Bearer` auth,
     /// capabilities from the compiled catalog in `provider/openai.rs` because
     /// the Models endpoint reports none of the limits the boot path consumes.
+    #[serde(rename = "openai")]
     OpenAI,
     /// The Codex backend (`chatgpt.com/backend-api/codex/responses`): the same
     /// Responses wire, billed to a ChatGPT/Codex subscription instead of the
     /// platform balance. Auth is the OAuth access token Codex CLI caches in
     /// `~/.codex/auth.json` plus its `ChatGPT-Account-ID`; the request shape
     /// mirrors what Codex CLI sends ([`ResponsesProfile::Codex`]).
+    #[serde(rename = "openai-codex")]
     OpenAICodex,
 }
 
@@ -97,6 +104,12 @@ pub enum Provider {
 pub enum ResponsesProfile {
     Platform,
     Codex,
+}
+
+impl std::fmt::Display for Provider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
 }
 
 impl Provider {
@@ -145,22 +158,17 @@ impl Provider {
         }
     }
 
-    /// Parse the `EFFERENCE_PROVIDER` value. Unset defaults to [`Anthropic`];
-    /// anything unrecognized is a hard error naming the valid values — never a
-    /// silent fallback (a wrong guess would send the key to the wrong host).
-    ///
-    /// [`Anthropic`]: Self::Anthropic
-    pub(super) fn parse(value: Option<&str>) -> Result<Self, Error> {
-        match value.map(str::trim) {
-            None | Some("") => Ok(Self::Anthropic),
-            Some("anthropic") => Ok(Self::Anthropic),
-            Some("openrouter") => Ok(Self::OpenRouter),
-            Some("openai") => Ok(Self::OpenAI),
-            Some("openai-codex" | "codex") => Ok(Self::OpenAICodex),
-            Some(other) => Err(format!(
-                "EFFERENCE_PROVIDER={other:?} not recognized: valid values are \
-                 `anthropic`, `openrouter`, `openai`, and `openai-codex` (a new provider \
-                 is a new enum variant — docs/transport.md)"
+    /// Parse a configured provider name. The vocabulary is closed because a provider
+    /// selects the endpoint, auth shape, metadata lookup, and wire dialect together.
+    pub fn from_name(value: &str) -> Result<Self, Error> {
+        match value.trim() {
+            "anthropic" => Ok(Self::Anthropic),
+            "openrouter" => Ok(Self::OpenRouter),
+            "openai" => Ok(Self::OpenAI),
+            "openai-codex" | "codex" => Ok(Self::OpenAICodex),
+            other => Err(format!(
+                "provider {other:?} not recognized: valid values are `anthropic`, \
+                 `openrouter`, `openai`, and `openai-codex` (docs/transport.md)"
             )
             .into()),
         }
@@ -210,9 +218,8 @@ impl Provider {
         }
     }
 
-    /// The lowercase name, as `EFFERENCE_PROVIDER` spells it — for error
-    /// messages and boot output.
-    ///
+    /// The lowercase name, as configuration spells it — for error messages and
+    /// boot output.
     pub fn name(&self) -> &'static str {
         match self {
             Self::Anthropic => "anthropic",

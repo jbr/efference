@@ -197,15 +197,6 @@ fn the_root_secret_strip_is_not_overridable_downward() {
     );
 }
 
-#[test]
-fn the_harness_key_is_masked_with_no_config_and_despite_an_override() {
-    let report = EnvPolicy::build_from(
-        &user(&[("*_KEY", entry(Some(false), None))]),
-        &env(&[("ANTHROPIC_API_KEY", "sk-ant-abcdefgh")]),
-    );
-    assert!(!report.policy.mask("sk-ant-abcdefgh").contains("abcdefgh"));
-}
-
 // ------------------------------------------------------------- marker & floor
 
 #[test]
@@ -781,5 +772,20 @@ fn a_responses_function_call_is_masked_on_append_and_replayed_as_logged() {
         !serde_json::to_string(&items)
             .unwrap()
             .contains("leaked-secret-value")
+    );
+}
+
+/// A host inference credential is masked below the ordinary noise floor, and its
+/// marker carries the name only — a four-character prefix of a short token could
+/// be most of it.
+#[test]
+fn absorb_secret_masks_short_values_without_a_prefix() {
+    let masker = Masker::default();
+    masker.absorb(&[("SHORT".into(), "abc".into())]);
+    assert_eq!(masker.mask("key abc here"), "key abc here");
+    masker.absorb_secret(&[("work (WORK_KEY)".into(), "abc".into())]);
+    assert_eq!(
+        masker.mask("key abc here"),
+        "key ⟦work (WORK_KEY): elided by harness⟧ here"
     );
 }

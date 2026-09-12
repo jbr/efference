@@ -19,7 +19,7 @@ impl Session {
     /// directory — `Gate in ~/code/efference` — which together say what happened
     /// and which session it happened in. The path is home-relative because the
     /// home prefix is the same on every notification from one machine. Before
-    /// `serve` sets an identity, the event stands alone.
+    /// boot sets an identity, the event stands alone.
     fn push_title(&self, event: &str) -> String {
         match self.identity.lock().unwrap().as_ref() {
             Some(identity) => format!("{event} in {}", tildify(&identity.cwd)),

@@ -7,91 +7,92 @@ use super::thinking::is_recognized_adaptive_claude;
 use super::*;
 use crate::log::{CallId, FRAME_CAPTURE_CAP, is_captured_header};
 
-/// A bare `ANTHROPIC_API_KEY` and no `EFFERENCE_PROVIDER` resolves to the
-/// Anthropic provider: its endpoint, `x-api-key` auth, key verbatim.
+/// One declared provider derives the whole endpoint: URL, auth header name, and
+/// scheme prefix. The secret arrives alone and stays a *whole* value.
 #[test]
-fn endpoint_defaults_to_anthropic_from_bare_key() {
-    let e = Endpoint::resolve(None, None, Some("sk-ant-xyz".into())).unwrap();
-    assert_eq!(e.provider, Provider::Anthropic);
-    assert_eq!(e.url, "https://api.anthropic.com/v1/messages");
-    assert_eq!(e.auth_header, "x-api-key");
-    assert_eq!(e.auth_value, "sk-ant-xyz");
+fn endpoint_is_derived_from_the_declared_provider() {
+    let anthropic =
+        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None).unwrap();
+    assert_eq!(anthropic.url, "https://api.anthropic.com/v1/messages");
+    assert_eq!(anthropic.auth_header, "x-api-key");
+    assert_eq!(anthropic.auth_value, "sk-ant-xyz");
+    let openrouter =
+        Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None).unwrap();
+    assert_eq!(openrouter.url, "https://openrouter.ai/api/v1/messages");
+    assert_eq!(openrouter.auth_header, "authorization");
+    assert_eq!(openrouter.auth_value, "Bearer sk-or-v1-abc");
+    // Base64 padding rides through verbatim.
+    let padded = Endpoint::from_credentials(Provider::Anthropic, "abc==".into(), None).unwrap();
+    assert_eq!(padded.auth_value, "abc==");
 }
 
-/// One declared word derives the whole OpenRouter endpoint: URL,
-/// `authorization` header, `Bearer ` prefix. The secret arrives alone and
-/// stays a *whole* value (an `op://…` reference `op run` resolves).
+/// The Codex backend needs its account id and is the only provider that takes one.
 #[test]
-fn endpoint_openrouter_derived_from_declared_provider() {
-    let e =
-        Endpoint::resolve(Some("openrouter".into()), Some("sk-or-v1-abc".into()), None).unwrap();
-    assert_eq!(e.provider, Provider::OpenRouter);
-    assert_eq!(e.url, "https://openrouter.ai/api/v1/messages");
-    assert_eq!(e.auth_header, "authorization");
-    assert_eq!(e.auth_value, "Bearer sk-or-v1-abc");
+fn codex_credentials_carry_the_account_header() {
+    let codex =
+        Endpoint::from_credentials(Provider::OpenAICodex, "tok".into(), Some("acct".into()))
+            .unwrap();
+    assert_eq!(
+        codex.extra_headers,
+        vec![("ChatGPT-Account-ID".to_string(), "acct".to_string())]
+    );
+    assert!(Endpoint::from_credentials(Provider::OpenAICodex, "tok".into(), None).is_err());
+    assert!(
+        Endpoint::from_credentials(Provider::OpenAI, "tok".into(), Some("acct".into())).is_err()
+    );
 }
 
-/// `EFFERENCE_API_KEY` wins over a lingering `ANTHROPIC_API_KEY`, and rides
-/// through verbatim (base64 `=` padding intact).
+/// An unrecognized provider name is a hard error naming the valid values — never
+/// a silent fallback to a host the key doesn't belong to. Names are trimmed and
+/// `codex` is an alias.
 #[test]
-fn endpoint_api_key_overrides_anthropic_key() {
-    let e = Endpoint::resolve(None, Some("abc==".into()), Some("sk-ant".into())).unwrap();
-    assert_eq!(e.auth_header, "x-api-key");
-    assert_eq!(e.auth_value, "abc==");
-}
-
-/// The `ANTHROPIC_API_KEY` fallback covers the Anthropic provider only — an
-/// Anthropic key at OpenRouter would 401 confusingly, so it errors at resolve,
-/// naming the variable to set.
-#[test]
-fn endpoint_openrouter_rejects_anthropic_key_fallback() {
-    let err = Endpoint::resolve(Some("openrouter".into()), None, Some("sk-ant".into()))
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("EFFERENCE_API_KEY"), "{err}");
-}
-
-/// An unrecognized provider is a hard error naming the valid values — never a
-/// silent fallback to a host the key doesn't belong to.
-#[test]
-fn endpoint_unknown_provider_is_loud() {
-    let err = Endpoint::resolve(Some("cohere".into()), Some("k".into()), None)
-        .unwrap_err()
-        .to_string();
+fn provider_names_are_a_closed_vocabulary() {
+    let err = Provider::from_name("cohere").unwrap_err().to_string();
     assert!(err.contains("anthropic"), "{err}");
     assert!(err.contains("openrouter"), "{err}");
+    assert_eq!(Provider::from_name(" openai ").unwrap(), Provider::OpenAI);
+    assert_eq!(Provider::from_name("codex").unwrap(), Provider::OpenAICodex);
+    assert_eq!(
+        serde_json::to_value(Provider::OpenAICodex).unwrap(),
+        serde_json::json!("openai-codex")
+    );
+}
+
+/// The endpoint's Debug redacts the credential and the extra headers.
+#[test]
+fn endpoint_debug_redacts_credentials() {
+    let codex = Endpoint::from_credentials(
+        Provider::OpenAICodex,
+        "tok-secret".into(),
+        Some("acct".into()),
+    )
+    .unwrap();
+    let debug = format!("{codex:?}");
+    assert!(!debug.contains("tok-secret"), "{debug}");
+    assert!(!debug.contains("acct"), "{debug}");
+    assert!(
+        debug.contains("openai-codex") || debug.contains("OpenAICodex"),
+        "{debug}"
+    );
 }
 
 /// The Codex backend takes the catalog's limits but not its explicit cache
 /// policy: it rejects `prompt_cache_breakpoint`, so the arm reports implicit.
 #[tokio::test]
 async fn codex_backend_capabilities_report_implicit_caching() {
-    let codex = Endpoint::resolve(Some("openai-codex".into()), Some("tok".into()), None)
+    let codex = Endpoint::from_credentials(Provider::OpenAICodex, "tok".into(), Some("a".into()))
         .unwrap()
         .fetch_capabilities("gpt-5.6-luna", &[])
         .await
         .unwrap();
     assert_eq!(codex.prompt_cache, PromptCachePolicy::Implicit);
-    let platform = Endpoint::resolve(Some("openai".into()), Some("tok".into()), None)
+    let platform = Endpoint::from_credentials(Provider::OpenAI, "tok".into(), None)
         .unwrap()
         .fetch_capabilities("gpt-5.6-luna", &[])
         .await
         .unwrap();
     assert_eq!(platform.prompt_cache, PromptCachePolicy::Explicit);
     assert_eq!(codex.context_length, platform.context_length);
-}
-
-/// A blank `EFFERENCE_PROVIDER` means unset, not an unknown provider.
-#[test]
-fn endpoint_blank_provider_defaults_to_anthropic() {
-    let e = Endpoint::resolve(Some("  ".into()), Some("k".into()), None).unwrap();
-    assert_eq!(e.provider, Provider::Anthropic);
-}
-
-/// No credentials at all is an error naming both ways to provide them.
-#[test]
-fn endpoint_errors_with_no_credentials() {
-    assert!(Endpoint::resolve(None, None, None).is_err());
 }
 
 /// The Anthropic Models API shape: `max_input_tokens` is the context window,
@@ -1363,7 +1364,7 @@ fn session_key_truncates_a_multibyte_name_without_panicking() {
 /// pin two unrelated prefixes to one route.
 #[test]
 fn spotter_endpoint_takes_a_distinct_key_that_still_fits_the_cap() {
-    let mut e = Endpoint::resolve(None, None, Some("sk-ant-xyz".into())).unwrap();
+    let mut e = Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None).unwrap();
     let long = "x".repeat(400);
     e.session_id = Some(sticky_session_id(
         &std::path::PathBuf::from(".efference").join(&long),
@@ -1377,7 +1378,7 @@ fn spotter_endpoint_takes_a_distinct_key_that_still_fits_the_cap() {
 /// either, rather than a bare suffix.
 #[test]
 fn spotter_endpoint_without_a_key_stays_keyless() {
-    let e = Endpoint::resolve(None, None, Some("sk-ant-xyz".into())).unwrap();
+    let e = Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None).unwrap();
     assert_eq!(e.session_id, None);
     assert_eq!(e.for_spotter().session_id, None);
 }
@@ -3266,7 +3267,7 @@ async fn a_foreign_dialect_turn_list_never_becomes_a_request() {
 #[test]
 fn triage_endpoint_takes_a_distinct_key_under_the_cap() {
     let mut e =
-        Endpoint::resolve(Some("openrouter".into()), Some("sk-or-v1-abc".into()), None).unwrap();
+        Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None).unwrap();
     assert_eq!(e.for_triage().session_id, None);
     let long = "x".repeat(400);
     e.session_id = Some(sticky_session_id(
@@ -3313,8 +3314,9 @@ fn thinking_off_switch_disables_claude_and_optional_foreign_and_omits_mandatory(
 fn thinking_off_reaches_a_foreign_openrouter_model_as_reasoning_disabled() {
     use super::thinking::Thinking;
     let openrouter =
-        Endpoint::resolve(Some("openrouter".into()), Some("sk-or-v1-abc".into()), None).unwrap();
-    let anthropic = Endpoint::resolve(None, None, Some("sk-ant-xyz".into())).unwrap();
+        Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None).unwrap();
+    let anthropic =
+        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None).unwrap();
     let auto = ToolChoice::auto();
     let field = |client: &Client| {
         let thinking = Thinking::for_request(client.model(), &auto, false, client.thinking_off);

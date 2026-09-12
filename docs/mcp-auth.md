@@ -134,7 +134,7 @@ place the harness stops and waits for a human mid-startup. Per server:
 
 `efference dev spotter --tool` mounts through the plain path with no credentials and no
 dance, so a spotter check can never open a browser; a server needing authorization
-fails there with a message pointing at `serve`. `--reauth <server>` discards stored
+fails there with a message pointing at a hosted session. `--reauth <server>` discards stored
 credentials first, for a revoked grant or a changed authorization server.
 
 The authorization URL is always printed *and* the browser is always attempted. The

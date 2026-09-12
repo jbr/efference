@@ -86,8 +86,8 @@ impl Session {
 
 /// The single diffing task: wake, recompute every topic, publish the ones that moved.
 ///
-/// Spawned once per daemon by `serve`, and holds an `Arc` for the daemon's lifetime like
-/// the keepalive and config-watch loops do — the process ends when `serve` returns.
+/// Spawned once per session by the runtime, and holds an `Arc` for the daemon's lifetime like
+/// the keepalive and config-watch loops do — the session ends when the runtime returns.
 pub(crate) async fn watch_topics(shared: Arc<Session>) {
     // What each topic looked like when last published. A topic absent here has never been
     // published, so its first computed value counts as a change — which is what gives a

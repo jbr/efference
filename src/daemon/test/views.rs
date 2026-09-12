@@ -126,7 +126,7 @@ fn state_reports_a_stalled_trajectory() {
 
 /// `GET /state` names what the session is — the configured model and its working
 /// directory (docs/control-api.md) — as a topic, so a client reads it off the
-/// connect snapshot. `null` before `serve` sets it, which is what a test or an
+/// connect snapshot. `null` before boot sets it, which is what a test or an
 /// offline verb sees.
 #[test]
 fn state_reports_the_session_identity() {
@@ -138,6 +138,7 @@ fn state_reports_the_session_identity() {
     shared.set_identity(SessionIdentity {
         model: "anthropic/claude-opus-4".into(),
         cwd: "/Users/jbr/code/efference".into(),
+        inference: None,
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(

@@ -8,6 +8,12 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Host-owned inference connections** (docs/transport.md, docs/operating.md): `efference host` loads named provider connections from `~/.efference/config.toml` (required) and their credentials from its own startup environment (`env` key or the Codex cache), once; a session selects `<connection>/<native model>` per role — main, spotter, and an own-client triage that must share the main dialect — with `[defaults]` filling omissions. Host secrets are masked by name in every session that holds them and never enter a child environment; `session_identity.inference` reports each role's connection, and the TUI sidebar and web top bar show it.
+
+- **`--name` reaches hosted sessions** (docs/control-channel.md): `tui`, `control`, and `mcp` resolve a name to its own socket or to `/sessions/<id>` on the host, and discovery counts hosted sessions; a name nothing serves is an error, and the TUI connects before taking the terminal instead of opening an empty screen.
+
+### Removed
+- **`efference serve`** and provider selection from the environment: `EFFERENCE_PROVIDER`, `EFFERENCE_API_KEY`, `EFFERENCE_CHATGPT_ACCOUNT_ID`, the `ANTHROPIC_API_KEY` fallback, and the unconditional masking of those names. A host is the only way to boot a session; the dev verbs that dial a provider (`dev wire`, `dev peek`, `dev spotter`, `dev spotter-eval`) resolve `--model` through the same config.
 - **`efference tui --new`** (docs/operating.md, docs/control-api.md): create a session on a running host — this directory as its root, this shell's environment as its base, `--name` as its id, `serve`'s session flags — and attach under `/sessions/<id>/`; quitting detaches. The control client takes a path prefix (`Client::at`) that joins `/v1` routes only, and `CreateSession` is the one body type both ends share.
 - **`efference host`** (docs/control-channel.md, docs/control-api.md): one process hosting many sessions as their control endpoint — `GET /sessions`, `POST /sessions` on the Unix socket (the body carries the session's cwd and environment), `DELETE /sessions/:id`, and each session's own API under `/sessions/<id>/`, routed in-process into the same handlers a session bind serves.
 - **`dev cache` states uncached input tokens beside the warm rate** (docs/log-and-projection.md): the rate counts any nonzero read as warm, so a session of preamble-only hits reads as healthy; the token column is what makes 81% warm against 2.07M uncached input legible.

@@ -16,6 +16,10 @@ pub async fn run(
     // Validate the theme up front, before the alt-screen takes over, so a bad
     // name surfaces a clean error (with the list) instead of a silent fallback.
     let theme = resolve_theme(theme)?;
+    // Open the event stream up front for the same reason: a socket nobody is
+    // listening on, or a host prefix that names no session, is a plain error
+    // here rather than an empty screen whose turns go nowhere.
+    let events = client.events(Some(0), Some("log,output,state")).await?;
 
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
     let (submit_tx, mut submit_rx) =
@@ -36,7 +40,7 @@ pub async fn run(
     // closes or the UI thread drops the receiver. No poll: the daemon pushes a
     // whole-topic replacement when a topic changes, and the connect snapshot seeds
     // every topic up front.
-    let bridge = tokio::spawn(bridge(client.clone(), tx.clone()));
+    let bridge = tokio::spawn(bridge(client.clone(), events, tx.clone()));
 
     // Turn sender: each composer submission is POSTed as a user turn.
     let turn_client = client.clone();

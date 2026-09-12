@@ -102,12 +102,17 @@ pub enum StreamDelta {
 /// mechanism that already delivers whole-topic replacements.
 #[derive(Clone, Debug, Serialize)]
 pub struct SessionIdentity {
-    /// The model id `serve` resolved — the same string the system prompt's
+    /// The native model id boot resolved — the same string the system prompt's
     /// identity line states (docs/context.md).
     pub model: String,
     /// The session's working directory, as the daemon knows it: what the tool
     /// layer was built with, rendered as a path string.
     pub cwd: String,
+    /// The host connection and native model behind each role, with whether
+    /// triage shares the main client. `None` only for a session built without
+    /// boot (tests).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inference: Option<crate::inference::InferenceIdentity>,
 }
 
 /// Why a trajectory stopped short of finishing (docs/transport.md).
@@ -178,7 +183,7 @@ pub struct ConfigRepair {
 }
 
 /// A session's state and control surface (docs/control-channel.md).
-/// The loop and HTTP handlers hold the same `Arc<Session>`; `serve` owns the
+/// The loop and HTTP handlers hold the same `Arc<Session>`; the runtime owns the
 /// listener and wires the agent future and auxiliary tasks.
 pub struct Session {
     /// Immutable working root for policy and child execution (docs/control-channel.md).
@@ -317,7 +322,7 @@ pub struct Session {
     /// cursor never needs invalidating — see [`Session::retention`].
     retention: Mutex<(usize, Retention)>,
     /// The selected model's capabilities, fetched from the provider's metadata
-    /// endpoint at boot (a required serve step — docs/transport.md) and set once
+    /// endpoint at boot (a required boot step — docs/transport.md) and set once
     /// via [`Session::set_capabilities`]. `None` only in tests and offline verbs
     /// that never fetched; `GET /state` then reports `context: null`.
     /// Transport-only: never logged or projected.
@@ -336,7 +341,7 @@ pub struct Session {
     /// reports `cost: null`. Transport-only: never logged or projected.
     cost: Arc<Mutex<CostCell>>,
     /// What this session is — the configured model and its working directory
-    /// (docs/control-api.md), set once by `serve` and read by the
+    /// (docs/control-api.md), set once by boot and read by the
     /// `session_identity` topic. `None` in tests and offline verbs that never
     /// booted a session, which the topic reports as `null`.
     identity: Mutex<Option<SessionIdentity>>,
@@ -427,7 +432,7 @@ pub struct Session {
     /// (`set_pace` dropping `held`); a pure speed change or a *hold* does not fire it (those take
     /// effect at the next juncture).
     pace_interrupt: Notify,
-    /// The session scratch dir (docs/tools.md): minted by `serve`, exported to bash
+    /// The session scratch dir (docs/tools.md): minted by boot, exported to bash
     /// children as `$TMPDIR` (foreground via the toolbox's `Bash`, background via
     /// [`spawn_background`](Self::spawn_background)), granted rw in the injected
     /// path stack, and the one value the structured-tool expander resolves. All
@@ -502,7 +507,7 @@ impl Session {
         upstream_failure: UpstreamFailureState,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
         // Tests and the convenience constructors resolve the `[env]` policy from
-        // the role they were handed (docs/env.md); `serve` builds one earlier —
+        // the role they were handed (docs/env.md); boot builds one earlier —
         // it needs the strip set for the toolbox and the masker for the boot
         // preamble — and passes it to [`Session::full`] so the session has exactly
         // one, whose needle set is append-only for its lifetime.
@@ -660,7 +665,7 @@ impl Session {
     /// `agent::tool_definitions`: the toolbox's mounted tools *and* the
     /// harness's own loop-owned family (`consolidate`, the supervisor/inbox
     /// tools, the two peek tools), the same union `tools[]` advertises.
-    /// Called once by `serve`, before `toolbox` moves into the loop — the
+    /// Called once by the runtime, before `toolbox` moves into the loop — the
     /// same "only a served session has this" reason as
     /// [`Self::set_capabilities`]/[`Self::set_identity`], which it sits beside.
     pub fn set_tool_catalog(&self, toolbox: &crate::tools::Toolbox) {
@@ -676,7 +681,7 @@ impl Session {
     }
 
     /// Store the boot-fetched model capabilities (docs/transport.md). Called once
-    /// by the daemon's `serve` before the loop starts; the value is immutable
+    /// by the runtime before the loop starts; the value is immutable
     /// thereafter and read by `GET /state`'s context readout.
     pub fn set_capabilities(&self, capabilities: crate::api::ModelCapabilities) {
         *self.capabilities.lock().unwrap() = Some(capabilities);
@@ -684,7 +689,7 @@ impl Session {
 
     /// Share the client's output-reservation cell (`api/reservation.rs`), so the
     /// context limit `GET /state` reports is the window less what the last
-    /// request reserved for output. Called once by `serve`, beside
+    /// request reserved for output. Called once by the runtime, beside
     /// [`Self::set_capabilities`].
     pub fn set_reservation(&self, reservation: ReservationState) {
         *self.reservation.lock().unwrap() = reservation;
@@ -696,7 +701,7 @@ impl Session {
     }
 
     /// Store what this session is — the model it was configured with and the
-    /// directory it runs in (docs/control-api.md). Called once by `serve` before
+    /// directory it runs in (docs/control-api.md). Called once by the runtime before
     /// the loop starts; the `session_identity` topic reads it back.
     pub fn set_identity(&self, identity: SessionIdentity) {
         *self.identity.lock().unwrap() = Some(identity);
@@ -799,7 +804,7 @@ impl Session {
 
     /// Arm session cost telemetry (docs/transport.md): every recorded request
     /// spawns a fetch of its billed cost from this endpoint's accounting
-    /// surface. Called by the daemon's `serve` only when the provider has one
+    /// surface. Called by the runtime only when the provider has one
     /// (OpenRouter today); unarmed, `GET /state` reports `cost: null`.
     pub fn enable_cost_tracking(&self, endpoint: crate::api::Endpoint) {
         self.cost.lock().unwrap().endpoint = Some(endpoint);
@@ -963,7 +968,7 @@ const SETTLE_TIMEOUT: Duration = Duration::from_secs(300);
 pub const SESSION_BASE: &str = ".efference";
 
 /// The control socket's name inside a session dir. The layout is named here rather
-/// than in each reader because two of them share it: `serve` and the CLI's socket
+/// than in each reader because two of them share it: the host and the CLI's socket
 /// resolution.
 pub const SOCKET_NAME: &str = "control.sock";
 
@@ -1035,11 +1040,9 @@ mod frontend;
 mod host;
 mod paths;
 mod runtime;
-mod serve;
 pub use host::{CreateSession, Host, serve_host};
 pub use paths::SessionPaths;
 pub use runtime::{SessionBoot, SessionRuntime};
 
 pub use frontend::RemoteFrontend;
-pub use serve::serve;
 pub use tcp::{TcpBind, TlsPem};

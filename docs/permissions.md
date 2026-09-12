@@ -51,7 +51,7 @@ load-time diagnostic that stands in for KDL's old editor tooling. The same crate
 file in place ([`DocumentMut`]) for the auto-persist write-back (below), so one dependency
 both reads the config and writes the harness's edits back with comments intact.
 
-**Per-session snapshot (the config is a reviewed file).** At boot the origin (`serve --config <path>`,
+**Per-session snapshot (the config is a reviewed file).** At boot the origin (`--config <path>`,
 which must exist; else the `efference.toml` probe; else a scaffolded empty file) is **snapshotted once**
 into the session's own `.efference/<id>/config.toml`. That snapshot — not the origin — is the live,
 watched, editable policy: two sessions sharing an origin diverge freely (the origin is an inert
@@ -368,7 +368,7 @@ contains the target, the *most specific* (deepest) one governs; a no-access gran
 sugar / `Perms::default()`) is a real **deny** once it is the governing prefix. This is what
 lets the standard three-layer stack work: allow `.`, deny `.efference/`, re-allow
 `.efference/<id>/config.toml` read-only. The harness **injects that self-surface stack in
-`serve`** (`src/bin/efference/serve.rs`), layered over the operator's grants: the session dir holds this
+boot** (`src/boot.rs`), layered over the operator's grants: the session dir holds this
 session's control socket, its append-only log, and every *other* session's dir, all under the
 operator's `.` grant — so without the deny nothing would stop a session from writing its own
 log (corrupting the session record) or POSTing to its own control socket (approving its own gates,
@@ -393,7 +393,7 @@ socket, a *peer's*, and a *parent's* uniformly — so the property survives into
 topologies without a second mechanism (see
 [`../backlog/multiagent/`](../backlog/multiagent/README.md)).
 
-`serve` injects one more grant alongside the self-surface stack: the per-session **scratch
+Boot injects one more grant alongside the self-surface stack: the per-session **scratch
 dir** ([tools.md](tools.md)) is always granted rw. It lives outside `.` and outside the
 session dir, so it interacts with neither the operator's grants nor the deny; structured-tool
 paths reach it via `$TMPDIR` expansion (resolved *before* classify/spot, so the grant check
@@ -521,7 +521,7 @@ deterministic rung applies) with the configured spelling as an annotation, and t
 states that a move's relative paths resolve against the cwd, with a worked example — a
 spotter once gated a plain in-cwd write by comparing spellings (`scratch/…` "does not
 start with `.`") instead of resolving; absolute grants make containment string-visible. The
-cwd is supplied by the caller (`ForkSpot::with_cwd`), not read from the process: `serve`
+cwd is supplied by the caller (`ForkSpot::with_cwd`), not read from the process: boot
 passes the session's own directory, and the offline eval passes each case's recorded one, so
 a case replayed from another checkout still resolves the way its session did. The persona is sized to clear Haiku's cache floor on its own, so even a minimal
 config caches; within a session the scope is fixed, so every spotter call after the first is
@@ -608,7 +608,7 @@ diffs the file and emits `Committed` edits); and the **session editing its own c
 config-as-reviewed-file mechanism that *replaced* the planned `propose_scope` tool — a session
 `write`/`edit` to its `config.toml` is forced to the operator gate (`is_config_write`,
 bypassing fast-path and spotter), and on approval the loop refreshes the file and folds it; the **autonomous flip**
-(`serve --autonomous`), below; and **prefix-promotion** (the spotter files a `Proposed(Command)`),
+(`--autonomous`), below; and **prefix-promotion** (the spotter files a `Proposed(Command)`),
 below — the last `Proposed`-lifecycle user.
 
 **A config edit has two outcomes, never three (`src/config.rs`).** The file is the session's policy
@@ -663,7 +663,7 @@ positions of increasing human involvement:
   has. The model may *edit that file* to request the access — but that write hits the `is_config_write`
   carve-out and **still gates**, held for the orchestrator-above. So autonomous mode relocates the
   human, it doesn't remove it: routine gated calls self-resolve, and the operator's attention is spent
-  only on genuine policy-change requests. (`serve --autonomous` boots into this position.)
+  only on genuine policy-change requests. (`--autonomous` boots into this position.)
   **A structured call's redirect names the grant it lacked.** The generic copy above says the
   call was gated; it does not say why the *tool* produced nothing, and a model reading a
   `write`/`edit` come back empty has been observed to conclude the tool is broken rather than

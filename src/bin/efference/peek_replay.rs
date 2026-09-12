@@ -313,13 +313,12 @@ pub(crate) async fn peek(
     // grammar the other reader verbs take.
     let (path, label) = resolve_session_log(&path.to_string_lossy())?;
     let entries = efference::persist::load(&path)?;
-    // Replays use the env-declared provider's projection-shaping choices — image
-    // placement and cache-breakpoint placement — matching what a live session against
-    // that provider projects; a keyless dry run falls back to the defaults
-    // (docs/log-and-projection.md).
-    let provider = efference::api::Endpoint::from_env()
-        .map(|e| e.provider)
-        .ok();
+    // Replays use the selected connection's projection-shaping choices — image
+    // placement and cache-breakpoint placement — matching what a live session on
+    // that provider projects; a dry run with no usable config falls back to the
+    // defaults (docs/log-and-projection.md).
+    let inference = crate::inference::resolve(Some(model), None, triage.clone());
+    let provider = inference.as_ref().ok().map(|i| i.main().1.provider);
     let placement = provider
         .map(|p| p.image_placement(model))
         .unwrap_or_default();
@@ -404,9 +403,11 @@ pub(crate) async fn peek(
         return Ok(());
     }
 
-    let mut endpoint = efference::api::Endpoint::from_env()?;
+    let inference = inference?;
+    let (main_selection, mut endpoint) = inference.main();
+    let model = main_selection.model.as_str();
     // The session's sticky-routing key (docs/transport.md), derived from its dir
-    // exactly as `serve` derives it, so the replay reads the session's own prefix on
+    // exactly as boot derives it, so the replay reads the session's own prefix on
     // the upstream that holds it — and the own peek takes its `-triage` suffix, its
     // own lineage's key. Without it a provider with sticky routing re-derives a key
     // per request and the replay wanders between upstreams, cold every time.
@@ -414,19 +415,20 @@ pub(crate) async fn peek(
         endpoint.session_id = Some(efference::api::sticky_session_id(dir));
     }
     // The own peek replays the exact live shape (docs/redaction-fork.md): the same
-    // constructor `serve` boots, the same system prompt over the recorded context
+    // constructor boot uses, the same system prompt over the recorded context
     // block, the session's own model named as the agent. The shared peek replays on
     // the agent client, whose model is `--model`.
     let agent_model = session_model(&system).unwrap_or_else(|| model.to_string());
-    let (peek, model) = match &triage {
-        Some(t) => {
+    let (peek, model) = match inference.triage() {
+        Some((_, mut triage_endpoint, t)) => {
+            triage_endpoint.session_id = endpoint.session_id.clone();
             let triage_system = efference::env::triage_system_prompt(
                 &t.model,
                 &agent_model,
                 context_block.as_deref(),
             );
             let (peek, caps) = ForkPeek::for_triage_model(
-                &endpoint,
+                &triage_endpoint,
                 t,
                 triage_system,
                 std::time::Duration::from_secs(600),

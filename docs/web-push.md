@@ -67,7 +67,7 @@ that), then spawns the send so the turn loop never waits on a push service.
   with an earlier one's text.
 
 Titles are `<event> in <cwd>` — `Gate in ~/code/efference` — with the home directory
-tilde-abbreviated; the event stands alone before `serve` sets an identity. The path in
+tilde-abbreviated; the event stands alone before boot sets an identity. The path in
 the payload is `/` today, the session bind's own root; when a host serves sessions
 under a prefix ([../backlog/host-process.md](../backlog/host-process.md)) the sender
 carries the session-prefixed path instead, and nothing else changes — the service

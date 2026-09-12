@@ -437,7 +437,7 @@ this class of bug.
 ### A declared server that does not mount stops the boot
 
 `optional = true` on a stanza opts out; the default is that a mount failure
-fails `efference serve`, naming the server and the reason. Declaring a server is
+fails the session boot, naming the server and the reason. Declaring a server is
 the operator's statement that this session should have it, so starting without
 it produces a session missing a capability nobody knows is missing — and an
 agent that answers "I can't do that" to a request the config says it can.
@@ -571,7 +571,7 @@ against future collisions as new servers or tools are added.
 
 ## The session scratch dir and `$TMPDIR`
 
-`serve` mints a private per-session scratch directory (`<system-temp>/efference-<rand>/`,
+Boot mints a private per-session scratch directory (`<system-temp>/efference-<rand>/`,
 mkdtemp-style: random name, create-or-retry, mode `0700`) and projects that one value
 three ways — the env var, the path grant, and the expansion value are all views of it:
 
@@ -599,7 +599,7 @@ three ways — the env var, the path grant, and the expansion value are all view
 
 The logged `tool_use` keeps the variable form the model wrote; only the in-flight call
 is rewritten, so projection determinism is untouched. Lifecycle: deleted on session
-end by the session runtime; `serve --keep-scratch` retains it as a post-mortem artifact.
+end by the session runtime; `--keep-scratch` retains it as a post-mortem artifact.
 
 ## Open items
 

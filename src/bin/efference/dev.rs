@@ -129,7 +129,7 @@ pub(crate) enum DevCommand {
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
         /// Replay under the separate-model peek instead: this model on its own client,
-        /// the same shape `serve --triage-model` boots. Every draw's verdict is
+        /// the same shape `--triage-model` boots. Every draw's verdict is
         /// compared line-for-line against the session's recorded verdict — what the
         /// agent chose to see — and the summary reports kept fractions, over- and
         /// under-retention, and a table of the gates that disagreed most.
@@ -174,12 +174,12 @@ pub(crate) enum DevCommand {
         /// readability — not parseable back).
         #[arg(long, value_enum, default_value = "json")]
         format: WireFormat,
-        /// Model id to stamp into the envelope. Matches the `serve` default; only
-        /// cosmetic here (the request isn't sent).
+        /// Model to stamp into the envelope, selected like `--model` at creation.
+        /// Only cosmetic here (the request isn't sent).
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
         /// Config file to fold into the reconstructed preamble, same resolution as
-        /// `serve` (defaults to probing `efference.toml`). The config file isn't recorded
+        /// boot (defaults to probing `efference.toml`). The config file isn't recorded
         /// in the log, so — like `system`/`tools[]` — it's rebuilt from the current
         /// environment; pass `--config` to match the session that produced the log.
         #[arg(long, short = 'c')]
@@ -202,9 +202,10 @@ pub(crate) enum DevCommand {
         /// `<path>:r` (read), or bare `<path>` (no access). E.g. `--path .:rw --path /refs:r`.
         #[arg(long = "path")]
         paths: Vec<String>,
-        /// Spotter model. Defaults to claude-haiku-4-5.
-        #[arg(long, default_value = "claude-haiku-4-5")]
-        model: String,
+        /// Spotter model, as `<connection>/<native model>` or a native id on the
+        /// host's default connection. Defaults to the configured spotter.
+        #[arg(long)]
+        model: Option<String>,
         /// Simulate a prefix-promotion probe riding this call: ask whether `<prefix>` is safe for all
         /// arguments (docs/permissions.md). The verdict's `clear_always` stance is
         /// the safe-vote; the tester reports whether it would queue a promotion.
@@ -317,15 +318,15 @@ pub(crate) enum DevCommand {
 }
 
 /// Run one `dev` verb.
-/// `name` is the global `--name`; `client_socket` resolves the session socket on
-/// demand, so the offline verbs never trigger discovery.
-pub(crate) async fn run(
+/// `name` is the global `--name`; `client_target` resolves the session on demand,
+/// so the offline verbs never trigger discovery.
+pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
     command: DevCommand,
     name: Option<String>,
-    client_socket: impl FnOnce() -> Result<PathBuf, CliError>,
+    client_target: impl FnOnce() -> F,
 ) -> CliResult {
     match command {
-        DevCommand::Open { print, bearer } => open(client_socket()?, print, bearer).await,
+        DevCommand::Open { print, bearer } => open(client_target().await?, print, bearer).await,
         DevCommand::Cache { session, all } => cache_report::cache(session, name, all),
         DevCommand::View {
             session,
@@ -389,7 +390,7 @@ pub(crate) async fn run(
                 scope,
                 watch_for,
                 paths,
-                &model,
+                model.as_deref(),
                 probe,
                 tool,
                 input,
@@ -505,9 +506,13 @@ pub(crate) async fn wire(
     config: Option<PathBuf>,
 ) -> CliResult {
     let entries = efference::persist::load(&path)?;
-    let provider = efference::api::Endpoint::from_env()
-        .map(|e| e.provider)
-        .ok();
+    // The provider behind `--model`, when the host config resolves it; with none,
+    // the view's own defaults.
+    let (model, provider) = match crate::inference::main_endpoint(model) {
+        Ok((model, endpoint)) => (model, Some(endpoint.provider)),
+        Err(_) => (model.to_string(), None),
+    };
+    let model = model.as_str();
     let placement = provider
         .map(|p| p.image_placement(model))
         .unwrap_or_default();
@@ -573,7 +578,7 @@ pub(crate) async fn wire(
         );
         system
     } else {
-        // No snapshot (a pre-snapshot log) — rebuild the envelope the same way `serve` does
+        // No snapshot (a pre-snapshot log) — rebuild the envelope the same way boot does
         // (current cwd seeds both the env block and the MCP servers' session roots; the role
         // config folds its brief into the preamble).
         let loaded = match efference::config::load(config.as_deref()) {
@@ -661,8 +666,9 @@ mod test;
 /// Mint and open a fresh bootstrap link against a running daemon's TCP bind
 /// (docs/web-bind.md); `--bearer` prints the program token instead. Both come over
 /// the Unix socket only.
-async fn open(socket: PathBuf, print: bool, bearer: bool) -> CliResult {
-    let client = ControlClient::new(socket);
+async fn open(target: ClientTarget, print: bool, bearer: bool) -> CliResult {
+    // The credential routes live at the socket root, whatever the session prefix.
+    let client = ControlClient::new(target.socket);
     if bearer {
         println!("{}", client.auth_bearer().await?);
         return Ok(());

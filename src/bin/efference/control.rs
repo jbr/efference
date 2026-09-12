@@ -32,7 +32,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::runtime::Handle;
 
-use super::{CliResult, resolve_client_socket};
+use super::{CliResult, ClientTarget, resolve_client_target};
 
 mcplease::tools!(
     Control,
@@ -54,7 +54,7 @@ mcplease::tools!(
 /// docs/operating.md: what the tools drive, what a gate is, and which call to
 /// reach for at each of the three things that can be waited on.
 const INSTRUCTIONS: &str = "\
-Drive one running efference session (a daemon started with `efference serve`). The \
+Drive one running efference session (created on an `efference host`). The \
 session runs its own agent loop; these tools submit work to it, resolve the gates it \
 stops at, and read where it is.
 
@@ -91,11 +91,11 @@ pub(crate) struct Control {
 }
 
 impl Control {
-    /// Bind the tools to the session behind `socket`, blocking on `runtime`.
-    pub(crate) fn new(runtime: Handle, socket: std::path::PathBuf, cli: bool) -> Self {
+    /// Bind the tools to the session at `target`, blocking on `runtime`.
+    pub(crate) fn new(runtime: Handle, target: ClientTarget, cli: bool) -> Self {
         Self {
             runtime,
-            default_client: Client::new(socket),
+            default_client: target.client(),
             cli,
         }
     }
@@ -116,9 +116,10 @@ impl Control {
     fn client(&self, session: Option<&str>) -> Result<Client> {
         match session {
             None => Ok(self.default_client.clone()),
-            Some(name) => Ok(Client::new(
-                resolve_client_socket(Some(name), None).map_err(|e| anyhow!("{e}"))?,
-            )),
+            Some(name) => Ok(self
+                .block_on(resolve_client_target(Some(name), None))
+                .map_err(|e| anyhow!("{e}"))?
+                .client()),
         }
     }
 
@@ -312,10 +313,10 @@ pub(crate) async fn pending_call_id(client: &Client) -> Result<String> {
 
 /// Run `efference control <tool>` and print what it returned. Dispatch is
 /// synchronous, so it runs on a blocking thread rather than on a runtime worker.
-pub(crate) async fn run_cli(tools: Tools, socket: std::path::PathBuf) -> CliResult {
+pub(crate) async fn run_cli(tools: Tools, target: ClientTarget) -> CliResult {
     let runtime = Handle::current();
     let text = tokio::task::spawn_blocking(move || {
-        let mut state = Control::new(runtime, socket, true);
+        let mut state = Control::new(runtime, target, true);
         mcplease::traits::Dispatch::call_to_text(
             tools,
             &mut state,
@@ -330,10 +331,10 @@ pub(crate) async fn run_cli(tools: Tools, socket: std::path::PathBuf) -> CliResu
 /// Run `efference mcp`: the same tools over newline-delimited JSON-RPC on
 /// stdin/stdout, the transport a harness mounting this server speaks
 /// (docs/operating.md). Blocks until stdin closes.
-pub(crate) async fn run_stdio(socket: std::path::PathBuf) -> CliResult {
+pub(crate) async fn run_stdio(target: ClientTarget) -> CliResult {
     let runtime = Handle::current();
     tokio::task::spawn_blocking(move || {
-        let mut state = Control::new(runtime, socket, false);
+        let mut state = Control::new(runtime, target, false);
         let config =
             mcplease::ServerConfig::new(mcplease::server_info!()).with_instructions(INSTRUCTIONS);
         mcplease::serve::<Tools, _>(&mut state, &config)

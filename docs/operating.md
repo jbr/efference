@@ -10,7 +10,7 @@ driven, and it is refined from use rather than written ahead of it.
 
 ## Three groups of commands
 
-`efference --help` lists only what a person types: `serve`, `tui`, `check`, `host`. The rest is grouped by who it is for.
+`efference --help` lists only what a person types: `host`, `tui`, `check`. The rest is grouped by who it is for.
 
 - **`efference control <tool>`** — the twelve calls that drive a *running* session:
   `turn`, `approve`, `settle`, `interrupt`, `background`, `pace`, `review-level`,
@@ -59,7 +59,7 @@ working" from "the socket broke".
 
 ## Where a session lives
 
-`efference serve` mints `.efference/<id>/` and never reuses one. It holds:
+Creating a session mints `.efference/<id>/` and never reuses one. It holds:
 
 - `control.sock` — the HTTP control channel, the only input path into the loop.
 - `log.jsonl` — the append-only record; every entry, raw.
@@ -88,10 +88,37 @@ Three reads, at three grains.
 `efference tui` is the interactive view of all three; `efference dev view <session>` opens a
 recorded log in the same rendering, inert. `efference tui --new` first creates a session on a
 running `efference host` (`--host-socket`, default `.efference/host.sock` here) from this
-directory, this shell's environment, `--name`, and the same session flags `serve` takes,
+directory, this shell's environment, `--name`, and the session flags,
 then attaches under `/sessions/<id>/`; quitting detaches, and the session stays on the host
-([control-api.md](control-api.md)). Without `--new`, a session flag is an error rather than
+([control-api.md](control-api.md)). Without `--new`, `tui --name <id>` attaches to that
+session whether it runs on the host or on its own socket, and a plain `tui` attaches to
+the single live session if there is exactly one. Without `--new`, a session flag is an error rather than
 silently ignored.
+
+The host owns inference: `~/.efference/config.toml` names its connections and
+where each credential comes from, and `efference host` loads them once at launch
+from its own environment — `op run -- efference host` unlocks the vault once for
+every session the host will create ([transport.md](transport.md)). A creating TUI
+passes model selections (`--model work/anthropic/claude-sonnet-4-5`, or a native id
+on the default connection) and no inference credentials; with no `--model`, the
+host's `[defaults].model` applies, and with none configured, creation says so. A
+host with no config file refuses to start, naming the path to create.
+The boot report and the sidebar's SESSION section name each role by connection.
+
+```toml ~/.efference/config.toml
+[defaults]
+model = "work/anthropic/claude-sonnet-4-5"
+spotter = "work/anthropic/claude-haiku-4-5"
+# triage omitted: the peek shares the agent's client
+
+[connections.work]
+provider = "openrouter"
+auth = { kind = "env", key = "OPENROUTER_WORK_API_KEY" }
+
+[connections.codex]
+provider = "openai-codex"
+auth = { kind = "codex-cache" }
+```
 
 A fourth read is offline, about spend rather than content, and a developer's instrument
 rather than an operator's: **`efference dev cache`** folds a
@@ -103,7 +130,7 @@ where a rate is worth comparing against. It needs no daemon and no network.
 
 **`efference check [path]`** is the other no-daemon verb, and it is about the template rather
 than a session: it parses `efference.toml` (or the path given), applies the soundness
-checks `serve` applies at boot, resolves every `[context]` entry from the current
+checks a session boot applies, resolves every `[context]` entry from the current
 directory (`exec` entries included), and mounts every `[mcp.servers.*]` stanza to
 enumerate each server's advertised tools against the file's `tools` grants — the computed
 trust perimeter, so the grant is written with the tool table in front of it. Mounting
@@ -112,7 +139,7 @@ authorization is reported, not authorized. It prints the grants and the preamble
 count, or the boot-time error with a non-zero exit. A required server that does not mount
 fails the check, same as boot; an `optional = true` one is reported and tolerated
 (docs/tools.md). It is the terminus the new-project guide names for a "set this project
-up" task, so a session asked to do that has something to run that is not `serve`.
+up" task, so a session asked to do that has something to run that is not a session.
 
 Two things worth knowing about what you see. Tool output on the transcript is the **raw**
 result — the model's copy has been focused down by a triage pass, so what you read and what
@@ -296,7 +323,7 @@ The frozen system prompt tells it, in these words or close to them:
   their structured results curate cleanly.
 - **`$TMPDIR` is scratch space**: a private per-session directory, always granted
   read/write, exported into every tool child, expanded in the file tools' path arguments,
-  and deleted at session end (`serve --keep-scratch` retains it). It is the sanctioned
+  and deleted at session end (`--keep-scratch` retains it). It is the sanctioned
   answer for temporary files, and it does not need a grant.
 - **Every call carries an `intent`**: one line on why this call, now, written before the
   other arguments. It is stripped before the tool runs and is shown to you at the gate. It

@@ -31,7 +31,7 @@ commands, the session's `EnvPolicy`, and every child spawn. Config edits reuse t
 base for masking rather than sampling the host environment. Child inheritance is
 replaced before policy and harness-owned values are applied ([env.md](env.md)).
 
-`Session` represents one session's state and control surface. The agent loop task and HTTP handlers both hold it as `Arc<Session>`. The daemon registers it as trillium's server-global shared state; handlers retrieve it per-connection. Listener ownership lives in `src/daemon/serve.rs`; the session's own tasks are owned by a `SessionRuntime` (below), not by the type itself. Its contents:
+`Session` represents one session's state and control surface. The agent loop task and HTTP handlers both hold it as `Arc<Session>`. The daemon registers it as trillium's server-global shared state; handlers retrieve it per-connection. Listener ownership lives in `src/daemon/host.rs`; the session's own tasks are owned by a `SessionRuntime` (below), not by the type itself. Its contents:
 
 **`Arc<Mutex<Log>>`** — the persisted, append-only log (see [log-and-projection.md](log-and-projection.md)). The loop appends under this lock via `Session::append`, which also pings the append notifier so SSE tailers wake. The lock is never held across an `await`; code that needs to call the model on a snapshot calls `Session::snapshot()` to clone the entries first.
 
@@ -56,7 +56,7 @@ starts from: the provider client, the mounted toolbox, the fork peek, the spotte
 the log, the session paths, the loaded role, the review level, the model's
 capabilities and name, the environment policy, and whether to keep scratch. Whoever
 creates the session resolves these; nothing in the struct reads ambient process
-state. The CLI's `serve` builds one; a host's session-creation handler builds the
+state. A host's session-creation handler builds one; the
 same struct.
 
 `SessionRuntime::start(boot, parent)` builds the `Session`, sets its boot-time
@@ -76,7 +76,7 @@ loop thread holds a guard until it has reaped background process groups and remo
 the scratch dir (unless `keep_scratch`). Shutting down the parent stops every
 runtime under it the same way; shutting down one runtime does not touch its
 siblings or the parent. `finished()` waits for the loop to return — on its own or
-by cancellation — and yields its outcome. `daemon::serve` creates the parent
+by cancellation — and yields its outcome. `serve_host` creates the parent
 `Swansong`, hands it to the listeners (so SIGINT/SIGTERM reach the loop) and starts
 one runtime under it; the two-runtimes test in `src/daemon/test/runtime.rs` pins
 the isolation.
@@ -112,10 +112,14 @@ forwarded and there is no per-session process.
 
 Creation is a route on the socket handler tuple and a refusal on the web tuple:
 listener topology decides where a session request — which carries the caller's
-environment — is accepted, rather than a per-conn check. `POST /sessions` builds a
-`SessionRequest`, runs `boot::prepare`, starts the runtime, and adopts it. Its
+environment — is accepted, rather than a per-conn check. `POST /sessions` resolves
+the body's `model`, `spotter_model`, and `triage` selections (each optional) against
+the host's `InferenceRegistry` ([transport.md](transport.md)) before anything is
+minted, builds a `SessionRequest` carrying the resolved endpoints, runs
+`boot::prepare`, starts the runtime, and adopts it. The `Host` is constructed with
+the registry its launch loaded; the sessions mutex is not held across creation. Its
 boot report goes to the host's stderr, and an MCP authorization opens a browser
-on the host's machine, as at `serve`; an island host launched by a TUI will need
+on the host's machine; an island host launched by a TUI will need
 that output captured (backlog/host-process.md).
 
 ## The route set
@@ -151,7 +155,7 @@ exception: on success it must fall through to the SSE half of its own route.
 ## Transport and binding
 
 `SessionPaths` (`src/daemon/paths.rs`) supplies absolute working and storage
-roots to daemon boot. The CLI resolves these before calling `daemon::serve`;
+roots to daemon boot. The CLI resolves these before calling `serve_host`;
 relative roots are rejected rather than interpreted inside the daemon. Usage
 records and the attachment watcher use the storage root, and attachment labels
 are relative to the session working root when contained within it. `App::session`
@@ -159,9 +163,9 @@ receives that working root explicitly for the web file viewer. The identity topi
 uses the same root. The listener's socket path is a separate input and does not
 determine storage; the CLI still places it in the session directory.
 
-The daemon binds with trillium's `bind_uds(path)`. Each session lives in its own directory — `.efference/<id>/` (the id is `serve --name <id>`, or a generated timestamp) — holding standard-named files: `control.sock`, `log.jsonl`, and (the snapshot) `config.toml` (see [permissions](permissions.md)). A client verb finds the socket by `--name`, or by scanning the session dirs for the single **live** (connectable) one — liveness, not mere existence, so a stale dir from a dead daemon doesn't shadow the running one; `--socket <path>` is an explicit override.
+The daemon binds with trillium's `bind_uds(path)`. Each session lives in its own directory — `.efference/<id>/` (the id is `--name <id>`, or a generated timestamp) — holding standard-named files: `control.sock`, `log.jsonl`, and (the snapshot) `config.toml` (see [permissions](permissions.md)). A hosted session has no socket of its own: it answers under `/sessions/<id>/` on the host's `.efference/host.sock`. A client verb resolves its target (`ClientTarget` in the CLI) as: `--socket <path>` verbatim; else `--name <id>` — that session's own live socket, or the host if `GET /sessions` lists the id; else the single **live** session found by scanning the session dirs and asking the host. Liveness means a successful connect, not a file's existence, so a stale dir from a dead process doesn't shadow a running one. A name nothing serves, or zero or several candidates with no name, is an error before any UI opens; the TUI also opens its event stream before taking the terminal, so a dead target is a printed error rather than an empty screen.
 
-**`serve` mints a session dir; it never reuses one.** The dir is created with `create_dir` (not `create_dir_all`) on the leaf, so an existing `--name` is refused with an error naming the dir and the log inside it, and two `serve`s racing the same name cannot both proceed. A session does not outlive its process: `Log::create` opens the log for append with an empty in-memory `entries`, so a second run over the same file would restart `seq` at 0 and leave a duplicated seq space that every offline reader (`view`, `wire`, the TUI fold) reads as one sequence. The guard also runs before the socket is unlinked, so a second `serve --name X` cannot take the socket away from a running daemon. Resuming a prior session is not implemented; when it is, this guard changes as part of that design.
+**Creation mints a session dir; it never reuses one.** The dir is created with `create_dir` (not `create_dir_all`) on the leaf, so an existing `--name` is refused with an error naming the dir and the log inside it, and two creations racing the same name cannot both proceed. A session does not outlive its process: `Log::create` opens the log for append with an empty in-memory `entries`, so a second run over the same file would restart `seq` at 0 and leave a duplicated seq space that every offline reader (`view`, `wire`, the TUI fold) reads as one sequence. The guard also runs before the socket is unlinked, so a second creation named `X` cannot take the socket away from a running session. Resuming a prior session is not implemented; when it is, this guard changes as part of that design.
 
 Clients dial via `UnixClientConfig`, which routes requests to a fixed path — the URL host is a placeholder; only path and headers matter.
 
@@ -252,7 +256,7 @@ Withheld from the model is not withheld from the operator: `raw` is in the log, 
 
 ## The CLI
 
-`efference serve` opens the log file, binds the control socket, and runs the agent loop with a `RemoteFrontend`. The loop parks at `read_user_turn` until the first `POST /turns` arrives.
+A hosted session opens the log file and runs the agent loop with a `RemoteFrontend`. The loop parks at `read_user_turn` until the first `POST /turns` arrives.
 
 `efference tui` ([the TUI](tui.md)) is the interactive client: it tails `/events` and renders, and its composer either resolves the pending gate (empty approves, `.abort` aborts, any other text redirects) or sends a new turn.
 

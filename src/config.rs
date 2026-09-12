@@ -129,7 +129,7 @@ pub struct TransportLimits {
     /// metadata invents is validated against that list at boot
     /// (`ModelCapabilities::check_effort`) and sent as spelled. `None` leaves
     /// the field off the request entirely, which is the provider's own default.
-    /// `serve --effort` overrides whatever this says; both are boot-time, and
+    /// `--effort` at creation overrides whatever this says; both are boot-time, and
     /// there is no runtime mutation path, because changing a thinking parameter
     /// mid-session invalidates the message-tier cache on Anthropic.
     pub effort: Option<String>,
