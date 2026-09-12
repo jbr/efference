@@ -150,30 +150,21 @@ refusal leaves someone staring at a stalled boot. The bare URL gets its own line
 with the OSC 8 hyperlink layered on top rather than instead — captured output is
 exactly where the escape is least likely to be honored.
 
-## Credential storage is a shim
+## Credential storage
 
-`src/mcp/auth/store.rs` writes plaintext JSON at `.efference/mcp-auth.json`, mode
-`0600`, set at create time rather than by a follow-up `chmod` so the tokens are never
-briefly world-readable. The base dir is one the harness already denies itself
-(docs/permissions.md), so a session cannot read its own credentials through the fs
-tools.
-
-That is a real protection but not why plaintext is acceptable — it is acceptable
-because it is temporary. `TokenStore` exists so the replacement is one new impl.
+`src/mcp/auth/store.rs` keeps one item per server in the secret store
+([secrets.md](secrets.md)), named `mcp:<server>` and holding the `StoredAuth`
+record as JSON. `TokenStore` is the seam the flow is written against;
+`KeychainStore` is its one implementation. The item is per user: an authorization
+belongs to the operator and the server, so a second checkout of a project reuses
+the grant. A record that does not parse is a hard error, not "no credentials" —
+the latter would quietly restart the browser dance and overwrite it.
 
 Two things are stored, and only one is obvious. The **token** saves a browser
 round-trip per launch. The **registration** saves the authorization server from
 accumulating a new anonymous client record per launch, because dynamic registration
 is not idempotent. A Client ID Metadata Document has nothing to store, which is one
 of its quieter advantages.
-
-Keychain is the natural next backend but not the current one: a keychain item is
-bound to the accessing binary, and `cargo build` makes a new one every time, so it
-would prompt on every rebuild of a harness under active development. 1Password fits
-this data badly for a different reason — OAuth tokens rotate on refresh, so this
-store is written by the machine, frequently. That is the opposite of the `env`
-passthrough's read-mostly human-managed secrets, which 1Password suits well. The two
-halves of "pluggable secret storage" want different backends.
 
 ## What is not built
 

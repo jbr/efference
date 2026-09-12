@@ -11,7 +11,7 @@
 //! onboarding agent writes the grant with the tool table in front of it.
 //!
 //! Mounting reuses stored credentials (`auth::stored_header` against the same
-//! `FileStore` boot uses) and never runs the authorization dance: a server
+//! `KeychainStore` boot uses) and never runs the authorization dance: a server
 //! that answers `401` is reported as requiring authorization — run
 //! `efference serve` — and counts as not mounted. A required server that does
 //! not mount fails the check, same as boot; an `optional = true` one is
@@ -65,7 +65,9 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
     // namespaced `<server>__<tool>` by construction, so attribution is exact.
     // Stored credentials are reused; the dance is not run (see module docs).
     if !role.mcp_servers.is_empty() {
-        let store = efference::mcp::auth::store::FileStore::new(Path::new(BASE_DIR));
+        let store = efference::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
+            efference::secrets::Secrets::detect()?,
+        ));
         let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), None)?;
         let mut failed: Option<(String, String)> = None;
         for (name, entry) in &role.mcp_servers {

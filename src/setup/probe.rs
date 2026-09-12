@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crate::api::{Endpoint, Provider};
 use crate::env_table::EnvSnapshot;
+use crate::secrets::Secrets;
 
 /// What a live key check learned, beyond "accepted".
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -36,6 +37,11 @@ pub struct ModelListing {
 pub trait Probe {
     /// The value of an environment variable in the shell setup runs in.
     fn env_var(&self, name: &str) -> Option<String>;
+    /// Where a pasted key would be kept (docs/secrets.md): the store's
+    /// description, or why there is none to offer.
+    fn secret_store(&self) -> Result<String, String>;
+    /// Keep `value` under `name` in that store.
+    fn store_secret(&self, name: &str, value: &str) -> Result<(), String>;
     /// Whether Codex CLI's cached login is readable: `Ok(account id)` or why not.
     fn codex_cache(&self) -> Result<String, String>;
     /// Whether the provider accepts `key`. `Ok(None)` when the provider has no
@@ -59,6 +65,8 @@ pub trait Probe {
 pub struct LiveProbe {
     env: EnvSnapshot,
     cwd: std::path::PathBuf,
+    /// The store, or why it could not be opened; setup goes on either way.
+    secrets: Result<Secrets, String>,
 }
 
 impl LiveProbe {
@@ -66,6 +74,7 @@ impl LiveProbe {
         Ok(Self {
             env: EnvSnapshot::capture()?,
             cwd: std::env::current_dir()?,
+            secrets: Secrets::detect().map_err(|error| error.to_string()),
         })
     }
 
@@ -78,6 +87,18 @@ impl LiveProbe {
 impl Probe for LiveProbe {
     fn env_var(&self, name: &str) -> Option<String> {
         self.env.get(name).map(str::to_string)
+    }
+
+    fn secret_store(&self) -> Result<String, String> {
+        self.secrets
+            .as_ref()
+            .map(|secrets| secrets.describe().to_string())
+            .map_err(Clone::clone)
+    }
+
+    fn store_secret(&self, name: &str, value: &str) -> Result<(), String> {
+        let secrets = self.secrets.as_ref().map_err(Clone::clone)?;
+        secrets.set(name, value).map_err(|error| error.to_string())
     }
 
     fn codex_cache(&self) -> Result<String, String> {

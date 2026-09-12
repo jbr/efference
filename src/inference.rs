@@ -13,6 +13,7 @@ use serde::Deserialize;
 use crate::api::{Endpoint, Error, Provider};
 use crate::distill::TriageModel;
 use crate::env_table::EnvSnapshot;
+use crate::secrets::Secrets;
 
 /// Where the user configuration lives under `HOME`; `efference setup` writes
 /// it and every host and offline verb reads it.
@@ -58,8 +59,15 @@ struct ConnectionConfig {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 enum AuthConfig {
-    Env { key: String },
+    Env {
+        key: String,
+    },
     CodexCache,
+    /// `auth = { kind = "keychain" }`: the OS secret store (docs/secrets.md),
+    /// item `inference:<name>`, `name` defaulting to the connection's.
+    Keychain {
+        name: Option<String>,
+    },
 }
 
 /// A selected connection plus the provider-native model ID sent upstream.
@@ -144,7 +152,7 @@ impl InferenceRegistry {
     /// Load the host's user configuration and credentials from the environment
     /// captured at host startup. A missing or malformed file is a launch error
     /// naming the path: with no connections there is nothing a session could use.
-    pub fn load(host_cwd: &Path, host_env: EnvSnapshot) -> Result<Self, Error> {
+    pub fn load(host_cwd: &Path, host_env: EnvSnapshot, secrets: &Secrets) -> Result<Self, Error> {
         let home = host_env
             .get("HOME")
             .ok_or("host environment has no HOME for ~/.efference/config.toml")?;
@@ -152,12 +160,18 @@ impl InferenceRegistry {
             &Path::new(home).join(CONFIG_RELATIVE_PATH),
             host_cwd,
             host_env,
+            secrets,
         )
     }
 
     /// The injected form: a host launch supplies its own path and environment
     /// (`load`), and tests supply a temporary one.
-    pub fn load_at(path: &Path, host_cwd: &Path, host_env: EnvSnapshot) -> Result<Self, Error> {
+    pub fn load_at(
+        path: &Path,
+        host_cwd: &Path,
+        host_env: EnvSnapshot,
+        secrets: &Secrets,
+    ) -> Result<Self, Error> {
         let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -178,19 +192,21 @@ impl InferenceRegistry {
         };
         let config = InferenceConfig::from_toml(&text)
             .map_err(|error| format!("inference config {}: {error}", path.display()))?;
-        Self::from_config(config, host_cwd, host_env)
+        Self::from_config(config, host_cwd, host_env, secrets)
     }
 
     pub fn from_config(
         config: InferenceConfig,
         host_cwd: &Path,
         host_env: EnvSnapshot,
+        secrets: &Secrets,
     ) -> Result<Self, Error> {
         let mut connections = BTreeMap::new();
         for (name, config) in config.connections {
             validate_connection_name(&name)?;
             let provider = Provider::from_name(&config.provider)?;
-            let credential = load_credential(&name, provider, config.auth, host_cwd, &host_env);
+            let credential =
+                load_credential(&name, provider, config.auth, host_cwd, &host_env, secrets);
             connections.insert(
                 name,
                 Connection {
@@ -435,8 +451,17 @@ fn load_credential(
     auth: AuthConfig,
     host_cwd: &Path,
     host_env: &EnvSnapshot,
+    secrets: &Secrets,
 ) -> Result<Credential, String> {
     let (token, account, label) = match auth {
+        AuthConfig::Keychain { name: item } => {
+            let item = crate::secrets::inference_name(item.as_deref().unwrap_or(name));
+            let token = secrets
+                .get(&item)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| format!("{} has no `{item}`", secrets.describe()))?;
+            (token, None, "keychain".to_string())
+        }
         AuthConfig::Env { key } => {
             let token = host_env
                 .get(&key)

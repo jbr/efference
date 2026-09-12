@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 
 use super::*;
+use crate::secrets::Secrets;
 
 /// One scripted answer. The script is consumed in order; a prompt with no
 /// answer left panics naming the question, which is the test's failure.
@@ -103,11 +104,25 @@ struct Table {
     known_models: Vec<String>,
     codex: Option<String>,
     seen_keys: RefCell<Vec<String>>,
+    /// `None` is a machine with no store to offer.
+    secrets: Option<Secrets>,
 }
 
 impl Probe for Table {
     fn env_var(&self, name: &str) -> Option<String> {
         self.env.get(name).cloned()
+    }
+
+    fn secret_store(&self) -> Result<String, String> {
+        self.secrets
+            .as_ref()
+            .map(|secrets| secrets.describe().to_string())
+            .ok_or("no store on this platform".to_string())
+    }
+
+    fn store_secret(&self, name: &str, value: &str) -> Result<(), String> {
+        let secrets = self.secrets.as_ref().ok_or("no store on this platform")?;
+        secrets.set(name, value).map_err(|error| error.to_string())
     }
 
     fn codex_cache(&self) -> Result<String, String> {
@@ -433,9 +448,9 @@ async fn two_connections_choose_a_default() {
     assert!(text.contains("[connections.openai-codex]"));
 }
 
-/// The keychain entry is offered and refused in this build.
+/// With no store to write, the keychain entry is listed with the reason.
 #[test]
-fn keychain_is_shown_unavailable() {
+fn keychain_is_shown_unavailable_without_a_store() {
     struct Capture(Vec<Choice>);
     impl Prompter for Capture {
         fn say(&mut self, _: Tone, _: &str) {}
@@ -464,6 +479,7 @@ fn keychain_is_shown_unavailable() {
         &mut capture,
         &probe,
         Provider::Anthropic,
+        "anthropic",
         "ANTHROPIC_API_KEY",
     ));
     assert_eq!(result.unwrap_err(), Cancelled);
@@ -472,12 +488,82 @@ fn keychain_is_shown_unavailable() {
         .iter()
         .find(|choice| choice.label.contains("keychain"))
         .unwrap();
-    assert!(
-        keychain
-            .unavailable
-            .as_deref()
+    assert_eq!(
+        keychain.unavailable.as_deref(),
+        Some("no store on this platform")
+    );
+}
+
+/// The paste path: the key is checked, kept under `inference:<connection>`,
+/// and the file records only the kind. The key drives the model menu too.
+#[tokio::test]
+async fn a_pasted_key_is_kept_in_the_store_and_the_file_names_only_the_kind() {
+    let probe = Table {
+        accepted_keys: strings(&["sk-pasted"]),
+        known_models: strings(&["claude-sonnet-4-5", "claude-haiku-4-5"]),
+        secrets: Some(Secrets::in_memory()),
+        ..Default::default()
+    };
+    let (draft, script) = run_script(
+        vec![
+            Answer::Pick("Anthropic"),
+            Answer::Type("work"),
+            Answer::Pick("Paste it now, kept in the OS keychain"),
+            Answer::Secret("sk-pasted"),
+            Answer::Pick("claude-sonnet-4-5"),
+            Answer::Type(""),
+            Answer::No,
+        ],
+        &probe,
+        "",
+    )
+    .await;
+    let draft = draft.unwrap();
+    assert_eq!(draft.connections[0].1.auth, AuthSource::Keychain);
+    assert_eq!(
+        probe
+            .secrets
+            .as_ref()
             .unwrap()
-            .contains("signed binary")
+            .get("inference:work")
+            .unwrap()
+            .as_deref(),
+        Some("sk-pasted")
+    );
+    assert!(script.said("Kept as `inference:work`"));
+    let text = render("", &draft).unwrap();
+    assert!(text.contains(r#"auth = { kind = "keychain" }"#), "{text}");
+    assert!(!text.contains("sk-pasted"));
+}
+
+/// A rejected key is not kept unless the person says to record it anyway.
+#[tokio::test]
+async fn a_rejected_pasted_key_is_not_kept_when_the_person_backs_out() {
+    let probe = Table {
+        secrets: Some(Secrets::in_memory()),
+        ..Default::default()
+    };
+    let (draft, _) = run_script(
+        vec![
+            Answer::Pick("Anthropic"),
+            Answer::Type("work"),
+            Answer::Pick("Paste it now, kept in the OS keychain"),
+            Answer::Secret("sk-bad"),
+            Answer::No,
+        ],
+        &probe,
+        "",
+    )
+    .await;
+    assert_eq!(draft.unwrap_err(), Cancelled);
+    assert_eq!(
+        probe
+            .secrets
+            .as_ref()
+            .unwrap()
+            .get("inference:work")
+            .unwrap(),
+        None
     );
 }
 

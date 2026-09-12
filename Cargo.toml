@@ -170,6 +170,23 @@ ratatui-image = { version = "11", default-features = false, features = ["crosste
 p256 = { version = "0.14", features = ["ecdh", "ecdsa"] }
 aes-gcm = "0.11"
 
+# The secret store (docs/secrets.md): one get/set/delete over the user's OS
+# credential store. `keyring-core` is the store-agnostic entry API; the platform
+# stores are linked directly rather than through the `keyring` umbrella, per that
+# crate's own guidance for applications that choose their store.
+keyring-core = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The login keychain, used in-process only when the binary is identity-signed;
+# an ad-hoc build shells out to `security` instead (docs/secrets.md).
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+# `SecCode::for_self` answers "is this binary identity-signed" at startup.
+security-framework = "3.7"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Secret Service over zbus; the runtime feature matches the daemon's tokio.
+zbus-secret-service-keyring-store = { version = "1", features = ["rt-tokio-crypto-rust"] }
+
 [features]
 default = ["dev"]
 # The `efference dev <verb>` group: the instruments for developing efference

@@ -5,7 +5,8 @@
 //! What is checked live depends on what the flow can see. A key that is in this
 //! shell's environment is checked without asking. One that is not can be pasted
 //! for the check alone: it goes to the provider and nowhere else, and the file
-//! still records only the variable name.
+//! still records only the variable name. A key pasted to be kept goes to the
+//! secret store (docs/secrets.md) and the file records only the kind.
 
 use super::*;
 
@@ -98,7 +99,7 @@ async fn one_connection<P: Prompter, Q: Probe>(
     };
 
     let (auth, key) = match card.env_key {
-        Some(default_key) => api_key_source(prompter, probe, provider, default_key).await?,
+        Some(default_key) => api_key_source(prompter, probe, provider, &name, default_key).await?,
         None => (codex_source(prompter, probe)?, None),
     };
 
@@ -116,21 +117,29 @@ async fn one_connection<P: Prompter, Q: Probe>(
 }
 
 /// Where an API key comes from, and the key itself when one is on hand for the
-/// live checks. The keychain path is shown and refused: keychain items bind to
-/// the binary that stored them, and a build that is not signed would prompt on
-/// every rebuild.
+/// live checks. The second choice keeps a pasted key in the secret store under
+/// `inference:<connection>`; it is listed as unavailable, with the store's own
+/// reason, when there is no store to write.
 pub(super) async fn api_key_source<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
     provider: Provider,
+    connection: &str,
     default_key: &str,
 ) -> Result<(AuthSource, Option<String>), Cancelled> {
+    let store = probe.secret_store();
+    let keep = match &store {
+        Ok(description) => Choice::new("Paste it now, kept in the OS keychain")
+            .detail(format!("stored in {description}")),
+        Err(why) => Choice::new("Paste it now, kept in the OS keychain").unavailable(why.clone()),
+    };
     let choices = [
         Choice::new("An environment variable").detail("read from the host's environment at launch"),
-        Choice::new("Paste it now, kept in the OS keychain")
-            .unavailable("not yet: needs a signed binary"),
+        keep,
     ];
-    prompter.select("Where will the API key come from?", &choices)?;
+    if prompter.select("Where will the API key come from?", &choices)? == 1 {
+        return keychain_source(prompter, probe, provider, connection).await;
+    }
     let variable = loop {
         let variable = prompter
             .text("Variable name", Some(default_key))?
@@ -168,33 +177,75 @@ pub(super) async fn api_key_source<P: Prompter, Q: Probe>(
         }
     };
     let key = match key {
-        Some(key) => match probe.check_key(provider, &key).await {
-            Ok(Some(report)) => {
-                let label = report
-                    .label
-                    .map(|label| format!(" ({label})"))
-                    .unwrap_or_default();
-                prompter.say(
-                    Tone::Good,
-                    &format!("{} accepted the key{label}.", provider),
-                );
-                Some(key)
-            }
-            Ok(None) => Some(key),
-            Err(error) => {
-                prompter.say(
-                    Tone::Bad,
-                    &format!("{provider} rejected the key: {}", describe(&error)),
-                );
-                if !prompter.confirm("Record this connection anyway?", false)? {
-                    return Err(Cancelled);
-                }
-                None
-            }
-        },
+        Some(key) => check_key(prompter, probe, provider, key).await?,
         None => None,
     };
     Ok((AuthSource::Env { key: variable }, key))
+}
+
+/// A pasted key, checked and then kept: the store is written only after the
+/// provider's answer, so a rejected key is kept only on request. The item name
+/// is said so the person can find it in the OS's own UI.
+async fn keychain_source<P: Prompter, Q: Probe>(
+    prompter: &mut P,
+    probe: &Q,
+    provider: Provider,
+    connection: &str,
+) -> Result<(AuthSource, Option<String>), Cancelled> {
+    let pasted = loop {
+        let pasted = prompter.secret("API key")?;
+        let pasted = pasted.trim().to_string();
+        if pasted.is_empty() {
+            prompter.say(Tone::Bad, "Nothing pasted.");
+            continue;
+        }
+        break pasted;
+    };
+    let checked = check_key(prompter, probe, provider, pasted.clone()).await?;
+    let name = crate::secrets::inference_name(connection);
+    match probe.store_secret(&name, &pasted) {
+        Ok(()) => prompter.say(Tone::Good, &format!("Kept as `{name}`.")),
+        Err(error) => {
+            prompter.say(Tone::Bad, &format!("Could not keep the key: {error}"));
+            return Err(Cancelled);
+        }
+    }
+    Ok((AuthSource::Keychain, checked))
+}
+
+/// Ask the provider about `key`. `Some(key)` when it is usable for the model
+/// checks that follow; `None` when it was rejected and the person chose to
+/// record the connection regardless.
+async fn check_key<P: Prompter, Q: Probe>(
+    prompter: &mut P,
+    probe: &Q,
+    provider: Provider,
+    key: String,
+) -> Result<Option<String>, Cancelled> {
+    match probe.check_key(provider, &key).await {
+        Ok(Some(report)) => {
+            let label = report
+                .label
+                .map(|label| format!(" ({label})"))
+                .unwrap_or_default();
+            prompter.say(
+                Tone::Good,
+                &format!("{} accepted the key{label}.", provider),
+            );
+            Ok(Some(key))
+        }
+        Ok(None) => Ok(Some(key)),
+        Err(error) => {
+            prompter.say(
+                Tone::Bad,
+                &format!("{provider} rejected the key: {}", describe(&error)),
+            );
+            if !prompter.confirm("Record this connection anyway?", false)? {
+                return Err(Cancelled);
+            }
+            Ok(None)
+        }
+    }
 }
 
 fn codex_source<P: Prompter, Q: Probe>(

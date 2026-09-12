@@ -45,7 +45,13 @@ auth = { kind = "env", key = "TEST_KEY" }
         [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
     )
     .unwrap();
-    crate::inference::InferenceRegistry::from_config(config, Path::new("/host"), env).unwrap()
+    crate::inference::InferenceRegistry::from_config(
+        config,
+        Path::new("/host"),
+        env,
+        &crate::secrets::Secrets::in_memory(),
+    )
+    .unwrap()
 }
 
 async fn host_server(host: &Arc<Host>, create: bool) -> TestServer<impl trillium::Handler> {
@@ -300,8 +306,12 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         .into(),
     )
     .unwrap();
-    let registry =
-        crate::inference::InferenceRegistry::load(&roots.0, host_env).expect("host registry");
+    let registry = crate::inference::InferenceRegistry::load(
+        &roots.0,
+        host_env,
+        &crate::secrets::Secrets::in_memory(),
+    )
+    .expect("host registry");
     let host = Host::new(registry);
     let server = host_server(&host, true).await;
 

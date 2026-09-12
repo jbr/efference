@@ -734,8 +734,9 @@ credential and extra headers.
 file `efference setup` writes interactively ([operating.md](operating.md)): each `[connections.<name>]` declares a `provider` and where its credential
 comes from (`auth = { kind = "env", key = "VAR" }` reads the named variable from
 the host's startup environment, ordinarily supplied by `op run`; `auth = { kind =
-"codex-cache" }` reads Codex CLI's `auth.json` once, under the host's `CODEX_HOME`
-or `HOME`). Credentials load once at host launch, each connection independently:
+"keychain" }` reads the secret store's `inference:<name>` item, `name` defaulting
+to the connection's ([secrets.md](secrets.md)); `auth = { kind = "codex-cache" }`
+reads Codex CLI's `auth.json` once, under the host's `CODEX_HOME` or `HOME`). Credentials load once at host launch, each connection independently:
 an unavailable one carries its reason and fails only the sessions that select it.
 Nothing re-reads a caller's environment, re-runs a secret command, or re-opens the
 cache per session, and the host's environment is never overlaid onto a session's

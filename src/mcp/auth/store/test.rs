@@ -23,50 +23,31 @@ fn stored() -> StoredAuth {
     }
 }
 
-fn store() -> (FileStore, tempdir::Guard) {
-    let dir = tempdir::Guard::new();
-    (FileStore::new(dir.path()), dir)
+fn store() -> (KeychainStore, Arc<Secrets>) {
+    let secrets = Arc::new(Secrets::in_memory());
+    (KeychainStore::new(Arc::clone(&secrets)), secrets)
 }
 
-/// A minimal scoped temp dir — the store is the only thing under test, and
-/// pulling in a fixture crate for one directory is not worth it.
-mod tempdir {
-    use std::path::{Path, PathBuf};
-    pub struct Guard(PathBuf);
-    impl Guard {
-        pub fn new() -> Self {
-            let unique = format!(
-                "efference-store-test-{}-{:?}",
-                std::process::id(),
-                std::thread::current().id()
-            );
-            let path = std::env::temp_dir().join(unique);
-            let _ = std::fs::remove_dir_all(&path);
-            std::fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-        pub fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-    impl Drop for Guard {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-}
-
-/// The normal first-run state: no file yet is not an error.
+/// The normal first-run state: no item yet is not an error.
 #[test]
-fn loading_from_an_absent_file_yields_nothing() {
-    let (store, _dir) = store();
+fn loading_an_absent_server_yields_nothing() {
+    let (store, _secrets) = store();
     assert!(store.load("sentry").unwrap().is_none());
-    assert!(!store.path().exists());
+}
+
+/// The item is filed under the population prefix, so an inference key named
+/// like a server can never be read as a grant.
+#[test]
+fn a_grant_is_filed_under_the_mcp_prefix() {
+    let (store, secrets) = store();
+    store.save("sentry", &stored()).unwrap();
+    assert!(secrets.get("mcp:sentry").unwrap().is_some());
+    assert!(secrets.get("sentry").unwrap().is_none());
 }
 
 #[test]
 fn a_grant_round_trips() {
-    let (store, _dir) = store();
+    let (store, _secrets) = store();
     store.save("sentry", &stored()).unwrap();
 
     let loaded = store.load("sentry").unwrap().unwrap();
@@ -82,7 +63,7 @@ fn a_grant_round_trips() {
 /// is still expired when it comes back — a duration would silently reset.
 #[test]
 fn an_expiry_survives_the_round_trip_as_an_instant() {
-    let (store, _dir) = store();
+    let (store, _secrets) = store();
     let mut auth = stored();
     auth.tokens = tokens(serde_json::json!({
         "access_token": "at",
@@ -98,7 +79,7 @@ fn an_expiry_survives_the_round_trip_as_an_instant() {
 /// at a different authorization server.
 #[test]
 fn a_registration_keeps_its_issuer_through_storage() {
-    let (store, _dir) = store();
+    let (store, _secrets) = store();
     let mut auth = stored();
     auth.registration = Some(Registration {
         client_id: "dcr-abc".into(),
@@ -120,7 +101,7 @@ fn a_registration_keeps_its_issuer_through_storage() {
 
 #[test]
 fn several_servers_coexist_and_are_independent() {
-    let (store, _dir) = store();
+    let (store, _secrets) = store();
     let mut other = stored();
     other.issuer = "https://mcp.openrouter.ai".into();
     store.save("sentry", &stored()).unwrap();
@@ -144,7 +125,7 @@ fn several_servers_coexist_and_are_independent() {
 
 #[test]
 fn saving_twice_replaces_rather_than_duplicates() {
-    let (store, _dir) = store();
+    let (store, _secrets) = store();
     store.save("sentry", &stored()).unwrap();
     let mut rotated = stored();
     rotated.tokens = tokens(serde_json::json!({
@@ -162,35 +143,20 @@ fn saving_twice_replaces_rather_than_duplicates() {
 
 #[test]
 fn clearing_something_absent_is_not_an_error() {
-    let (store, _dir) = store();
+    let (store, _secrets) = store();
     assert!(store.clear("never-existed").is_ok());
     store.save("sentry", &stored()).unwrap();
     assert!(store.clear("never-existed").is_ok());
     assert!(store.load("sentry").unwrap().is_some());
 }
 
-/// Tokens must never be briefly world-readable, so the mode is set at create
-/// time rather than by a follow-up `chmod`.
-#[cfg(unix)]
-#[test]
-fn the_credential_file_is_owner_only() {
-    use std::os::unix::fs::PermissionsExt;
-    let (store, _dir) = store();
-    store.save("sentry", &stored()).unwrap();
-    let mode = std::fs::metadata(store.path())
-        .unwrap()
-        .permissions()
-        .mode();
-    assert_eq!(mode & 0o777, 0o600, "mode was {:o}", mode & 0o777);
-}
-
-/// A corrupt file is a hard error, not a silent "you have no credentials" —
+/// A corrupt item is a hard error, not a silent "you have no credentials" —
 /// the latter would quietly restart the browser dance and overwrite whatever
 /// was actually in there.
 #[test]
-fn a_corrupt_file_is_an_error_rather_than_an_empty_store() {
-    let (store, _dir) = store();
-    std::fs::write(store.path(), "{not json").unwrap();
+fn a_corrupt_item_is_an_error_rather_than_an_empty_store() {
+    let (store, secrets) = store();
+    secrets.set("mcp:sentry", "{not json").unwrap();
     let error = store.load("sentry").unwrap_err().to_string();
     assert!(error.contains("stored credentials"), "{error}");
 }

@@ -62,6 +62,9 @@ pub fn render(existing_text: &str, draft: &Draft) -> Result<String, String> {
             AuthSource::CodexCache => {
                 auth.insert("kind", "codex-cache".into());
             }
+            AuthSource::Keychain => {
+                auth.insert("kind", "keychain".into());
+            }
         }
         table["auth"] = value(auth);
         connections.insert(name, Item::Table(table));

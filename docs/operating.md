@@ -113,13 +113,14 @@ inference is configured. Per connection it asks the provider, a name, where the
 credential comes from, the agent model, and the spotter model, then whether to
 add another, and which connection sessions default to when there is a choice.
 The credential source is an environment variable (prefilled with the provider's
-conventional name) or, for Codex, the CLI's cached login; pasting a key into the
-OS keychain is listed and refused until the binary is signed, since a keychain
-item binds to the binary that stored it. What can be checked is checked live: a
-variable that is set in setup's own shell is tried against the provider, an
-unset one can be pasted for the check alone (sent to the provider, never
-written), Anthropic offers its model listing as a menu, and a chosen model is
-described from the same metadata boot reads. A rejected key or an unknown model
+conventional name), a key pasted now and kept in the OS credential store as
+`inference:<name>` ([secrets.md](secrets.md); the file then records only
+`kind = "keychain"`), or, for Codex, the CLI's cached login. What can be checked
+is checked live: a variable that is set in setup's own shell is tried against
+the provider, an unset one can be pasted for the check alone (sent to the
+provider, never written), a key to be kept is checked before it is kept,
+Anthropic offers its model listing as a menu, and a chosen model is described
+from the same metadata boot reads. A rejected key or an unknown model
 is said and can be kept. The file is written `0600` under the owner; an existing
 file keeps its entries, comments, and standing `[defaults]`, and a name already
 in it is refused at the prompt. Esc or Ctrl-C at any prompt cancels with nothing
@@ -134,6 +135,10 @@ spotter = "work/anthropic/claude-haiku-4-5"
 [connections.work]
 provider = "openrouter"
 auth = { kind = "env", key = "OPENROUTER_WORK_API_KEY" }
+
+[connections.personal]
+provider = "anthropic"
+auth = { kind = "keychain" }   # the store's inference:personal item
 
 [connections.codex]
 provider = "openai-codex"

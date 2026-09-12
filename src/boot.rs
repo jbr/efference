@@ -364,9 +364,11 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
         // about this model's image input, so an image-producing tool refuses
         // clearly instead of attaching bytes the model cannot read.
         .with_image_input(capabilities.supports_image_input);
-    // Credentials live in the base dir, not the session dir: an authorization
-    // belongs to the operator and the server, not to one session.
-    let store = crate::mcp::auth::store::FileStore::new(&cwd.join(BASE_DIR));
+    // Credentials live in the user's secret store (docs/secrets.md): an
+    // authorization belongs to the operator and the server, not to one session.
+    let store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
+        crate::secrets::Secrets::detect()?,
+    ));
     let unmounted = mcp_mount::mount_all(
         &mut toolbox,
         &loaded.role.mcp_servers,

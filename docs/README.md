@@ -158,6 +158,7 @@ Read top-down; open the subsystem doc you need.
 | Transport & streaming (upstream SSE, deltas, keepalive, the shared HTTP client) | [transport.md](transport.md) | `src/api.rs`, `src/http.rs` |
 | Host-owned inference — named connections, credential loading, per-role model selection | [transport.md](transport.md) | `src/inference.rs`, `src/boot.rs`, `src/daemon/host.rs` |
 | MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/http.rs` |
+| The secret store — API keys and OAuth grants in the OS credential store | [secrets.md](secrets.md) | `src/secrets.rs`, `src/mcp/auth/store.rs`, `src/inference.rs` |
 | The TCP bind — the web client's front door (root-derived credentials, TOTP bootstrap, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/daemon/handler.rs`, `src/daemon/tcp.rs` |
 | The web client | [web-client.md](web-client.md) | `web/`, `src/daemon/tcp.rs` |
 | Web push — the daemon notifies a pocketed phone | [web-push.md](web-push.md) | `src/push.rs` (+ `src/push/`), `src/daemon/push.rs` |

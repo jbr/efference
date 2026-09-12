@@ -110,6 +110,9 @@ pub enum AuthSource {
     Env { key: String },
     /// `auth = { kind = "codex-cache" }`: Codex CLI's login, read at host launch.
     CodexCache,
+    /// `auth = { kind = "keychain" }`: the secret store's `inference:<name>`
+    /// item, which setup wrote (docs/secrets.md).
+    Keychain,
 }
 
 /// One connection the flow decided on.

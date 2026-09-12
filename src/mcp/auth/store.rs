@@ -1,11 +1,6 @@
-//! Where authorized credentials live between runs (docs/mcp-auth.md).
-//!
-//! **This is a shim.** [`FileStore`] writes tokens as plaintext JSON, which is
-//! not a viable long-term answer and is not meant to be one — the intended
-//! replacement is pluggable secret storage, the machine-written counterpart to
-//! the human-managed `[env]` references (docs/env.md).
-//! [`TokenStore`] exists so that replacement is one new impl rather than a hunt
-//! through call sites.
+//! Where authorized credentials live between runs (docs/mcp-auth.md): one item
+//! per server in the secret store (docs/secrets.md), named `mcp:<server>`,
+//! holding the [`StoredAuth`] record as JSON.
 //!
 //! ## Why anything is stored at all
 //!
@@ -18,26 +13,18 @@
 //! with identical throwaway identities. A Client ID Metadata Document has
 //! nothing to store, which is one of its quieter advantages.
 //!
-//! ## Why the file lives beside the session, not in a keychain
-//!
-//! A keychain item is bound to the accessing binary, and `cargo build` produces
-//! a new one every time — so a keychain-backed store would prompt on every
-//! rebuild of a harness under active development. That is an argument for
-//! keychain *later*, against a stable installed binary, not for it now.
-//!
-//! 1Password is a poor fit for this particular data for a different reason:
-//! OAuth tokens rotate on every refresh, so this store is written by the
-//! machine, frequently. That is the opposite of the `env` passthrough's
-//! read-mostly, human-managed secrets, which 1Password suits well. The two
-//! halves of "pluggable secret storage" want different backends.
+//! The item is per user, not per project: an authorization belongs to the
+//! operator and the server, and a second checkout of the same project reuses
+//! the grant rather than registering again.
 
-use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 
 use crate::oauth::register::Registration;
 use crate::oauth::token::Tokens;
+use crate::secrets::Secrets;
 
 /// Everything needed to use — and later refresh — one server's authorization,
 /// without redoing discovery.
@@ -59,12 +46,8 @@ pub struct StoredAuth {
     pub registration: Option<Registration>,
 }
 
-/// Read and write authorized credentials, keyed by the config's server name.
-///
-/// Keyed by server name rather than by issuer because that is what the caller
-/// has in hand at mount time, before any discovery has run. The issuer is
-/// checked *after* loading, against what discovery lands on
-/// ([`StoredAuth::issuer`]).
+/// Load, save, and forget one server's credentials. The seam the auth flow is
+/// written against; [`KeychainStore`] is the one implementation.
 pub trait TokenStore: Send + Sync {
     fn load(&self, server: &str) -> anyhow::Result<Option<StoredAuth>>;
     fn save(&self, server: &str, auth: &StoredAuth) -> anyhow::Result<()>;
@@ -72,97 +55,38 @@ pub trait TokenStore: Send + Sync {
     fn clear(&self, server: &str) -> anyhow::Result<()>;
 }
 
-/// One JSON file holding every server's credentials.
-///
-/// Lives in the session base dir, which the harness already denies itself
-/// (docs/permissions.md) so a session cannot read its own credentials through
-/// the fs tools. That is a real protection but not the reason plaintext is
-/// acceptable here — it is acceptable because it is temporary.
-pub struct FileStore {
-    path: PathBuf,
+/// The secret store, one item per server.
+pub struct KeychainStore {
+    secrets: Arc<Secrets>,
 }
 
-impl FileStore {
-    pub fn new(base_dir: &Path) -> Self {
-        Self {
-            path: base_dir.join("mcp-auth.json"),
-        }
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn read_all(&self) -> anyhow::Result<std::collections::BTreeMap<String, StoredAuth>> {
-        match std::fs::read_to_string(&self.path) {
-            Ok(contents) => serde_json::from_str(&contents).with_context(|| {
-                format!(
-                    "{} is not readable as stored credentials",
-                    self.path.display()
-                )
-            }),
-            // No file yet is the normal first-run state, not an error.
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Default::default()),
-            Err(e) => Err(e).with_context(|| format!("reading {}", self.path.display())),
-        }
-    }
-
-    fn write_all(
-        &self,
-        all: &std::collections::BTreeMap<String, StoredAuth>,
-    ) -> anyhow::Result<()> {
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let contents = serde_json::to_string_pretty(all)?;
-        // Create with owner-only permissions *before* any bytes land, so the
-        // tokens are never briefly world-readable.
-        write_private(&self.path, contents.as_bytes())
-            .with_context(|| format!("writing {}", self.path.display()))
+impl KeychainStore {
+    pub fn new(secrets: Arc<Secrets>) -> Self {
+        Self { secrets }
     }
 }
 
-impl TokenStore for FileStore {
+impl TokenStore for KeychainStore {
     fn load(&self, server: &str) -> anyhow::Result<Option<StoredAuth>> {
-        Ok(self.read_all()?.remove(server))
+        let name = crate::secrets::mcp_name(server);
+        let Some(json) = self.secrets.get(&name)? else {
+            return Ok(None);
+        };
+        // A record that does not parse is a hard error, not "no credentials":
+        // the latter would quietly restart the browser dance and overwrite it.
+        let auth = serde_json::from_str(&json)
+            .with_context(|| format!("`{name}` is not readable as stored credentials"))?;
+        Ok(Some(auth))
     }
 
     fn save(&self, server: &str, auth: &StoredAuth) -> anyhow::Result<()> {
-        let mut all = self.read_all()?;
-        all.insert(server.to_string(), auth.clone());
-        self.write_all(&all)
+        let json = serde_json::to_string(auth)?;
+        Ok(self.secrets.set(&crate::secrets::mcp_name(server), &json)?)
     }
 
     fn clear(&self, server: &str) -> anyhow::Result<()> {
-        let mut all = self.read_all()?;
-        if all.remove(server).is_none() {
-            return Ok(());
-        }
-        self.write_all(&all)
+        Ok(self.secrets.delete(&crate::secrets::mcp_name(server))?)
     }
-}
-
-/// Write a file readable only by its owner (`0600`).
-///
-/// The mode is set at create time rather than with a follow-up `chmod`: between
-/// those two calls the tokens would be on disk under the process umask, and a
-/// crash in the gap would leave them that way.
-#[cfg(unix)]
-fn write_private(path: &Path, contents: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(contents)
-}
-
-#[cfg(not(unix))]
-fn write_private(path: &Path, contents: &[u8]) -> std::io::Result<()> {
-    std::fs::write(path, contents)
 }
 
 #[cfg(test)]

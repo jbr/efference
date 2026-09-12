@@ -27,6 +27,7 @@ pub mod policy;
 pub mod pretty;
 pub mod project;
 pub mod push;
+pub mod secrets;
 pub mod setup;
 pub mod spawn;
 pub mod spotter;
