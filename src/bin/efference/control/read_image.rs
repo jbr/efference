@@ -27,7 +27,7 @@ pub struct Image {
     #[schemars(skip)]
     #[arg(long, short)]
     pub out: Option<std::path::PathBuf>,
-    /// Read from this session instead of the resolved one — the per-call override of the session resolved from `--name`/`--socket`/discovery.
+    /// Read from this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub session: Option<String>,

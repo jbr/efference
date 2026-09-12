@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub struct Dismiss {
     /// The notification id.
     pub id: u64,
-    /// Act on this session instead of the resolved one — the per-call override of the session resolved from `--name`/`--socket`/discovery.
+    /// Act on this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub session: Option<String>,

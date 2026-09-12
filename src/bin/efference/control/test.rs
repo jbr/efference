@@ -109,6 +109,9 @@ fn tools_list_is_ordered_and_annotated() {
             "state",
             "log",
             "title",
+            "sessions",
+            "create",
+            "end",
         ]
     );
 
@@ -125,18 +128,19 @@ fn tools_list_is_ordered_and_annotated() {
         )
     };
 
-    for name in ["state", "log", "settle", "image"] {
+    for name in ["state", "log", "settle", "image", "sessions"] {
         assert_eq!(hints(name).0, Some(true), "{name} is a read");
     }
-    // Interrupt kills a process group; approving runs a call the rungs did not clear.
-    for name in ["interrupt", "approve"] {
+    // Interrupt kills a process group; approving runs a call the rungs did not
+    // clear; ending a session tears it down.
+    for name in ["interrupt", "approve", "end"] {
         assert_eq!(
             hints(name),
             (Some(false), Some(true), Some(false)),
             "{name}"
         );
     }
-    for name in ["turn", "background", "pace", "notify"] {
+    for name in ["turn", "background", "pace", "notify", "create"] {
         assert_eq!(
             hints(name),
             (Some(false), Some(false), Some(false)),
@@ -151,5 +155,52 @@ fn tools_list_is_ordered_and_annotated() {
             "{}",
             tool.name
         );
+    }
+}
+
+/// Mounted against the host with no `--name`/`--socket`, a call that names no
+/// session is an error naming the argument, not a discovery of whatever is live:
+/// the mount's session selection is explicit per call (docs/operating.md). The
+/// host path here has no listener, so the error also says the host is not up.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unbound_mount_requires_session() {
+    let mut state = Control::new(
+        Handle::current(),
+        std::path::PathBuf::from("/nonexistent/efference/host.sock"),
+        Fallback::None,
+        false,
+    );
+    let err = tokio::task::spawn_blocking(move || match state.client(None) {
+        Ok(_) => panic!("an unbound mount resolved a session"),
+        Err(e) => e.to_string(),
+    })
+    .await
+    .unwrap();
+    assert!(err.contains("pass `session`"), "{err}");
+    assert!(err.contains("no host at"), "{err}");
+}
+
+/// Every session tool but the host's own three takes `session`, and the three
+/// take none or a required one — the mount's whole addressing surface, pinned
+/// against a tool that forgets the field.
+#[test]
+fn every_session_tool_takes_session() {
+    for tool in Tools::tools_list() {
+        let properties = tool.input_schema["properties"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        match tool.name.as_str() {
+            "sessions" | "create" => assert!(!properties.contains_key("session"), "{}", tool.name),
+            "end" => assert_eq!(
+                tool.input_schema["required"],
+                serde_json::json!(["session"])
+            ),
+            _ => assert!(
+                properties.contains_key("session"),
+                "{} takes no `session`",
+                tool.name
+            ),
+        }
     }
 }

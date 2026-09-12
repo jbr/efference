@@ -409,9 +409,10 @@ impl Client {
         json_field(&read_2xx(conn, "POST", path).await?, "id")
     }
 
-    /// The sessions a host holds (`GET /sessions`, docs/control-api.md), by id.
-    /// A listener route at the socket root, like [`create_session`](Self::create_session).
-    pub async fn list_sessions(&self) -> Result<Vec<String>> {
+    /// The sessions a host holds (`GET /sessions`, docs/control-api.md), sorted
+    /// by id, each with its title once one has been written. A listener route at
+    /// the socket root, like [`create_session`](Self::create_session).
+    pub async fn sessions(&self) -> Result<Vec<SessionListing>> {
         let path = "/sessions";
         let conn = self
             .http
@@ -419,18 +420,32 @@ impl Client {
             .await
             .with_context(|| format!("GET {path} on the host socket"))?;
         let body = read_2xx(conn, "GET", path).await?;
-        let listed: Vec<serde_json::Value> =
-            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
-        listed
-            .iter()
-            .map(|entry| {
-                entry
-                    .get("id")
-                    .and_then(|id| id.as_str())
-                    .map(str::to_string)
-                    .ok_or_else(|| anyhow!("GET {path}: an entry without an id: {entry}"))
-            })
-            .collect()
+        serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
+    }
+
+    /// The ids of the sessions a host holds: [`sessions`](Self::sessions) without
+    /// the titles.
+    pub async fn list_sessions(&self) -> Result<Vec<String>> {
+        Ok(self
+            .sessions()
+            .await?
+            .into_iter()
+            .map(|listing| listing.id)
+            .collect())
+    }
+
+    /// End a hosted session (`DELETE /sessions/:id`, docs/control-api.md):
+    /// answers once its teardown has run. A listener route at the socket root;
+    /// `404` for an id the host does not hold.
+    pub async fn end_session(&self, id: &str) -> Result<()> {
+        let path = format!("/sessions/{id}");
+        let conn = self
+            .http
+            .delete(path.as_str())
+            .await
+            .with_context(|| format!("DELETE {path} on the host socket"))?;
+        read_2xx(conn, "DELETE", &path).await?;
+        Ok(())
     }
 
     /// A fresh bootstrap link from the daemon's TCP bind (`GET /auth/link`,
@@ -565,6 +580,17 @@ impl Client {
             .with_context(|| format!("GET {path} from the control socket"))?;
         read_2xx(conn, "GET", path).await
     }
+}
+
+/// One entry of `GET /sessions` (docs/control-api.md): a hosted session's id and,
+/// once one has been written, its title (docs/session-title.md).
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+pub struct SessionListing {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 /// One turn a `DELETE /turns/:submission_id` actually popped (docs/control-api.md) — the text a

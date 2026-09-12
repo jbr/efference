@@ -99,10 +99,19 @@ pub(crate) async fn resolve_client_target(
     name: Option<&str>,
     socket: Option<PathBuf>,
 ) -> Result<ClientTarget, CliError> {
+    resolve_client_target_at(host_socket(), name, socket).await
+}
+
+/// [`resolve_client_target`] against a host at `host` rather than the default
+/// `.efference/host.sock` — what `efference mcp --host-socket` resolves through.
+pub(crate) async fn resolve_client_target_at(
+    host: PathBuf,
+    name: Option<&str>,
+    socket: Option<PathBuf>,
+) -> Result<ClientTarget, CliError> {
     if let Some(socket) = socket {
         return Ok(ClientTarget::socket(socket));
     }
-    let host = host_socket();
     let hosted: Vec<String> = if is_live(&host) {
         ControlClient::new(&host)
             .list_sessions()
@@ -421,10 +430,17 @@ pub(crate) enum Command {
     Control(control::Tools),
     /// Serve the `control` tools as an MCP server on stdin/stdout.
     ///
-    /// The mount another agent harness supervises a session through: each `control`
+    /// The mount another agent harness supervises sessions through: each `control`
     /// subcommand is one tool. Speaks newline-delimited JSON-RPC and blocks until
-    /// stdin closes. Pass `--name` to pick the session when several are live.
-    Mcp,
+    /// stdin closes. Connects to the host: nothing needs to be running when it
+    /// starts, and each call names its session (`sessions` lists them, `create`
+    /// makes one). With `--name` or `--socket`, a call that names no session
+    /// drives that one.
+    Mcp {
+        /// The host's control socket. Defaults to `.efference/host.sock` here.
+        #[arg(long, value_name = "PATH")]
+        host_socket: Option<PathBuf>,
+    },
     /// Instruments for developing efference itself.
     ///
     /// The wire view, the element gallery, the spotter and peek testers, the

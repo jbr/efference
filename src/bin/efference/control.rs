@@ -1,8 +1,9 @@
 //! The session-control tools: one definition, two entry points (docs/operating.md).
 //!
 //! Each verb that drives a *running* session is one control-API call
-//! over the session's socket (docs/control-channel.md), written once here as an
-//! [mcplease](mcplease) tool. The `tools!` macro below turns them into a single
+//! over its control channel (docs/control-channel.md), and the three that
+//! address the host — `sessions`, `create`, `end` — are one host-route call each.
+//! Every one is written once here as an [mcplease](mcplease) tool. The `tools!` macro below turns them into a single
 //! `Tools` enum that is simultaneously
 //!
 //! - a clap `Subcommand`, mounted as `efference control <tool>`, and
@@ -22,6 +23,7 @@
 //! (`tokio::task::spawn_blocking`), never on a runtime worker.
 
 use std::future::Future;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
@@ -32,7 +34,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::runtime::Handle;
 
-use super::{CliResult, ClientTarget, resolve_client_target};
+use super::{CliResult, resolve_client_target_at};
 
 mcplease::tools!(
     Control,
@@ -48,16 +50,22 @@ mcplease::tools!(
     (Image, read_image, "image"),
     (State, state, "state"),
     (Log, read_log, "log"),
-    (Title, title, "title")
+    (Title, title, "title"),
+    (Sessions, sessions, "sessions"),
+    (Create, create, "create"),
+    (End, end, "end")
 );
 
 /// What a mounting harness is told about this server, verbatim from
 /// docs/operating.md: what the tools drive, what a gate is, and which call to
 /// reach for at each of the three things that can be waited on.
 const INSTRUCTIONS: &str = "\
-Drive one running efference session (created on an `efference host`). The \
-session runs its own agent loop; these tools submit work to it, resolve the gates it \
-stops at, and read where it is.
+Drive the efference sessions on one host. Each session runs its own agent loop; \
+these tools submit work to it, resolve the gates it stops at, and read where it is. \
+`sessions` lists what the host holds, `create` starts a session in a working \
+directory, `end` tears one down. Every other tool takes a `session` id; it is \
+required unless this server was started against one session, and then it \
+overrides that session for the call.
 
 A *gate* is the loop pausing on a tool call the permission rungs did not clear: the \
 call is held, nothing runs, and the session waits for a decision. `state` reports the \
@@ -73,55 +81,122 @@ its `/state` then. Pass `timeout_s`; on expiry they return the current state wit
 ambient message that waits for the next natural break instead. Prefer `notify` for \
 anything that is not urgent.";
 
-/// The tool state: which session the tools drive, and how a synchronous
-/// [`Tool`](mcplease::traits::Tool) reaches an async client.
+/// The tool state: the host the tools reach, which session a call that names
+/// none drives, and how a synchronous [`Tool`](mcplease::traits::Tool) reaches an
+/// async client.
 ///
-/// Session selection is deliberately two knobs and no more — the socket resolved at
-/// startup from `--name`/`--socket`/discovery, and an optional per-call `session`
-/// override. Who *may* drive which session is a separate design; nothing here
-/// pre-empts it.
+/// Session selection is two knobs and no more: the per-call `session` id, and the
+/// [`Fallback`] for a call without one. Who *may* drive which session is a
+/// separate design; nothing here pre-empts it.
 pub(crate) struct Control {
     /// The runtime `main` is on. Every tool blocks on one client call through it.
     runtime: Handle,
-    /// The session resolved at startup, used by any call that names no `session`.
-    default_client: Client,
+    /// The host's control socket: where a `session` id is looked up, and what
+    /// `sessions`/`create`/`end` address.
+    host: PathBuf,
+    /// The session for a call that names none.
+    fallback: Fallback,
     /// Whether this dispatch came from the command line rather than from an MCP
     /// client. Only `image` reads it: at a terminal it writes a file and says so,
     /// over MCP it hands back the bytes as an image content block.
     cli: bool,
 }
 
+/// Which session a call that names no `session` drives.
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum Fallback {
+    /// One already reached: a resolved `--name`/`--socket`, or a test's in-memory
+    /// transport.
+    Client(Client),
+    /// Resolve from `--name`/`--socket`/discovery on first use, then keep it. The
+    /// command line's default, so `efference control state` in a directory with
+    /// one session needs no name and a host-only verb never triggers discovery.
+    Resolve {
+        name: Option<String>,
+        socket: Option<PathBuf>,
+    },
+    /// Nothing: the server was mounted against the host, and every call names its
+    /// session. `efference mcp`'s default.
+    None,
+}
+
 impl Control {
-    /// Bind the tools to the session at `target`, blocking on `runtime`.
-    pub(crate) fn new(runtime: Handle, target: ClientTarget, cli: bool) -> Self {
+    /// Bind the tools to the host at `host`, with `fallback` for calls that name no
+    /// session, blocking on `runtime`.
+    pub(crate) fn new(runtime: Handle, host: PathBuf, fallback: Fallback, cli: bool) -> Self {
         Self {
             runtime,
-            default_client: target.client(),
+            host,
+            fallback,
             cli,
         }
     }
 
     /// Bind the tools to an already-built client — the seam a test drives the real
-    /// control router through on an in-memory transport.
+    /// control router through on an in-memory transport. The host is a path
+    /// nothing listens on.
     #[cfg(test)]
     pub(crate) fn with_client(runtime: Handle, default_client: Client, cli: bool) -> Self {
-        Self {
+        Self::new(
             runtime,
-            default_client,
+            PathBuf::from(".efference/host.sock"),
+            Fallback::Client(default_client),
             cli,
+        )
+    }
+
+    /// The client for one call: the `session` id if given — a session the host
+    /// lists, or one with its own live socket under `.efference/` — else the
+    /// fallback. Without a fallback, a call that names no session is an error that
+    /// says what the host holds.
+    fn client(&mut self, session: Option<&str>) -> Result<Client> {
+        if let Some(name) = session {
+            return self.resolve(Some(name), None);
+        }
+        match &self.fallback {
+            Fallback::Client(client) => Ok(client.clone()),
+            Fallback::Resolve { name, socket } => {
+                let (name, socket) = (name.clone(), socket.clone());
+                let client = self.resolve(name.as_deref(), socket)?;
+                self.fallback = Fallback::Client(client.clone());
+                Ok(client)
+            }
+            Fallback::None => {
+                let held = match self.host_client() {
+                    Ok(host) => match self.block_on(host.list_sessions()) {
+                        Ok(ids) if ids.is_empty() => {
+                            "the host holds no sessions; `create` one".to_string()
+                        }
+                        Ok(ids) => format!("the host holds: {}", ids.join(", ")),
+                        Err(e) => format!("the host could not be listed: {e:#}"),
+                    },
+                    Err(e) => e.to_string(),
+                };
+                Err(anyhow!(
+                    "pass `session`: this server is mounted against the host, not one session ({held})"
+                ))
+            }
         }
     }
 
-    /// The client for one call: the `session` override if given, else the session
-    /// resolved at startup. An override names a session the same way `--name` does.
-    fn client(&self, session: Option<&str>) -> Result<Client> {
-        match session {
-            None => Ok(self.default_client.clone()),
-            Some(name) => Ok(self
-                .block_on(resolve_client_target(Some(name), None))
-                .map_err(|e| anyhow!("{e}"))?
-                .client()),
+    fn resolve(&self, name: Option<&str>, socket: Option<PathBuf>) -> Result<Client> {
+        Ok(self
+            .block_on(resolve_client_target_at(self.host.clone(), name, socket))
+            .map_err(|e| anyhow!("{e}"))?
+            .client())
+    }
+
+    /// A client at the host's socket root, for the listener's own routes. Checked
+    /// live first, so a host that is not running reads as that rather than as a
+    /// connection error inside a request.
+    fn host_client(&self) -> Result<Client> {
+        if std::os::unix::net::UnixStream::connect(&self.host).is_err() {
+            return Err(anyhow!(
+                "no host at {}; start one with `efference host`",
+                self.host.display()
+            ));
         }
+        Ok(Client::new(&self.host))
     }
 
     /// Whether this dispatch came from the command line. See [`Control::cli`].
@@ -312,12 +387,19 @@ pub(crate) async fn pending_call_id(client: &Client) -> Result<String> {
         .ok_or_else(|| anyhow!("no pending approval; pass a call id explicitly"))
 }
 
-/// Run `efference control <tool>` and print what it returned. Dispatch is
-/// synchronous, so it runs on a blocking thread rather than on a runtime worker.
-pub(crate) async fn run_cli(tools: Tools, target: ClientTarget) -> CliResult {
+/// Run `efference control <tool>` and print what it returned. A call that names no
+/// session resolves one from `--name`/`--socket`/discovery, as the other client
+/// verbs do. Dispatch is synchronous, so it runs on a blocking thread rather than
+/// on a runtime worker.
+pub(crate) async fn run_cli(
+    tools: Tools,
+    host: PathBuf,
+    name: Option<String>,
+    socket: Option<PathBuf>,
+) -> CliResult {
     let runtime = Handle::current();
     let text = tokio::task::spawn_blocking(move || {
-        let mut state = Control::new(runtime, target, true);
+        let mut state = Control::new(runtime, host, Fallback::Resolve { name, socket }, true);
         mcplease::traits::Dispatch::call_to_text(
             tools,
             &mut state,
@@ -331,11 +413,23 @@ pub(crate) async fn run_cli(tools: Tools, target: ClientTarget) -> CliResult {
 
 /// Run `efference mcp`: the same tools over newline-delimited JSON-RPC on
 /// stdin/stdout, the transport a harness mounting this server speaks
-/// (docs/operating.md). Blocks until stdin closes.
-pub(crate) async fn run_stdio(target: ClientTarget) -> CliResult {
+/// (docs/operating.md). Nothing is resolved at startup: the host need not be
+/// running yet, and each call names its session — unless `--name`/`--socket`
+/// was given, which a call that names none then drives. Blocks until stdin
+/// closes.
+pub(crate) async fn run_stdio(
+    host: PathBuf,
+    name: Option<String>,
+    socket: Option<PathBuf>,
+) -> CliResult {
     let runtime = Handle::current();
+    let fallback = if name.is_some() || socket.is_some() {
+        Fallback::Resolve { name, socket }
+    } else {
+        Fallback::None
+    };
     tokio::task::spawn_blocking(move || {
-        let mut state = Control::new(runtime, target, false);
+        let mut state = Control::new(runtime, host, fallback, false);
         let config =
             mcplease::ServerConfig::new(mcplease::server_info!()).with_instructions(INSTRUCTIONS);
         mcplease::serve::<Tools, _>(&mut state, &config)

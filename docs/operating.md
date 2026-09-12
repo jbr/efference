@@ -14,8 +14,11 @@ driven, and it is refined from use rather than written ahead of it.
 
 - **`efference control <tool>`** — the calls that drive a *running* session:
   `turn`, `approve`, `settle`, `interrupt`, `background`, `pace`, `review-level`,
-  `notify`, `dismiss`, `image`, `state`, `log`, `title`. Each is one control-API call over the
-  session's socket ([control-channel.md](control-channel.md)).
+  `notify`, `dismiss`, `image`, `state`, `log`, `title`, each one control-API call
+  over the session's control channel ([control-channel.md](control-channel.md)) —
+  and the three that address the host: `sessions` (list, with titles), `create`
+  (a session in a working directory, this process's environment as its base), and
+  `end` (tear one down).
 - **`efference mcp`** — the same calls, served as an MCP server over stdin/stdout
   (below). One definition, two entry points: they are written once as mcplease tools
   (`src/bin/efference/control/`, one file per tool) and mounted both ways, so the
@@ -39,18 +42,23 @@ closes, which is the transport a locally-spawned MCP server speaks. A Claude Cod
   "mcpServers": {
     "efference": {
       "command": "efference",
-      "args": ["--name", "my-session", "mcp"]
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-Session selection is the same two knobs as the command line and nothing more: the socket
-resolved at startup from `--name`/`--socket`/discovery, and an optional `session` argument
-on every tool that overrides it for one call. The server's `instructions` and each tool's
-description are written for the model reading `tools/list`; the behaviour hints say which
-tools read and which mutate, since the spec's defaults are pessimistic and a mounting
-harness's approval UX reads them.
+The mount addresses the host, not a session: nothing is resolved at startup, so the
+host need not be running yet and the mount outlives any one session. The host is
+`.efference/host.sock` in the mount's working directory, or `--host-socket <path>`.
+Every session tool takes a `session` id — what `sessions` lists and `create` returns —
+and a call without one is an error that names what the host currently holds. The
+command line resolves the way the other client verbs do (`--name`/`--socket`, else
+the single live session), and `efference --name my-session mcp` gives the mount
+that same default, which a call's `session` then overrides. The server's
+`instructions` and each tool's description are written for the model reading
+`tools/list`; the behaviour hints say which tools read and which mutate, since the
+spec's defaults are pessimistic and a mounting harness's approval UX reads them.
 
 The three waiting tools — `settle`, and `turn`/`approve` with `wait` — take a `timeout_s`,
 because MCP clients time tool calls out. On expiry they answer with the current state

@@ -58,8 +58,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })
             .await
         }
-        Command::Control(tools) => control::run_cli(tools, client_target().await?).await,
-        Command::Mcp => control::run_stdio(client_target().await?).await,
+        Command::Control(tools) => {
+            control::run_cli(
+                tools,
+                cli::host_socket(),
+                name.clone(),
+                socket_override.clone(),
+            )
+            .await
+        }
+        Command::Mcp { host_socket } => {
+            control::run_stdio(
+                host_socket.unwrap_or_else(cli::host_socket),
+                name.clone(),
+                socket_override.clone(),
+            )
+            .await
+        }
         #[cfg(feature = "dev")]
         Command::Dev(command) => dev::run(command, name.clone(), client_target).await,
         Command::Check { path } => check(path).await,

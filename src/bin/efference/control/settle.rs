@@ -19,7 +19,7 @@ pub struct Settle {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub timeout_s: Option<u64>,
-    /// Watch this session instead of the resolved one — the per-call override of the session resolved from `--name`/`--socket`/discovery.
+    /// Watch this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub session: Option<String>,

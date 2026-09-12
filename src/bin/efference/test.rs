@@ -25,6 +25,24 @@ async fn a_name_nothing_serves_is_an_error() {
     assert!(err.contains("definitely-not-live"), "{err}");
 }
 
+/// A name resolves against the host path it is given, not only the default one:
+/// the socket in the error is the one `efference mcp --host-socket` named.
+#[tokio::test]
+async fn a_name_resolves_against_the_given_host() {
+    let err = resolve_client_target_at(
+        PathBuf::from("/nonexistent/efference/host.sock"),
+        Some("definitely-not-live"),
+        None,
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("/nonexistent/efference/host.sock is not running"),
+        "{err}"
+    );
+}
+
 /// A hosted target's attachment store is the session dir beside the host socket.
 #[test]
 fn a_hosted_target_finds_its_session_dir() {
