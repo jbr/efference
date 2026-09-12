@@ -14,7 +14,7 @@ driven, and it is refined from use rather than written ahead of it.
 
 - **`efference control <tool>`** — the calls that drive a *running* session:
   `turn`, `approve`, `settle`, `interrupt`, `background`, `pace`, `review-level`,
-  `notify`, `dismiss`, `image`, `state`, `log`, `title`, each one control-API call
+  `notify`, `dismiss`, `image`, `state`, `transcript`, `entries`, `title`, each one control-API call
   over the session's control channel ([control-channel.md](control-channel.md)) —
   and the three that address the host: `sessions` (list, with titles), `create`
   (a session in a working directory, this process's environment as its base), and
@@ -89,8 +89,14 @@ Each read is at its own grain.
   the inbox, running processes, token usage and cost, the pace and review-level dials, the
   **effective** policy in force, and the three condition topics (`stall`, `upstream_retry`,
   `config_repair`). Effective, not boot: a grant made twenty minutes ago shows up here.
-- **`efference control log [--since N]`** — the durable history. Entries are immutable, so anything
-  you have already read stays valid.
+- **`efference control transcript [--since N | --tail N]`** — what the session has said and
+  done, one line per entry with its `seq`: prose in full, each call by name, arguments and
+  intent, each result by size, error flag and triage verdict, never a body. Entries are
+  immutable, so `--since <last_seq>` after a wait reads only what is new.
+- **`efference control entries <seq>…`** — the whole entries behind transcript lines: a
+  result's complete content, a call's exact arguments. The raw window (`GET /log`) is not
+  a verb: at a terminal the jsonl is the same bytes, and over MCP a window of raw bodies
+  was too large to read and too small to audit.
 - **`GET /events`** — one SSE stream carrying everything as it happens, in one order:
   durable log entries, pre-commit output (assistant text, thinking, tool arguments
   arriving, live process output), and whole-topic state replacements. A client holding this

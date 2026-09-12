@@ -13,9 +13,9 @@
 //! `mcplease::run` is not used: it owns argv parsing and logger init, and efference
 //! has both already.
 //!
-//! Two module names dodge a dependency of the same name (`use image::Image` would be
-//! ambiguous against the `image` crate): the `image` and `log` tools live in
-//! `read_image.rs` and `read_log.rs`. The advertised tool names are unaffected.
+//! One module name dodges a dependency of the same name (`use image::Image` would be
+//! ambiguous against the `image` crate): the `image` tool lives in `read_image.rs`.
+//! The advertised tool name is unaffected.
 //!
 //! `Tool::execute` is synchronous and [`Client`] is async, so [`Control`] carries a
 //! [`Handle`] to the runtime `main` is already on and each tool blocks on its one
@@ -49,7 +49,8 @@ mcplease::tools!(
     (Dismiss, dismiss, "dismiss"),
     (Image, read_image, "image"),
     (State, state, "state"),
-    (Log, read_log, "log"),
+    (Transcript, transcript, "transcript"),
+    (Entries, entries, "entries"),
     (Title, title, "title"),
     (Sessions, sessions, "sessions"),
     (Create, create, "create"),
@@ -79,7 +80,12 @@ its `/state` then. Pass `timeout_s`; on expiry they return the current state wit
 
 `turn` interrupts what the session is doing with a new user message; `notify` files an \
 ambient message that waits for the next natural break instead. Prefer `notify` for \
-anything that is not urgent.";
+anything that is not urgent.
+
+Reading: `transcript` is what the session has said and done, one line per entry with \
+its `seq` — prose in full, calls by name and intent, results by size and verdict, no \
+bodies. `entries` fetches whole entries by seq when a line is not enough; `image` \
+fetches an image a result carried.";
 
 /// The tool state: the host the tools reach, which session a call that names
 /// none drives, and how a synchronous [`Tool`](mcplease::traits::Tool) reaches an
@@ -273,19 +279,11 @@ impl StateResult {
     }
 }
 
-/// A `GET /log` read as a tool result (docs/control-api.md).
+/// Whole log entries fetched by seq (`GET /log/:seq`, docs/control-api.md).
 #[derive(Serialize, schemars::JsonSchema)]
-pub(crate) struct LogResult {
-    /// The durable append-only log window: the entries from `since` onward.
-    log: Value,
-}
-
-impl LogResult {
-    fn new(body: &str) -> Result<Self> {
-        Ok(Self {
-            log: serde_json::from_str(body)?,
-        })
-    }
+pub(crate) struct EntriesResult {
+    /// One full entry view per requested seq, in the order asked.
+    entries: Vec<Value>,
 }
 
 // `structured_output!`'s expansion, plus a `to_text` that pretty-prints: the
@@ -302,7 +300,7 @@ impl ToolOutput for StateResult {
     }
 }
 
-impl ToolOutput for LogResult {
+impl ToolOutput for EntriesResult {
     fn output_schema() -> Option<Value> {
         Some(mcplease::traits::schema_for::<Self>().into())
     }

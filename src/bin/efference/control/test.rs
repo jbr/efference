@@ -3,15 +3,21 @@
 use super::*;
 use efference::persist::Log;
 use mcplease::traits::AsToolsList;
-use mcplease::types::{JsonRpcRequest, JsonRpcResponse};
+use mcplease::traits::Tool as _;
+use mcplease::types::{JsonRpcRequest, JsonRpcResponse, RequestContext};
 use std::sync::Arc;
 
 /// A [`Control`] whose default session is a live [`router`](efference::daemon::router)
 /// on `trillium_testing`'s in-memory transport — the whole request/response cycle,
 /// with no socket bound (`daemon/test.rs` explains why the tests never bind one).
 async fn test_state(cli: bool) -> Control {
-    let (shared, _turns) =
-        efference::daemon::Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    test_state_over(cli, Log::in_memory()).await
+}
+
+/// [`test_state`] over a log the test has already written to: the router has no
+/// loop behind it, so an entry a test wants to read back is appended before mounting.
+async fn test_state_over(cli: bool, log: Log) -> Control {
+    let (shared, _turns) = efference::daemon::Session::new(std::env::current_dir().unwrap(), log);
     let mut handler = (
         trillium::Init::new(move |info: trillium::Info| {
             let shared = Arc::clone(&shared);
@@ -84,6 +90,56 @@ async fn tools_call_state_reaches_the_daemon() {
     );
 }
 
+/// `transcript` and `entries` over the same router: a turn submitted through the
+/// client shows up as one `user` line carrying its seq, and that seq fetches the
+/// whole entry.
+#[tokio::test(flavor = "multi_thread")]
+async fn transcript_lines_carry_the_seq_that_entries_resolves() {
+    let mut log = Log::in_memory();
+    log.append(
+        1,
+        efference::log::Payload::User(vec![efference::log::ContentBlock::Text(
+            "hello transcript".into(),
+        )]),
+    )
+    .unwrap();
+    let mut state = test_state_over(false, log).await;
+
+    let text = tokio::task::spawn_blocking(move || {
+        let text = Transcript {
+            since: None,
+            tail: None,
+            session: None,
+        }
+        .execute(&mut state, &RequestContext::default())
+        .unwrap();
+        (state, text)
+    })
+    .await
+    .unwrap();
+    let (mut state, text) = text;
+    let line = text
+        .lines()
+        .find(|l| l.contains("hello transcript"))
+        .unwrap_or_else(|| panic!("no user line in transcript:\n{text}"));
+    assert!(line.contains(" user "), "{line}");
+    let seq: u64 = line.split_whitespace().next().unwrap().parse().unwrap();
+
+    let fetched = tokio::task::spawn_blocking(move || {
+        Entries {
+            seqs: vec![seq],
+            session: None,
+        }
+        .execute(&mut state, &RequestContext::default())
+        .unwrap()
+    })
+    .await
+    .unwrap();
+    let entry = &fetched.entries[0];
+    assert_eq!(entry["seq"], seq);
+    assert_eq!(entry["payload"]["User"][0]["Text"], "hello transcript");
+}
+
 /// The advertised list is what a mounting harness caches, so both its **order** and
 /// its behaviour hints are pinned here. Order is macro-expansion order; a reorder
 /// moves every client's cached list. The hints are what an approval UX shows, and
@@ -107,7 +163,8 @@ fn tools_list_is_ordered_and_annotated() {
             "dismiss",
             "image",
             "state",
-            "log",
+            "transcript",
+            "entries",
             "title",
             "sessions",
             "create",
@@ -128,7 +185,14 @@ fn tools_list_is_ordered_and_annotated() {
         )
     };
 
-    for name in ["state", "log", "settle", "image", "sessions"] {
+    for name in [
+        "state",
+        "transcript",
+        "entries",
+        "settle",
+        "image",
+        "sessions",
+    ] {
         assert_eq!(hints(name).0, Some(true), "{name} is a read");
     }
     // Interrupt kills a process group; approving runs a call the rungs did not

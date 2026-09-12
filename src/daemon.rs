@@ -1033,6 +1033,7 @@ mod push;
 mod stream;
 pub(crate) mod tcp;
 mod topics;
+mod transcript;
 mod views;
 mod watch;
 

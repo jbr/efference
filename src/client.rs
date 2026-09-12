@@ -352,14 +352,29 @@ impl Client {
             .map(drop)
     }
 
-    /// The durable log (`GET /log?since=<seq>`), the append-only event store
-    /// (docs/README.md). Returned as the raw JSON array body.
-    pub async fn log(&self, since: Option<u64>) -> Result<String> {
-        let path = match since {
-            Some(s) => format!("/log?since={s}"),
-            None => "/log".to_string(),
+    /// The transcript (`GET /transcript`, docs/control-api.md): a log window at
+    /// reading grain, one text block per entry. `since` resumes forward, `tail`
+    /// takes the last N; both together is the daemon's `400`.
+    pub async fn transcript(&self, since: Option<u64>, tail: Option<u64>) -> Result<String> {
+        let mut query = Vec::new();
+        if let Some(since) = since {
+            query.push(format!("since={since}"));
+        }
+        if let Some(tail) = tail {
+            query.push(format!("tail={tail}"));
+        }
+        let path = if query.is_empty() {
+            "/transcript".to_string()
+        } else {
+            format!("/transcript?{}", query.join("&"))
         };
         self.get(&path).await
+    }
+
+    /// One whole entry by `seq` (`GET /log/:seq`, docs/control-api.md): the full
+    /// entry view, an oversized result's content included.
+    pub async fn log_entry(&self, seq: u64) -> Result<String> {
+        self.get(&format!("/log/{seq}")).await
     }
 
     /// Open the unified control stream (`GET /events`, docs/control-api.md). Every event's

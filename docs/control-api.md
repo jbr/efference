@@ -575,6 +575,25 @@ A window may be cut anywhere because references that dangle across the cut are
 `MarkKind::Boundary` naming a span that precedes it, a `Triage` pinning an
 `Ambient` from far back: all resolve by address.
 
+#### `GET /transcript`
+The same window as `GET /log` — same `since`/`before`/`tail` query, same `400`s —
+rendered as `text/plain` at reading grain (`daemon/transcript.rs`): one block per
+entry, `seq tag body`, with a multi-line body indented to the body column. Prose
+(`user`, `assistant`) is whole; a `call` is its tool name, every argument but the
+intent, then the intent in full — an argument named like a body (`contents`,
+`content`, `text`, `body`, `old_string`, `new_string`) is cut short, any other at
+a width that keeps a long `command` readable; a `result` is its outcome, size, and
+wire verdict (`raw`, `elided`, `kept k/n lines: note`, or the triage failure), plus
+how many images it carries — never its content. Calls that shared one assistant
+entry are labelled `seq.1`, `seq.2`, … in place of the bare seq, and each of their
+results opens with `for seq.n:`, so the pairing survives the spot and config
+entries that interleave them; a call alone in its entry keeps the bare seq. `notify`, `spot`,
+`config`, `process`, `mark`, `preamble` and `title` are one line each; a `triage`
+line appears only when the verdict pinned or dismissed a notification or the peek
+retried; telemetry renders to nothing. Every line's `seq` resolves through the
+routes below, which is where the bodies are. The `transcript` control verb reads
+this; the raw window is for clients that render entries themselves.
+
 #### `GET /log/:seq`
 One `LogEntry`, or `404 not_found` past the head of the log. The general form of
 reference resolution: every reference is ultimately to an entry or to something

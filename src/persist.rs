@@ -30,7 +30,7 @@ pub struct Log {
     sink: Option<BufWriter<File>>,
     /// The `[env]` mask (docs/env.md). Every payload passes through it on the way
     /// in, which is what makes append the one choke point securing every
-    /// downstream surface — the wire, the jsonl, the TUI, `control log`. An empty
+    /// downstream surface — the wire, the jsonl, the TUI, `control transcript` and `entries`. An empty
     /// masker (the default, and every test that does not install one) is the
     /// identity.
     masker: Arc<Masker>,

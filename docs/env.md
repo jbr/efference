@@ -121,7 +121,7 @@ paths funnel through. That single point covers tool results, the boot
 `Preamble` (including a `[context]` exec snapshot of the environment),
 `Ambient` notifications, user paste, and harness-written error text, and because
 every downstream surface reads the log, one choke point secures all of them: the
-wire, the jsonl on disk, the TUI, and the `control log` view.
+wire, the jsonl on disk, the TUI, and the `control transcript`/`entries` reads.
 
 The payload paths it filters, exhaustively: `User` text blocks; `Assistant` text
 blocks, tool-call `input` strings, and `upstream_failure` (its `why` and, when

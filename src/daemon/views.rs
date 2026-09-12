@@ -308,6 +308,14 @@ impl Session {
         serde_json::to_string(&views).unwrap_or_else(|_| "[]".into())
     }
 
+    /// The selected window of the log at reading grain (`GET /transcript`,
+    /// docs/control-api.md): one text block per entry, bodies left behind
+    /// [`Self::entry_json`]. Same window selection as [`Self::log_json`].
+    pub(super) fn transcript(&self, select: &LogSelect) -> String {
+        let log = self.log.lock().unwrap();
+        super::transcript::render(window(log.entries(), select))
+    }
+
     /// One entry by `seq`, or `None` if the log has no such position.
     ///
     /// The general form of reference resolution: every reference a windowed client can

@@ -183,6 +183,7 @@ pub(crate) fn control_routes_with_heartbeat(heartbeat: Duration) -> Router {
         .put("/v1/title", title::put_title)
         .get("/v1/state", state::read_state)
         .get("/v1/log", log_reads::read_log_window)
+        .get("/v1/transcript", log_reads::read_transcript)
         .get("/v1/log/:seq", log_reads::read_log_entry)
         .get("/v1/log/:seq/images/:idx", log_reads::read_result_image)
         .get("/v1/tool_calls/:call_id", log_reads::read_tool_call)

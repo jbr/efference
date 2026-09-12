@@ -50,10 +50,10 @@ fn stub_router() -> Router {
             conn.with_status(200)
                 .with_body(r#"{"last_seq":3,"gate":null}"#)
         })
-        .get("/v1/log", |conn: Conn| async move {
+        .get("/v1/transcript", |conn: Conn| async move {
             // Echo the querystring so the test can assert `since` made the trip.
             let q = conn.querystring().to_string();
-            conn.with_status(200).with_body(format!(r#"{{"q":"{q}"}}"#))
+            conn.with_status(200).with_body(format!("q={q}"))
         })
         // A host's surface: creation at the root, one session's routes under its prefix,
         // and the credential routes at the root under either base.
@@ -109,10 +109,10 @@ async fn verbs_round_trip_over_the_unix_connector() {
     let state = client.state().await.unwrap();
     assert!(state.contains(r#""last_seq":3"#));
 
-    let log = client.log(Some(12)).await.unwrap();
+    let transcript = client.transcript(Some(12), None).await.unwrap();
     assert!(
-        log.contains("since=12"),
-        "since should reach the daemon: {log}"
+        transcript.contains("since=12"),
+        "since should reach the daemon: {transcript}"
     );
 
     // The stub saw exactly what the client claims to have sent.
