@@ -37,9 +37,18 @@ impl Tool<Control> for End {
     type Output = String;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        let Executor::Client(state) = &mut control.executor;
-        let host = state.host_client()?;
-        state.block_on(host.end_session(&self.session))?;
-        Ok(format!("ended {}", self.session))
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let host = state.host_client()?;
+                state.block_on(host.end_session(&self.session))?;
+                Ok(format!("ended {}", self.session))
+            }
+            Executor::Host(state) => {
+                // Ending is mutating: the target must be a descendant.
+                state.resolve_mutating(Some(&self.session))?;
+                state.end(&self.session)?;
+                Ok(format!("ended {}", self.session))
+            }
+        }
     }
 }

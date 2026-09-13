@@ -55,15 +55,27 @@ impl Tool<Control> for Notify {
     type Output = String;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        let Executor::Client(state) = &mut control.executor;
-        let client = state.client(self.session.as_deref())?;
-        let body = self.body.join(" ");
-        let id = state.block_on(client.notify(
-            &self.source,
-            &body,
-            self.slot.as_deref(),
-            self.replaces,
-        ))?;
-        Ok(format!("notified (id {id})"))
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let client = state.client(self.session.as_deref())?;
+                let body = self.body.join(" ");
+                let id = state.block_on(client.notify(
+                    &self.source,
+                    &body,
+                    self.slot.as_deref(),
+                    self.replaces,
+                ))?;
+                Ok(format!("notified (id {id})"))
+            }
+            Executor::Host(state) => {
+                // `notify` is an ambient message, not a mutation of the target:
+                // it reaches anything in the caller's project (docs/tools.md).
+                let session = state.resolve(self.session.as_deref())?;
+                let body = self.body.join(" ");
+                let id =
+                    session.notify(self.source.clone(), body, self.slot.clone(), self.replaces);
+                Ok(format!("notified (id {id})"))
+            }
+        }
     }
 }

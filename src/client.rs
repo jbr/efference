@@ -633,6 +633,10 @@ pub struct SessionListing {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// The session that commissioned this one, when a session did (docs/tools.md):
+    /// control state, present only for a session-driven `create`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<String>,
 }
 
 /// One turn a `DELETE /turns/:submission_id` actually popped (docs/control-api.md) — the text a

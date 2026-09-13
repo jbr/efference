@@ -119,6 +119,10 @@ pub enum Provider {
     // variant (clippy::large_enum_variant). Method calls auto-deref through the box.
     Fs(Box<McpServer<FsTools, fs_mcp::Tools>>),
     SemanticEdit(Box<McpServer<SemanticEditTools, semantic_edit_mcp::Tools>>),
+    /// The session-control verbs (docs/tools.md): `sessions__*`, driving the
+    /// host in-process with the calling session's identity. Mounted only for a
+    /// session created on a host.
+    Sessions(Box<McpServer<crate::control_tools::Control, crate::control_tools::Tools>>),
     /// A connected provider (docs/tools.md): a user-declared server reached
     /// over stdio or HTTP, its tool table discovered at mount.
     Connected(Box<crate::mcp::ConnectedProvider>),
@@ -132,6 +136,7 @@ impl Provider {
             Provider::ReadImage(_) => vec![ReadImage::definition()],
             Provider::Fs(s) => s.definitions.clone(),
             Provider::SemanticEdit(s) => s.definitions.clone(),
+            Provider::Sessions(s) => s.definitions.clone(),
             Provider::Connected(c) => c.definitions(),
         }
     }
@@ -143,6 +148,7 @@ impl Provider {
             Provider::ReadImage(_) => name == read_image::NAME,
             Provider::Fs(s) => s.handles(name),
             Provider::SemanticEdit(s) => s.handles(name),
+            Provider::Sessions(s) => s.handles(name),
             Provider::Connected(c) => c.handles(name),
         }
     }
@@ -161,6 +167,10 @@ impl Provider {
                 definition,
             }),
             Provider::SemanticEdit(s) => s.schema(name).map(|definition| ToolBrief {
+                server: None,
+                definition,
+            }),
+            Provider::Sessions(s) => s.schema(name).map(|definition| ToolBrief {
                 server: None,
                 definition,
             }),
@@ -183,6 +193,9 @@ impl Provider {
                 .schema(&call.name)
                 .is_some_and(|d| declares_own_intent(&d.input_schema)),
             Provider::SemanticEdit(s) => s
+                .schema(&call.name)
+                .is_some_and(|d| declares_own_intent(&d.input_schema)),
+            Provider::Sessions(s) => s
                 .schema(&call.name)
                 .is_some_and(|d| declares_own_intent(&d.input_schema)),
             Provider::Connected(c) => c
@@ -224,6 +237,13 @@ impl Provider {
             Provider::SemanticEdit(s) => {
                 Some(ToolEntry::from_definition(s.schema(name)?, None, true))
             }
+            Provider::Sessions(s) => {
+                // `from_definition` carries the bare tool name; the route echoes
+                // the wire name the caller looked up (docs/control-api.md).
+                let mut entry = ToolEntry::from_definition(s.schema(name)?, None, true);
+                entry.name = name.to_string();
+                Some(entry)
+            }
             Provider::Connected(c) => {
                 let brief = c.brief(name)?;
                 Some(ToolEntry::from_definition(
@@ -257,6 +277,10 @@ impl Provider {
             // committed entry.
             Provider::Fs(s) => s.run_call(&call.name, &call.input).into(),
             Provider::SemanticEdit(s) => s.run_call(&call.name, &call.input).into(),
+            // Synchronous dispatch, like the other embedded servers. `create`
+            // and `end` await real work inside it, driven on the host's runtime
+            // rather than this loop's (docs/tools.md).
+            Provider::Sessions(s) => s.run_call(&call.name, &call.input).into(),
             Provider::ReadImage(r) => r.run(&call.input).into(),
             // Async over a wire, but no OS process of the *call's* own and no
             // live stream: the result lands whole. Races `abort` internally
@@ -280,6 +304,9 @@ pub struct McpServer<State, ToolEnum> {
     /// the annotations and the title — and the spotter reads those
     /// ([`ToolBrief`], docs/permissions.md).
     schemas: Vec<ToolDefinition>,
+    /// The wire-name namespace (`<server>__<tool>`) this server was mounted
+    /// under, or `None` for a bare-named embedded server (docs/tools.md).
+    namespace: Option<String>,
     _tools: PhantomData<fn() -> ToolEnum>,
 }
 
@@ -295,26 +322,63 @@ where
     /// keys, so the defs are byte-stable for the session — docs/log-and-projection.md) and reused as the
     /// wire `tools[]`.
     fn from_state(state: State, hidden: &[&str]) -> Self {
+        Self::from_state_named(state, hidden, None)
+    }
+
+    /// [`from_state`](Self::from_state) mounted under a wire-name namespace
+    /// (`<server>__<tool>`, docs/tools.md): the definitions are rewritten to the
+    /// namespaced form and dispatch strips the prefix back off. The namespace is
+    /// fixed for the session, so the definitions stay byte-stable
+    /// (docs/log-and-projection.md).
+    fn from_state_namespaced(state: State, hidden: &[&str], namespace: &str) -> Self {
+        Self::from_state_named(state, hidden, Some(namespace))
+    }
+
+    fn from_state_named(state: State, hidden: &[&str], namespace: Option<&str>) -> Self {
         let schemas: Vec<ToolDefinition> = <ToolEnum as AsToolsList>::tools_list()
             .into_iter()
             .filter(|s| !hidden.contains(&s.name.as_str()))
             .collect();
-        let definitions = schemas.iter().map(anthropic_def).collect();
+        let definitions = schemas
+            .iter()
+            .map(|schema| {
+                let mut definition = anthropic_def(schema);
+                if let Some(namespace) = namespace {
+                    definition["name"] = Value::String(format!("{namespace}__{}", schema.name));
+                }
+                definition
+            })
+            .collect();
         Self {
             state: RefCell::new(state),
             definitions,
             schemas,
+            namespace: namespace.map(str::to_string),
             _tools: PhantomData,
         }
     }
 
+    /// The bare tool name behind a wire name: strips this server's namespace
+    /// when mounted namespaced, identity otherwise. `None` when the name does
+    /// not carry this server's prefix.
+    fn bare_name<'a>(&self, name: &'a str) -> Option<&'a str> {
+        match &self.namespace {
+            Some(namespace) => name
+                .strip_prefix(namespace.as_str())
+                .and_then(|rest| rest.strip_prefix("__")),
+            None => Some(name),
+        }
+    }
+
     fn handles(&self, name: &str) -> bool {
-        self.schemas.iter().any(|s| s.name == name)
+        self.bare_name(name)
+            .is_some_and(|bare| self.schemas.iter().any(|s| s.name == bare))
     }
 
     /// This server's entry for `name`, for the spotter's brief.
     fn schema(&self, name: &str) -> Option<&ToolDefinition> {
-        self.schemas.iter().find(|s| s.name == name)
+        let bare = self.bare_name(name)?;
+        self.schemas.iter().find(|s| s.name == bare)
     }
 
     /// Dispatch one call through the generated `ToolEnum`: wrap as
@@ -325,7 +389,10 @@ where
     /// same way as a remote one. Any failure (bad input, tool error) becomes an
     /// `is_error` result so the `tool_use` still gets its pair.
     fn run_call(&self, name: &str, input: &Value) -> RawResult {
-        let envelope = json!({ "name": name, "arguments": input });
+        let Some(bare) = self.bare_name(name) else {
+            return RawResult::error(format!("unknown tool: {name}"));
+        };
+        let envelope = json!({ "name": bare, "arguments": input });
         let tool: ToolEnum = match serde_json::from_value(envelope) {
             Ok(tool) => tool,
             Err(e) => {
@@ -658,6 +725,26 @@ impl Toolbox {
                 .await?;
         self.providers.push(Provider::Connected(Box::new(provider)));
         Ok(())
+    }
+
+    /// Mount the session-control provider (docs/tools.md): the session reaches
+    /// its project's other sessions through `host`, in-process, under the
+    /// `sessions__<verb>` wire names. `caller` is the session's own id;
+    /// `runtime` drives the two verbs that await real work (`create`, `end`).
+    /// `settle` is hidden from the mounted set, like fs's `delete`.
+    pub fn mount_sessions(
+        &mut self,
+        host: std::sync::Arc<crate::daemon::Host>,
+        caller: String,
+        runtime: tokio::runtime::Handle,
+    ) {
+        let state = crate::control_tools::Control::new(
+            crate::control_tools::Executor::host(runtime, host, caller),
+            false,
+        );
+        self.providers.push(Provider::Sessions(Box::new(
+            McpServer::from_state_namespaced(state, &["settle"], "sessions"),
+        )));
     }
 
     /// The session scratch dir the bash provider exports as `$TMPDIR`, if any.

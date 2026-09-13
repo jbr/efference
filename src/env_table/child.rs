@@ -64,6 +64,23 @@ impl ChildEnv {
     pub fn injected_names(&self) -> impl Iterator<Item = &str> {
         self.inject.keys().map(String::as_str)
     }
+    /// The environment as a child receives it: the base less the stripped names,
+    /// plus the table's injected values (docs/env.md). A snapshot of the spawn
+    /// policy, for handing to another session's creation request.
+    pub fn resolved(&self) -> BTreeMap<String, String> {
+        let mut env: BTreeMap<String, String> = self
+            .base
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect();
+        for name in self.strip.iter() {
+            env.remove(name);
+        }
+        for (name, value) in self.inject.iter() {
+            env.insert(name.clone(), value.clone());
+        }
+        env
+    }
 
     /// Apply the policy to a `std::process::Command`'s environment.
     pub fn apply(&self, cmd: &mut std::process::Command) {

@@ -17,7 +17,7 @@ pub(super) struct Pace {
 }
 
 impl Session {
-    pub(super) fn submit_turn(&self, turn: SubmittedTurn) {
+    pub(crate) fn submit_turn(&self, turn: SubmittedTurn) {
         // Record the turn as queued *before* sending, so `is_settled` reads "busy" the instant
         // the turn is accepted — even before the loop dequeues it (the `/settle` submit race,
         // docs/permissions.md).
@@ -107,7 +107,7 @@ impl Session {
     /// *hold* does not wake it — those take effect at the next juncture, per the design (a hold lands at
     /// the next juncture, letting the in-flight step finish; a speed change outlives the hold and
     /// recolors resume). Returns the resulting `(speed, held)`.
-    pub(super) fn set_pace(&self, speed: Option<Duration>, held: Option<bool>) -> (Duration, bool) {
+    pub(crate) fn set_pace(&self, speed: Option<Duration>, held: Option<bool>) -> (Duration, bool) {
         let mut wake = false;
         let result = {
             let mut p = self.pace.lock().unwrap();
@@ -218,7 +218,7 @@ impl Session {
         Arc::clone(&self.interrupt)
     }
 
-    pub(super) fn interrupt(&self) {
+    pub(crate) fn interrupt(&self) {
         // Latch first, then wake: a bash tool racing the abort future must never
         // resolve and reach the loop's juncture check before the flag is visible.
         self.interrupt_latch.store(true, Ordering::SeqCst);

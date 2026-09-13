@@ -44,15 +44,35 @@ impl Tool<Control> for Background {
     type Output = String;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        let Executor::Client(state) = &mut control.executor;
-        let client = state.client(self.session.as_deref())?;
-        Ok(
-            match state.block_on(client.background(self.note.as_deref()))? {
-                Some(id) => {
-                    format!("requested backgrounding p#{id} (lands only while it is still running)")
-                }
-                None => "no foreground tool running; nothing to background".into(),
-            },
-        )
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let client = state.client(self.session.as_deref())?;
+                Ok(
+                    match state.block_on(client.background(self.note.as_deref()))? {
+                        Some(id) => format!(
+                            "requested backgrounding p#{id} (lands only while it is still running)"
+                        ),
+                        None => "no foreground tool running; nothing to background".into(),
+                    },
+                )
+            }
+            Executor::Host(state) => {
+                let session = state.resolve_mutating(self.session.as_deref())?;
+                let foreground = session
+                    .process_states()
+                    .into_iter()
+                    .find(|process| !process.background)
+                    .map(|process| process.id);
+                Ok(match foreground {
+                    Some(id) => {
+                        session.request_detach(self.note.clone());
+                        format!(
+                            "requested backgrounding p#{id} (lands only while it is still running)"
+                        )
+                    }
+                    None => "no foreground tool running; nothing to background".into(),
+                })
+            }
+        }
     }
 }

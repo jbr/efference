@@ -1,5 +1,5 @@
 use super::{Control, Executor};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -51,13 +51,27 @@ impl Tool<Control> for Transcript {
     type Output = String;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        let Executor::Client(state) = &mut control.executor;
-        let client = state.client(self.session.as_deref())?;
-        let text = state.block_on(client.transcript(self.since, self.tail))?;
-        Ok(if text.is_empty() {
-            "(no entries)".to_string()
-        } else {
-            text
-        })
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let client = state.client(self.session.as_deref())?;
+                let text = state.block_on(client.transcript(self.since, self.tail))?;
+                Ok(if text.is_empty() {
+                    "(no entries)".to_string()
+                } else {
+                    text
+                })
+            }
+            Executor::Host(state) => {
+                let session = state.resolve(self.session.as_deref())?;
+                let text = session
+                    .transcript_window(self.since, self.tail)
+                    .map_err(|reason| anyhow!("{reason}"))?;
+                Ok(if text.is_empty() {
+                    "(no entries)".to_string()
+                } else {
+                    text
+                })
+            }
+        }
     }
 }

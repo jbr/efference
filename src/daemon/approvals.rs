@@ -59,7 +59,7 @@ impl Session {
 
     /// Deliver a client's decision to the waiting loop. Clears the gate so
     /// `GET /state` reflects the resolution immediately. `false` → no such gate.
-    pub(super) fn resolve_approval(&self, id: &CallId, decision: Approval) -> bool {
+    pub(crate) fn resolve_approval(&self, id: &CallId, decision: Approval) -> bool {
         let sender = self.approvals.lock().unwrap().remove(id);
         let Some(tx) = sender else { return false };
         {

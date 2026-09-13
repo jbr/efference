@@ -56,9 +56,12 @@ the two SSE streams (`text/event-stream`).
 `efference host` ([control-channel.md](control-channel.md)) serves several
 sessions from one process. Its own routes are the listener's, not a session's:
 
-- `GET /sessions` — `[{"id": …, "title"?: …}, …]`, the hosted sessions, sorted
-  by id, each with its current title once one has been written
-  ([session-title.md](session-title.md)).
+- `GET /sessions` — `[{"id": …, "title"?: …, "created_by"?: …}, …]`, the hosted
+  sessions, sorted by id, each with its current title once one has been written
+  ([session-title.md](session-title.md)) and, when a session created it, the
+  calling session's id as `created_by`. `created_by` is host control state — the
+  creation tree — never logged or projected; a human-created root omits it
+  (docs/tools.md).
 - `POST /sessions` — create a session. The body is the session request: `cwd`
   (absolute, always sent), `env` (the complete base environment, [env.md](env.md)),
   `model`, and optionally `name`, `config`, `spotter_model`, `triage`,

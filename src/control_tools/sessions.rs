@@ -1,6 +1,6 @@
 use super::{Control, Executor, pretty};
-use anyhow::Result;
 use crate::client::SessionListing;
+use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta, ToolOutput},
     types::{RequestContext, ToolAnnotations},
@@ -51,9 +51,17 @@ impl Tool<Control> for Sessions {
     type Output = SessionsResult;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<SessionsResult> {
-        let Executor::Client(state) = &mut control.executor;
-        let host = state.host_client()?;
-        let sessions = state.block_on(host.sessions())?;
-        Ok(SessionsResult { sessions })
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let host = state.host_client()?;
+                let sessions = state.block_on(host.sessions())?;
+                Ok(SessionsResult { sessions })
+            }
+            // The listing is project-scoped: sessions sharing the caller's
+            // storage base (docs/tools.md).
+            Executor::Host(state) => Ok(SessionsResult {
+                sessions: state.sessions()?,
+            }),
+        }
     }
 }

@@ -1,5 +1,5 @@
-use super::{Control, Executor, EntriesResult};
-use anyhow::{Context as _, Result};
+use super::{Control, EntriesResult, Executor};
+use anyhow::{Context as _, Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -42,15 +42,29 @@ impl Tool<Control> for Entries {
     type Output = EntriesResult;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<EntriesResult> {
-        let Executor::Client(state) = &mut control.executor;
-        let client = state.client(self.session.as_deref())?;
-        let mut entries = Vec::with_capacity(self.seqs.len());
-        for seq in self.seqs {
-            let body = state
-                .block_on(client.log_entry(seq))
-                .with_context(|| format!("entry {seq}"))?;
-            entries.push(serde_json::from_str(&body)?);
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let client = state.client(self.session.as_deref())?;
+                let mut entries = Vec::with_capacity(self.seqs.len());
+                for seq in self.seqs {
+                    let body = state
+                        .block_on(client.log_entry(seq))
+                        .with_context(|| format!("entry {seq}"))?;
+                    entries.push(serde_json::from_str(&body)?);
+                }
+                Ok(EntriesResult { entries })
+            }
+            Executor::Host(state) => {
+                let session = state.resolve(self.session.as_deref())?;
+                let mut entries = Vec::with_capacity(self.seqs.len());
+                for seq in &self.seqs {
+                    let body = session
+                        .entry_json(*seq)
+                        .ok_or_else(|| anyhow!("entry {seq}"))?;
+                    entries.push(serde_json::from_str(&body)?);
+                }
+                Ok(EntriesResult { entries })
+            }
         }
-        Ok(EntriesResult { entries })
     }
 }

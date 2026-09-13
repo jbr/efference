@@ -42,7 +42,7 @@ impl Session {
     /// control state, redundant for any client taking `log` frames, and useful to a
     /// `?include=state` subscriber only as a bootstrap hint. It therefore sits outside
     /// the fold identity above.
-    pub(super) fn state_json(&self) -> String {
+    pub(crate) fn state_json(&self) -> String {
         let mut out = serde_json::Map::new();
         out.insert("last_seq".into(), self.last_seq_json());
         for topic in Topic::ALL {
@@ -322,7 +322,7 @@ impl Session {
     /// hold is ultimately to an entry or to something inside one. Immutably cacheable —
     /// see [`Self::tool_call_json`]. Served as the [`EntryView`], like every
     /// control-channel read of an entry.
-    pub(super) fn entry_json(&self, seq: u64) -> Option<String> {
+    pub(crate) fn entry_json(&self, seq: u64) -> Option<String> {
         let log = self.log.lock().unwrap();
         let entry = log.entries().iter().find(|e| e.seq == seq)?;
         serde_json::to_string(&EntryView::full(entry)).ok()
@@ -331,7 +331,7 @@ impl Session {
     /// The decoded bytes of one logged result image, addressed by its entry's `seq` and
     /// its index within that result — the dereference target for the image references
     /// the views carry (`GET /log/:seq/images/:idx`, docs/control-api.md).
-    pub(super) fn image_bytes(&self, seq: u64, idx: usize) -> Option<(String, Vec<u8>)> {
+    pub(crate) fn image_bytes(&self, seq: u64, idx: usize) -> Option<(String, Vec<u8>)> {
         use base64::Engine;
         let log = self.log.lock().unwrap();
         let entry = log.entries().iter().find(|e| e.seq == seq)?;

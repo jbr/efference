@@ -1,5 +1,5 @@
 use super::{Control, Executor};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -40,9 +40,19 @@ impl Tool<Control> for Dismiss {
     type Output = String;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        let Executor::Client(state) = &mut control.executor;
-        let client = state.client(self.session.as_deref())?;
-        state.block_on(client.dismiss_notification(self.id))?;
-        Ok(format!("dismissed {}", self.id))
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let client = state.client(self.session.as_deref())?;
+                state.block_on(client.dismiss_notification(self.id))?;
+                Ok(format!("dismissed {}", self.id))
+            }
+            Executor::Host(state) => {
+                let session = state.resolve_mutating(self.session.as_deref())?;
+                if !session.dismiss_notification(self.id) {
+                    return Err(anyhow!("no pending notification with id {}", self.id));
+                }
+                Ok(format!("dismissed {}", self.id))
+            }
+        }
     }
 }

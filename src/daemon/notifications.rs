@@ -84,7 +84,7 @@ impl Session {
 
     /// Dismiss a pending notification out-of-band (docs/inbox.md —
     /// `DELETE /notifications/:id`). `false` → no pending notification with that id.
-    pub(super) fn dismiss_notification(&self, id: u64) -> bool {
+    pub(crate) fn dismiss_notification(&self, id: u64) -> bool {
         let removed = {
             let mut inbox = self.inbox.lock().unwrap();
             let before = inbox.pending.len();

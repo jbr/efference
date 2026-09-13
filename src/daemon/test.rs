@@ -134,6 +134,7 @@ mod config_edits;
 mod continuation;
 mod events;
 mod http;
+mod in_session;
 mod keepalive;
 mod log_reads;
 mod metrics;

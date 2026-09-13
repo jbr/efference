@@ -83,6 +83,9 @@ impl SessionRuntime {
             client.image_placement(),
             env_policy,
         );
+        // The project's storage base, for the in-session `sessions` mount's
+        // listing and target scope (docs/tools.md).
+        session.set_storage_base(paths.storage());
 
         // The boot review level (docs/permissions.md), set before the loop spawns
         // because the gate reads it on the loop's thread.

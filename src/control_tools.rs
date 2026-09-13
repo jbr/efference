@@ -25,6 +25,7 @@
 
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::client::Client;
@@ -123,11 +124,17 @@ impl Control {
     }
 }
 
-/// How control tools reach a session. The CLI and stdio MCP server both use the
-/// HTTP client today. A future in-process mount adds its own variant; each tool
-/// explicitly selects its executor in its `execute` implementation.
+/// How control tools reach a session (docs/tools.md). The CLI and stdio MCP
+/// server use the HTTP client; a session's own toolbox uses the in-process
+/// `Host` executor and calls the host directly. Each tool explicitly selects
+/// its executor in its `execute` implementation.
+///
+/// The client variant is much the larger (it carries the runtime handle, socket,
+/// and fallback client); like [`Fallback`], the enum stays unboxed.
+#[allow(clippy::large_enum_variant)]
 pub enum Executor {
     Client(ClientExecutor),
+    Host(HostExecutor),
 }
 
 impl Executor {
@@ -138,6 +145,184 @@ impl Executor {
             host,
             fallback,
         })
+    }
+
+    /// Bind the in-process executor: the calling session driving its project's
+    /// sessions through the host it already lives in (docs/tools.md). The host
+    /// is held weakly — the host owns every session and a session's toolbox
+    /// holds this executor, so a strong reference would be a cycle.
+    pub fn host(runtime: Handle, host: Arc<crate::daemon::Host>, caller: String) -> Self {
+        Self::Host(HostExecutor {
+            runtime,
+            host: Arc::downgrade(&host),
+            caller,
+        })
+    }
+}
+
+/// The in-process executor (docs/tools.md): the calling session's toolbox reaches
+/// the host directly — the same `Session` methods the HTTP handlers call, never a
+/// round trip over the socket. The two target rules live here because this is the
+/// only executor that knows who is calling:
+///
+/// 1. the target is never the caller, and
+/// 2. a mutating verb reaches only sessions in the caller's descendant chain
+///    (via `created_by`), so a session cannot resolve its own gate or steer a peer.
+pub struct HostExecutor {
+    /// A handle to the host's runtime, for the two verbs that await real work
+    /// (`create` boots a session; `end` waits for its teardown).
+    runtime: Handle,
+    /// The host, held weakly (see [`Executor::host`]).
+    host: std::sync::Weak<crate::daemon::Host>,
+    /// The calling session's id — the executor's identity.
+    caller: String,
+}
+
+impl HostExecutor {
+    /// The host, or an error if it has shut down.
+    fn host(&self) -> Result<Arc<crate::daemon::Host>> {
+        self.host
+            .upgrade()
+            .ok_or_else(|| anyhow!("the host is no longer running"))
+    }
+
+    /// The calling session itself, or an error if it has ended.
+    fn caller_session(&self) -> Result<Arc<crate::daemon::Session>> {
+        self.host()?
+            .session(&self.caller)
+            .ok_or_else(|| anyhow!("the calling session {:?} is no longer hosted", self.caller))
+    }
+
+    /// Resolve the target a call names, enforcing rule 1. A call that names no
+    /// session defaults to the caller, which the rule then refuses — which is
+    /// what makes an in-session read with no target an error rather than a
+    /// silent self-read.
+    fn target(&self, requested: Option<&str>) -> Result<String> {
+        let target = requested.unwrap_or(&self.caller).to_string();
+        if target == self.caller {
+            return Err(anyhow!(
+                "refused: {target:?} is the calling session — a session cannot target itself \
+                 (docs/tools.md)"
+            ));
+        }
+        Ok(target)
+    }
+
+    /// The target's `Session`, if it is in the caller's project — the sessions
+    /// whose `.efference/` storage base is the caller's (docs/tools.md). A
+    /// session outside it is not found, not forbidden: project scope is a
+    /// visibility boundary, not a permission one.
+    fn in_project(&self, target: &str) -> Result<Arc<crate::daemon::Session>> {
+        let host = self.host()?;
+        let caller = host
+            .session(&self.caller)
+            .ok_or_else(|| anyhow!("the calling session {:?} is no longer hosted", self.caller))?;
+        let session = host.session(target).ok_or_else(|| {
+            anyhow!("no session {target:?} in this project — `sessions` lists what it holds")
+        })?;
+        if session.storage_base() != caller.storage_base() {
+            return Err(anyhow!(
+                "no session {target:?} in this project — `sessions` lists what it holds"
+            ));
+        }
+        Ok(session)
+    }
+
+    /// The target for a read or for `notify`: rule 1 and project scope.
+    fn resolve(&self, requested: Option<&str>) -> Result<Arc<crate::daemon::Session>> {
+        let target = self.target(requested)?;
+        self.in_project(&target)
+    }
+
+    /// The target for a mutating verb: rule 1, project scope, and rule 2 — the
+    /// caller must be an ancestor of the target.
+    fn resolve_mutating(&self, requested: Option<&str>) -> Result<Arc<crate::daemon::Session>> {
+        let target = self.target(requested)?;
+        let session = self.in_project(&target)?;
+        let host = self.host()?;
+        if !self.is_ancestor(&host, &target) {
+            return Err(anyhow!(
+                "refused: {:?} is not an ancestor of {target:?} — a mutating call reaches only \
+                 sessions the caller created (docs/tools.md)",
+                self.caller
+            ));
+        }
+        Ok(session)
+    }
+
+    /// Whether `target`'s `created_by` chain reaches the caller. The tree is
+    /// acyclic by construction; the `seen` set only guards a malformed one.
+    fn is_ancestor(&self, host: &crate::daemon::Host, target: &str) -> bool {
+        let mut seen = std::collections::HashSet::new();
+        let mut current = target.to_string();
+        while seen.insert(current.clone()) {
+            match host.created_by(&current) {
+                Some(parent) if parent == self.caller => return true,
+                Some(parent) => current = parent,
+                None => return false,
+            }
+        }
+        false
+    }
+
+    /// Run one async host call to completion from the synchronous tool
+    /// dispatch. Dispatch runs on the session loop's own runtime, where
+    /// `Handle::block_on` panics, so the future is driven on a scratch thread
+    /// against the host's runtime while this thread waits.
+    fn block_on<F, T>(&self, future: F) -> Result<T>
+    where
+        F: std::future::Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let runtime = self.runtime.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(runtime.block_on(future));
+        });
+        rx.recv()
+            .map_err(|_| anyhow!("the host call ended without a result"))
+    }
+
+    /// `create` in-session: the child records the caller as its creator
+    /// (docs/tools.md).
+    fn create(&self, body: crate::daemon::CreateSession) -> Result<String> {
+        let host = self.host()?;
+        let caller = self.caller.clone();
+        let created = self.block_on(async move { host.create(body, Some(caller)).await })?;
+        created.map_err(|reason| anyhow!("{reason}"))
+    }
+
+    /// `end` in-session: wait for the target's teardown.
+    fn end(&self, target: &str) -> Result<()> {
+        let host = self.host()?;
+        let id = target.to_string();
+        self.block_on(async move {
+            if let Some(done) = host.end(&id) {
+                done.await;
+            }
+        })
+    }
+
+    /// The caller's project: every session sharing its storage base.
+    fn sessions(&self) -> Result<Vec<crate::client::SessionListing>> {
+        let host = self.host()?;
+        let caller = self.caller_session()?;
+        let base = caller.storage_base();
+        let mut list = Vec::new();
+        for id in host.ids() {
+            let Some(session) = host.session(&id) else {
+                continue;
+            };
+            if session.storage_base() != base {
+                continue;
+            }
+            list.push(crate::client::SessionListing {
+                title: session.identity().and_then(|identity| identity.title),
+                created_by: host.created_by(&id),
+                id,
+            });
+        }
+        Ok(list)
     }
 }
 

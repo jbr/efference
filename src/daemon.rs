@@ -196,6 +196,11 @@ pub struct ConfigRepair {
 pub struct Session {
     /// Immutable working root for policy and child execution (docs/control-channel.md).
     cwd: PathBuf,
+    /// The parent of the session's storage dir — the `.efference/` base every
+    /// session in this project shares (docs/tools.md). The in-session `sessions`
+    /// mount scopes its listing and target resolution to it. Set once by the
+    /// runtime; unset in tests and offline sessions.
+    storage_base: std::sync::OnceLock<PathBuf>,
     /// The loop appends under this lock; handlers snapshot it for `GET /log`.
     /// The lock is only ever held across the
     /// synchronous `project`/append — never an `await`.
@@ -470,6 +475,47 @@ impl Session {
     pub fn cwd(&self) -> &std::path::Path {
         &self.cwd
     }
+    /// Record the session's storage base — the parent of `SessionPaths::storage`,
+    /// the `.efference/` every session in this project shares (docs/tools.md).
+    /// Called once by the runtime; unset in tests and offline sessions.
+    pub fn set_storage_base(&self, storage: &std::path::Path) {
+        let base = storage
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| storage.to_path_buf());
+        let _ = self.storage_base.set(base);
+    }
+
+    /// The storage base this session shares with its project's other sessions,
+    /// when the runtime set one (docs/tools.md).
+    pub fn storage_base(&self) -> Option<&std::path::Path> {
+        self.storage_base.get().map(PathBuf::as_path)
+    }
+
+    /// The environment every child this session spawns receives — the base its
+    /// `bash` children get, strips and injections applied (docs/env.md). Handed
+    /// to a session-driven `create` as the new session's base.
+    pub fn child_env(&self) -> crate::env_table::ChildEnv {
+        self.env_policy.child_env()
+    }
+    /// The transcript window the in-session `transcript` tool serves
+    /// (docs/tools.md): the same selection as `GET /transcript`, with the
+    /// daemon's own argument check (docs/control-api.md). The `LogSelect` type
+    /// stays private to the daemon, so this is the one public shape.
+    pub(crate) fn transcript_window(
+        &self,
+        since: Option<u64>,
+        tail: Option<u64>,
+    ) -> std::result::Result<String, String> {
+        if since.is_some() && tail.is_some() {
+            return Err("since and tail are mutually exclusive".into());
+        }
+        Ok(self.transcript(&LogSelect {
+            since,
+            before: None,
+            tail,
+        }))
+    }
 
     /// Build state under the default role at an absolute working root
     /// (docs/control-channel.md). Relative roots are a caller error and panic.
@@ -611,6 +657,7 @@ impl Session {
         };
         let shared = Arc::new(Self {
             cwd,
+            storage_base: std::sync::OnceLock::new(),
             log: Mutex::new(log),
             image_placement,
             turns_tx,

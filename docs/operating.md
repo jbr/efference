@@ -20,10 +20,10 @@ driven, and it is refined from use rather than written ahead of it.
   (a session in a working directory, this process's environment as its base), and
   `end` (tear one down).
 - **`efference mcp`** — the same calls, served as an MCP server over stdin/stdout
-  (below). One definition, two entry points: they are written once as mcplease tools
+  (below). One definition, three entry points: they are written once as mcplease tools
   (`src/control_tools.rs` and `src/control_tools/`, one file per tool) and mounted by
-  the binary for both paths, so the command line and a mounting harness cannot drift
-  apart.
+  the binary for the command line and the stdio server, and by a hosted session's own
+  toolbox for its model (below), so the paths cannot drift apart.
 - **`efference dev <verb>`** — instruments for developing efference itself: `wire`,
   `gallery`, `peek`, `spotter`, `spotter-log`, `spotter-eval`, `cache`, `view` (a recorded log in the TUI, inert), and `open`, the
   web-bind bootstrap-link mint ([web-bind.md](web-bind.md)). Compiled under the `dev`
@@ -68,6 +68,29 @@ The three waiting tools — `settle`, and `turn`/`approve` with `wait` — take 
 because MCP clients time tool calls out. On expiry they answer with the current state
 marked `settled: false` rather than with an error, so a caller never has to tell "still
 working" from "the socket broke".
+
+### The control tools inside a session
+
+A session created on a host also mounts these verbs in its own toolbox, under the wire
+names `sessions__<verb>` (`sessions__turn`, `sessions__state`, `sessions__create`). The
+session's model can commission a child, send it a `turn`, resolve its gate, read its
+`state` or `transcript`, and end it, without an operator relaying between them. The calls
+reach the host in-process and carry the calling session's id, so a `turn` lands on the
+child as `session[<caller id>]` ([control-api.md](control-api.md)).
+
+Two rules are enforced by the mount, not by config. A session is never its own target: a
+call naming the caller, or naming no `session`, is an error. And the mutating verbs —
+`turn`, `approve`, `interrupt`, `end`, `review-level`, `pace`, `title`, `background`,
+`dismiss` — reach only sessions the caller created; `notify` and the reads reach any
+session in the project. Reach is the project: `sessions__sessions` lists, and every
+`sessions__*` target resolves, only among sessions sharing the caller's `.efference/`
+base, so an id from another project reads as not found.
+
+`create` from a session runs in the caller's cwd with the caller's child environment as
+the new session's base, and records the caller as the child's creator — the field
+`GET /sessions` reports as `created_by` ([control-api.md](control-api.md)). `settle` is
+not mounted, and `wait` is refused in-session: a session has its own inbox to be woken
+through rather than a client that must block.
 
 ## Where a session lives
 

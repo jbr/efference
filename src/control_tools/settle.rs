@@ -1,5 +1,5 @@
 use super::{Control, Executor, StateResult};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -45,8 +45,17 @@ impl Tool<Control> for Settle {
     type Output = StateResult;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<StateResult> {
-        let Executor::Client(state) = &mut control.executor;
-        let client = state.client(self.session.as_deref())?;
-        state.settle_within(&client, self.timeout_s, client.settle())
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let client = state.client(self.session.as_deref())?;
+                state.settle_within(&client, self.timeout_s, client.settle())
+            }
+            // Hidden from the in-session mount: a session has an inbox to be
+            // woken through, not a blocking wait (docs/tools.md).
+            Executor::Host(_) => Err(anyhow!(
+                "`settle` is not available in-session: a session's continuation is its own inbox, \
+                 not a blocking call (docs/tools.md)"
+            )),
+        }
     }
 }

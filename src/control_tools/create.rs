@@ -90,32 +90,66 @@ impl Tool<Control> for Create {
     type Output = CreatedResult;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<CreatedResult> {
-        let Executor::Client(state) = &mut control.executor;
-        let here = std::env::current_dir().context("reading the working directory")?;
-        let cwd = match self.cwd {
-            Some(cwd) => here.join(cwd),
-            None => here,
-        };
-        let env = crate::env_table::EnvSnapshot::capture()
-            .map_err(anyhow::Error::msg)?
-            .into_entries();
-        let request = crate::daemon::CreateSession {
-            name: self.name,
-            cwd,
-            config: self.config,
-            model: self.model,
-            spotter_model: self.spotter_model,
-            triage: None,
-            temperature: self.temperature,
-            effort: self.effort,
-            upstream: self.upstream,
-            autonomous: self.autonomous,
-            reauth: Vec::new(),
-            keep_scratch: false,
-            env,
-        };
-        let host = state.host_client()?;
-        let id = state.block_on(host.create_session(&request))?;
-        Ok(CreatedResult { id })
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let here = std::env::current_dir().context("reading the working directory")?;
+                let cwd = match self.cwd {
+                    Some(cwd) => here.join(cwd),
+                    None => here,
+                };
+                let env = crate::env_table::EnvSnapshot::capture()
+                    .map_err(anyhow::Error::msg)?
+                    .into_entries();
+                let request = crate::daemon::CreateSession {
+                    name: self.name,
+                    cwd,
+                    config: self.config,
+                    model: self.model,
+                    spotter_model: self.spotter_model,
+                    triage: None,
+                    temperature: self.temperature,
+                    effort: self.effort,
+                    upstream: self.upstream,
+                    autonomous: self.autonomous,
+                    reauth: Vec::new(),
+                    keep_scratch: false,
+                    env,
+                };
+                let host = state.host_client()?;
+                let id = state.block_on(host.create_session(&request))?;
+                Ok(CreatedResult { id })
+            }
+            Executor::Host(state) => {
+                // A session-driven creation runs in the caller's cwd and with the
+                // caller's child environment as the new session's base — the same
+                // environment its own bash children get (docs/tools.md).
+                let caller = state.caller_session()?;
+                let here = caller.cwd().to_path_buf();
+                let cwd = match self.cwd {
+                    Some(cwd) => here.join(cwd),
+                    None => here,
+                };
+                let env = caller.child_env().resolved();
+                let request = crate::daemon::CreateSession {
+                    name: self.name,
+                    cwd,
+                    config: self.config,
+                    model: self.model,
+                    spotter_model: self.spotter_model,
+                    triage: None,
+                    temperature: self.temperature,
+                    effort: self.effort,
+                    upstream: self.upstream,
+                    autonomous: self.autonomous,
+                    reauth: Vec::new(),
+                    keep_scratch: false,
+                    env,
+                };
+                // The child records the caller as its creator, which is what
+                // makes it a descendant for later mutating calls.
+                let id = state.create(request)?;
+                Ok(CreatedResult { id })
+            }
+        }
     }
 }

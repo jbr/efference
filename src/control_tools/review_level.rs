@@ -1,5 +1,5 @@
 use super::{Control, Executor};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -41,9 +41,20 @@ impl Tool<Control> for ReviewLevel {
     type Output = String;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        let Executor::Client(state) = &mut control.executor;
-        let client = state.client(self.session.as_deref())?;
-        let set = state.block_on(client.review_level(&self.level))?;
-        Ok(format!("review level: {set}"))
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let client = state.client(self.session.as_deref())?;
+                let set = state.block_on(client.review_level(&self.level))?;
+                Ok(format!("review level: {set}"))
+            }
+            Executor::Host(state) => {
+                let session = state.resolve_mutating(self.session.as_deref())?;
+                let level = crate::policy::ReviewLevel::parse(&self.level).ok_or_else(|| {
+                    anyhow!("review_level must be autonomous | spotter_human | human_only")
+                })?;
+                session.set_review_level(level);
+                Ok(format!("review level: {}", level.as_str()))
+            }
+        }
     }
 }

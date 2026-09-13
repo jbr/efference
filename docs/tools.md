@@ -200,13 +200,45 @@ fully reversible) that exposes its modules, `Tools` enum, state struct, and an
 `embedded(cwd)` constructor.
 
 This section is about efference *consuming* MCP servers. It also serves one: the
-session-control verbs are written as mcplease tools and mounted twice, as `efference
-control <tool>` and as the stdio server `efference mcp` ([operating.md](operating.md)).
-That server drives a session from outside; it has nothing to do with the toolbox a
-session's model calls.
+session-control verbs are written as mcplease tools and mounted three times, as
+`efference control <tool>`, as the stdio server `efference mcp`, and inside a hosted
+session's own toolbox ([operating.md](operating.md)).
 
-`McpServer<State, ToolEnum>` in `src/tools.rs` is generic over the two
-instantiations (fs-mcp and semantic-edit-mcp). It holds state in a `RefCell`
+#### The `sessions` provider
+
+A session created on a host mounts the control verbs as `Provider::Sessions`,
+wrapping the control `Tools` enum in the in-process `McpServer<Control, Tools>`.
+The session's model reaches its project's other sessions by tool call, under
+namespaced wire names (`sessions__turn`, `sessions__state`, `sessions__create`).
+`settle` is not mounted, and the `wait` flags on `turn` and `approve` are refused:
+an in-session caller has its own inbox rather than a client that must block.
+
+The provider's executor is `Executor::Host`, which holds the host and the calling
+session's id and calls the same `Session` methods the HTTP handlers call — never a
+round trip over the socket. The calling identity is what makes two rules
+enforceable, and they are enforced by the executor rather than by config:
+
+- **The caller is never its own target.** A call naming the caller, or naming no
+  session (which defaults to it), is refused on every verb.
+- **A mutating verb reaches descendants only.** `turn`, `approve`, `interrupt`,
+  `end`, `review_level`, `pace`, `title`, `background`, and `dismiss` require the
+  target's `created_by` chain to reach the caller. `notify` and the reads
+  (`sessions`, `state`, `transcript`, `entries`, `image`) reach any session in the
+  caller's project.
+
+`created_by` is per-session host control state: never logged, never projected, and
+absent on a human root. `create` from a session runs in the caller's cwd, takes the
+caller's child environment as the new session's base, and records the caller as the
+child's `created_by`. Reach is the project: `sessions` lists, and every target
+resolves, only among sessions whose `.efference/` storage base is the caller's, so
+another project's id is not found rather than forbidden. A `turn` submitted this way
+carries `source: session[<caller id>]` ([log-and-projection.md](log-and-projection.md)).
+The mount is unconditional for a hosted session today; which verbs a config mounts is
+later work.
+
+`McpServer<State, ToolEnum>` in `src/tools.rs` is generic over the
+instantiations (fs-mcp, semantic-edit-mcp, and the session-control server). It holds
+state in a `RefCell`
 — the agent loop is single-threaded and `mcplease`'s `Dispatch::call` is
 synchronous, so the borrow never spans an `.await`. Dispatching a call wraps
 the name and arguments as `{"name", "arguments"}`, deserializes to the typed

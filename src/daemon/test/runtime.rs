@@ -71,6 +71,15 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
     }
 }
 
+/// [`boot`] with explicit storage: the session's own `.efference/<id>/` dir, so
+/// the runtime records the project's storage base the in-session mount scopes
+/// to (docs/tools.md).
+pub(super) fn boot_in(cwd: &Path, session_dir: &Path) -> SessionBoot<StaticSpotter> {
+    let mut boot = boot(cwd);
+    boot.paths = SessionPaths::new(cwd.to_path_buf(), session_dir.to_path_buf()).unwrap();
+    boot
+}
+
 fn alive(pgid: u32) -> bool {
     // SAFETY: signal 0 checks existence and permission only; no memory effects.
     unsafe { libc::killpg(pgid as libc::pid_t, 0) == 0 }

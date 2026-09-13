@@ -1,6 +1,6 @@
 use super::{Control, Executor};
-use anyhow::Result;
 use crate::frontend::Approval;
+use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta, ToolOutput as _},
     types::{RequestContext, ToolAnnotations},
@@ -67,26 +67,57 @@ impl Tool<Control> for Approve {
     type Output = String;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        let Executor::Client(state) = &mut control.executor;
-        let client = state.client(self.session.as_deref())?;
-        let call_id = match self.call_id {
-            Some(id) => id,
-            None => state.block_on(super::pending_call_id(&client))?,
-        };
-        let decision = match (self.abort, self.redirect) {
-            (true, _) => Approval::Abort,
-            (false, Some(message)) => Approval::Redirect(message),
-            (false, None) => Approval::Approve,
-        };
-        if !self.wait {
-            state.block_on(client.approve(&call_id, &decision))?;
-            return Ok(format!("resolved {call_id}"));
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let client = state.client(self.session.as_deref())?;
+                let call_id = match self.call_id {
+                    Some(id) => id,
+                    None => state.block_on(super::pending_call_id(&client))?,
+                };
+                let decision = match (self.abort, self.redirect) {
+                    (true, _) => Approval::Abort,
+                    (false, Some(message)) => Approval::Redirect(message),
+                    (false, None) => Approval::Approve,
+                };
+                if !self.wait {
+                    state.block_on(client.approve(&call_id, &decision))?;
+                    return Ok(format!("resolved {call_id}"));
+                }
+                let settled = state.settle_within(
+                    &client,
+                    self.timeout_s,
+                    client.approve_wait(&call_id, &decision),
+                )?;
+                Ok(settled.to_text())
+            }
+            Executor::Host(state) => {
+                if self.wait {
+                    return Err(anyhow!(
+                        "`wait` is not available in-session: a session's continuation is its own \
+                         inbox, not a blocking call (docs/tools.md)"
+                    ));
+                }
+                let session = state.resolve_mutating(self.session.as_deref())?;
+                // In-session the held call is named explicitly: the executor
+                // does not read the child's gate in a second step.
+                let call_id = self.call_id.ok_or_else(|| {
+                    anyhow!(
+                        "in-session `approve` requires `call_id`: read the target's `state` gate \
+                         for the held call"
+                    )
+                })?;
+                let decision = match (self.abort, self.redirect) {
+                    (true, _) => Approval::Abort,
+                    (false, Some(message)) => Approval::Redirect(message),
+                    (false, None) => Approval::Approve,
+                };
+                if !session.resolve_approval(&crate::log::CallId(call_id.clone()), decision) {
+                    return Err(anyhow!(
+                        "no pending gate {call_id:?} in that session — it may have moved"
+                    ));
+                }
+                Ok(format!("resolved {call_id}"))
+            }
         }
-        let settled = state.settle_within(
-            &client,
-            self.timeout_s,
-            client.approve_wait(&call_id, &decision),
-        )?;
-        Ok(settled.to_text())
     }
 }

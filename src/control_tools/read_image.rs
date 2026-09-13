@@ -1,5 +1,5 @@
 use super::{Control, Executor, ImageResult};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -56,9 +56,19 @@ impl Tool<Control> for Image {
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<ImageResult> {
         let cli = control.is_cli();
-        let Executor::Client(state) = &mut control.executor;
-        let client = state.client(self.session.as_deref())?;
-        let bytes = state.block_on(client.log_image(self.seq, self.idx))?;
+        let bytes = match &mut control.executor {
+            Executor::Client(state) => {
+                let client = state.client(self.session.as_deref())?;
+                state.block_on(client.log_image(self.seq, self.idx))?
+            }
+            Executor::Host(state) => {
+                let session = state.resolve(self.session.as_deref())?;
+                session
+                    .image_bytes(self.seq, self.idx)
+                    .map(|(_media_type, bytes)| bytes)
+                    .ok_or_else(|| anyhow!("no image at seq {} index {}", self.seq, self.idx))?
+            }
+        };
         // The encoding comes from the bytes rather than from a media type the caller
         // would have to re-request: the image was realized into one of a handful of
         // encodings, and guessing wrong names a file no viewer opens.

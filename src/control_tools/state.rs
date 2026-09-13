@@ -39,8 +39,15 @@ impl Tool<Control> for State {
     type Output = StateResult;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<StateResult> {
-        let Executor::Client(state) = &mut control.executor;
-        let client = state.client(self.session.as_deref())?;
-        StateResult::plain(&state.block_on(client.state())?)
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let client = state.client(self.session.as_deref())?;
+                StateResult::plain(&state.block_on(client.state())?)
+            }
+            Executor::Host(state) => {
+                let session = state.resolve(self.session.as_deref())?;
+                StateResult::plain(&session.state_json())
+            }
+        }
     }
 }

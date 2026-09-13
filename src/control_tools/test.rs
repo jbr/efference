@@ -239,6 +239,7 @@ async fn an_unbound_mount_requires_session() {
             Ok(_) => panic!("an unbound mount resolved a session"),
             Err(e) => e.to_string(),
         },
+        Executor::Host(_) => panic!("this test bound the HTTP executor"),
     })
     .await
     .unwrap();

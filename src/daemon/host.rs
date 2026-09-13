@@ -31,6 +31,9 @@ struct Hosted {
     session: Arc<Session>,
     swansong: Swansong,
     files: Files,
+    /// The session that commissioned this one, when a session did (docs/tools.md).
+    /// Control state only: never logged, never projected.
+    created_by: Option<String>,
 }
 
 impl Host {
@@ -54,11 +57,24 @@ impl Host {
     /// `Swansong` — leaves the map when its teardown has run. The runtime must
     /// have been started under [`swansong`](Self::swansong).
     pub fn adopt(self: &Arc<Self>, id: String, runtime: SessionRuntime) {
+        self.adopt_with(id, runtime, None);
+    }
+
+    /// [`adopt`](Self::adopt) recording who commissioned the session
+    /// (docs/tools.md): `Some(caller)` for a session-driven `create`, `None`
+    /// for a human root.
+    pub fn adopt_with(
+        self: &Arc<Self>,
+        id: String,
+        runtime: SessionRuntime,
+        created_by: Option<String>,
+    ) {
         let session = Arc::clone(runtime.session());
         let hosted = Hosted {
             files: Files::rooted_at(session.cwd()),
             session,
             swansong: runtime.swansong().clone(),
+            created_by,
         };
         self.sessions.lock().unwrap().insert(id.clone(), hosted);
         let host = Arc::clone(self);
@@ -69,6 +85,80 @@ impl Host {
             }
             host.sessions.lock().unwrap().remove(&id);
         });
+    }
+
+    /// The session that commissioned `id`, when a session did (docs/tools.md).
+    /// Control state — the creation tree, never logged or projected.
+    pub fn created_by(&self, id: &str) -> Option<String> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .get(id)
+            .and_then(|hosted| hosted.created_by.clone())
+    }
+    /// Create a session on this host: the path behind `POST /sessions`
+    /// (docs/control-api.md) and the in-session `sessions__create` tool
+    /// (docs/tools.md). `created_by` is the calling session when a session
+    /// commissioned this one, `None` for a human root. Returns the minted id,
+    /// or the reason nothing was minted.
+    pub async fn create(
+        self: &Arc<Self>,
+        body: CreateSession,
+        created_by: Option<String>,
+    ) -> std::result::Result<String, String> {
+        // The session base is what an unnamed id must be free in, on disk and in
+        // the live map — a dead session's directory still holds its name
+        // (docs/session-title.md).
+        let base = body.cwd.join(SESSION_BASE);
+        let id = body.name.unwrap_or_else(|| {
+            slug::mint(|id| self.session(id).is_some() || base.join(id).exists())
+        });
+        if !super::tcp::plain_id(&id) {
+            return Err(format!(
+                "session name {id:?} is not a single plain path segment"
+            ));
+        }
+        if self.session(&id).is_some() {
+            return Err(format!("session {id:?} is already hosted"));
+        }
+        if !body.cwd.is_absolute() {
+            return Err(format!("cwd must be absolute: {}", body.cwd.display()));
+        }
+        let base_env = match crate::env_table::EnvSnapshot::new(body.env) {
+            Ok(base) => base,
+            Err(e) => return Err(format!("env: {e}")),
+        };
+        let inference = match self.inference.resolve(
+            body.model.as_deref(),
+            body.spotter_model.as_deref(),
+            body.triage,
+        ) {
+            Ok(inference) => inference,
+            Err(error) => return Err(error.to_string()),
+        };
+        let request = crate::boot::SessionRequest {
+            session_dir: body.cwd.join(SESSION_BASE).join(&id),
+            cwd: body.cwd,
+            base_env,
+            config: body.config,
+            inference,
+            temperature: body.temperature,
+            effort: body.effort,
+            upstream: body.upstream,
+            autonomous: body.autonomous,
+            reauth: body.reauth,
+            keep_scratch: body.keep_scratch,
+            // The new session's toolbox mounts the `sessions` provider against
+            // this host, with the new session itself as the caller (docs/tools.md).
+            host: Some(Arc::clone(self)),
+        };
+        let boot = match crate::boot::prepare(request).await {
+            Ok(boot) => boot,
+            Err(e) => return Err(format!("could not prepare session: {e}")),
+        };
+        let runtime = SessionRuntime::start(boot, self.swansong());
+        self.adopt_with(id.clone(), runtime, created_by);
+        Ok(id)
     }
 
     /// The hosted session ids, sorted (docs/control-api.md).
@@ -145,10 +235,18 @@ async fn list_sessions(conn: Conn) -> Conn {
                 .session(&id)
                 .and_then(|session| session.identity())
                 .and_then(|identity| identity.title);
-            match title {
-                Some(title) => serde_json::json!({ "id": id, "title": title }),
-                None => serde_json::json!({ "id": id }),
+            let created_by = host.created_by(&id);
+            let mut entry = serde_json::Map::new();
+            entry.insert("id".into(), serde_json::Value::String(id));
+            if let Some(title) = title {
+                entry.insert("title".into(), serde_json::Value::String(title));
             }
+            // The creation tree, so a human can see which sessions a session
+            // commissioned (docs/tools.md). Absent for a human root.
+            if let Some(created_by) = created_by {
+                entry.insert("created_by".into(), serde_json::Value::String(created_by));
+            }
+            serde_json::Value::Object(entry)
         })
         .collect();
     conn.with_status(200)
@@ -259,74 +357,15 @@ async fn create_session(mut conn: Conn) -> Conn {
         Ok(body) => body,
         Err(e) => return fail(conn, ErrorCode::BadRequest, format!("invalid body: {e}")),
     };
-    // The session base is what an unnamed id must be free in, on disk and in
-    // the live map — a dead session's directory still holds its name
-    // (docs/session-title.md).
-    let base = body.cwd.join(SESSION_BASE);
-    let id = body
-        .name
-        .unwrap_or_else(|| slug::mint(|id| host.session(id).is_some() || base.join(id).exists()));
-    if !super::tcp::plain_id(&id) {
-        return fail(
-            conn,
-            ErrorCode::BadRequest,
-            format!("session name {id:?} is not a single plain path segment"),
-        );
+    // A human root: no session commissioned it, so it has no `created_by`
+    // (docs/tools.md).
+    match host.create(body, None).await {
+        Ok(id) => conn
+            .with_status(201)
+            .with_body(serde_json::json!({ "id": id }).to_string())
+            .halt(),
+        Err(reason) => fail(conn, ErrorCode::BadRequest, reason),
     }
-    if host.session(&id).is_some() {
-        return fail(
-            conn,
-            ErrorCode::BadRequest,
-            format!("session {id:?} is already hosted"),
-        );
-    }
-    if !body.cwd.is_absolute() {
-        return fail(
-            conn,
-            ErrorCode::BadRequest,
-            format!("cwd must be absolute: {}", body.cwd.display()),
-        );
-    }
-    let base_env = match crate::env_table::EnvSnapshot::new(body.env) {
-        Ok(base) => base,
-        Err(e) => return fail(conn, ErrorCode::BadRequest, format!("env: {e}")),
-    };
-    let inference = match host.inference.resolve(
-        body.model.as_deref(),
-        body.spotter_model.as_deref(),
-        body.triage,
-    ) {
-        Ok(inference) => inference,
-        Err(error) => return fail(conn, ErrorCode::BadRequest, error.to_string()),
-    };
-    let request = crate::boot::SessionRequest {
-        session_dir: body.cwd.join(SESSION_BASE).join(&id),
-        cwd: body.cwd,
-        base_env,
-        config: body.config,
-        inference,
-        temperature: body.temperature,
-        effort: body.effort,
-        upstream: body.upstream,
-        autonomous: body.autonomous,
-        reauth: body.reauth,
-        keep_scratch: body.keep_scratch,
-    };
-    let boot = match crate::boot::prepare(request).await {
-        Ok(boot) => boot,
-        Err(e) => {
-            return fail(
-                conn,
-                ErrorCode::BadRequest,
-                format!("could not prepare session: {e}"),
-            );
-        }
-    };
-    let runtime = SessionRuntime::start(boot, host.swansong());
-    host.adopt(id.clone(), runtime);
-    conn.with_status(201)
-        .with_body(serde_json::json!({ "id": id }).to_string())
-        .halt()
 }
 
 /// `POST /sessions` on a network listener: remote creation needs an environment

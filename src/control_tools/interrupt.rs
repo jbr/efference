@@ -41,9 +41,16 @@ impl Tool<Control> for Interrupt {
     type Output = String;
 
     fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        let Executor::Client(state) = &mut control.executor;
-        let client = state.client(self.session.as_deref())?;
-        state.block_on(client.interrupt())?;
-        Ok("interrupted".into())
+        match &mut control.executor {
+            Executor::Client(state) => {
+                let client = state.client(self.session.as_deref())?;
+                state.block_on(client.interrupt())?;
+                Ok("interrupted".into())
+            }
+            Executor::Host(state) => {
+                state.resolve_mutating(self.session.as_deref())?.interrupt();
+                Ok("interrupted".into())
+            }
+        }
     }
 }

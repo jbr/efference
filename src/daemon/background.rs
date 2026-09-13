@@ -211,7 +211,7 @@ impl Session {
     /// no tail (docs/control-api.md). Distinct from
     /// [`bg_snapshot`](Self::bg_snapshot), the model-facing peek view; see
     /// [`ProcessState`](crate::supervisor::ProcessState) for why they diverge.
-    pub(super) fn process_states(&self) -> Vec<crate::supervisor::ProcessState> {
+    pub(crate) fn process_states(&self) -> Vec<crate::supervisor::ProcessState> {
         self.supervisor.lock().unwrap().process_states()
     }
 

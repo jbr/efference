@@ -588,3 +588,60 @@ fn the_embedded_toolbox_is_legal_on_both_dialects() {
         );
     }
 }
+/// The in-session `sessions` provider (docs/tools.md): the namespaced
+/// `sessions__*` definitions a hosted session's `tools[]` carries, with `settle`
+/// hidden, unique names, injected `intent`, and byte-stable definitions.
+#[tokio::test]
+async fn the_sessions_provider_mounts_namespaced_and_hides_settle() {
+    let dir = std::env::temp_dir().join(format!("eff-sessions-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // `Host::new` already returns an `Arc<Host>`.
+    let host = crate::daemon::Host::new(crate::inference::InferenceRegistry::empty());
+    let mut toolbox = Toolbox::bash_and_mcps(dir.clone(), None).unwrap();
+    toolbox.mount_sessions(host, "caller".into(), tokio::runtime::Handle::current());
+
+    let mut names = toolbox.names();
+    for expected in [
+        "sessions__turn",
+        "sessions__approve",
+        "sessions__interrupt",
+        "sessions__background",
+        "sessions__pace",
+        "sessions__review_level",
+        "sessions__notify",
+        "sessions__dismiss",
+        "sessions__image",
+        "sessions__state",
+        "sessions__transcript",
+        "sessions__entries",
+        "sessions__title",
+        "sessions__sessions",
+        "sessions__create",
+        "sessions__end",
+    ] {
+        assert!(
+            names.iter().any(|name| name == expected),
+            "{expected} not mounted: {names:?}"
+        );
+    }
+    assert!(
+        !names.iter().any(|name| name == "sessions__settle"),
+        "settle is hidden in-session: {names:?}"
+    );
+    names.sort_unstable();
+    let mut unique = names.clone();
+    unique.dedup();
+    assert_eq!(names, unique, "duplicate tool name on the wire");
+
+    // Injected `intent` and byte-stable definitions, like every provider.
+    let once = serde_json::to_string(&toolbox.definitions()).unwrap();
+    let twice = serde_json::to_string(&toolbox.definitions()).unwrap();
+    assert_eq!(once, twice);
+    let entry = toolbox.tool_entry("sessions__state").expect("mounted");
+    assert_eq!(entry.name, "sessions__state");
+    assert!(entry.input_schema["properties"]["intent"].is_object());
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}

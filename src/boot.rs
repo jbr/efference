@@ -98,6 +98,10 @@ pub struct SessionRequest {
     pub autonomous: bool,
     pub reauth: Vec<String>,
     pub keep_scratch: bool,
+    /// The host this session is created on, when it is: the in-session
+    /// `sessions` mount reaches it directly (docs/tools.md). `None` for a
+    /// standalone session, which has no host to address.
+    pub host: Option<std::sync::Arc<crate::daemon::Host>>,
 }
 
 /// Prepare a session: everything from the origin config to the provider client,
@@ -117,6 +121,7 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
         autonomous,
         reauth,
         keep_scratch,
+        host,
     } = request;
     assert!(cwd.is_absolute(), "session cwd must be absolute");
     assert!(session_dir.is_absolute(), "session dir must be absolute");
@@ -364,6 +369,17 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
         // about this model's image input, so an image-producing tool refuses
         // clearly instead of attaching bytes the model cannot read.
         .with_image_input(capabilities.supports_image_input);
+    // The in-session `sessions` provider (docs/tools.md): a session created on
+    // a host reaches its project's sessions directly, with its own id as the
+    // caller. Mounted before the first projection so `tools[]` is fixed from
+    // turn one.
+    if let Some(host) = host {
+        let caller = session_dir
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        toolbox.mount_sessions(host, caller, tokio::runtime::Handle::current());
+    }
     // Credentials live in the user's secret store (docs/secrets.md): an
     // authorization belongs to the operator and the server, not to one session.
     let store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
