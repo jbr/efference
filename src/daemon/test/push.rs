@@ -183,16 +183,17 @@ fn gate_body_prefers_intent_over_reason() {
         gate_body(
             "write",
             Some("record the decision"),
-            Some("outside the tree")
+            Some("outside the tree"),
+            None
         ),
         "write — record the decision"
     );
     assert_eq!(
-        gate_body("write", None, Some("outside the tree")),
+        gate_body("write", None, Some("outside the tree"), None),
         "write — outside the tree"
     );
     assert_eq!(
-        gate_body("write", None, None),
+        gate_body("write", None, None, None),
         "write is waiting for a decision"
     );
 }

@@ -29,10 +29,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::client::Client;
+use crate::log::ToolCall;
 use anyhow::{Result, anyhow};
+
 use mcplease::traits::ToolOutput;
 use mcplease::types::ContentBlock;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::runtime::Handle;
 
@@ -87,6 +89,42 @@ its `seq` — prose in full, calls by name and intent, results by size and verdi
 bodies. `entries` fetches whole entries by seq when a line is not enough; `image` \
 fetches an image a result carried.";
 
+/// The wire name of the in-session approval tool: the one call the loop binds to
+/// its target's held action before running the permission ladder
+/// (docs/permissions.md). The mount namespaces it `<server>__<tool>` for
+/// `sessions` (docs/tools.md).
+pub const APPROVE_WIRE_NAME: &str = "sessions__approve";
+
+/// The leaf action a `sessions__approve` call authorizes (docs/permissions.md).
+///
+/// `sessions__approve` carries only a `call_id`, so the parent's ladder would
+/// otherwise judge the approval rather than the move it authorizes. Before
+/// classification the host binds the target's held call to the approval: the
+/// leaf tool, its input as the child wrote it, its intent and cwd, and the chain
+/// of sessions from the directly-targeted child down to the session holding the
+/// leaf. The parent's fast-path, spotter, and human gate all read this instead
+/// of the id.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BoundAction {
+    /// The leaf tool's wire name.
+    pub name: String,
+    /// The leaf call's input, as the child wrote it (its `intent` still inside,
+    /// docs/tools.md).
+    pub input: Value,
+    /// The leaf call's one-line intent, lifted for the gate view.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    /// The leaf's working directory — what its relative paths resolve against,
+    /// and the cwd `policy::classify` runs with.
+    pub cwd: PathBuf,
+    /// The session the parent's call directly names — the top of `chain`.
+    pub session: String,
+    /// The session ids from that target down to the session holding the leaf,
+    /// inclusive. One entry for a direct approval; longer when the held call is
+    /// itself an approval. Only participating approvers appear.
+    pub chain: Vec<String>,
+}
+
 /// The tool state: an executor and the presentation requested by its mount.
 pub struct Control {
     executor: Executor,
@@ -121,6 +159,18 @@ impl Control {
     /// Whether this dispatch came from the command line. See [`Control::cli`].
     fn is_cli(&self) -> bool {
         self.cli
+    }
+    /// Resolve a `sessions__approve` call to the leaf action it authorizes
+    /// (docs/permissions.md). Only the in-process [`Executor::Host`] can: it knows
+    /// the caller and can read the target's pending gate. The HTTP executor never
+    /// sees this call — the binding happens inside the target's own daemon.
+    pub(crate) fn resolve_bound_action(&self, call: &ToolCall) -> Result<BoundAction> {
+        match &self.executor {
+            Executor::Host(state) => state.resolve_bound_action(call),
+            Executor::Client(_) => Err(anyhow!(
+                "no in-process host to resolve a bound action against (docs/tools.md)"
+            )),
+        }
     }
 }
 
@@ -250,19 +300,110 @@ impl HostExecutor {
         Ok(session)
     }
 
-    /// Whether `target`'s `created_by` chain reaches the caller. The tree is
+    /// Whether `target`'s `created_by` chain reaches `ancestor`. The tree is
     /// acyclic by construction; the `seen` set only guards a malformed one.
-    fn is_ancestor(&self, host: &crate::daemon::Host, target: &str) -> bool {
+    fn chain_reaches(host: &crate::daemon::Host, ancestor: &str, target: &str) -> bool {
         let mut seen = std::collections::HashSet::new();
         let mut current = target.to_string();
         while seen.insert(current.clone()) {
             match host.created_by(&current) {
-                Some(parent) if parent == self.caller => return true,
+                Some(parent) if parent == ancestor => return true,
                 Some(parent) => current = parent,
                 None => return false,
             }
         }
         false
+    }
+
+    /// Whether `target`'s `created_by` chain reaches the caller.
+    fn is_ancestor(&self, host: &crate::daemon::Host, target: &str) -> bool {
+        Self::chain_reaches(host, &self.caller, target)
+    }
+
+    /// Bind a `sessions__approve` call to the leaf action its target holds
+    /// (docs/permissions.md). The first hop obeys the same target rules the Host
+    /// arm enforces when it runs — never self, descendants only, same project.
+    /// While the held call is itself an approval, follow its `session`+`call_id`
+    /// through the host to the leaf, each hop required to be a descendant of the
+    /// previous; refuse on a moved gate or a cycle.
+    fn resolve_bound_action(&self, call: &ToolCall) -> Result<BoundAction> {
+        let requested = call.input.get("session").and_then(Value::as_str);
+        // The parent's own call: rule 1, project scope, rule 2.
+        let direct = self.resolve_mutating(requested)?;
+        let direct_id = self.target(requested)?;
+        let mut expected = call
+            .input
+            .get("call_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                anyhow!(
+                    "in-session `approve` requires `call_id`: read the target's `state` gate \
+                     for the held call"
+                )
+            })?
+            .to_string();
+        let mut chain = vec![direct_id];
+        let mut session = direct;
+        let mut previous = chain[0].clone();
+        let mut seen = std::collections::HashSet::new();
+        seen.insert(previous.clone());
+        loop {
+            let gate = session.pending_gate().ok_or_else(|| {
+                anyhow!(
+                    "gate moved: no pending gate in {previous:?} — read its `state` for the \
+                     held call"
+                )
+            })?;
+            if gate.call.id.0 != expected {
+                return Err(anyhow!(
+                    "gate moved: {expected:?} is not the pending gate in {previous:?}"
+                ));
+            }
+            if gate.call.name != APPROVE_WIRE_NAME {
+                let intent = gate.call.intent().map(str::to_string);
+                let top = chain[0].clone();
+                return Ok(BoundAction {
+                    name: gate.call.name,
+                    input: gate.call.input,
+                    intent,
+                    cwd: gate.cwd,
+                    session: top,
+                    chain,
+                });
+            }
+            // The held call is itself an approval: follow it to its own target.
+            let host = self.host()?;
+            let next = gate
+                .call
+                .input
+                .get("session")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("the held `sessions__approve` names no session to follow"))?
+                .to_string();
+            if !Self::chain_reaches(&host, &previous, &next) {
+                return Err(anyhow!(
+                    "refused: {previous:?} is not an ancestor of {next:?} — a mutating call \
+                     reaches only sessions the caller created (docs/tools.md)"
+                ));
+            }
+            if !seen.insert(next.clone()) {
+                return Err(anyhow!(
+                    "refused: the approval chain revisits {next:?} — a cycle (docs/tools.md)"
+                ));
+            }
+            session = self.in_project(&next)?;
+            expected = gate
+                .call
+                .input
+                .get("call_id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    anyhow!("the held `sessions__approve` names no `call_id` to follow")
+                })?
+                .to_string();
+            previous = next.clone();
+            chain.push(next);
+        }
     }
 
     /// Run one async host call to completion from the synchronous tool

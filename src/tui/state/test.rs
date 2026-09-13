@@ -24,6 +24,7 @@ fn state_with_gate() -> (
         name: "bash".into(),
         input: serde_json::json!({ "command": "ls" }),
         reason: None,
+        acting_on: None,
     });
     (s, arx)
 }

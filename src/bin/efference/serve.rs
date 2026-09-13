@@ -219,7 +219,7 @@ pub(crate) async fn spotter_check(
     let (model, endpoint) = crate::inference::spotter_endpoint(model)?;
     let spotting = ForkSpot::new(endpoint, model)
         .with_cwd(cwd)
-        .assess(&role, &call, sent, probe.as_deref())
+        .assess(&role, &call, sent, &[], probe.as_deref())
         .await;
     println!("stance: {:?}", spotting.read.stance);
     println!("reason: {}", spotting.read.reason);

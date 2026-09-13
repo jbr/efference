@@ -18,6 +18,7 @@
 //!   tool, carrying the intent: kill the process group, or detach it into the
 //!   background supervisor (docs/supervisor.md).
 
+use crate::control_tools::BoundAction;
 use crate::log::{ConfigChange, ToolCall};
 
 /// A user turn as it arrived over the control channel: the text plus the
@@ -93,8 +94,11 @@ pub trait Frontend {
         Vec::new()
     }
 
-    /// Gate a pending tool call: approve, abort, or redirect.
-    async fn approve(&mut self, call: &ToolCall) -> Approval;
+    /// Gate a pending tool call: approve, abort, or redirect. `bound` is the leaf
+    /// action a `sessions__approve` authorizes, when the call is one
+    /// (docs/permissions.md) — the gate view and the child's own held action, so
+    /// the operator sees the move rather than an id.
+    async fn approve(&mut self, call: &ToolCall, bound: Option<&BoundAction>) -> Approval;
 
     /// Resolve when the user interrupts a *running* tool, with the intent: kill
     /// its process group, or detach it into the background supervisor. The loop

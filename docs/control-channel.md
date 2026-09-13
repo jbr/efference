@@ -182,7 +182,7 @@ The agent loop and the log know only the `Frontend` trait. Swapping the client â
 ```rust
 trait Frontend {
     async fn read_user_turn(&mut self) -> Option<String>;
-    async fn approve(&mut self, call: &ToolCall) -> Approval;
+    async fn approve(&mut self, call: &ToolCall, bound: Option<&BoundAction>) -> Approval;
     async fn interrupted(&mut self) -> Interrupt;
 }
 ```

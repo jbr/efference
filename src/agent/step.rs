@@ -100,16 +100,25 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             WireState::Raw,
         )]));
     }
-    // The permission cascade (docs/permissions.md). First the deterministic fast-path: a
-    // `Clear` verdict auto-approves with zero model cost. What it can't clear falls to
-    // the independent spotter — a fresh-context model rung that re-decides on the
-    // residual before the human does, returning a graded stance. Its verdict is logged as
-    // a `Spot` audit entry regardless of outcome (fast-path clears stay unlogged), and its
-    // usage reads the shared spotter prefix, so it joins the cache telemetry
-    // (docs/log-and-projection.md). Classify against the *effective* policy — base role
-    // plus the fold of every grant so far: a prior amendment can promote this very call
-    // into the fast-path, and the spotter sees the same scope.
-    let role = shared.effective_config();
+    // A `sessions__approve` call authorizes the target's held move, so the parent's
+    // permission cascade judges that move rather than the id (docs/permissions.md).
+    // Resolve it first: a moved gate or a refused target is the whole answer, and
+    // nothing should be classified. The logged `ToolCall` is untouched — the wire
+    // carries what the model wrote.
+    let bound = if call.name == crate::control_tools::APPROVE_WIRE_NAME {
+        match toolbox.resolve_bound_action(call) {
+            Ok(bound) => Some(bound),
+            Err(e) => {
+                return Ok(Decision::Direct(vec![Payload::tool_result(
+                    call.id.clone(),
+                    RawResult::error(format!("not run — {e}")),
+                    WireState::Raw,
+                )]));
+            }
+        }
+    } else {
+        None
+    };
     // The session's own config file is its policy *interface*: a write to it is a proposal
     // that must always reach the operator — never auto-cleared by a path grant, never
     // spotter-cleared (docs/permissions.md). It bypasses the whole cascade straight to the
@@ -119,120 +128,18 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
         .config_path()
         .is_some_and(|cfg| policy::is_config_write(shared.cwd(), call, cfg));
     let approval = if config_write {
-        frontend.approve(call).await
+        frontend.approve(call, bound.as_ref()).await
     } else {
-        match policy::classify(shared.cwd(), &role, call) {
-            Verdict::Clear => Approval::Approve,
-            // A `[commands]` deny (docs/permissions.md): the operator already wrote the answer
-            // for this prefix, so the spotter is not asked — the move goes straight to whoever
-            // gates. Autonomous has no synchronous human, so it takes the same redirect a
-            // spotter `Gate` takes there, carrying the reason the config gave it.
-            Verdict::Deny => {
-                if shared.autonomous() {
-                    Approval::Redirect(denied_gate_message(shared.config_path()))
-                } else {
-                    frontend.approve(call).await
-                }
-            }
-            // HumanOnly (docs/permissions.md): the human takes the spotter's role
-            // *entirely* — skip the spotter (pay no tokens, log no `Spot`) and gate
-            // straight to the human, who both decides this call and grows the allowlist by
-            // hand. Learning is relocated to the human, not lost.
-            Verdict::Gate if shared.review_level() == ReviewLevel::HumanOnly => {
-                frontend.approve(call).await
-            }
-            Verdict::Gate => {
-                // Prefix-promotion probe (docs/permissions.md): on a bash move, observe
-                // its recurrence and pick the shortest prefix worth asking the spotter to
-                // vouch for *for all arguments*. The spotter answers via the stance
-                // (`clear_always`), so the probe rides the one spot call.
-                let probe = if call.name == bash::NAME {
-                    call.input
-                        .get("command")
-                        .and_then(Value::as_str)
-                        .and_then(|command| policy::bash_tokens(shared.cwd(), &role, command))
-                        .and_then(|tokens| shared.observe_and_pick_probe(&role, &tokens))
-                } else {
-                    None
-                };
-                // What the turn's whole `tools[]` knows about this tool — providers
-                // plus the loop-owned family (docs/permissions.md). `None` for bash,
-                // whose command text is its own description.
-                let brief = super::brief(toolbox, &call.name);
-                let spotting = spotter
-                    .assess(&role, call, brief.as_ref(), probe.as_deref())
-                    .await;
-                if let Some(u) = spotting.usage {
-                    shared.record_request(RequestOrigin::Spot, u);
-                }
-                let stance = spotting.read.stance;
-                let reason = spotting.read.reason;
-                let origin = spotting.origin;
-                shared.append(
-                    turn,
-                    Payload::Spot(Spot {
-                        call_id: call.id.clone(),
-                        stance,
-                        reason: reason.clone(),
-                        origin,
-                        probed_prefix: probe.clone(),
-                    }),
-                )?;
-                // The probe's answer *is* the stance: `clear_always` is the safe-vote for
-                // the probed prefix, any other stance is not-safe (a fail-closed fallback
-                // didn't judge, so it casts no vote). When the safe-votes cross the
-                // consensus threshold, file a non-blocking `Proposed(Command)` — inert
-                // until an orchestrator-above commits it. Nothing rides along: the proposal
-                // can't clear anything until committed, and this very call is still decided
-                // below.
-                if let Some(prefix) = &probe
-                    && origin == Origin::Model
-                    && shared.record_probe_vote(prefix, stance == Stance::ClearAlways)
-                    && let Some(command) = policy::promotable_command(&role, prefix)
-                {
-                    shared.append(
-                        turn,
-                        Payload::ConfigEdit(ConfigEdit {
-                            state: EditState::Proposed,
-                            resolves: None,
-                            change: ConfigChange::Command { command },
-                            note: format!(
-                                "spotter: `{prefix}` judged safe for all arguments — \
-                                 proposed for the allowlist"
-                            ),
-                        }),
-                    )?;
-                }
-                match stance {
-                    // Clear (and its promotion refinement) auto-approve the move, no human.
-                    Stance::Clear | Stance::ClearAlways => Approval::Approve,
-                    // The autonomous flip (docs/permissions.md): with no synchronous human,
-                    // don't block on an absent gate — redirect the model to its config file,
-                    // the one policy interface it has. (The config write itself still gates
-                    // for the orchestrator-above.) Supervised: route to the human gate.
-                    Stance::Watch | Stance::Gate => {
-                        if shared.autonomous() {
-                            // A structured call whose missing grants the fast path can name
-                            // gets the diagnosis, not just the verdict (docs/permissions.md):
-                            // the failure it answers is a model reading a gated `edit` as a
-                            // broken tool and rewriting the file through bash instead.
-                            Approval::Redirect(
-                                match policy::missing_grants(shared.cwd(), &role, call) {
-                                    Some(missing) => missing_grant_message(
-                                        shared.config_path(),
-                                        &reason,
-                                        &missing,
-                                    ),
-                                    None => autonomous_gate_message(shared.config_path(), &reason),
-                                },
-                            )
-                        } else {
-                            frontend.approve(call).await
-                        }
-                    }
-                }
-            }
-        }
+        judge(
+            frontend,
+            shared,
+            spotter,
+            toolbox,
+            turn,
+            call,
+            bound.as_ref(),
+        )
+        .await?
     };
     // A `ConfigEdit` is the orchestrator legislating policy (docs/permissions.md): append
     // the change (which folds into the effective config), then re-classify *this* call
@@ -497,5 +404,159 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
         }),
         // Resolved into Approve/Redirect by `commit_config_edit` above before this match.
         Approval::ConfigEdit { .. } => unreachable!("grant is legislated above"),
+    }
+}
+/// The permission cascade for one call (docs/permissions.md). `bound` is the leaf
+/// action a `sessions__approve` authorizes, when the call is one: a granted
+/// `sessions__approve` clears blind — the config's statement of trust in the
+/// coordinator — and otherwise the leaf, not the id, is what the fast-path, the
+/// spotter, and the human gate judge. Returns the decision; the caller commits
+/// any `ConfigEdit` it carries.
+pub(super) async fn judge<F: Frontend, S: Spotter>(
+    frontend: &mut F,
+    shared: &Arc<Session>,
+    spotter: &S,
+    toolbox: &Toolbox,
+    turn: Turn,
+    call: &ToolCall,
+    bound: Option<&crate::control_tools::BoundAction>,
+) -> Result<Approval, Error> {
+    // Classify against the *effective* policy — base role plus the fold of every
+    // grant so far: a prior amendment can promote this very call into the
+    // fast-path, and the spotter sees the same scope.
+    let role = shared.effective_config();
+    // A granted `sessions__approve` clears blind (docs/permissions.md): the doc
+    // states that as trust in the coordinator, so the child's leaf is not
+    // re-litigated on this path.
+    if bound.is_some() && policy::tool_granted(&role, &call.name) {
+        return Ok(Approval::Approve);
+    }
+    // The judged call: the child's leaf when bound, else the parent's own call.
+    // The id stays the parent's, so the `Spot` audit entry and the gate correlate
+    // to the call actually held. The leaf's cwd is what its relative paths resolve
+    // against; the parent's is used otherwise.
+    let leaf;
+    let (judged, cwd): (&ToolCall, &std::path::Path) = match bound {
+        Some(bound) => {
+            leaf = ToolCall::new(bound.name.clone(), call.id.clone(), bound.input.clone());
+            (&leaf, bound.cwd.as_path())
+        }
+        None => (call, shared.cwd()),
+    };
+    match policy::classify(cwd, &role, judged) {
+        Verdict::Clear => Ok(Approval::Approve),
+        // A `[commands]` deny (docs/permissions.md): the operator already wrote the answer
+        // for this prefix, so the spotter is not asked — the move goes straight to whoever
+        // gates. Autonomous has no synchronous human, so it takes the same redirect a
+        // spotter `Gate` takes there, carrying the reason the config gave it.
+        Verdict::Deny => {
+            if shared.autonomous() {
+                Ok(Approval::Redirect(denied_gate_message(
+                    shared.config_path(),
+                )))
+            } else {
+                Ok(frontend.approve(call, bound).await)
+            }
+        }
+        // HumanOnly (docs/permissions.md): the human takes the spotter's role
+        // *entirely* — skip the spotter (pay no tokens, log no `Spot`) and gate
+        // straight to the human, who both decides this call and grows the allowlist by
+        // hand. Learning is relocated to the human, not lost.
+        Verdict::Gate if shared.review_level() == ReviewLevel::HumanOnly => {
+            Ok(frontend.approve(call, bound).await)
+        }
+        Verdict::Gate => {
+            // Prefix-promotion probe (docs/permissions.md): on a bash move, observe
+            // its recurrence and pick the shortest prefix worth asking the spotter to
+            // vouch for *for all arguments*. The spotter answers via the stance
+            // (`clear_always`), so the probe rides the one spot call. A bound leaf's
+            // command belongs to the child's own ledger, so no probe rides an approval.
+            let probe = if bound.is_none() && judged.name == bash::NAME {
+                judged
+                    .input
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .and_then(|command| policy::bash_tokens(shared.cwd(), &role, command))
+                    .and_then(|tokens| shared.observe_and_pick_probe(&role, &tokens))
+            } else {
+                None
+            };
+            // What the turn's whole `tools[]` knows about this tool — providers
+            // plus the loop-owned family (docs/permissions.md). `None` for bash,
+            // whose command text is its own description. Built from the leaf's name
+            // when bound, so the spotter reads the child's tool.
+            let brief = super::brief(toolbox, &judged.name);
+            let chain: &[String] = bound.map(|b| b.chain.as_slice()).unwrap_or(&[]);
+            let spotting = spotter
+                .assess(&role, judged, brief.as_ref(), chain, probe.as_deref())
+                .await;
+            if let Some(u) = spotting.usage {
+                shared.record_request(RequestOrigin::Spot, u);
+            }
+            let stance = spotting.read.stance;
+            let reason = spotting.read.reason;
+            let origin = spotting.origin;
+            shared.append(
+                turn,
+                Payload::Spot(Spot {
+                    call_id: call.id.clone(),
+                    stance,
+                    reason: reason.clone(),
+                    origin,
+                    probed_prefix: probe.clone(),
+                }),
+            )?;
+            // The probe's answer *is* the stance: `clear_always` is the safe-vote for
+            // the probed prefix, any other stance is not-safe (a fail-closed fallback
+            // didn't judge, so it casts no vote). When the safe-votes cross the
+            // consensus threshold, file a non-blocking `Proposed(Command)` — inert
+            // until an orchestrator-above commits it. Nothing rides along: the proposal
+            // can't clear anything until committed, and this very call is still decided
+            // below.
+            if let Some(prefix) = &probe
+                && origin == Origin::Model
+                && shared.record_probe_vote(prefix, stance == Stance::ClearAlways)
+                && let Some(command) = policy::promotable_command(&role, prefix)
+            {
+                shared.append(
+                    turn,
+                    Payload::ConfigEdit(ConfigEdit {
+                        state: EditState::Proposed,
+                        resolves: None,
+                        change: ConfigChange::Command { command },
+                        note: format!(
+                            "spotter: `{prefix}` judged safe for all arguments — \
+                             proposed for the allowlist"
+                        ),
+                    }),
+                )?;
+            }
+            match stance {
+                // Clear (and its promotion refinement) auto-approve the move, no human.
+                Stance::Clear | Stance::ClearAlways => Ok(Approval::Approve),
+                // The autonomous flip (docs/permissions.md): with no synchronous human,
+                // don't block on an absent gate — redirect the model to its config file,
+                // the one policy interface it has. (The config write itself still gates
+                // for the orchestrator-above.) Supervised: route to the human gate.
+                Stance::Watch | Stance::Gate => {
+                    if shared.autonomous() {
+                        // A structured call whose missing grants the fast path can name
+                        // gets the diagnosis, not just the verdict (docs/permissions.md):
+                        // the failure it answers is a model reading a gated `edit` as a
+                        // broken tool and rewriting the file through bash instead.
+                        Ok(Approval::Redirect(
+                            match policy::missing_grants(cwd, &role, judged) {
+                                Some(missing) => {
+                                    missing_grant_message(shared.config_path(), &reason, &missing)
+                                }
+                                None => autonomous_gate_message(shared.config_path(), &reason),
+                            },
+                        ))
+                    } else {
+                        Ok(frontend.approve(call, bound).await)
+                    }
+                }
+            }
+        }
     }
 }

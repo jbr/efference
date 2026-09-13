@@ -74,6 +74,34 @@ pub(super) fn parse_pending_gate(pending: &serde_json::Value) -> Option<PendingG
             .get("reason")
             .and_then(|r| r.as_str())
             .map(String::from),
+        acting_on: pending.get("acting_on").and_then(parse_acting_on),
+    })
+}
+
+/// Parse `GET /state`'s `gate.acting_on` — the bound leaf action (docs/permissions.md).
+/// Absent or malformed is no bound action, which renders like an ordinary gate.
+fn parse_acting_on(value: &serde_json::Value) -> Option<ActingOn> {
+    Some(ActingOn {
+        name: value.get("name")?.as_str()?.to_string(),
+        input: value
+            .get("input")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        intent: value
+            .get("intent")
+            .and_then(|i| i.as_str())
+            .map(String::from),
+        session: value.get("session")?.as_str()?.to_string(),
+        chain: value
+            .get("chain")
+            .and_then(|c| c.as_array())
+            .map(|chain| {
+                chain
+                    .iter()
+                    .filter_map(|id| id.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
 

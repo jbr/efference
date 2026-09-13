@@ -123,7 +123,7 @@ fn a_running_or_gated_loop_declines() {
     assert!(shared.request_continue().is_err(), "mid-turn declines");
 
     let call = bash_call("ls");
-    let _gate = shared.register_pending(&call);
+    let _gate = shared.register_pending(&call, None);
     assert_eq!(
         shared.request_continue().unwrap_err().message(),
         "an approval gate is pending — resolve it to continue"

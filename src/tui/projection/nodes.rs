@@ -230,6 +230,59 @@ pub(in crate::tui) fn gate_affordance() -> DocumentNode<'static> {
     )
 }
 
+/// The child's held move, shown beside a bound `sessions__approve` so the human
+/// approves the move rather than an id (docs/permissions.md). The logged call line
+/// stays exactly as the model wrote it; this annotation names which child and what
+/// it is holding. The chain joins with `→` when the approval passed through more
+/// than one session.
+pub(in crate::tui) fn bound_action(bound: &crate::tui::ActingOn) -> DocumentNode<'static> {
+    let display = crate::mcp::display_name(&bound.name);
+    let detail = match bound.name.as_str() {
+        "bash" => bound
+            .input
+            .get("command")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        _ => serde_json::to_string(&bound.input).unwrap_or_default(),
+    };
+    let target = if bound.chain.len() > 1 {
+        bound.chain.join(" → ")
+    } else {
+        bound.session.clone()
+    };
+    let mut spans = vec![
+        Span {
+            text: "⤷ acting on ".into(),
+            style: SpanStyle::Comment,
+            action: None,
+        },
+        Span {
+            text: format!("{target}'s {display}").into(),
+            style: SpanStyle::UserAccent,
+            action: None,
+        },
+    ];
+    if !detail.is_empty() {
+        spans.push(Span {
+            text: format!(" · {detail}").into(),
+            style: SpanStyle::Comment,
+            action: None,
+        });
+    }
+    if let Some(intent) = bound.intent.as_deref().filter(|i| !i.trim().is_empty()) {
+        spans.push(Span {
+            text: format!(" — {intent}").into(),
+            style: SpanStyle::Comment,
+            action: None,
+        });
+    }
+    DocumentNode::entry(
+        EntryKind::Annotation,
+        vec![DocumentNode::Paragraph { spans }],
+    )
+}
+
 /// One harness annotation beside a call or its result: a marker glyph and a muted
 /// line, as its own non-focusable [`Annotation`](EntryKind::Annotation) entry
 /// (docs/tui.md). The shared shape behind the spotter's verdict and the distiller's

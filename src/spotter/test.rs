@@ -72,11 +72,11 @@ fn parse_spot_reads_the_promotion_safe_vote() {
 fn render_move_asks_the_promotion_question_only_when_a_prefix_is_probed() {
     let call = ToolCall::new(bash::NAME, "x", json!({ "command": "git log --oneline" }));
     // No probe → no promotion question.
-    let plain = render_move(&call, None, None);
+    let plain = render_move(&call, None, &[], None);
     assert!(!plain.contains("clear_always"), "{plain}");
     assert!(!plain.contains("promotion"), "{plain}");
     // Probe → the named prefix and the clear_always instruction ride the move.
-    let probed = render_move(&call, None, Some("git log"));
+    let probed = render_move(&call, None, &[], Some("git log"));
     assert!(probed.contains("git log"), "{probed}");
     assert!(probed.contains("clear_always"), "{probed}");
 }
@@ -92,12 +92,12 @@ fn parse_spot_is_none_without_a_spot_call() {
 #[test]
 fn render_move_shows_bash_command_and_structured_input() {
     let bash_call = ToolCall::new(bash::NAME, "x", json!({ "command": "git push" }));
-    let rendered = render_move(&bash_call, None, None);
+    let rendered = render_move(&bash_call, None, &[], None);
     assert!(rendered.contains("git push"), "{rendered}");
     assert!(rendered.contains("spot"), "instruction present: {rendered}");
 
     let write_call = ToolCall::new("write", "y", json!({ "path": "/etc/hosts" }));
-    let rendered = render_move(&write_call, None, None);
+    let rendered = render_move(&write_call, None, &[], None);
     assert!(rendered.contains("write"), "{rendered}");
     assert!(rendered.contains("/etc/hosts"), "{rendered}");
 }
@@ -114,7 +114,7 @@ fn render_move_withholds_the_calls_intent() {
         "z",
         json!({ "path": "/etc/hosts", "intent": "this host file is disposable" }),
     );
-    let rendered = render_move(&call, None, None);
+    let rendered = render_move(&call, None, &[], None);
     assert!(rendered.contains("/etc/hosts"), "{rendered}");
     assert!(
         !rendered.contains("disposable"),
@@ -153,7 +153,7 @@ fn a_brief_puts_the_tool_before_its_input() {
         server: Some("ferritin"),
         definition: &definition,
     };
-    let rendered = render_move(&call, Some(&brief), None);
+    let rendered = render_move(&call, Some(&brief), &[], None);
 
     // The tool reads dotted here as everywhere user-facing, and is attributed to the
     // server that advertised it.

@@ -15,6 +15,18 @@ pub(super) struct Pending {
     /// no spotter verdict preceded the gate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) reason: Option<String>,
+    /// The leaf action this approval authorizes, when the held call is a bound
+    /// `sessions__approve` (docs/permissions.md). `None` for an ordinary gate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) acting_on: Option<crate::control_tools::BoundAction>,
+}
+
+/// A session's held call, as its parent's `sessions__approve` resolver reads it
+/// (docs/permissions.md): the call the model wrote, plus the cwd its action
+/// resolves against.
+pub(crate) struct PendingGate {
+    pub(crate) call: ToolCall,
+    pub(crate) cwd: PathBuf,
 }
 
 impl Session {
@@ -35,19 +47,42 @@ impl Session {
             })
     }
 
+    /// The held call, as a parent's `sessions__approve` resolver reads it
+    /// (docs/permissions.md): the call the model wrote plus the cwd its action
+    /// resolves against. `None` when no gate is open.
+    pub(crate) fn pending_gate(&self) -> Option<PendingGate> {
+        let pending = self.pending.lock().unwrap();
+        let pending = pending.as_ref()?;
+        Some(PendingGate {
+            call: ToolCall::new(
+                pending.name.clone(),
+                pending.call_id.clone(),
+                pending.input.clone(),
+            ),
+            cwd: self.cwd.clone(),
+        })
+    }
+
     /// Register an approval gate and surface it to `GET /state`. Returns the
-    /// receiver the loop awaits.
-    pub(super) fn register_pending(&self, call: &ToolCall) -> oneshot::Receiver<Approval> {
+    /// receiver the loop awaits. `bound` is the leaf action a `sessions__approve`
+    /// authorizes, when the held call is one (docs/permissions.md).
+    pub(super) fn register_pending(
+        &self,
+        call: &ToolCall,
+        bound: Option<&crate::control_tools::BoundAction>,
+    ) -> oneshot::Receiver<Approval> {
         let (tx, rx) = oneshot::channel();
         self.approvals.lock().unwrap().insert(call.id.clone(), tx);
         let reason = self.latest_spot_reason(&call.id);
-        // Composed before the `Pending` takes ownership of the two fields.
-        let push_body = super::push::gate_body(&call.name, call.intent(), reason.as_deref());
+        // Composed before the `Pending` takes ownership of the fields. A bound
+        // approval names the child's leaf action rather than the approval call.
+        let push_body = super::push::gate_body(&call.name, call.intent(), reason.as_deref(), bound);
         *self.pending.lock().unwrap() = Some(Pending {
             call_id: call.id.0.clone(),
             name: call.name.clone(),
             input: call.input.clone(),
             reason,
+            acting_on: bound.cloned(),
         });
         // A gate is a settled state — wake any `/settle` waiter (the `?wait` on `/turn` returns here).
         self.settle_changed.notify_waiters();

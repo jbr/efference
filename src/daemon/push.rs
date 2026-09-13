@@ -139,7 +139,27 @@ fn tildify(path: &str) -> String {
 /// spotter's reason is the fallback when the intent is absent (no reader may
 /// assume it is present): it describes the risk rather than the purpose, which
 /// is the less useful half at a glance but still beats the name alone.
-pub(super) fn gate_body(name: &str, intent: Option<&str>, reason: Option<&str>) -> String {
+///
+/// A bound `sessions__approve` names the child and the child's held move instead
+/// (docs/permissions.md): `approve <child>'s <leaf> — <intent>`, so the
+/// notification answers "whose gate, and for what" rather than showing an id.
+pub(super) fn gate_body(
+    name: &str,
+    intent: Option<&str>,
+    reason: Option<&str>,
+    bound: Option<&crate::control_tools::BoundAction>,
+) -> String {
+    if let Some(bound) = bound {
+        let display = crate::mcp::display_name(&bound.name);
+        let text = bound.intent.as_deref().or(intent).or(reason);
+        return match text {
+            Some(text) => format!("approve {}'s {display} — {text}", bound.session),
+            None => format!(
+                "approve {}'s {display} is waiting for a decision",
+                bound.session
+            ),
+        };
+    }
     match intent.or(reason) {
         Some(text) => format!("{name} — {text}"),
         None => format!("{name} is waiting for a decision"),

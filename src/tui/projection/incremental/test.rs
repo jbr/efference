@@ -147,6 +147,7 @@ fn a_gate_arriving_and_resolving_rebuilds_its_call() {
         Gate {
             call: Some("call-1"),
             reason: Some("deletes outside the git tree"),
+            acting_on: None,
         },
         &[],
     );
@@ -159,6 +160,7 @@ fn a_gate_arriving_and_resolving_rebuilds_its_call() {
         Gate {
             call: Some("call-1"),
             reason: Some("deletes outside the git tree"),
+            acting_on: None,
         },
         &[],
     );

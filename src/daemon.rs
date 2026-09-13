@@ -1095,6 +1095,7 @@ pub use handler::{App, Transport, handler};
 pub(crate) use watch::refresh_and_emit;
 
 use approvals::Pending;
+
 use config_edits::{PendingProposal, session_visible_notice};
 use entry_view::EntryView;
 use errors::{ErrorBody, ErrorCode, fail, respond};

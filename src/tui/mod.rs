@@ -255,6 +255,24 @@ pub(crate) struct PendingGate {
     /// The spotter's one-line reason for holding this call, if it gated via the spotter
     /// (docs/permissions.md) — surfaced inline at the gate so the human sees *why*.
     pub reason: Option<String>,
+    /// The leaf action this approval authorizes, when the held call is a bound
+    /// `sessions__approve` (docs/permissions.md). The gate renders the child and
+    /// its held move instead of the approval's id.
+    pub acting_on: Option<ActingOn>,
+}
+
+/// The leaf action behind a bound `sessions__approve` (docs/permissions.md), as
+/// `GET /state`'s `gate.acting_on` carries it: the child's tool and input, the
+/// intent it wrote, and the session chain the approval passed through.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ActingOn {
+    pub name: String,
+    pub input: serde_json::Value,
+    pub intent: Option<String>,
+    /// The session the parent's call directly names.
+    pub session: String,
+    /// The session ids from that target down to the session holding the leaf.
+    pub chain: Vec<String>,
 }
 /// Usage statistics from the daemon — the `usage` state topic (also `GET /state`'s
 /// `usage` key).

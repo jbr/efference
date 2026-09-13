@@ -165,6 +165,45 @@ fn transcript_pending_approval_gate() {
     play.snapshot("transcript_pending_approval_gate");
 }
 
+/// A bound `sessions__approve` gate shows the child's held move beside the approval
+/// (docs/permissions.md): the logged call line is the model's `sessions__approve`, and
+/// the annotation names which child and the command it is holding, so the human
+/// approves the move rather than the id.
+#[test]
+fn transcript_pending_bound_approval_gate() {
+    let mut play = Screenplay::new(80, 16);
+    play.user("Have the child clean the build directory.");
+    play.assistant(
+        "Asking the child to remove it.",
+        vec![ToolCall::new(
+            crate::control_tools::APPROVE_WIRE_NAME,
+            "toolu_parent",
+            json!({ "session": "child", "call_id": "toolu_child_gate" }),
+        )],
+    );
+    play.pending_gate_bound(
+        "toolu_parent",
+        "child",
+        "bash",
+        json!({ "command": "rm -rf ./build" }),
+        Some("clean the build tree"),
+    );
+
+    assert!(
+        play.find("acting on").is_some(),
+        "the bound leaf action renders beside the gate"
+    );
+    assert!(
+        play.find("child's bash").is_some(),
+        "the child and its held tool are named"
+    );
+    assert!(
+        play.find("rm -rf ./build").is_some(),
+        "the child's command is shown"
+    );
+    play.snapshot("transcript_pending_bound_approval_gate");
+}
+
 /// Redirecting a gate: the call stays in the transcript with a message *instead
 /// of a result* (docs/tui.md). The loop clears the gate, pairs the orphaned
 /// `tool_use` with an error result ("not run — the user replied…"), and the

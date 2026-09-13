@@ -236,6 +236,14 @@ carries `source: session[<caller id>]` ([log-and-projection.md](log-and-projecti
 The mount is unconditional for a hosted session today; which verbs a config mounts is
 later work.
 
+`sessions__approve` is bound before it is classified (docs/permissions.md): the loop
+asks the provider for the target's pending gate and gets the child's held action — tool,
+input, intent, cwd, and the chain of sessions down to the leaf. The parent's fast-path,
+spotter brief, and human gate read that action rather than the `call_id`, and the gate
+view carries it as `acting_on` (docs/control-api.md). A held call that is itself a
+`sessions__approve` is followed through the host to the leaf; a stale `call_id` refuses
+with "gate moved" before any rung is consulted.
+
 `McpServer<State, ToolEnum>` in `src/tools.rs` is generic over the
 instantiations (fs-mcp, semantic-edit-mcp, and the session-control server). It holds
 state in a `RefCell`

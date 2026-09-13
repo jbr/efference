@@ -412,7 +412,15 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "call_id": "toolu_…",
     "name": "bash",
     "input": { … },                // the tool_use input, verbatim
-    "reason": "…"                  // optional: the spotter's one-line reason
+    "reason": "…",                 // optional: the spotter's one-line reason
+    "acting_on": {                 // optional: the leaf a `sessions__approve` authorizes
+      "name": "bash",              //   (docs/permissions.md) — the held call is the
+      "input": { … },              //   parent's approval, this is the child's move
+      "intent": "…",               //   optional
+      "cwd": "/work",              //   the leaf's working directory
+      "session": "child",          //   the session the parent's call directly names
+      "chain": ["child", "grand"] //   that target down to the session holding the leaf
+    }
   },
   "role": {                        // EFFECTIVE policy = base config + folded edits
     "source": "/path/efference.toml",   // or null for the built-in default

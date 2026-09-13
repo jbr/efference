@@ -48,6 +48,7 @@ impl Fixture {
         adopt("parent", &projects[0], None);
         adopt("peer", &projects[0], None);
         adopt("child", &projects[0], Some("parent".into()));
+        adopt("grandchild", &projects[0], Some("child".into()));
         adopt("stranger", &projects[1], None);
         Self { root, host }
     }
@@ -182,6 +183,166 @@ async fn a_session_in_another_project_is_not_found() {
         assert!(listing.contains(id), "{id} missing from {listing}");
     }
     assert!(!listing.contains("stranger"), "{listing}");
+
+    fixture.host.swansong().shut_down().await;
+}
+
+/// A parent's `sessions__approve` binds to the target's held move (docs/permissions.md):
+/// the leaf tool, its input as the child wrote it, its intent, its cwd, and the chain.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_bound_approve_resolves_the_childs_held_move() {
+    let fixture = Fixture::new();
+    let child = fixture.host.session("child").unwrap();
+    let leaf = ToolCall::new(
+        "bash",
+        "toolu_leaf",
+        serde_json::json!({ "command": "rm -rf build", "intent": "clean the tree" }),
+    );
+    let _gate = child.register_pending(&leaf, None);
+
+    let approve = ToolCall::new(
+        crate::control_tools::APPROVE_WIRE_NAME,
+        "toolu_parent",
+        serde_json::json!({ "session": "child", "call_id": "toolu_leaf" }),
+    );
+    let bound = fixture
+        .control("parent")
+        .resolve_bound_action(&approve)
+        .expect("a descendant with a matching pending gate binds");
+    assert_eq!(bound.name, "bash");
+    assert_eq!(bound.input["command"], "rm -rf build");
+    assert_eq!(bound.intent.as_deref(), Some("clean the tree"));
+    assert_eq!(bound.cwd, fixture.root.join("a"));
+    assert_eq!(bound.session, "child");
+    assert_eq!(bound.chain, vec!["child".to_string()]);
+
+    fixture.host.swansong().shut_down().await;
+}
+
+/// An approve of an approve is never the thing authorized (docs/permissions.md): the
+/// resolver follows the held approval through the host to the leaf, accumulating the
+/// chain of participating sessions.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_approve_of_an_approve_carries_a_two_hop_chain() {
+    let fixture = Fixture::new();
+    let grandchild = fixture.host.session("grandchild").unwrap();
+    let leaf = ToolCall::new(
+        "bash",
+        "toolu_leaf",
+        serde_json::json!({ "command": "cargo test" }),
+    );
+    let _leaf_gate = grandchild.register_pending(&leaf, None);
+
+    let inner = ToolCall::new(
+        crate::control_tools::APPROVE_WIRE_NAME,
+        "toolu_inner",
+        serde_json::json!({ "session": "grandchild", "call_id": "toolu_leaf" }),
+    );
+    let child = fixture.host.session("child").unwrap();
+    let _inner_gate = child.register_pending(&inner, None);
+
+    let outer = ToolCall::new(
+        crate::control_tools::APPROVE_WIRE_NAME,
+        "toolu_outer",
+        serde_json::json!({ "session": "child", "call_id": "toolu_inner" }),
+    );
+    let bound = fixture
+        .control("parent")
+        .resolve_bound_action(&outer)
+        .expect("the chain follows to the leaf");
+    assert_eq!(bound.name, "bash");
+    assert_eq!(bound.input["command"], "cargo test");
+    assert_eq!(bound.session, "child");
+    assert_eq!(
+        bound.chain,
+        vec!["child".to_string(), "grandchild".to_string()]
+    );
+
+    fixture.host.swansong().shut_down().await;
+}
+
+/// A `call_id` that is not the target's pending gate refuses with "gate moved" before
+/// any classification (docs/permissions.md), and a target with no gate at all refuses
+/// the same way.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stale_or_absent_gate_is_refused() {
+    let fixture = Fixture::new();
+    let child = fixture.host.session("child").unwrap();
+    let _gate = child.register_pending(
+        &ToolCall::new("bash", "toolu_real", serde_json::json!({ "command": "ls" })),
+        None,
+    );
+
+    let stale = ToolCall::new(
+        crate::control_tools::APPROVE_WIRE_NAME,
+        "toolu_parent",
+        serde_json::json!({ "session": "child", "call_id": "toolu_stale" }),
+    );
+    let err = fixture
+        .control("parent")
+        .resolve_bound_action(&stale)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("gate moved"), "{err}");
+
+    // A descendant with no gate open at all (the tree is parent → child → grandchild).
+    let absent = ToolCall::new(
+        crate::control_tools::APPROVE_WIRE_NAME,
+        "toolu_parent",
+        serde_json::json!({ "session": "grandchild", "call_id": "toolu_whatever" }),
+    );
+    let err = fixture
+        .control("parent")
+        .resolve_bound_action(&absent)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("gate moved"), "{err}");
+
+    fixture.host.swansong().shut_down().await;
+}
+
+/// The target rules the Host arm enforces apply to the binding too (docs/permissions.md):
+/// self is never a target, and a mutating call reaches descendants only.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_target_rules_apply_to_a_bound_approve() {
+    let fixture = Fixture::new();
+    let control = fixture.control("parent");
+
+    let own = ToolCall::new(
+        crate::control_tools::APPROVE_WIRE_NAME,
+        "toolu_parent",
+        serde_json::json!({ "session": "parent", "call_id": "x" }),
+    );
+    let err = control.resolve_bound_action(&own).unwrap_err().to_string();
+    assert!(err.contains("cannot target itself"), "{err}");
+
+    let peer = ToolCall::new(
+        crate::control_tools::APPROVE_WIRE_NAME,
+        "toolu_parent",
+        serde_json::json!({ "session": "peer", "call_id": "x" }),
+    );
+    let err = control.resolve_bound_action(&peer).unwrap_err().to_string();
+    assert!(err.contains("not an ancestor"), "{err}");
+
+    fixture.host.swansong().shut_down().await;
+}
+
+/// In-session `approve` requires the held call's id (docs/tools.md): without one there
+/// is no gate to bind, so the resolver refuses rather than guessing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_bound_approve_without_a_call_id_is_refused() {
+    let fixture = Fixture::new();
+    let approve = ToolCall::new(
+        crate::control_tools::APPROVE_WIRE_NAME,
+        "toolu_parent",
+        serde_json::json!({ "session": "child" }),
+    );
+    let err = fixture
+        .control("parent")
+        .resolve_bound_action(&approve)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("requires `call_id`"), "{err}");
 
     fixture.host.swansong().shut_down().await;
 }

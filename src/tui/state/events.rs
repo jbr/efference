@@ -302,6 +302,10 @@ impl<'a> InteractiveState<'a> {
         let gate = projection::Gate {
             call: self.pending_gate.as_ref().map(|g| g.call_id.as_str()),
             reason: self.pending_gate.as_ref().and_then(|g| g.reason.as_deref()),
+            acting_on: self
+                .pending_gate
+                .as_ref()
+                .and_then(|g| g.acting_on.as_ref()),
         };
         self.transcript.update(
             &mut self.document,

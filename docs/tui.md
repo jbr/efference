@@ -343,6 +343,14 @@ spotter gated · deletes outside the git tree — not reversible
 
 Reading order is call → what the spotter made of it → what to do, so the affordance lands adjacent to the strip carrying the verbs.
 
+When the held call is a session's `sessions__approve`, the gate shows the child's move in place of the id ([permissions](permissions.md)): the logged call line stays as the model wrote it, and an annotation below names which child and what it is holding. The chain joins with `→` when the approval passed through more than one session.
+
+```
+❯ sessions.approve(call_id: "toolu_c", session: "child")
+⤷ acting on child's bash · rm -rf ./build — clean the build tree
+⏸ awaiting your approval  ·  ⏎ approve · type to redirect
+```
+
 **Every judged call carries its verdict, not only a held one.** The `Spot` entries are indexed by `call_id` alongside the results and emitted with the call they judge, so a *cleared* call shows its reason too — which is most of them, since clearing is the common verdict and nothing ever interrupts for one. The stance leads the line (`spotter cleared · …`, `watching`, `gated`) because it is the scannable part; without it every verdict looks alike. The whole line sits in the dim register: before the decision it is why the call is held, and after it is a gloss on what the call was taken to be, so it never competes with the call or its result for attention. A resolved gate keeps its verdict, which is the only surviving record when a human approves something the spotter wanted to stop. `Origin` is not drawn — a fail-closed verdict's own reason reads "spotter unavailable", so a glyph would only repeat the line. The committed entry is the source; `pending_reason` from the gate covers only a client holding the gate without the `Spot` entry behind it — a window the stream's coherence rule closes (a `gate` frame never precedes the entry it quotes, [control-api](control-api.md)), so the fallback survives as robustness rather than as a path that renders (it has no stance, and reads `spotter · …`).
 
 Whether this much per-call annotation earns its space is an open question the dogfooding loop is meant to answer; a suppression setting is the obvious lever if it turns out to be noise.

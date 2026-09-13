@@ -37,8 +37,9 @@ pub(crate) struct Transcript {
     /// keep running offsets straight as splices change later entries' positions.
     dirty: BTreeSet<usize>,
     /// The gate this document was last built with — a change dirties both the call
-    /// it left and the call it moved to.
-    gate: Option<(String, Option<String>)>,
+    /// it left and the call it moved to. The bound action is part of the value: a
+    /// bound `sessions__approve` moving onto the same call still changes the render.
+    gate: Option<(String, Option<String>, Option<crate::tui::ActingOn>)>,
 }
 
 impl Transcript {
@@ -79,9 +80,10 @@ impl Transcript {
         // The gate is ephemeral control state, not a log entry, so its movement has
         // to be noticed here: both the call it left and the call it arrived at
         // render differently (docs/tui.md).
-        let held = self.gate.as_ref().map(|(call, reason)| Gate {
+        let held = self.gate.as_ref().map(|(call, reason, acting_on)| Gate {
             call: Some(call.as_str()),
             reason: reason.as_deref(),
+            acting_on: acting_on.as_ref(),
         });
         if held.unwrap_or_default() != gate {
             for call_id in [held.and_then(|g| g.call), gate.call].into_iter().flatten() {
@@ -89,9 +91,13 @@ impl Transcript {
                     self.dirty.insert(owner);
                 }
             }
-            self.gate = gate
-                .call
-                .map(|call| (call.to_string(), gate.reason.map(str::to_string)));
+            self.gate = gate.call.map(|call| {
+                (
+                    call.to_string(),
+                    gate.reason.map(str::to_string),
+                    gate.acting_on.cloned(),
+                )
+            });
         }
 
         // Raw toggles, each keyed by the call whose result they change.

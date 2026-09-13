@@ -274,7 +274,7 @@ pub(crate) async fn spotter_eval(
                         };
                         let brief = efference::agent::brief(&toolbox, &call.name);
                         let start = Instant::now();
-                        let spotting = spot.assess(&role, &call, brief.as_ref(), None).await;
+                        let spotting = spot.assess(&role, &call, brief.as_ref(), &[], None).await;
                         let ms = start.elapsed().as_millis() as u64;
                         let (stance, verdict, ok) = match spotting.origin {
                             Origin::Model => {

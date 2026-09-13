@@ -432,6 +432,37 @@ itself over its own documents would be the self-authorization the config design 
 is also excluded from `[paths]` resolution outright, because joined onto the cwd it would
 look like an ordinary relative path and a broad grant would then appear to cover it.
 
+## `sessions__approve` is classified as the action it authorizes (`src/agent/step.rs`, `src/control_tools.rs`)
+
+A session's `sessions__approve` carries only a `call_id`, so classifying it as written
+would ask every rung to judge an id. Before the cascade runs, the loop asks the mounted
+sessions provider to bind the call to the target's held move (docs/tools.md): the host
+reads the target's pending gate, and while the held call is itself a `sessions__approve`
+it follows that call's `session`+`call_id` to the next session, refusing on a cycle. The
+result is a `BoundAction` — the leaf tool, the child's input, its intent, its cwd, and
+the chain of session ids from the directly-targeted child down to the session holding
+the leaf. A `call_id` that is not the target's pending gate is refused before
+classification with a "gate moved" error result, and the target rules the Host executor
+already enforces (self never, descendants only, project reach) apply to the binding.
+
+The parent's ladder then decides on the leaf:
+
+- If `sessions__approve` is in the parent's `tools` set, the call clears blind. That
+  grant is the config's statement of trust in the coordinator, and the child's move is
+  not re-litigated.
+- Otherwise `policy::classify` runs on the leaf call, under the parent's effective
+  config, with the leaf's cwd. A `[commands]` grant the parent holds clears a matching
+  child command; an ungranted leaf gates.
+- The spotter is handed the leaf — its tool brief and the approval chain — and answers
+  the same scope question, not one about the approval call.
+- The human gate shows the child and its held move (`acting_on`, docs/control-api.md)
+  instead of the id.
+
+The prefix-promotion probe does not ride a bound approval: the leaf's command belongs to
+the child's own probe ledger. The logged `ToolCall` is untouched throughout — the wire
+carries what the model wrote, and the binding lives only in flight and in the ephemeral
+gate view.
+
 ## The spotter (`src/spotter.rs`)
 
 What the fast-path can't `Clear` falls to the **spotter** before it reaches the human — a

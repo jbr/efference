@@ -598,6 +598,19 @@ pub fn unknown_tool_message(name: &str, available: &[String]) -> String {
     message
 }
 
+impl McpServer<crate::control_tools::Control, crate::control_tools::Tools> {
+    /// Resolve a `sessions__approve` call to the leaf action its target holds
+    /// (docs/permissions.md), through the sessions provider's in-process host.
+    /// The `RefCell` borrow is synchronous — no `.await` — like every embedded
+    /// dispatch (docs/tools.md).
+    fn resolve_bound_action(
+        &self,
+        call: &ToolCall,
+    ) -> anyhow::Result<crate::control_tools::BoundAction> {
+        self.state.borrow().resolve_bound_action(call)
+    }
+}
+
 /// The mounted set of tool backends. The loop asks it for the wire `tools[]` and
 /// routes each `tool_use` to the backend that handles it.
 pub struct Toolbox {
@@ -756,6 +769,26 @@ impl Toolbox {
             Provider::Bash(b) => b.tmpdir.as_deref(),
             _ => None,
         })
+    }
+
+    /// Bind a `sessions__approve` call to the leaf action its target holds
+    /// (docs/permissions.md). The loop asks the mounted sessions provider, which
+    /// holds the in-process host and the caller's identity; a target that is not
+    /// the pending gate, a refused target, or a cyclic chain is an error and the
+    /// loop refuses before classification.
+    pub fn resolve_bound_action(
+        &self,
+        call: &ToolCall,
+    ) -> anyhow::Result<crate::control_tools::BoundAction> {
+        let sessions = self
+            .providers
+            .iter()
+            .find_map(|p| match p {
+                Provider::Sessions(s) => Some(s),
+                _ => None,
+            })
+            .ok_or_else(|| anyhow::anyhow!("the sessions provider is not mounted"))?;
+        sessions.resolve_bound_action(call)
     }
 
     /// All tool definitions, in mount order — the request's `tools[]`, each carrying

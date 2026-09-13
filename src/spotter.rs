@@ -89,11 +89,18 @@ pub trait Spotter {
     /// (docs/permissions.md) wants judged *for promotion* alongside this move:
     /// when `Some`, the move prompt asks whether that prefix is safe for **every** argument, and a
     /// [`Stance::ClearAlways`] is the safe-vote. `None` on most calls (no probe rides along).
+    ///
+    /// `chain` is non-empty when `call` is a leaf bound to a parent's
+    /// `sessions__approve` (docs/permissions.md): the session ids from the
+    /// directly-targeted child down to the session holding the leaf. The move
+    /// presented is the child's action, and the chain names the approvers it
+    /// passed through. Empty for an ordinary move.
     async fn assess(
         &self,
         role: &Config,
         call: &ToolCall,
         brief: Option<&ToolBrief<'_>>,
+        chain: &[String],
         probe: Option<&str>,
     ) -> Spotting;
 }
@@ -165,6 +172,7 @@ impl Spotter for ForkSpot {
         role: &Config,
         call: &ToolCall,
         brief: Option<&ToolBrief<'_>>,
+        chain: &[String],
         probe: Option<&str>,
     ) -> Spotting {
         // Cached block: the per-session-stable scope + watch-for. Fresh
@@ -181,7 +189,7 @@ impl Spotter for ForkSpot {
                 self.scratch.as_deref(),
             )),
             UserPart::Breakpoint,
-            UserPart::Text(render_move(call, brief, probe)),
+            UserPart::Text(render_move(call, brief, chain, probe)),
         ])];
 
         // No-op sink: the spotter's tokens are internal and must never surface on        // the control stream (mirrors the fork peek).
@@ -229,6 +237,7 @@ impl Spotter for StaticSpotter {
         _role: &Config,
         _call: &ToolCall,
         _brief: Option<&ToolBrief<'_>>,
+        _chain: &[String],
         _probe: Option<&str>,
     ) -> Spotting {
         Spotting {
@@ -350,7 +359,12 @@ fn render_context(
 /// `{"path": "x"}` is uninterpretable until you know what the tool does with a path.
 /// Bash needs no equivalent — its command text is self-describing, which is exactly
 /// what a bare structured call is not.
-fn render_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>, probe: Option<&str>) -> String {
+fn render_move(
+    call: &ToolCall,
+    brief: Option<&ToolBrief<'_>>,
+    chain: &[String],
+    probe: Option<&str>,
+) -> String {
     let body = if call.name == bash::NAME {
         match call.input.get("command").and_then(Value::as_str) {
             Some(cmd) => format!("A shell command:\n\n    {cmd}"),
@@ -391,17 +405,41 @@ fn render_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>, probe: Option<&st
         ),
         None => String::new(),
     };
+    let approval = chain_context(chain);
     format!(
-        "---\n\nThe session is about to make this move:\n\n{body}{promotion}\n\n\
+        "---\n\nThe session is about to make this move:\n\n{body}{approval}{promotion}\n\n\
          Call `spot` with your stance and a one-line reason."
     )
+}
+
+/// The approval context for a move bound to a parent's `sessions__approve`
+/// (docs/permissions.md), or empty for an ordinary move. The chain is the session
+/// ids from the directly-targeted child down to the session holding the leaf; the
+/// spotter judges the leaf, and this says whose it is.
+fn chain_context(chain: &[String]) -> String {
+    let Some(holder) = chain.last() else {
+        return String::new();
+    };
+    if chain.len() == 1 {
+        format!(
+            "\n\nThis move is held by the session `{holder}`; approving it authorizes that \
+             session to run the move."
+        )
+    } else {
+        format!(
+            "\n\nThis move is the leaf of an approval chain — {} — held by the most recent \
+             session, `{holder}`. Each named session approved on the way here; judge the move \
+             itself, not the approvals.",
+            chain.join(" → ")
+        )
+    }
 }
 
 /// The exact move block [`Spotter::assess`] would send for this call — what the
 /// spotter model reads, byte for byte. The `efference dev spotter` tester prints it, so
 /// iterating on a tool's brief doesn't mean guessing at what the model saw.
 pub fn preview_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>, probe: Option<&str>) -> String {
-    render_move(call, brief, probe)
+    render_move(call, brief, &[], probe)
 }
 
 /// How much of a description and of an input schema ride into the move block. A

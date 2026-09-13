@@ -3,6 +3,8 @@
 
 use super::*;
 
+use crate::control_tools::BoundAction;
+
 /// The loop's [`Frontend`], backed entirely by [`Session`]: every input arrives
 /// over HTTP. The loop is pull-shaped — it blocks at `read_user_turn` / `approve`
 /// — and each pull resolves when a client pushes.
@@ -45,8 +47,8 @@ impl Frontend for RemoteFrontend {
         turns
     }
 
-    async fn approve(&mut self, call: &ToolCall) -> Approval {
-        let rx = self.shared.register_pending(call);
+    async fn approve(&mut self, call: &ToolCall, bound: Option<&BoundAction>) -> Approval {
+        let rx = self.shared.register_pending(call, bound);
         // A dropped sender (shouldn't happen on the live daemon) defaults to abort
         // — never run a call we couldn't get a decision for.
         rx.await.unwrap_or(Approval::Abort)
