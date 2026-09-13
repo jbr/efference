@@ -860,14 +860,16 @@ impl Session {
         turn: Turn,
         payload: Payload,
         submission_id: String,
+        source: Option<String>,
     ) -> io::Result<Seq> {
         // User turns only — a submitted turn is never a `ConfigEdit`, so none of
         // `append`'s proposal-lifecycle handling applies here.
-        let seq = self
-            .log
-            .lock()
-            .unwrap()
-            .append_submission(turn, payload, Some(submission_id))?;
+        let seq = self.log.lock().unwrap().append_submission(
+            turn,
+            payload,
+            Some(submission_id),
+            source,
+        )?;
         self.appended.notify_waiters();
         Ok(seq)
     }

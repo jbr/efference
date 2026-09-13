@@ -11,6 +11,13 @@ pub(crate) struct TurnBody {
     /// and recorded on the resulting `User` entry as `submission_id`.
     #[serde(default)]
     pub(crate) submission_id: Option<String>,
+    /// The client's self-chosen label for who is submitting (docs/control-api.md):
+    /// `web`, `mcp[<name>]`, or `agent[<id>]`. Client-asserted, like a
+    /// notification's source. Absent = the operator, whose turns carry no prefix.
+    /// Recorded on the resulting `User` entry as `source` and projected onto its
+    /// wire block when present.
+    #[serde(default)]
+    pub(crate) source: Option<String>,
 }
 
 /// Cap on a client-minted submission id: long enough for any uuid-ish scheme,

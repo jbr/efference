@@ -311,6 +311,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                     turn,
                     Payload::User(vec![ContentBlock::Text(submitted.text)]),
                     submitted.submission_id,
+                    submitted.source,
                 )?;
             }
         }
@@ -374,6 +375,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                     turn,
                     Payload::User(vec![ContentBlock::Text(submitted.text)]),
                     submitted.submission_id,
+                    submitted.source,
                 )?;
             }
             // Project, then place the single trailing cache breakpoint just before

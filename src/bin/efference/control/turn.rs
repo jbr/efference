@@ -30,6 +30,13 @@ pub struct Turn {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub timeout_s: Option<u64>,
+    /// Name who is submitting, when it is not the operator (docs/control-api.md):
+    /// `web`, `mcp[<name>]`, or `agent[<id>]`. Over MCP this defaults to
+    /// `mcp[<caller's clientInfo.name>]`, so a mounting harness is named without
+    /// saying anything; a script passes it explicitly. Absent = the operator.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[arg(long)]
+    pub source: Option<String>,
     /// Drive this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
@@ -56,14 +63,40 @@ impl ToolMeta for Turn {
 impl Tool<Control> for Turn {
     type Output = String;
 
-    fn execute(self, state: &mut Control, _context: &RequestContext) -> Result<String> {
+    fn execute(self, state: &mut Control, context: &RequestContext) -> Result<String> {
         let client = state.client(self.session.as_deref())?;
         let text = self.text.join(" ");
+        // An explicit `--source` wins; otherwise a call over MCP names the
+        // mounting harness from the clientInfo it sent (docs/control-api.md). The
+        // command line's RequestContext is empty, so `efference control turn`
+        // submits as the operator unless told otherwise.
+        let source = turn_source(self.source, context);
         if !self.wait {
-            state.block_on(client.turn(&text))?;
+            state.block_on(client.turn_sourced(&text, source.as_deref()))?;
             return Ok("accepted".into());
         }
-        let settled = state.settle_within(&client, self.timeout_s, client.turn_wait(&text))?;
+        let settled = state.settle_within(
+            &client,
+            self.timeout_s,
+            client.turn_wait_sourced(&text, source.as_deref()),
+        )?;
         Ok(settled.to_text())
     }
 }
+
+/// The `source` a submitted turn carries (docs/control-api.md): an explicit
+/// label wins; otherwise a call over MCP names its caller from the `clientInfo`
+/// the caller sent, so a mounting harness is named without saying anything.
+/// `None` (the command line's empty context, or a caller that declared no name)
+/// means the operator, whose turns render no prefix.
+fn turn_source(explicit: Option<String>, context: &RequestContext) -> Option<String> {
+    explicit.or_else(|| {
+        context
+            .client_info
+            .as_ref()
+            .map(|info| format!("mcp[{}]", info.name))
+    })
+}
+
+#[cfg(test)]
+mod test;

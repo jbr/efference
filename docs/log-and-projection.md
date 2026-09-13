@@ -11,7 +11,7 @@ caching constraint that shapes both.
 ### `LogEntry`
 
 ```rust
-struct LogEntry { seq: u64, turn: u32, at: Timestamp, submission_id: Option<String>, payload: Payload }
+struct LogEntry { seq: u64, turn: u32, at: Timestamp, submission_id: Option<String>, source: Option<String>, payload: Payload }
 ```
 
 `seq` is the monotone address space `project` reads over. `turn` is log
@@ -24,6 +24,15 @@ socket-submitted turn and absent on entries the loop originates itself —
 never projected, keyed on by clients reconciling delivery, and an audit
 record of which submission produced the entry. It is skipped when `None`, so
 pre-existing logs read back unchanged.
+
+`source` differs from the metadata above: it records who submitted a
+turn when that is not the operator — `web`, `mcp[<name>]`, or `agent[<id>]`,
+client-asserted like `notify`'s source. It **is** projected: a `User` entry
+carrying one opens its wire block with a `source:` line, so the model can tell
+the voices apart when several clients submit into a session (docs/control-api.md).
+`None` on operator turns and on entries the loop originates itself, and skipped
+when `None`, so an unsourced turn projects and serializes exactly as it did
+before the field existed.
 
 ### `Payload`
 
@@ -243,7 +252,8 @@ dialect-neutral fold: it decides **selection** — which entries reach the wire,
 compaction fold driven by a pre-pass over `Mark::Boundary` entries, result verdicts
 (`Distilled` re-rendered from `keep` + `raw`, `Elided`, `TriageFailed`), pinned
 notifications, surfaced context, and every audit-only exclusion — and renders what
-every dialect sends identically (result text with its `[seq]` handle). Its output is
+every dialect sends identically (result text with its `[seq]` handle, and the
+`source:` prefix opening a sourced `User` turn's first prose part). Its output is
 a list of `WireTurn`s:
 
 ```rust

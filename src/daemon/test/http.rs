@@ -82,6 +82,26 @@ async fn turn_submission_ids_adopt_or_mint() {
     assert!(turns_rx.try_recv().is_err(), "rejected turn never queued");
 }
 
+/// `POST /turns` carries an optional client-asserted `source` onto the queued
+/// turn (docs/control-api.md); absent, the turn is the operator's and carries
+/// none.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn turn_source_reaches_the_queued_turn() {
+    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let client = test_client(&shared).await;
+
+    client
+        .turn_sourced("hi from a script", Some("agent[abc]"))
+        .await
+        .unwrap();
+    let queued = turns_rx.recv().await.unwrap();
+    assert_eq!(queued.source.as_deref(), Some("agent[abc]"));
+
+    client.turn("from the operator").await.unwrap();
+    let queued = turns_rx.recv().await.unwrap();
+    assert_eq!(queued.source, None);
+}
+
 /// Recall over the wire (docs/control-api.md): `DELETE /turns/:submission_id` pops the suffix
 /// and answers with what it actually popped, the `queued` state topic reflects the remainder,
 /// and an id the loop already consumed pops nothing rather than erroring.

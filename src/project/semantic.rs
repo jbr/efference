@@ -234,8 +234,20 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
                 // `pending` above). Only prose is user-authored today; the thinking
                 // block forms exist on `ContentBlock` for the legacy fixture shape and
                 // never occur in a `User` entry.
+                //
+                // A source names who is speaking, when it is not the operator
+                // (docs/control-api.md); it opens the turn's first prose part so the
+                // model reads it as an address. No source renders no prefix, which is
+                // what keeps every unsourced turn's bytes unchanged.
+                let mut source = entry.source.as_deref();
                 pending.extend(blocks.iter().filter_map(|block| match block {
-                    ContentBlock::Text(text) => Some(UserPart::Text(text.clone())),
+                    ContentBlock::Text(text) => {
+                        let text = match source.take() {
+                            Some(source) => format!("{source}: {text}"),
+                            None => text.clone(),
+                        };
+                        Some(UserPart::Text(text))
+                    }
                     ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => None,
                 }));
             }

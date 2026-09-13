@@ -1056,6 +1056,7 @@ fn assembles_and_projects_interleaved_blocks_in_provider_order() {
         turn: 0,
         at: crate::log::Timestamp(0),
         submission_id: None,
+        source: None,
         payload: completion.assistant.clone(),
     }];
     let wire = crate::project::project(&log);

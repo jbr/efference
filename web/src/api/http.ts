@@ -87,6 +87,9 @@ export const submitTurn = (text: string, submissionId: string) =>
   post<{ status: string; submission_id: string }>("/v1/turns", {
     text,
     submission_id: submissionId,
+    // The web client is not the operator at a terminal; name where the turn
+    // came from so the model can attribute it (docs/control-api.md).
+    source: "web",
   });
 // Withdraw the pending-queue suffix beginning at this submission (docs/control-api.md —
 // recall). The answer is authoritative: the loop may have dequeued the turn already, so

@@ -10,8 +10,24 @@ fn entry(seq: u64, payload: Payload) -> LogEntry {
         turn: 1,
         at: Timestamp(1_700_000_000_000 + seq),
         submission_id: None,
+        source: None,
         payload,
     }
+}
+
+/// A sourced `User` entry opens its line with the same `source:` address the
+/// wire carries (docs/control-api.md); the unsourced line above stays bare.
+#[test]
+fn a_sourced_user_line_shows_the_source() {
+    let mut user = entry(
+        1,
+        Payload::User(vec![ContentBlock::Text("please look".into())]),
+    );
+    user.source = Some("mcp[claude-code]".into());
+    assert_eq!(
+        render(&[user]),
+        "      1 user      mcp[claude-code]: please look\n"
+    );
 }
 
 fn assistant(text: &str, calls: Vec<ToolCall>) -> Payload {

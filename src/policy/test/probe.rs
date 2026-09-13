@@ -74,6 +74,7 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
             turn: 0,
             at: Timestamp(0),
             submission_id: None,
+            source: None,
             payload: Payload::Assistant {
                 output: crate::log::AssistantOutput::from_legacy_messages(
                     vec![],
@@ -94,6 +95,7 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
             turn: 0,
             at: Timestamp(0),
             submission_id: None,
+            source: None,
             payload: Payload::Spot(Spot {
                 call_id: CallId(id.into()),
                 stance,
@@ -153,6 +155,7 @@ fn probe_ledger_ignores_fallback_verdicts() {
         turn: 0,
         at: Timestamp(0),
         submission_id: None,
+        source: None,
         payload: Payload::Spot(Spot {
             call_id: CallId("x".into()),
             stance: Stance::ClearAlways, // would be a safe vote — but origin is Fallback

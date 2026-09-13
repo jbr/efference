@@ -88,17 +88,20 @@ impl Log {
     /// can't lose an acknowledged entry. It stops short of `fsync` per line — a
     /// deliberate durability/throughput tradeoff.
     pub fn append(&mut self, turn: Turn, payload: Payload) -> io::Result<Seq> {
-        self.append_submission(turn, payload, None)
+        self.append_submission(turn, payload, None, None)
     }
 
-    /// [`append`](Self::append) with the submission id of the `POST /v1/turns`
-    /// the entry realizes (docs/control-api.md) — the loop's user-turn appends
-    /// use this; everything else appends without one.
+    /// [`append`](Self::append) with the submission provenance of the
+    /// `POST /v1/turns` the entry realizes (docs/control-api.md) — the loop's
+    /// user-turn appends use this; everything else appends without one. `source`
+    /// is the client's self-chosen label and is projected on a `User` entry's
+    /// wire block when present (docs/log-and-projection.md).
     pub fn append_submission(
         &mut self,
         turn: Turn,
         payload: Payload,
         submission_id: Option<String>,
+        source: Option<String>,
     ) -> io::Result<Seq> {
         // The mask choke point (docs/env.md). Both `append` paths funnel here, so
         // every text-bearing payload — tool results, the boot preamble, ambient
@@ -114,6 +117,7 @@ impl Log {
             turn,
             at: Timestamp::now(),
             submission_id,
+            source,
             payload,
         };
         if let Some(sink) = &mut self.sink {

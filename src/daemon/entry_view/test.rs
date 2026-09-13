@@ -9,6 +9,7 @@ fn entry(seq: u64, submission_id: Option<&str>, payload: Payload) -> LogEntry {
         turn: 1,
         at: Timestamp(1_700_000_000_000),
         submission_id: submission_id.map(String::from),
+        source: None,
         payload,
     }
 }

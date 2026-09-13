@@ -137,10 +137,14 @@ pub(crate) fn entry_nodes(
     {
         match &entry.payload {
             Payload::User(blocks) => {
-                nodes.push(DocumentNode::entry(
-                    EntryKind::UserMessage,
-                    markdown(&join_text(blocks)),
-                ));
+                // A sourced turn is attributed with the same `source:` address it
+                // carries on the wire (docs/control-api.md); the operator's turns
+                // have none, so their rendering is unchanged.
+                let text = match &entry.source {
+                    Some(source) => format!("{source}: {}", join_text(blocks)),
+                    None => join_text(blocks),
+                };
+                nodes.push(DocumentNode::entry(EntryKind::UserMessage, markdown(&text)));
             }
             Payload::Assistant {
                 output,

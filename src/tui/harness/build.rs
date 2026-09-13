@@ -15,6 +15,7 @@ impl Screenplay<'_> {
             turn: 1,
             at: Timestamp(0),
             submission_id: None,
+            source: None,
             payload,
         }))
     }
@@ -66,6 +67,7 @@ impl Screenplay<'_> {
             turn: 1,
             at: Timestamp(0),
             submission_id: Some(pending.submission_id),
+            source: pending.source,
             payload: Payload::User(vec![ContentBlock::Text(pending.text)]),
         }))
     }

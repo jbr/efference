@@ -113,6 +113,7 @@ fn a_running_or_gated_loop_declines() {
     shared.submit_turn(SubmittedTurn {
         text: "hi".into(),
         submission_id: "sub-test".into(),
+        source: None,
     });
     assert_eq!(
         shared.request_continue().unwrap_err().message(),

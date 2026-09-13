@@ -12,6 +12,7 @@ fn entry(seq: u64, turn: u32, payload: Payload) -> LogEntry {
         turn,
         at: Timestamp(1000 + seq),
         submission_id: None,
+        source: None,
         payload,
     }
 }
@@ -98,6 +99,33 @@ fn projection_matches_expected_wire_bytes() {
     let wire = serde_json::to_string(&project(&sample_log())).unwrap();
     let expected = r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] file.txt"}]}]"#;
     assert_eq!(wire, expected);
+}
+
+/// Pins the sourced case: a `User` entry carrying a `source` opens its wire
+/// block with the `source:` prefix (docs/control-api.md), and that is the only
+/// byte difference from the unsourced pin above — every other block is
+/// identical. The prefix is what lets the model tell voices apart when more
+/// than one client submits into a session.
+#[test]
+fn projection_with_source_matches_expected_wire_bytes() {
+    let mut log = sample_log();
+    log[0].source = Some("mcp[claude-code]".into());
+    let wire = serde_json::to_string(&project(&log)).unwrap();
+    let expected = r#"[{"role":"user","content":[{"type":"text","text":"mcp[claude-code]: hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] file.txt"}]}]"#;
+    assert_eq!(wire, expected);
+}
+
+/// A sourced turn and its unsourced twin differ on the wire only by the
+/// prefix line, so a log with no source projects byte-for-byte as it did
+/// before the field existed.
+#[test]
+fn source_does_not_move_unsourced_bytes() {
+    let unsourced = serde_json::to_string(&project(&sample_log())).unwrap();
+    let mut sourced = sample_log();
+    sourced[0].source = Some("web".into());
+    let sourced = serde_json::to_string(&project(&sourced)).unwrap();
+    assert_ne!(unsourced, sourced);
+    assert!(sourced.contains(r#""text":"web: hello""#));
 }
 
 /// A log whose tool result carries one image, in the given wire state.

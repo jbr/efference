@@ -83,7 +83,14 @@ impl Client {
     /// daemon answers 202 immediately — submission is decoupled from inference, so
     /// the caller watches the stream (or `/log`) for the response.
     pub async fn turn(&self, text: &str) -> Result<()> {
-        let body = serde_json::json!({ "text": text }).to_string();
+        self.turn_sourced(text, None).await
+    }
+
+    /// [`turn`](Self::turn) carrying a `source` label (docs/control-api.md) — the
+    /// client's self-chosen name for who is speaking (`web`, `mcp[<name>]`,
+    /// `agent[<id>]`). `None` submits as the operator, who renders no prefix.
+    pub async fn turn_sourced(&self, text: &str, source: Option<&str>) -> Result<()> {
+        let body = Self::turn_body(text, None, source);
         self.post("/turns", body).await.map(drop)
     }
 
@@ -92,8 +99,22 @@ impl Client {
     /// entry and echoed in the returned 202 body, so the caller can reconcile
     /// delivery by exact key rather than content.
     pub async fn turn_with_submission_id(&self, text: &str, submission_id: &str) -> Result<String> {
-        let body = serde_json::json!({ "text": text, "submission_id": submission_id }).to_string();
+        let body = Self::turn_body(text, Some(submission_id), None);
         self.post("/turns", body).await
+    }
+
+    /// The `POST /turns` body: `text`, plus `submission_id` and `source` when
+    /// present. Field order is fixed here so the body is the same bytes every
+    /// call for the same inputs.
+    fn turn_body(text: &str, submission_id: Option<&str>, source: Option<&str>) -> String {
+        let mut body = serde_json::json!({ "text": text });
+        if let Some(submission_id) = submission_id {
+            body["submission_id"] = serde_json::Value::from(submission_id);
+        }
+        if let Some(source) = source {
+            body["source"] = serde_json::Value::from(source);
+        }
+        body.to_string()
     }
 
     /// Withdraw the pending-queue suffix beginning at `submission_id`
@@ -114,7 +135,13 @@ impl Client {
     /// "act → poll `/state` in a loop → read" into one round-trip
     /// (docs/permissions.md).
     pub async fn turn_wait(&self, text: &str) -> Result<String> {
-        let body = serde_json::json!({ "text": text }).to_string();
+        self.turn_wait_sourced(text, None).await
+    }
+
+    /// [`turn_wait`](Self::turn_wait) carrying a `source` label
+    /// (docs/control-api.md).
+    pub async fn turn_wait_sourced(&self, text: &str, source: Option<&str>) -> Result<String> {
+        let body = Self::turn_body(text, None, source);
         self.post("/turns?wait", body).await
     }
 

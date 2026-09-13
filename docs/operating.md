@@ -58,7 +58,10 @@ the single live session), and `efference --name my-session mcp` gives the mount
 that same default, which a call's `session` then overrides. The server's
 `instructions` and each tool's description are written for the model reading
 `tools/list`; the behaviour hints say which tools read and which mutate, since the
-spec's defaults are pessimistic and a mounting harness's approval UX reads them.
+spec's defaults are pessimistic and a mounting harness's approval UX reads them. A
+`turn` submitted over the mount is attributed as `mcp[<clientInfo.name>]` from the
+name the client sent at initialize, so the session reads which harness is speaking
+without the caller saying so (docs/control-api.md).
 
 The three waiting tools — `settle`, and `turn`/`approve` with `wait` — take a `timeout_s`,
 because MCP clients time tool calls out. On expiry they answer with the current state
@@ -296,7 +299,10 @@ resolve its own.
 - **`efference control turn <text>`** — a user turn. It never waits for the trajectory to end: it is
   picked up at the next juncture, after the current tool's results land, and merges into the
   same message as those results. So mid-trajectory steering arrives *with* the evidence the
-  model is about to reason from, not after it.
+  model is about to reason from, not after it. `--source <label>` names who is submitting
+  when it is not the operator (`web`, `mcp[<name>]`, `agent[<id>]`); the label rides on the
+  turn and prefixes it for the model (docs/control-api.md). Over the MCP mount it defaults
+  to the mounting harness's name (below).
 - **`efference control notify <source> <body>`** — an ambient notification into the inbox. Unlike a
   turn, this is **triageable**: the model may pin it, dismiss it, or leave it. Use it for
   things that can wait and might not matter. `--slot <name>` supersedes an earlier

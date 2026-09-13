@@ -7,6 +7,7 @@ fn at(seq: Seq, payload: Payload) -> LogEntry {
         turn: 0,
         at: Timestamp(seq),
         submission_id: None,
+        source: None,
         payload,
     }
 }

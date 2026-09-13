@@ -50,6 +50,8 @@ impl<'a> InteractiveState<'a> {
         let submitted = crate::frontend::SubmittedTurn {
             text,
             submission_id: crate::daemon::mint_submission_id(),
+            // The TUI is the operator: no source, so the model reads a bare turn.
+            source: None,
         };
         if self.submit_tx.send(submitted.clone()).is_ok() {
             // Echo the message immediately as a pending transcript unit

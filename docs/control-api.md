@@ -117,12 +117,18 @@ it.
 Enqueue a user turn. Also seeds turn 1 on an idle daemon. Submission is
 decoupled from inference.
 
-- Body: `{ "text": "<string>", "submission_id": "<string, optional>" }` —
+- Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>" }` —
   `submission_id` identifies this submission: adopted when the client minted
   one (1–128 bytes), daemon-minted otherwise, and recorded on the resulting
   `User` entry as its `submission_id` (log metadata, never projected). A
   client that minted the id can settle its own delivery echo by exact key,
   and the log records which submission produced each turn.
+- `source` names who is submitting, when it is not the operator — client-asserted,
+  like `notify`'s source, and not verified. The convention is `web`,
+  `mcp[<clientInfo.name>]`, or `agent[<id>]`. Recorded on the resulting `User`
+  entry and rendered as a `source:` prefix line on its wire block
+  (docs/log-and-projection.md); absent means the operator, whose turns render no
+  prefix.
 - `202 {"status":"accepted","submission_id":"<string>"}` — enqueued; watch
   `/events` (or `/state`) for the result. The echoed id is informational: any
   effect of a request — including the `User` entry carrying this id — may
@@ -579,7 +585,9 @@ A window may be cut anywhere because references that dangle across the cut are
 The same window as `GET /log` — same `since`/`before`/`tail` query, same `400`s —
 rendered as `text/plain` at reading grain (`daemon/transcript.rs`): one block per
 entry, `seq tag body`, with a multi-line body indented to the body column. Prose
-(`user`, `assistant`) is whole; a `call` is its tool name, every argument but the
+(`user`, `assistant`) is whole, except that a `user` entry carrying a `source`
+opens its text with the same `source: ` address the wire uses
+(docs/control-api.md); a `call` is its tool name, every argument but the
 intent, then the intent in full — an argument named like a body (`contents`,
 `content`, `text`, `body`, `old_string`, `new_string`) is cut short, any other at
 a width that keeps a long `command` readable; a `result` is its outcome, size, and
@@ -914,9 +922,12 @@ publishes nothing at all — indistinguishable from a hung harness.
 
 ## Data shapes referenced above
 
-- **`LogEntry`** `{ seq, turn, at, payload }` where `payload` is one of `User` /
-  `Assistant` / `ToolResult` / `Mark` / `Triage` / `Ambient` / `Spot` /
-  `ConfigEdit` (see [log-and-projection.md](log-and-projection.md)).
+- **`LogEntry`** `{ seq, turn, at, submission_id?, source?, payload }` where
+  `payload` is one of `User` / `Assistant` / `ToolResult` / `Mark` / `Triage` /
+  `Ambient` / `Spot` / `ConfigEdit` (see
+  [log-and-projection.md](log-and-projection.md)). `submission_id` names the
+  `POST /turns` that produced the entry; `source` names its submitter when not
+  the operator and is the one entry field that reaches the wire.
 - **`ConfigChange`** — one of `command` / `path` / `tool` / `scope` (see
   [permissions.md](permissions.md)).
 - **`BgView`** — a background-process view (see [supervisor.md](supervisor.md)).

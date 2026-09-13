@@ -119,6 +119,7 @@ fn submission_id_round_trips_and_is_skipped_when_absent() {
         0,
         Payload::User(vec![ContentBlock::Text("hi".into())]),
         Some("sub-abc".into()),
+        None,
     )
     .unwrap();
     log.append(0, Payload::User(vec![ContentBlock::Text("note".into())]))
@@ -137,6 +138,39 @@ fn submission_id_round_trips_and_is_skipped_when_absent() {
     std::fs::remove_file(&path).unwrap();
 }
 
+/// `source` rides on the entry like `submission_id`, but unlike it is
+/// projected (docs/control-api.md). Written only when a client names itself, so
+/// an operator turn's jsonl is byte-identical to one written before the field
+/// existed; old logs without it load as `None`.
+#[test]
+fn source_round_trips_and_is_skipped_when_absent() {
+    let path = std::env::temp_dir().join(format!("efference-source-{}.jsonl", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+
+    let mut log = Log::create(&path).unwrap();
+    log.append_submission(
+        0,
+        Payload::User(vec![ContentBlock::Text("hi".into())]),
+        None,
+        Some("mcp[claude-code]".into()),
+    )
+    .unwrap();
+    log.append(0, Payload::User(vec![ContentBlock::Text("note".into())]))
+        .unwrap();
+    drop(log);
+
+    let raw = std::fs::read_to_string(&path).unwrap();
+    let lines: Vec<&str> = raw.lines().collect();
+    assert!(lines[0].contains(r#""source":"mcp[claude-code]""#));
+    assert!(!lines[1].contains("source"));
+
+    let loaded = load(&path).unwrap();
+    assert_eq!(loaded[0].source.as_deref(), Some("mcp[claude-code]"));
+    assert_eq!(loaded[1].source, None);
+
+    std::fs::remove_file(&path).unwrap();
+}
+
 /// `submission_id` is log metadata like `at` (docs/log-and-projection.md):
 /// two logs identical except for it must project to the same wire bytes.
 #[test]
@@ -146,6 +180,7 @@ fn submission_id_never_reaches_the_projection() {
         0,
         Payload::User(vec![ContentBlock::Text("hello".into())]),
         Some("sub-xyz".into()),
+        None,
     )
     .unwrap();
     let mut without = Log::in_memory();

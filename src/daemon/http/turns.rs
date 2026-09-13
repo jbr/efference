@@ -15,6 +15,7 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
         Ok(TurnBody {
             text,
             submission_id,
+            source,
         }) => {
             if submission_id
                 .as_ref()
@@ -30,6 +31,7 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
             shared.submit_turn(SubmittedTurn {
                 text,
                 submission_id: submission_id.clone(),
+                source,
             });
             // `?wait`: hold the connection until the turn reaches a gate or completes,
             // then answer with the resulting state — "act → read state" in one round-trip

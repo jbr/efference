@@ -131,7 +131,11 @@ format is byte-pinned and deliberately cheap to flip: whether tags actually beat
 here is an unverified assumption, recorded for A/B in
 `backlog/preamble-format-experiment.md`. The block splices into the system prompt after
 the curation preamble and before the role scope (*what it may do*) — knowledge before
-perimeter (`env::system_prompt`).
+perimeter (`env::system_prompt`). The curation preamble itself (`assets/prompts/session.md`)
+states the turn-attribution convention in one sentence, so a prefix is read as an
+address rather than as content: a user turn may open with a `source:` prefix naming
+who submitted it, and a turn with no prefix is from the operator
+(docs/control-api.md).
 
 ## Exec sections — a section whose body is a command's stdout
 

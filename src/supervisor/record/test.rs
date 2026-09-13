@@ -12,6 +12,7 @@ fn entry(seq: Seq, payload: Payload) -> LogEntry {
         turn: 1,
         at: Timestamp(1_754_300_000_000 + seq),
         submission_id: None,
+        source: None,
         payload,
     }
 }

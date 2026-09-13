@@ -29,6 +29,11 @@ use crate::log::{ConfigChange, ToolCall};
 pub struct SubmittedTurn {
     pub text: String,
     pub submission_id: String,
+    /// The client's self-chosen label for who submitted this turn
+    /// (docs/control-api.md): `web`, `mcp[<name>]`, or `agent[<id>]`. `None` for
+    /// a turn the operator submitted (the TUI) — the operator is the implicit
+    /// default voice on the wire, so no prefix renders.
+    pub source: Option<String>,
 }
 
 /// The operator's intent when interrupting a *running* tool (docs/supervisor.md).

@@ -679,6 +679,7 @@ fn title_is_solicited_after_a_user_turn_and_on_the_fallback() {
             turn: 0,
             at: Timestamp(seq),
             submission_id: None,
+            source: None,
             payload,
         }
     }

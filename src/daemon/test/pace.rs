@@ -14,6 +14,7 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
     shared.submit_turn(SubmittedTurn {
         text: "hi".into(),
         submission_id: "sub-test".into(),
+        source: None,
     });
     assert!(
         !shared.is_settled(),
@@ -52,6 +53,7 @@ async fn await_settled_returns_when_the_loop_parks() {
     shared.submit_turn(SubmittedTurn {
         text: "hi".into(),
         submission_id: "sub-test".into(),
+        source: None,
     });
     shared.claim_turn("sub-test", true); // busy, mid-turn
 
@@ -92,14 +94,17 @@ fn drain_injected_turns_delivers_queued_turns_and_balances_settle() {
     shared.submit_turn(SubmittedTurn {
         text: "first".into(),
         submission_id: "sub-1".into(),
+        source: None,
     });
     shared.submit_turn(SubmittedTurn {
         text: "   ".into(),
         submission_id: "sub-2".into(),
+        source: None,
     });
     shared.submit_turn(SubmittedTurn {
         text: "second".into(),
         submission_id: "sub-3".into(),
+        source: None,
     });
     assert!(
         !shared.is_settled(),
@@ -187,6 +192,7 @@ async fn a_submit_resumes_and_skips_the_seam() {
     shared.submit_turn(SubmittedTurn {
         text: "go".into(),
         submission_id: "sub-test".into(),
+        source: None,
     });
     assert!(!shared.pace_snapshot().1, "submit dropped the hold");
 
@@ -209,6 +215,7 @@ async fn a_submit_interrupts_a_finite_paced_sleep() {
     shared.submit_turn(SubmittedTurn {
         text: "urgent".into(),
         submission_id: "sub-test".into(),
+        source: None,
     }); // fires the pace interrupt
 
     tokio::time::timeout(Duration::from_millis(500), seam)
@@ -250,6 +257,7 @@ fn withdraw_pops_the_suffix_from_the_named_turn() {
         shared.submit_turn(SubmittedTurn {
             text: text.into(),
             submission_id: id.into(),
+            source: None,
         });
     }
     let popped = shared.withdraw_turns("s2");
@@ -280,6 +288,7 @@ fn withdraw_pops_nothing_once_the_loop_has_claimed_the_turn() {
     shared.submit_turn(SubmittedTurn {
         text: "sent".into(),
         submission_id: "s1".into(),
+        source: None,
     });
     assert!(shared.claim_turn("s1", true));
     assert!(shared.withdraw_turns("s1").is_empty());
@@ -297,10 +306,12 @@ async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
     shared.submit_turn(SubmittedTurn {
         text: "recalled".into(),
         submission_id: "s1".into(),
+        source: None,
     });
     shared.submit_turn(SubmittedTurn {
         text: "kept".into(),
         submission_id: "s2".into(),
+        source: None,
     });
     assert_eq!(
         shared.withdraw_turns("s1").len(),
@@ -313,6 +324,7 @@ async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
     shared.submit_turn(SubmittedTurn {
         text: "fresh".into(),
         submission_id: "s3".into(),
+        source: None,
     });
     let delivered = frontend.drain_injected_turns();
     assert_eq!(delivered.len(), 1);

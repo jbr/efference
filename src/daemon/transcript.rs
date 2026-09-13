@@ -100,13 +100,25 @@ fn block(out: &mut String, label: &str, tag: &str, body: &str) {
 /// per text block and per call; some are none.
 fn lines(entry: &LogEntry, siblings: &mut HashMap<CallId, String>) -> Vec<Line> {
     match &entry.payload {
-        Payload::User(blocks) => blocks
-            .iter()
-            .filter_map(|b| match b {
-                crate::log::ContentBlock::Text(t) => Some(line("user", t.clone())),
-                _ => None,
-            })
-            .collect(),
+        Payload::User(blocks) => {
+            // A sourced turn opens its line with the same `source:` address it
+            // carries on the wire (docs/control-api.md), so a reader attributes
+            // the prose the way the model does; an operator turn has none.
+            let mut source = entry.source.as_deref();
+            blocks
+                .iter()
+                .filter_map(|b| match b {
+                    crate::log::ContentBlock::Text(t) => {
+                        let body = match source.take() {
+                            Some(source) => format!("{source}: {t}"),
+                            None => t.clone(),
+                        };
+                        Some(line("user", body))
+                    }
+                    _ => None,
+                })
+                .collect()
+        }
         Payload::Assistant {
             output,
             upstream_failure,
