@@ -1,4 +1,4 @@
-use super::{Control, StateResult};
+use super::{Control, Executor, StateResult};
 use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -44,7 +44,8 @@ impl ToolMeta for Settle {
 impl Tool<Control> for Settle {
     type Output = StateResult;
 
-    fn execute(self, state: &mut Control, _context: &RequestContext) -> Result<StateResult> {
+    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<StateResult> {
+        let Executor::Client(state) = &mut control.executor;
         let client = state.client(self.session.as_deref())?;
         state.settle_within(&client, self.timeout_s, client.settle())
     }

@@ -1,4 +1,4 @@
-use super::{Control, EntriesResult};
+use super::{Control, Executor, EntriesResult};
 use anyhow::{Context as _, Result};
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -41,7 +41,8 @@ impl ToolMeta for Entries {
 impl Tool<Control> for Entries {
     type Output = EntriesResult;
 
-    fn execute(self, state: &mut Control, _context: &RequestContext) -> Result<EntriesResult> {
+    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<EntriesResult> {
+        let Executor::Client(state) = &mut control.executor;
         let client = state.client(self.session.as_deref())?;
         let mut entries = Vec::with_capacity(self.seqs.len());
         for seq in self.seqs {

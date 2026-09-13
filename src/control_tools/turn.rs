@@ -1,4 +1,4 @@
-use super::Control;
+use super::{Control, Executor};
 use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta, ToolOutput as _},
@@ -63,7 +63,8 @@ impl ToolMeta for Turn {
 impl Tool<Control> for Turn {
     type Output = String;
 
-    fn execute(self, state: &mut Control, context: &RequestContext) -> Result<String> {
+    fn execute(self, control: &mut Control, context: &RequestContext) -> Result<String> {
+        let Executor::Client(state) = &mut control.executor;
         let client = state.client(self.session.as_deref())?;
         let text = self.text.join(" ");
         // An explicit `--source` wins; otherwise a call over MCP names the

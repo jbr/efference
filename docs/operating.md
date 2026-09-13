@@ -21,8 +21,9 @@ driven, and it is refined from use rather than written ahead of it.
   `end` (tear one down).
 - **`efference mcp`** — the same calls, served as an MCP server over stdin/stdout
   (below). One definition, two entry points: they are written once as mcplease tools
-  (`src/bin/efference/control/`, one file per tool) and mounted both ways, so the
-  command line and a mounting harness cannot drift apart.
+  (`src/control_tools.rs` and `src/control_tools/`, one file per tool) and mounted by
+  the binary for both paths, so the command line and a mounting harness cannot drift
+  apart.
 - **`efference dev <verb>`** — instruments for developing efference itself: `wire`,
   `gallery`, `peek`, `spotter`, `spotter-log`, `spotter-eval`, `cache`, `view` (a recorded log in the TUI, inert), and `open`, the
   web-bind bootstrap-link mint ([web-bind.md](web-bind.md)). Compiled under the `dev`

@@ -1,4 +1,4 @@
-use super::{Control, ImageResult};
+use super::{Control, Executor, ImageResult};
 use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -54,14 +54,16 @@ impl ToolMeta for Image {
 impl Tool<Control> for Image {
     type Output = ImageResult;
 
-    fn execute(self, state: &mut Control, _context: &RequestContext) -> Result<ImageResult> {
+    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<ImageResult> {
+        let cli = control.is_cli();
+        let Executor::Client(state) = &mut control.executor;
         let client = state.client(self.session.as_deref())?;
         let bytes = state.block_on(client.log_image(self.seq, self.idx))?;
         // The encoding comes from the bytes rather than from a media type the caller
         // would have to re-request: the image was realized into one of a handful of
         // encodings, and guessing wrong names a file no viewer opens.
         let format = image::guess_format(&bytes).ok();
-        if !state.is_cli() {
+        if !cli {
             return Ok(ImageResult::inline(&bytes, format));
         }
         let extension = format

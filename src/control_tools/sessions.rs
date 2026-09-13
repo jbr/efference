@@ -1,6 +1,6 @@
-use super::{Control, pretty};
+use super::{Control, Executor, pretty};
 use anyhow::Result;
-use efference::client::SessionListing;
+use crate::client::SessionListing;
 use mcplease::{
     traits::{Tool, ToolMeta, ToolOutput},
     types::{RequestContext, ToolAnnotations},
@@ -32,7 +32,7 @@ impl ToolMeta for Sessions {
 
 /// The host's session list as a tool result (docs/control-api.md).
 #[derive(Serialize, schemars::JsonSchema)]
-pub(crate) struct SessionsResult {
+pub struct SessionsResult {
     /// The hosted sessions, sorted by id.
     sessions: Vec<SessionListing>,
 }
@@ -50,7 +50,8 @@ impl ToolOutput for SessionsResult {
 impl Tool<Control> for Sessions {
     type Output = SessionsResult;
 
-    fn execute(self, state: &mut Control, _context: &RequestContext) -> Result<SessionsResult> {
+    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<SessionsResult> {
+        let Executor::Client(state) = &mut control.executor;
         let host = state.host_client()?;
         let sessions = state.block_on(host.sessions())?;
         Ok(SessionsResult { sessions })

@@ -154,7 +154,7 @@ Read top-down; open the subsystem doc you need.
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs` (+ `src/daemon/`), `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
 | Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/config.rs`, `src/policy.rs`, `src/agent.rs`, `src/daemon/config_edits.rs` |
 | The `[context]` preamble builder — what the session boots knowing | [context.md](context.md) | `src/context.rs`, `src/config.rs`, `src/env.rs`, `src/policy.rs` |
-| Operating a session — what an operator can see, change, and say (usage, not architecture) | [operating.md](operating.md) | `src/client.rs`, `src/bin/efference/verbs.rs`, `src/guide.rs` |
+| Operating a session — what an operator can see, change, and say (usage, not architecture) | [operating.md](operating.md) | `src/client.rs`, `src/control_tools.rs`, `src/bin/efference/control.rs`, `src/bin/efference/verbs.rs`, `src/guide.rs` |
 | The `[env]` table — stripping and injecting env vars at spawn, masking them at append, resolving vault references | [env.md](env.md) | `src/env_table.rs`, `src/env_table/resolve.rs`, `src/persist.rs`, `src/bash.rs` |
 | Transport & streaming (upstream SSE, deltas, keepalive, the shared HTTP client) | [transport.md](transport.md) | `src/api.rs`, `src/http.rs` |
 | Host-owned inference — named connections, credential loading, per-role model selection | [transport.md](transport.md) | `src/inference.rs`, `src/boot.rs`, `src/daemon/host.rs` |
@@ -174,7 +174,8 @@ The turn engine that ties it together is `src/agent.rs`; the CLI binary is
 `src/bin/efference/`, whose `host` verb boots the daemon. Its command tree is grouped by
 who each command is for ([operating.md](operating.md)): the human verbs at the top level, `efference
 control <tool>` for the calls that drive a running session — the same tools
-`efference mcp` serves over MCP, written once in `src/bin/efference/control/` — and
+`efference mcp` serves over MCP, written once in `src/control_tools.rs` and
+`src/control_tools/` — and
 `efference dev <verb>` for the instruments that develop the harness itself, behind the
 `dev` cargo feature.
 

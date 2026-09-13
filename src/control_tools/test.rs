@@ -1,13 +1,13 @@
 //! The control tools, exercised over the real control router (docs/operating.md).
 
 use super::*;
-use efference::persist::Log;
+use crate::persist::Log;
 use mcplease::traits::AsToolsList;
 use mcplease::traits::Tool as _;
 use mcplease::types::{JsonRpcRequest, JsonRpcResponse, RequestContext};
 use std::sync::Arc;
 
-/// A [`Control`] whose default session is a live [`router`](efference::daemon::router)
+/// A [`Control`] whose default session is a live [`router`](crate::daemon::router)
 /// on `trillium_testing`'s in-memory transport — the whole request/response cycle,
 /// with no socket bound (`daemon/test.rs` explains why the tests never bind one).
 async fn test_state(cli: bool) -> Control {
@@ -17,15 +17,15 @@ async fn test_state(cli: bool) -> Control {
 /// [`test_state`] over a log the test has already written to: the router has no
 /// loop behind it, so an entry a test wants to read back is appended before mounting.
 async fn test_state_over(cli: bool, log: Log) -> Control {
-    let (shared, _turns) = efference::daemon::Session::new(std::env::current_dir().unwrap(), log);
+    let (shared, _turns) = crate::daemon::Session::new(std::env::current_dir().unwrap(), log);
     let mut handler = (
         trillium::Init::new(move |info: trillium::Info| {
             let shared = Arc::clone(&shared);
             async move { info.with_shared_state(shared) }
         }),
-        efference::daemon::handler(
-            efference::daemon::Transport::Socket { auth: None },
-            efference::daemon::App::session(std::env::current_dir().unwrap()),
+        crate::daemon::handler(
+            crate::daemon::Transport::Socket { auth: None },
+            crate::daemon::App::session(std::env::current_dir().unwrap()),
         ),
     );
     let context = trillium_testing::init(&mut handler).await;
@@ -98,7 +98,7 @@ async fn transcript_lines_carry_the_seq_that_entries_resolves() {
     let mut log = Log::in_memory();
     log.append(
         1,
-        efference::log::Payload::User(vec![efference::log::ContentBlock::Text(
+        crate::log::Payload::User(vec![crate::log::ContentBlock::Text(
             "hello transcript".into(),
         )]),
     )
@@ -228,15 +228,17 @@ fn tools_list_is_ordered_and_annotated() {
 /// host path here has no listener, so the error also says the host is not up.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unbound_mount_requires_session() {
-    let mut state = Control::new(
+    let executor = Executor::client(
         Handle::current(),
         std::path::PathBuf::from("/nonexistent/efference/host.sock"),
         Fallback::None,
-        false,
     );
-    let err = tokio::task::spawn_blocking(move || match state.client(None) {
-        Ok(_) => panic!("an unbound mount resolved a session"),
-        Err(e) => e.to_string(),
+    let mut state = Control::new(executor, false);
+    let err = tokio::task::spawn_blocking(move || match &mut state.executor {
+        Executor::Client(executor) => match executor.client(None) {
+            Ok(_) => panic!("an unbound mount resolved a session"),
+            Err(e) => e.to_string(),
+        },
     })
     .await
     .unwrap();

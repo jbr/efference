@@ -1,6 +1,6 @@
-use super::Control;
+use super::{Control, Executor};
 use anyhow::Result;
-use efference::frontend::Approval;
+use crate::frontend::Approval;
 use mcplease::{
     traits::{Tool, ToolMeta, ToolOutput as _},
     types::{RequestContext, ToolAnnotations},
@@ -66,7 +66,8 @@ impl ToolMeta for Approve {
 impl Tool<Control> for Approve {
     type Output = String;
 
-    fn execute(self, state: &mut Control, _context: &RequestContext) -> Result<String> {
+    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
+        let Executor::Client(state) = &mut control.executor;
         let client = state.client(self.session.as_deref())?;
         let call_id = match self.call_id {
             Some(id) => id,

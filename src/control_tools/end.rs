@@ -1,4 +1,4 @@
-use super::Control;
+use super::{Control, Executor};
 use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -36,7 +36,8 @@ impl ToolMeta for End {
 impl Tool<Control> for End {
     type Output = String;
 
-    fn execute(self, state: &mut Control, _context: &RequestContext) -> Result<String> {
+    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
+        let Executor::Client(state) = &mut control.executor;
         let host = state.host_client()?;
         state.block_on(host.end_session(&self.session))?;
         Ok(format!("ended {}", self.session))

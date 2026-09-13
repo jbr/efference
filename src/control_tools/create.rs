@@ -1,4 +1,4 @@
-use super::{Control, pretty};
+use super::{Control, Executor, pretty};
 use anyhow::{Context, Result};
 use mcplease::{
     traits::{Tool, ToolMeta, ToolOutput},
@@ -72,7 +72,7 @@ impl ToolMeta for Create {
 /// A created session as a tool result: its id, the `session` every other tool
 /// takes.
 #[derive(Serialize, schemars::JsonSchema)]
-pub(crate) struct CreatedResult {
+pub struct CreatedResult {
     id: String,
 }
 
@@ -89,16 +89,17 @@ impl ToolOutput for CreatedResult {
 impl Tool<Control> for Create {
     type Output = CreatedResult;
 
-    fn execute(self, state: &mut Control, _context: &RequestContext) -> Result<CreatedResult> {
+    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<CreatedResult> {
+        let Executor::Client(state) = &mut control.executor;
         let here = std::env::current_dir().context("reading the working directory")?;
         let cwd = match self.cwd {
             Some(cwd) => here.join(cwd),
             None => here,
         };
-        let env = efference::env_table::EnvSnapshot::capture()
+        let env = crate::env_table::EnvSnapshot::capture()
             .map_err(anyhow::Error::msg)?
             .into_entries();
-        let request = efference::daemon::CreateSession {
+        let request = crate::daemon::CreateSession {
             name: self.name,
             cwd,
             config: self.config,

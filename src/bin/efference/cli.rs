@@ -427,7 +427,7 @@ pub(crate) enum Command {
     /// serves over MCP, so a shell script and a mounting harness reach a session
     /// through one definition. `efference control --help` lists them.
     #[command(subcommand)]
-    Control(control::Tools),
+    Control(efference::control_tools::Tools),
     /// Serve the `control` tools as an MCP server on stdin/stdout.
     ///
     /// The mount another agent harness supervises sessions through: each `control`

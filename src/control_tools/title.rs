@@ -1,4 +1,4 @@
-use super::Control;
+use super::{Control, Executor};
 use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -40,7 +40,8 @@ impl ToolMeta for Title {
 impl Tool<Control> for Title {
     type Output = String;
 
-    fn execute(self, state: &mut Control, _context: &RequestContext) -> Result<String> {
+    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
+        let Executor::Client(state) = &mut control.executor;
         let client = state.client(self.session.as_deref())?;
         let identity = state.block_on(client.set_title(&self.title))?;
         Ok(format!(

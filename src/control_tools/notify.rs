@@ -1,4 +1,4 @@
-use super::Control;
+use super::{Control, Executor};
 use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -54,7 +54,8 @@ impl ToolMeta for Notify {
 impl Tool<Control> for Notify {
     type Output = String;
 
-    fn execute(self, state: &mut Control, _context: &RequestContext) -> Result<String> {
+    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
+        let Executor::Client(state) = &mut control.executor;
         let client = state.client(self.session.as_deref())?;
         let body = self.body.join(" ");
         let id = state.block_on(client.notify(
