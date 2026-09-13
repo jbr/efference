@@ -64,7 +64,7 @@ impl Session {
     /// Whether any **un-shown** notification is queued (the ephemeral pending set).
     /// The idle wake triggers on this — never on already-shown "left" items, so a
     /// deferred notification can't spin the idle loop (docs/inbox.md).
-    pub(super) fn has_pending_notifications(&self) -> bool {
+    pub fn has_pending_notifications(&self) -> bool {
         !self.inbox.lock().unwrap().pending.is_empty()
     }
 

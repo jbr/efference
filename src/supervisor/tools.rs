@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 
 use serde_json::{Value, json};
 
-use super::{CHECK_INBOX, KILL, LIST, READ, WATCH};
+use super::{CHECK_INBOX, KILL, LIST, READ, WAIT, WATCH};
 use crate::tools::{ToolBrief, anthropic_def};
 use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
 
@@ -120,9 +120,17 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
          for them to surface after your next action."
             .into(),
     );
-    inbox.annotations = Some(read_only);
+    inbox.annotations = Some(read_only.clone());
 
-    vec![list, read, kill, watch, inbox]
+    let mut wait = ToolDefinition::new(WAIT, json!({ "type": "object", "properties": {} }));
+    wait.description = Some(
+        "Wait for the next inbox notification, then return the pending notifications. Refuses if no \
+         running background process or pending notification can wake you."
+            .into(),
+    );
+    wait.annotations = Some(read_only);
+
+    vec![list, read, kill, watch, inbox, wait]
 });
 
 /// The harness-level supervisor/inbox tools (docs/supervisor.md). Like `consolidate`, these

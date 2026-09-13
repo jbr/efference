@@ -36,11 +36,37 @@ pub(super) fn cap_tool_result(call: &ToolCall, result: RawResult) -> RawResult {
 /// if `call` isn't one (so the caller falls through to the world toolbox). Like
 /// `consolidate` these act on `Session`, not the world — but unlike it their result
 /// distills through the universal fork like any tool (no bypass).
-pub(super) fn supervisor_tool_result(shared: &Arc<Session>, call: &ToolCall) -> Option<RawResult> {
+pub(super) async fn supervisor_tool_result(
+    shared: &Arc<Session>,
+    call: &ToolCall,
+) -> Option<RawResult> {
     let handle = || call.input.get("handle").and_then(Value::as_str);
     match call.name.as_str() {
         supervisor::LIST => Some(RawResult::text(shared.bg_list_text())),
         supervisor::CHECK_INBOX => Some(RawResult::text(shared.inbox_summary())),
+        supervisor::WAIT => Some(
+            if !shared.has_pending_notifications() && !shared.has_running_background() {
+                RawResult::error(
+                    "wait refused: nothing can wake this session — a pending notification or a running \
+                 background process would count.",
+                )
+            } else {
+                // `inbox_wake` is the idle-triage signal: it arms before checking the queue,
+                // then awaits without holding either the inbox or supervisor lock. Arm the
+                // interrupt waiter before its latch check for the same lost-wakeup protection.
+                let interrupt = shared.interrupt_signal();
+                let interrupted = interrupt.notified();
+                tokio::pin!(interrupted);
+                if interrupted.as_mut().enable() || shared.interrupt_pending() {
+                    RawResult::error("wait interrupted by user")
+                } else {
+                    tokio::select! {
+                        _ = shared.inbox_wake() => RawResult::text(shared.inbox_summary()),
+                        _ = &mut interrupted => RawResult::error("wait interrupted by user"),
+                    }
+                }
+            },
+        ),
         supervisor::READ => Some(match handle() {
             Some(h) => {
                 match shared.bg_read_since(h, call.input.get("cursor").and_then(Value::as_u64)) {

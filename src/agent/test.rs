@@ -68,6 +68,58 @@ pub(super) fn bash_call(command: &str) -> ToolCall {
     )
 }
 
+#[tokio::test]
+async fn wait_refuses_when_no_known_source_can_wake_it() {
+    let (shared, _rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        crate::persist::Log::in_memory(),
+    );
+    let result = supervisor_tool_result(&shared, &call(supervisor::WAIT))
+        .await
+        .expect("wait is a supervisor tool");
+
+    assert!(result.is_error, "a wait with no wake source must refuse");
+    assert!(result.content.contains("nothing can wake"), "{result:?}");
+    assert!(
+        result.content.contains("pending notification"),
+        "{result:?}"
+    );
+    assert!(
+        result.content.contains("running background process"),
+        "{result:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn wait_wakes_for_a_notification_and_returns_its_body() {
+    let (shared, _rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        crate::persist::Log::in_memory(),
+    );
+    let handle = shared
+        .spawn_background("sleep 1".into(), None)
+        .expect("background process makes wait safe");
+    let sender = Arc::clone(&shared);
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        sender.notify("ci".into(), "build completed".into(), None, None);
+    });
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        supervisor_tool_result(&shared, &call(supervisor::WAIT)),
+    )
+    .await
+    .expect("wait wakes when notify enqueues")
+    .expect("wait is a supervisor tool");
+    assert!(!result.is_error, "notification wakes wait: {result:?}");
+    assert!(
+        result.content.contains("ci · build completed"),
+        "{result:?}"
+    );
+    assert!(shared.kill_bg(&handle), "clean up the test process");
+}
+
 /// The wire shape an interrupt produces (docs/control-channel.md). Three
 /// things have to hold at once, and they are the whole design:
 ///

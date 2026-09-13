@@ -40,6 +40,9 @@ pub const WATCH: &str = "watch_process";
 /// `check_inbox` — surface pending notifications on demand (the directed inbox read,
 /// docs/inbox.md) so the model needn't wait for them to ride its next action.
 pub const CHECK_INBOX: &str = "check_inbox";
+/// `wait` — block until a new inbox notification arrives, then surface pending
+/// notifications (docs/supervisor.md). Refuses when no known source can wake it.
+pub const WAIT: &str = "wait";
 
 /// Render a process id as its prose handle — the form the model and every human
 /// transcript sees (`p#3`). The bare ordinal is what routes and frames carry
@@ -614,6 +617,13 @@ impl Supervisor {
             source: handle(p.id),
             body,
         })
+    }
+
+    /// Whether any background process remains able to produce an inbox notification
+    /// (docs/supervisor.md). Used before the loop-owned `wait` blocks, so it does not
+    /// leave a turn open when no supervised event can arrive.
+    pub fn has_running_background(&self) -> bool {
+        self.procs.iter().any(|p| p.background && p.running)
     }
 
     /// The directed `list_processes` view (docs/supervisor.md): all *running background*

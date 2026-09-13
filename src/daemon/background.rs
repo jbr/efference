@@ -240,6 +240,12 @@ impl Session {
         }
     }
 
+    /// Whether a running background process can produce the next notification that
+    /// wakes the loop-owned `wait` tool (docs/supervisor.md).
+    pub fn has_running_background(&self) -> bool {
+        self.supervisor.lock().unwrap().has_running_background()
+    }
+
     /// The directed `list_processes` view (docs/supervisor.md).
     pub fn bg_list_text(&self) -> String {
         self.supervisor.lock().unwrap().list_text()

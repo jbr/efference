@@ -219,7 +219,7 @@ fn pgid_of_only_running() {
 /// harness's own claims: reads are reads, `kill_process` is the destructive member.
 #[test]
 fn every_supervisor_tool_has_a_brief_with_honest_annotations() {
-    for name in [LIST, READ, KILL, WATCH, CHECK_INBOX] {
+    for name in [LIST, READ, KILL, WATCH, CHECK_INBOX, WAIT] {
         let b = brief(name).unwrap_or_else(|| panic!("no brief for {name}"));
         assert!(b.server.is_none(), "{name} is the harness's own");
         let hints = b.definition.annotations.as_ref().unwrap();
@@ -271,7 +271,7 @@ fn every_supervisor_tool_has_a_brief_with_honest_annotations() {
 fn wire_definitions_carry_no_annotations() {
     let defs = tool_definitions();
     let names: Vec<&str> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec![LIST, READ, KILL, WATCH, CHECK_INBOX]);
+    assert_eq!(names, vec![LIST, READ, KILL, WATCH, CHECK_INBOX, WAIT]);
     for def in &defs {
         let keys: Vec<&str> = def
             .as_object()

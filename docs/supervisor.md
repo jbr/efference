@@ -8,13 +8,17 @@ only offers "check," forcing the model to be its own scheduler. The fix is
 turn, goes idle, and is woken when something worth its attention happens — an exit,
 a matched pattern.
 
-This is strictly better than a blocking `wait(until=…)` call. A blocked wait makes
-the agent inert: it cannot react to a *different* process failing while it waits,
-and it holds an open turn for nothing. "Wait for exit" is simply the idle agent
-being woken by the exit notification (the idle-triggered triage gate, below). "Wait
-for a pattern" is the non-blocking `watch_process(handle, pattern)` — the drain task
-matches output and fires a notification — which composes with wake-on-notification
-instead of fighting it (see [watches](#watches), below).
+A process-specific blocking `wait(until=…)` makes the agent inert to a *different*
+process failing while it waits. "Wait for exit" is the idle agent being woken by the
+exit notification (the idle-triggered triage gate, below). "Wait for a pattern" is
+the non-blocking `watch_process(handle, pattern)` — the drain task matches output and
+fires a notification (see [watches](#watches), below).
+
+`wait()` instead waits for the next inbox notification of any origin, then returns the
+pending notifications as its tool result. It can therefore return for an exit, a watch
+hit, an operator nudge, or an inter-agent message rather than one selected process.
+It refuses when no pending notification or running background process can wake the
+session, so it does not leave a turn open indefinitely.
 
 ## Process identity — one namespace, background as a property
 
@@ -353,6 +357,10 @@ are *not* notifications, idle-triage fires only on discrete lifecycle events,
 operator nudges, and inter-agent messages — low-frequency by construction. Had tails
 been notifications, every refresh would wake a fork.
 
+When `wait()` returns, its ordinary tool-result gate renders the same pending inbox
+items for triage. The wait does not drain or disposition them; it only keeps the turn
+open until one arrives.
+
 ## Tool surface
 
 `bash` gains `background: true` as an optional boolean input. The command is the
@@ -361,11 +369,11 @@ instead of awaiting it and returns the `p#<id>` handle immediately.
 
 The supervisor verbs: `list_processes`, `read_process(handle, cursor)`,
 `kill_process(handle)`, `watch_process(handle, pattern)` ([watches](#watches)),
-and `check_inbox` (surface pending inbox notifications on
-demand, so the model need not wait for them to ride its next action). Tool
-definitions are constant `json!` values with sorted keys so the `tools[]` array
-stays byte-stable across turns (see [transport](transport.md) for why this matters
-for prefix caching).
+`check_inbox` (surface pending inbox notifications on demand), and `wait()` (block
+until the next notification and return the pending notifications; refuse without a
+known wake source). Tool definitions are constant `json!` values with sorted keys so
+the `tools[]` array stays byte-stable across turns (see [transport](transport.md) for
+why this matters for prefix caching).
 
 ## Watches
 

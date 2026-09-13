@@ -225,6 +225,13 @@ impl Session {
         self.interrupt.notify_waiters();
     }
 
+    /// Whether an interrupt is latched for the current call. The loop-owned `wait`
+    /// checks this after arming the interrupt notifier, closing the interval where a
+    /// notification could otherwise be missed before its wait future is polled.
+    pub fn interrupt_pending(&self) -> bool {
+        self.interrupt_latch.load(Ordering::SeqCst)
+    }
+
     /// Consume the latched interrupt — `true` exactly once per `POST /loop/interrupt`
     /// (docs/control-channel.md). The loop calls this at both junctures around a
     /// call: before one runs (it doesn't) and where its result lands (the result

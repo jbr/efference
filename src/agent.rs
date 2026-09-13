@@ -124,6 +124,7 @@ pub fn tool_catalog(
         supervisor::KILL,
         supervisor::WATCH,
         supervisor::CHECK_INBOX,
+        supervisor::WAIT,
     ] {
         if let Some(brief) = supervisor::brief(name) {
             catalog.insert(

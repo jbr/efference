@@ -345,9 +345,9 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 // `tool_result`, so triage, the log, and `project` never learn it was
                 // served from anywhere unusual.
                 r
-            } else if let Some(r) = supervisor_tool_result(shared, call) {
+            } else if let Some(r) = supervisor_tool_result(shared, call).await {
                 // A supervisor/inbox read/act tool (docs/supervisor.md) — resolves against
-                // daemon state synchronously, no world run.
+                // daemon state; `wait` yields on the inbox signal while the other tools return.
                 r
             } else {
                 if call.name == bash::NAME {
