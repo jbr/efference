@@ -174,8 +174,3 @@ A pinned notification renders as a user-role message block:
 The `⟢` sigil is chosen to be Haiku-safe. The `role:system` operator channel (the
 eventual Opus-4.8 upgrade described in `supervisor.md`) is the anticipated path for
 higher-trust injection; user-role is the conservative, universally-supported default.
-
-## Anticipated refinements
-
-`urgency` (affecting inbox ordering and sigil in the peek) and out-of-band dismissal of
-an already-shown notification are anticipated refinements tracked in the backlog.
