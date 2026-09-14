@@ -119,7 +119,7 @@ brush-parser = "0.4.0"
 # reads the config and writes the harness's auto-persisted edits back, comments intact. A parse
 # error carries a source span; its `Display` renders the offending line (the load-time diagnostic
 # that stands in for KDL's miette report).
-toml_edit = { version = "0.25.13", features = ["serde"] }
+toml_edit = { version = "0.25.15", features = ["serde"] }
 # Order-preserving map. `[context]` entries render as preamble sections in the operator's
 # document order (backlog/preamble-context.md), so they can't ride the sorted BTreeMap the
 # policy tables use. Already compiled in-tree via toml_edit; this just promotes it to direct.
@@ -154,7 +154,7 @@ data-encoding = "2"
 # Only reached from `efference serve` with a tty; a headless boot prints the URL
 # instead, since there is no browser to hand a redirect back to.
 webbrowser = "1.2.4"
-jiter = { version = "0.16.0", default-features = false }
+jiter = { version = "0.17.0", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 # Terminal image rendering for the TUI (docs/tui.md): protocol detection
 # (kitty/iTerm2), the font-size-in-pixels query, per-protocol encoding, and the
