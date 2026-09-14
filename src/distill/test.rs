@@ -1392,6 +1392,29 @@ fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
     assert_eq!(own.with_auto_choice().choice(RETAIN).forced(), None);
 }
 
+/// The standalone idle triage rides the agent lineage even when a separate triage
+/// model is configured (docs/redaction-fork.md): the agent's client, the agent's
+/// full `tools[]`, and `auto`.
+#[test]
+fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {
+    let endpoint = crate::api::Endpoint::from_credentials(
+        crate::api::Provider::Anthropic,
+        "sk-ant-xyz".into(),
+        None,
+    )
+    .unwrap();
+    let agent = Client::new(endpoint.clone(), "big", "sys", None);
+    let agent_tools = vec![json!({"name": "read"}), retain_tool(), triage_tool()];
+    let own = ForkPeek::own(Client::new(endpoint.for_triage(), "small", "persona", None));
+
+    let (client, tools, choice) = own.idle_envelope(&agent, &agent_tools);
+    assert_eq!(client.model(), "big");
+    assert_eq!(tools.len(), 3);
+    assert_eq!(choice.forced(), None);
+    // The per-result peek still runs on the own model.
+    assert_eq!(own.client(&agent).model(), "small");
+}
+
 /// `intent_feedback` is the one channel from triage back to the agent about the *intent*
 /// rather than the output (docs/redaction-fork.md). It is optional in both answer shapes
 /// and lands on the verdict beside the note, so it reaches the wire under the `⟢` sign.

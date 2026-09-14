@@ -370,10 +370,11 @@ pub(crate) struct SessionFlags {
     ///
     /// Experimental. Omitted, the peek runs on the agent's own client and reads the
     /// agent's prompt cache (on a host, unless `[defaults].triage` is set). Given, the
-    /// peek runs on its own client even when it names the agent's model: its own
-    /// system prompt, its own session key, and only the two peek tools offered. Its
-    /// cache is a separate lineage over the same transcript, paid at that model's
-    /// rate. Must share the agent's wire dialect.
+    /// per-result peek runs on its own client even when it names the agent's model:
+    /// its own system prompt, its own session key, and only the two peek tools
+    /// offered. Its cache is a separate lineage over the same transcript, paid at
+    /// that model's rate. Must share the agent's wire dialect. The idle triage (the
+    /// wake decision) stays on the agent's client regardless.
     #[arg(long)]
     pub(crate) triage_model: Option<String>,
     /// Let the triage model think. Off by default: the peek's reasoning is discarded

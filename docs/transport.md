@@ -135,7 +135,9 @@ the shared envelope ([redaction-fork.md](redaction-fork.md)): identical
 cache — so both may think (the fork's thinking is discarded with its throwaway
 tail); the spotter still forces its `spot` tool → thinking off (`disabled` on
 Claude, omitted foreign); a separate-model peek sends thinking off the same way
-unless `--triage-thinking` or `--triage-effort` (`Client::without_thinking`: explicit
+unless `--triage-thinking` or `--triage-effort` — for the per-result peeks only; the
+idle triage rides the agent's client and thinks as the agent does
+([redaction-fork.md](redaction-fork.md)) (`Client::without_thinking`: explicit
 `disabled` for a foreign model whose metadata says reasoning is optional, the field
 omitted plus OpenRouter's `reasoning: {enabled: false}` for one whose reasoning is
 mandatory — `ModelCapabilities::reasoning_mandatory`, from the model entry's

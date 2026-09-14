@@ -10,6 +10,9 @@ behind a change, see [`journal/`](journal/).
 ### Added
 - **A child's status wakes its creator** (docs/tools.md): `create` from a session subscribes the caller, and each of the child's decision points — a gate, a turn completing into idle, a stall, its end — lands in the caller's inbox on slot `session:<id>` as a must-wake notification the loop pins whatever the triage peek decides (docs/inbox.md). `sessions__subscribe`/`sessions__unsubscribe` hear any session in the project without the wake; `wait` counts a subscription as a wake source. Children end with their creator unless created `detached`.
 
+### Changed
+- **The idle triage runs on the agent's own lineage** (docs/redaction-fork.md): with a separate `--triage-model`, only the per-result peeks go to it; the wake decision an idle session makes on a notification sends the agent's client, tools, and thinking, reading the cache the keepalive holds warm.
+
 ### Fixed
 - **A trajectory started by a notification wake read as idle**: the idle-triage escalation never set `running`, so `/settle` returned at once, the status watcher reported idle, and a turn submitted meanwhile sat in `queued` with nothing to explain the wait. Escalation now marks the loop running until it parks (docs/inbox.md).
 - **A connection that never opened panicked the session loop**: `sse_open_failure` read a response body from a transport that did not exist. A refused connect now records a completion failure and stalls, as other request failures do.

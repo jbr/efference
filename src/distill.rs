@@ -315,6 +315,20 @@ impl ForkPeek {
         }
     }
 
+    /// The envelope of the standalone idle triage: the agent's client, the agent's
+    /// `tools[]`, and `auto`, whether or not a separate triage model is configured
+    /// (docs/redaction-fork.md). The idle ask decides whether the session wakes at
+    /// all, and a wrong dismiss there is silent; it runs on the agent's own lineage,
+    /// at the agent's thinking, reading the cache the keepalive holds warm. The
+    /// separate model keeps the per-result peeks, which are the volume.
+    fn idle_envelope<'a>(
+        &self,
+        agent: &'a Client,
+        agent_tools: &'a [Value],
+    ) -> (&'a Client, &'a [Value], ToolChoice) {
+        (agent, agent_tools, ToolChoice::auto())
+    }
+
     /// Decide the wire form of the results a completion produced, and triage the inbox +
     /// live background processes (docs/redaction-fork.md, docs/inbox.md, docs/supervisor.md).
     /// `tools` is the turn's full `tools[]` — the fork sends the *same* array as the agent
@@ -489,11 +503,12 @@ impl ForkPeek {
         messages.push(WireTurn::text(view));
 
         let mut record = PeekRecord::default();
+        let (client, tools, choice) = self.idle_envelope(agent, agent_tools);
         let parsed = peek_with_retries(
-            self.client(agent),
+            client,
             messages,
-            self.tools(agent_tools),
-            self.choice(TRIAGE),
+            tools,
+            choice,
             &call_now(TRIAGE),
             |c| parse_dispositions(c, TRIAGE).ok_or_else(|| unusable(c, TRIAGE)),
             &mut record,

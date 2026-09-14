@@ -178,6 +178,18 @@ drops the parts of it that only served that:
 - **None of the agent client's** effort, temperature, or upstream pin; its own
   capability lookup, so its output cap and context window are its own.
 
+**The idle triage is not delegated.** The standalone triage an idle session runs when a
+notification arrives ([inbox.md](inbox.md)) sends the agent's client, the agent's full
+`tools[]`, and `auto` whether or not a triage model is configured
+(`ForkPeek::idle_envelope`). That ask decides whether the session wakes at all, and a
+wrong dismiss there is silent: nothing re-raises it until something else wakes the
+session. It runs on the agent lineage, at the agent's thinking, reading the cache the
+keepalive holds warm through idle; a separate model's reflexive answer is kept for the
+per-result peeks, which are the volume. Observed before this split: a haiku-class
+triage model with thinking off answered the idle ask in 23–32 output tokens and gave
+opposite verdicts on the same self-scheduled timer exit two cycles apart
+(journal/2026-09-14-idle-triage-on-the-agent-lineage.md).
+
 The prefix is the same canonical projection either way, so the own lineage is warm
 across gates: each peek writes the newest assistant turn and reads the rest, at the
 triage model's rate. The **tail ask is unchanged** — first person, "the call you just
