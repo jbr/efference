@@ -131,7 +131,8 @@ Each read is at its own grain.
 
 `efference tui` is the interactive view of all three; `efference dev view <session>` opens a
 recorded log in the same rendering, inert. `efference tui --new` first creates a session on a
-running `efference host` (`--host-socket`, default `.efference/host.sock` here) from this
+running `efference host` (`--host-socket`, default `.efference/host.sock` here; a host
+started with `--socket <path>` is reached by that path from any directory) from this
 directory, this shell's environment, `--name`, and the session flags,
 then attaches under `/sessions/<id>/`; quitting detaches, and the session stays on the host
 ([control-api.md](control-api.md)). Without `--new`, `tui --name <id>` attaches to that

@@ -250,12 +250,18 @@ pub(crate) async fn spotter_check(
 }
 
 /// `efference host`: a hosting process with no sessions until `POST /sessions`.
-pub(crate) async fn host(bind_flags: BindFlags) -> CliResult {
+/// `socket` is the global `--socket`, the path to bind instead of the default
+/// `.efference/host.sock` here — how one host serves several projects
+/// (docs/operating.md).
+pub(crate) async fn host(bind_flags: BindFlags, socket: Option<PathBuf>) -> CliResult {
     let bind = resolve_bind(bind_flags)?;
-    // The socket keeps its relative spelling (Darwin's socket path limit); the
-    // base dir is created so the bind has somewhere to land.
-    std::fs::create_dir_all(BASE_DIR)?;
-    let socket = host_socket();
+    // The default keeps its relative spelling (Darwin's socket path limit); an
+    // explicit path is bound as given. Either way the dir is created so the
+    // bind has somewhere to land.
+    let socket = socket.unwrap_or_else(host_socket);
+    if let Some(dir) = socket.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir)?;
+    }
     let _ = std::fs::remove_file(&socket);
     let _ = env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("warn,efference=info"),

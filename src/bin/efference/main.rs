@@ -49,13 +49,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             tls_key,
             open,
         } => {
-            serve::host(serve::BindFlags {
-                bind,
-                host,
-                tls_cert,
-                tls_key,
-                open,
-            })
+            serve::host(
+                serve::BindFlags {
+                    bind,
+                    host,
+                    tls_cert,
+                    tls_key,
+                    open,
+                },
+                socket_override.clone(),
+            )
             .await
         }
         Command::Control(tools) => {

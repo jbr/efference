@@ -103,7 +103,8 @@ session's lifetime from `start` to teardown and nothing outside it.
 
 `Host` (`src/daemon/host.rs`) is a map of session ids to started runtimes under
 one root `Swansong`; `serve_host` binds the control socket (`.efference/host.sock`
-under the host's cwd, for now) and the optional TCP listener with that `Swansong`,
+under the host's cwd, or the path `efference host --socket` names — how one host
+serves several projects) and the optional TCP listener with that `Swansong`,
 so a signal stops the listeners and every session. `Host::adopt` registers a
 runtime started under the host's `Swansong` and spawns a watcher that removes the
 entry once the runtime has finished, whether by `DELETE /sessions/:id`, its own

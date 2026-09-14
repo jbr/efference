@@ -27,6 +27,7 @@ behind a change, see [`journal/`](journal/).
 - **`--name` reaches hosted sessions** (docs/control-channel.md): `tui`, `control`, and `mcp` resolve a name to its own socket or to `/sessions/<id>` on the host, and discovery counts hosted sessions; a name nothing serves is an error, and the TUI connects before taking the terminal instead of opening an empty screen.
 
 ### Fixed
+- **`efference host --socket <path>` binds there**: the global `--socket` was parsed and ignored by `host`, which always bound `.efference/host.sock` under its cwd; an explicit path (one host for every project, `tui --new --host-socket` from anywhere) is now honored and its directory created.
 - **OpenRouter's default spotter is a slug**: with no `[defaults].spotter`, an OpenRouter main connection now defaults the spotter to `anthropic/claude-haiku-4-5`; the bare id failed the metadata query at boot.
 
 ### Removed
