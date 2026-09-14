@@ -16,7 +16,6 @@
 //! (docs/log-and-projection.md).
 
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -266,9 +265,9 @@ impl Provider {
     async fn run(
         &self,
         call: &ToolCall,
-        abort: impl Future<Output = Interrupt>,
-        on_spawn: impl FnOnce(Option<u32>),
-        on_output: impl FnMut(&[u8]),
+        abort: impl Future<Output = Interrupt> + Send,
+        on_spawn: impl FnOnce(Option<u32>) + Send,
+        on_output: impl FnMut(&[u8]) + Send,
     ) -> Outcome {
         match self {
             Provider::Bash(b) => b.run(&call.input, abort, on_spawn, on_output).await,
@@ -292,12 +291,11 @@ impl Provider {
 
 /// An in-process MCP server (docs/tools.md) adapted to the toolbox, generic over the
 /// server's session `State` and its generated `mcplease` `ToolEnum` dispatcher.
-/// Holds the state behind a `RefCell` — the loop is single-threaded and
-/// `mcplease`'s `Dispatch::call` is synchronous (`&mut state`), so the borrow never spans
-/// an `.await` — plus the precomputed Anthropic tool definitions and the names it
+/// Holds the state behind a `Mutex` — `mcplease`'s `Dispatch::call` is synchronous
+/// (`&mut state`), so the lock never spans an `.await` — plus the precomputed Anthropic tool definitions and the names it
 /// answers for. fs-mcp and semantic-edit-mcp are two instantiations.
 pub struct McpServer<State, ToolEnum> {
-    state: RefCell<State>,
+    state: std::sync::Mutex<State>,
     definitions: Vec<Value>,
     /// The mounted tool table, aligned with `definitions`. Kept whole (not just
     /// the names) because `anthropic_def` drops what the wire has no slot for —
@@ -350,7 +348,7 @@ where
             })
             .collect();
         Self {
-            state: RefCell::new(state),
+            state: std::sync::Mutex::new(state),
             definitions,
             schemas,
             namespace: namespace.map(str::to_string),
@@ -399,7 +397,7 @@ where
                 return RawResult::error(format!("invalid input for {name}: {e}"));
             }
         };
-        match tool.call(&mut self.state.borrow_mut(), &request_context()) {
+        match tool.call(&mut self.state.lock().unwrap(), &request_context()) {
             Ok(result) => crate::mcp::render_result(result),
             Err(e) => RawResult::error(e.to_string()),
         }
@@ -601,13 +599,13 @@ pub fn unknown_tool_message(name: &str, available: &[String]) -> String {
 impl McpServer<crate::control_tools::Control, crate::control_tools::Tools> {
     /// Resolve a `sessions__approve` call to the leaf action its target holds
     /// (docs/permissions.md), through the sessions provider's in-process host.
-    /// The `RefCell` borrow is synchronous — no `.await` — like every embedded
+    /// The lock is synchronous — no `.await` — like every embedded
     /// dispatch (docs/tools.md).
     fn resolve_bound_action(
         &self,
         call: &ToolCall,
     ) -> anyhow::Result<crate::control_tools::BoundAction> {
-        self.state.borrow().resolve_bound_action(call)
+        self.state.lock().unwrap().resolve_bound_action(call)
     }
 }
 
@@ -873,9 +871,9 @@ impl Toolbox {
     pub async fn run(
         &self,
         call: &ToolCall,
-        abort: impl Future<Output = Interrupt>,
-        on_spawn: impl FnOnce(Option<u32>),
-        on_output: impl FnMut(&[u8]),
+        abort: impl Future<Output = Interrupt> + Send,
+        on_spawn: impl FnOnce(Option<u32>) + Send,
+        on_output: impl FnMut(&[u8]) + Send,
     ) -> Outcome {
         // A model that reports no image input is told so *before* the read
         // (docs/tools.md): `read_image` exists only to produce an image, so it

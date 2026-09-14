@@ -407,15 +407,24 @@ impl HostExecutor {
     }
 
     /// Run one async host call to completion from the synchronous tool
-    /// dispatch. Dispatch runs on the session loop's own runtime, where
-    /// `Handle::block_on` panics, so the future is driven on a scratch thread
-    /// against the host's runtime while this thread waits.
+    /// dispatch. The loop runs on the host's multi-thread runtime
+    /// (docs/control-channel.md), so dispatch is on one of its workers:
+    /// `block_in_place` hands that worker's queue to another thread and lets
+    /// this one wait, and the future is driven by the rest of the runtime.
+    /// Outside a multi-thread runtime — a current-thread test — the future
+    /// runs on a scratch thread against the host runtime instead, since
+    /// `block_in_place` would panic there.
     fn block_on<F, T>(&self, future: F) -> Result<T>
     where
         F: std::future::Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
         let runtime = self.runtime.clone();
+        let multi_thread = tokio::runtime::Handle::try_current()
+            .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
+        if multi_thread {
+            return Ok(tokio::task::block_in_place(|| runtime.block_on(future)));
+        }
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let _ = tx.send(runtime.block_on(future));

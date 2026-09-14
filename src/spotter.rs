@@ -74,8 +74,8 @@ impl Spotting {
 }
 
 /// The permission-rung interface. Used generically by the loop (`<S: Spotter>`); not
-/// object-safe and needn't be (one mounted rung per session).
-#[allow(async_fn_in_trait)] // single-threaded loop; no Send bound needed, like Distiller.
+/// object-safe and needn't be (one mounted rung per session). The future is `Send`
+/// so the loop can run on the host's multi-thread runtime (docs/control-channel.md).
 pub trait Spotter {
     /// Assess one gated tool call against the config. The config supplies the mission
     /// (scope), the boundaries (path grants + cwd), and the spotter-only watch-for list.
@@ -95,14 +95,14 @@ pub trait Spotter {
     /// directly-targeted child down to the session holding the leaf. The move
     /// presented is the child's action, and the chain names the approvers it
     /// passed through. Empty for an ordinary move.
-    async fn assess(
+    fn assess(
         &self,
         role: &Config,
         call: &ToolCall,
         brief: Option<&ToolBrief<'_>>,
         chain: &[String],
         probe: Option<&str>,
-    ) -> Spotting;
+    ) -> impl Future<Output = Spotting> + Send;
 }
 
 /// The model spotter — the independent rung realized. Owns a dedicated [`Client`]

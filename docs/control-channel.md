@@ -62,17 +62,24 @@ same struct.
 `SessionRuntime::start(boot, parent)` builds the `Session`, sets its boot-time
 fields (review level, capabilities, reservation, identity, cost tracking, usage log,
 tool catalog), and runs the session's tasks under a child `Swansong` of `parent`.
-The topic differ, cache keepalive, config watcher, and attachment watcher are
-spawned on the current tokio runtime, each wrapped in the child's `interrupt`. The
-agent loop runs on a dedicated thread with its own current-thread tokio runtime,
-because the loop is single-threaded by design: the toolbox holds `RefCell` state and
-the `Frontend`/`Spotter` futures carry no `Send` bound, so it cannot be spawned onto
-a work-stealing runtime. Handlers and watchers reach the session through
-`Arc<Session>` as before; a hosted session therefore costs one thread for its loop.
+The topic differ, cache keepalive, config watcher, attachment watcher, and the
+agent loop itself are all spawned on the current tokio runtime — the host's
+multi-thread runtime — each wrapped in the child's `interrupt`. The loop is `Send`
+end to end: embedded MCP state sits behind a `Mutex` the synchronous dispatch never
+holds across an await, and the `Frontend`/`Spotter` futures carry a `Send` bound.
+Every session therefore shares one I/O driver with the host and with every other
+session, which is what makes the process-wide HTTP client's connection pool
+(`src/http.rs`) safe to share: a pooled connection's driver task is always on a
+runtime that keeps being polled. (A loop on a runtime of its own stopped being polled
+whenever it blocked synchronously — an in-session `sessions__create` waiting on the
+host — and a pooled h2 connection that loop had opened then hung any host-side
+request that borrowed it.) The in-session host calls that do block (`create`, `end`)
+go through `block_in_place`, so the waiting worker hands its queue to another thread.
+Handlers and watchers reach the session through `Arc<Session>`.
 
 The child `Swansong` is the runtime's one control handle. `shut_down()` on it
 cancels the loop and the watchers and completes only after teardown has run: the
-loop thread holds a guard until it has reaped background process groups and removed
+loop task holds a guard until it has reaped background process groups and removed
 the scratch dir (unless `keep_scratch`). Shutting down the parent stops every
 runtime under it the same way; shutting down one runtime does not touch its
 siblings or the parent. `finished()` waits for the loop to return — on its own or

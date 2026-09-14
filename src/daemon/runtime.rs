@@ -42,16 +42,21 @@ pub struct SessionRuntime {
 }
 
 impl SessionRuntime {
-    /// Start a session under `parent`: build its [`Session`], spawn its watchers
-    /// on the current tokio runtime, and run its agent loop on a dedicated
-    /// thread. Shutting `parent` down stops this runtime; shutting this runtime
-    /// down does not touch `parent`.
+    /// Start a session under `parent`: build its [`Session`] and spawn its
+    /// watchers and its agent loop on the current tokio runtime. Shutting
+    /// `parent` down stops this runtime; shutting this runtime down does not
+    /// touch `parent`.
     ///
-    /// The loop gets its own thread because it is single-threaded by design —
-    /// the toolbox holds `RefCell` state and the `Frontend`/`Spotter` futures
-    /// carry no `Send` bound — so it cannot be spawned onto a work-stealing
-    /// runtime. Handlers and watchers share `Session` through `Arc` as before.
-    pub fn start<S: Spotter + Send + 'static>(boot: SessionBoot<S>, parent: &Swansong) -> Self {
+    /// The loop is `Send` end to end — the toolbox holds its embedded servers'
+    /// state behind a `Mutex`, and the `Frontend`/`Spotter` futures are `Send` —
+    /// so it runs on the host's work-stealing runtime alongside everything else.
+    /// A session that ran on a runtime of its own stopped being polled whenever
+    /// its loop blocked synchronously, and a pooled connection it had opened was
+    /// then undriveable from anywhere (docs/control-channel.md).
+    pub fn start<S: Spotter + Send + Sync + 'static>(
+        boot: SessionBoot<S>,
+        parent: &Swansong,
+    ) -> Self {
         let SessionBoot {
             mut client,
             toolbox,
@@ -192,7 +197,10 @@ impl SessionRuntime {
             paths.attachment_display(),
         )));
 
-        // The agent loop, on its own thread and runtime. The loop parks in
+        // The agent loop, spawned on the current (host) runtime like the watchers
+        // above. It shares that runtime's I/O driver with every other session and
+        // with the host's own work, which is what lets the process-wide HTTP client
+        // pool connections across them (docs/control-channel.md). The loop parks in
         // `read_user_turn` on the turn channel, whose senders live in the still-alive
         // `Arc<Session>`, so shutdown has to cancel it rather than wait for it: the
         // child `Swansong`'s `interrupt` drives the loop normally until shutdown is
@@ -204,54 +212,43 @@ impl SessionRuntime {
         let loop_session = Arc::clone(&session);
         let loop_swansong = swansong.clone();
         let guard = swansong.guard();
-        std::thread::Builder::new()
-            .name(format!("session-{}", paths.cwd().display()))
-            .spawn(move || {
-                let _guard = guard;
-                let result = match tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                {
-                    Ok(runtime) => runtime.block_on(async {
-                        let mut frontend = RemoteFrontend {
-                            shared: Arc::clone(&loop_session),
-                            turns,
-                        };
-                        let run = agent::run(
-                            &client,
-                            &mut frontend,
-                            Arc::clone(&loop_session),
-                            distiller,
-                            spotter,
-                            toolbox,
-                        );
-                        match loop_swansong.interrupt(run).await {
-                            Some(result) => result,
-                            None => {
-                                eprintln!("\nshutting down");
-                                Ok(())
-                            }
-                        }
-                    }),
-                    Err(e) => Err(format!("could not start the session's runtime: {e}").into()),
-                };
-                // Reap any background children before the session is gone so a
-                // stopped session doesn't orphan a process group (docs/supervisor.md).
-                loop_session.kill_all_bg();
-                // Scratch lifecycle (docs/tools.md): cleaned on session end unless
-                // retained as a post-mortem artifact.
-                if let Some(scratch) = scratch {
-                    if keep_scratch {
-                        eprintln!("scratch kept: {}", scratch.display());
-                    } else if let Err(e) = std::fs::remove_dir_all(&scratch)
-                        && e.kind() != std::io::ErrorKind::NotFound
-                    {
-                        eprintln!("[scratch: could not remove {}: {e}]", scratch.display());
-                    }
+        tokio::spawn(async move {
+            let _guard = guard;
+            let mut frontend = RemoteFrontend {
+                shared: Arc::clone(&loop_session),
+                turns,
+            };
+            let run = agent::run(
+                &client,
+                &mut frontend,
+                Arc::clone(&loop_session),
+                distiller,
+                spotter,
+                toolbox,
+            );
+            let result = match loop_swansong.interrupt(run).await {
+                Some(result) => result,
+                None => {
+                    eprintln!("\nshutting down");
+                    Ok(())
                 }
-                let _ = done.send(result);
-            })
-            .expect("spawn the session loop thread");
+            };
+            // Reap any background children before the session is gone so a
+            // stopped session doesn't orphan a process group (docs/supervisor.md).
+            loop_session.kill_all_bg();
+            // Scratch lifecycle (docs/tools.md): cleaned on session end unless
+            // retained as a post-mortem artifact.
+            if let Some(scratch) = scratch {
+                if keep_scratch {
+                    eprintln!("scratch kept: {}", scratch.display());
+                } else if let Err(e) = std::fs::remove_dir_all(&scratch)
+                    && e.kind() != std::io::ErrorKind::NotFound
+                {
+                    eprintln!("[scratch: could not remove {}: {e}]", scratch.display());
+                }
+            }
+            let _ = done.send(result);
+        });
 
         Self {
             session,

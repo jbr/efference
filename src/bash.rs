@@ -200,9 +200,9 @@ impl Bash {
     pub async fn run(
         &self,
         input: &Value,
-        abort: impl Future<Output = Interrupt>,
-        on_spawn: impl FnOnce(Option<u32>),
-        mut on_output: impl FnMut(&[u8]),
+        abort: impl Future<Output = Interrupt> + Send,
+        on_spawn: impl FnOnce(Option<u32>) + Send,
+        mut on_output: impl FnMut(&[u8]) + Send,
     ) -> Outcome {
         let (command, background_after) = match Input::deserialize(input) {
             // A call-supplied bound is clamped, never trusted: the ceiling is the
@@ -254,10 +254,10 @@ impl Bash {
         // timer detach and an operator detach are the *same* path — `Interrupt::Detach`
         // surrenders the live child, and everything downstream is unchanged. Whichever
         // fires first wins; `auto` records which it was, for the handoff wording.
-        let auto = std::cell::Cell::new(false);
+        let auto = std::sync::atomic::AtomicBool::new(false);
         let deadline = async {
             tokio::time::sleep(background_after).await;
-            auto.set(true);
+            auto.store(true, std::sync::atomic::Ordering::Relaxed);
             Interrupt::Detach
         };
         let cancel = async {
@@ -271,7 +271,9 @@ impl Bash {
             combined.extend_from_slice(chunk);
         })
         .await;
-        let auto_after = auto.get().then_some(background_after);
+        let auto_after = auto
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .then_some(background_after);
         match interrupted {
             Some(Interrupt::Kill) => {
                 if let Some(pgid) = pgid {
@@ -315,8 +317,8 @@ impl Bash {
 pub(crate) async fn drain_pipes<T>(
     stdout: &mut tokio::process::ChildStdout,
     stderr: &mut tokio::process::ChildStderr,
-    cancel: impl Future<Output = T>,
-    mut on_chunk: impl FnMut(&[u8]),
+    cancel: impl Future<Output = T> + Send,
+    mut on_chunk: impl FnMut(&[u8]) + Send,
 ) -> Option<T> {
     let mut out_buf = [0u8; 8192];
     let mut err_buf = [0u8; 8192];

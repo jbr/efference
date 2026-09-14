@@ -76,11 +76,12 @@ pub enum Approval {
 }
 
 /// The interaction boundary. Used generically by the loop (`<F: Frontend>`); not
-/// object-safe, and it needn't be — there's one mounted backend at a time.
-#[allow(async_fn_in_trait)] // single-consumer interaction; no Send bound needed.
+/// object-safe, and it needn't be — there's one mounted backend at a time. The
+/// futures are `Send` so the loop can run on the host's multi-thread runtime
+/// (docs/control-channel.md); implementors write `async fn` as usual.
 pub trait Frontend {
     /// Read the next user turn. `None` = end of input → quit.
-    async fn read_user_turn(&mut self) -> Option<SubmittedTurn>;
+    fn read_user_turn(&mut self) -> impl Future<Output = Option<SubmittedTurn>> + Send;
 
     /// Non-blocking drain of any user turns submitted **while the loop was
     /// mid-trajectory** (docs/control-channel.md). The loop calls this at
@@ -98,10 +99,14 @@ pub trait Frontend {
     /// action a `sessions__approve` authorizes, when the call is one
     /// (docs/permissions.md) — the gate view and the child's own held action, so
     /// the operator sees the move rather than an id.
-    async fn approve(&mut self, call: &ToolCall, bound: Option<&BoundAction>) -> Approval;
+    fn approve(
+        &mut self,
+        call: &ToolCall,
+        bound: Option<&BoundAction>,
+    ) -> impl Future<Output = Approval> + Send;
 
     /// Resolve when the user interrupts a *running* tool, with the intent: kill
     /// its process group, or detach it into the background supervisor. The loop
     /// passes this as the bash tool's `abort` future (docs/supervisor.md).
-    async fn interrupted(&mut self) -> Interrupt;
+    fn interrupted(&mut self) -> impl Future<Output = Interrupt> + Send;
 }

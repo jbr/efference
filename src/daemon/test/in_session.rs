@@ -2,7 +2,7 @@
 //! directly, with the caller's identity enforced (docs/tools.md).
 
 use super::*;
-use crate::control_tools::{Control, Executor, Interrupt, Notify, Sessions, State, Turn};
+use crate::control_tools::{Control, Create, Executor, Interrupt, Notify, Sessions, State, Turn};
 use crate::daemon::{Host, SessionRuntime};
 use mcplease::traits::Tool as _;
 use mcplease::traits::ToolOutput as _;
@@ -343,6 +343,50 @@ async fn a_bound_approve_without_a_call_id_is_refused() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("requires `call_id`"), "{err}");
+
+    fixture.host.swansong().shut_down().await;
+}
+
+/// A session creates only inside its own project (docs/tools.md): a cwd whose
+/// `.efference/` base is not the caller's is refused before anything is minted,
+/// since no later verb could reach the child. A cwd inside the project passes
+/// this check (and fails later here, on the empty inference registry).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_create_outside_the_project_is_refused() {
+    let fixture = Fixture::new();
+    let mut control = fixture.control("parent");
+    let create = |cwd: &str| Create {
+        cwd: Some(cwd.into()),
+        name: Some("offshoot".into()),
+        model: None,
+        spotter_model: None,
+        config: None,
+        effort: None,
+        temperature: None,
+        autonomous: false,
+        upstream: Vec::new(),
+    };
+    let err = create("../b")
+        .execute(&mut control, &RequestContext::default())
+        .err()
+        .expect("another project's cwd is refused")
+        .to_string();
+    assert!(err.contains("outside this project"), "{err}");
+    assert!(
+        err.contains(&fixture.root.join("b").display().to_string()),
+        "{err}"
+    );
+    assert!(
+        !fixture.root.join("b/.efference/offshoot").exists(),
+        "nothing minted"
+    );
+
+    let err = create("./sub/..")
+        .execute(&mut control, &RequestContext::default())
+        .err()
+        .expect("the empty registry refuses the model")
+        .to_string();
+    assert!(!err.contains("outside this project"), "{err}");
 
     fixture.host.swansong().shut_down().await;
 }

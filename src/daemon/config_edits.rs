@@ -172,7 +172,7 @@ impl Session {
     /// The current **review level** (docs/permissions.md) — who reviews a
     /// gated call. Runtime-mutable (the `PATCH /loop {review_level}` verb); read by the loop's cascade and
     /// reported on `GET /state`. Relaxed ordering: a lone dial with no happens-before tie to other
-    /// state, read on the loop thread and written by a handler thread.
+    /// state, read on the loop task and written by a handler task.
     pub fn review_level(&self) -> crate::policy::ReviewLevel {
         crate::policy::ReviewLevel::from_u8(self.review_level.load(Ordering::Relaxed))
     }

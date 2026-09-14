@@ -125,10 +125,29 @@ impl Tool<Control> for Create {
                 // environment its own bash children get (docs/tools.md).
                 let caller = state.caller_session()?;
                 let here = caller.cwd().to_path_buf();
-                let cwd = match self.cwd {
+                let cwd = crate::policy::lexical_normalize(&match self.cwd {
                     Some(cwd) => here.join(cwd),
                     None => here,
-                };
+                });
+                // Reach is the project (docs/tools.md): every later verb finds a
+                // target only under the caller's `.efference/` base, so a child
+                // minted anywhere else could never be supervised or ended by the
+                // session that commissioned it. Refused here, before anything is
+                // minted, rather than discovered at the first `state` call.
+                let base = cwd.join(crate::daemon::SESSION_BASE);
+                let project = caller
+                    .storage_base()
+                    .map(crate::policy::lexical_normalize)
+                    .ok_or_else(|| anyhow::anyhow!("the calling session has no project base"))?;
+                if base != project {
+                    anyhow::bail!(
+                        "refused: {} is outside this project — a session creates only under \
+                         its own `.efference/` base ({}) so it can reach what it made \
+                         (docs/tools.md)",
+                        cwd.display(),
+                        project.display()
+                    );
+                }
                 let env = caller.child_env().resolved();
                 let request = crate::daemon::CreateSession {
                     name: self.name,

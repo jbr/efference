@@ -408,7 +408,7 @@ pub struct Session {
     effective: Mutex<Arc<crate::config::Config>>,
     /// The live config file — the format-preserving document currently on disk plus what it
     /// validates to (docs/permissions.md). `None` when the role resolved
-    /// to the built-in default (no file to hold). Behind a lock because both the loop thread (a
+    /// to the built-in default (no file to hold). Behind a lock because both the loop task (a
     /// committed grant, and the check after an approved config write) and the fs-watch task reach
     /// it; every path in and out of the file goes through here, which is what keeps "the disk
     /// always holds the last content that parsed" true of *all* writers rather than some.

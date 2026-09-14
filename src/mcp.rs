@@ -292,7 +292,11 @@ impl ConnectedProvider {
     /// and pairs the `tool_use` with an error result (a stale response
     /// arriving later is skipped by id); `Detach` is bash-only and keeps
     /// waiting.
-    pub async fn run(&self, call: &ToolCall, abort: impl Future<Output = Interrupt>) -> Outcome {
+    pub async fn run(
+        &self,
+        call: &ToolCall,
+        abort: impl Future<Output = Interrupt> + Send,
+    ) -> Outcome {
         let mut call_future = std::pin::pin!(self.call(&call.name, &call.input));
         let abort = std::pin::pin!(abort);
         tokio::select! {

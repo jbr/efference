@@ -231,7 +231,9 @@ absent on a human root. `create` from a session runs in the caller's cwd, takes 
 caller's child environment as the new session's base, and records the caller as the
 child's `created_by`. Reach is the project: `sessions` lists, and every target
 resolves, only among sessions whose `.efference/` storage base is the caller's, so
-another project's id is not found rather than forbidden. A `turn` submitted this way
+another project's id is not found rather than forbidden. `create` is bounded the same
+way at the other end: a `cwd` whose `.efference/` base is not the caller's is refused
+before anything is minted, since the caller could never reach the child it made. A `turn` submitted this way
 carries `source: session[<caller id>]` ([log-and-projection.md](log-and-projection.md)).
 The mount is unconditional for a hosted session today; which verbs a config mounts is
 later work.
@@ -246,9 +248,9 @@ with "gate moved" before any rung is consulted.
 
 `McpServer<State, ToolEnum>` in `src/tools.rs` is generic over the
 instantiations (fs-mcp, semantic-edit-mcp, and the session-control server). It holds
-state in a `RefCell`
-— the agent loop is single-threaded and `mcplease`'s `Dispatch::call` is
-synchronous, so the borrow never spans an `.await`. Dispatching a call wraps
+state in a `Mutex` — `mcplease`'s `Dispatch::call` is synchronous, so the lock never
+spans an `.await`, and the loop it runs in is `Send`
+([control-channel.md](control-channel.md)). Dispatching a call wraps
 the name and arguments as `{"name", "arguments"}`, deserializes to the typed
 `ToolEnum` via `serde_json::from_value`, and calls `Dispatch::call` against the
 shared state with a `RequestContext` naming efference and declaring no client
