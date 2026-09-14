@@ -56,7 +56,9 @@ mcplease::tools!(
     (Title, title, "title"),
     (Sessions, sessions, "sessions"),
     (Create, create, "create"),
-    (End, end, "end")
+    (End, end, "end"),
+    (Subscribe, subscribe, "subscribe"),
+    (Unsubscribe, unsubscribe, "unsubscribe")
 );
 
 /// What a mounting harness is told about this server, verbatim from
@@ -440,6 +442,17 @@ impl HostExecutor {
         let caller = self.caller.clone();
         let created = self.block_on(async move { host.create(body, Some(caller)).await })?;
         created.map_err(|reason| anyhow!("{reason}"))
+    }
+
+    /// `subscribe` in-session: the caller hears the target's status
+    /// (docs/tools.md). `Ok(false)` when the target is no longer hosted.
+    fn subscribe(&self, target: &str, wake: bool) -> Result<bool> {
+        Ok(self.host()?.subscribe(target, &self.caller, wake))
+    }
+
+    /// `unsubscribe` in-session. `Ok(false)` when there was no subscription.
+    fn unsubscribe(&self, target: &str) -> Result<bool> {
+        Ok(self.host()?.unsubscribe(target, &self.caller))
     }
 
     /// `end` in-session: wait for the target's teardown.

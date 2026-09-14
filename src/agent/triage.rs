@@ -44,11 +44,15 @@ pub(super) async fn run_idle_triage(
 
     let entries = shared.snapshot();
     let mut shown = active_shown(&entries);
-    for note in shared.drain_inbox() {
-        let source = note.source.clone();
-        let body = note.body.clone();
-        let seq = shared.append(*turn, Payload::Ambient(note))?;
+    let mut forced = Vec::new();
+    for drained in shared.drain_inbox() {
+        let source = drained.notification.source.clone();
+        let body = drained.notification.body.clone();
+        let seq = shared.append(*turn, Payload::Ambient(drained.notification))?;
         shown.push(ShownNotification { seq, source, body });
+        if drained.wake {
+            forced.push(seq);
+        }
     }
     let background = shared.bg_snapshot();
     // Nothing to look at (e.g. the waking notifications were dismissed out-of-band before
@@ -65,7 +69,10 @@ pub(super) async fn run_idle_triage(
     }
 
     // Apply dispositions; escalate iff anything was pinned (the wire grew, docs/inbox.md).
+    // A must-wake item is pinned whatever the peek said — that is what makes the
+    // wake declared rather than judged, so a dismiss cannot swallow it.
     let mut inbox = triage.inbox;
+    force_pins(&mut inbox, &forced);
     let mut escalate = inbox.iter().any(|(_, d)| matches!(d, Disposition::Pin));
     for (handle, verdict) in triage.background {
         match verdict {
@@ -102,4 +109,19 @@ pub(super) async fn run_idle_triage(
         }),
     )?;
     Ok(escalate)
+}
+
+/// Override the peek's verdict for the must-wake notifications (docs/inbox.md): each
+/// `forced` seq is pinned, whether the peek pinned it, dismissed it, or left it.
+/// Deterministic on purpose — the fork keeps everything downstream of *whether* the
+/// agent wakes (the note, the rest of the inbox), never the whether itself.
+pub(super) fn force_pins(
+    inbox: &mut Vec<(crate::log::Seq, Disposition)>,
+    forced: &[crate::log::Seq],
+) {
+    if forced.is_empty() {
+        return;
+    }
+    inbox.retain(|(seq, _)| !forced.contains(seq));
+    inbox.extend(forced.iter().map(|seq| (*seq, Disposition::Pin)));
 }

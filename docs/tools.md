@@ -228,8 +228,8 @@ enforceable, and they are enforced by the executor rather than by config:
 
 `created_by` is per-session host control state: never logged, never projected, and
 absent on a human root. `create` from a session runs in the caller's cwd, takes the
-caller's child environment as the new session's base, and records the caller as the
-child's `created_by`. Reach is the project: `sessions` lists, and every target
+caller's child environment as the new session's base, records the caller as the
+child's `created_by`, and subscribes the caller to the child's status (below). Reach is the project: `sessions` lists, and every target
 resolves, only among sessions whose `.efference/` storage base is the caller's, so
 another project's id is not found rather than forbidden. `create` is bounded the same
 way at the other end: a `cwd` whose `.efference/` base is not the caller's is refused
@@ -237,6 +237,52 @@ before anything is minted, since the caller could never reach the child it made.
 carries `source: session[<caller id>]` ([log-and-projection.md](log-and-projection.md)).
 The mount is unconditional for a hosted session today; which verbs a config mounts is
 later work.
+
+##### Subscriptions: a session's status in another's inbox
+
+Waiting on another session is a subscription, not a blocking call. A session's
+**status** — what it is doing at a decision point — reaches each subscriber's inbox
+as a notification (docs/inbox.md) with the session's id as `source` and the slot
+`session:<id>`, so a subscriber's pending inbox holds the latest condition rather
+than a pile. The statuses posted are the decision points: **gated** (the held tool,
+its intent, the spotter's reason, the `call_id`, and that `sessions__approve`
+resolves it), **idle** after a turn completed (with the turn's closing prose,
+truncated), **stalled** (docs/transport.md), and **ended** or **failed** once the
+runtime has returned. `running` is observed to detect the transitions and never
+posted; the boot idle is not posted either. Every body says where the target's log
+stands, so the subscriber pulls the transcript from where it last read. The status
+is the current condition, not the child's prose: prose on every child turn would
+grow the parent's cached prefix.
+
+Two kinds of subscription, differing only in whether the notification must wake the
+subscriber (docs/inbox.md — must-wake):
+
+- **A creator's, made by `create`, with wake.** Delegation must wake: the parent gets
+  a turn to act at each of the child's decision points even if it then decides
+  nothing needs doing. In particular a child's turn ending — a report, a question,
+  a refusal — hands control back to the parent without the child sending anything.
+- **An explicit `subscribe`, without wake.** Observation may not: the subscriber's
+  triage may dismiss or leave a peer's status. `subscribe` and `unsubscribe` reach
+  any session in the caller's project, like `notify`; the creator's subscription
+  is dropped by `unsubscribe` like any other. Neither is meaningful from an
+  external client, which has no inbox: the HTTP executor refuses them and names
+  `settle` and the `wait` flags instead.
+
+The subscriber set is host control state on the target — never logged, never
+projected — and the host runs one watcher per session that reads its status on
+every control-state change and posts it when it moves (`src/daemon/subscriptions.rs`,
+`src/daemon/status.rs`). A subscribed session counts as something that may wake
+the subscriber, so its `wait` tool is not refused while one exists
+(docs/supervisor.md).
+
+##### Lifecycle: children end with their creator
+
+A session ends when the session that created it ends, unless `create` passed
+`detached: true`; the end is posted to the ending session's subscribers first, then
+its own subscriptions are dropped and its non-detached children are ended, each
+running the same teardown. Cascade is the default because the keepalive re-warms an
+orphan's prefix every interval forever; `detached` exists for a session meant to
+outlive its creator. The human sees every session in `sessions` either way.
 
 `sessions__approve` is bound before it is classified (docs/permissions.md): the loop
 asks the provider for the target's pending gate and gets the child's held action — tool,

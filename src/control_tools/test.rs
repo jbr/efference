@@ -169,6 +169,8 @@ fn tools_list_is_ordered_and_annotated() {
             "sessions",
             "create",
             "end",
+            "subscribe",
+            "unsubscribe",
         ]
     );
 

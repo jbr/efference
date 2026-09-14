@@ -284,6 +284,10 @@ pub struct Session {
     /// Paired with the flag rather than standing alone: `notify_waiters` stores no
     /// permit, so the flag is what a wake landing before the loop parks lands on.
     continue_signal: Notify,
+    /// How many sessions this one is subscribed to (docs/tools.md) — host control
+    /// state mirrored here so the `wait` tool can count a subscribed session as
+    /// something that may wake it (docs/supervisor.md).
+    subscriptions: std::sync::atomic::AtomicUsize,
     /// Pinged when a notification is enqueued (docs/inbox.md — `notify`). The agent loop's
     /// idle path awaits this to wake an idle agent for a standalone triage (the
     /// wake-on-notification model that replaced blocking `wait`).
@@ -675,6 +679,7 @@ impl Session {
             settle_changed: Notify::new(),
             continue_pending: AtomicBool::new(false),
             continue_signal: Notify::new(),
+            subscriptions: std::sync::atomic::AtomicUsize::new(0),
             notified: Notify::new(),
             stream_tx,
             state_changed: Notify::new(),
@@ -1075,6 +1080,8 @@ mod keepalive;
 mod metrics;
 mod notifications;
 mod pace;
+mod status;
+mod subscriptions;
 // Whether anyone is watching (docs/web-push.md) — the live stream-connection count
 // push suppression reads.
 mod presence;

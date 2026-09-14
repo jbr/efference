@@ -45,10 +45,13 @@ pub(super) async fn supervisor_tool_result(
         supervisor::LIST => Some(RawResult::text(shared.bg_list_text())),
         supervisor::CHECK_INBOX => Some(RawResult::text(shared.inbox_summary())),
         supervisor::WAIT => Some(
-            if !shared.has_pending_notifications() && !shared.has_running_background() {
+            if !shared.has_pending_notifications()
+                && !shared.has_running_background()
+                && !shared.has_subscriptions()
+            {
                 RawResult::error(
-                    "wait refused: nothing can wake this session — a pending notification or a running \
-                 background process would count.",
+                    "wait refused: nothing can wake this session — a pending notification, a running \
+                 background process, or a session you are subscribed to would count.",
                 )
             } else {
                 // `inbox_wake` is the idle-triage signal: it arms before checking the queue,

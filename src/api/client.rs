@@ -982,6 +982,10 @@ impl Client {
             let status = conn.status();
             let body = match captured_error_body(&mut conn) {
                 Some(body) => body,
+                // No status means no response arrived — the connect itself
+                // failed — so there is no body and no transport to read one
+                // from; the client panics on the read rather than erroring.
+                None if status.is_none() => String::new(),
                 None => conn
                     .response_body()
                     .read_string()

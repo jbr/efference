@@ -195,6 +195,7 @@ async fn a_prefixed_client_joins_v1_only() {
         autonomous: false,
         reauth: vec![],
         keep_scratch: false,
+        detached: false,
         env: [("HOME".to_string(), "/h".to_string())].into(),
     };
     let id = Client::new(&socket).create_session(&request).await.unwrap();

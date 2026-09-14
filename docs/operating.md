@@ -14,7 +14,8 @@ driven, and it is refined from use rather than written ahead of it.
 
 - **`efference control <tool>`** — the calls that drive a *running* session:
   `turn`, `approve`, `settle`, `interrupt`, `background`, `pace`, `review-level`,
-  `notify`, `dismiss`, `image`, `state`, `transcript`, `entries`, `title`, each one control-API call
+  `notify`, `subscribe`, `unsubscribe`, `dismiss`, `image`, `state`, `transcript`,
+  `entries`, `title`, each one control-API call
   over the session's control channel ([control-channel.md](control-channel.md)) —
   and the three that address the host: `sessions` (list, with titles), `create`
   (a session in a working directory, this process's environment as its base), and
@@ -89,9 +90,14 @@ base, so an id from another project reads as not found.
 
 `create` from a session runs in the caller's cwd with the caller's child environment as
 the new session's base, and records the caller as the child's creator — the field
-`GET /sessions` reports as `created_by` ([control-api.md](control-api.md)). `settle` is
-not mounted, and `wait` is refused in-session: a session has its own inbox to be woken
-through rather than a client that must block.
+`GET /sessions` reports as `created_by` ([control-api.md](control-api.md)). It also
+subscribes the caller to the child: each time the child stops at a gate, finishes a
+turn, stalls, or ends, a notification naming the condition and the call that answers
+it lands in the caller's inbox and wakes it ([tools.md](tools.md)). `subscribe` hears
+any session in the project the same way, without the wake; `unsubscribe` drops
+either. `settle` is not mounted, and the `wait` flags are refused in-session: a
+session has its own inbox to be woken through rather than a client that must block.
+A child ends with its creator unless created `detached`.
 
 ## Where a session lives
 

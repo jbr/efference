@@ -21,6 +21,18 @@ pub(super) struct PendingNotification {
     pub(super) body: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) slot: Option<String>,
+    /// Must-wake (docs/inbox.md): the loop pins this at its first show whatever the
+    /// triage peek decides, so an idle agent gets a turn to act on it. Set by the
+    /// harness for a delegated child's status, never by a client.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) wake: bool,
+}
+
+/// A notification taken off the pending queue for its first show: the record the
+/// loop logs as an `Ambient`, and whether it must be pinned (docs/inbox.md).
+pub struct Drained {
+    pub notification: crate::log::Notification,
+    pub wake: bool,
 }
 
 impl Session {
@@ -35,6 +47,25 @@ impl Session {
         body: String,
         slot: Option<String>,
         replaces: Option<u64>,
+    ) -> u64 {
+        self.enqueue(source, body, slot, replaces, false)
+    }
+
+    /// [`notify`](Self::notify) for a notification the agent must get a turn for
+    /// (docs/inbox.md): the loop pins it at first show regardless of the peek's
+    /// verdict. The harness's own channel — a delegated child's status
+    /// (docs/tools.md) — not a client's.
+    pub(crate) fn notify_wake(&self, source: String, body: String, slot: Option<String>) -> u64 {
+        self.enqueue(source, body, slot, None, true)
+    }
+
+    fn enqueue(
+        &self,
+        source: String,
+        body: String,
+        slot: Option<String>,
+        replaces: Option<u64>,
+        wake: bool,
     ) -> u64 {
         let mut inbox = self.inbox.lock().unwrap();
         // Supersede: an explicit `replaces` id, and/or any pending entry on the slot.
@@ -53,6 +84,7 @@ impl Session {
             source,
             body,
             slot,
+            wake,
         });
         drop(inbox);
         // Wake an idle agent for a standalone triage (docs/inbox.md — wake-on-notification).
@@ -105,17 +137,21 @@ impl Session {
     /// Drain the un-shown notifications for a triage gate (docs/inbox.md): take and clear
     /// the ephemeral queue. The loop logs each as a first-show `Ambient` entry (its
     /// `seq` becoming its durable id) and shows it to the model, so the queue holds
-    /// only what's arrived since the last gate. Returned in arrival order as
-    /// [`Notification`](crate::log::Notification)s ready to wrap in a payload.
-    pub fn drain_inbox(&self) -> Vec<crate::log::Notification> {
+    /// only what's arrived since the last gate. Returned in arrival order, each a
+    /// [`Notification`](crate::log::Notification) ready to wrap in a payload plus
+    /// its must-wake flag, which the loop applies after the verdict.
+    pub fn drain_inbox(&self) -> Vec<Drained> {
         let mut inbox = self.inbox.lock().unwrap();
         inbox
             .pending
             .drain(..)
-            .map(|p| crate::log::Notification {
-                source: p.source,
-                body: p.body,
-                slot: p.slot,
+            .map(|p| Drained {
+                notification: crate::log::Notification {
+                    source: p.source,
+                    body: p.body,
+                    slot: p.slot,
+                },
+                wake: p.wake,
             })
             .collect()
     }

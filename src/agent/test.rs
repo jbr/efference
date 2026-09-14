@@ -1031,3 +1031,29 @@ fn title_is_solicited_after_a_user_turn_and_on_the_fallback() {
     log.push(entry(103, assistant()));
     assert!(should_solicit_title(&log));
 }
+
+/// A must-wake notification is pinned whatever the peek decided (docs/inbox.md):
+/// a dismiss is overridden, a leave is filled in, and an ordinary item's verdict
+/// is untouched.
+#[test]
+fn force_pins_overrides_the_peek_for_must_wake_items() {
+    let mut inbox = vec![
+        (5, Disposition::Dismiss),
+        (6, Disposition::Pin),
+        (7, Disposition::Dismiss),
+    ];
+    force_pins(&mut inbox, &[5, 8]);
+    inbox.sort_by_key(|(seq, _)| *seq);
+    assert_eq!(
+        inbox,
+        vec![
+            (5, Disposition::Pin),
+            (6, Disposition::Pin),
+            (7, Disposition::Dismiss),
+            (8, Disposition::Pin),
+        ]
+    );
+    let mut untouched = vec![(1, Disposition::Dismiss)];
+    force_pins(&mut untouched, &[]);
+    assert_eq!(untouched, vec![(1, Disposition::Dismiss)]);
+}

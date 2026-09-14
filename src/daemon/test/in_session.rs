@@ -43,6 +43,7 @@ impl Fixture {
                 id.to_string(),
                 SessionRuntime::start(boot, host.swansong()),
                 created_by,
+                false,
             );
         };
         adopt("parent", &projects[0], None);
@@ -365,6 +366,7 @@ async fn a_create_outside_the_project_is_refused() {
         temperature: None,
         autonomous: false,
         upstream: Vec::new(),
+        detached: false,
     };
     let err = create("../b")
         .execute(&mut control, &RequestContext::default())

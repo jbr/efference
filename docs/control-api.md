@@ -67,7 +67,9 @@ sessions from one process. Its own routes are the listener's, not a session's:
 - `POST /sessions` — create a session. The body is the session request: `cwd`
   (absolute, always sent), `env` (the complete base environment, [env.md](env.md)),
   `model`, and optionally `name`, `config`, `spotter_model`, `triage`,
-  `temperature`, `effort`, `upstream`, `autonomous`, `reauth`, `keep_scratch`.
+  `temperature`, `effort`, `upstream`, `autonomous`, `reauth`, `keep_scratch`,
+  and `detached` (meaningful for a session-driven create only: whether the new
+  session outlives its creator, docs/tools.md).
   `name` omitted mints an `adjective-noun` id free on the host and under the
   session base ([session-title.md](session-title.md)). `201 {"id": …}`; `400` with the reason when the body, the name, the cwd, or
   preparation is unusable, in which case nothing was minted. Accepted on the
@@ -432,7 +434,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "tools": { … },
     "paths": { "<path>": { "read": true, "write": false } }
   },
-  "notifications": [ { "id": 3, "source": "…", "body": "…", "slot": "…" } ],
+  "notifications": [ { "id": 3, "source": "…", "body": "…", "slot": "…", "wake"?: true } ],
   "proposals": [ { "seq": 17, "change": { … } } ],
   "processes": [                   // every running tool-spawned process: STRUCTURE ONLY
     { "id": 1,                     // spawn-minted ordinal; rendered "p#1" in prose

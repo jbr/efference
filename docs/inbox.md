@@ -115,6 +115,26 @@ each notification one of three dispositions:
 All dispositions are recorded on the `Triage` log entry (`inbox: Vec<(Seq, Disposition)>`),
 making the fork's verdict durable even though the fork's transcript is throwaway.
 
+## Must-wake — the disposition the harness declares
+
+A notification may be enqueued **must-wake** (`wake` on the pending record, surfaced
+on `GET /state` only when set). At its first show the loop pins it whatever the
+fork's verdict — a dismiss is overridden, a leave is filled in — so an idle agent
+escalates to a real turn on it and a running one carries it into the wire at the
+next gate. Whether the agent wakes is thereby declared by the sender, not judged by
+the peek; the peek keeps everything downstream of that: the rest of the inbox, the
+background tails, its note. A peek that fails outright changes nothing here, since
+the pin is applied by the loop after the verdict returns. An escalated trajectory
+marks the loop `running` itself, since no submitted turn was claimed to do it: from
+the escalation until the loop parks, `/settle` blocks and the status watcher reports
+running, the same as for a trajectory a turn started.
+
+The flag is ephemeral, like the queue: the logged `Ambient` does not carry it, and the
+`Triage` records the pin as a pin. No client verb sets it — `POST /notifications`
+enqueues ordinary notifications — it is the harness's own channel, used today for a
+delegated child's status ([tools.md](tools.md), subscriptions). Superseding on a slot
+takes the replacement's own terms.
+
 ## Supersession — archive-and-replace, never edit
 
 Records are immutable; a `PUT /notifications/:id` verb does not exist. A new notification
@@ -157,6 +177,5 @@ higher-trust injection; user-role is the conservative, universally-supported def
 
 ## Anticipated refinements
 
-`urgency` (affecting inbox ordering and sigil in the peek), `non_redactable` (forcing pin
-— the item persists until acknowledged), and out-of-band dismissal of an already-shown
-notification are anticipated refinements tracked in the backlog.
+`urgency` (affecting inbox ordering and sigil in the peek) and out-of-band dismissal of
+an already-shown notification are anticipated refinements tracked in the backlog.

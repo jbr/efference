@@ -296,7 +296,9 @@ pub async fn run<F: Frontend, S: Spotter>(
                     continue;
                 }
                 // Escalated: fall into the trajectory with no new user turn — the model
-                // responds to the pinned event at the wire tail.
+                // responds to the pinned event at the wire tail. No turn was claimed, so
+                // nothing else marks the loop running (docs/control-api.md).
+                shared.escalated();
             }
             IdleWake::Continue => {
                 // The zero-token continue (docs/control-api.md): the operator handed
@@ -708,6 +710,9 @@ pub async fn run<F: Frontend, S: Spotter>(
                     Step::Direct(_) => None,
                 })
                 .collect();
+            // The must-wake notifications this gate first-shows (docs/inbox.md):
+            // pinned below whatever the peek decides.
+            let mut forced_pins: Vec<crate::log::Seq> = Vec::new();
             let mut gate = if pending.is_empty() {
                 None
             } else {
@@ -722,12 +727,17 @@ pub async fn run<F: Frontend, S: Spotter>(
                 // project to nothing, so the fork prefix `entries` stays byte-identical,
                 // docs/log-and-projection.md.)
                 let mut shown = active_shown(&entries);
-                for note in shared.drain_inbox() {
-                    let source = note.source.clone();
-                    let body = note.body.clone();
-                    let seq = shared.append(turn, Payload::Ambient(note))?;
+                let mut forced = Vec::new();
+                for drained in shared.drain_inbox() {
+                    let source = drained.notification.source.clone();
+                    let body = drained.notification.body.clone();
+                    let seq = shared.append(turn, Payload::Ambient(drained.notification))?;
                     shown.push(ShownNotification { seq, source, body });
+                    if drained.wake {
+                        forced.push(seq);
+                    }
                 }
+                forced_pins = forced;
                 // The live background processes' fresh tails ride the same peek
                 // (docs/supervisor.md) — re-sampled now, never logged unless pinned.
                 let background = shared.bg_snapshot();
@@ -755,6 +765,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 .as_mut()
                 .map(|g| std::mem::take(&mut g.inbox))
                 .unwrap_or_default();
+            force_pins(&mut inbox_verdict, &forced_pins);
             if let Some(g) = &gate {
                 for (handle, verdict) in &g.background {
                     match verdict {

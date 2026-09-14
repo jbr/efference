@@ -103,6 +103,10 @@ impl Session {
                 *pending = None;
             }
         }
+        // The gate topic and the status watchers (`subscriptions.rs`) read the
+        // resolution now rather than at the loop's next append, which on an
+        // approved long-running command is some time away.
+        self.touch_state();
         // The receiver is dropped only if the loop already moved on (e.g. the turn
         // was aborted by another route); treat that as "nothing waiting".
         tx.send(decision).is_ok()

@@ -162,6 +162,16 @@ impl Session {
         // Not held, no delay → proceed at once.
     }
 
+    /// An idle triage escalated to a trajectory (docs/supervisor.md): the loop is
+    /// running with no submitted turn to have claimed, so it says so here. Without
+    /// this, `running`, `/settle`, and the status watcher read the whole
+    /// wake-driven trajectory as idle, and a turn submitted meanwhile sits in
+    /// `queued` until the next seam-drain with nothing to explain the wait.
+    pub(crate) fn escalated(&self) {
+        self.running.store(true, Ordering::SeqCst);
+        self.touch_state();
+    }
+
     /// The loop is parking (about to await the next user turn): mark not-running and wake any
     /// `/settle` waiter. If a turn is already queued, `recv` resolves at once and [`claim_turn`]
     /// re-sets running, so a transient `running == false` with a non-empty queue still reads as

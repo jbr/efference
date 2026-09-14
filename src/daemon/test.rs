@@ -142,6 +142,8 @@ mod notifications;
 mod pace;
 mod processes;
 mod push;
+mod status;
+mod subscriptions;
 mod tools;
 mod views;
 

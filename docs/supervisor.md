@@ -17,8 +17,9 @@ fires a notification (see [watches](#watches), below).
 `wait()` instead waits for the next inbox notification of any origin, then returns the
 pending notifications as its tool result. It can therefore return for an exit, a watch
 hit, an operator nudge, or an inter-agent message rather than one selected process.
-It refuses when no pending notification or running background process can wake the
-session, so it does not leave a turn open indefinitely.
+It refuses when nothing can wake the session — no pending notification, no running
+background process, and no session it is subscribed to ([tools.md](tools.md)) — so it
+does not leave a turn open indefinitely.
 
 ## Process identity — one namespace, background as a property
 

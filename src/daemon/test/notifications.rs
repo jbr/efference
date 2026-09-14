@@ -39,6 +39,26 @@ fn inbox_supersedes_by_slot_and_dismisses() {
     assert_eq!(pending[0].body, "finished");
 }
 
+/// A must-wake notification (docs/inbox.md) carries its flag through the queue, the
+/// `GET /state` view (present only when set), slot supersession, and the drain.
+#[test]
+fn a_wake_notification_keeps_its_flag_through_the_queue() {
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared.notify("op".into(), "fyi".into(), None, None);
+    shared.notify_wake("child".into(), "gated".into(), Some("session:child".into()));
+    let json = serde_json::to_value(shared.pending_notifications()).unwrap();
+    assert_eq!(json[0].get("wake"), None, "absent unless set: {json}");
+    assert_eq!(json[1]["wake"], true, "{json}");
+
+    // Supersession on the slot keeps the replacement's own terms.
+    shared.notify_wake("child".into(), "idle".into(), Some("session:child".into()));
+    let drained = shared.drain_inbox();
+    assert_eq!(drained.len(), 2);
+    assert!(!drained[0].wake);
+    assert!(drained[1].wake);
+    assert_eq!(drained[1].notification.body, "idle");
+}
+
 /// `inbox_wake` (docs/inbox.md — the idle wake signal) resolves immediately when a
 /// notification is already pending, and otherwise unblocks when one arrives. Drained
 /// (shown) notifications don't re-trigger it, so a deferred item can't spin the loop.

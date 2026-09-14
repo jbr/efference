@@ -50,6 +50,10 @@ pub struct Create {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[arg(long)]
     pub upstream: Vec<String>,
+    /// Let the session outlive its creator. By default a session ends when the session that created it ends.
+    #[serde(default)]
+    #[arg(long)]
+    pub detached: bool,
 }
 
 impl ToolMeta for Create {
@@ -113,6 +117,7 @@ impl Tool<Control> for Create {
                     autonomous: self.autonomous,
                     reauth: Vec::new(),
                     keep_scratch: false,
+                    detached: self.detached,
                     env,
                 };
                 let host = state.host_client()?;
@@ -162,10 +167,12 @@ impl Tool<Control> for Create {
                     autonomous: self.autonomous,
                     reauth: Vec::new(),
                     keep_scratch: false,
+                    detached: self.detached,
                     env,
                 };
                 // The child records the caller as its creator, which is what
-                // makes it a descendant for later mutating calls.
+                // makes it a descendant for later mutating calls — and
+                // subscribes the caller to the child's status (docs/tools.md).
                 let id = state.create(request)?;
                 Ok(CreatedResult { id })
             }

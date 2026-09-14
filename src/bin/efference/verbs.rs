@@ -49,6 +49,8 @@ pub(crate) async fn tui_new(
         autonomous,
         reauth,
         keep_scratch,
+        // A human root has no creator to end with (docs/tools.md).
+        detached: false,
         env,
     };
     eprintln!("creating a session on {}…", host_socket.display());

@@ -27,13 +27,18 @@ pub struct Host {
 /// What the host keeps per session: the state handlers read, the child
 /// `Swansong` that ends it, and its `/files` view rooted at its own cwd.
 #[derive(Clone)]
-struct Hosted {
+pub(super) struct Hosted {
     session: Arc<Session>,
     swansong: Swansong,
     files: Files,
     /// The session that commissioned this one, when a session did (docs/tools.md).
     /// Control state only: never logged, never projected.
-    created_by: Option<String>,
+    pub(super) created_by: Option<String>,
+    /// Whether this session outlives its creator (docs/tools.md). Children end
+    /// with the session that made them unless created `detached`.
+    pub(super) detached: bool,
+    /// Who hears this session's status, and on what terms (`subscriptions.rs`).
+    pub(super) subscribers: BTreeMap<String, super::subscriptions::Subscription>,
 }
 
 impl Host {
@@ -57,34 +62,75 @@ impl Host {
     /// `Swansong` — leaves the map when its teardown has run. The runtime must
     /// have been started under [`swansong`](Self::swansong).
     pub fn adopt(self: &Arc<Self>, id: String, runtime: SessionRuntime) {
-        self.adopt_with(id, runtime, None);
+        self.adopt_with(id, runtime, None, false);
     }
 
     /// [`adopt`](Self::adopt) recording who commissioned the session
     /// (docs/tools.md): `Some(caller)` for a session-driven `create`, `None`
-    /// for a human root.
+    /// for a human root. A creator is subscribed to the session's status with
+    /// `wake`, and the session ends with its creator unless `detached`.
     pub fn adopt_with(
         self: &Arc<Self>,
         id: String,
         runtime: SessionRuntime,
         created_by: Option<String>,
+        detached: bool,
     ) {
         let session = Arc::clone(runtime.session());
         let hosted = Hosted {
             files: Files::rooted_at(session.cwd()),
-            session,
+            session: Arc::clone(&session),
             swansong: runtime.swansong().clone(),
-            created_by,
+            created_by: created_by.clone(),
+            detached,
+            subscribers: BTreeMap::new(),
         };
         self.sessions.lock().unwrap().insert(id.clone(), hosted);
+        if let Some(creator) = created_by {
+            self.subscribe(&id, &creator, true);
+        }
+        // The status watcher (`subscriptions.rs`), stopped by the runtime's
+        // shutdown like its other tasks.
+        tokio::spawn(
+            runtime
+                .swansong()
+                .interrupt(super::subscriptions::watch_status(
+                    Arc::downgrade(self),
+                    id.clone(),
+                    Arc::clone(&session),
+                )),
+        );
         let host = Arc::clone(self);
         tokio::spawn(async move {
-            match runtime.finished().await {
-                Ok(()) => eprintln!("session {id}: ended"),
-                Err(e) => eprintln!("session {id}: ended with error: {e}"),
+            let status = match runtime.finished().await {
+                Ok(()) => {
+                    eprintln!("session {id}: ended");
+                    super::status::SessionStatus::Ended
+                }
+                Err(e) => {
+                    eprintln!("session {id}: ended with error: {e}");
+                    super::status::SessionStatus::Failed {
+                        error: e.to_string(),
+                    }
+                }
+            };
+            // The end is the last status the subscribers hear; then the
+            // session's own subscriptions and its non-detached children go
+            // with it (docs/tools.md).
+            host.post_status(&id, &session, &status);
+            host.drop_subscriptions_of(&id);
+            for child in host.cascade_of(&id) {
+                if let Some(done) = host.end(&child) {
+                    done.await;
+                }
             }
             host.sessions.lock().unwrap().remove(&id);
         });
+    }
+
+    /// The session map, locked — for the subscription table (`subscriptions.rs`).
+    pub(super) fn sessions_mut(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, Hosted>> {
+        self.sessions.lock().unwrap()
     }
 
     /// The session that commissioned `id`, when a session did (docs/tools.md).
@@ -157,7 +203,7 @@ impl Host {
             Err(e) => return Err(format!("could not prepare session: {e}")),
         };
         let runtime = SessionRuntime::start(boot, self.swansong());
-        self.adopt_with(id.clone(), runtime, created_by);
+        self.adopt_with(id.clone(), runtime, created_by, body.detached);
         Ok(id)
     }
 
@@ -348,6 +394,10 @@ pub struct CreateSession {
     pub reauth: Vec<String>,
     #[serde(default)]
     pub keep_scratch: bool,
+    /// Outlive the session that creates this one (docs/tools.md). Meaningful only
+    /// for a session-driven `create`: a human root has no creator to end with.
+    #[serde(default)]
+    pub detached: bool,
     pub env: BTreeMap<String, String>,
 }
 
