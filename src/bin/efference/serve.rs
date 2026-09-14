@@ -250,15 +250,16 @@ pub(crate) async fn spotter_check(
 }
 
 /// `efference host`: a hosting process with no sessions until `POST /sessions`.
-/// `socket` is the global `--socket`, the path to bind instead of the default
-/// `.efference/host.sock` here — how one host serves several projects
-/// (docs/operating.md).
+/// Binds the user's host socket, `~/.efference/host.sock`, which every project's
+/// clients look for after their own directory; `socket` (the global `--socket`)
+/// binds elsewhere — `.efference/host.sock` for a project-local host
+/// (docs/control-channel.md).
 pub(crate) async fn host(bind_flags: BindFlags, socket: Option<PathBuf>) -> CliResult {
     let bind = resolve_bind(bind_flags)?;
-    // The default keeps its relative spelling (Darwin's socket path limit); an
-    // explicit path is bound as given. Either way the dir is created so the
-    // bind has somewhere to land.
-    let socket = socket.unwrap_or_else(host_socket);
+    let socket = match socket {
+        Some(socket) => socket,
+        None => user_host_socket().ok_or("no HOME to place ~/.efference/host.sock under")?,
+    };
     if let Some(dir) = socket.parent().filter(|dir| !dir.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir)?;
     }

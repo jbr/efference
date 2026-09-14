@@ -221,8 +221,9 @@ fn missing_host(conn: Conn) -> Conn {
     fail(conn, ErrorCode::Internal, "missing host state")
 }
 
-/// `GET /sessions`: the hosted ids, sorted, each with its current title when one
-/// has been written (docs/session-title.md): `[{"id": …, "title": …}, …]`.
+/// `GET /sessions`: the hosted ids, sorted, each with its working directory and
+/// its current title when one has been written (docs/session-title.md):
+/// `[{"id": …, "cwd": …, "title"?: …, "created_by"?: …}, …]`.
 async fn list_sessions(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
@@ -231,15 +232,20 @@ async fn list_sessions(conn: Conn) -> Conn {
         .ids()
         .into_iter()
         .map(|id| {
-            let title = host
-                .session(&id)
-                .and_then(|session| session.identity())
-                .and_then(|identity| identity.title);
+            let identity = host.session(&id).and_then(|session| session.identity());
             let created_by = host.created_by(&id);
             let mut entry = serde_json::Map::new();
             entry.insert("id".into(), serde_json::Value::String(id));
-            if let Some(title) = title {
+            if let Some(title) = identity
+                .as_ref()
+                .and_then(|identity| identity.title.clone())
+            {
                 entry.insert("title".into(), serde_json::Value::String(title));
+            }
+            // The working directory, so a client can keep to its own project's
+            // sessions on a host that serves several (docs/control-channel.md).
+            if let Some(cwd) = identity.map(|identity| identity.cwd) {
+                entry.insert("cwd".into(), serde_json::Value::String(cwd));
             }
             // The creation tree, so a human can see which sessions a session
             // commissioned (docs/tools.md). Absent for a human root.

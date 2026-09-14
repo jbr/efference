@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::Control(tools) => {
             control::run_cli(
                 tools,
-                cli::host_socket(),
+                cli::mount_host(),
                 name.clone(),
                 socket_override.clone(),
             )
@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
         Command::Mcp { host_socket } => {
             control::run_stdio(
-                host_socket.unwrap_or_else(cli::host_socket),
+                host_socket.unwrap_or_else(cli::mount_host),
                 name.clone(),
                 socket_override.clone(),
             )
@@ -102,7 +102,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             images,
             frame_cost,
         } => {
-            let host_socket = host_socket.unwrap_or_else(cli::host_socket);
+            let host_socket = match host_socket {
+                Some(host_socket) => host_socket,
+                None => cli::live_host()?,
+            };
             tui_new(
                 host_socket,
                 cli.name.clone(),

@@ -633,6 +633,11 @@ pub struct SessionListing {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// The session's working directory, as its identity carries it
+    /// (docs/control-api.md): what a client scopes a host's listing to its own
+    /// project by, since one host serves many.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     /// The session that commissioned this one, when a session did (docs/tools.md):
     /// control state, present only for a session-driven `create`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

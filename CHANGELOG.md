@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **A user-wide host** (docs/control-channel.md): `efference host` binds `~/.efference/host.sock` and serves every project; clients look for a host at `.efference/host.sock` here, then there. `GET /sessions` carries each session's `cwd`, and every client resolution — the TUI, the `control` verbs, `efference mcp` — keeps to sessions whose cwd is the current directory, so a plain `tui` in one project never lands on another's session. `tui --new` creates on the first live host; `--host-socket` overrides.
 - **The agent loop runs on the host runtime** (docs/control-channel.md): the loop is `Send` end to end — embedded MCP state behind a `Mutex`, `Frontend`/`Spotter` futures bounded `Send` — and is spawned on the host's multi-thread runtime instead of a thread with a current-thread runtime of its own. Fixes an in-session `sessions__create` hanging its caller forever: the blocked loop stopped driving a pooled h2 connection the host-side boot then borrowed. In-session `create`/`end` wait through `block_in_place`.
 - **A session creates only inside its own project** (docs/tools.md): `sessions__create` refuses a `cwd` whose `.efference/` base is not the caller's, before anything is minted; a child made elsewhere was unreachable by every later verb.
 - **`sessions__approve` is classified as the action it authorizes** (docs/permissions.md): before the parent's permission cascade runs, the host resolves the child's held call, following an approve-of-an-approve to its leaf, and the parent's fast path, spotter, and human gate judge that leaf under the parent's config; a granted `sessions__approve` clears blind as documented trust. `GET /state`'s `gate` and the TUI show the child's command under the parent's call, and a moved gate refuses before classification.
@@ -27,7 +28,7 @@ behind a change, see [`journal/`](journal/).
 - **`--name` reaches hosted sessions** (docs/control-channel.md): `tui`, `control`, and `mcp` resolve a name to its own socket or to `/sessions/<id>` on the host, and discovery counts hosted sessions; a name nothing serves is an error, and the TUI connects before taking the terminal instead of opening an empty screen.
 
 ### Fixed
-- **`efference host --socket <path>` binds there**: the global `--socket` was parsed and ignored by `host`, which always bound `.efference/host.sock` under its cwd; an explicit path (one host for every project, `tui --new --host-socket` from anywhere) is now honored and its directory created.
+- **`efference host --socket <path>` binds there**: the global `--socket` was parsed and ignored by `host`, which always bound the default; an explicit path is now honored and its directory created.
 - **OpenRouter's default spotter is a slug**: with no `[defaults].spotter`, an OpenRouter main connection now defaults the spotter to `anthropic/claude-haiku-4-5`; the bare id failed the metadata query at boot.
 
 ### Removed

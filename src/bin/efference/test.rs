@@ -30,7 +30,7 @@ async fn a_name_nothing_serves_is_an_error() {
 #[tokio::test]
 async fn a_name_resolves_against_the_given_host() {
     let err = resolve_client_target_at(
-        PathBuf::from("/nonexistent/efference/host.sock"),
+        vec![PathBuf::from("/nonexistent/efference/host.sock")],
         Some("definitely-not-live"),
         None,
     )
@@ -43,14 +43,49 @@ async fn a_name_resolves_against_the_given_host() {
     );
 }
 
-/// A hosted target's attachment store is the session dir beside the host socket.
+/// A hosted target's attachment store is the session dir under *this* directory,
+/// wherever the host's socket is: the host mints under the session's cwd.
 #[test]
 fn a_hosted_target_finds_its_session_dir() {
     let target = ClientTarget {
-        socket: PathBuf::from(".efference/host.sock"),
+        socket: PathBuf::from("/home/someone/.efference/host.sock"),
         prefix: Some("/sessions/b".into()),
     };
     assert_eq!(target.session_dir(), Some(PathBuf::from(".efference/b")));
+}
+
+/// A host's listing is scoped to this directory: sessions with another cwd are
+/// not candidates, and a listing with no cwd (an older host) is kept.
+#[test]
+fn a_hosts_listing_is_scoped_to_this_directory() {
+    use efference::client::SessionListing;
+    let dir = std::env::temp_dir().join("efference-hosted-here");
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    let listing = |id: &str, cwd: Option<&str>| SessionListing {
+        id: id.into(),
+        title: None,
+        cwd: cwd.map(str::to_string),
+        created_by: None,
+    };
+    let listings = [
+        listing("here", Some(dir.to_str().unwrap())),
+        listing("dotted", Some(dir.join("sub/..").to_str().unwrap())),
+        listing("elsewhere", Some(dir.join("sub").to_str().unwrap())),
+        listing("unplaced", None),
+    ];
+    let got = hosted_here(&listings, &dir);
+    assert_eq!(got, ["here", "dotted", "unplaced"]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The candidate order is this project's host, then the user's.
+#[test]
+fn host_candidates_are_project_then_user() {
+    let candidates = host_candidates();
+    assert_eq!(candidates[0], PathBuf::from(".efference/host.sock"));
+    if let Some(home) = std::env::var_os("HOME") {
+        assert_eq!(candidates[1], Path::new(&home).join(".efference/host.sock"));
+    }
 }
 
 /// The session flags are refused without `--new`, since a plain `tui` attaches and

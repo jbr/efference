@@ -50,8 +50,9 @@ closes, which is the transport a locally-spawned MCP server speaks. A Claude Cod
 ```
 
 The mount addresses the host, not a session: nothing is resolved at startup, so the
-host need not be running yet and the mount outlives any one session. The host is
-`.efference/host.sock` in the mount's working directory, or `--host-socket <path>`.
+host need not be running yet and the mount outlives any one session. The host is the
+first live of `.efference/host.sock` in the mount's working directory and
+`~/.efference/host.sock`, else the latter, or `--host-socket <path>`.
 Every session tool takes a `session` id — what `sessions` lists and `create` returns —
 and a call without one is an error that names what the host currently holds. The
 command line resolves the way the other client verbs do (`--name`/`--socket`, else
@@ -131,8 +132,8 @@ Each read is at its own grain.
 
 `efference tui` is the interactive view of all three; `efference dev view <session>` opens a
 recorded log in the same rendering, inert. `efference tui --new` first creates a session on a
-running `efference host` (`--host-socket`, default `.efference/host.sock` here; a host
-started with `--socket <path>` is reached by that path from any directory) from this
+running `efference host` (the first live of `.efference/host.sock` here and
+`~/.efference/host.sock`, or `--host-socket <path>`) from this
 directory, this shell's environment, `--name`, and the session flags,
 then attaches under `/sessions/<id>/`; quitting detaches, and the session stays on the host
 ([control-api.md](control-api.md)). Without `--new`, `tui --name <id>` attaches to that

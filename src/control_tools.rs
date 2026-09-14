@@ -466,13 +466,27 @@ impl HostExecutor {
             if session.storage_base() != base {
                 continue;
             }
+            let identity = session.identity();
             list.push(crate::client::SessionListing {
-                title: session.identity().and_then(|identity| identity.title),
+                title: identity
+                    .as_ref()
+                    .and_then(|identity| identity.title.clone()),
+                cwd: identity.map(|identity| identity.cwd),
                 created_by: host.created_by(&id),
                 id,
             });
         }
         Ok(list)
+    }
+}
+
+/// Whether two paths name the same directory: by canonical form when both
+/// resolve, else as spelled (a session's identity carries the cwd its creator
+/// sent, which is `current_dir` here when it is this directory).
+fn same_dir(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
     }
 }
 
@@ -540,8 +554,21 @@ impl ClientExecutor {
         if let Some(socket) = socket {
             return Ok(Client::new(socket));
         }
-        let hosted = if Self::is_live(&self.host) {
-            self.block_on(Client::new(&self.host).list_sessions())?
+        // The host's listing, scoped to this directory: one host serves many
+        // projects, and a verb run here means a session here
+        // (docs/control-channel.md). A listing without a cwd is kept.
+        let hosted: Vec<String> = if Self::is_live(&self.host) {
+            let here = std::env::current_dir()?;
+            self.block_on(Client::new(&self.host).sessions())?
+                .into_iter()
+                .filter(|listing| {
+                    listing
+                        .cwd
+                        .as_deref()
+                        .is_none_or(|cwd| same_dir(std::path::Path::new(cwd), &here))
+                })
+                .map(|listing| listing.id)
+                .collect()
         } else {
             Vec::new()
         };

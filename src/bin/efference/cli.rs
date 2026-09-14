@@ -30,13 +30,57 @@ pub(crate) fn session_dir(id: &str) -> PathBuf {
     Path::new(BASE_DIR).join(id)
 }
 
-/// The host socket's name under the base dir: one per hosting process, beside
-/// the session dirs it creates (docs/control-channel.md).
+/// The host socket's name under a base dir (docs/control-channel.md).
 pub(crate) const HOST_SOCKET_NAME: &str = "host.sock";
 
-/// The default host socket, `.efference/host.sock` here.
-pub(crate) fn host_socket() -> PathBuf {
+/// A project-local host: `.efference/host.sock` here. What `efference host
+/// --socket .efference/host.sock` binds; consulted before the user's host.
+pub(crate) fn project_host_socket() -> PathBuf {
     Path::new(BASE_DIR).join(HOST_SOCKET_NAME)
+}
+
+/// The user's host: `~/.efference/host.sock`, what a bare `efference host` binds
+/// and where every project's clients look after their own directory
+/// (docs/control-channel.md). `None` without a home directory.
+pub(crate) fn user_host_socket() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| Path::new(&home).join(BASE_DIR).join(HOST_SOCKET_NAME))
+}
+
+/// Where a client looks for a host, in order: this project's, then the user's.
+pub(crate) fn host_candidates() -> Vec<PathBuf> {
+    let mut hosts = vec![project_host_socket()];
+    hosts.extend(user_host_socket());
+    hosts
+}
+
+/// The host a verb that needs one live now talks to (`tui --new`): the first
+/// live candidate, else an error naming what was tried.
+pub(crate) fn live_host() -> Result<PathBuf, CliError> {
+    let candidates = host_candidates();
+    if let Some(host) = candidates.iter().find(|host| is_live(host)) {
+        return Ok(host.clone());
+    }
+    let tried: Vec<String> = candidates
+        .iter()
+        .map(|host| host.display().to_string())
+        .collect();
+    Err(format!(
+        "no host is running (tried {}) — start one with `efference host`, or pass --host-socket",
+        tried.join(", ")
+    )
+    .into())
+}
+
+/// The host a mount addresses (`control`, `mcp`): the first live candidate, else
+/// the user's host, which need not be running yet — the mount outlives it.
+pub(crate) fn mount_host() -> PathBuf {
+    let candidates = host_candidates();
+    candidates
+        .iter()
+        .find(|host| is_live(host))
+        .cloned()
+        .or_else(|| candidates.last().cloned())
+        .unwrap_or_else(project_host_socket)
 }
 
 /// Where a *client* verb's session lives: a socket, and the prefix under it when
@@ -71,14 +115,14 @@ impl ClientTarget {
     }
 
     /// The session dir the attachment store lives beside (docs/inbox.md): the
-    /// socket's own dir, or `.efference/<id>` next to the host socket. `None` for
-    /// an explicit socket with no parent.
+    /// socket's own dir, or `.efference/<id>` here for a hosted session — the
+    /// host mints under the session's cwd, not beside its own socket
+    /// (docs/control-channel.md), and a hosted target is only ever resolved for
+    /// a session whose cwd is this directory. `None` for an explicit socket with
+    /// no parent.
     pub(crate) fn session_dir(&self) -> Option<PathBuf> {
         match &self.prefix {
-            Some(prefix) => {
-                let id = prefix.rsplit('/').next()?;
-                Some(self.socket.parent()?.join(id))
-            }
+            Some(prefix) => Some(session_dir(prefix.rsplit('/').next()?)),
             None => self.socket.parent().map(Path::to_path_buf),
         }
     }
@@ -90,51 +134,96 @@ fn is_live(socket: &Path) -> bool {
     std::os::unix::net::UnixStream::connect(socket).is_ok()
 }
 
+/// Whether two paths name the same directory: by canonical form when both
+/// resolve, else as spelled. A session's identity carries the cwd its creator
+/// sent, which is what `current_dir` returns here when the same directory.
+fn same_dir(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+/// The ids in a host's listing whose cwd is `here`: the project-scoped view of
+/// a host that serves several (docs/control-channel.md). A listing without a
+/// cwd (a host older than the field) is kept, since it cannot be placed.
+pub(crate) fn hosted_here(
+    listings: &[efference::client::SessionListing],
+    here: &Path,
+) -> Vec<String> {
+    listings
+        .iter()
+        .filter(|listing| {
+            listing
+                .cwd
+                .as_ref()
+                .is_none_or(|cwd| same_dir(Path::new(cwd), here))
+        })
+        .map(|listing| listing.id.clone())
+        .collect()
+}
+
 /// Resolve the session a *client* verb should talk to: an explicit `--socket`; else
-/// the named session — its own live socket, or the host at `.efference/host.sock`
-/// if it lists that id; else the single live session found by scanning the session
-/// dirs and asking the host (docs/permissions.md). Anything that is not live is an
-/// error here, before a UI opens or a call is made.
+/// the named session — its own live socket, or a host that lists that id in this
+/// directory; else the single live session found by scanning the session dirs and
+/// asking every live host for its sessions here (docs/permissions.md). The hosts
+/// are [`host_candidates`]: this project's, then the user's. Anything that is not
+/// live is an error here, before a UI opens or a call is made.
 pub(crate) async fn resolve_client_target(
     name: Option<&str>,
     socket: Option<PathBuf>,
 ) -> Result<ClientTarget, CliError> {
-    resolve_client_target_at(host_socket(), name, socket).await
+    resolve_client_target_at(host_candidates(), name, socket).await
 }
 
-/// [`resolve_client_target`] against a host at `host` rather than the default
-/// `.efference/host.sock` — what `efference mcp --host-socket` resolves through.
+/// [`resolve_client_target`] against the given hosts rather than the default
+/// candidates — what `efference mcp --host-socket` resolves through.
 pub(crate) async fn resolve_client_target_at(
-    host: PathBuf,
+    hosts: Vec<PathBuf>,
     name: Option<&str>,
     socket: Option<PathBuf>,
 ) -> Result<ClientTarget, CliError> {
     if let Some(socket) = socket {
         return Ok(ClientTarget::socket(socket));
     }
-    let hosted: Vec<String> = if is_live(&host) {
-        ControlClient::new(&host)
-            .list_sessions()
+    let here = std::env::current_dir()?;
+    // (host, ids it serves in this directory), live hosts only.
+    let mut hosted: Vec<(PathBuf, Vec<String>)> = Vec::new();
+    let mut down: Vec<String> = Vec::new();
+    for host in hosts {
+        if !is_live(&host) {
+            down.push(host.display().to_string());
+            continue;
+        }
+        let listings = ControlClient::new(&host)
+            .sessions()
             .await
-            .map_err(|e| format!("listing {}: {e}", host.display()))?
-    } else {
-        Vec::new()
-    };
+            .map_err(|e| format!("listing {}: {e}", host.display()))?;
+        hosted.push((host, hosted_here(&listings, &here)));
+    }
     if let Some(name) = name {
         let own = session_dir(name).join(SOCKET_NAME);
         if is_live(&own) {
             return Ok(ClientTarget::socket(own));
         }
-        if hosted.iter().any(|id| id == name) {
-            return Ok(ClientTarget::hosted(host, name));
+        if let Some((host, _)) = hosted
+            .iter()
+            .find(|(_, ids)| ids.iter().any(|id| id == name))
+        {
+            return Ok(ClientTarget::hosted(host.clone(), name));
         }
         return Err(format!(
-            "no live session {name:?}: nothing listens at {} and the host{} does not list it",
+            "no live session {name:?}: nothing listens at {}{}{}",
             own.display(),
-            if is_live(&host) {
+            if hosted.is_empty() {
                 String::new()
             } else {
-                format!(" at {} is not running", host.display())
+                " and no host lists it here".to_string()
+            },
+            if down.is_empty() {
+                String::new()
+            } else {
+                format!("; the host at {} is not running", down.join(" or "))
             }
         )
         .into());
@@ -143,14 +232,12 @@ pub(crate) async fn resolve_client_target_at(
         .into_iter()
         .map(ClientTarget::socket)
         .collect();
-    live.extend(
-        hosted
-            .iter()
-            .map(|id| ClientTarget::hosted(host.clone(), id)),
-    );
+    for (host, ids) in &hosted {
+        live.extend(ids.iter().map(|id| ClientTarget::hosted(host.clone(), id)));
+    }
     match live.len() {
         0 => Err(
-            "no live efference session found — create one with `tui --new`, or pass --name/--socket"
+            "no live efference session found here — create one with `tui --new`, or pass --name/--socket"
                 .into(),
         ),
         1 => Ok(live.pop().unwrap()),
@@ -437,7 +524,8 @@ pub(crate) enum Command {
     /// makes one). With `--name` or `--socket`, a call that names no session
     /// drives that one.
     Mcp {
-        /// The host's control socket. Defaults to `.efference/host.sock` here.
+        /// The host's control socket. Defaults to the first live of
+        /// `.efference/host.sock` here and `~/.efference/host.sock`, else the latter.
         #[arg(long, value_name = "PATH")]
         host_socket: Option<PathBuf>,
     },
@@ -463,7 +551,8 @@ pub(crate) enum Command {
         /// Create a session on the host at --host-socket, then attach to it.
         #[arg(long)]
         new: bool,
-        /// The host's control socket. Defaults to `.efference/host.sock` here.
+        /// The host's control socket. Defaults to the first live of
+        /// `.efference/host.sock` here and `~/.efference/host.sock`.
         #[arg(long, value_name = "PATH", requires = "new")]
         host_socket: Option<PathBuf>,
         #[command(flatten)]

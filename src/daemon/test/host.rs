@@ -102,11 +102,17 @@ async fn a_host_routes_each_prefix_to_its_own_session() {
     }
     let server = host_server(&host, true).await;
 
+    // Each entry carries the session's cwd — what a client scopes a shared
+    // host's listing to its own project by (docs/control-channel.md).
     let list = server.get("/sessions").await;
     list.assert_status(200);
+    let cwd = |label: &str| roots.0.join(label).to_string_lossy().into_owned();
     assert_eq!(
         json(list.body()),
-        serde_json::json!([{"id": "one"}, {"id": "two"}])
+        serde_json::json!([
+            {"id": "one", "cwd": cwd("one")},
+            {"id": "two", "cwd": cwd("two")},
+        ])
     );
 
     for label in ["one", "two"] {
