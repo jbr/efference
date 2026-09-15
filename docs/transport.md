@@ -667,17 +667,20 @@ The Codex backend streams with **no `content-type` header** (verified with curl,
 does, but the failed negotiation still owns the executed conn, so the Responses
 dialect recovers the stream from it with `EventStream::new` when the error is
 `UnexpectedContentType(None)`; a present non-`text/event-stream` value, and every
-other dialect, stay on the open-failure path. Each response also carries
-`x-codex-*` headers naming the plan, the 5-hour and 7-day usage windows as
-percentages, and their reset times. `api/plan.rs` reads them off every response
-the status handler sees — a 429 included, since the response that ends a window
-is the one that most wants reading — into a cell the daemon publishes as
-`usage.plan` (control-api.md): the plan type and each window's used percentage,
-length, and reset as absolute millis. A response carrying none of the headers
-retains the previous snapshot; one carrying any replaces it whole. The snapshot
-is operational state, not a record: it never enters the log, so the captured-
-header allowlist and the masker are not involved, and a resumed session starts
-with `null` until its first Codex response.
+other dialect, stay on the open-failure path. Each response may also carry
+independently metered `x-<limit>-*` header families. The ordinary allowance is
+`x-codex-*`; a separately metered model such as Codex Spark has its own family,
+optional `x-<limit>-limit-name`, and may be identified by
+`x-codex-active-limit` when exhausted. `api/plan.rs` discovers every family from
+its primary-percent header and reads it off every response the status handler
+sees — a 429 included — into a cell the daemon publishes as `usage.plan`
+(control-api.md). Limit ids normalize hyphens to underscores; each limit carries
+its primary and secondary window's used percentage, length, and reset as
+absolute millis. A response carrying none of the headers retains the previous
+snapshot; one carrying any replaces it whole. The snapshot is operational state,
+not a record: it never enters the log, so the captured-header allowlist and the
+masker are not involved, and a resumed session starts with `null` until its first
+Codex response.
 
 **Turn routing on the Codex backend.** Each response carries an `x-codex-turn-state`
 header: an opaque token the backend issues at the start of a user turn and expects
@@ -710,8 +713,10 @@ spotter model must be one its connection's metadata source knows: with no
 (`Provider::default_spotter_model`, gpt-5.6-luna here, claude-haiku-4-5 on
 Anthropic and its `anthropic/` slug on OpenRouter), and an explicit `--spotter-model` passes its own provider's
 check. The catalog
-(`api/provider/openai.rs`) is exact per model: GPT-5.6 and its sol/terra/luna
-variants, and GPT-6 Astra, which takes no `none` effort and no `temperature` —
+(`api/provider/openai.rs`) is exact per provider and model: GPT-5.6 and its
+sol/terra/luna variants, GPT-6 Astra, and the subscription-only, text-only
+GPT-5.3 Codex Spark. Spark has a 128,000-token context window and is refused on
+the platform provider; Astra takes no `none` effort and no `temperature` —
 `ModelCapabilities::accepts_temperature` is what makes an explicit
 `--temperature` against it fail at boot rather than on the first request. An
 unknown slug is refused with the list this build knows; slugs are never
@@ -766,9 +771,10 @@ variables.
 
 **OpenAI capabilities** come from a compiled catalog (`api/provider/openai.rs`)
 rather than a metadata GET: the Models endpoint reports none of the limits the
-boot path consumes. Entries are exact — `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`,
-`gpt-5.6-luna` today — and an unknown model fails boot rather than inheriting a
-family's limits.
+boot path consumes. Entries are exact and may be provider-specific:
+`gpt-5.3-codex-spark` resolves only on `openai-codex`, while the shared platform
+models resolve on either Responses endpoint. An unknown model fails boot rather
+than inheriting a family's limits.
 
 **Sticky routing (`x-session-id`).** OpenRouter routes a model slug to *some*
 upstream provider and keeps a conversation on one of them so the prompt cache

@@ -402,11 +402,15 @@ export interface PlanWindow {
 
 export interface Plan {
   type: string | null;
-  // The short window (5 hours on a Plus plan).
-  primary: PlanWindow | null;
-  // The long window (7 days on a Plus plan).
-  secondary: PlanWindow | null;
+  active: string | null;
+  limits: Record<string, PlanLimit>;
   observed_at: number;
+}
+
+export interface PlanLimit {
+  name: string | null;
+  primary: PlanWindow | null;
+  secondary: PlanWindow | null;
 }
 
 export interface Pace {

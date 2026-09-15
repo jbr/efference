@@ -460,12 +460,19 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     },
     "plan": {                               // null off the Codex backend (transport.md)
       "type": "plus",                       // x-codex-plan-type
-      "primary": {                          // the short window; null when the last response omitted it
-        "used_percent": 12,
-        "window_minutes": 300,
-        "resets_at": 1788677725000          // absolute Unix millis; the client subtracts
+      "active": "codex_spark",              // exhausted/active limit id, or null
+      "limits": {                            // independent meter families, keyed by normalized id
+        "codex": {
+          "name": null,                      // optional backend display name
+          "primary": {                       // null when the last response omitted it
+            "used_percent": 12,
+            "window_minutes": 300,
+            "resets_at": 1788677725000       // absolute Unix millis; the client subtracts
+          },
+          "secondary": { …same three fields… }
+        },
+        "codex_spark": { …same limit fields… }
       },
-      "secondary": { …same three fields… }, // the long window
       "observed_at": 1788677700000          // when the last plan-bearing response arrived
     }
   },

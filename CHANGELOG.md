@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **GPT-5.3 Codex Spark support** (docs/transport.md): the subscription provider accepts its text-only capability profile, and `usage.plan` preserves separately metered quota families and the active exhausted limit.
 - **A child's status wakes its creator** (docs/tools.md): `create` from a session subscribes the caller, and each of the child's decision points — a gate, a turn completing into idle, a stall, its end — lands in the caller's inbox on slot `session:<id>` as a must-wake notification the loop pins whatever the triage peek decides (docs/inbox.md). `sessions__subscribe`/`sessions__unsubscribe` hear any session in the project without the wake; `wait` counts a subscription as a wake source. Children end with their creator unless created `detached`.
 
 ### Changed

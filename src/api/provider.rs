@@ -928,7 +928,7 @@ impl Endpoint {
         upstream: &[String],
     ) -> Result<ModelCapabilities, Error> {
         if self.provider.uses_openai_catalog() {
-            let mut capabilities = openai_model_capabilities(model)?;
+            let mut capabilities = openai_model_capabilities(self.provider, model)?;
             // The Codex backend rejects the whole gpt-5.6+ cache-control family —
             // `prompt_cache_options` and `prompt_cache_retention` both answer 400
             // "Unsupported parameter" on every model it serves, so this is the

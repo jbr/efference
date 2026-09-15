@@ -164,7 +164,12 @@ impl ClientHandler for UpstreamStatusHandler {
         if let Some(cell) = &self.plan {
             let headers = conn.response_headers();
             let observed_at = crate::log::Timestamp::now().0;
+            let names: Vec<String> = headers
+                .iter()
+                .map(|(name, _)| name.as_ref().to_string())
+                .collect();
             if let Some(snapshot) = plan_from_headers(
+                names,
                 |name| headers.get_str(name).map(str::to_string),
                 observed_at,
             ) {

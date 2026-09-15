@@ -375,7 +375,7 @@ pub use diagnostics::{
 pub(crate) use endpoint::codex_cached_credentials;
 pub use endpoint::{Endpoint, sticky_session_id};
 pub use failure::FailureClass;
-pub use plan::{PlanSnapshot, PlanState, PlanWindow, plan_state};
+pub use plan::{PlanLimit, PlanSnapshot, PlanState, PlanWindow, plan_state};
 pub use provider::{
     ModelCapabilities, OUTPUT_FLOOR, PromptCachePolicy, Provider, ResponsesProfile, WireDialect,
     openai_model_capabilities,

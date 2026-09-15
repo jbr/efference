@@ -1838,7 +1838,7 @@ fn prompt_caching_is_read_off_the_endpoint_metadata() {
 #[test]
 fn openai_gpt_5_6_capability_profiles_are_exact() {
     for model in ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
-        let caps = super::provider::openai_model_capabilities(model).unwrap();
+        let caps = super::provider::openai_model_capabilities(Provider::OpenAI, model).unwrap();
         assert_eq!(caps.context_length, 1_050_000, "{model}");
         assert_eq!(caps.max_output_tokens, Some(128_000), "{model}");
         assert!(caps.supports_reasoning, "{model}");
@@ -1855,7 +1855,8 @@ fn openai_gpt_5_6_capability_profiles_are_exact() {
 
     // GPT-6 Astra: the model page's window and output, no `none` effort, no
     // temperature (docs/transport.md).
-    let astra = super::provider::openai_model_capabilities("gpt-6-astra").unwrap();
+    let astra =
+        super::provider::openai_model_capabilities(Provider::OpenAI, "gpt-6-astra").unwrap();
     assert_eq!(astra.context_length, 1_050_000);
     assert_eq!(astra.max_output_tokens, Some(128_000));
     assert!(astra.supports_reasoning && astra.supports_image_input);
@@ -1867,7 +1868,7 @@ fn openai_gpt_5_6_capability_profiles_are_exact() {
     );
     // The harness does not normalize slugs: a `.0` the catalog never named is unknown,
     // and the error lists what this build knows.
-    let error = super::provider::openai_model_capabilities("gpt-6.0-astra")
+    let error = super::provider::openai_model_capabilities(Provider::OpenAI, "gpt-6.0-astra")
         .unwrap_err()
         .to_string();
     assert!(error.contains("gpt-6-astra"), "{error}");
@@ -1887,11 +1888,38 @@ fn openai_gpt_5_6_capability_profiles_are_exact() {
         "anthropic/claude-haiku-4-5"
     );
 
-    let error = super::provider::openai_model_capabilities("gpt-5.7-luna")
+    let error = super::provider::openai_model_capabilities(Provider::OpenAI, "gpt-5.7-luna")
         .unwrap_err()
         .to_string();
     assert!(error.contains("no capability profile"), "{error}");
     assert!(error.contains("gpt-5.7-luna"), "{error}");
+}
+
+/// Spark is a text-only Codex subscription model. It must not leak into the
+/// platform API catalog, where the same model id is unavailable.
+#[test]
+fn codex_spark_capability_profile_is_provider_specific() {
+    let spark =
+        super::provider::openai_model_capabilities(Provider::OpenAICodex, "gpt-5.3-codex-spark")
+            .unwrap();
+    assert_eq!(spark.context_length, 128_000);
+    assert_eq!(spark.max_output_tokens, None);
+    assert!(spark.supports_reasoning);
+    assert!(!spark.supports_image_input);
+    assert!(!spark.accepts_temperature);
+    assert_eq!(spark.default_effort.as_deref(), Some("medium"));
+    assert_eq!(
+        spark.supported_efforts.as_deref(),
+        Some(&["low", "medium", "high", "xhigh"].map(String::from)[..]),
+    );
+
+    let error = super::provider::openai_model_capabilities(Provider::OpenAI, "gpt-5.3-codex-spark")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("only on the openai-codex provider"),
+        "{error}"
+    );
 }
 
 /// Image input, per provider (docs/tools.md). OpenRouter states it in
@@ -2949,13 +2977,15 @@ async fn codex_plan_windows_are_read_off_every_response_and_retained_when_absent
                 "x-codex-plan-type: plus\r\nx-codex-primary-used-percent: 12\r\n\
                  x-codex-primary-window-minutes: 300\r\nx-codex-primary-reset-at: 1788677725\r\n\
                  x-codex-secondary-used-percent: 19\r\nx-codex-secondary-window-minutes: 10080\r\n\
-                 x-codex-secondary-reset-at: 1789180313\r\n",
+                 x-codex-secondary-reset-at: 1789180313\r\n\
+                 x-codex-spark-primary-used-percent: 45\r\nx-codex-spark-limit-name: spark\r\n",
             ),
             ("200 OK", ""),
             (
                 "429 Too Many Requests",
                 "x-codex-plan-type: plus\r\nx-codex-primary-used-percent: 100\r\n\
-                 x-codex-primary-window-minutes: 300\r\nx-codex-primary-reset-at: 1788744444\r\n",
+                 x-codex-primary-window-minutes: 300\r\nx-codex-primary-reset-at: 1788744444\r\n\
+                 x-codex-active-limit: codex-spark\r\nx-codex-spark-primary-used-percent: 100\r\n",
             ),
         ];
         for (status, plan_headers) in responses {
@@ -3005,11 +3035,21 @@ async fn codex_plan_windows_are_read_off_every_response_and_retained_when_absent
         .clone()
         .expect("read off the first response");
     assert_eq!(first.plan_type.as_deref(), Some("plus"));
-    let primary = first.primary.as_ref().unwrap();
+    let ordinary = &first.limits["codex"];
+    let primary = ordinary.primary.as_ref().unwrap();
     assert_eq!(primary.used_percent, 12.0);
     assert_eq!(primary.window_minutes, Some(300));
     assert_eq!(primary.resets_at, Some(1_788_677_725_000));
-    assert_eq!(first.secondary.as_ref().unwrap().used_percent, 19.0);
+    assert_eq!(ordinary.secondary.as_ref().unwrap().used_percent, 19.0);
+    assert_eq!(first.limits["codex_spark"].name.as_deref(), Some("spark"));
+    assert_eq!(
+        first.limits["codex_spark"]
+            .primary
+            .as_ref()
+            .unwrap()
+            .used_percent,
+        45.0
+    );
 
     client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -3025,13 +3065,15 @@ async fn codex_plan_windows_are_read_off_every_response_and_retained_when_absent
     assert!(refused.is_err(), "the terminal 429 is not retried");
     server.join().unwrap();
     let last = plan.lock().unwrap().clone().unwrap();
-    assert_eq!(last.primary.as_ref().unwrap().used_percent, 100.0);
+    assert_eq!(last.active.as_deref(), Some("codex_spark"));
+    let ordinary = &last.limits["codex"];
+    assert_eq!(ordinary.primary.as_ref().unwrap().used_percent, 100.0);
     assert_eq!(
-        last.primary.as_ref().unwrap().resets_at,
+        ordinary.primary.as_ref().unwrap().resets_at,
         Some(1_788_744_444_000)
     );
     assert!(
-        last.secondary.is_none(),
+        ordinary.secondary.is_none(),
         "a response naming only one window replaces the whole snapshot"
     );
 }

@@ -686,12 +686,19 @@ fn state_reports_plan_windows_under_usage() {
 
     *plan.lock().unwrap() = Some(crate::api::PlanSnapshot {
         plan_type: Some("plus".into()),
-        primary: Some(crate::api::PlanWindow {
-            used_percent: 12.5,
-            window_minutes: Some(300),
-            resets_at: Some(1_788_677_725_000),
-        }),
-        secondary: None,
+        active: None,
+        limits: std::collections::BTreeMap::from([(
+            "codex".into(),
+            crate::api::PlanLimit {
+                name: None,
+                primary: Some(crate::api::PlanWindow {
+                    used_percent: 12.5,
+                    window_minutes: Some(300),
+                    resets_at: Some(1_788_677_725_000),
+                }),
+                secondary: None,
+            },
+        )]),
         observed_at: 5,
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
@@ -699,8 +706,14 @@ fn state_reports_plan_windows_under_usage() {
         v["usage"]["plan"],
         serde_json::json!({
             "type": "plus",
-            "primary": { "used_percent": 12.5, "window_minutes": 300, "resets_at": 1_788_677_725_000u64 },
-            "secondary": null,
+            "active": null,
+            "limits": {
+                "codex": {
+                    "name": null,
+                    "primary": { "used_percent": 12.5, "window_minutes": 300, "resets_at": 1_788_677_725_000u64 },
+                    "secondary": null
+                }
+            },
             "observed_at": 5,
         })
     );
