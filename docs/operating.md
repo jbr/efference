@@ -155,7 +155,17 @@ unlocks the vault once for every session the host will create
 passes model selections (`--model work/anthropic/claude-sonnet-4-5`, or a native id
 on the default connection) and no inference credentials; with no `--model`, the
 host's `[defaults].model` applies, and with none configured, creation says so. A
-host with no config file refuses to start, naming `efference setup`.
+host with no config file refuses to start, naming `efference setup`. So does one
+whose configured connections include any that cannot authenticate: the host names
+each and its reason rather than starting and failing every session that touches
+that provider, which would hide the problem at the moment someone could fix it.
+`disabled = true` is how a provider stays written down without blocking a launch,
+so the rule costs one setup run for a stale connection nobody uses. The check is
+the host's, not the registry's — a registry describing a partly-broken world is
+still a legitimate thing to build, and an offline verb naming a specific model
+already fails on that model alone. A credential that expires *after* launch is a
+different matter: sessions exist by then, and it is re-read in place
+([transport.md](transport.md)).
 The boot report and the sidebar's SESSION section name each role by connection.
 
 **First run: `efference setup`** (`src/setup.rs`). A bare `efference` on a machine

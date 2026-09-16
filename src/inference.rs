@@ -115,6 +115,11 @@ pub struct InferenceRegistry {
 struct Connection {
     provider: Provider,
     credential: Result<Credential, String>,
+    /// Turned off in the config rather than failing to load. Kept apart from
+    /// the credential's `Err` because the two are different facts: this one the
+    /// config declares about itself, and a host refuses to start over the other
+    /// (docs/operating.md).
+    disabled: bool,
 }
 
 struct Credential {
@@ -238,6 +243,7 @@ impl InferenceRegistry {
                 Connection {
                     provider,
                     credential,
+                    disabled: config.disabled,
                 },
             );
         }
@@ -265,6 +271,22 @@ impl InferenceRegistry {
             connections,
             defaults,
         })
+    }
+
+    /// Connections that are configured, not disabled, and whose credential did
+    /// not load, with the reason each gave. Empty is the ordinary case; a host
+    /// refuses to start otherwise (docs/operating.md), because a host that
+    /// starts and then fails every session touching that provider hides the
+    /// problem at the moment someone could fix it.
+    pub fn unavailable(&self) -> Vec<(&str, &str)> {
+        self.connections
+            .iter()
+            .filter(|(_, connection)| !connection.disabled)
+            .filter_map(|(name, connection)| {
+                let error = connection.credential.as_ref().err()?;
+                Some((name.as_str(), error.as_str()))
+            })
+            .collect()
     }
 
     pub fn empty() -> Self {

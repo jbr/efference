@@ -274,6 +274,30 @@ pub(crate) async fn host(bind_flags: BindFlags, socket: Option<PathBuf>) -> CliR
     // to re-read its credential from when one expires (docs/transport.md).
     let secrets = std::sync::Arc::new(efference::secrets::Secrets::detect()?);
     let inference = efference::inference::InferenceRegistry::load(&host_cwd, host_env, &secrets)?;
+    refuse_broken_connections(&inference)?;
     daemon::serve_host(efference::daemon::Host::new(inference), socket, bind).await?;
     Ok(())
+}
+
+/// A host does not start half-working (docs/operating.md). A connection whose
+/// credential will not load is reported here, at launch, rather than as a
+/// failure on every session that happens to touch that provider — which hides
+/// the problem at exactly the moment someone could fix it.
+///
+/// The remedy is named, not performed: this host has nobody to ask. A host
+/// launched by a TUI for one session can offer the repair inline once that
+/// exists (backlog/host-process.md).
+fn refuse_broken_connections(
+    inference: &efference::inference::InferenceRegistry,
+) -> Result<(), efference::api::Error> {
+    let broken = inference.unavailable();
+    if broken.is_empty() {
+        return Ok(());
+    }
+    let mut message = String::from("these configured connections cannot authenticate:\n");
+    for (name, why) in &broken {
+        message.push_str(&format!("  {name}: {why}\n"));
+    }
+    message.push_str("run `efference setup` to repair one, or to disable it and start without it");
+    Err(message.into())
 }

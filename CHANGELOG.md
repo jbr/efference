@@ -13,6 +13,7 @@ behind a change, see [`journal/`](journal/).
 - **A child's status wakes its creator** (docs/tools.md): `create` from a session subscribes the caller, and each of the child's decision points — a gate, a turn completing into idle, a stall, its end — lands in the caller's inbox on slot `session:<id>` as a must-wake notification the loop pins whatever the triage peek decides (docs/inbox.md). `sessions__subscribe`/`sessions__unsubscribe` hear any session in the project without the wake; `wait` counts a subscription as a wake source. Children end with their creator unless created `detached`.
 
 ### Changed
+- **A host refuses to start when a configured connection cannot authenticate** (docs/operating.md): it names each connection and its reason instead of starting and failing every session that touches that provider. `disabled = true` keeps a provider written down without blocking a launch.
 - **The idle triage runs on the agent's own lineage** (docs/redaction-fork.md): with a separate `--triage-model`, only the per-result peeks go to it; the wake decision an idle session makes on a notification sends the agent's client, tools, and thinking, reading the cache the keepalive holds warm.
 
 ### Fixed

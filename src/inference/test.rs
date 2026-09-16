@@ -398,3 +398,55 @@ auth = { kind = "env", key = "WORK_KEY" }
         })
     );
 }
+
+/// A host does not start half-working (docs/operating.md): a configured
+/// connection whose credential will not load is reported at launch, rather than
+/// as a failure on every session that happens to touch that provider.
+#[test]
+fn a_connection_that_cannot_authenticate_is_reported_for_launch() {
+    let registry = registry(
+        r#"
+[connections.working]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+
+[connections.broken]
+provider = "openrouter"
+auth = { kind = "env", key = "NEVER_SET" }
+"#,
+        environment(&[("ANTHROPIC_KEY", "secret")]),
+    );
+    let unavailable = registry.unavailable();
+    assert_eq!(
+        unavailable.len(),
+        1,
+        "only the one that failed: {unavailable:?}"
+    );
+    assert_eq!(unavailable[0].0, "broken");
+    assert!(unavailable[0].1.contains("NEVER_SET"), "{unavailable:?}");
+}
+
+/// A disabled connection is not a broken one: the operator said so, and saying
+/// it is what lets a host start without that provider. Reporting it here would
+/// make disabling useless, since disabling is the remedy being offered.
+#[test]
+fn a_disabled_connection_is_not_reported_as_unable_to_authenticate() {
+    let registry = registry(
+        r#"
+[connections.working]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+
+[connections.off]
+provider = "openrouter"
+disabled = true
+auth = { kind = "env", key = "NEVER_SET" }
+"#,
+        environment(&[("ANTHROPIC_KEY", "secret")]),
+    );
+    assert!(
+        registry.unavailable().is_empty(),
+        "{:?}",
+        registry.unavailable()
+    );
+}
