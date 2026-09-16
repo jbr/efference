@@ -43,6 +43,9 @@ pub(crate) async fn drain_background(
     .await;
     let status = child.wait().await.ok();
     let summary = shared.supervisor.lock().unwrap().finish(id, status);
+    // The child is reaped and out of the running set: teardown waiting on this
+    // session's children can re-check (docs/supervisor.md).
+    shared.reaped.notify_waiters();
     shared.touch_state();
     if let Some(finished) = summary {
         // The durable half (docs/supervisor.md): the exit is a fact about the
@@ -348,9 +351,42 @@ impl Session {
 
     /// `killpg` every still-running background child — daemon teardown (docs/supervisor.md
     /// ownership). Best-effort: a child that already exited is a benign `ESRCH`.
+    ///
+    /// Signalling only. `killpg` returns once the signal is queued, and a killed
+    /// process stays in the table — answering `killpg(pgid, 0)` — until its
+    /// parent waits it, so this returning does not mean the children are gone.
+    /// Teardown wants [`reap_all_bg`](Self::reap_all_bg).
     pub fn kill_all_bg(&self) {
         for pgid in self.supervisor.lock().unwrap().running_pgids() {
             crate::bash::kill_group(pgid);
+        }
+    }
+
+    /// Kill every background child **and wait for it to be reaped**, which is
+    /// what session teardown means by "the session's processes are gone"
+    /// (docs/supervisor.md).
+    ///
+    /// The wait is on the reap itself, not a clock: `drain_background` is
+    /// already awaiting `child.wait()` on every background child, and clears it
+    /// from the running set when that returns. So there is no interval to tune
+    /// and no window where scratch cleanup runs against a process still holding
+    /// a file open under it.
+    ///
+    /// SIGKILL has already been sent, so there is no further escalation to
+    /// offer: a group that never leaves the table is blocked in the kernel, and
+    /// no second signal from anywhere can move it. The operator's own escalation
+    /// is the host's — a second shutdown signal ends the process outright.
+    pub async fn reap_all_bg(&self) {
+        loop {
+            // Registered before the check: `notify_waiters` stores no permit, so
+            // a reap landing between the two would otherwise be missed and this
+            // would wait for a child that is already gone.
+            let reaped = self.reaped.notified();
+            self.kill_all_bg();
+            if self.supervisor.lock().unwrap().running_pgids().is_empty() {
+                return;
+            }
+            reaped.await;
         }
     }
 }

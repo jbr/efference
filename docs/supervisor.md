@@ -96,6 +96,27 @@ is shared between the foreground abort path and the supervisor's kill/teardown p
 The supervisor registry exposes `running_pgids()` — the set of all still-running
 pgids — for the teardown sweep.
 
+### Teardown waits for the reap, not the signal
+
+`killpg` returns once the signal is queued, and a killed process stays in the
+process table — still answering `killpg(pgid, 0)` — until its parent waits it.
+So sending SIGKILL is not the same as the children being gone, and session
+teardown means the latter: `reap_all_bg` signals and then waits, and only then
+does the session's scratch directory get removed. Without that wait, the removal
+could run against a process still holding a file open under it, and
+`shut_down().await` would resolve with the processes still in the table.
+
+The wait is on the reap itself rather than on a clock. `drain_background` is
+already awaiting `child.wait()` on every background child and clears it from the
+running set when that returns, so teardown re-checks on a notify fired there.
+There is no interval to tune.
+
+There is deliberately no escalation behind it. SIGKILL has already been sent, so
+a group that never leaves the table is blocked in the kernel and no second signal
+can move it — a bounded timer would only choose how long to wait before removing
+scratch out from under a live process. The operator's escalation is the host's:
+a second shutdown signal ends the process outright.
+
 ## Spawns are serialized
 
 Every child the crate starts — foreground and background bash, `[context]` exec,

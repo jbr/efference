@@ -98,6 +98,12 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
 /// Two runtimes under one parent: ending one reaps its background children and
 /// removes its scratch while the other keeps serving; ending the parent ends
 /// the rest. Shutdown completion means teardown has run, not merely begun.
+///
+/// `alive` is `killpg(pgid, 0)`, which stays true for a killed process until it
+/// is waited — so asserting it directly after a shutdown is asserting that
+/// teardown waited for the reap, not merely that it sent the signal. That is
+/// the invariant (`reap_all_bg`, docs/supervisor.md), and this test was
+/// intermittently failing on it while teardown only signalled.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn one_runtime_stops_without_touching_its_sibling() {
     let roots = Roots::new();

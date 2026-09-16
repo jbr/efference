@@ -396,6 +396,11 @@ pub struct Session {
     /// immutable notification model would pile up stale snapshots). Pinned tails and
     /// exits *do* reach the durable log, but as `Ambient` notifications, not from here.
     supervisor: Mutex<Supervisor>,
+    /// Fired each time a background child is reaped (`drain_background` after
+    /// `child.wait()`), so teardown can await the children actually being gone
+    /// rather than the kill signal merely having been sent
+    /// (docs/supervisor.md).
+    reaped: tokio::sync::Notify,
     /// The resolved role config and where it came from (docs/permissions.md).
     /// Read-only for the session's lifetime — the scope is already frozen into the
     /// cached preamble; this copy backs the `GET /state` report ("which role am I?") and
@@ -701,6 +706,7 @@ impl Session {
 
             proposals: Mutex::new(Vec::new()),
             supervisor: Mutex::new(Supervisor::with_minted(minted)),
+            reaped: tokio::sync::Notify::new(),
             role,
             effective: Mutex::new(effective),
             config_file: Mutex::new(config_file),

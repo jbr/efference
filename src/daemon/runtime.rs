@@ -235,7 +235,10 @@ impl SessionRuntime {
             };
             // Reap any background children before the session is gone so a
             // stopped session doesn't orphan a process group (docs/supervisor.md).
-            loop_session.kill_all_bg();
+            // Awaited, not merely signalled: the scratch removal below would
+            // otherwise race a child still writing under it, and `shut_down()`
+            // would resolve while the processes were still in the table.
+            loop_session.reap_all_bg().await;
             // Scratch lifecycle (docs/tools.md): cleaned on session end unless
             // retained as a post-mortem artifact.
             if let Some(scratch) = scratch {
