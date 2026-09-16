@@ -9,7 +9,7 @@ fn counting(values: Vec<Result<String, String>>) -> (AuthValue, Arc<AtomicUsize>
     let initial = "old".to_string();
     let value = AuthValue::reloadable(
         initial,
-        Box::new(move || {
+        sync_reload(move || {
             let n = seen.fetch_add(1, Ordering::SeqCst);
             values.get(n).cloned().unwrap_or(Ok("old".into()))
         }),

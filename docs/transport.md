@@ -595,6 +595,7 @@ Not every kind has a source to re-read, and this is where the auth kinds differ
 | --- | --- |
 | `codex-cache` | re-reads `auth.json`; the operator runs `codex login` in another terminal and the next attempt carries the new token |
 | `keychain` | re-reads the store item, which an operator can rewrite from outside the process |
+| `oauth` | re-reads the stored grant, and refreshes it against the issuer when its `exp` is near — the only kind whose re-read leaves the machine |
 | `env` | nothing to re-read — the value comes from the environment captured when the host started, which no outside change reaches, so a re-read returns the same bytes forever |
 
 An outcome that leaves the same value on the wire (`Unchanged`, `NoSource`, a
@@ -701,11 +702,26 @@ capability profile reports implicit caching. Explicit mode is unreachable here,
 and would be worse than unreachable if half-applied: `mode: explicit` with no
 breakpoints disables caching outright. "What Codex CLI sends, and nothing it does
 not" cuts both ways — the arm shipped for three days without `session-id`, which
-Codex CLI does send, and paid for it in cache misses. Auth is the OAuth access
-token Codex CLI caches in `~/.codex/auth.json` (`$CODEX_HOME` honoured) sent as
-`authorization: Bearer`, plus `ChatGPT-Account-ID` from the same file and an
-`originator: efference` header. efference reads that file and never writes it;
-refreshing an expired token is `codex login`'s job (backlog/openai-provider/chatgpt-oauth.md).
+Codex CLI does send, and paid for it in cache misses. Auth is a ChatGPT OAuth access
+token sent as `authorization: Bearer`, plus the account it names in
+`ChatGPT-Account-ID` and an `originator: efference` header. It comes from one of
+two auth kinds:
+
+- `codex-cache` reads the token Codex CLI keeps in `~/.codex/auth.json`
+  (`$CODEX_HOME` honoured). efference reads that file and never writes it, so
+  renewing is `codex login`'s job — the re-read above is what lets a running host
+  pick that up.
+- `oauth` is efference's own grant (`inference/chatgpt.rs`): it runs the
+  authorization dance itself, stores access, refresh, and id tokens in the secret
+  store ([secrets.md](secrets.md)), and refreshes them against the issuer. No
+  Codex install is required, a Codex that keeps its login in the keyring is no
+  obstacle, and renewal is unattended.
+
+The grant is deliberately efference's own rather than Codex's. A refresh may
+return a *new* refresh token, so refreshing Codex's grant would leave its
+`auth.json` holding a dead one — efference would work and `codex` would break.
+Two grants under one client id are the ordinary "logged in from another computer"
+case.
 Both profiles have a byte pin.
 
 The Codex backend streams with **no `content-type` header** (verified with curl,

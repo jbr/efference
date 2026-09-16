@@ -16,13 +16,33 @@
 //!
 //! [`Endpoint`]: super::Endpoint
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock, Weak};
 
 use crate::env_table::Masker;
 
 /// Re-reads a credential from wherever it came from, yielding the assembled
 /// header value or why it could not be read.
-pub type Reload = Box<dyn Fn() -> Result<String, String> + Send + Sync>;
+///
+/// Async because re-reading is not always local: `codex-cache` and `keychain`
+/// read a file or the OS store, but an OAuth grant's re-read is a *refresh* —
+/// an HTTP round-trip to the issuer. A blocking closure doing that inside the
+/// runtime would hold a worker thread for the length of a network call.
+pub type Reload =
+    Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> + Send + Sync>;
+
+/// Wrap a synchronous re-read — a file, a store lookup — as a [`Reload`].
+///
+/// The read still happens on the caller's thread. That is right for the local
+/// sources: a keychain read can wait on a biometric prompt, but it is bounded
+/// by a person, and moving it would not make it cancellable.
+pub fn sync_reload(read: impl Fn() -> Result<String, String> + Send + Sync + 'static) -> Reload {
+    Box::new(move || {
+        let result = read();
+        Box::pin(async move { result })
+    })
+}
 
 /// The auth header value shared by every clone of one connection's endpoint.
 #[derive(Clone)]
@@ -129,7 +149,7 @@ impl AuthValue {
         let Some(reload) = &self.0.reload else {
             return Reloaded::NoSource;
         };
-        match reload() {
+        match reload().await {
             Err(why) => Reloaded::Failed(why),
             Ok(value) if value == rejected => Reloaded::Unchanged,
             Ok(value) => {

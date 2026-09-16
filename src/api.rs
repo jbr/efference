@@ -367,7 +367,7 @@ mod reservation;
 pub(crate) mod responses;
 mod thinking;
 
-pub use auth_value::{AuthValue, Reload, Reloaded};
+pub use auth_value::{AuthValue, Reload, Reloaded, sync_reload};
 pub use client::{Client, DEFAULT_STREAM_CEILING, KeepaliveError};
 pub use diagnostics::{
     RetrySurface, TurnRoutingState, UpstreamAttemptFailure, UpstreamAttemptQueue, UpstreamFailure,

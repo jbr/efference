@@ -280,3 +280,48 @@ pub async fn refresh(secrets: &Secrets, connection: &str, grant: &Grant) -> Resu
 
 #[cfg(test)]
 mod test;
+
+/// Building a grant without the issuer, for tests elsewhere in the crate that
+/// need a connection with one. Kept beside the type it constructs so the stored
+/// shape has a single definition.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+
+    /// An access token carrying the claims a grant is built from. Unsigned: the
+    /// claims are read, never verified ([`claims`]).
+    pub(crate) fn access_token(account: &str, plan: &str) -> String {
+        use base64::Engine as _;
+        let claims = serde_json::json!({
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": account,
+                "chatgpt_plan_type": plan,
+            }
+        });
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string());
+        format!("header.{payload}.signature")
+    }
+
+    /// Store a grant for `connection` whose access token is current.
+    pub(crate) fn store_grant(secrets: &Secrets, connection: &str, access_token: &str) {
+        let expires_at = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 60 * 60 * 24;
+        let grant: Grant = serde_json::from_value(serde_json::json!({
+            "issuer": ISSUER,
+            "tokens": {
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "refresh_token": "rt",
+                "scope": SCOPE,
+                "expires_at": expires_at,
+            },
+            "account_id": "acct-7",
+            "plan": "plus",
+        }))
+        .expect("the stored shape");
+        grant.save(secrets, connection).expect("saved");
+    }
+}

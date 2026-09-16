@@ -3531,7 +3531,7 @@ async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
         auth_header: "x-api-key".into(),
         auth_value: crate::api::AuthValue::reloadable(
             "stale".into(),
-            Box::new(move || {
+            crate::api::sync_reload(move || {
                 counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok("refreshed".into())
             }),

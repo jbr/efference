@@ -11,14 +11,17 @@ fn environment(values: &[(&str, &str)]) -> EnvSnapshot {
 }
 
 fn registry(toml: &str, environment: EnvSnapshot) -> InferenceRegistry {
+    registry_with_secrets(toml, environment, &Arc::new(Secrets::in_memory()))
+}
+
+/// The same, against a store a test has already put something in.
+fn registry_with_secrets(
+    toml: &str,
+    environment: EnvSnapshot,
+    secrets: &Arc<Secrets>,
+) -> InferenceRegistry {
     let config = InferenceConfig::from_toml(toml).unwrap();
-    InferenceRegistry::from_config(
-        config,
-        Path::new("/host"),
-        environment,
-        &Arc::new(Secrets::in_memory()),
-    )
-    .unwrap()
+    InferenceRegistry::from_config(config, Path::new("/host"), environment, secrets).unwrap()
 }
 
 #[test]
@@ -449,4 +452,67 @@ auth = { kind = "env", key = "NEVER_SET" }
         "{:?}",
         registry.unavailable()
     );
+}
+
+/// `auth = { kind = "oauth" }` reads the grant efference stores for itself,
+/// rather than the file Codex CLI keeps (docs/transport.md).
+#[test]
+fn an_oauth_connection_loads_the_stored_grant() {
+    let secrets = Arc::new(Secrets::in_memory());
+    let access = crate::inference::chatgpt::test_support::access_token("acct-7", "plus");
+    crate::inference::chatgpt::test_support::store_grant(&secrets, "codex", &access);
+
+    let registry = registry_with_secrets(
+        r#"
+[connections.codex]
+provider = "openai-codex"
+auth = { kind = "oauth" }
+"#,
+        environment(&[]),
+        &secrets,
+    );
+    assert!(
+        registry.unavailable().is_empty(),
+        "{:?}",
+        registry.unavailable()
+    );
+}
+
+/// With no grant stored, the connection is unavailable and says how to fix it
+/// — not a panic, and not a silent half-working host.
+#[test]
+fn an_oauth_connection_without_a_grant_says_to_log_in() {
+    let registry = registry_with_secrets(
+        r#"
+[connections.codex]
+provider = "openai-codex"
+auth = { kind = "oauth" }
+"#,
+        environment(&[]),
+        &Arc::new(Secrets::in_memory()),
+    );
+    let unavailable = registry.unavailable();
+    assert_eq!(unavailable.len(), 1);
+    assert!(
+        unavailable[0].1.contains("efference setup"),
+        "{unavailable:?}"
+    );
+}
+
+/// The kind names a mechanism; which issuer it means is the provider's to say,
+/// and only the Codex backend has one today.
+#[test]
+fn oauth_on_a_provider_with_no_issuer_is_refused() {
+    let registry = registry_with_secrets(
+        r#"
+[connections.other]
+provider = "anthropic"
+auth = { kind = "oauth" }
+"#,
+        environment(&[]),
+        &Arc::new(Secrets::in_memory()),
+    );
+    let unavailable = registry.unavailable();
+    assert_eq!(unavailable.len(), 1);
+    assert!(unavailable[0].1.contains("no issuer"), "{unavailable:?}");
 }

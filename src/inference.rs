@@ -70,6 +70,17 @@ enum AuthConfig {
         key: String,
     },
     CodexCache,
+    /// `auth = { kind = "oauth" }`: a grant efference obtained and maintains,
+    /// in the secret store under `oauth:<name>` (docs/secrets.md). Names the
+    /// mechanism as the other kinds do; which issuer is the *provider's* to
+    /// say, so no issuer is configured here.
+    ///
+    /// Distinct from `keychain`, whose contract is "the operator placed a
+    /// secret and we read it": this one is obtained by a login flow, rewritten
+    /// on refresh, and carries an issuer and an expiry.
+    Oauth {
+        name: Option<String>,
+    },
     /// `auth = { kind = "keychain" }`: the OS secret store (docs/secrets.md),
     /// item `inference:<name>`, `name` defaulting to the connection's.
     Keychain {
@@ -541,7 +552,7 @@ fn load_credential(
             // The store is outside this process, so an operator who replaces the
             // item repairs a running host (docs/transport.md).
             let (store, key) = (secrets.clone(), item.clone());
-            let reload: Option<Reload> = Some(Box::new(move || {
+            let reload: Option<Reload> = Some(crate::api::sync_reload(move || {
                 match store.get(&key).map_err(|error| error.to_string())? {
                     Some(token) => Ok(provider.auth_header_value(&token)),
                     None => Err(format!("{} has no `{key}`", store.describe())),
@@ -559,6 +570,42 @@ fn load_credential(
                 .to_string();
             (token, None, key, None)
         }
+        AuthConfig::Oauth { name: item } => {
+            if provider != Provider::OpenAICodex {
+                return Err(format!(
+                    "auth kind oauth has no issuer for provider {provider}; only openai-codex                      has one today"
+                ));
+            }
+            let item = item.unwrap_or_else(|| name.to_string());
+            let grant = chatgpt::Grant::load(secrets, &item)?.ok_or_else(|| {
+                format!("no ChatGPT login stored for {item:?}; run `efference setup` to log in")
+            })?;
+            // The grant is refreshed by the reloader below rather than here:
+            // loading a registry is synchronous and happens in offline verbs
+            // too, and a launch is not the place to discover the issuer is
+            // unreachable. An expired token is re-read on its first rejection
+            // like any other kind (docs/transport.md).
+            let account = grant.account_id.clone();
+            let token = grant.tokens.access_token().to_string();
+            let (store, connection) = (secrets.clone(), item.clone());
+            let reload: Option<Reload> = Some(Box::new(move || {
+                let (store, connection) = (store.clone(), connection.clone());
+                Box::pin(async move {
+                    // Re-read first: another host process, or `efference setup`,
+                    // may have stored a fresh grant already, and refreshing
+                    // would rotate a token that did not need it.
+                    let stored = chatgpt::Grant::load(&store, &connection)?
+                        .ok_or_else(|| format!("the stored grant for {connection:?} is gone"))?;
+                    let grant = if stored.needs_refresh() {
+                        chatgpt::refresh(&store, &connection, &stored).await?
+                    } else {
+                        stored
+                    };
+                    Ok(provider.auth_header_value(grant.tokens.access_token()))
+                })
+            }));
+            (token, Some(account), format!("oauth:{item}"), reload)
+        }
         AuthConfig::CodexCache => {
             if provider != Provider::OpenAICodex {
                 return Err("auth kind codex-cache requires provider openai-codex".to_string());
@@ -572,7 +619,7 @@ fn load_credential(
             // not re-read — it rides `extra_headers` and is stable across a
             // refresh of the same login.
             let (cwd, env) = (host_cwd.to_path_buf(), host_env.clone());
-            let reload: Option<Reload> = Some(Box::new(move || {
+            let reload: Option<Reload> = Some(crate::api::sync_reload(move || {
                 let read = |name: &str| env.get(name).map(str::to_string);
                 crate::api::codex_cached_credentials(&cwd, &read)
                     .map_err(|error| format!("could not re-read the Codex cache: {error}"))
