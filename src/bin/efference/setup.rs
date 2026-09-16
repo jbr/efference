@@ -38,8 +38,11 @@ pub(crate) async fn run(config: Option<PathBuf>) -> CliResult {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(error) => return Err(format!("could not read {}: {error}", path.display()).into()),
     };
+    // A config this cannot read whole is refused rather than shown in part:
+    // the connection it could not parse is the one most likely to need
+    // repairing, and a shorter list looks complete (docs/operating.md).
     let existing = Existing::from_toml(&existing_text)
-        .map_err(|error| format!("{} is not TOML: {error}", path.display()))?;
+        .map_err(|error| format!("{}: {error}", path.display()))?;
     let mut terminal = Terminal::open()?;
     let probe = LiveProbe::capture()?;
     terminal.say(

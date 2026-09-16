@@ -179,6 +179,49 @@ file keeps its entries, comments, and standing `[defaults]`, and a name already
 in it is refused at the prompt. Esc or Ctrl-C at any prompt cancels with nothing
 written. `--config <path>` writes elsewhere.
 
+**Managing what is already there** (`src/setup/manage.rs`). With a config file,
+setup opens on the connections in it rather than on the provider menu — one row
+per connection with its name, provider, and a readiness note read locally
+(the variable is set, the stored item is there, the Codex token's `exp` has not
+passed; nothing is asked of a provider, since the list is drawn on every run) —
+plus adding another and finishing. A row offers:
+
+- **Edit**, per kind. An API key can move between the environment and the store,
+  or be replaced by rerunning the same credential prompts the add path uses; a
+  `codex-cache` connection has no storage to move, so it re-reads instead. Moving
+  a variable *into* the store needs no paste, since setup already read the value
+  for the readiness note — unless the variable holds a `<scheme>://…` reference
+  (an `op://…` that a resolver expands at read time), which is refused, because
+  storing what the variable literally says would put the unexpanded reference in
+  the keychain. The reverse is never spelled as a move: the stored value is
+  revealed, the config is switched to a variable, and the stored copy stays
+  unless separately cleared — a provider key is shown once at creation, so the
+  stored copy may be the only one.
+- **Rename**, which also moves the stored item when its name was implicit
+  (`inference:<name>` follows the connection): written under the new name, read
+  back, and only then removed, so an interruption strands a copy rather than
+  destroying the only one. An explicitly pinned `name` is left alone.
+- **Disable**, writing `disabled = true`: the connection keeps its models and
+  credential source and is never a candidate. `load_credential` is not called
+  for it, so it is unavailable by the same mechanism as a credential that failed
+  to load.
+- **Delete**, which also offers to clear the stored item, never silently.
+
+Disable and delete share one prompt about `[defaults]`, because `[defaults]`
+treats them identically: naming a disabled connection is an error at load, as
+naming a deleted one is, and both stop the host rather than the one role that
+named it. The check reads the declared flag and never a credential's load
+result — a config describes itself, and a credential that failed to load for an
+outside reason is not a config error. The operator is told which role is
+affected and offered a new target; leaving it dangling is allowed and says what
+it costs.
+
+A connection setup cannot read whole — an unrecognized `auth.kind`, a missing
+`provider`, a non-boolean `disabled` — is an error naming it, not a row left
+out. The connection it cannot parse is the one most likely to need repairing,
+and a shorter list looks complete; the kinds also grow, so a newer file read by
+an older build says it is not understood rather than hiding it.
+
 ```toml ~/.efference/config.toml
 [defaults]
 model = "work/anthropic/claude-sonnet-4-5"

@@ -4,6 +4,9 @@
 
 use std::path::Path;
 
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+
 use crate::api::{Endpoint, Provider};
 use crate::env_table::EnvSnapshot;
 use crate::secrets::Secrets;
@@ -42,8 +45,15 @@ pub trait Probe {
     fn secret_store(&self) -> Result<String, String>;
     /// Keep `value` under `name` in that store.
     fn store_secret(&self, name: &str, value: &str) -> Result<(), String>;
-    /// Whether Codex CLI's cached login is readable: `Ok(account id)` or why not.
+    /// Whether Codex CLI's cached login is readable: `Ok(account id)` or why not
+    /// — including a token past its own `exp` claim, decoded locally with no
+    /// network call.
     fn codex_cache(&self) -> Result<String, String>;
+    /// The value kept under `name` in the store, when there is a store and it
+    /// holds one. Read-only: never printed except by an explicit reveal.
+    fn secret_value(&self, name: &str) -> Result<Option<String>, String>;
+    /// Remove `name` from the store. Absent is not an error.
+    fn delete_secret(&self, name: &str) -> Result<(), String>;
     /// Whether the provider accepts `key`. `Ok(None)` when the provider has no
     /// route to ask.
     async fn check_key(&self, provider: Provider, key: &str) -> Result<Option<KeyReport>, String>;
@@ -101,11 +111,26 @@ impl Probe for LiveProbe {
         secrets.set(name, value).map_err(|error| error.to_string())
     }
 
+    fn secret_value(&self, name: &str) -> Result<Option<String>, String> {
+        let secrets = self.secrets.as_ref().map_err(Clone::clone)?;
+        secrets.get(name).map_err(|error| error.to_string())
+    }
+
+    fn delete_secret(&self, name: &str) -> Result<(), String> {
+        let secrets = self.secrets.as_ref().map_err(Clone::clone)?;
+        secrets.delete(name).map_err(|error| error.to_string())
+    }
+
     fn codex_cache(&self) -> Result<String, String> {
         let read = |name: &str| self.env.get(name).map(str::to_string);
-        crate::api::codex_cached_credentials(Path::new(&self.cwd), &read)
-            .map(|(_, account)| account)
-            .map_err(|error| error.to_string())
+        let (token, account) = crate::api::codex_cached_credentials(Path::new(&self.cwd), &read)
+            .map_err(|error| error.to_string())?;
+        if let Some(expiry) = jwt_exp(&token)
+            && expiry <= now_unix()
+        {
+            return Err("token expired".to_string());
+        }
+        Ok(account)
     }
 
     async fn check_key(&self, provider: Provider, key: &str) -> Result<Option<KeyReport>, String> {
@@ -148,6 +173,23 @@ impl Probe for LiveProbe {
             max_output_tokens: capabilities.max_output_tokens,
         })
     }
+}
+
+/// The `exp` claim of a JWT's payload segment, undecorated by a signature
+/// check — this is a local readiness hint, never the credential a request
+/// carries, so a token that fails to parse is simply not flagged expired.
+fn jwt_exp(token: &str) -> Option<i64> {
+    let payload = token.split('.').nth(1)?;
+    let bytes = URL_SAFE_NO_PAD.decode(payload).ok()?;
+    let json: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    json.get("exp")?.as_i64()
+}
+
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// OpenRouter's `GET /api/v1/key` body carries `data.label`; any other body

@@ -10,36 +10,43 @@
 
 use super::*;
 
-/// Run the questions against `existing` and return what to add. Says what it
+/// Run the questions against `existing` and return what to change. Says what it
 /// finds as it goes; the caller renders and writes the result.
+///
+/// Two flows behind one entry point (backlog/setup-edits-connections.md): a
+/// config with nothing configured yet gets the plain add path below; one that
+/// already has connections gets the management list (`src/setup/manage.rs`),
+/// which can also reach this same add path through its "add another" entry.
 pub async fn run<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
     existing: &Existing,
 ) -> Result<Draft, Cancelled> {
-    let mut draft = Draft::default();
     if existing.connections.is_empty() {
         prompter.say(
             Tone::Plain,
             "efference talks to a model through a named connection: a provider plus \
              where its credential comes from. Let's set one up.",
         );
+        let mut draft = Draft::default();
+        add_connections(prompter, probe, existing, &mut draft).await?;
+        draft.default_connection = choose_default(prompter, existing, &draft)?;
+        Ok(draft)
     } else {
-        let names: Vec<String> = existing
-            .connections
-            .iter()
-            .map(|(name, provider)| format!("{name} ({provider})"))
-            .collect();
-        prompter.say(
-            Tone::Plain,
-            &format!(
-                "Existing connections: {}. Adding another.",
-                names.join(", ")
-            ),
-        );
+        super::manage::run(prompter, probe, existing).await
     }
+}
+
+/// One or more new connections, looped until the person says no more. Shared
+/// by the first-run path and the management list's "add another connection".
+pub(super) async fn add_connections<P: Prompter, Q: Probe>(
+    prompter: &mut P,
+    probe: &Q,
+    existing: &Existing,
+    draft: &mut Draft,
+) -> Result<(), Cancelled> {
     loop {
-        let (name, connection) = one_connection(prompter, probe, existing, &draft).await?;
+        let (name, connection) = one_connection(prompter, probe, existing, draft).await?;
         prompter.say(
             Tone::Good,
             &format!(
@@ -52,8 +59,7 @@ pub async fn run<P: Prompter, Q: Probe>(
             break;
         }
     }
-    draft.default_connection = choose_default(prompter, existing, &draft)?;
-    Ok(draft)
+    Ok(())
 }
 
 async fn one_connection<P: Prompter, Q: Probe>(
@@ -248,7 +254,7 @@ async fn check_key<P: Prompter, Q: Probe>(
     }
 }
 
-fn codex_source<P: Prompter, Q: Probe>(
+pub(super) fn codex_source<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
 ) -> Result<AuthSource, Cancelled> {
@@ -387,7 +393,7 @@ async fn check_model<P: Prompter, Q: Probe>(
 /// Which connection `[defaults]` points at. One new connection on an empty file
 /// needs no question. An existing default is kept unless the person says
 /// otherwise; several candidates are a menu.
-fn choose_default<P: Prompter>(
+pub(super) fn choose_default<P: Prompter>(
     prompter: &mut P,
     existing: &Existing,
     draft: &Draft,

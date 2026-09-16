@@ -233,6 +233,62 @@ auth = { kind = "env", key = "K" }
     assert!(error.contains("no '/'"), "{error}");
 }
 
+/// A disabled connection stays in the catalog but is never resolved, and a
+/// [defaults] entry naming it fails at load, identical to naming a connection
+/// that was never configured (docs/operating.md).
+#[test]
+fn a_disabled_connection_is_never_a_candidate() {
+    let config = InferenceConfig::from_toml(
+        r#"
+[defaults]
+model = "main/claude"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+disabled = true
+"#,
+    )
+    .unwrap();
+    let error = match InferenceRegistry::from_config(
+        config,
+        Path::new("/host"),
+        environment(&[("ANTHROPIC_KEY", "secret")]),
+        &Arc::new(Secrets::in_memory()),
+    ) {
+        Ok(_) => panic!("[defaults].model naming a disabled connection unexpectedly loaded"),
+        Err(error) => error.to_string(),
+    };
+    assert!(error.contains("\"main\""), "{error}");
+    assert!(
+        error.contains("is disabled"),
+        "the operator turned it off; reporting it as unconfigured sends them looking \
+         for a connection that is right there in the file: {error}"
+    );
+}
+
+/// A disabled connection with no [defaults] naming it loads fine; resolving a
+/// role against it explicitly still fails, by the ordinary unavailable-
+/// credential path.
+#[test]
+fn a_disabled_connection_can_still_be_named_explicitly_and_fails_to_resolve() {
+    let registry = registry(
+        r#"
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+disabled = true
+"#,
+        environment(&[("ANTHROPIC_KEY", "secret")]),
+    );
+    let error = match registry.resolve(Some("main/claude"), None, None) {
+        Ok(_) => panic!("a disabled connection unexpectedly resolved"),
+        Err(error) => error.to_string(),
+    };
+    assert!(error.contains("unavailable"), "{error}");
+    assert!(error.contains("disabled"), "{error}");
+}
+
 /// Explicit triage is own-client mode even when it names the main model; only an
 /// omitted triage (with no configured default) shares the main client.
 #[test]

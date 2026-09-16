@@ -54,6 +54,12 @@ struct Defaults {
 struct ConnectionConfig {
     provider: String,
     auth: AuthConfig,
+    /// Kept in the catalog with its credential source intact, never a
+    /// candidate for a session (docs/operating.md). `load_credential` is not
+    /// even called: the connection's credential is unconditionally
+    /// unavailable, by the same mechanism as a credential that fails to load.
+    #[serde(default)]
+    disabled: bool,
 }
 
 /// The location of an inference credential, never its value.
@@ -207,11 +213,26 @@ impl InferenceRegistry {
         secrets: &Arc<Secrets>,
     ) -> Result<Self, Error> {
         let mut connections = BTreeMap::new();
+        // A disabled connection stays keyed in `connections` (its models and
+        // credential source are still what the operator wrote) but is left out
+        // of `enabled_names`, so a [defaults] entry naming it fails here exactly
+        // as one naming a connection that was never configured does, rather
+        // than waiting for a session to resolve that role (docs/operating.md).
+        let mut enabled_names = BTreeSet::new();
+        let mut disabled_names = BTreeSet::new();
         for (name, config) in config.connections {
             validate_connection_name(&name)?;
             let provider = Provider::from_name(&config.provider)?;
-            let credential =
-                load_credential(&name, provider, config.auth, host_cwd, &host_env, secrets);
+            let credential = if config.disabled {
+                Err(format!("connection {name:?} is disabled"))
+            } else {
+                load_credential(&name, provider, config.auth, host_cwd, &host_env, secrets)
+            };
+            if config.disabled {
+                disabled_names.insert(name.clone());
+            } else {
+                enabled_names.insert(name.clone());
+            }
             connections.insert(
                 name,
                 Connection {
@@ -220,11 +241,25 @@ impl InferenceRegistry {
                 },
             );
         }
-        let names = connections.keys().cloned().collect();
         let defaults = ResolvedDefaults {
-            model: resolve_config_default(config.defaults.model, &names, "model")?,
-            spotter: resolve_config_default(config.defaults.spotter, &names, "spotter")?,
-            triage: resolve_config_default(config.defaults.triage, &names, "triage")?,
+            model: resolve_config_default(
+                config.defaults.model,
+                &enabled_names,
+                &disabled_names,
+                "model",
+            )?,
+            spotter: resolve_config_default(
+                config.defaults.spotter,
+                &enabled_names,
+                &disabled_names,
+                "spotter",
+            )?,
+            triage: resolve_config_default(
+                config.defaults.triage,
+                &enabled_names,
+                &disabled_names,
+                "triage",
+            )?,
         };
         Ok(Self {
             connections,
@@ -535,9 +570,15 @@ fn load_credential(
     })
 }
 
+/// `names` is the connections a default may name; `disabled` is those the
+/// operator turned off, carried separately only so the error says which of the
+/// two happened. The check reads the declared flag, never a credential's load
+/// result: a config describes itself, and a credential that failed to load for
+/// an outside reason is not a config error (docs/operating.md).
 fn resolve_config_default(
     value: Option<String>,
     names: &BTreeSet<String>,
+    disabled: &BTreeSet<String>,
     role: &str,
 ) -> Result<Option<ModelReference>, Error> {
     let Some(value) = value else {
@@ -553,10 +594,16 @@ fn resolve_config_default(
         return Err(format!("[defaults].{role} is not a qualified model: {value:?}").into());
     }
     if !names.contains(connection) {
-        return Err(format!(
-            "[defaults].{role} selects connection {connection:?}, but it is not configured"
-        )
-        .into());
+        return Err(if disabled.contains(connection) {
+            format!("[defaults].{role} selects connection {connection:?}, but it is disabled")
+                .into()
+        } else {
+            let error: Error = format!(
+                "[defaults].{role} selects connection {connection:?}, but it is not configured"
+            )
+            .into();
+            error
+        });
     }
     Ok(Some(ModelReference {
         connection: connection.to_string(),
