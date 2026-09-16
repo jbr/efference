@@ -21,7 +21,7 @@ The log is read once at open, so a session that is still running shows as of the
 
 ## The transcript is another `project(log)`
 
-Just as the wire is a deterministic projection of the log into an Anthropic `messages` array (see [log-and-projection.md](log-and-projection.md)), `tui/projection.rs`'s
+Just as the wire is a deterministic projection of the log into the request its dialect requires (see [log-and-projection.md](log-and-projection.md)), `tui/projection.rs`'s
 
 ```rust
 project(&[LogEntry], &LiveTail, &ViewState, Gate<'_>, pending_turns: &[SubmittedTurn]) -> Document<'static>

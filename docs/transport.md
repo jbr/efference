@@ -1,10 +1,11 @@
 # Transport & streaming
 
-This layer bridges `project(log)` and an Anthropic-Messages-compatible endpoint
-(Anthropic directly, or OpenRouter's `/api/v1/messages` skin — see
-[providers](#providers)): it turns a projected message list into an HTTP
-request, streams the response back, and hands a finished `Completion` to the
-loop — which appends it to the log and forks. Everything described here is transport-only. None of it appends to the
+This layer bridges `project(log)` and the upstream endpoint in whichever wire dialect
+the provider speaks — Anthropic Messages (Anthropic directly, or OpenRouter's
+`/api/v1/messages` skin) or OpenAI Responses (the Codex backend or the platform API); see
+[the Responses dialect](#the-responses-dialect) and [providers](#providers). It turns a
+projected conversation into an HTTP request, streams the response back, and hands a
+finished `Completion` to the loop — which appends it to the log and forks. Everything described here is transport-only. None of it appends to the
 log, changes a projection, or perturbs the byte-stability invariants guarded in
 [log-and-projection.md](log-and-projection.md).
 

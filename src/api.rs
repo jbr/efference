@@ -1,4 +1,5 @@
-//! The Anthropic Messages API wire — request/response shapes and the HTTP call.
+//! The upstream wire — request/response shapes and the HTTP call, in either dialect
+//! (`WireDialect`: Anthropic Messages or OpenAI Responses, docs/transport.md).
 //!
 //! Streaming. The request `messages` are produced by [`crate::project::project`];
 //! the response arrives as a Server-Sent Events stream and is reassembled by

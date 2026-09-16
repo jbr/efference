@@ -21,11 +21,17 @@ positions behind it are in [positions.md](positions.md); planned work lives in
 
 ## What this is
 
-efference is a daemon (`efference host`) that runs the agent turn loop against an
-Anthropic-Messages-compatible endpoint, driven entirely through an HTTP control
-channel that the TUI, the CLI verbs, scripts, and other agents share as equal
-clients. It is one take on the harness category — a small, deliberately curated
-featureset — built on positions rather than a thesis: chiefly that autonomy is a
+efference is a long-lived host process (`efference host`) that holds every session and
+runs their agent turn loops, against two wire dialects: Anthropic Messages and OpenAI
+Responses ([transport.md](transport.md)). It is driven entirely through an HTTP control
+channel — over a Unix socket, ordinarily the user-wide `~/.efference/host.sock`, and
+optionally over TCP as the web client's front door ([web-bind.md](web-bind.md)) — which
+the TUI, the CLI verbs, scripts, and other agents share as equal clients. A session takes
+the working directory and environment of the client that created it, and outlives that
+client: detaching a TUI leaves the loop running in the host.
+
+It is one take on the harness category — a small, deliberately curated featureset —
+built on positions rather than a thesis: chiefly that autonomy is a
 runtime dial rather than a product identity, and that friction experienced by the
 agent is a defect even when the work completes anyway. [positions.md](positions.md)
 records the positions and the observed failures behind them.
