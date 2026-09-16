@@ -25,7 +25,7 @@ mod render;
 pub mod terminal;
 
 pub use flow::run;
-pub use probe::{KeyReport, LiveProbe, ModelListing, ModelReport, Probe};
+pub use probe::{ChatGptLogin, KeyReport, LiveProbe, ModelListing, ModelReport, Probe};
 pub use render::{render, write};
 
 /// The person declined to continue: Esc or Ctrl-C at any prompt. Nothing has
@@ -114,6 +114,10 @@ pub enum AuthSource {
     /// `auth = { kind = "keychain" }`: the secret store's `inference:<name>`
     /// item, which setup wrote (docs/secrets.md).
     Keychain,
+    /// `auth = { kind = "oauth" }`: the secret store's `oauth:<name>` item,
+    /// holding the grant setup obtained by logging in (docs/secrets.md). The
+    /// item name is the connection's, so the kind carries no field.
+    Oauth,
 }
 
 /// One connection the flow decided on.
@@ -125,6 +129,9 @@ pub struct ConnectionDraft {
     pub model: String,
     /// The provider-native id for the spotter rung.
     pub spotter: String,
+    /// `disabled = true` on the appended table. A connection can be disabled in
+    /// the management flow before the run that adds it has written anything.
+    pub disabled: bool,
 }
 
 /// Everything setup decided, before it becomes TOML.
@@ -138,8 +145,49 @@ pub struct Draft {
     /// person kept it.
     pub default_connection: Option<String>,
     /// Mutations to connections that already exist, in the order decided
-    /// (`src/setup/manage.rs`). Empty on the first-run add path.
+    /// (`src/setup/manage.rs`). Empty on the first-run add path. Queued through
+    /// [`Draft::record`], which is what keeps every entry naming a connection
+    /// the file actually has.
     pub edits: Vec<Change>,
+}
+
+impl Draft {
+    /// Record one management decision (docs/operating.md).
+    ///
+    /// A decision about a connection this same run added is not an edit to the
+    /// file: the connection is not there yet, and `render` applies `edits`
+    /// against the document before appending `connections`, so queueing one
+    /// would fail the write and lose the run. Such a decision is applied to the
+    /// pending [`ConnectionDraft`] instead, and only the rest become [`Change`]s.
+    pub fn record(&mut self, change: Change) {
+        let Some(target) = change.connection() else {
+            self.edits.push(change);
+            return;
+        };
+        let Some(index) = self.connections.iter().position(|(name, _)| name == target) else {
+            self.edits.push(change);
+            return;
+        };
+        match change {
+            Change::Rename { from, to } => {
+                self.connections[index].0 = to.clone();
+                if self.default_connection.as_deref() == Some(from.as_str()) {
+                    self.default_connection = Some(to);
+                }
+            }
+            Change::SetAuth { auth, .. } => self.connections[index].1.auth = auth,
+            Change::SetDisabled { disabled, .. } => {
+                self.connections[index].1.disabled = disabled;
+            }
+            Change::Delete { name } => {
+                self.connections.remove(index);
+                if self.default_connection.as_deref() == Some(name.as_str()) {
+                    self.default_connection = None;
+                }
+            }
+            Change::SetDefaultRole { .. } => unreachable!("no connection target"),
+        }
+    }
 }
 
 /// One mutation the management flow makes to an existing document (render.rs
@@ -164,6 +212,20 @@ pub enum Change {
         role: DefaultRole,
         value: Option<String>,
     },
+}
+
+impl Change {
+    /// The connection this change is about, or `None` for one that is not about
+    /// a connection at all.
+    fn connection(&self) -> Option<&str> {
+        match self {
+            Change::Rename { from, .. } => Some(from),
+            Change::SetAuth { name, .. }
+            | Change::SetDisabled { name, .. }
+            | Change::Delete { name } => Some(name),
+            Change::SetDefaultRole { .. } => None,
+        }
+    }
 }
 
 /// Which `[defaults]` key a [`Change::SetDefaultRole`] targets.
@@ -205,13 +267,23 @@ pub enum ExistingAuth {
     Keychain {
         name: Option<String>,
     },
+    /// `name` as for [`ExistingAuth::Keychain`], naming the `oauth:<name>`
+    /// item the grant is stored under.
+    Oauth {
+        name: Option<String>,
+    },
 }
 
 impl ExistingAuth {
-    /// The secret-store item this auth reads, when it is keychain-backed.
+    /// The secret-store item this auth reads, for the two kinds that read one:
+    /// a keychain key, or an OAuth grant. `None` for the kinds whose
+    /// credential is elsewhere.
     pub(crate) fn item_name(&self, connection: &str) -> Option<String> {
         match self {
             ExistingAuth::Keychain { name } => Some(crate::secrets::inference_name(
+                name.as_deref().unwrap_or(connection),
+            )),
+            ExistingAuth::Oauth { name } => Some(crate::secrets::oauth_name(
                 name.as_deref().unwrap_or(connection),
             )),
             _ => None,
@@ -349,20 +421,27 @@ fn parse_auth(item: &toml_edit::Item) -> Result<ExistingAuth, String> {
             .map(str::to_string)
             .ok_or_else(|| format!("has a non-string `auth.{field}`"))
     };
+    // Absent is the implicit item name; present-but-not-a-string is an error.
+    let optional_name = || -> Result<Option<String>, String> {
+        match table.get("name") {
+            None => Ok(None),
+            Some(_) => Ok(Some(string("name")?)),
+        }
+    };
     match kind {
         "env" => Ok(ExistingAuth::Env {
             key: string("key")?,
         }),
         "codex-cache" => Ok(ExistingAuth::CodexCache),
         "keychain" => Ok(ExistingAuth::Keychain {
-            name: match table.get("name") {
-                None => None,
-                Some(_) => Some(string("name")?),
-            },
+            name: optional_name()?,
+        }),
+        "oauth" => Ok(ExistingAuth::Oauth {
+            name: optional_name()?,
         }),
         other => Err(format!(
             "has an `auth` of unrecognized kind {other:?}; this build understands \
-             env, keychain, and codex-cache"
+             env, keychain, oauth, and codex-cache"
         )),
     }
 }
@@ -406,8 +485,8 @@ pub(crate) const PROVIDERS: [ProviderCard; 4] = [
     },
     ProviderCard {
         provider: Provider::OpenAICodex,
-        label: "ChatGPT subscription via Codex",
-        detail: "the login Codex CLI keeps",
+        label: "ChatGPT subscription",
+        detail: "your Plus or Pro plan",
         env_key: None,
         model_hint: "gpt-5.6",
     },

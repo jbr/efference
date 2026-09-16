@@ -72,9 +72,9 @@ pub(crate) async fn run(config: Option<PathBuf>) -> CliResult {
         .iter()
         .filter_map(|(_, connection)| match &connection.auth {
             efference::setup::AuthSource::Env { key } => Some(key.clone()),
-            efference::setup::AuthSource::CodexCache | efference::setup::AuthSource::Keychain => {
-                None
-            }
+            efference::setup::AuthSource::CodexCache
+            | efference::setup::AuthSource::Keychain
+            | efference::setup::AuthSource::Oauth => None,
         })
         .collect();
     terminal.say(Tone::Plain, "");

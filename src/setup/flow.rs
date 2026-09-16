@@ -10,6 +10,9 @@
 
 use super::*;
 
+mod chatgpt;
+pub(super) use chatgpt::{chatgpt_source, codex_cache_source, oauth_source};
+
 /// Run the questions against `existing` and return what to change. Says what it
 /// finds as it goes; the caller renders and writes the result.
 ///
@@ -106,7 +109,7 @@ async fn one_connection<P: Prompter, Q: Probe>(
 
     let (auth, key) = match card.env_key {
         Some(default_key) => api_key_source(prompter, probe, provider, &name, default_key).await?,
-        None => (codex_source(prompter, probe)?, None),
+        None => (chatgpt_source(prompter, probe, &name).await?, None),
     };
 
     let model = choose_model(prompter, probe, card, key.as_deref()).await?;
@@ -118,6 +121,7 @@ async fn one_connection<P: Prompter, Q: Probe>(
             auth,
             model,
             spotter,
+            disabled: false,
         },
     ))
 }
@@ -252,29 +256,6 @@ async fn check_key<P: Prompter, Q: Probe>(
             Ok(None)
         }
     }
-}
-
-pub(super) fn codex_source<P: Prompter, Q: Probe>(
-    prompter: &mut P,
-    probe: &Q,
-) -> Result<AuthSource, Cancelled> {
-    match probe.codex_cache() {
-        Ok(account) => prompter.say(
-            Tone::Good,
-            &format!("Found a Codex login for account {account}."),
-        ),
-        Err(error) => {
-            prompter.say(Tone::Bad, &format!("No Codex login found: {error}"));
-            prompter.say(
-                Tone::Note,
-                "Run `codex login` before starting a host; the host reads the cache at launch.",
-            );
-            if !prompter.confirm("Record this connection anyway?", true)? {
-                return Err(Cancelled);
-            }
-        }
-    }
-    Ok(AuthSource::CodexCache)
 }
 
 /// The main model: from a live listing when the provider offers one and a key

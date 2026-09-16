@@ -26,6 +26,17 @@ pub struct ModelReport {
     pub max_output_tokens: Option<u64>,
 }
 
+/// What a completed ChatGPT login learned, once the grant is stored
+/// (docs/secrets.md). The tokens stay in the store; nothing the flow prints
+/// comes from them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatGptLogin {
+    /// `chatgpt_account_id`, which every request on this connection carries.
+    pub account_id: String,
+    /// The plan the grant named at login, when it named one.
+    pub plan: Option<String>,
+}
+
 /// One entry of a live model listing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelListing {
@@ -49,6 +60,11 @@ pub trait Probe {
     /// — including a token past its own `exp` claim, decoded locally with no
     /// network call.
     fn codex_cache(&self) -> Result<String, String>;
+    /// Run the ChatGPT authorization dance and store the grant under
+    /// `oauth:<connection>` (docs/secrets.md), returning what it named. The
+    /// browser opening and the HTTP round trips live behind this method so the
+    /// flow stays testable.
+    async fn chatgpt_login(&self, connection: &str) -> Result<ChatGptLogin, String>;
     /// The value kept under `name` in the store, when there is a store and it
     /// holds one. Read-only: never printed except by an explicit reveal.
     fn secret_value(&self, name: &str) -> Result<Option<String>, String>;
@@ -133,6 +149,16 @@ impl Probe for LiveProbe {
         Ok(account)
     }
 
+    async fn chatgpt_login(&self, connection: &str) -> Result<ChatGptLogin, String> {
+        let secrets = self.secrets.as_ref().map_err(Clone::clone)?;
+        let grant = crate::inference::chatgpt::log_in(present_authorization).await?;
+        grant.save(secrets, connection)?;
+        Ok(ChatGptLogin {
+            account_id: grant.account_id,
+            plan: grant.plan,
+        })
+    }
+
     async fn check_key(&self, provider: Provider, key: &str) -> Result<Option<KeyReport>, String> {
         let body = Self::endpoint(provider, key)?
             .check_key()
@@ -173,6 +199,29 @@ impl Probe for LiveProbe {
             max_output_tokens: capabilities.max_output_tokens,
         })
     }
+}
+
+/// Get the person to the authorization URL: print it, then try to open it.
+///
+/// The URL is printed either way, so the open is attempted unconditionally and
+/// a failure is reported rather than fatal — the same reasoning as the MCP
+/// authorization path (`src/boot/mcp_mount.rs`). Written on stdout, where the
+/// prompts are, so it reads in place in the transcript setup leaves behind; no
+/// prompt is open while the login runs, so raw mode is not in effect.
+fn present_authorization(url: &str) -> Result<(), String> {
+    println!();
+    println!("  Log in to ChatGPT to authorize efference:");
+    println!();
+    println!("  {url}");
+    println!();
+    match webbrowser::open(url) {
+        Ok(()) => println!("  (opened in your browser — waiting for you to finish)"),
+        Err(error) => {
+            println!("  (could not open a browser: {error} — open the URL above to continue)")
+        }
+    }
+    println!();
+    Ok(())
 }
 
 /// The `exp` claim of a JWT's payload segment, undecorated by a signature

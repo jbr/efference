@@ -63,6 +63,9 @@ pub fn render(existing_text: &str, draft: &Draft) -> Result<String, String> {
         let mut table = Table::new();
         table["provider"] = value(connection.provider.name());
         table["auth"] = value(auth_inline_table(&connection.auth));
+        if connection.disabled {
+            table["disabled"] = value(true);
+        }
         connections.insert(name, Item::Table(table));
     }
     let body = doc.to_string();
@@ -86,6 +89,9 @@ fn auth_inline_table(auth: &AuthSource) -> InlineTable {
         }
         AuthSource::Keychain => {
             table.insert("kind", "keychain".into());
+        }
+        AuthSource::Oauth => {
+            table.insert("kind", "oauth".into());
         }
     }
     table

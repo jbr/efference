@@ -41,6 +41,11 @@ pub(super) async fn edit_connection<P: Prompter, Q: Probe>(
         ExistingAuth::CodexCache => {
             choices.push(Choice::new("Re-authorize"));
         }
+        // No move for a grant: there is no value to put in a variable, and
+        // nothing to paste. Running the login again is the whole repair.
+        ExistingAuth::Oauth { .. } => {
+            choices.push(Choice::new("Re-authorize"));
+        }
     }
     choices.push(Choice::new("Back"));
     let picked = prompter.select(&format!("Edit {name}"), &choices)?;
@@ -55,8 +60,19 @@ pub(super) async fn edit_connection<P: Prompter, Q: Probe>(
         "Reveal the key and switch to an environment variable" => {
             reveal_and_switch_to_env(prompter, probe, working, draft, name, connection).await
         }
+        // One label, two mechanisms: the cached login is re-checked, a grant is
+        // obtained again. The stored item name is the connection's unless the
+        // file pinned one.
         "Re-authorize" => {
-            crate::setup::flow::codex_source(prompter, probe)?;
+            match &connection.auth {
+                ExistingAuth::Oauth { name: item } => {
+                    let item = item.clone().unwrap_or_else(|| name.to_string());
+                    crate::setup::flow::oauth_source(prompter, probe, &item).await?;
+                }
+                _ => {
+                    crate::setup::flow::codex_cache_source(prompter, probe)?;
+                }
+            }
             Ok(())
         }
         _ => Ok(()),
@@ -94,9 +110,20 @@ async fn rename_connection<P: Prompter, Q: Probe>(
         }
         break typed;
     };
-    if let ExistingAuth::Keychain { name: None } = &connection.auth {
-        let old_item = crate::secrets::inference_name(name);
-        let new_item = crate::secrets::inference_name(&new_name);
+    // A stored item named after the connection moves with it; an item name the
+    // file pinned explicitly stays where the file says it is.
+    let moving = match &connection.auth {
+        ExistingAuth::Keychain { name: None } => Some((
+            crate::secrets::inference_name(name),
+            crate::secrets::inference_name(&new_name),
+        )),
+        ExistingAuth::Oauth { name: None } => Some((
+            crate::secrets::oauth_name(name),
+            crate::secrets::oauth_name(&new_name),
+        )),
+        _ => None,
+    };
+    if let Some((old_item, new_item)) = moving {
         let value = match probe.secret_value(&old_item) {
             Ok(Some(value)) => value,
             Ok(None) => {
@@ -130,7 +157,7 @@ async fn rename_connection<P: Prompter, Q: Probe>(
                 } else {
                     prompter.say(
                         Tone::Good,
-                        &format!("Moved the stored key to `{new_item}`."),
+                        &format!("Moved the stored credential to `{new_item}`."),
                     );
                 }
             }
@@ -145,7 +172,7 @@ async fn rename_connection<P: Prompter, Q: Probe>(
             }
         }
     }
-    draft.edits.push(Change::Rename {
+    draft.record(Change::Rename {
         from: name.to_string(),
         to: new_name.clone(),
     });
@@ -161,8 +188,8 @@ async fn rename_connection<P: Prompter, Q: Probe>(
             *value = format!("{new_name}/{rest}");
         }
     }
-    // A keychain auth with an implicit item name now defaults to the new
-    // connection's name, which is exactly what just happened above.
+    // A keychain or oauth auth with an implicit item name now defaults to the
+    // new connection's name, which is exactly what just happened above.
     let updated = connection.clone();
     working.connections.remove(name);
     working.connections.insert(new_name.clone(), updated);
@@ -197,7 +224,7 @@ async fn update_credential<P: Prompter, Q: Probe>(
         .unwrap_or("API_KEY");
     let (auth, _) =
         crate::setup::flow::api_key_source(prompter, probe, provider, name, default_key).await?;
-    draft.edits.push(Change::SetAuth {
+    draft.record(Change::SetAuth {
         name: name.to_string(),
         auth: auth.clone(),
     });
@@ -238,7 +265,7 @@ async fn move_env_to_keychain<P: Prompter, Q: Probe>(
     let item = crate::secrets::inference_name(name);
     match probe.store_secret(&item, &value) {
         Ok(()) => {
-            draft.edits.push(Change::SetAuth {
+            draft.record(Change::SetAuth {
                 name: name.to_string(),
                 auth: AuthSource::Keychain,
             });
@@ -292,7 +319,7 @@ async fn reveal_and_switch_to_env<P: Prompter, Q: Probe>(
         }
         break typed;
     };
-    draft.edits.push(Change::SetAuth {
+    draft.record(Change::SetAuth {
         name: name.to_string(),
         auth: AuthSource::Env {
             key: variable.clone(),
@@ -323,6 +350,7 @@ pub(super) fn to_existing_auth(auth: &AuthSource) -> ExistingAuth {
         AuthSource::Env { key } => ExistingAuth::Env { key: key.clone() },
         AuthSource::CodexCache => ExistingAuth::CodexCache,
         AuthSource::Keychain => ExistingAuth::Keychain { name: None },
+        AuthSource::Oauth => ExistingAuth::Oauth { name: None },
     }
 }
 

@@ -139,7 +139,7 @@ async fn act_on_connection<P: Prompter, Q: Probe>(
             if disabled {
                 offer_repoint_defaults(prompter, working, draft, name).await?;
             }
-            draft.edits.push(Change::SetDisabled {
+            draft.record(Change::SetDisabled {
                 name: name.to_string(),
                 disabled,
             });
@@ -167,7 +167,7 @@ async fn act_on_connection<P: Prompter, Q: Probe>(
                         }
                     }
                 }
-                draft.edits.push(Change::Delete {
+                draft.record(Change::Delete {
                     name: name.to_string(),
                 });
                 working.connections.remove(name);
@@ -224,7 +224,7 @@ async fn offer_repoint_defaults<P: Prompter>(
             continue;
         }
         let qualified = format!("{target}/{model}");
-        draft.edits.push(Change::SetDefaultRole {
+        draft.record(Change::SetDefaultRole {
             role,
             value: Some(qualified.clone()),
         });
@@ -270,6 +270,15 @@ fn describe_auth<Q: Probe>(
             match probe.secret_value(&item) {
                 Ok(Some(_)) => (source, None),
                 Ok(None) => (source, Some("not in the store".to_string())),
+                Err(error) => (source, Some(error)),
+            }
+        }
+        ExistingAuth::Oauth { .. } => {
+            let item = connection.auth.item_name(name).expect("oauth auth");
+            let source = format!("oauth · {item}");
+            match probe.secret_value(&item) {
+                Ok(Some(_)) => (source, None),
+                Ok(None) => (source, Some("no stored login".to_string())),
                 Err(error) => (source, Some(error)),
             }
         }

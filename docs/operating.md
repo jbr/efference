@@ -178,13 +178,27 @@ add another, and which connection sessions default to when there is a choice.
 The credential source is an environment variable (prefilled with the provider's
 conventional name), a key pasted now and kept in the OS credential store as
 `inference:<name>` ([secrets.md](secrets.md); the file then records only
-`kind = "keychain"`), or, for Codex, the CLI's cached login. What can be checked
+`kind = "keychain"`), or, for a ChatGPT subscription, one of two ways to hold
+that plan. What can be checked
 is checked live: a variable that is set in setup's own shell is tried against
 the provider, an unset one can be pasted for the check alone (sent to the
 provider, never written), a key to be kept is checked before it is kept,
 Anthropic offers its model listing as a menu, and a chosen model is described
 from the same metadata boot reads. A rejected key or an unknown model
-is said and can be kept. The file is written `0600` under the owner; an existing
+is said and can be kept.
+
+The subscription's two ways are asked as one question, since both spend the same
+Plus or Pro plan: piggyback on Codex's cached login (`kind = "codex-cache"`,
+which needs Codex run often enough to keep the token fresh), or log in here
+(`kind = "oauth"`: the browser opens, the grant is kept as `oauth:<name>`
+([secrets.md](secrets.md)) and refreshed from there, and Codex need not be
+installed). An unavailable way is listed with its reason rather than hidden — no
+Codex cache to read, or no store to keep a grant in — and when neither is open
+setup says both reasons instead of drawing an empty menu. A login that does not
+finish is offered again and records nothing when declined, since a connection
+naming a grant that is not there fails at host launch.
+
+The file is written `0600` under the owner; an existing
 file keeps its entries, comments, and standing `[defaults]`, and a name already
 in it is refused at the prompt. Esc or Ctrl-C at any prompt cancels with nothing
 written. `--config <path>` writes elsewhere.
@@ -192,13 +206,16 @@ written. `--config <path>` writes elsewhere.
 **Managing what is already there** (`src/setup/manage.rs`). With a config file,
 setup opens on the connections in it rather than on the provider menu — one row
 per connection with its name, provider, and a readiness note read locally
-(the variable is set, the stored item is there, the Codex token's `exp` has not
-passed; nothing is asked of a provider, since the list is drawn on every run) —
+(the variable is set, the stored item or login is there, the Codex token's `exp`
+has not passed; nothing is asked of a provider, since the list is drawn on every
+run) —
 plus adding another and finishing. A row offers:
 
 - **Edit**, per kind. An API key can move between the environment and the store,
   or be replaced by rerunning the same credential prompts the add path uses; a
-  `codex-cache` connection has no storage to move, so it re-reads instead. Moving
+  `codex-cache` connection has no storage to move, so it re-reads instead, and an
+  `oauth` connection offers re-authorize where the key kinds offer move: a grant
+  is not a value that can be exported to a variable. Moving
   a variable *into* the store needs no paste, since setup already read the value
   for the readiness note — unless the variable holds a `<scheme>://…` reference
   (an `op://…` that a resolver expands at read time), which is refused, because
@@ -208,7 +225,8 @@ plus adding another and finishing. A row offers:
   unless separately cleared — a provider key is shown once at creation, so the
   stored copy may be the only one.
 - **Rename**, which also moves the stored item when its name was implicit
-  (`inference:<name>` follows the connection): written under the new name, read
+  (`inference:<name>` or `oauth:<name>` follows the connection): written under
+  the new name, read
   back, and only then removed, so an interruption strands a copy rather than
   destroying the only one. An explicitly pinned `name` is left alone.
 - **Disable**, writing `disabled = true`: the connection keeps its models and
@@ -248,7 +266,11 @@ auth = { kind = "keychain" }   # the store's inference:personal item
 
 [connections.codex]
 provider = "openai-codex"
-auth = { kind = "codex-cache" }
+auth = { kind = "codex-cache" }   # the login Codex CLI keeps
+
+[connections.chatgpt]
+provider = "openai-codex"
+auth = { kind = "oauth" }         # the store's oauth:chatgpt grant
 ```
 
 A fourth read is offline, about spend rather than content, and a developer's instrument
