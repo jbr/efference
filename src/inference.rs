@@ -573,7 +573,8 @@ fn load_credential(
         AuthConfig::Oauth { name: item } => {
             if provider != Provider::OpenAICodex {
                 return Err(format!(
-                    "auth kind oauth has no issuer for provider {provider}; only openai-codex                      has one today"
+                    "auth kind oauth has no issuer for provider {provider}; only openai-codex \
+                     has one today"
                 ));
             }
             let item = item.unwrap_or_else(|| name.to_string());

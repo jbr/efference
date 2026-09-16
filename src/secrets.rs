@@ -1,9 +1,10 @@
 //! The secret store (docs/secrets.md): `get`/`set`/`delete` of one named string
 //! in the user's OS credential store, under the service name `efference`.
 //!
-//! Two populations share it under prefixed names — `inference:<connection>`
-//! for API keys and `mcp:<server>` for OAuth grants — so a listing in the OS's
-//! own UI reads, and neither can shadow the other.
+//! Three populations share it under prefixed names — `inference:<connection>`
+//! for API keys, `oauth:<connection>` for ChatGPT grants, and `mcp:<server>`
+//! for MCP grants — so a listing in the OS's own UI reads, and none can shadow
+//! another.
 //!
 //! The backend is chosen once per process by [`Secrets::detect`]:
 //!
