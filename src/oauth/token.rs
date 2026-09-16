@@ -175,7 +175,13 @@ pub async fn exchange_code(
     token_endpoint: &str,
     request: CodeExchange<'_>,
 ) -> anyhow::Result<Tokens> {
-    post_form(http, token_endpoint, request.form()).await
+    post_token(
+        http,
+        token_endpoint,
+        "application/x-www-form-urlencoded",
+        request.form(),
+    )
+    .await
 }
 
 /// Trade a refresh token for a fresh grant.
@@ -196,11 +202,61 @@ pub async fn refresh(
         .refresh_token()
         .context("no refresh token was issued for this grant")?;
     let form = refresh_form(refresh_token, client_id, resource);
-    let mut tokens = post_form(http, token_endpoint, form).await?;
-    if tokens.refresh_token.is_none() {
-        tokens.refresh_token = previous.refresh_token.clone();
+    let tokens = post_token(
+        http,
+        token_endpoint,
+        "application/x-www-form-urlencoded",
+        form,
+    )
+    .await?;
+    Ok(carry_refresh_forward(previous, tokens))
+}
+
+/// Trade a refresh token for a fresh grant at an issuer that takes **JSON**
+/// rather than the form encoding RFC 6749 specifies.
+///
+/// `auth.openai.com` is one: Codex CLI posts `{client_id, grant_type,
+/// refresh_token}` as `application/json` to refresh, while still form-encoding
+/// its authorization-code exchange. The asymmetry is the issuer's, not ours.
+pub async fn refresh_json(
+    http: &HttpClient,
+    token_endpoint: &str,
+    previous: &Tokens,
+    client_id: &str,
+) -> anyhow::Result<Tokens> {
+    let refresh_token = previous
+        .refresh_token()
+        .context("no refresh token was issued for this grant")?;
+    let tokens = post_token(
+        http,
+        token_endpoint,
+        "application/json",
+        refresh_json_body(refresh_token, client_id),
+    )
+    .await?;
+    Ok(carry_refresh_forward(previous, tokens))
+}
+
+/// The JSON refresh body. Split out like [`refresh_form`] so the encoding can
+/// be asserted without a server — the two encodings sitting side by side is the
+/// kind of asymmetry a later reader corrects into a bug.
+fn refresh_json_body(refresh_token: &str, client_id: &str) -> String {
+    serde_json::json!({
+        "client_id": client_id,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    })
+    .to_string()
+}
+
+/// A response that omits `refresh_token` leaves the previous one current
+/// ([`refresh`]). Shared so the two encodings cannot drift on the one piece of
+/// this that is not wire format.
+fn carry_refresh_forward(previous: &Tokens, mut fresh: Tokens) -> Tokens {
+    if fresh.refresh_token.is_none() {
+        fresh.refresh_token = previous.refresh_token.clone();
     }
-    Ok(tokens)
+    fresh
 }
 
 /// The refresh request body. Split out from [`refresh`] so the encoding can be
@@ -229,32 +285,39 @@ pub struct CodeExchange<'a> {
     /// The PKCE verifier whose challenge went out on the authorization request.
     pub code_verifier: &'a str,
     /// The RFC 8707 resource indicator — the canonical URI of the MCP server.
-    pub resource: &'a str,
+    /// `None` for an issuer that has no such concept: the parameter is
+    /// *unconditional* for MCP, where a server that understands it binds the
+    /// token's audience, but `auth.openai.com` issues one audience and takes no
+    /// resource at all.
+    pub resource: Option<&'a str>,
 }
 
 impl CodeExchange<'_> {
     fn form(&self) -> String {
-        form_urlencoded::Serializer::new(String::new())
-            .append_pair("grant_type", "authorization_code")
+        let mut form = form_urlencoded::Serializer::new(String::new());
+        form.append_pair("grant_type", "authorization_code")
             .append_pair("code", self.code)
             .append_pair("redirect_uri", self.redirect_uri)
             .append_pair("client_id", self.client_id)
-            .append_pair("code_verifier", self.code_verifier)
-            .append_pair("resource", self.resource)
-            .finish()
+            .append_pair("code_verifier", self.code_verifier);
+        if let Some(resource) = self.resource {
+            form.append_pair("resource", resource);
+        }
+        form.finish()
     }
 }
 
-async fn post_form(
+async fn post_token(
     http: &HttpClient,
     token_endpoint: &str,
-    form: String,
+    content_type: &'static str,
+    body: String,
 ) -> anyhow::Result<Tokens> {
     let mut conn = http
         .post(token_endpoint)
-        .with_request_header("content-type", "application/x-www-form-urlencoded")
+        .with_request_header("content-type", content_type)
         .with_request_header("accept", "application/json")
-        .with_body(form)
+        .with_body(body)
         .await
         .with_context(|| format!("POST {token_endpoint}"))?;
     let status = conn.status().map_or(0, u16::from);

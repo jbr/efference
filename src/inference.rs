@@ -640,5 +640,7 @@ fn validate_connection_name(name: &str) -> Result<(), Error> {
     Ok(())
 }
 
+pub mod chatgpt;
+
 #[cfg(test)]
 mod test;

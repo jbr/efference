@@ -35,8 +35,13 @@ use trillium::{Conn, Method, Status};
 use trillium_client::url::form_urlencoded;
 use trillium_tokio::Swansong;
 
-/// The path the redirect URI points at. Fixed rather than random: it is part
-/// of the pre-registered redirect URI, so it cannot vary per request.
+/// The path the redirect URI points at for a dynamically registered client,
+/// which declares its own. Fixed rather than random: it is part of the
+/// registered redirect URI, so it cannot vary per request.
+///
+/// An issuer that registered the client itself dictates the path instead —
+/// `auth.openai.com` expects `/auth/callback` — so [`listen`] takes it rather
+/// than assuming this one.
 pub const CALLBACK_PATH: &str = "/callback";
 
 /// How long to wait for the operator to finish authorizing in the browser
@@ -55,6 +60,9 @@ type Delivery = Arc<Mutex<Option<oneshot::Sender<Params>>>>;
 /// A bound listener waiting for one authorization response.
 pub struct Loopback {
     port: u16,
+    /// The callback path this listener answers on, so the redirect URI it hands
+    /// out and the route it serves cannot disagree.
+    path: &'static str,
     swansong: Swansong,
     received: oneshot::Receiver<Params>,
 }
@@ -65,6 +73,11 @@ pub struct Loopback {
 /// "port 50505 is in use" is not actionable on its own when the caller only
 /// knows about a ladder.
 pub async fn listen(ports: &[u16]) -> anyhow::Result<Loopback> {
+    listen_at(ports, CALLBACK_PATH).await
+}
+
+/// [`listen`] at a callback path the issuer dictates.
+pub async fn listen_at(ports: &[u16], path: &'static str) -> anyhow::Result<Loopback> {
     let (sender, received) = oneshot::channel();
     let sender = Arc::new(Mutex::new(Some(sender)));
     let swansong = Swansong::new();
@@ -84,9 +97,10 @@ pub async fn listen(ports: &[u16]) -> anyhow::Result<Loopback> {
                 // The returned `ServerHandle` is not needed: the port is known
                 // (we chose it) and shutdown goes through the `Swansong` we
                 // already hold. Dropping the handle does not stop the server.
-                listeners.spawn(callback_handler(sender.clone()));
+                listeners.spawn(callback_handler(sender.clone(), path));
                 return Ok(Loopback {
                     port,
+                    path,
                     swansong,
                     received,
                 });
@@ -104,7 +118,14 @@ impl Loopback {
     /// The `redirect_uri` to send on the authorization and token requests.
     /// Both must carry byte-identical values, so both read it from here.
     pub fn redirect_uri(&self) -> String {
-        redirect_uri("127.0.0.1", self.port)
+        self.redirect_uri_for("127.0.0.1")
+    }
+
+    /// The same, spelled with the host the issuer registered. The listener
+    /// binds `127.0.0.1` either way; the spelling is what the issuer
+    /// exact-matches, and `auth.openai.com` registered `localhost`.
+    pub fn redirect_uri_for(&self, host: &str) -> String {
+        format!("http://{host}:{}{}", self.port, self.path)
     }
 
     pub fn port(&self) -> u16 {
@@ -149,11 +170,11 @@ pub fn all_redirect_uris(ports: &[u16]) -> Vec<String> {
 
 /// The handler: capture the query of the first `GET /callback`, answer the
 /// browser, and ignore everything else.
-fn callback_handler(sender: Delivery) -> impl trillium::Handler {
+fn callback_handler(sender: Delivery, path: &'static str) -> impl trillium::Handler {
     move |conn: Conn| {
         let sender = sender.clone();
         async move {
-            if conn.method() != Method::Get || conn.path() != CALLBACK_PATH {
+            if conn.method() != Method::Get || conn.path() != path {
                 return conn.with_status(Status::NotFound).halt();
             }
             let params = decode_query(conn.querystring());

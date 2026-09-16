@@ -73,6 +73,31 @@ pub struct Authorized {
 }
 
 impl Pending {
+    /// An authorization request to an issuer known ahead of time rather than
+    /// discovered, whose authorization URL the caller builds because that
+    /// issuer requires parameters beyond the standard set
+    /// (`inference/chatgpt.rs`).
+    ///
+    /// `iss_advertised` is false: no metadata was read, so nothing claimed RFC
+    /// 9207 support and a *missing* `iss` cannot be held against the response.
+    /// An `iss` that is present and wrong is still refused.
+    pub fn to_known_issuer(
+        issuer: &str,
+        redirect_uri: &str,
+        state: String,
+        pkce: Pkce,
+        scope: Option<String>,
+    ) -> Self {
+        Self {
+            issuer: issuer.to_string(),
+            iss_advertised: false,
+            state,
+            pkce,
+            redirect_uri: redirect_uri.to_string(),
+            scope,
+        }
+    }
+
     /// Build an authorization request for `server`, and the URL to open.
     ///
     /// `resource` is the RFC 8707 resource indicator — the canonical URI of

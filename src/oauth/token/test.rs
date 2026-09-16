@@ -19,7 +19,7 @@ fn the_code_exchange_carries_every_required_parameter() {
         redirect_uri: "http://127.0.0.1:50505/callback",
         client_id: "client-abc",
         code_verifier: "the-verifier",
-        resource: "https://mcp.example.com/mcp",
+        resource: Some("https://mcp.example.com/mcp"),
     }
     .form();
     assert_eq!(
@@ -46,7 +46,7 @@ fn urls_are_percent_encoded_in_the_body() {
         redirect_uri: "http://127.0.0.1:50505/callback",
         client_id: "id",
         code_verifier: "v",
-        resource: "https://mcp.example.com/mcp",
+        resource: Some("https://mcp.example.com/mcp"),
     }
     .form();
     assert!(
@@ -65,7 +65,7 @@ fn a_url_shaped_client_id_survives_encoding() {
         redirect_uri: "http://localhost:50505/callback",
         client_id: "https://efference.net/oauth/client-v1.json",
         code_verifier: "v",
-        resource: "https://mcp.example.com",
+        resource: Some("https://mcp.example.com"),
     }
     .form();
     let decoded = pairs(&form);
@@ -216,4 +216,38 @@ fn debug_leaks_neither_token() {
     assert!(!rendered.contains("secret-refresh"), "{rendered}");
     // Non-secret fields stay legible, or the redaction makes debugging worse.
     assert!(rendered.contains("files:read"), "{rendered}");
+}
+
+/// The JSON refresh body, pinned beside the form one. `auth.openai.com` takes
+/// JSON here while taking form encoding for its authorization-code exchange
+/// (`inference/chatgpt.rs`); posting the form encoding to it fails at the
+/// issuer, which is a long way from this code.
+#[test]
+fn the_json_refresh_body_is_what_the_issuer_takes() {
+    let body = refresh_json_body("the-refresh-token", "app_id");
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(parsed["grant_type"], "refresh_token");
+    assert_eq!(parsed["refresh_token"], "the-refresh-token");
+    assert_eq!(parsed["client_id"], "app_id");
+    assert!(
+        parsed.get("resource").is_none(),
+        "this issuer takes no resource indicator: {body}"
+    );
+}
+
+/// The code exchange omits `resource` entirely for an issuer that has none,
+/// rather than sending it empty — an empty resource is a value, and a server
+/// that binds audiences would bind the wrong one.
+#[test]
+fn a_code_exchange_without_a_resource_omits_the_parameter() {
+    let form = CodeExchange {
+        code: "c",
+        redirect_uri: "http://localhost:1455/auth/callback",
+        client_id: "app_id",
+        code_verifier: "v",
+        resource: None,
+    }
+    .form();
+    assert!(!form.contains("resource"), "{form}");
+    assert!(form.contains("grant_type=authorization_code"), "{form}");
 }

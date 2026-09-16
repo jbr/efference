@@ -34,6 +34,14 @@ pub fn inference_name(connection: &str) -> String {
     format!("inference:{connection}")
 }
 
+/// The name a connection's OAuth grant is stored under. Distinct from
+/// [`inference_name`], whose item is a bare secret: this one holds a JSON
+/// record (docs/secrets.md), and a human reading the store should not have to
+/// guess which a given item is.
+pub fn oauth_name(connection: &str) -> String {
+    format!("oauth:{connection}")
+}
+
 /// The name an MCP server's grant is stored under.
 pub fn mcp_name(server: &str) -> String {
     format!("mcp:{server}")

@@ -169,7 +169,7 @@ where
             redirect_uri: &authorized.redirect_uri,
             client_id: &client_id,
             code_verifier: &authorized.code_verifier,
-            resource: &protected.resource,
+            resource: Some(&protected.resource),
         },
     )
     .await?;
