@@ -3465,3 +3465,120 @@ fn thinking_off_reaches_a_foreign_openrouter_model_as_reasoning_disabled() {
     let unasked = Client::new(openrouter, "ibm/granite", "sys", None);
     assert_eq!(field(&unasked), None);
 }
+
+/// **A credential that expired under a running host** (docs/transport.md): the
+/// Codex backend answers an aged-out ChatGPT token with a 401 naming
+/// `token_expired`, which is the one rejected-credential case with a remedy —
+/// the value is re-read from its source and the attempt goes again. Before this,
+/// the token was copied into the endpoint at host launch, so every session held
+/// its own dead copy and `codex login` in another terminal changed nothing.
+///
+/// The server here demands the *new* token on the second request, so the test
+/// fails if the retry re-sends the rejected one.
+#[tokio::test]
+async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let expired = "{\"error\":{\"message\":\"Provided authentication token is expired. \
+                       Please try signing in again.\",\"type\":null,\"code\":\"token_expired\"},\
+                       \"status\":401,\"detail\":{\"code\":\"token_expired\"}}";
+        let (mut sock, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 8192];
+        let read = sock.read(&mut buf).unwrap();
+        let first = String::from_utf8_lossy(&buf[..read]).to_string();
+        sock.write_all(
+            format!(
+                "HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\n\
+                 content-length: {}\r\n\r\n{expired}",
+                expired.len()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        sock.flush().unwrap();
+        drop(sock);
+
+        let (mut sock, _) = listener.accept().unwrap();
+        let read = sock.read(&mut buf).unwrap();
+        let second = String::from_utf8_lossy(&buf[..read]).to_string();
+        let body = "event: message_start\ndata: {\"type\":\"message_start\",\
+                    \"message\":{\"id\":\"gen-1\",\"model\":\"m\",\
+                    \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n\
+                    event: message_delta\ndata: {\"delta\":{\"stop_reason\":\"end_turn\"},\
+                    \"usage\":{\"input_tokens\":1,\"output_tokens\":1}}\n\n\
+                    event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+        sock.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                 content-length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        sock.flush().unwrap();
+        (first, second)
+    });
+
+    let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = std::sync::Arc::clone(&reads);
+    let endpoint = Endpoint {
+        provider: Provider::Anthropic,
+        url: format!("http://{addr}/v1/messages"),
+        auth_header: "x-api-key".into(),
+        auth_value: crate::api::AuthValue::reloadable(
+            "stale".into(),
+            Box::new(move || {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok("refreshed".into())
+            }),
+        ),
+        session_id: None,
+        extra_headers: Vec::new(),
+    };
+    let client = Client::new(endpoint, "m", "sys", None);
+    let completion = client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .expect("the re-read credential completes the turn");
+
+    assert!(
+        completion.upstream_failure().is_none(),
+        "the retry succeeded"
+    );
+    assert_eq!(
+        reads.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the source is read once, not once per attempt"
+    );
+    let (first, second) = server.join().unwrap();
+    assert!(first.contains("x-api-key: stale"), "{first}");
+    assert!(
+        second.contains("x-api-key: refreshed"),
+        "the retry carries the re-read value: {second}"
+    );
+}
+
+/// A 401 that is *not* expiry keeps its terminal classification: re-reading a
+/// key the provider rejects as wrong produces the same rejection.
+#[test]
+fn a_rejected_key_is_terminal_and_an_expired_one_is_not() {
+    use crate::api::failure::{FailureClass, classify_body};
+
+    assert_eq!(
+        classify_body("{\"error\":{\"code\":\"invalid_api_key\"}}"),
+        FailureClass::Terminal
+    );
+    assert_eq!(
+        classify_body("{\"error\":{\"code\":\"token_expired\"}}"),
+        FailureClass::CredentialExpired
+    );
+    assert_eq!(
+        classify_body("{\"detail\":{\"code\":\"token_expired\"}}"),
+        FailureClass::Transient,
+        "only the documented fields name the class; `detail` is not one of them"
+    );
+}

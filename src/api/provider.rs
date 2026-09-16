@@ -370,11 +370,19 @@ impl Provider {
     /// The literal prepended to the secret to form the auth header value.
     /// Split off the secret so the secret stays a *whole* value (an `op://…`
     /// reference `op run` can substitute — docs/transport.md).
-    pub(super) fn auth_prefix(&self) -> &'static str {
+    fn auth_prefix(&self) -> &'static str {
         match self {
             Self::Anthropic => "",
             Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => "Bearer ",
         }
+    }
+
+    /// The assembled auth header value for a bare secret. The one place the
+    /// prefix is applied, so a credential re-read under a running host
+    /// (`AuthValue`, docs/transport.md) reproduces exactly what construction
+    /// built rather than a second spelling of it.
+    pub fn auth_header_value(&self, secret: &str) -> String {
+        format!("{}{}", self.auth_prefix(), secret)
     }
 
     /// The ceilings half of the boot metadata for `model` (docs/transport.md):
@@ -1039,7 +1047,7 @@ impl Endpoint {
         let http = crate::http::client();
         let mut conn = http
             .get(url)
-            .with_request_header(self.auth_header.clone(), self.auth_value.clone())
+            .with_request_header(self.auth_header.clone(), self.auth_value.get())
             .with_request_header("anthropic-version", ANTHROPIC_VERSION)
             .await
             .map_err(|e| -> Error { format!("GET {url} failed: {e}").into() })?;

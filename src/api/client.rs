@@ -10,6 +10,7 @@ use trillium_client::ClientHandler;
 use trillium_client_retry::RetryHandler;
 
 use crate::api::assembler::ResponseMeta;
+use crate::api::auth_value::Reloaded;
 use crate::api::failure::{FailureClass, classify_body};
 use crate::api::plan::{PlanState, plan_from_headers, plan_state};
 use crate::api::responses::assembler::ResponsesAssembler;
@@ -679,6 +680,10 @@ impl Client {
             }
             + serde_json::to_vec(tools)?.len();
         let mut max_tokens = self.reserve(body_bytes);
+        // The credential re-read below happens at most once per call: a source
+        // that yields a working token yields it the first time, and a second
+        // pass would only re-read the same bytes.
+        let mut reloaded_auth = false;
         let mut events = loop {
             let body = match &encoded {
                 Encoded::Messages(messages) => {
@@ -721,6 +726,10 @@ impl Client {
                 body.len()
             );
 
+            // What this attempt authenticates with, kept so a rejection can say
+            // which value was rejected rather than re-reading one that may
+            // already have been repaired by another session (`AuthValue`).
+            let sent_auth = self.endpoint.auth_value.get();
             let conn = self.post();
             match conn.with_body(body).into_sse().await {
                 Ok(events) => break events,
@@ -758,6 +767,38 @@ impl Client {
                             );
                             max_tokens = u32::try_from(halved).unwrap_or(u32::MAX);
                             continue;
+                        }
+                    }
+                    // The credential aged out under a running host
+                    // (docs/transport.md). The value is shared by every session
+                    // on this connection, so re-reading its source here repairs
+                    // all of them — the operator runs `codex login` in another
+                    // terminal and the next attempt carries the new token. A
+                    // credential that is *wrong* rather than expired classifies
+                    // Terminal and never reaches this.
+                    if !reloaded_auth
+                        && status == Some(Status::Unauthorized)
+                        && classify_body(&detail) == FailureClass::CredentialExpired
+                    {
+                        reloaded_auth = true;
+                        match self.endpoint.auth_value.reload(&sent_auth).await {
+                            Reloaded::Replaced => {
+                                log::warn!(
+                                    "{} rejected an expired credential; re-read its source \
+                                     and retrying",
+                                    self.endpoint.provider
+                                );
+                                continue;
+                            }
+                            // Every other outcome leaves the same value on the
+                            // wire, so the retry would fail identically. The
+                            // reason joins the error the caller stalls with.
+                            outcome => {
+                                return Err(Self::open_error(
+                                    status,
+                                    format!("{detail} (credential re-read: {outcome})"),
+                                ));
+                            }
                         }
                     }
                     return Err(Self::open_error(status, detail));
@@ -875,7 +916,7 @@ impl Client {
             .post(self.endpoint.url.as_str())
             .with_request_header(
                 self.endpoint.auth_header.clone(),
-                self.endpoint.auth_value.clone(),
+                self.endpoint.auth_value.get(),
             )
             .with_request_header("content-type", "application/json");
         let conn = match self.dialect() {

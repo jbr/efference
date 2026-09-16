@@ -15,6 +15,7 @@ behind a change, see [`journal/`](journal/).
 - **The idle triage runs on the agent's own lineage** (docs/redaction-fork.md): with a separate `--triage-model`, only the per-result peeks go to it; the wake decision an idle session makes on a notification sends the agent's client, tools, and thinking, reading the cache the keepalive holds warm.
 
 ### Fixed
+- **A host outliving its credential could not recover** (docs/transport.md): an expired Codex token 401'd every session for the host's life, because the token was copied into each endpoint at launch and `codex login` could not reach it. A `token_expired` rejection now re-reads the credential from its source and retries, repairing every session at once; `env` credentials, frozen in the host's environment, report that they have no source to re-read.
 - **A trajectory started by a notification wake read as idle**: the idle-triage escalation never set `running`, so `/settle` returned at once, the status watcher reported idle, and a turn submitted meanwhile sat in `queued` with nothing to explain the wait. Escalation now marks the loop running until it parks (docs/inbox.md).
 - **A connection that never opened panicked the session loop**: `sse_open_failure` read a response body from a transport that did not exist. A refused connect now records a completion failure and stalls, as other request failures do.
 - **Resolving a gate pings state**, so the `gate` topic clears when the decision lands rather than at the loop's next append.

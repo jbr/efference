@@ -49,7 +49,7 @@ auth = { kind = "env", key = "TEST_KEY" }
         config,
         Path::new("/host"),
         env,
-        &crate::secrets::Secrets::in_memory(),
+        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()
 }
@@ -315,7 +315,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     let registry = crate::inference::InferenceRegistry::load(
         &roots.0,
         host_env,
-        &crate::secrets::Secrets::in_memory(),
+        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .expect("host registry");
     let host = Host::new(registry);

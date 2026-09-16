@@ -1,0 +1,178 @@
+//! The auth header value, held so it can be replaced under a running host
+//! (docs/transport.md).
+//!
+//! An [`Endpoint`] is built once per host connection and cloned per session and
+//! role, so a credential copied into it at construction is fixed for the host's
+//! life. That is what strands a host whose token expires mid-run: every session
+//! holds its own copy of the dead value, and even a freshly created session is
+//! born with it. The value therefore lives behind one shared cell that every
+//! clone reads through, and a clone shares the cell rather than the string.
+//!
+//! [`AuthValue::reload`] re-runs whatever produced the value. Not every kind has
+//! something to re-run: an `env` credential comes from the environment captured
+//! when the host started, which no outside change can reach, so that kind
+//! carries no reloader and reports as much. `From<&str>` and `From<String>`
+//! build a cell with no reloader, which is what a literal in a test wants.
+//!
+//! [`Endpoint`]: super::Endpoint
+
+use std::sync::{Arc, RwLock, Weak};
+
+use crate::env_table::Masker;
+
+/// Re-reads a credential from wherever it came from, yielding the assembled
+/// header value or why it could not be read.
+pub type Reload = Box<dyn Fn() -> Result<String, String> + Send + Sync>;
+
+/// The auth header value shared by every clone of one connection's endpoint.
+#[derive(Clone)]
+pub struct AuthValue(Arc<Cell>);
+
+struct Cell {
+    current: RwLock<String>,
+    reload: Option<Reload>,
+    /// The maskers of the sessions using this credential. A replacement has to
+    /// join them or the new token is unmasked in every transcript that was
+    /// protected from the old one (docs/secrets.md). Weak, because a session's
+    /// masker dies with the session while this cell lives as long as the host;
+    /// `absorb_secret` never removes, so the old value stays masked too.
+    maskers: RwLock<Vec<(Weak<Masker>, String)>>,
+    /// Held across a reload so concurrent callers do not each run one. A
+    /// reloader may block for a while — a keychain read can wait on a biometric
+    /// prompt — so this is the async mutex, not the value's lock, which is
+    /// never held across the read.
+    reloading: tokio::sync::Mutex<()>,
+}
+
+/// What a [`AuthValue::reload`] attempt did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reloaded {
+    /// The source yielded a different value, now in place. A request that failed
+    /// on the old one is worth sending again.
+    Replaced,
+    /// The source yielded the same value it had. Nothing has changed upstream,
+    /// so retrying would fail identically.
+    Unchanged,
+    /// There is nothing to re-read: this kind's value cannot change under a
+    /// running host.
+    NoSource,
+    /// The source was there but could not be read, with its own words.
+    Failed(String),
+}
+
+/// The words that join the upstream error when a re-read did not produce a
+/// working credential, so the stall says what was tried.
+impl std::fmt::Display for Reloaded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Replaced => f.write_str("replaced"),
+            Self::Unchanged => f.write_str("the source holds the same credential"),
+            Self::NoSource => {
+                f.write_str("this credential has no source to re-read under a running host")
+            }
+            Self::Failed(why) => write!(f, "{why}"),
+        }
+    }
+}
+
+impl AuthValue {
+    /// A value with a source it can be re-read from.
+    pub fn reloadable(initial: String, reload: Reload) -> Self {
+        Self(Arc::new(Cell {
+            current: RwLock::new(initial),
+            reload: Some(reload),
+            reloading: tokio::sync::Mutex::new(()),
+            maskers: RwLock::new(Vec::new()),
+        }))
+    }
+
+    /// Mask replacements of this credential in `masker` too, under `name`.
+    ///
+    /// The initial value is absorbed by the caller as before; this is only about
+    /// what a re-read produces later, which no session has seen at boot.
+    pub fn mask_replacements_in(&self, name: &str, masker: &Arc<Masker>) {
+        let mut registered = self.0.maskers.write().unwrap();
+        registered.retain(|(weak, _)| weak.strong_count() > 0);
+        registered.push((Arc::downgrade(masker), name.to_string()));
+    }
+
+    /// Register a replacement everywhere the old value was masked.
+    fn mask(&self, value: &str) {
+        let mut registered = self.0.maskers.write().unwrap();
+        registered.retain(|(weak, _)| weak.strong_count() > 0);
+        for (weak, name) in registered.iter() {
+            if let Some(masker) = weak.upgrade() {
+                masker.absorb_secret(&[(name.clone(), value.to_string())]);
+            }
+        }
+    }
+
+    /// The value to put on the request, as of now.
+    pub fn get(&self) -> String {
+        self.0.current.read().unwrap().clone()
+    }
+
+    /// Re-read the credential, replacing the value when it differs from
+    /// `rejected` — the value whose rejection prompted this.
+    ///
+    /// Taking what the caller sent, rather than re-reading the current value, is
+    /// what makes concurrent failures cost one read: when several sessions fail
+    /// on the same token, the first replaces it and the rest find the value
+    /// already moved past what they sent and retry on it without re-reading. It
+    /// also removes the window where a caller re-reads a value that was already
+    /// repaired between its request and its reload.
+    pub async fn reload(&self, rejected: &str) -> Reloaded {
+        let _guard = self.0.reloading.lock().await;
+        if self.get() != rejected {
+            return Reloaded::Replaced;
+        }
+        let Some(reload) = &self.0.reload else {
+            return Reloaded::NoSource;
+        };
+        match reload() {
+            Err(why) => Reloaded::Failed(why),
+            Ok(value) if value == rejected => Reloaded::Unchanged,
+            Ok(value) => {
+                // Masked before it is reachable: nothing may read the new value
+                // off the cell until it is redactable.
+                self.mask(&value);
+                *self.0.current.write().unwrap() = value;
+                Reloaded::Replaced
+            }
+        }
+    }
+}
+
+impl From<String> for AuthValue {
+    fn from(value: String) -> Self {
+        Self(Arc::new(Cell {
+            current: RwLock::new(value),
+            reload: None,
+            reloading: tokio::sync::Mutex::new(()),
+            maskers: RwLock::new(Vec::new()),
+        }))
+    }
+}
+
+impl From<&str> for AuthValue {
+    fn from(value: &str) -> Self {
+        Self::from(value.to_string())
+    }
+}
+
+/// Compares the value, so an endpoint's auth can be asserted against a literal.
+impl PartialEq<&str> for AuthValue {
+    fn eq(&self, other: &&str) -> bool {
+        self.get() == *other
+    }
+}
+
+/// Never the value itself: an endpoint is debug-printed in logs and errors.
+impl std::fmt::Debug for AuthValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[redacted]")
+    }
+}
+
+#[cfg(test)]
+mod test;

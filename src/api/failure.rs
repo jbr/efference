@@ -22,7 +22,21 @@ pub enum FailureClass {
     /// retry, no stall — the turn ends and the loop returns to idle. Counts
     /// against nothing.
     Aborted,
+    /// The credential itself expired, rather than being wrong. Re-reading it
+    /// from its source may produce a working one, so this is the single case
+    /// where a rejected credential is worth another attempt
+    /// (docs/transport.md). Terminal if the re-read changes nothing.
+    CredentialExpired,
 }
+
+/// Names for a credential that was valid and aged out, as distinct from one
+/// that is wrong. The distinction is the whole retry: a token the provider says
+/// is *expired* can be replaced by re-reading its source, where `invalid_api_key`
+/// stays terminal however many times it is re-read.
+const EXPIRED: &[&str] = &[
+    // The Codex backend, on a ChatGPT access token past its `exp`.
+    "token_expired",
+];
 
 /// Names a provider attaches to failures that a retry cannot change: quota and
 /// plan exhaustion, rejected requests, credentials, policy refusals, and the
@@ -57,8 +71,13 @@ const TERMINAL: &[&str] = &[
 /// stalling a session on a name this table has not met. The name stays visible
 /// in the record-only entry and the stall detail either way.
 pub fn classify(kind: Option<&str>, code: Option<&str>) -> FailureClass {
-    let terminal = |name: Option<&str>| name.is_some_and(|n| TERMINAL.contains(&n));
-    if terminal(kind) || terminal(code) {
+    let named = |table: &[&str], name: Option<&str>| name.is_some_and(|n| table.contains(&n));
+    // Expiry is checked first: it names a terminal condition too (the
+    // credential was rejected), and the difference is that this one has a
+    // remedy.
+    if named(EXPIRED, kind) || named(EXPIRED, code) {
+        FailureClass::CredentialExpired
+    } else if named(TERMINAL, kind) || named(TERMINAL, code) {
         FailureClass::Terminal
     } else {
         FailureClass::Transient

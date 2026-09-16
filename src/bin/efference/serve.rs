@@ -270,7 +270,9 @@ pub(crate) async fn host(bind_flags: BindFlags, socket: Option<PathBuf>) -> CliR
     .try_init();
     let host_cwd = std::env::current_dir()?;
     let host_env = efference::env_table::EnvSnapshot::capture()?;
-    let secrets = efference::secrets::Secrets::detect()?;
+    // Shared rather than borrowed: a keychain-backed connection keeps the store
+    // to re-read its credential from when one expires (docs/transport.md).
+    let secrets = std::sync::Arc::new(efference::secrets::Secrets::detect()?);
     let inference = efference::inference::InferenceRegistry::load(&host_cwd, host_env, &secrets)?;
     daemon::serve_host(efference::daemon::Host::new(inference), socket, bind).await?;
     Ok(())

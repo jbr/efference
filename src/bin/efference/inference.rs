@@ -10,7 +10,7 @@ use efference::inference::{InferenceRegistry, SessionInference};
 pub(crate) fn registry() -> Result<InferenceRegistry, Error> {
     let cwd = std::env::current_dir()?;
     let env = efference::env_table::EnvSnapshot::capture()?;
-    let secrets = efference::secrets::Secrets::detect()?;
+    let secrets = std::sync::Arc::new(efference::secrets::Secrets::detect()?);
     InferenceRegistry::load(&cwd, env, &secrets)
 }
 

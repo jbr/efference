@@ -16,7 +16,7 @@ fn registry(toml: &str, environment: EnvSnapshot) -> InferenceRegistry {
         config,
         Path::new("/host"),
         environment,
-        &Secrets::in_memory(),
+        &Arc::new(Secrets::in_memory()),
     )
     .unwrap()
 }
@@ -153,7 +153,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
         config,
         Path::new("/host"),
         environment(&[("ANTHROPIC_KEY", "secret")]),
-        &Secrets::in_memory(),
+        &Arc::new(Secrets::in_memory()),
     ) {
         Ok(_) => panic!("unqualified default unexpectedly loaded"),
         Err(error) => error.to_string(),
@@ -225,7 +225,7 @@ auth = { kind = "env", key = "K" }
         config,
         Path::new("/host"),
         environment(&[]),
-        &Secrets::in_memory(),
+        &Arc::new(Secrets::in_memory()),
     ) {
         Ok(_) => panic!("slashed connection name unexpectedly loaded"),
         Err(error) => error.to_string(),

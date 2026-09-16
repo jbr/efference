@@ -7,10 +7,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::Arc;
 
 use serde::Deserialize;
 
-use crate::api::{Endpoint, Error, Provider};
+use crate::api::{AuthValue, Endpoint, Error, Provider, Reload};
 use crate::distill::TriageModel;
 use crate::env_table::EnvSnapshot;
 use crate::secrets::Secrets;
@@ -152,7 +153,11 @@ impl InferenceRegistry {
     /// Load the host's user configuration and credentials from the environment
     /// captured at host startup. A missing or malformed file is a launch error
     /// naming the path: with no connections there is nothing a session could use.
-    pub fn load(host_cwd: &Path, host_env: EnvSnapshot, secrets: &Secrets) -> Result<Self, Error> {
+    pub fn load(
+        host_cwd: &Path,
+        host_env: EnvSnapshot,
+        secrets: &Arc<Secrets>,
+    ) -> Result<Self, Error> {
         let home = host_env
             .get("HOME")
             .ok_or("host environment has no HOME for ~/.efference/config.toml")?;
@@ -170,7 +175,7 @@ impl InferenceRegistry {
         path: &Path,
         host_cwd: &Path,
         host_env: EnvSnapshot,
-        secrets: &Secrets,
+        secrets: &Arc<Secrets>,
     ) -> Result<Self, Error> {
         let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
@@ -199,7 +204,7 @@ impl InferenceRegistry {
         config: InferenceConfig,
         host_cwd: &Path,
         host_env: EnvSnapshot,
-        secrets: &Secrets,
+        secrets: &Arc<Secrets>,
     ) -> Result<Self, Error> {
         let mut connections = BTreeMap::new();
         for (name, config) in config.connections {
@@ -436,8 +441,24 @@ impl SessionInference {
         }
     }
 
-    pub fn absorb_secrets(&self, masker: &crate::env_table::Masker) {
+    /// Mask this session's credentials, now and after any re-read: a credential
+    /// that expires mid-session is replaced in place (`AuthValue`), and the
+    /// replacement has to be masked in the session that was protected from the
+    /// old one (docs/secrets.md).
+    pub fn absorb_secrets(&self, masker: &Arc<crate::env_table::Masker>) {
         masker.absorb_secret(&self.secret_values);
+        for role in self.roles() {
+            for (name, _) in &role.secret_values {
+                role.endpoint.auth_value.mask_replacements_in(name, masker);
+            }
+        }
+    }
+
+    fn roles(&self) -> impl Iterator<Item = &ResolvedRole> {
+        [Some(&self.main), Some(&self.spotter)]
+            .into_iter()
+            .chain([self.triage.as_ref().map(|t| &t.role)])
+            .flatten()
     }
 }
 
@@ -451,23 +472,35 @@ fn load_credential(
     auth: AuthConfig,
     host_cwd: &Path,
     host_env: &EnvSnapshot,
-    secrets: &Secrets,
+    secrets: &Arc<Secrets>,
 ) -> Result<Credential, String> {
-    let (token, account, label) = match auth {
+    let (token, account, label, reload) = match auth {
         AuthConfig::Keychain { name: item } => {
             let item = crate::secrets::inference_name(item.as_deref().unwrap_or(name));
             let token = secrets
                 .get(&item)
                 .map_err(|error| error.to_string())?
                 .ok_or_else(|| format!("{} has no `{item}`", secrets.describe()))?;
-            (token, None, "keychain".to_string())
+            // The store is outside this process, so an operator who replaces the
+            // item repairs a running host (docs/transport.md).
+            let (store, key) = (secrets.clone(), item.clone());
+            let reload: Option<Reload> = Some(Box::new(move || {
+                match store.get(&key).map_err(|error| error.to_string())? {
+                    Some(token) => Ok(provider.auth_header_value(&token)),
+                    None => Err(format!("{} has no `{key}`", store.describe())),
+                }
+            }));
+            (token, None, "keychain".to_string(), reload)
         }
+        // No reloader: the value comes from the environment captured when the
+        // host started, which nothing outside the process can change, so a
+        // re-read would return the same bytes forever (docs/transport.md).
         AuthConfig::Env { key } => {
             let token = host_env
                 .get(&key)
                 .ok_or_else(|| format!("host environment has no {key}"))?
                 .to_string();
-            (token, None, key)
+            (token, None, key, None)
         }
         AuthConfig::CodexCache => {
             if provider != Provider::OpenAICodex {
@@ -476,11 +509,26 @@ fn load_credential(
             let read = |name: &str| host_env.get(name).map(str::to_string);
             let (token, account) = crate::api::codex_cached_credentials(host_cwd, &read)
                 .map_err(|error| format!("could not load Codex cache: {error}"))?;
-            (token, Some(account), "Codex cache".to_string())
+            // Codex CLI rewrites the file on its own refresh, so re-reading it is
+            // how a host outlives an expired token: the operator runs `codex
+            // login` and the next attempt carries the new one. The account id is
+            // not re-read — it rides `extra_headers` and is stable across a
+            // refresh of the same login.
+            let (cwd, env) = (host_cwd.to_path_buf(), host_env.clone());
+            let reload: Option<Reload> = Some(Box::new(move || {
+                let read = |name: &str| env.get(name).map(str::to_string);
+                crate::api::codex_cached_credentials(&cwd, &read)
+                    .map_err(|error| format!("could not re-read the Codex cache: {error}"))
+                    .map(|(token, _)| provider.auth_header_value(&token))
+            }));
+            (token, Some(account), "Codex cache".to_string(), reload)
         }
     };
-    let endpoint = Endpoint::from_credentials(provider, token.clone(), account)
+    let mut endpoint = Endpoint::from_credentials(provider, token.clone(), account)
         .map_err(|error| error.to_string())?;
+    if let Some(reload) = reload {
+        endpoint.auth_value = AuthValue::reloadable(provider.auth_header_value(&token), reload);
+    }
     Ok(Credential {
         endpoint,
         secret_values: vec![(format!("{name} ({label})"), token)],

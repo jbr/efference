@@ -29,7 +29,11 @@ pub struct Endpoint {
     /// alone, so the secret stays a *whole* value (an `op://…` reference that
     /// `op run` substitutes — it only resolves a reference that is the entire
     /// value, never one embedded mid-string).
-    pub auth_value: String,
+    ///
+    /// Held in a shared cell rather than as a string, so a credential that
+    /// expires under a running host can be replaced for every session at once
+    /// ([`AuthValue`], docs/transport.md).
+    pub auth_value: AuthValue,
     /// This session's sticky-routing key (docs/transport.md), or `None` where
     /// there is no conversation to pin. Set by the daemon's `serve` from
     /// [`sticky_session_id`]; carried on every request the provider declares a
@@ -193,7 +197,7 @@ impl Endpoint {
             provider,
             url: provider.messages_url().to_string(),
             auth_header: provider.auth_header().to_string(),
-            auth_value: format!("{}{}", provider.auth_prefix(), token),
+            auth_value: AuthValue::from(provider.auth_header_value(&token)),
             session_id: None,
             extra_headers: Vec::new(),
         };

@@ -563,6 +563,51 @@ log appends after each model call. The queue is bounded and drops its oldest
 entries, so an outage against a daemon that is not draining cannot grow the
 process without bound — the durable record is the log, not the queue.
 
+
+### A credential that expires under a running host
+
+`FailureClass::CredentialExpired` is the one rejected-credential case worth
+another attempt. It is named by the provider — the Codex backend answers a
+ChatGPT access token past its `exp` with a 401 whose `code` is `token_expired` —
+and it is checked before the terminal table, because expiry names a terminal
+condition too and the only difference is that this one has a remedy. A
+credential that is *wrong* (`invalid_api_key`) stays terminal however often it
+is re-read.
+
+The value itself is what makes the remedy reachable. An `Endpoint` is built once
+per host connection and cloned per session and role, so a credential copied in
+as a string would be fixed for the host's life: a token expiring mid-run strands
+every session, and even a session created afterwards is born with the dead copy.
+`AuthValue` (`api/auth_value.rs`) holds it in one cell that every clone reads
+through, so replacing it at the connection repairs the sessions already running.
+
+On that classification `Client::complete` re-reads the credential from its source
+and retries the attempt — the same shape as the window backstop above, and once
+per call, since a source that yields a working token yields it the first time.
+The caller passes the value *it* sent, so several sessions failing on one token
+cost one read: whoever arrives second finds the value already past what it sent
+and retries on it without re-reading.
+
+Not every kind has a source to re-read, and this is where the auth kinds differ
+(`inference.rs`):
+
+| kind | on expiry |
+| --- | --- |
+| `codex-cache` | re-reads `auth.json`; the operator runs `codex login` in another terminal and the next attempt carries the new token |
+| `keychain` | re-reads the store item, which an operator can rewrite from outside the process |
+| `env` | nothing to re-read — the value comes from the environment captured when the host started, which no outside change reaches, so a re-read returns the same bytes forever |
+
+An outcome that leaves the same value on the wire (`Unchanged`, `NoSource`, a
+failed read) joins the upstream error rather than retrying, so the stall says
+what was tried. A replacement is masked before it becomes reachable, in every
+session that was protected from the value it replaces (docs/secrets.md); the
+maskers are held weakly, since a session's masker dies with the session while the
+cell lives as long as the host.
+
+The account id is not re-read: it rides `extra_headers` and is stable across a
+refresh of the same login. Refreshing *before* expiry — the access token is a JWT
+carrying `exp` — belongs with owning the grant, not here.
+
 ---
 
 
