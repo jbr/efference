@@ -308,7 +308,7 @@ and must not be weakened:
   that change would silently bust the production cache, so it must break a
   test first.
 
-Both pins, and the whole-envelope pin in `src/api/test.rs`, answer one question:
+Both pins, and the whole-envelope pin in `src/api/test/envelope.rs`, answer one question:
 does the harness still emit the bytes it emitted yesterday? They cannot answer
 whether the **provider** still matches those bytes — a dependency's serialization
 changing under us, a provider-side normalization, a field that varies per session.

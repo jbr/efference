@@ -308,7 +308,7 @@ non-retryable 429s — exhausted credit, spend and usage limits — are the body
 veto in `api/failure.rs` (below), and Codex CLI retries all 5xx the same way.
 Both Responses profiles ride the same handler: the bearer header, the account
 header, the `originator` attribution, and the absence of `anthropic-version` are
-pinned over a mock upstream in `src/api/test.rs`, as are a 400 open returning
+pinned over a mock upstream in `src/api/test/codex.rs`, as are a 400 open returning
 its body once, a 503 open retried and queued, and the ceiling cutting a
 Responses stream mid-text.
 
