@@ -128,7 +128,7 @@ async fn a_commissioned_session_defaults_to_upstream_and_a_root_does_not() {
     fixture.host.swansong().shut_down().await;
 }
 
-/// The position is resolved **at the moment a call is routed**, never once at
+/// The position is resolved **when a call is routed**, never once at
 /// creation. `outliver` is commissioned by `root` and outlives it; while `root`
 /// runs, its gate is `root`'s to answer, and the instant `root` ends the same
 /// unchanged dial reviews as `spotter_human` — the operator — rather than leaving
