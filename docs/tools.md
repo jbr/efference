@@ -227,7 +227,9 @@ enforceable, and they are enforced by the executor rather than by config:
   caller's project.
 
 `created_by` is per-session host control state: never logged, never projected, and
-absent on a human root. `create` from a session runs in the caller's cwd, takes the
+absent on a human root. It is also what the child's identity line names as its
+creator, so a delegated session has its return address without being told one in
+the task text ([context.md](context.md)). `create` from a session runs in the caller's cwd, takes the
 caller's child environment as the new session's base, records the caller as the
 child's `created_by`, and subscribes the caller to the child's status (below). Reach is the project: `sessions` lists, and every target
 resolves, only among sessions whose `.efference/` storage base is the caller's, so

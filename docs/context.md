@@ -39,6 +39,39 @@ already uses it: turns arrive prefixed `agent[<id>]:`
 for the session's life, so the sentence is byte-stable in the cached prefix, and
 its exact bytes are pinned in `src/env/test.rs`.
 
+## The creator's id
+
+When a session commissioned this one, one further sentence follows on the same
+line (`src/env.rs`):
+
+```
+You are {model}. This session is `{id}` on this host; that is the id other agents use to reach you. It was created by `{created_by}`, which you can reach the same way.
+```
+
+It renders only when the host has a `created_by` for this session
+([tools.md](tools.md)) — a root session's identity line ends at its own
+id, with no sentence and no placeholder. The value comes from the host's own
+record, plumbed through `SessionRequest` into the preamble at boot: never prompt
+text, never an id read out of an upstream log, so nothing a turn says can change
+who a session believes made it. Detaching changes only whether the child ends
+with its creator, not who created it, so a detached child renders the same
+sentence.
+
+What the sentence says is a return address and nothing more. It does not claim
+the creator is still running — it may have ended — and it grants no authority in
+either direction; who may drive whom is the reach rule in
+[tools.md](tools.md), enforced at the tool, not something the preamble confers.
+Liveness and what the creator is doing are *changing* peer status, and the
+identity line sits in the frozen cached prefix: putting either there would move
+the prefix mid-session. Status reaches a session through turns and inbox
+notifications instead ([inbox.md](inbox.md)). The creator id is immutable for the
+session's life, which is what makes it safe to freeze.
+
+`efference dev wire` rebuilding an old log cannot recover this sentence:
+`created_by` is host control state and is never logged. Sessions recorded since
+the boot-preamble snapshot read the stored `system` back verbatim and are
+unaffected.
+
 The line is also where a knowledge-cutoff note would attach; provider
 metadata has a slot for one (OpenRouter's `knowledge_cutoff`) that is
 unpopulated today, so the cutoff is not rendered

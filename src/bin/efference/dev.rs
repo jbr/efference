@@ -616,9 +616,15 @@ pub(crate) async fn wire(
             .and_then(|dir| dir.file_name())
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default();
+        // No creator: `created_by` is host control state, never logged
+        // (docs/tools.md), so an offline rebuild from a log cannot recover it —
+        // a child's rebuilt preamble is missing the creator sentence its live
+        // one carried. Sessions logged since the boot-preamble snapshot read
+        // back the recorded `system` instead and are unaffected.
         efference::env::system_prompt(
             model,
             &session_id,
+            None,
             context_block.as_deref(),
             role_section.as_deref(),
             None,

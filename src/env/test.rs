@@ -2,10 +2,11 @@ use super::*;
 
 #[test]
 fn system_prompt_appends_role_section_when_present() {
-    let without = system_prompt("m", "sample-session", None, None, None);
+    let without = system_prompt("m", "sample-session", None, None, None, None);
     let with = system_prompt(
         "m",
         "sample-session",
+        None,
         None,
         Some("Your role for this session:\n\nStay put."),
         None,
@@ -24,6 +25,7 @@ fn system_prompt_splices_context_block_before_the_role() {
     let s = system_prompt(
         "m",
         "sample-session",
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
@@ -31,7 +33,7 @@ fn system_prompt_splices_context_block_before_the_role() {
     assert!(s.contains("<CLAUDE.md>\nhi\n</CLAUDE.md>"));
     assert!(s.find("<CLAUDE.md>").unwrap() < s.find("Your role").unwrap());
     // No block → nothing spliced.
-    assert!(!system_prompt("m", "sample-session", None, None, None).contains("<CLAUDE.md>"));
+    assert!(!system_prompt("m", "sample-session", None, None, None, None).contains("<CLAUDE.md>"));
 }
 
 /// The session's config file is never named in the system prompt: the permission perimeter
@@ -42,6 +44,7 @@ fn system_prompt_never_names_the_config_file() {
     let full = system_prompt(
         "m",
         "sample-session",
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
@@ -60,6 +63,7 @@ fn system_prompt_appends_the_unmounted_section_last() {
     let full = system_prompt(
         "m",
         "sample-session",
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         Some(unmounted),
@@ -71,6 +75,7 @@ fn system_prompt_appends_the_unmounted_section_last() {
     let without = system_prompt(
         "m",
         "sample-session",
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
@@ -93,6 +98,7 @@ fn system_prompt_states_the_model_identity_and_the_session_id() {
     let s = system_prompt(
         "anthropic/claude-sonnet-5",
         "burgundy-skink",
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         None,
         None,
@@ -106,6 +112,73 @@ fn system_prompt_states_the_model_identity_and_the_session_id() {
     // One identity claim, not two: the session *has* an id.
     assert_eq!(s.matches("You are ").count(), 1);
     assert!(!s.contains("Your name is"));
+    // A root session has no creator, so the creator sentence is absent
+    // entirely — not rendered with an empty or placeholder id.
+    assert!(!s.contains("created by"));
+}
+
+/// The creator sentence's exact bytes, on the same line and under the same rules
+/// as the id it follows (docs/context.md). It states the relationship and stops:
+/// the creator id is a return address, not an authority grant and not a claim
+/// the creator is still running. Present only when a session commissioned this
+/// one; a root renders the identity line alone, byte-for-byte.
+#[test]
+fn system_prompt_names_the_creating_session_when_there_is_one() {
+    let child = system_prompt(
+        "anthropic/claude-sonnet-5",
+        "eager-meadow",
+        Some("lucid-lark"),
+        Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
+        None,
+        None,
+    );
+    assert!(child.starts_with(concat!(
+        "You are anthropic/claude-sonnet-5. ",
+        "This session is `eager-meadow` on this host; ",
+        "that is the id other agents use to reach you. ",
+        "It was created by `lucid-lark`, which you can reach the same way.\n\n",
+    )));
+    // Still one identity claim across both sentences: the creator is named as a
+    // relation, never as a second "you are".
+    assert_eq!(child.matches("You are ").count(), 1);
+    // The creator is named once. A second mention is where changing peer status
+    // ("currently running", "is waiting on you") would accrete, and the prefix
+    // is frozen for the session's life.
+    assert_eq!(child.matches("lucid-lark").count(), 1);
+
+    // A root: the sentence is absent, and the rest is byte-identical to the
+    // child's prompt with that one sentence removed.
+    let root = system_prompt(
+        "anthropic/claude-sonnet-5",
+        "eager-meadow",
+        None,
+        Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
+        None,
+        None,
+    );
+    assert!(!root.contains("created by"));
+    assert_eq!(
+        child.replace(
+            " It was created by `lucid-lark`, which you can reach the same way.",
+            ""
+        ),
+        root
+    );
+
+    // Detaching is host control state, not provenance: the prompt takes only the
+    // recorded creator id, so a detached child renders the same sentence as an
+    // ordinary one. Nothing downstream of this id says which it is.
+    assert_eq!(
+        child,
+        system_prompt(
+            "anthropic/claude-sonnet-5",
+            "eager-meadow",
+            Some("lucid-lark"),
+            Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
+            None,
+            None,
+        )
+    );
 }
 
 /// The separate-model peek's system prompt (docs/redaction-fork.md): the triage

@@ -102,6 +102,11 @@ pub struct SessionRequest {
     /// `sessions` mount reaches it directly (docs/tools.md). `None` for a
     /// standalone session, which has no host to address.
     pub host: Option<std::sync::Arc<crate::daemon::Host>>,
+    /// The session that commissioned this one, when a session did
+    /// (docs/tools.md). It reaches the prompt's identity line as the child's
+    /// return address (docs/context.md); the host records the same value as
+    /// `created_by` when it adopts the started runtime. `None` for a root.
+    pub created_by: Option<String>,
 }
 
 /// Prepare a session: everything from the origin config to the provider client,
@@ -122,6 +127,7 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
         reauth,
         keep_scratch,
         host,
+        created_by,
     } = request;
     assert!(cwd.is_absolute(), "session cwd must be absolute");
     assert!(session_dir.is_absolute(), "session dir must be absolute");
@@ -441,6 +447,7 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
     let system = env_policy.mask(&crate::env::system_prompt(
         model,
         &session_id,
+        created_by.as_deref(),
         context_block.as_deref(),
         role_section.as_deref(),
         unmounted_section.as_deref(),

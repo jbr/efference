@@ -197,6 +197,9 @@ impl Host {
             // The new session's toolbox mounts the `sessions` provider against
             // this host, with the new session itself as the caller (docs/tools.md).
             host: Some(Arc::clone(self)),
+            // The creator reaches the child's identity line (docs/context.md);
+            // `adopt_with` below records the same value as control state.
+            created_by: created_by.clone(),
         };
         let boot = match crate::boot::prepare(request).await {
             Ok(boot) => boot,

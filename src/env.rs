@@ -34,6 +34,10 @@ const TRIAGE_PERSONA: &str = include_str!("../assets/prompts/triage.md");
 /// cached prefix, so every part must be byte-stable. The `wire` dev view shows the recorded boot
 /// snapshot instead of reconstructing (docs/log-and-projection.md).
 ///
+/// `created_by` is the id of the session that commissioned this one, when a session did: it
+/// renders as one further sentence on the identity line, so a child has its creator's return
+/// address without carrying one through prose (docs/context.md).
+///
 /// The session's config file is deliberately **not** named here. Surfacing it up front read as
 /// "this is what you're allowed to do" and drew sessions into reading and probing their own
 /// perimeter as a first move (a dogfood session did exactly that) — attention the guardrails are
@@ -43,6 +47,7 @@ const TRIAGE_PERSONA: &str = include_str!("../assets/prompts/triage.md");
 pub fn system_prompt(
     model: &str,
     session_id: &str,
+    created_by: Option<&str>,
     context_block: Option<&str>,
     role_section: Option<&str>,
     unmounted: Option<&str>,
@@ -67,6 +72,22 @@ pub fn system_prompt(
     prompt.push_str(" This session is `");
     prompt.push_str(session_id);
     prompt.push_str("` on this host; that is the id other agents use to reach you.");
+    // The creator's id, when a session commissioned this one (docs/context.md).
+    // The host records it as `created_by`; it is the return address a child
+    // otherwise hand-carries through prose (a delegated task description was
+    // observed typing "My id lucid-lark" into its payload). It states the
+    // relationship and stops there: not a second identity claim, not an
+    // authority grant, and not a claim the creator is still running — whether
+    // it is alive is changing peer status and belongs in a turn, not in the
+    // frozen prefix. A root session has no creator, so the sentence is absent
+    // entirely rather than rendered empty. `created_by` is immutable
+    // provenance, so the sentence is byte-stable for the session's life; a
+    // detached child still names the session that made it.
+    if let Some(creator) = created_by {
+        prompt.push_str(" It was created by `");
+        prompt.push_str(creator);
+        prompt.push_str("`, which you can reach the same way.");
+    }
     // How the harness works — `include_str!` keeps the file's trailing newline;
     // trim it so the join is clean.
     prompt.push_str("\n\n");
