@@ -143,9 +143,23 @@ running `efference host` (the first live of `.efference/host.sock` here and
 directory, this shell's environment, `--name`, and the session flags,
 then attaches under `/sessions/<id>/`; quitting detaches, and the session stays on the host
 ([control-api.md](control-api.md)). Without `--new`, `tui --name <id>` attaches to that
-session whether it runs on the host or on its own socket, and a plain `tui` attaches to
-the single live session if there is exactly one. Without `--new`, a session flag is an error rather than
+session whether it runs on the host or on its own socket. Without `--new`, a session flag is an error rather than
 silently ignored.
+
+A bare `efference tui` — no `--new`, no `--name`, no `--socket` — asks first
+(`src/bin/efference/picker.rs`): an inline prompt in the same style as `efference setup`,
+listing the live hosts' sessions whose cwd is this directory, each with the title the
+triage model keeps for it ([session-title.md](session-title.md)), and one last entry that
+creates a session here. Picking a row is the attach above; picking the last entry is
+`tui --new` with this directory and no session flags. The prompt appears even when one
+session is the only row, so the other entries stay visible; the cursor starts on the first
+row, so attaching to it is one Enter. Sessions the same hosts hold in other directories are
+counted in a line above the menu rather than listed — attaching from here to a session
+rooted elsewhere would put the TUI's directory and the session's out of step. With no host
+listening and no session on its own socket, the prompt is replaced by the sockets that were
+tried and the `efference host` command that binds one. Esc leaves without attaching. Where
+stdin or stdout is not a terminal there is nothing to draw in, and the invocation resolves
+as it would with an explicit target.
 
 The host owns inference: `~/.efference/config.toml` names its connections and
 where each credential comes from, and `efference host` loads them once at launch —

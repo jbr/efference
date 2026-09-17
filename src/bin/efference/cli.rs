@@ -100,7 +100,7 @@ impl ClientTarget {
         }
     }
 
-    fn hosted(socket: PathBuf, id: &str) -> Self {
+    pub(crate) fn hosted(socket: PathBuf, id: &str) -> Self {
         Self {
             socket,
             prefix: Some(format!("/sessions/{id}")),
@@ -130,14 +130,14 @@ impl ClientTarget {
 
 /// Whether a listener is bound at `socket`: a successful connect, not mere
 /// existence, so a leftover file from a dead process never shadows a live one.
-fn is_live(socket: &Path) -> bool {
+pub(crate) fn is_live(socket: &Path) -> bool {
     std::os::unix::net::UnixStream::connect(socket).is_ok()
 }
 
 /// Whether two paths name the same directory: by canonical form when both
 /// resolve, else as spelled. A session's identity carries the cwd its creator
 /// sent, which is what `current_dir` returns here when the same directory.
-fn same_dir(a: &Path, b: &Path) -> bool {
+pub(crate) fn same_dir(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
         _ => a == b,
@@ -540,9 +540,12 @@ pub(crate) enum Command {
     Dev(dev::DevCommand),
     /// efference in your terminal: attach to a running session, or create one on a host.
     ///
-    /// The terminal counterpart to the web client. Connects to the session running
-    /// here (or the one named by `--name`) and shows the transcript live,
-    /// with a composer for turns and approvals. Press ? inside for the keys.
+    /// The terminal counterpart to the web client. Shows the transcript live, with a
+    /// composer for turns and approvals. Press ? inside for the keys.
+    ///
+    /// With no flags it asks first: an inline list of the host's sessions in this
+    /// directory, and an entry that creates one here. `--name <id>` attaches to that
+    /// session without asking.
     ///
     /// With `--new`, creates a session on a running `efference host` first — this
     /// directory as its working root, this shell's environment as its base, `--name`

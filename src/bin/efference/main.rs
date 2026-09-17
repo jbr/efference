@@ -129,7 +129,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                      without it `tui` attaches to a running session"
                     .into());
             }
-            tui(client_target().await?, theme, images.into(), frame_cost).await
+            // An explicit target is an answer already; the picker is for the
+            // invocation that named nothing (docs/operating.md).
+            if name.is_none() && socket_override.is_none() {
+                picker::run(theme, images.into(), frame_cost).await
+            } else {
+                tui(client_target().await?, theme, images.into(), frame_cost).await
+            }
         }
     }
 }
@@ -155,6 +161,7 @@ mod inference;
 mod paint;
 #[cfg(feature = "dev")]
 mod peek_replay;
+mod picker;
 mod serve;
 mod setup;
 #[cfg(feature = "dev")]

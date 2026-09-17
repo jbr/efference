@@ -66,7 +66,7 @@ impl Terminal {
     /// terminal: the prompts need raw mode and a place to redraw.
     pub fn open() -> Result<Self, String> {
         if !std::io::stdin().is_terminal() || !stdout().is_terminal() {
-            return Err("efference setup is interactive; run it in a terminal".to_string());
+            return Err("this prompt is interactive; run efference in a terminal".to_string());
         }
         Ok(Self {
             out: stdout(),
