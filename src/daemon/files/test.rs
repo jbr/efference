@@ -397,52 +397,60 @@ async fn an_ignored_name_is_still_readable_by_path() {
         .assert_body("still readable");
 }
 
+/// A trailing slash names nothing: a directory is a directory because the
+/// filesystem says so, and both spellings of one are the same resource.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_directory_without_a_trailing_slash_redirects() {
-    let scratch = Scratch::new("redirect");
+async fn both_spellings_of_a_directory_list_it() {
+    let scratch = Scratch::new("spellings");
     scratch.write("sub/nested.txt", "n");
     let server = server(&scratch).await;
 
-    server
-        .get("/files/sub")
-        .await
-        .assert_status(301)
-        .assert_header("location", "/files/sub/");
+    for path in ["/files/sub", "/files/sub/"] {
+        let conn = server.get(path).await;
+        conn.assert_status(200);
+        let body: Value = serde_json::from_str(conn.body()).unwrap();
+        assert_eq!(body["path"], "sub", "{path}");
+        assert_eq!(body["entries"][0]["name"], "nested.txt", "{path}");
+    }
 }
 
-/// The slashless spelling of the *root* is the same redirect, which is the
-/// spelling with no path left to build a `Location` from except the request's own.
+/// Including the root, whose slashless spelling is the empty wildcard capture.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_root_without_a_trailing_slash_redirects() {
-    let scratch = Scratch::new("root-redirect");
+async fn both_spellings_of_the_root_list_it() {
+    let scratch = Scratch::new("root-spellings");
     scratch.write("a.txt", "a");
     let server = server(&scratch).await;
 
-    server
-        .get("/files")
-        .await
-        .assert_status(301)
-        .assert_header("location", "/files/");
+    for path in ["/files", "/files/"] {
+        let conn = server.get(path).await;
+        conn.assert_status(200);
+        let body: Value = serde_json::from_str(conn.body()).unwrap();
+        assert_eq!(body["path"], "", "{path}");
+        assert_eq!(body["entries"][0]["name"], "a.txt", "{path}");
+    }
 }
 
-/// The listing's shape rides in the query, so a spelling correction that dropped
-/// it would answer a different question than the one asked.
+/// The listing's shape rides in the query, and is read off whichever spelling
+/// asked — there is no redirect left to preserve it across.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_redirect_keeps_the_query() {
-    let scratch = Scratch::new("redirect-query");
-    scratch.write("sub/nested.txt", "n");
+async fn the_query_shapes_either_spelling() {
+    let scratch = Scratch::new("spelling-query");
+    scratch.write("sub/deep/nested.txt", "n");
     let server = server(&scratch).await;
 
-    server
-        .get("/files/sub?recursive=1")
-        .await
-        .assert_status(301)
-        .assert_header("location", "/files/sub/?recursive=1");
-    server
-        .get("/files?recursive=1")
-        .await
-        .assert_status(301)
-        .assert_header("location", "/files/?recursive=1");
+    for path in ["/files/sub?recursive=1", "/files/sub/?recursive=1"] {
+        let conn = server.get(path).await;
+        conn.assert_status(200);
+        let body: Value = serde_json::from_str(conn.body()).unwrap();
+        assert_eq!(body["recursive"], true, "{path}");
+        let names: Vec<&str> = body["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["name"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"deep/nested.txt"), "{names:?} for {path}");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -634,6 +642,34 @@ async fn a_directory_stream_pokes_for_its_own_entries() {
     scratch.write("sub/arrived.txt", "a");
     let body = read_until(&mut conn, "event: change").await;
     assert!(body.contains("data: sub/arrived.txt"), "{body}");
+}
+
+/// The stream route takes the filesystem's answer too, so neither spelling of a
+/// directory — the root's included, which used to answer `400` — is a file stream.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn either_spelling_of_a_directory_streams_it() {
+    let scratch = Scratch::new("dir-stream-spellings");
+    scratch.write("sub/nested.txt", "n");
+    let client = raw_client(&scratch).await;
+
+    for (path, arrival, event) in [
+        ("/files/sub", "sub/one.txt", "data: sub/one.txt"),
+        ("/files/sub/", "sub/two.txt", "data: sub/two.txt"),
+        ("/files", "top.txt", "data: top.txt"),
+        ("/files/", "other.txt", "data: other.txt"),
+    ] {
+        let mut conn = client
+            .get(path)
+            .with_request_header(KnownHeaderName::Accept, "text/event-stream")
+            .await
+            .expect("open stream");
+        assert_eq!(conn.status().map(|s| s as u16), Some(200), "{path}");
+
+        // Read past any poke the setup's own writes produced: the needle is the
+        // arrival this iteration is waiting for, not merely the first change.
+        scratch.write(arrival, "a");
+        read_until(&mut conn, event).await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -174,21 +174,28 @@ The `401`/`403`/`429` codes are `ErrorCode` variants in the standard error envel
 `src/daemon/files.rs`, mounted on a web transport only, after the routes and before
 the web client's frontend handler. It is a router over one `/files/*` route rather
 than a handler that strips its own prefix, so the mount point is a route spelling
-like every other and the path below it arrives as the router's wildcard; the
-directory redirect builds its `Location` from the whole request path, since the
-wildcard names only the part below the mount. Read-only and human-facing: it is what running a
+like every other and the path below it arrives as the router's wildcard. Every
+answer is built from that capture alone — nothing reads the request path, and
+nothing reads a trailing slash, which routefinder trims before matching
+anyway. Read-only and human-facing: it is what running a
 static file server beside the daemon was doing, moved inside it, so project files
 are readable through the same page the session runs in — including from away from
 the machine. It is the server half of the file viewer
 ([../backlog/web/file-view/](../backlog/web/file-view/README.md)).
 
 - `GET /files/<path>` → the file's bytes.
-- `GET /files/<dir>/` → a JSON listing: `path` (relative to the root),
+- `GET /files/<dir>` → a JSON listing: `path` (relative to the root),
   `recursive`, `truncated`, and `entries` of
   `{name, kind, size, modified_at, symlink}`, sorted by name. `kind` follows
-  symlinks while `symlink` records that the entry is one. The slashless spelling
-  `301`s to the slashed one (query kept), so a listing's relative links compose.
-- `GET /files/<dir>/?recursive=1&depth=N` → the same shape walked below the
+  symlinks while `symlink` records that the entry is one.
+- **A trailing slash names nothing.** Whether a path is a file or a directory is
+  the filesystem's answer about the path, so `/files/sub` and `/files/sub/` are
+  one resource served one way, and so are `/files` and `/files/`. There is no
+  canonical spelling and no redirect to it: the listing carries its own `path`
+  for a breadcrumb and the client composes absolute URLs, so nothing is resolved
+  relative to the document URL, which is the only thing a trailing slash buys a
+  static file server.
+- `GET /files/<dir>?recursive=1&depth=N` → the same shape walked below the
   directory, with entry `name`s spelled as paths relative to it — the file
   finder's input ([web-client.md](web-client.md)). Both the depth and the entry
   count are capped in `files::list` rather than trusted; past either the walk
@@ -329,8 +336,8 @@ above, so a build directory cannot flood a stream nobody could see the results
 of; `is_dir` at poke time is best-effort, since a deleted entry cannot be
 stat'd, and the cost of getting it wrong is one spurious poke. A lagged
 receiver pokes with the directory itself, whose answer is the same re-list.
-Both spellings are served, since a stream has no redirect an `EventSource`
-would follow usefully.
+The stream route reads the filesystem the same way the read route does, so
+either spelling of a directory — the root included — streams that directory.
 
 ## Auth routes live beside `/v1`, not under it
 

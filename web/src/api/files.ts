@@ -28,13 +28,10 @@ export const fileStream = (path: string): EventSource =>
   new EventSource(fileUrl(path));
 
 /** The change-poke stream for one directory's own entries — what an expanded
- * tree node holds so its listing stays current (docs/web-bind.md). The
- * trailing slash is the directory spelling; `""` is the root. */
+ * tree node holds so its listing stays current (docs/web-bind.md). A directory
+ * is spelled like any other path; `""` is the root. */
 export const dirStream = (path: string): EventSource =>
-  new EventSource(dirUrl(path));
-
-const dirUrl = (path: string): string =>
-  path === "" ? joinBase("/files/") : fileUrl(path) + "/";
+  new EventSource(fileUrl(path));
 
 /** One entry of a listing. In a recursive listing `name` is the path relative
  * to the directory listed; in a flat one it is a bare name. */
@@ -64,7 +61,7 @@ export type ListFetch =
  * result size, reporting `truncated` rather than erroring. */
 export async function listDir(path: string, depth = 1): Promise<ListFetch> {
   const query = depth > 1 ? `?recursive=1&depth=${depth}` : "";
-  const response = await fetch(dirUrl(path) + query, {
+  const response = await fetch(fileUrl(path) + query, {
     headers: { accept: "application/json" },
   });
   if (response.ok) {

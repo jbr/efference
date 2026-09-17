@@ -505,10 +505,10 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     host.swansong().shut_down().await;
 }
 
-/// Each session's `/files` under its own prefix. The redirect a slashless
-/// directory answers with names the whole request path, prefix included — a
-/// `Location` naming only the part below the mount would send the client to a
-/// path this listener does not serve.
+/// Each session's `/files` under its own prefix, in both spellings of a
+/// directory: the wildcard capture the router hands this surface is the path
+/// below the mount, so a listing has to come back under the whole prefix
+/// without the route reconstructing it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_hosted_sessions_files_are_served_under_its_prefix() {
     let roots = Roots::new();
@@ -535,11 +535,14 @@ async fn a_hosted_sessions_files_are_served_under_its_prefix() {
         .collect();
     assert!(names.contains(&"scratch".to_string()), "{names:?}");
 
-    server
-        .get("/sessions/one/files/scratch")
-        .await
-        .assert_status(301)
-        .assert_header("location", "/sessions/one/files/scratch/");
+    for path in [
+        "/sessions/one/files/scratch",
+        "/sessions/one/files/scratch/",
+    ] {
+        let conn = server.get(path).await;
+        conn.assert_status(200);
+        assert_eq!(json(conn.body())["path"], "scratch", "{path}");
+    }
 
     server
         .get("/sessions/one/files/nowhere.txt")

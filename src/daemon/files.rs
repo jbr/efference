@@ -164,7 +164,9 @@ impl Files {
     /// on it update themselves (docs/web-bind.md). Non-recursive, like the
     /// file case — a tree that has not expanded a directory has no use for its
     /// contents' churn — and filtered by the discovery ignore set, so a build
-    /// directory cannot flood a stream nobody can see the results of.
+    /// directory cannot flood a stream nobody can see the results of. Which of
+    /// the two a URL gets is the filesystem's answer about the path it names,
+    /// never the URL's spelling (docs/web-bind.md).
     ///
     /// Every refusal is an `Err` here so the caller answers with `fail` in one
     /// place; the `Ok` is the watch and subscription the `Sse` stage turns into
@@ -177,12 +179,20 @@ impl Files {
             )
         })?;
         let root = self.root.as_ref().expect("root checked").clone();
-        let (parent, name) = rest
-            .rsplit_once('/')
-            .ok_or_else(|| (ErrorCode::BadRequest, "stream a file path".into()))?;
+        // A path that resolves to a directory streams that directory, whichever
+        // way it was spelled — the root included, which is the empty capture.
+        if let Some(resolved) = self.resolve(rest)
+            && tokio::fs::metadata(&resolved)
+                .await
+                .is_ok_and(|meta| meta.is_dir())
+        {
+            return self.prepare_dir_stream(watch, root, resolved).await;
+        }
+        // Everything else is watched as a file, including a name that does not
+        // exist yet. A capture with no separator is a name at the root.
+        let (parent, name) = rest.rsplit_once('/').unwrap_or(("", rest));
         if name.is_empty() {
-            let dir = self.resolve(parent).ok_or_else(Self::not_found)?;
-            return self.prepare_dir_stream(watch, root, dir).await;
+            return Err(Self::not_found());
         }
         let name = percent_decode_str(name)
             .decode_utf8()
@@ -195,13 +205,6 @@ impl Files {
             return Err(Self::not_found());
         }
         let mut file = dir.join(name.as_ref());
-        if tokio::fs::metadata(&file).await.is_ok_and(|m| m.is_dir()) {
-            // The slashless directory spelling. The read route redirects it;
-            // a stream has no redirect an `EventSource` would follow usefully,
-            // so it is served directly.
-            let resolved = self.resolve(rest).ok_or_else(Self::not_found)?;
-            return self.prepare_dir_stream(watch, root, resolved).await;
-        }
         // The poke filter compares byte-wise against notify's reported (disk)
         // spelling, so when the path resolves, adopt its canonical form *and
         // watch the canonical parent*: a wrong-case URL spelling on APFS, and a
@@ -408,35 +411,6 @@ enum StreamTarget {
     },
 }
 
-/// The whole request path as the client spelled it, query dropped. Under a
-/// router `conn.path()` is only the nested remainder, so a `Location` built
-/// from it would name a path relative to the mount rather than the origin.
-fn request_path(conn: &Conn) -> &str {
-    let path_and_query = conn.path_and_query();
-    path_and_query
-        .split_once('?')
-        .map_or(path_and_query, |(path, _)| path)
-}
-
-/// The path below the mount, in the spelling this surface's checks read: empty
-/// or `/`-led, trailing slash intact.
-///
-/// The router's wildcard capture is the remainder without a leading slash, and
-/// routefinder trims a trailing slash off the path before matching, so the
-/// capture cannot tell `/files/sub` from `/files/sub/`. Those are two different
-/// answers here — a redirect and a listing — so the trailing slash is read back
-/// off the request path.
-fn rest_of(conn: &Conn) -> String {
-    let wildcard = conn.path();
-    let trailing = request_path(conn).ends_with('/');
-    match (wildcard.is_empty(), trailing) {
-        (true, false) => String::new(),
-        (true, true) => "/".into(),
-        (false, false) => format!("/{wildcard}"),
-        (false, true) => format!("/{wildcard}/"),
-    }
-}
-
 type ChangeStream = Pin<Box<dyn Stream<Item = ChangeEvent> + Send + Sync + 'static>>;
 
 /// The `Sse` stage's event source: the prepared target becomes the poke stream.
@@ -479,7 +453,7 @@ impl Files {
     ///    negotiates on `Accept` alone, which is sound because the route bounds
     ///    it: the same `Accept` that makes it answer is the one the stage above
     ///    prepares or refuses for.
-    /// 3. **Read** — the body: a file, a listing, or the directory redirect.
+    /// 3. **Read** — the body: a file's bytes, or a directory's listing.
     ///
     /// Trillium's `Sse` drives the stream through the handler's upgrade hook,
     /// so it is mounted as a handler of its own rather than called from inside
@@ -493,7 +467,11 @@ impl Files {
                 move |conn: Conn| {
                     let files = validate.clone();
                     async move {
-                        let rest = rest_of(&conn);
+                        // The path below the mount, as the router captured it:
+                        // no leading slash, and no trailing one either, since
+                        // routefinder trims it before matching. Nothing here
+                        // reads a trailing slash, so the trimming costs nothing.
+                        let rest = conn.path().to_string();
                         if conn.method() != Method::Get {
                             return fail(
                                 conn,
@@ -530,8 +508,7 @@ impl Files {
                 move |conn: Conn| {
                     let files = reader.clone();
                     async move {
-                        let rest = rest_of(&conn);
-                        let Some(path) = files.resolve(&rest) else {
+                        let Some(path) = files.resolve(conn.path()) else {
                             return fail(
                                 conn,
                                 ErrorCode::NotFound,
@@ -542,22 +519,6 @@ impl Files {
                             return fail(conn, ErrorCode::NotFound, "no such path");
                         };
                         if meta.is_dir() {
-                            // A listing's relative links only compose under a trailing slash, so the
-                            // slashless spelling is a redirect rather than a second served shape.
-                            if !rest.ends_with('/') {
-                                // The query carries the listing's shape (`?recursive=1`), so
-                                // the redirect must keep it or the client's options vanish on
-                                // a spelling correction.
-                                let query = conn.querystring();
-                                let location = match query.is_empty() {
-                                    true => format!("{}/", request_path(&conn)),
-                                    false => format!("{}/?{query}", request_path(&conn)),
-                                };
-                                return conn
-                                    .with_status(301)
-                                    .with_response_header(KnownHeaderName::Location, location)
-                                    .halt();
-                            }
                             let options = Options::from_query(conn.querystring());
                             let scope = files.scope(&path);
                             let root = files.root.as_ref().expect("root checked").clone();
