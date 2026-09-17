@@ -17,6 +17,10 @@ impl<'a> super::InteractiveState<'a> {
         mouse_event: MouseEvent,
         terminal: &Terminal<impl Backend>,
     ) {
+        #[cfg(feature = "dev")]
+        if matches!(&self.ui_mode, UiMode::Sessions(menu) if menu.form.is_some()) {
+            return;
+        }
         if !self.ui.mouse_enabled {
             return;
         }

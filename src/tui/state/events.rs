@@ -215,6 +215,15 @@ impl<'a> InteractiveState<'a> {
                 self.apply_sessions(listing);
                 self.dirty = true;
             }
+            #[cfg(feature = "dev")]
+            TuiEvent::SessionFormPrototype => {
+                self.ui_mode = super::UiMode::Sessions(crate::tui::sessions::SessionMenu {
+                    prototype: true,
+                    note: Some("Offline gallery · n opens the new-session prototype".into()),
+                    ..Default::default()
+                });
+                self.dirty = true;
+            }
             TuiEvent::Disconnected => return true,
         }
         false

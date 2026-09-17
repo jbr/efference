@@ -411,3 +411,28 @@ The IR keeps ferritin's `Cow<'a>` borrowing, used as `Document<'static>` over ow
 ## Backlog
 
 Remaining polish — the box→`│` connector refinement for result bodies, bring-to-foreground on a process row (no daemon transition exists to drive it), the narrow-mode scrimmed drawer, the at-rest unit boundary, and refreshing the help-screen keymap text — is tracked in the backlog.
+
+## New-session form experiment
+
+With the `dev` feature, `efference dev session-form` renders a fixed-data form in a
+ratatui inline viewport on the normal terminal screen. `efference dev session-form
+--embedded` opens the offline gallery's Sessions panel; `n` opens the same form.
+Neither entry point reads inference configuration, contacts a host, or creates a
+session. Normal startup and the live Sessions panel are unchanged.
+
+`session_form.rs` owns the draft, focus, nested connection/model picker, text
+editors, and back/cancel transitions. `session_form/render.rs` renders that state
+into a supplied rectangle with supplied styles. `session_form/inline.rs` owns raw
+mode and the inline viewport; `sessions.rs`, `keyboard.rs`, and `render_sessions.rs`
+contain the embedded integration. The embedded form receives Escape and Ctrl-C
+before the session's handlers and blocks mouse events from reaching the transcript.
+Cancelling returns to Sessions without touching the attached loop. The fixtures
+are not a provider catalog or a capability-validation policy.
+
+Enter initially returns the unchanged draft. Inline acceptance prints it; embedded
+acceptance simulates a creation error and leaves the edits in place. Model fields
+select a sample connection, then a filtered model list or a free-form native ID.
+`r` on a field removes its override. Escape backs out of an editor or picker before
+cancelling the form. The shared tests cover those transitions, rendering at nonzero
+origins and small sizes, and the embedded layout; live inline checks use a PTY
+because buffer tests cannot establish terminal restoration or scrollback behavior.

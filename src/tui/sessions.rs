@@ -20,6 +20,10 @@ use crate::client::SessionSummary;
 /// The switcher's state while it is open.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct SessionMenu {
+    #[cfg(feature = "dev")]
+    pub prototype: bool,
+    #[cfg(feature = "dev")]
+    pub(super) form: Option<Box<super::session_form::Form>>,
     /// The listing as the host last answered it, sorted by id. Empty while the
     /// first read is out.
     pub rows: Vec<SessionSummary>,
@@ -130,6 +134,11 @@ impl InteractiveState<'_> {
         let UiMode::Sessions(menu) = &mut self.ui_mode else {
             return false;
         };
+        #[cfg(feature = "dev")]
+        if menu.prototype && key.code == KeyCode::Char('n') {
+            menu.form = Some(Box::default());
+            return false;
+        }
         // While a confirm is up it owns every key: `y` (or ⏎) goes through and
         // anything else is a cancel, so a mistyped key can only ever back out.
         if let Some(id) = menu.confirming.clone() {

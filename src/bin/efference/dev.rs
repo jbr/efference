@@ -13,6 +13,12 @@ use super::*;
 
 #[derive(Subcommand)]
 pub(crate) enum DevCommand {
+    /// Fixed-data new-session form; no host, credentials, or session creation.
+    SessionForm {
+        /// Open inside the offline gallery's Sessions screen instead of inline.
+        #[arg(long)]
+        embedded: bool,
+    },
     /// Mint a fresh bootstrap link against a running daemon's TCP bind and open it —
     /// the re-auth path when at the host, and the answer to lost scrollback
     /// (docs/web-bind.md). The credential routes answer only on the Unix socket:
@@ -326,6 +332,14 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
     client_target: impl FnOnce() -> F,
 ) -> CliResult {
     match command {
+        DevCommand::SessionForm { embedded } => {
+            if embedded {
+                efference::tui::run_session_form_prototype().await?;
+            } else {
+                efference::tui::session_form::run()?;
+            }
+            Ok(())
+        }
         DevCommand::Open { print, bearer } => open(client_target().await?, print, bearer).await,
         DevCommand::Cache { session, all } => cache_report::cache(session, name, all),
         DevCommand::View {

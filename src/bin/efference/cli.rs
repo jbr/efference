@@ -8,6 +8,7 @@ pub(crate) const BASE_DIR: &str = efference::daemon::SESSION_BASE;
 
 pub(crate) const SOCKET_NAME: &str = efference::daemon::SOCKET_NAME;
 
+#[cfg(any(feature = "dev", test))]
 pub(crate) const LOG_NAME: &str = efference::boot::LOG_NAME;
 
 #[derive(Parser)]

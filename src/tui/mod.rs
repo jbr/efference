@@ -51,6 +51,8 @@ pub(crate) mod render_status_bar;
 pub(crate) mod render_table;
 pub(crate) mod render_theme_picker;
 pub(crate) mod senders;
+#[cfg(feature = "dev")]
+pub mod session_form;
 pub(crate) mod sessions;
 pub(crate) mod sidebar;
 pub(crate) mod span_style;
@@ -168,6 +170,9 @@ pub(crate) enum TuiEvent {
     Sessions(Result<Vec<crate::client::SessionSummary>, String>),
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
+    /// Open the offline fixed-data form experiment (docs/tui.md).
+    #[cfg(feature = "dev")]
+    SessionFormPrototype,
 }
 
 /// A verb the switcher issues against the *host* rather than the attached
@@ -571,3 +576,6 @@ pub(crate) fn secs_since(at_ms: u64) -> u64 {
     let now = crate::log::Timestamp::now().0;
     now.saturating_sub(at_ms) / 1000
 }
+
+#[cfg(feature = "dev")]
+pub use run::run_session_form_prototype;

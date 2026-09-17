@@ -54,6 +54,22 @@ impl<'a> InteractiveState<'a> {
         key: KeyEvent,
         terminal: &mut Terminal<impl Backend + Write>,
     ) -> bool {
+        // The nested form owns Esc and Ctrl-C: neither reaches the attached loop.
+        #[cfg(feature = "dev")]
+        if let UiMode::Sessions(menu) = &mut self.ui_mode
+            && let Some(form) = &mut menu.form
+        {
+            use super::session_form::Action;
+            match form.handle(key) {
+                Action::Continue => {}
+                Action::Cancel => menu.form = None,
+                Action::Start(_) => form.creation_failed(
+                    "Demo creation error · no request sent; edits kept. Esc returns to Sessions."
+                        .into(),
+                ),
+            }
+            return false;
+        }
         // Graduated Esc (docs/tui.md): a state machine, not a press-count, so it is handled
         // before any mode dispatch. See [`handle_escape`](InteractiveState::handle_escape).
         if key.code == KeyCode::Esc {

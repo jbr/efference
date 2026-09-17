@@ -16,10 +16,12 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
+#[cfg(feature = "dev")]
 use efference::api::Client;
 use efference::client::Client as ControlClient;
 use efference::daemon;
 use efference::distill::TriageModel;
+#[cfg(feature = "dev")]
 use efference::spotter::ForkSpot;
 #[cfg(feature = "dev")]
 use efference::spotter::Spotter;
@@ -155,6 +157,7 @@ mod cli;
 mod control;
 #[cfg(feature = "dev")]
 mod dev;
+#[cfg(feature = "dev")]
 mod inference;
 
 #[cfg(feature = "dev")]

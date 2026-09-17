@@ -277,7 +277,16 @@ pub async fn run_gallery(
     stream: Option<gallery::stream::Script>,
     frame_cost: bool,
 ) -> Result<()> {
-    run_offline(gallery::log(), None, theme, images, stream, frame_cost).await
+    run_offline(
+        gallery::log(),
+        None,
+        theme,
+        images,
+        stream,
+        frame_cost,
+        false,
+    )
+    .await
 }
 
 /// Launch the TUI **read-only** on a recorded session's log (`efference dev view`,
@@ -291,7 +300,7 @@ pub async fn run_view(
     theme: Option<String>,
     images: ImageMode,
 ) -> Result<()> {
-    run_offline(entries, Some(label), theme, images, None, false).await
+    run_offline(entries, Some(label), theme, images, None, false, false).await
 }
 
 /// The shared offline runner behind [`run_gallery`] and [`run_view`]: seed the
@@ -307,6 +316,7 @@ async fn run_offline(
     images: ImageMode,
     stream: Option<gallery::stream::Script>,
     frame_cost: bool,
+    form_prototype: bool,
 ) -> Result<()> {
     let theme = resolve_theme(theme)?;
 
@@ -320,6 +330,13 @@ async fn run_offline(
     for entry in entries {
         let _ = tx.send(TuiEvent::Entry(entry));
     }
+
+    #[cfg(feature = "dev")]
+    if form_prototype {
+        let _ = tx.send(TuiEvent::SessionFormPrototype);
+    }
+    #[cfg(not(feature = "dev"))]
+    let _ = form_prototype;
 
     // The emitter shares the events channel with the seeded log, so live fragments
     // land in the same UI as committed entries — the point being to watch the
@@ -380,4 +397,19 @@ pub(super) fn resolve_theme(theme: Option<String>) -> Result<String> {
             .next()
             .unwrap_or_else(|| DEFAULT_THEME.to_string())),
     }
+}
+
+/// Offline Sessions container for the shared form experiment (docs/tui.md).
+#[cfg(feature = "dev")]
+pub async fn run_session_form_prototype() -> Result<()> {
+    run_offline(
+        gallery::log(),
+        None,
+        None,
+        ImageMode::Off,
+        None,
+        false,
+        true,
+    )
+    .await
 }

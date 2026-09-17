@@ -21,6 +21,29 @@ impl InteractiveState<'_> {
         // with it — the same rule the theme picker follows.
         self.render_cache.actions.clear();
 
+        #[cfg(feature = "dev")]
+        if let Some(form) = &menu.form {
+            let width = area.width.min(92);
+            let height = area.height.min(super::session_form::HEIGHT + 2);
+            let modal = Rect::new(
+                area.x + (area.width - width) / 2,
+                area.y + (area.height - height) / 2,
+                width,
+                height,
+            );
+            Clear.render(modal, buf);
+            let border = Block::default()
+                .borders(Borders::ALL)
+                .style(self.theme.help_bg_style);
+            let inner = border.inner(modal);
+            border.render(modal, buf);
+            form.render(
+                buf,
+                inner,
+                super::session_form::render::Styles::from(&self.theme),
+            );
+            return;
+        }
         let modal = centered(area);
         Clear.render(modal, buf);
 
@@ -60,6 +83,8 @@ impl InteractiveState<'_> {
         let note = menu.note.clone().unwrap_or_default();
         let legend = match menu.confirming {
             Some(_) => " y:end  any other key:cancel ",
+            #[cfg(feature = "dev")]
+            None if menu.prototype => " n:new (prototype)  ⎋:close ",
             None => " ↑/↓:move  ⏎:switch  e:end  ⎋:close ",
         };
         write_row(buf, modal, 3, &note, self.theme.status_hint_style);
