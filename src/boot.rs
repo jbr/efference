@@ -350,6 +350,14 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
     eprintln!("session dir: {}", session_dir.display());
     eprintln!("logging to {}", log_path.display());
 
+    // The session's id is its dir's name (docs/control-api.md): the address the
+    // control channel, the `sessions` mount's caller field, and the identity line
+    // in the system prompt all use, so it is read once here.
+    let session_id = session_dir
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
     // Build the system prompt once, here at startup, and freeze it into the cached
     // prefix — it must stay byte-stable for the whole session or it would invalidate
     // the cache every turn (docs/log-and-projection.md). Everything it folds in is resolved
@@ -374,11 +382,7 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
     // caller. Mounted before the first projection so `tools[]` is fixed from
     // turn one.
     if let Some(host) = host {
-        let caller = session_dir
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        toolbox.mount_sessions(host, caller, tokio::runtime::Handle::current());
+        toolbox.mount_sessions(host, session_id.clone(), tokio::runtime::Handle::current());
     }
     // Credentials live in the user's secret store (docs/secrets.md): an
     // authorization belongs to the operator and the server, not to one session.
@@ -436,6 +440,7 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
     let context_block = resolved.render();
     let system = env_policy.mask(&crate::env::system_prompt(
         model,
+        &session_id,
         context_block.as_deref(),
         role_section.as_deref(),
         unmounted_section.as_deref(),

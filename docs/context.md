@@ -12,13 +12,34 @@ in `src/env.rs`; the read/write grants in `src/policy.rs`.
 
 ## The identity line
 
-The very first line of the system prompt is `You are {model}.` — the configured
-model verbatim, unconditionally (`src/env.rs`). It leads the prompt so the model
-knows what it is before reading anything else: the harness instructions, the
-`[context]` block, and the role all follow. An untold model answers "which model
-are you" from its training priors, usually wrongly, and a log that mixes models
-across a session needs the current one to know which earlier turns were not its
-own. The line is also where a knowledge-cutoff note would attach; provider
+The very first line of the system prompt is, unconditionally (`src/env.rs`):
+
+```
+You are {model}. This session is `{id}` on this host; that is the id other agents use to reach you.
+```
+
+The configured model verbatim, then the session's id — its session dir's name,
+the same string the control channel addresses it by. The line leads the prompt so
+the model knows what it is before reading anything else: the harness
+instructions, the `[context]` block, and the role all follow. An untold model
+answers "which model are you" from its training priors, usually wrongly, and a
+log that mixes models across a session needs the current one to know which
+earlier turns were not its own. An untold session either invents an id or
+hand-carries one through prose — a delegated task description observed typing
+"My id lucid-lark" as a return address.
+
+The two halves are in **different grammar on purpose**: one identity claim (`You
+are {model}.`) and one possession (`This session is {id}`). Two identity claims
+in consecutive sentences — `Your name is …`, a second `You are …` — are resolved
+by treating the generated id as a persona to inhabit. The session has an id; the
+model is not it. The noun is **id** because the rest of the agent-facing surface
+already uses it: turns arrive prefixed `agent[<id>]:`
+(`assets/prompts/session.md`) and every control tool takes a `session` id;
+*address* stays the explanatory gloss rather than a second noun. The id is fixed
+for the session's life, so the sentence is byte-stable in the cached prefix, and
+its exact bytes are pinned in `src/env/test.rs`.
+
+The line is also where a knowledge-cutoff note would attach; provider
 metadata has a slot for one (OpenRouter's `knowledge_cutoff`) that is
 unpopulated today, so the cutoff is not rendered
 ([../backlog/model-identity.md](../backlog/model-identity.md) holds the

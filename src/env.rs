@@ -42,6 +42,7 @@ const TRIAGE_PERSONA: &str = include_str!("../assets/prompts/triage.md");
 /// ([`crate::agent`], docs/permissions.md).
 pub fn system_prompt(
     model: &str,
+    session_id: &str,
     context_block: Option<&str>,
     role_section: Option<&str>,
     unmounted: Option<&str>,
@@ -56,6 +57,16 @@ pub fn system_prompt(
     prompt.push_str("You are ");
     prompt.push_str(model);
     prompt.push('.');
+    // The session's own id, in different grammar from the model claim
+    // (docs/context.md): the session *has* an id, the model is not it. A second
+    // "you are" beside the first reads as a persona to inhabit. `id` is the noun
+    // the rest of the surface already uses — turns arrive prefixed `agent[<id>]:`
+    // and every control tool takes a `session` id — so the sentence names the
+    // address a session would otherwise have to hand-carry in prose. The id is
+    // fixed for the session's life, so the line is byte-stable in the prefix.
+    prompt.push_str(" This session is `");
+    prompt.push_str(session_id);
+    prompt.push_str("` on this host; that is the id other agents use to reach you.");
     // How the harness works — `include_str!` keeps the file's trailing newline;
     // trim it so the join is clean.
     prompt.push_str("\n\n");

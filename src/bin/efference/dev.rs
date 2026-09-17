@@ -608,8 +608,17 @@ pub(crate) async fn wire(
         // No unmounted-servers section: this offline view mounts no connected
         // providers at all (see the note below), so it has nothing to report
         // about which of them failed.
+        // The session's id is its dir's name — the log sits at
+        // `.efference/<id>/log.jsonl`, so the rebuilt identity line can name the
+        // session this log belongs to (docs/context.md).
+        let session_id = path
+            .parent()
+            .and_then(|dir| dir.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
         efference::env::system_prompt(
             model,
+            &session_id,
             context_block.as_deref(),
             role_section.as_deref(),
             None,
