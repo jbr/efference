@@ -140,6 +140,114 @@ async fn transcript_lines_carry_the_seq_that_entries_resolves() {
     assert_eq!(entry["payload"]["User"][0]["Text"], "hello transcript");
 }
 
+/// A `Proposed` config edit as a `Payload` — the spotter's prefix-promotion shape,
+/// inert until an orchestrator resolves it (docs/permissions.md).
+fn proposed_edit(command: &str) -> crate::log::Payload {
+    crate::log::Payload::ConfigEdit(crate::log::ConfigEdit {
+        state: crate::log::EditState::Proposed,
+        resolves: None,
+        change: crate::log::ConfigChange::Command {
+            command: command.into(),
+        },
+        note: String::new(),
+    })
+}
+
+/// `proposal` over the real router: committing folds the queued change into the
+/// effective config and drains it from `state.proposals`; cancelling drains it
+/// without applying anything; an unknown `seq` is an error naming it.
+///
+/// Unlike [`test_state_over`], the proposals here are filed with `Session::append`
+/// *after* construction — the pending-proposals queue is populated by the live
+/// append path, not folded from a log a `Session` is merely opened over.
+#[tokio::test(flavor = "multi_thread")]
+async fn proposal_commits_and_cancels_through_the_client_executor() {
+    let (shared, _turns) =
+        crate::daemon::Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let commit_seq = shared.append(0, proposed_edit("npm")).unwrap();
+    let cancel_seq = shared.append(0, proposed_edit("cargo")).unwrap();
+
+    let mut handler = (
+        trillium::Init::new({
+            let shared = Arc::clone(&shared);
+            move |info: trillium::Info| {
+                let shared = Arc::clone(&shared);
+                async move { info.with_shared_state(shared) }
+            }
+        }),
+        crate::daemon::handler(
+            crate::daemon::Transport::Socket { auth: None },
+            crate::daemon::App::session(std::env::current_dir().unwrap()),
+        ),
+    );
+    let context = trillium_testing::init(&mut handler).await;
+    let mut state = Control::with_client(
+        Handle::current(),
+        Client::with_connector(
+            trillium_testing::ServerConnector::new(handler).with_context(context),
+        ),
+        false,
+    );
+
+    let (mut state, result) = tokio::task::spawn_blocking(move || {
+        let result = Proposal {
+            seq: commit_seq,
+            cancel: false,
+            note: "looks safe".into(),
+            session: None,
+        }
+        .execute(&mut state, &RequestContext::default());
+        (state, result)
+    })
+    .await
+    .unwrap();
+    assert_eq!(result.unwrap(), format!("committed {commit_seq}"));
+
+    let (mut state, result) = tokio::task::spawn_blocking(move || {
+        let result = Proposal {
+            seq: cancel_seq,
+            cancel: true,
+            note: "not now".into(),
+            session: None,
+        }
+        .execute(&mut state, &RequestContext::default());
+        (state, result)
+    })
+    .await
+    .unwrap();
+    assert_eq!(result.unwrap(), format!("cancelled {cancel_seq}"));
+
+    let (mut state, remaining) = tokio::task::spawn_blocking(move || {
+        let result = State { session: None }
+            .execute(&mut state, &RequestContext::default())
+            .unwrap();
+        (state, result)
+    })
+    .await
+    .unwrap();
+    let proposals = remaining.state.get("proposals").cloned();
+    assert_eq!(
+        proposals,
+        Some(serde_json::json!([])),
+        "both proposals drained: {:?}",
+        remaining.state
+    );
+
+    let err = tokio::task::spawn_blocking(move || {
+        Proposal {
+            seq: 999,
+            cancel: false,
+            note: "?".into(),
+            session: None,
+        }
+        .execute(&mut state, &RequestContext::default())
+    })
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert!(err.to_string().contains("999"), "{err}");
+}
+
 /// The advertised list is what a mounting harness caches, so both its **order** and
 /// its behaviour hints are pinned here. Order is macro-expansion order; a reorder
 /// moves every client's cached list. The hints are what an approval UX shows, and
@@ -161,6 +269,7 @@ fn tools_list_is_ordered_and_annotated() {
             "review_level",
             "notify",
             "dismiss",
+            "proposal",
             "image",
             "state",
             "transcript",
@@ -198,8 +307,9 @@ fn tools_list_is_ordered_and_annotated() {
         assert_eq!(hints(name).0, Some(true), "{name} is a read");
     }
     // Interrupt kills a process group; approving runs a call the rungs did not
-    // clear; ending a session tears it down.
-    for name in ["interrupt", "approve", "end"] {
+    // clear; ending a session tears it down; committing a proposal folds a
+    // change into the effective config.
+    for name in ["interrupt", "approve", "end", "proposal"] {
         assert_eq!(
             hints(name),
             (Some(false), Some(true), Some(false)),

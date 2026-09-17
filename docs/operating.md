@@ -14,8 +14,8 @@ driven, and it is refined from use rather than written ahead of it.
 
 - **`efference control <tool>`** — the calls that drive a *running* session:
   `turn`, `approve`, `settle`, `interrupt`, `background`, `pace`, `review-level`,
-  `notify`, `subscribe`, `unsubscribe`, `dismiss`, `image`, `state`, `transcript`,
-  `entries`, `title`, each one control-API call
+  `notify`, `subscribe`, `unsubscribe`, `dismiss`, `proposal`, `image`, `state`,
+  `transcript`, `entries`, `title`, each one control-API call
   over the session's control channel ([control-channel.md](control-channel.md)) —
   and the three that address the host: `sessions` (list, with titles), `create`
   (a session in a working directory, this process's environment as its base), and
@@ -83,8 +83,8 @@ child as `session[<caller id>]` ([control-api.md](control-api.md)).
 Two rules are enforced by the mount, not by config. A session is never its own target: a
 call naming the caller, or naming no `session`, is an error. And the mutating verbs —
 `turn`, `approve`, `interrupt`, `end`, `review-level`, `pace`, `title`, `background`,
-`dismiss` — reach only sessions the caller created; `notify` and the reads reach any
-session in the project. Reach is the project: `sessions__sessions` lists, and every
+`dismiss`, `proposal` — reach only sessions the caller created; `notify` and the reads
+reach any session in the project. Reach is the project: `sessions__sessions` lists, and every
 `sessions__*` target resolves, only among sessions sharing the caller's `.efference/`
 base, so an id from another project reads as not found.
 
@@ -376,8 +376,9 @@ request a change, and that write always gates for you whatever else the config a
 including under `--autonomous`. Reading the diff *is* reading the request, and approving it
 is granting it. Separately, the spotter files **proposals** for command prefixes it has
 judged safe across repeated sightings; they sit inert in `state.proposals` until
-`PATCH /proposals/:seq` commits or cancels one. A session can file a proposal; it can never
-resolve its own.
+`efference control proposal <seq>` (`--cancel` to drop it instead) commits or cancels
+one, over `PATCH /proposals/:seq`. A session can file a proposal; it can never resolve
+its own.
 
 ## The dials
 

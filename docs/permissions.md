@@ -629,7 +629,8 @@ spotter, fresh-context each call, just reads the effective scope directly.
 **The edit lifecycle.** A `ConfigEdit` carries a `state` (`Proposed` / `Committed` / `Cancelled`)
 and a `resolves: Option<Seq>`. Only a **committed** edit folds into the effective config; a
 `Proposed` entry is inert and parks in the daemon's pending-proposals queue until an orchestrator
-commits or cancels it (referencing the proposal's `seq` via `resolves`). The synchronous paths —
+commits or cancels it (referencing the proposal's `seq` via `resolves`) — over `PATCH
+/proposals/:seq` directly, or the `proposal` control tool (docs/operating.md). The synchronous paths —
 the human gate, fs-watch, and an approved session edit — append `Committed` directly; the
 asynchronous proposers go `Proposed → commit/cancel`.
 

@@ -71,7 +71,7 @@ impl Session {
     /// session-effective only: unlike the synchronous gate path
     /// ([`apply_config_change`](Self::apply_config_change)), it is not written back to the
     /// config file.
-    pub(super) fn resolve_proposal_decision(
+    pub(crate) fn resolve_proposal_decision(
         &self,
         seq: Seq,
         commit: bool,

@@ -221,10 +221,10 @@ enforceable, and they are enforced by the executor rather than by config:
 - **The caller is never its own target.** A call naming the caller, or naming no
   session (which defaults to it), is refused on every verb.
 - **A mutating verb reaches descendants only.** `turn`, `approve`, `interrupt`,
-  `end`, `review_level`, `pace`, `title`, `background`, and `dismiss` require the
-  target's `created_by` chain to reach the caller. `notify` and the reads
-  (`sessions`, `state`, `transcript`, `entries`, `image`) reach any session in the
-  caller's project.
+  `end`, `review_level`, `pace`, `title`, `background`, `dismiss`, and `proposal`
+  require the target's `created_by` chain to reach the caller. `notify` and the
+  reads (`sessions`, `state`, `transcript`, `entries`, `image`) reach any session
+  in the caller's project.
 
 `created_by` is per-session host control state: never logged, never projected, and
 absent on a human root. It is also what the child's identity line names as its
