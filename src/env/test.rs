@@ -142,8 +142,8 @@ fn system_prompt_names_the_creating_session_when_there_is_one() {
     // relation, never as a second "you are".
     assert_eq!(child.matches("You are ").count(), 1);
     // The creator is named once. A second mention is where changing peer status
-    // ("currently running", "is waiting on you") would accrete, and the prefix
-    // is frozen for the session's life.
+    // ("is waiting on you", "has three processes running") would accrete, and
+    // the prefix is frozen for the session's life.
     assert_eq!(child.matches("lucid-lark").count(), 1);
 
     // A root: the sentence is absent, and the rest is byte-identical to the

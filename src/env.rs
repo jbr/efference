@@ -73,16 +73,12 @@ pub fn system_prompt(
     prompt.push_str(session_id);
     prompt.push_str("` on this host; that is the id other agents use to reach you.");
     // The creator's id, when a session commissioned this one (docs/context.md).
-    // The host records it as `created_by`; it is the return address a child
-    // otherwise hand-carries through prose (a delegated task description was
-    // observed typing "My id lucid-lark" into its payload). It states the
-    // relationship and stops there: not a second identity claim, not an
-    // authority grant, and not a claim the creator is still running — whether
-    // it is alive is changing peer status and belongs in a turn, not in the
-    // frozen prefix. A root session has no creator, so the sentence is absent
-    // entirely rather than rendered empty. `created_by` is immutable
-    // provenance, so the sentence is byte-stable for the session's life; a
-    // detached child still names the session that made it.
+    // It states the relationship and stops there: not a second identity claim,
+    // not an authority grant, and not a claim the creator is still running.
+    // Whether it is alive is changing peer status, which cannot go in a frozen
+    // prefix; `created_by` is immutable provenance, so this sentence is
+    // byte-stable for the session's life. A root has none, and the sentence is
+    // then absent rather than rendered empty.
     if let Some(creator) = created_by {
         prompt.push_str(" It was created by `");
         prompt.push_str(creator);
