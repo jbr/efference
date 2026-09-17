@@ -13,8 +13,8 @@ This is the **one**-session bind. A multi-session host reuses everything in this
 document — the flags, the listener shape, the credential layer, and the gate — rather
 than shipping a second one. The gate's only listener-dependent decision is which
 prefixes it guards, carried as a `Surface`: a session bind guards `/v1` and `/files`,
-a host guards `/sessions`. The host `Surface` exists today with nothing mounted
-behind it; in-process session routing is planned work (`backlog/host-process.md`).
+a host guards `/sessions`. `Surface::Host` is the seam the in-process host mounts
+its session routes behind, so the gate's prefix decision is the same shape on both.
 
 The bind is configured by CLI flags — each with an env fallback (`EFFERENCE_BIND`,
 `EFFERENCE_HOST`, `EFFERENCE_TLS_CERT`, `EFFERENCE_TLS_KEY`) so a direnv'd shell can
