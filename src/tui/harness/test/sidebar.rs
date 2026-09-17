@@ -253,6 +253,7 @@ fn sidebar_slice_excludes_the_transcript() {
         paths: vec![],
         tools: vec![],
         review_level: Some("human_only".into()),
+        resolved_review_level: None,
     }));
 
     let slice = play.sidebar_grid();
@@ -456,6 +457,7 @@ fn sidebar_policy_with_a_tentative_proposal() {
         paths: vec![committed(".  rw"), proposed("/refs  r", 9)],
         tools: vec![committed("read"), committed("write")],
         review_level: None,
+        resolved_review_level: None,
     }));
 
     let bar = play.find("⊕").expect("the proposed grant shows a ⊕ marker");
@@ -563,6 +565,7 @@ fn sidebar_play() -> Screenplay<'static> {
         }],
         tools: vec![],
         review_level: Some("human_only".into()),
+        resolved_review_level: None,
     }));
     play
 }

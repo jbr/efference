@@ -114,8 +114,8 @@ pub(super) fn perm_str(read: bool, write: bool) -> &'static str {
     }
 }
 
-/// Merge the `role`, `proposals`, and `review_level` topics into a [`PolicyView`] for
-/// the sidebar (docs/permissions.md). Three topics, one view: the daemon serves them
+/// Merge the `role`, `proposals`, `review_level` and `resolved_review_level` topics
+/// into a [`PolicyView`] for the sidebar (docs/permissions.md). Four topics, one view: the daemon serves them
 /// separately (docs/control-api.md), and this client merges them only for its own
 /// rendering convenience, so the bridge holds the latest value of each and re-merges
 /// when any of them moves. Proposals are merged into their section and sorted alongside
@@ -126,6 +126,7 @@ pub(super) fn parse_policy(
     role: &serde_json::Value,
     proposals: &serde_json::Value,
     review_level: &serde_json::Value,
+    resolved_review_level: &serde_json::Value,
 ) -> Option<PolicyView> {
     if role.is_null() {
         return None;
@@ -252,6 +253,12 @@ pub(super) fn parse_policy(
         paths,
         tools,
         review_level: review_level.as_str().map(String::from),
+        // Reported only when it differs from the dial, which is the only case in which
+        // it says something the dial does not (docs/permissions.md).
+        resolved_review_level: resolved_review_level
+            .as_str()
+            .filter(|resolved| Some(*resolved) != review_level.as_str())
+            .map(String::from),
     })
 }
 

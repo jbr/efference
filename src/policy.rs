@@ -52,11 +52,24 @@ pub enum Verdict {
 /// runtime-settable over the control channel (unlike the frozen base config). Orthogonal to pace —
 /// any combination is meaningful (autonomous-but-slow, human-only-and-held). Pause is *not* a
 /// position here; that's the `held` overlay.
+///
+/// The order is by how much a position costs a human, which an upstream agent reduces without
+/// eliminating: an `Upstream` gate is answered by another session, but that session's own dial
+/// still terminates at the operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReviewLevel {
     /// No synchronous human: a spotter `Watch`/`Gate` redirects the model to its config
     /// (`agent::autonomous_gate_message`) instead of blocking on an absent gate.
     Autonomous,
+    /// The creating session reviews: a call the spotter holds is routed to the session that
+    /// commissioned this one, which resolves it through the ordinary `approve` route
+    /// (docs/permissions.md). The default for a session another session created.
+    ///
+    /// The position **resolves at routing time, never at creation**: a session with no live
+    /// upstream — a root, or a creator that has since ended — reviews as
+    /// [`SpotterHuman`](Self::SpotterHuman) instead ([`crate::daemon::Session::resolved_review_level`]).
+    /// Resolving once at creation would leave a child whose creator died effectively unreviewed.
+    Upstream,
     /// The supervised default: fast-path → spotter → human gate.
     SpotterHuman,
     /// The human takes the spotter's role **entirely** — skip the spotter (pay no tokens, log no
@@ -67,11 +80,14 @@ pub enum ReviewLevel {
 
 impl ReviewLevel {
     /// Ordinal for lock-free `AtomicU8` storage; also the gear position a UI can present.
+    /// The ordinal is process-local storage, not a wire or on-disk encoding — the control
+    /// channel, the CLI and the log all carry the snake_case token from [`as_str`](Self::as_str).
     pub fn as_u8(self) -> u8 {
         match self {
             ReviewLevel::Autonomous => 0,
-            ReviewLevel::SpotterHuman => 1,
-            ReviewLevel::HumanOnly => 2,
+            ReviewLevel::Upstream => 1,
+            ReviewLevel::SpotterHuman => 2,
+            ReviewLevel::HumanOnly => 3,
         }
     }
 
@@ -80,7 +96,8 @@ impl ReviewLevel {
     pub fn from_u8(n: u8) -> Self {
         match n {
             0 => ReviewLevel::Autonomous,
-            2 => ReviewLevel::HumanOnly,
+            1 => ReviewLevel::Upstream,
+            3 => ReviewLevel::HumanOnly,
             _ => ReviewLevel::SpotterHuman,
         }
     }
@@ -90,6 +107,7 @@ impl ReviewLevel {
     pub fn as_str(self) -> &'static str {
         match self {
             ReviewLevel::Autonomous => "autonomous",
+            ReviewLevel::Upstream => "upstream",
             ReviewLevel::SpotterHuman => "spotter_human",
             ReviewLevel::HumanOnly => "human_only",
         }
@@ -100,6 +118,7 @@ impl ReviewLevel {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "autonomous" => Some(ReviewLevel::Autonomous),
+            "upstream" => Some(ReviewLevel::Upstream),
             "spotter_human" => Some(ReviewLevel::SpotterHuman),
             "human_only" => Some(ReviewLevel::HumanOnly),
             _ => None,

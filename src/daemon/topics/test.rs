@@ -36,12 +36,17 @@ async fn publishes_the_full_set_once_then_only_changes() {
     shared.touch_state();
     assert!(drain(&mut rx).await.is_empty(), "unchanged → silent");
 
-    // One dial moves; only its topic is republished.
+    // One dial moves; only the topics that moved with it are republished. The
+    // resolved position is derived from the dial, so it moves too — and only it
+    // (docs/permissions.md).
     shared.set_review_level(crate::policy::ReviewLevel::HumanOnly);
     let changed = drain(&mut rx).await;
-    assert_eq!(changed.len(), 1, "only the topic that moved: {changed:?}");
-    let update = &changed[&Topic::ReviewLevel];
-    assert_eq!(&*update.json, r#""human_only""#);
+    assert_eq!(changed.len(), 2, "only the topics that moved: {changed:?}");
+    assert_eq!(&*changed[&Topic::ReviewLevel].json, r#""human_only""#);
+    assert_eq!(
+        &*changed[&Topic::ResolvedReviewLevel].json,
+        r#""human_only""#
+    );
 }
 
 /// A published value is the topic's **whole** current value — the same bytes

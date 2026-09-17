@@ -94,6 +94,12 @@ pub(crate) enum Topic {
     Pace,
     /// The review-level dial (docs/permissions.md).
     ReviewLevel,
+    /// The review position **in force**, which is the dial's own value except that
+    /// `upstream` with no live upstream reviews as `spotter_human` (docs/permissions.md).
+    /// Carried beside the dial rather than folded into it because the two answer
+    /// different questions — what was set, and who answers a gate open right now —
+    /// and because this one moves without anyone turning the dial.
+    ResolvedReviewLevel,
     /// Whether the loop is executing a turn.
     Running,
     /// Turns submitted but not yet dequeued, in submission order — `[{submission_id, text}]`
@@ -128,7 +134,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 15] = [
+    pub(crate) const ALL: [Topic; 16] = [
         Self::Gate,
         Self::Processes,
         Self::Usage,
@@ -137,6 +143,7 @@ impl Topic {
         Self::Notifications,
         Self::Pace,
         Self::ReviewLevel,
+        Self::ResolvedReviewLevel,
         Self::Running,
         Self::Queued,
         Self::Stall,
@@ -164,6 +171,7 @@ impl Topic {
             Self::Notifications => "notifications",
             Self::Pace => "pace",
             Self::ReviewLevel => "review_level",
+            Self::ResolvedReviewLevel => "resolved_review_level",
             Self::Running => "running",
             Self::Queued => "queued",
             Self::Stall => "stall",

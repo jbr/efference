@@ -316,7 +316,13 @@ impl<'a> InteractiveState<'a> {
                     x0 + 1,
                     y,
                     max_w.saturating_sub(1),
-                    &format!("review  {level}"),
+                    &match &policy.resolved_review_level {
+                        // The dial and the position in force disagree: say both, dial
+                        // first, so what was set and who answers are both readable
+                        // (docs/permissions.md).
+                        Some(resolved) => format!("review  {level} → {resolved}"),
+                        None => format!("review  {level}"),
+                    },
                     text,
                 );
                 y += 1;

@@ -116,6 +116,22 @@ impl Session {
             }
         }
     }
+
+    /// The same status body, addressed to the session the gate is *routed* to under
+    /// the `upstream` review position (docs/permissions.md). The added sentence names
+    /// the recipient as the reviewer and names the dial that hands the child back to
+    /// the operator, so declining is a move the reader can make rather than a silence.
+    pub(crate) fn upstream_gate_body(&self, id: &str, status: &SessionStatus) -> String {
+        let mut body = self.status_body(id, status);
+        if matches!(status, SessionStatus::Gated { .. }) {
+            body.push_str(&format!(
+                " You are its upstream reviewer: answer with sessions__approve, or hand \
+                 {id} back to the operator with sessions__review_level (spotter_human), \
+                 which re-routes this gate rather than dropping it."
+            ));
+        }
+        body
+    }
 }
 
 /// The inbox slot a session's status posts on: one slot per session, so a

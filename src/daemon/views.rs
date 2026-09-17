@@ -25,6 +25,7 @@ impl Session {
             Topic::Notifications => self.notifications_json(),
             Topic::Pace => self.pace_json(),
             Topic::ReviewLevel => self.review_level_json(),
+            Topic::ResolvedReviewLevel => self.resolved_review_level_json(),
             Topic::Running => self.running_json(),
             Topic::Queued => self.queued_json(),
             Topic::Stall => self.stall_json(),
@@ -186,9 +187,20 @@ impl Session {
     }
 
     /// The review-level dial (docs/permissions.md): who reviews a gated call —
-    /// `autonomous` / `spotter_human` / `human_only`. Runtime-settable.
+    /// `autonomous` / `upstream` / `spotter_human` / `human_only`. Runtime-settable.
+    /// This is the dial's own value — what a client set and reads back — which is not
+    /// always who answers; see [`resolved_review_level_json`](Self::resolved_review_level_json).
     fn review_level_json(&self) -> Value {
         Value::from(self.review_level().as_str())
+    }
+
+    /// The review position **in force right now** (docs/permissions.md). Equal to the
+    /// dial except for `upstream` with no live upstream — a root session, or a creator
+    /// that has ended — which reviews as `spotter_human`. Reported beside the dial so
+    /// "who answers this gate" is answerable while one is pending, without the client
+    /// reconstructing the creation tree.
+    fn resolved_review_level_json(&self) -> Value {
+        Value::from(self.resolved_review_level().as_str())
     }
 
     /// Whether the loop is executing a turn (vs. parked idle) — the "is something

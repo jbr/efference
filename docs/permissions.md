@@ -684,9 +684,11 @@ always has an owner.
 ## The review-level dial (`src/agent.rs`, `src/daemon/config_edits.rs`)
 
 **Who reviews a call the fast-path didn't clear** is a runtime dial — a [`ReviewLevel`] ordinal on
-`Session` (`policy.rs`), set over the control channel (`PATCH /loop {review_level}`, `efference control review-level`)
-and reported on `GET /state`, orthogonal to pace ([operator participation](control-channel.md#operator-participation--the-intervention-points)). Three
-positions of increasing human involvement:
+`Session` (`policy.rs`), set over the control channel (`PATCH /loop {review_level}`, `efference control review-level`,
+the `sessions__review_level` tool) and reported on `GET /state`, orthogonal to pace
+([operator participation](control-channel.md#operator-participation--the-intervention-points)). Four
+positions, ordered by how much the position costs a human — which an upstream agent reduces
+without eliminating:
 
 - **`Autonomous`** — no synchronous human. The spotter still runs and can `Clear`; what changes is
   the residual: a spotter `Watch`/`Gate` no longer blocks on an absent human — it becomes an
@@ -711,6 +713,40 @@ positions of increasing human involvement:
   same way, which since the redirection carve-out it does. The two halves are reported
   independently: the path check requires the name grant as a precondition, which is true of
   the decision and misleading as a diagnosis.
+- **`Upstream`** — the **creating session** reviews. The spotter still runs; what it will not
+  clear is routed to the session that commissioned this one as a gate, which resolves it through
+  the ordinary `approve` route (the descendants-only authority rule already governs that call,
+  [tools.md](tools.md)). This is a fourth answer on the same dimension, not a new relation
+  between sessions: `create` from a session defaults the child here, and handing a child back to
+  the operator is the same dial set to `spotter_human` — there is no separate disown verb.
+  Chains terminate at the operator, since each session's own position is asked in turn and
+  `created_by` is a tree.
+
+  **The position resolves when a call is routed, never at creation** (`daemon/review.rs`). A
+  session with no live upstream — a root, or a creator that has since ended — reviews as
+  `SpotterHuman` from that moment, in the same fail-safe direction as `ReviewLevel::from_u8`: an
+  unresolvable position moves toward the operator, never toward autonomous. Resolving once at
+  creation is the failure this avoids — a child whose creator died would otherwise hold a call
+  nobody was routed. `GET /state` therefore carries two fields: `review_level`, the dial's own
+  value, and `resolved_review_level`, the position in force, so "who answers this gate" is
+  answerable while one is pending.
+
+  **Routing is the dial's, observation is the subscription's.** A session's status reaches its
+  subscribers as an inbox notification either way ([inbox.md](inbox.md), `daemon/subscriptions.rs`);
+  what `Upstream` adds is that a *gate* also reaches the live upstream with a must-wake and a
+  body naming it as the reviewer, subscribed or not. That is the distinction the position exists
+  to draw: unsubscribing to stop answering a peer's gates also discarded its completion and stall
+  notices, which were wanted. A creator is still subscribed with `wake` on `create`, because
+  waking it when a child goes idle so it can continue is a separate use.
+
+  **A level change re-routes a gate already held; it never drops one.** The status watcher is
+  level-triggered on the status *and* the resolved position, so turning the dial — or the upstream
+  ending — re-posts the held call to whoever now answers it. Handing off future approvals is not
+  abandoning a call that is holding a child right now.
+
+  There is deliberately no `upstream_only` position mirroring `HumanOnly`: if a nonhuman reviewer
+  is acceptable at all, the spotter takes the first shot, being cheap, purpose-briefed, and
+  resolving its most restrictive answer to this gate anyway.
 - **`SpotterHuman`** — the supervised default: fast-path → spotter → human gate.
 - **`HumanOnly`** — the human takes the spotter's role **entirely**: the spotter is **skipped**
   (no model call, no token cost, no `Spot` entry), and every call the fast-path didn't clear goes

@@ -418,7 +418,11 @@ export interface Pace {
   held: boolean;
 }
 
-export type ReviewLevel = "autonomous" | "spotter_human" | "human_only";
+export type ReviewLevel =
+  | "autonomous"
+  | "upstream"
+  | "spotter_human"
+  | "human_only";
 
 // The last non-success upstream response, with consecutive occurrences of that
 // status. Ephemeral transport diagnostics: never log content (docs/transport.md).
@@ -511,6 +515,9 @@ export interface StateTopics {
   usage?: Usage | null;
   pace?: Pace | null;
   review_level?: ReviewLevel | null;
+  // The position in force, which is the dial's own value except that `upstream`
+  // with no live upstream reviews as `spotter_human` (docs/permissions.md).
+  resolved_review_level?: ReviewLevel | null;
   running?: boolean | null;
   stall?: Stall | null;
   upstream_failure?: UpstreamFailure | null;

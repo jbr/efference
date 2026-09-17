@@ -93,12 +93,18 @@ struct PolicyTopics {
     role: Option<serde_json::Value>,
     proposals: serde_json::Value,
     review_level: serde_json::Value,
+    resolved_review_level: serde_json::Value,
 }
 
 impl PolicyTopics {
     fn view(&self) -> Option<PolicyView> {
         let role = self.role.as_ref()?;
-        parse::parse_policy(role, &self.proposals, &self.review_level)
+        parse::parse_policy(
+            role,
+            &self.proposals,
+            &self.review_level,
+            &self.resolved_review_level,
+        )
     }
 }
 
@@ -167,6 +173,10 @@ fn decode_frame(
             }
             "review_level" => {
                 policy.review_level = data.clone();
+                policy.view().map(|v| send(TuiEvent::Policy(v)))
+            }
+            "resolved_review_level" => {
+                policy.resolved_review_level = data.clone();
                 policy.view().map(|v| send(TuiEvent::Policy(v)))
             }
             _ => None,

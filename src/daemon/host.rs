@@ -87,6 +87,15 @@ impl Host {
         };
         self.sessions.lock().unwrap().insert(id.clone(), hosted);
         if let Some(creator) = created_by {
+            // The creating session is this one's upstream reviewer (docs/permissions.md):
+            // the link is recorded first, so the dial below has something to resolve
+            // against. A session-created session defaults to `upstream`; an explicit
+            // `--autonomous` at creation has already moved the dial off the supervised
+            // default and keeps it.
+            session.set_upstream(self, creator.clone());
+            if session.review_level() == crate::policy::ReviewLevel::SpotterHuman {
+                session.set_review_level(crate::policy::ReviewLevel::Upstream);
+            }
             self.subscribe(&id, &creator, true);
         }
         // The status watcher (`subscriptions.rs`), stopped by the runtime's
@@ -125,6 +134,16 @@ impl Host {
                 }
             }
             host.sessions.lock().unwrap().remove(&id);
+            // A surviving child's `upstream` position now has nothing to resolve to, so
+            // it reviews as `spotter_human` from here (docs/permissions.md). The
+            // resolution is read fresh at every routing, so nothing has to be rewritten
+            // — but a child already holding a gate has to be re-routed to the operator,
+            // and a state readout has to re-emit, so wake both.
+            for child in host.children_of(&id) {
+                if let Some(session) = host.session(&child) {
+                    session.touch_state();
+                }
+            }
         });
     }
 

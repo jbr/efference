@@ -463,10 +463,15 @@ pub(crate) struct PolicyView {
     pub commands: Vec<PolicyEntry>,
     pub paths: Vec<PolicyEntry>,
     pub tools: Vec<PolicyEntry>,
-    /// The review-level dial (docs/tui.md) from `/state`'s
-    /// `review_level` — who reviews a gated call (`autonomous` / `spotter_human` / `human_only`).
+    /// The review-level dial (docs/tui.md) from `/state`'s `review_level` — who reviews
+    /// a gated call (`autonomous` / `upstream` / `spotter_human` / `human_only`).
     /// Read-only here; the interactive gear selector is deferred to the ergonomics pass.
     pub review_level: Option<String>,
+    /// The position **in force**, when it is not the dial's own value: an `upstream`
+    /// session whose creator has ended reviews as `spotter_human`, and the operator
+    /// reading this sidebar is the one who answers (docs/permissions.md). `None`
+    /// whenever the two agree.
+    pub resolved_review_level: Option<String>,
 }
 
 use std::io::{self, stdout};

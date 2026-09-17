@@ -197,7 +197,12 @@ and are byte-identical to — their state topics: `pace` (`{speed_ms, held}`),
   applied: a part-bad request moves nothing.
 - `PATCH` → `200` with the full resource representation.
 - `400 bad_request` — bad body, or a `review_level` outside
-  `autonomous | spotter_human | human_only`.
+  `autonomous | upstream | spotter_human | human_only`.
+
+`review_level` is the dial's own value — what a client set and reads back. Who
+answers a gate *right now* is the separate `resolved_review_level` topic on
+`GET /state`, because `upstream` with no live upstream reviews as `spotter_human`
+(see [permissions](permissions.md)).
 
 #### `PUT /title`
 Set the session's title by hand ([session-title.md](session-title.md)): one

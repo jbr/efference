@@ -135,6 +135,15 @@ enqueues ordinary notifications — it is the harness's own channel, used today 
 delegated child's status ([tools.md](tools.md), subscriptions). Superseding on a slot
 takes the replacement's own terms.
 
+**A routed gate rides this channel, and is not a subscription.** A session whose review
+position resolves to `upstream` ([permissions.md](permissions.md)) sends the call it is
+holding to the session that created it, on the same `session:<id>` slot and with the same
+must-wake, whether or not that session is subscribed — and with a body that names the
+recipient as the one to resolve it. Everything else a subscriber hears is observation: the
+same statuses, on the subscription's own terms, which `unsubscribe` drops. Keeping the two
+apart is what lets an agent stop watching a peer without also stopping answering for it, and
+stop answering for a child without going blind to whether it finished.
+
 ## Supersession — archive-and-replace, never edit
 
 Records are immutable; a `PUT /notifications/:id` verb does not exist. A new notification

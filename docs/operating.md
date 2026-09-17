@@ -397,7 +397,11 @@ its own.
 ## The dials
 
 - **`efference control review-level <level>`** — who reviews a call the fast path did not clear.
-  `spotter_human` is the supervised default (fast path → spotter → you). `autonomous`
+  `spotter_human` is the supervised default (fast path → spotter → you). `upstream` sends
+  what the spotter will not clear to the session that created this one, which answers it with
+  `approve`; it is the default for a session another session created, and setting a child back
+  to `spotter_human` is how a creating agent hands it to you. A session with no live creator
+  reviews as `spotter_human` whatever the dial says. `autonomous`
   removes the synchronous human: the spotter still runs and can clear, and what it will not
   clear is handed back to the model with the reason and a pointer at its own config file —
   so routine gates self-resolve and your attention is spent on genuine policy requests.

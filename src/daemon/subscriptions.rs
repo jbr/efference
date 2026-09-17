@@ -71,9 +71,21 @@ impl Host {
     /// Post `status` of `id` to each subscriber's inbox, on the session's slot so
     /// a pending status is superseded rather than stacked (docs/inbox.md). A
     /// subscriber that has ended is skipped.
+    ///
+    /// A gate is the one status that is more than observation. **Who answers it is the
+    /// review-level dial's to say, not the subscription's** (docs/permissions.md): a
+    /// session whose position resolves to `upstream` sends the call it is holding to
+    /// its creator, subscribed or not, with the wake a held call warrants and a body
+    /// that says the recipient is the one to resolve it. That reviewer is skipped in
+    /// the subscriber loop so the two posts do not race on one slot. Every other
+    /// status, and every other position, posts to subscribers alone.
     pub(super) fn post_status(&self, id: &str, session: &Session, status: &SessionStatus) {
         let body = session.status_body(id, status);
+        let reviewer = self.gate_reviewer(session, status);
         for (subscriber, terms) in self.subscribers(id) {
+            if Some(&subscriber) == reviewer.as_ref() {
+                continue;
+            }
             let Some(inbox) = self.session(&subscriber) else {
                 continue;
             };
@@ -83,6 +95,28 @@ impl Host {
                 inbox.notify(id.to_string(), body.clone(), Some(status_slot(id)), None);
             }
         }
+        if let Some(reviewer) = reviewer
+            && let Some(inbox) = self.session(&reviewer)
+        {
+            inbox.notify_wake(
+                id.to_string(),
+                session.upstream_gate_body(id, status),
+                Some(status_slot(id)),
+            );
+        }
+    }
+
+    /// The session this status is *routed to*, as against merely reported: the live
+    /// upstream of a session holding a gate whose position resolves to `upstream`
+    /// (docs/permissions.md). `None` for every other status and position — including a
+    /// session whose creator has ended, whose gate the operator answers.
+    fn gate_reviewer(&self, session: &Session, status: &SessionStatus) -> Option<String> {
+        if !matches!(status, SessionStatus::Gated { .. })
+            || session.resolved_review_level() != crate::policy::ReviewLevel::Upstream
+        {
+            return None;
+        }
+        session.upstream()
     }
 
     /// Forget every subscription `id` holds on other sessions, and release its
@@ -115,6 +149,16 @@ impl Host {
             .map(|(child, _)| child.clone())
             .collect()
     }
+
+    /// Every session `id` commissioned, detached or not — the sessions whose
+    /// `upstream` review position resolves through `id` (docs/permissions.md).
+    pub(super) fn children_of(&self, id: &str) -> Vec<String> {
+        self.sessions_mut()
+            .iter()
+            .filter(|(_, hosted)| hosted.created_by.as_deref() == Some(id))
+            .map(|(child, _)| child.clone())
+            .collect()
+    }
 }
 
 /// Watch one session's status and post each move to its subscribers. Runs under
@@ -124,8 +168,14 @@ impl Host {
 /// Level-triggered on the current status: a gate that resolves before this
 /// wakes is not reported, since there is nothing left to act on. The boot idle
 /// is not reported either — only an idle a turn led to.
+///
+/// The resolved review position is part of the level, not just the status, because it
+/// decides where a gate is *routed* (docs/permissions.md). A held call whose position
+/// moves — the dial turned to hand the child back, or the upstream ending — is
+/// re-routed rather than dropped: the status has not changed, so only the position
+/// carries the news.
 pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, session: Arc<Session>) {
-    let mut last: Option<SessionStatus> = None;
+    let mut last: Option<(SessionStatus, crate::policy::ReviewLevel)> = None;
     loop {
         // Arm before reading, so a change landing between the read and the await
         // cannot be lost — the same discipline the topic differ uses.
@@ -140,16 +190,20 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
         appended.as_mut().enable();
 
         let status = session.status();
+        let level = session.resolved_review_level();
         let notable = match (&last, &status) {
             (_, SessionStatus::Running) => false,
             (None, SessionStatus::Idle) => false,
-            (Some(previous), current) => previous != current,
+            (Some((previous, routed)), current) => {
+                previous != current
+                    || (matches!(current, SessionStatus::Gated { .. }) && *routed != level)
+            }
             (None, _) => true,
         };
         if notable && let Some(host) = host.upgrade() {
             host.post_status(&id, &session, &status);
         }
-        last = Some(status);
+        last = Some((status, level));
 
         tokio::select! {
             _ = &mut settled => {}

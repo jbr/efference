@@ -7,6 +7,7 @@ use super::*;
 fn review_level_round_trips_and_fails_safe() {
     for level in [
         ReviewLevel::Autonomous,
+        ReviewLevel::Upstream,
         ReviewLevel::SpotterHuman,
         ReviewLevel::HumanOnly,
     ] {
@@ -17,10 +18,25 @@ fn review_level_round_trips_and_fails_safe() {
             "token round-trip"
         );
     }
-    // Ordinal is the gear order: Autonomous < SpotterHuman < HumanOnly.
-    assert!(
-        ReviewLevel::Autonomous.as_u8() < ReviewLevel::SpotterHuman.as_u8()
-            && ReviewLevel::SpotterHuman.as_u8() < ReviewLevel::HumanOnly.as_u8()
+    // The gear order, pinned: ordered by how much a position costs a human, which an
+    // upstream agent reduces without eliminating.
+    assert_eq!(
+        [
+            ReviewLevel::Autonomous.as_u8(),
+            ReviewLevel::Upstream.as_u8(),
+            ReviewLevel::SpotterHuman.as_u8(),
+            ReviewLevel::HumanOnly.as_u8(),
+        ],
+        [0, 1, 2, 3]
+    );
+    assert_eq!(
+        [
+            ReviewLevel::Autonomous.as_str(),
+            ReviewLevel::Upstream.as_str(),
+            ReviewLevel::SpotterHuman.as_str(),
+            ReviewLevel::HumanOnly.as_str(),
+        ],
+        ["autonomous", "upstream", "spotter_human", "human_only"]
     );
     // Fail-safe: an out-of-range ordinal or unknown token defaults to supervised, never
     // silently to the unsupervised `Autonomous`.
