@@ -6,25 +6,6 @@ use crate::tui::frame_cost::FrameCost;
 use ratatui::prelude::Backend;
 use std::io::Write;
 
-/// The channels the UI sends the operator's intent over, carried together
-/// because every entry point builds them all at once and hands them straight to the
-/// state. The tokio side turns each into its control-channel call; an offline run
-/// (the gallery, a read-only view) holds the far-ends so a send can't error.
-pub(super) struct Senders {
-    pub submit: tokio::sync::mpsc::UnboundedSender<crate::frontend::SubmittedTurn>,
-    /// Withdraw the pending-queue suffix from a submission id (docs/control-api.md); the
-    /// answer rides home as a [`TuiEvent::Recalled`].
-    pub recall: tokio::sync::mpsc::UnboundedSender<String>,
-    /// The zero-token continue (docs/control-api.md): payload-free, because the
-    /// verb is.
-    pub continue_loop: tokio::sync::mpsc::UnboundedSender<()>,
-    pub approve: tokio::sync::mpsc::UnboundedSender<(String, crate::frontend::Approval)>,
-    pub pace: tokio::sync::mpsc::UnboundedSender<PaceCmd>,
-    pub interrupt: tokio::sync::mpsc::UnboundedSender<crate::frontend::Interrupt>,
-    pub sidebar: tokio::sync::mpsc::UnboundedSender<SidebarCmd>,
-    pub images: tokio::sync::mpsc::UnboundedSender<crate::tui::image::ImageKey>,
-}
-
 /// The blocking crossterm UI loop. Owns the terminal, the [`InteractiveState`],
 /// and a crossterm event-reader thread; renders each frame from the projected
 /// transcript. Adapted from ferritin's `ui_thread_loop` (the request-thread
@@ -45,7 +26,7 @@ pub(super) fn ui_loop(
     // This session's attachment store (docs/inbox.md), or `None` for a run with no session
     // behind it — the gallery and the read-only view.
     attachments_dir: Option<std::path::PathBuf>,
-) -> io::Result<()> {
+) -> io::Result<Exit> {
     // Build the render context: interactive TTY, sized to the terminal.
     let width = crossterm::terminal::size()
         .map(|(w, _)| w as usize)
@@ -96,19 +77,7 @@ pub(super) fn ui_loop(
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let mut state = InteractiveState::new(
-        events,
-        senders.submit,
-        senders.recall,
-        senders.continue_loop,
-        senders.approve,
-        senders.pace,
-        senders.interrupt,
-        senders.sidebar,
-        senders.images,
-        render_context,
-        theme,
-    );
+    let mut state = InteractiveState::new(events, senders, render_context, theme);
     state.attachments_dir = attachments_dir;
     if let Some(label) = viewing {
         state.set_viewing(label);
@@ -242,7 +211,9 @@ pub(super) fn ui_loop(
         }
 
         if exit || state.ui.quit_requested {
-            break Ok(());
+            // The switcher is the only thing that sets a destination; every
+            // other way out of the loop is a plain quit (`sessions.rs`).
+            break Ok(state.switch_to.take().unwrap_or(Exit::Quit));
         }
         if !redraw {
             continue;

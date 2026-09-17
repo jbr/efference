@@ -58,14 +58,16 @@ fn a_hosted_target_finds_its_session_dir() {
 /// not candidates, and a listing with no cwd (an older host) is kept.
 #[test]
 fn a_hosts_listing_is_scoped_to_this_directory() {
-    use efference::client::SessionListing;
+    use efference::client::SessionSummary;
     let dir = std::env::temp_dir().join("efference-hosted-here");
     std::fs::create_dir_all(dir.join("sub")).unwrap();
-    let listing = |id: &str, cwd: Option<&str>| SessionListing {
+    let listing = |id: &str, cwd: Option<&str>| SessionSummary {
         id: id.into(),
         title: None,
         cwd: cwd.map(str::to_string),
         created_by: None,
+        status: "idle".into(),
+        processes: 0,
     };
     let listings = [
         listing("here", Some(dir.to_str().unwrap())),

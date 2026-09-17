@@ -34,7 +34,7 @@ expression: self.render()
 26 │ │ render_module_20.rs │                                                        │
 27 │ ╰─────────────────────╯                                                        │
 28 │                                                                                │
-29 │   pace fast     theme t     help ?     detach q                                │
+29 │   pace fast     sessions s     theme t     help ?     detach q                 │
 30 │›                                                                               │
    │  ^                                                                             │
 31 │   efference — ↑ controls                                                       │

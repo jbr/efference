@@ -42,6 +42,9 @@ pub(crate) enum StripVerb {
     Theme,
     /// Open the help screen.
     Help,
+    /// Open the session switcher (`sessions.rs`): the host's sessions, with
+    /// switch and end.
+    Sessions,
     /// Leave the TUI; the daemon and session keep running.
     Detach,
 }
@@ -62,10 +65,13 @@ const fn item(label: &'static str, hint: &'static str, verb: StripVerb) -> Strip
 
 /// The omnipresent tail, appended to every state's context verbs and therefore
 /// the first thing a narrow width cuts (right to left: `detach`, `help`, `theme`,
-/// `pace`). Ordered least-cuttable first: `pace` is a control the operator reaches
-/// for mid-run, `detach` is the one with the plainest keyboard fallback.
-const TAIL: [StripItem; 4] = [
+/// `sessions`, `pace`). Ordered least-cuttable first: `pace` is a control the
+/// operator reaches for mid-run, `detach` is the one with the plainest keyboard
+/// fallback. `sessions` sits second because it is the doorway to the verbs that
+/// act on a session's life rather than its loop — switch, and end (`sessions.rs`).
+const TAIL: [StripItem; 5] = [
     item("pace", "", StripVerb::PaceWidget),
+    item("sessions", "s", StripVerb::Sessions),
     item("theme", "t", StripVerb::Theme),
     item("help", "?", StripVerb::Help),
     item("detach", "q", StripVerb::Detach),
@@ -273,6 +279,7 @@ impl InteractiveState<'_> {
             StripVerb::ApproveGate => self.approve_gate(),
             StripVerb::AllowStage => self.stage_allow(),
             StripVerb::AbortGate => self.abort_gate(),
+            StripVerb::Sessions => self.open_sessions(),
             StripVerb::Theme => self.open_theme_picker(),
             StripVerb::Help => self.ui_mode = UiMode::Help,
             StripVerb::Detach => self.ui.quit_requested = true,

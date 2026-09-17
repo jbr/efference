@@ -33,7 +33,7 @@ expression: self.render()
 24 │                                                                                │
 25 │                                                                                │
 26 │                                                                                │
-27 │   background b     kill ⎋⎋     pause ⎋     pace fast     theme t     help ?    │
+27 │   background b     kill ⎋⎋     pause ⎋     pace fast     sessions s            │
 28 │›                                                                               │
 29 │   ◍ streaming…  showing the whole output so far — it keeps growing             │
    └────────────────────────────────────────────────────────────────────────────────┘

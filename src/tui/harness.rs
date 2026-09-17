@@ -23,7 +23,6 @@ use ratatui::{
     buffer::Buffer,
     style::{Color, Modifier},
 };
-use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
 use super::SidebarCmd;
 use super::TuiEvent;
@@ -50,28 +49,10 @@ pub(crate) struct Screenplay<'a> {
     height: u16,
     next_seq: u64,
     _event_tx: Sender<TuiEvent>,
-    /// Held un-underscored so a scenario can assert what a submit put on the wire —
-    /// or, for a read-only view, that nothing did ([`took_turn`](Screenplay::took_turn)).
-    submit_rx: UnboundedReceiver<crate::frontend::SubmittedTurn>,
-    /// Held un-underscored so a scenario can assert a recall addressed the right
-    /// submission ([`took_recall`](Screenplay::took_recall)).
-    recall_rx: UnboundedReceiver<String>,
-    /// Held un-underscored so a scenario can assert the empty-composer `⏎` fired the
-    /// zero-token continue ([`took_continue`](Screenplay::took_continue)).
-    continue_rx: UnboundedReceiver<()>,
-    /// Held un-underscored so a scenario can assert what decision a gate action
-    /// sent ([`took_approval`](Screenplay::took_approval)).
-    approve_rx: UnboundedReceiver<(String, Approval)>,
-    /// Held un-underscored so a scenario can assert the pace command a widget
-    /// commit pushed ([`took_pace`](Screenplay::took_pace)).
-    pace_rx: UnboundedReceiver<super::PaceCmd>,
-    /// Held un-underscored so a scenario can assert an interrupt intent fired —
-    /// the hard rung of graduated Esc ([`took_interrupt`](Screenplay::took_interrupt))
-    /// or the background handoff ([`took_background`](Screenplay::took_background)).
-    interrupt_rx: UnboundedReceiver<crate::frontend::Interrupt>,
-    /// Held so a scenario can assert a sidebar verb dispatched
-    /// ([`took_sidebar_cmd`](Screenplay::took_sidebar_cmd)).
-    sidebar_rx: UnboundedReceiver<SidebarCmd>,
+    /// Every intent channel's far end, held so a send from inside the state never
+    /// errors — and read by the `took_*` accessors below, which is how a scenario
+    /// asserts what a gesture actually dispatched.
+    receivers: super::senders::Receivers,
 }
 
 impl Screenplay<'static> {
@@ -90,42 +71,15 @@ impl Screenplay<'static> {
             .expect("the default theme loads");
         let theme = InteractiveTheme::from_render_context(&rc);
         let (event_tx, event_rx) = unbounded();
-        let (submit_tx, submit_rx) = unbounded_channel();
-        let (recall_tx, recall_rx) = unbounded_channel();
-        let (continue_tx, continue_rx) = unbounded_channel();
-        let (approve_tx, approve_rx) = unbounded_channel();
-        let (pace_tx, pace_rx) = unbounded_channel();
-        let (interrupt_tx, interrupt_rx) = unbounded_channel();
-        let (sidebar_tx, sidebar_rx) = unbounded_channel();
-        // The far end is dropped: a scenario's entries carry their image bytes
-        // inline (the offline shape), so nothing here fetches.
-        let (images_tx, _) = unbounded_channel();
-        let state = InteractiveState::new(
-            event_rx,
-            submit_tx,
-            recall_tx,
-            continue_tx,
-            approve_tx,
-            pace_tx,
-            interrupt_tx,
-            sidebar_tx,
-            images_tx,
-            rc,
-            theme,
-        );
+        let (senders, receivers) = super::senders::Senders::channels();
+        let state = InteractiveState::new(event_rx, senders, rc, theme);
         Self {
             state,
             width,
             height,
             next_seq: 1,
-            sidebar_rx,
             _event_tx: event_tx,
-            submit_rx,
-            recall_rx,
-            continue_rx,
-            approve_rx,
-            pace_rx,
-            interrupt_rx,
+            receivers,
         }
     }
 }
@@ -227,7 +181,7 @@ impl Screenplay<'_> {
     /// sent on.
     pub(crate) fn took_interrupt(&mut self) -> bool {
         matches!(
-            self.interrupt_rx.try_recv(),
+            self.receivers.interrupt.try_recv(),
             Ok(crate::frontend::Interrupt::Kill)
         )
     }
@@ -236,7 +190,7 @@ impl Screenplay<'_> {
     /// check (docs/supervisor.md) — the detach intent on the same channel.
     pub(crate) fn took_background(&mut self) -> bool {
         matches!(
-            self.interrupt_rx.try_recv(),
+            self.receivers.interrupt.try_recv(),
             Ok(crate::frontend::Interrupt::Detach)
         )
     }
@@ -244,40 +198,45 @@ impl Screenplay<'_> {
     /// The sidebar verb dispatched since the last check, if any — drains the channel
     /// the UI would send a focused row's kill / commit / cancel over.
     pub(crate) fn took_sidebar_cmd(&mut self) -> Option<SidebarCmd> {
-        self.sidebar_rx.try_recv().ok()
+        self.receivers.sidebar.try_recv().ok()
     }
 
     /// The user turn a submit sent since the last check, if any — drains the channel
     /// the UI would `POST /turns` over. `None` means nothing was sent.
     pub(crate) fn took_turn(&mut self) -> Option<String> {
-        self.submit_rx.try_recv().ok().map(|turn| turn.text)
+        self.receivers.submit.try_recv().ok().map(|turn| turn.text)
     }
 
     /// The submission id a recall asked to withdraw since the last check, if any —
     /// drains the channel the UI would `DELETE /turns/:id` over.
     #[allow(dead_code)]
     pub(crate) fn took_recall(&mut self) -> Option<String> {
-        self.recall_rx.try_recv().ok()
+        self.receivers.recall.try_recv().ok()
     }
 
     /// Whether the empty-composer `⏎` fired the zero-token continue since the last
     /// check — drains the channel the UI would `POST /loop/continue` over.
     pub(crate) fn took_continue(&mut self) -> bool {
-        self.continue_rx.try_recv().is_ok()
+        self.receivers.continue_loop.try_recv().is_ok()
     }
 
     /// The approval decision a gate action sent since the last check (`call_id`,
     /// decision), if any — drains the channel the UI would have resolved
     /// `PUT /approvals/:call_id` over.
     pub(crate) fn took_approval(&mut self) -> Option<(String, Approval)> {
-        self.approve_rx.try_recv().ok()
+        self.receivers.approve.try_recv().ok()
     }
 
     /// The pace command (`speed_ms`, `held`) pushed since the last check, if any —
     /// drains the channel the UI would `PATCH /loop {pace}` over. `None` means nothing was
     /// sent (e.g. a widget preview or revert, which never touch the daemon).
+    /// The host verb a switcher gesture dispatched (`sessions.rs`), if any.
+    pub(crate) fn took_host_cmd(&mut self) -> Option<super::HostCmd> {
+        self.receivers.host.try_recv().ok()
+    }
+
     pub(crate) fn took_pace(&mut self) -> Option<super::PaceCmd> {
-        self.pace_rx.try_recv().ok()
+        self.receivers.pace.try_recv().ok()
     }
 
     /// Move the pointer to screen cell `(x, y)` through the real mouse path — the

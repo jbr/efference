@@ -40,6 +40,9 @@ impl<'a> InteractiveState<'a> {
     fn normalize_to_composer(&mut self) {
         match std::mem::replace(&mut self.ui_mode, UiMode::Normal) {
             UiMode::Help => {}
+            // The switcher closes; a confirm it was holding goes with it, which
+            // is the direction Esc is allowed to move a destructive verb.
+            UiMode::Sessions(_) => {}
             UiMode::ThemePicker {
                 saved_theme_name, ..
             } => {

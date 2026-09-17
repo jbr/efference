@@ -8,7 +8,7 @@ expression: self.render()
  0 │                                │
  1 │                                │
  2 │                                │
- 3 │   pace fast     theme t        │
+ 3 │   pace fast     sessions s     │
  4 │› the quick brown fox jumps     │
  5 │› over the lazy dog             │
    │                   ^            │

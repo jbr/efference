@@ -56,14 +56,36 @@ the two SSE streams (`text/event-stream`).
 `efference host` ([control-channel.md](control-channel.md)) serves several
 sessions from one process. Its own routes are the listener's, not a session's:
 
-- `GET /sessions` — `[{"id": …, "cwd": …, "title"?: …, "created_by"?: …}, …]`, the
-  hosted sessions, sorted by id, each with its working directory (what a client
-  scopes the listing to its own project by, [control-channel.md](control-channel.md)),
-  its current title once one has been written
-  ([session-title.md](session-title.md)) and, when a session created it, the
-  calling session's id as `created_by`. `created_by` is host control state — the
-  creation tree — never logged or projected; a human-created root omits it
-  (docs/tools.md).
+- `GET /sessions` — the listing:
+  `[{"id": …, "cwd": …, "title"?: …, "created_by"?: …, "status": …, "processes": n}, …]`,
+  the hosted sessions sorted by id, each with its working directory (what a
+  client scopes the listing to its own project by,
+  [control-channel.md](control-channel.md)), its current title once one has been
+  written ([session-title.md](session-title.md)) and, when a session created it,
+  the calling session's id as `created_by`. `created_by` is host control state —
+  the creation tree — never logged or projected; a human-created root omits it
+  ([tools.md](tools.md)). `status` is one word — `running`, `idle`, `gated`,
+  `stalled` — and `processes` counts the background processes the session holds
+  ([supervisor.md](supervisor.md)). Those two are what a list surface can show
+  without one `GET /sessions/<id>/v1/state` per row, and what a client's
+  destructive affordance reads before it asks: ending a session that is doing
+  something, or that holds processes an end would reap, is confirmed
+  ([tui.md](tui.md), [web-client.md](web-client.md)).
+
+  **The same path with `Accept: text/event-stream` subscribes to the listing.**
+  One resource, two readings: a request naming the SSE media type receives the
+  current listing as an `event: sessions` frame and the whole listing again on
+  every change — a session arriving, leaving, or moving between those statuses.
+  Any other request gets the JSON above.
+
+  The stream is level-triggered and has **no durable class and no cursor**. A
+  frame carries no `id:`, because there is no history to resume into: a late
+  subscriber is caught up by the next frame, a missed frame is repaired by the
+  next, and a reconnect is a fresh subscription. That is also why this is not a
+  merge of per-session streams — the per-session contract is one cursor per
+  handshake, and nothing here holds one. A client that wants a session's own
+  entries opens that session's `/v1/events` beside this
+  (backlog/host-process.md).
 - `POST /sessions` — create a session. The body is the session request: `cwd`
   (absolute, always sent), `env` (the complete base environment, [env.md](env.md)),
   `model`, and optionally `name`, `config`, `spotter_model`, `triage`,

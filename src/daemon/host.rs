@@ -17,11 +17,20 @@ use std::collections::BTreeMap;
 use trillium::Handler;
 use trillium_tokio::Swansong;
 
+mod summary;
+pub use summary::SessionSummary;
+use summary::summary_stream;
+
 /// One process's sessions and the `Swansong` they all hang under.
 pub struct Host {
     swansong: Swansong,
     inference: crate::inference::InferenceRegistry,
     sessions: Mutex<BTreeMap<String, Hosted>>,
+    /// Signalled when the session listing may have moved (`summary.rs`): a
+    /// session arriving or leaving, and every wake of a session's status
+    /// watcher. Every listing subscriber recomputes and diffs for itself, so
+    /// this carries no value and an extra ping costs a comparison.
+    summary_changed: Notify,
 }
 
 /// What the host keeps per session: the state handlers read, the child
@@ -47,6 +56,7 @@ impl Host {
             swansong: Swansong::new(),
             inference,
             sessions: Mutex::new(BTreeMap::new()),
+            summary_changed: Notify::new(),
         })
     }
 
@@ -86,6 +96,7 @@ impl Host {
             subscribers: BTreeMap::new(),
         };
         self.sessions.lock().unwrap().insert(id.clone(), hosted);
+        self.touch_summary();
         if let Some(creator) = created_by {
             // The creating session is this one's upstream reviewer (docs/permissions.md):
             // the link is recorded first, so the dial below has something to resolve
@@ -134,6 +145,7 @@ impl Host {
                 }
             }
             host.sessions.lock().unwrap().remove(&id);
+            host.touch_summary();
             // A surviving child's `upstream` position now has nothing to resolve to, so
             // it reviews as `spotter_human` from here (docs/permissions.md). The
             // resolution is read fresh at every routing, so nothing has to be rewritten
@@ -261,7 +273,7 @@ impl Host {
 /// `/files` under its prefix — the web transport, as on a session bind.
 pub(crate) fn host_routes(create: bool, files: bool) -> impl trillium::Handler {
     let mut router = Router::new()
-        .get("/sessions", list_sessions)
+        .get("/sessions", list_sessions())
         .delete("/sessions/:id", end_session)
         // The wildcard remainder becomes the conn's path, so the control routes
         // match `/v1/…` exactly as they do at a session bind's root.
@@ -289,43 +301,36 @@ fn missing_host(conn: Conn) -> Conn {
     fail(conn, ErrorCode::Internal, "missing host state")
 }
 
-/// `GET /sessions`: the hosted ids, sorted, each with its working directory and
-/// its current title when one has been written (docs/session-title.md):
-/// `[{"id": …, "cwd": …, "title"?: …, "created_by"?: …}, …]`.
-async fn list_sessions(conn: Conn) -> Conn {
-    let Some(host) = host_of(&conn) else {
-        return missing_host(conn);
-    };
-    let ids: Vec<_> = host
-        .ids()
-        .into_iter()
-        .map(|id| {
-            let identity = host.session(&id).and_then(|session| session.identity());
-            let created_by = host.created_by(&id);
-            let mut entry = serde_json::Map::new();
-            entry.insert("id".into(), serde_json::Value::String(id));
-            if let Some(title) = identity
-                .as_ref()
-                .and_then(|identity| identity.title.clone())
-            {
-                entry.insert("title".into(), serde_json::Value::String(title));
-            }
-            // The working directory, so a client can keep to its own project's
-            // sessions on a host that serves several (docs/control-channel.md).
-            if let Some(cwd) = identity.map(|identity| identity.cwd) {
-                entry.insert("cwd".into(), serde_json::Value::String(cwd));
-            }
-            // The creation tree, so a human can see which sessions a session
-            // commissioned (docs/tools.md). Absent for a human root.
-            if let Some(created_by) = created_by {
-                entry.insert("created_by".into(), serde_json::Value::String(created_by));
-            }
-            serde_json::Value::Object(entry)
+/// `GET /sessions`: the listing (`summary.rs`) — one row per hosted session,
+/// sorted by id.
+///
+/// The route is a tuple so the same URL serves both readings of the one
+/// resource. The `Sse` half negotiates on `Accept`: a request naming
+/// `text/event-stream` subscribes to the listing and receives it whole on every
+/// change, and any other request passes through untouched to the JSON half
+/// below (docs/control-api.md).
+fn list_sessions() -> impl trillium::Handler {
+    (
+        sse(|conn: &mut Conn| match host_of(conn) {
+            Some(host) => summary_stream(Arc::downgrade(&host)),
+            // Unreachable through the mounted router, which always carries the
+            // host as shared state; an empty stream closes rather than hangs.
+            None => Box::pin(futures_lite::stream::empty()),
         })
-        .collect();
-    conn.with_status(200)
-        .with_body(serde_json::Value::Array(ids).to_string())
-        .halt()
+        .with_heartbeat(super::http::EVENTS_HEARTBEAT),
+        read_sessions,
+    )
+}
+
+/// The JSON half of [`list_sessions`].
+async fn read_sessions(conn: Conn) -> Conn {
+    match host_of(&conn) {
+        Some(host) => conn
+            .with_status(200)
+            .with_body(host.summaries_json())
+            .halt(),
+        None => missing_host(conn),
+    }
 }
 
 /// The per-session `/files` view, handed from [`resolve_session`] through conn

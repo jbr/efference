@@ -23,8 +23,9 @@ use crate::tui::document::{Document, DocumentNode, NodePath, TuiAction};
 use crate::tui::projection::{self, LiveTail};
 use crate::tui::render_context::{RenderContext, ThemeError};
 use crate::tui::{
-    BgProc, PaceCmd, PaceView, PendingGate, SessionIdentityView, SidebarCmd, SidebarReturn,
-    SidebarRow, StallView, TuiEvent, UpstreamFailureView, UpstreamRetryView, UsageStats,
+    BgProc, Exit, HostCmd, PaceCmd, PaceView, PendingGate, SessionIdentityView, SidebarCmd,
+    SidebarReturn, SidebarRow, StallView, TuiEvent, UpstreamFailureView, UpstreamRetryView,
+    UsageStats,
 };
 
 use crossbeam_channel::Receiver;
@@ -130,6 +131,9 @@ pub(super) enum UiMode {
     Normal,
     /// Help screen
     Help,
+    /// The session switcher (`sessions.rs`): the host's sessions, with switch
+    /// and end.
+    Sessions(super::sessions::SessionMenu),
     /// Theme picker modal
     ThemePicker {
         /// Index of currently selected theme
@@ -524,6 +528,14 @@ pub(super) struct InteractiveState<'a> {
     /// `PATCH /processes/:id {background: true}` (the foreground→background handoff, docs/supervisor.md).
     /// A no-op if nothing is running.
     pub interrupt_tx: UnboundedSender<Interrupt>,
+    /// Dispatches a host verb — list the sessions, end one — to the tokio side,
+    /// which addresses the host's own routes at the socket root (`sessions.rs`).
+    /// The listing rides home as a [`TuiEvent::Sessions`].
+    pub host_tx: UnboundedSender<HostCmd>,
+    /// Set by the switcher when the operator picked another session: the loop
+    /// ends and the entry point re-attaches there, closing this stream
+    /// (docs/tui.md). `None` means the loop ended for any other reason.
+    pub switch_to: Option<Exit>,
     /// Dispatches a focused sidebar row's verb to the tokio side, which issues the
     /// matching control-channel call (docs/tui.md). Fire-and-forget: a stale row
     /// (process exited, proposal resolved elsewhere) is answered 404 by the daemon

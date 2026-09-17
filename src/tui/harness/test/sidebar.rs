@@ -727,7 +727,8 @@ fn tab_returns_to_where_focus_entered_from() {
 
     // From the strip: Tab there and back restores the strip item.
     play.route_key(KeyCode::Up, KeyModifiers::NONE); // → strip item 0
-    play.route_key(KeyCode::Right, KeyModifiers::NONE); // → item 1
+    play.route_key(KeyCode::Right, KeyModifiers::NONE); // → item 1 (sessions)
+    play.route_key(KeyCode::Right, KeyModifiers::NONE); // → item 2 (theme)
     play.route_key(KeyCode::Tab, KeyModifiers::NONE); // → sidebar
     play.route_key(KeyCode::Tab, KeyModifiers::NONE); // → back
     assert_eq!(

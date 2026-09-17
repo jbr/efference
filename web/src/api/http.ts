@@ -201,12 +201,18 @@ export const mintSession = (code: string) =>
   requestAt<{ status: string }>("POST", "/auth/session", { code });
 
 /** One entry of the host's session listing (docs/web-client.md). The id is the
- * path segment a client joins its control base onto, and the listing carries
- * nothing else: a session's own state is read through its own API. */
+ * path segment a client joins its control base onto; the rest is what a list
+ * surface can show without one `GET /sessions/<id>/v1/state` per row. */
 export interface SessionEntry {
   id: string;
   // The session's current title, once one has been written (docs/session-title.md).
   title?: string;
+  cwd?: string;
+  created_by?: string;
+  /** What the session is doing, in one word. */
+  status: "running" | "idle" | "gated" | "stalled";
+  /** Live background processes the session holds; ending it reaps them. */
+  processes: number;
 }
 
 // A host's one endpoint of its own (docs/web-client.md), at its root rather than
@@ -215,3 +221,12 @@ export interface SessionEntry {
 // the client tells the two bindings apart (session/entry.ts).
 export const fetchSessions = () =>
   requestAt<SessionEntry[]>("GET", "/sessions");
+
+// End a hosted session (docs/control-api.md). The host answers once teardown has
+// run — background processes reaped, scratch removed — so the listing that
+// follows shows the finished state rather than a session on its way out.
+export const endSession = (id: string) =>
+  requestAt<{ id: string; state: string }>(
+    "DELETE",
+    `/sessions/${encodeURIComponent(id)}`,
+  );

@@ -90,6 +90,10 @@ impl<'a> InteractiveState<'a> {
             return false;
         }
 
+        if matches!(self.ui_mode, UiMode::Sessions(_)) {
+            return self.handle_sessions_key(key);
+        }
+
         if let UiMode::ThemePicker {
             ref mut selected_index,
             ..

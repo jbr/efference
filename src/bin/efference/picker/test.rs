@@ -70,7 +70,7 @@ impl Prompter for Script {
 
 /// One listing as the wire carries it, decoded the way the client decodes
 /// `GET /sessions`.
-fn listing(json: &str) -> SessionListing {
+fn listing(json: &str) -> SessionSummary {
     serde_json::from_str(json).unwrap()
 }
 
@@ -82,20 +82,22 @@ fn here() -> PathBuf {
     PathBuf::from("/tmp/efference-picker/project")
 }
 
-fn listings(entries: &[&str]) -> Vec<(PathBuf, Vec<SessionListing>)> {
+fn listings(entries: &[&str]) -> Vec<(PathBuf, Vec<SessionSummary>)> {
     vec![(host(), entries.iter().map(|json| listing(json)).collect())]
 }
 
 const HERE_SESSION: &str = r#"{
   "id": "pickled-wombat",
   "title": "investigating the cause of the missing radish",
-  "cwd": "/tmp/efference-picker/project"
+  "cwd": "/tmp/efference-picker/project",
+  "status": "idle"
 }"#;
 
 const ELSEWHERE_SESSION: &str = r#"{
   "id": "frigid-salamander",
   "title": "considering the nature of existence",
-  "cwd": "/tmp/efference-picker/elsewhere"
+  "cwd": "/tmp/efference-picker/elsewhere",
+  "status": "idle"
 }"#;
 
 #[test]
@@ -111,7 +113,10 @@ fn rows_are_this_directorys_sessions_and_the_rest_is_a_count() {
 /// away — the same rule `hosted_here` applies.
 #[test]
 fn a_listing_without_a_cwd_is_kept() {
-    let menu = menu(&listings(&[r#"{"id": "placeless"}"#]), &here());
+    let menu = menu(
+        &listings(&[r#"{"id": "placeless", "status": "idle"}"#]),
+        &here(),
+    );
     assert_eq!(menu.rows.len(), 1);
     assert_eq!(menu.elsewhere, 0);
 }
@@ -137,7 +142,7 @@ fn a_row_carries_the_title_and_the_create_entry_is_last() {
 fn an_untitled_session_says_so_and_names_its_creator() {
     let menu = menu(
         &listings(&[
-            r#"{"id": "fresh", "cwd": "/tmp/efference-picker/project", "created_by": "pickled-wombat"}"#,
+            r#"{"id": "fresh", "cwd": "/tmp/efference-picker/project", "created_by": "pickled-wombat", "status": "idle"}"#,
         ]),
         &here(),
     );

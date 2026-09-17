@@ -20,7 +20,9 @@ export function App() {
     return <Login onAuthenticated={resolve} />;
   }
   if (entry.kind === "list") {
-    return <SessionList sessions={entry.sessions} onReload={resolve} />;
+    // The probe's answer seeds the list; the list holds the listing stream open
+    // from there, so nothing above it re-resolves (docs/web-client.md).
+    return <SessionList sessions={entry.sessions} />;
   }
   return <SessionView />;
 }

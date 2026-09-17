@@ -44,11 +44,14 @@ pub(crate) mod render_image;
 pub(crate) mod render_loading_bar;
 pub(crate) mod render_node;
 pub(crate) mod render_scrollbar;
+pub(crate) mod render_sessions;
 pub(crate) mod render_sidebar;
 pub(crate) mod render_span;
 pub(crate) mod render_status_bar;
 pub(crate) mod render_table;
 pub(crate) mod render_theme_picker;
+pub(crate) mod senders;
+pub(crate) mod sessions;
 pub(crate) mod sidebar;
 pub(crate) mod span_style;
 pub(crate) mod state;
@@ -60,6 +63,7 @@ pub(crate) mod write_text;
 // The render pipeline and input handlers reference these via `super::` (i.e. the
 // `tui` module namespace), mirroring ferritin's `renderer::interactive` layout.
 // Private re-export: visible to the `tui` submodules, not the wider crate.
+use senders::{Receivers, Senders};
 use state::{InteractiveState, UiMode};
 
 /// One inbound message to the UI thread, decoded by the bridge from the unified
@@ -158,8 +162,41 @@ pub(crate) enum TuiEvent {
     /// dequeued the turn first — because the server's answer is authoritative; the composer
     /// splices exactly this and nothing else.
     Recalled(Vec<crate::client::WithdrawnTurn>),
+    /// The host's session listing came back, or said why it could not
+    /// (docs/tui.md). One whole listing per event: the switcher holds the latest
+    /// and nothing is reconciled.
+    Sessions(Result<Vec<crate::client::SessionSummary>, String>),
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
+}
+
+/// A verb the switcher issues against the *host* rather than the attached
+/// session (docs/tui.md). Sent to the tokio side, which addresses the host's own
+/// routes at the socket root; the answer rides home as a
+/// [`TuiEvent::Sessions`].
+#[derive(Debug, Clone)]
+pub(crate) enum HostCmd {
+    /// `GET /sessions` — the listing, as the switcher opens.
+    List,
+    /// `DELETE /sessions/:id` — end a session and re-read the listing. The host
+    /// answers once teardown has run, so the re-read shows the finished state.
+    End(String),
+}
+
+/// Why the UI loop returned (docs/tui.md). Detaching leaves the session running
+/// on its host; switching closes this stream and opens another, because the
+/// per-session contract is one cursor per handshake (docs/control-api.md).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Exit {
+    /// The client is done.
+    Quit,
+    /// Attach to a different session on the same host.
+    Switch {
+        id: String,
+        /// The session's working directory, as the listing carried it — where
+        /// its attachment store lives (docs/inbox.md).
+        cwd: Option<String>,
+    },
 }
 
 /// How the TUI picks its graphics protocol for result images (docs/tui.md).
@@ -524,7 +561,7 @@ pub use run::{run, run_gallery, run_view};
 
 use bridge::bridge;
 use run::DEFAULT_THEME;
-use ui_loop::{Senders, ui_loop};
+use ui_loop::ui_loop;
 
 /// Seconds elapsed since an absolute Unix-millis stamp, per the local clock. The
 /// client-side half of "send absolute instants, let clients compute elapsed"

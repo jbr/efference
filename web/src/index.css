@@ -188,8 +188,8 @@ input[type="checkbox"] {
   color: var(--fg);
 }
 
-/* The host's root: one row per live session, each a link into its own view.
-   Nothing per row but the id — the listing carries nothing else. */
+/* The host's root: one row per live session, each a link into its own view,
+   with the status the listing carries and the end verb beside it. */
 .session-list ul {
   list-style: none;
   margin: 1.5rem 0;
@@ -198,6 +198,26 @@ input[type="checkbox"] {
 
 .session-list li {
   border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+}
+
+/* The link takes the row; the end verb and its confirm sit at the far end. */
+.session-list li > a {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-list-status {
+  white-space: nowrap;
+}
+
+.session-list-confirm {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  white-space: nowrap;
 }
 
 .session-list a {

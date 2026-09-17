@@ -89,6 +89,55 @@ fn json(body: &str) -> Value {
     serde_json::from_str(body).unwrap_or_else(|e| panic!("{e}: {body}"))
 }
 
+/// The listing is one resource with two readings: `GET /sessions` answers the
+/// array, and the same path with `Accept: text/event-stream` subscribes to it —
+/// the current value on connect, then the whole value again on every change,
+/// with no cursor and nothing to reconcile (`host/summary.rs`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_session_listing_streams_its_current_value() {
+    let roots = Roots::new();
+    let host = Host::new(crate::inference::InferenceRegistry::empty());
+    host.adopt(
+        "one".into(),
+        SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong()),
+    );
+    // A root-based client: the listing is the *listener's* surface, not a
+    // session's, so it sits at the socket root under either binding.
+    let client = host_client(&host, "one").await.with_prefix("");
+    let mut events = client
+        .session_events()
+        .await
+        .expect("subscribe to the listing");
+
+    let (id, kind, data) = next_event(&mut events).await;
+    assert_eq!(kind.as_deref(), Some("sessions"));
+    // No cursor on a resource with no history: an `id` here would be a resume
+    // position into a stream that cannot replay.
+    assert_eq!(id, None);
+    let listing = json(&data);
+    assert_eq!(listing[0]["id"], "one");
+    assert_eq!(listing[0]["status"], "idle");
+    assert_eq!(listing[0]["processes"], 0);
+    assert_eq!(listing.as_array().unwrap().len(), 1);
+
+    // A second session is a change to the listing, so the next frame carries
+    // both rows rather than a delta naming the arrival.
+    host.adopt(
+        "two".into(),
+        SessionRuntime::start(runtime::boot(&roots.0.join("two")), host.swansong()),
+    );
+    let (_, _, data) = next_event(&mut events).await;
+    let ids: Vec<String> = json(&data)
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(ids, ["one", "two"]);
+
+    host.swansong().shut_down().await;
+}
+
 /// Two sessions behind one listener: the list names both, each `/sessions/<id>/v1/state`
 /// is that session's (its own cwd), an unknown id is `404`, and ending one leaves the
 /// other listed and answering.
@@ -110,8 +159,8 @@ async fn a_host_routes_each_prefix_to_its_own_session() {
     assert_eq!(
         json(list.body()),
         serde_json::json!([
-            {"id": "one", "cwd": cwd("one")},
-            {"id": "two", "cwd": cwd("two")},
+            {"id": "one", "cwd": cwd("one"), "status": "idle", "processes": 0},
+            {"id": "two", "cwd": cwd("two"), "status": "idle", "processes": 0},
         ])
     );
 

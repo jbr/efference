@@ -17,7 +17,7 @@ expression: self.render()
  8 │                                                                                                              │                                       │
  9 │                                                                                                              │                                       │
 10 │                                                                                                              │                                       │
-11 │   background b   ▸ kill ⎋⎋     pause ⎋     pace fast     theme t     help ?   pinned · leave to re-rank      │                                       │
+11 │   background b   ▸ kill ⎋⎋     pause ⎋     pace fast     sessions s     theme t   pinned · leave to re-rank  │                                       │
 12 │›                                                                                                             │                                       │
 13 │   that verb no longer applies here                                                                                                                   │
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

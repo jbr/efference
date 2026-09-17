@@ -11,7 +11,7 @@
 //! against a scripted prompter rather than a terminal (`picker/test.rs`).
 
 use super::*;
-use efference::client::SessionListing;
+use efference::client::SessionSummary;
 use efference::setup::{Cancelled, Choice, Prompter, Tone, terminal::Terminal};
 
 /// One session the picker can attach to, with the host that serves it — a host
@@ -46,7 +46,7 @@ pub(crate) enum Pick {
 
 /// Split the live hosts' listings into this directory's sessions and a count of
 /// the rest.
-pub(crate) fn menu(listings: &[(PathBuf, Vec<SessionListing>)], here: &Path) -> Menu {
+pub(crate) fn menu(listings: &[(PathBuf, Vec<SessionSummary>)], here: &Path) -> Menu {
     let mut menu = Menu::default();
     for (host, sessions) in listings {
         for session in sessions {
@@ -174,7 +174,7 @@ pub(crate) async fn run(
 ) -> CliResult {
     let here = std::env::current_dir()?;
     let candidates = host_candidates();
-    let mut listings: Vec<(PathBuf, Vec<SessionListing>)> = Vec::new();
+    let mut listings: Vec<(PathBuf, Vec<SessionSummary>)> = Vec::new();
     for host in &candidates {
         if !is_live(host) {
             continue;

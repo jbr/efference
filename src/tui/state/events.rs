@@ -211,6 +211,10 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
             }
             TuiEvent::Recalled(withdrawn) => self.apply_recall(withdrawn),
+            TuiEvent::Sessions(listing) => {
+                self.apply_sessions(listing);
+                self.dirty = true;
+            }
             TuiEvent::Disconnected => return true,
         }
         false

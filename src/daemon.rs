@@ -1147,7 +1147,7 @@ mod paths;
 mod review;
 mod runtime;
 pub mod slug;
-pub use host::{CreateSession, Host, serve_host};
+pub use host::{CreateSession, Host, SessionSummary, serve_host};
 pub use paths::SessionPaths;
 pub use runtime::{SessionBoot, SessionRuntime};
 

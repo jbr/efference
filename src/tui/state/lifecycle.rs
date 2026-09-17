@@ -7,23 +7,27 @@ mod test;
 
 impl<'a> InteractiveState<'a> {
     /// Create new interactive state. The document starts empty; it is filled in
-    /// as [`TuiEvent`]s arrive over `events`. The argument count is the stateful
-    /// surface itself — one receiver plus the intent channels the UI dispatches on
-    /// (docs/tui.md) — not an accident to bundle away.
-    #[allow(clippy::too_many_arguments)]
+    /// as [`TuiEvent`]s arrive over `events`. The intent channels travel as one
+    /// [`Senders`](crate::tui::senders::Senders), which is what keeps adding an
+    /// intent to one field on each half rather than a parameter on every entry
+    /// point (docs/tui.md).
     pub(in crate::tui) fn new(
         events: Receiver<TuiEvent>,
-        submit_tx: UnboundedSender<crate::frontend::SubmittedTurn>,
-        recall_tx: UnboundedSender<String>,
-        continue_tx: UnboundedSender<()>,
-        approve_tx: UnboundedSender<(String, Approval)>,
-        pace_tx: UnboundedSender<PaceCmd>,
-        interrupt_tx: UnboundedSender<Interrupt>,
-        sidebar_tx: UnboundedSender<SidebarCmd>,
-        images_tx: UnboundedSender<crate::tui::image::ImageKey>,
+        senders: crate::tui::senders::Senders,
         render_context: RenderContext,
         theme: InteractiveTheme,
     ) -> Self {
+        let crate::tui::senders::Senders {
+            submit: submit_tx,
+            recall: recall_tx,
+            continue_loop: continue_tx,
+            approve: approve_tx,
+            pace: pace_tx,
+            interrupt: interrupt_tx,
+            sidebar: sidebar_tx,
+            images: images_tx,
+            host: host_tx,
+        } = senders;
         let current_theme_name = render_context
             .current_theme_name()
             .as_ref()
@@ -111,6 +115,8 @@ impl<'a> InteractiveState<'a> {
             pace_tx,
             interrupt_tx,
             sidebar_tx,
+            host_tx,
+            switch_to: None,
             sidebar_open: false,
             sidebar_focus: None,
             sidebar_return: None,

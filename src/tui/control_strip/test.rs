@@ -21,7 +21,7 @@ fn strip_is_always_present_and_never_empty() {
     play.user("hello");
     assert_eq!(
         labels(&play),
-        vec!["pace", "theme", "help", "detach"],
+        vec!["pace", "sessions", "theme", "help", "detach"],
         "idle is the tail alone"
     );
     let (px, _) = play.find("pace").expect("pace always shows");
@@ -50,6 +50,7 @@ fn strip_context_verbs_swap_over_a_fixed_tail() {
             "kill",
             "pause",
             "pace",
+            "sessions",
             "theme",
             "help",
             "detach"
@@ -73,7 +74,15 @@ fn strip_offers_background_only_for_foreground_bash_but_always_an_interrupt() {
     play.running_tool("toolu_r", "read", json!({ "path": "src/log.rs" }));
     assert_eq!(
         labels(&play),
-        vec!["interrupt", "pause", "pace", "theme", "help", "detach"],
+        vec![
+            "interrupt",
+            "pause",
+            "pace",
+            "sessions",
+            "theme",
+            "help",
+            "detach"
+        ],
         "a non-bash tool still offers the interrupt, without the handoff"
     );
 
@@ -120,7 +129,15 @@ fn strip_while_generating_offers_the_interrupt_and_the_hold() {
     play.event(TuiEvent::Running(true));
     assert_eq!(
         labels(&play),
-        vec!["interrupt", "pause", "pace", "theme", "help", "detach"]
+        vec![
+            "interrupt",
+            "pause",
+            "pace",
+            "sessions",
+            "theme",
+            "help",
+            "detach"
+        ]
     );
 }
 
@@ -142,7 +159,7 @@ fn strip_hold_reads_resume_and_survives_into_idle() {
     play.event(TuiEvent::Running(false));
     assert_eq!(
         labels(&play),
-        vec!["resume", "pace", "theme", "help", "detach"],
+        vec!["resume", "pace", "sessions", "theme", "help", "detach"],
         "resume is still reachable once the turn ends"
     );
 }
@@ -151,7 +168,7 @@ fn strip_hold_reads_resume_and_survives_into_idle() {
 /// least-relevant end first and never a context verb.
 #[test]
 fn strip_cuts_from_the_right_when_narrow() {
-    let mut wide = Screenplay::new(140, 12);
+    let mut wide = Screenplay::new(160, 12);
     wide.user("go");
     wide.running_bash("toolu_b", "cargo test");
     assert!(
@@ -240,6 +257,7 @@ fn strip_focused_item_has_a_raised_surface() {
     let mut play = Screenplay::new(80, 10);
     play.user("hello");
     play.route_key(KeyCode::Up, NONE); // → strip, on `pace`
+    play.route_key(KeyCode::Right, NONE); // focus `sessions`
     play.route_key(KeyCode::Right, NONE); // focus `theme`
     let (tx, ty) = play.find("theme").expect("theme on screen");
     let (hx, hy) = play.find("help").expect("help on screen");
@@ -263,7 +281,8 @@ fn strip_focused_item_has_a_raised_surface() {
 fn strip_detach_quits() {
     let mut play = Screenplay::new(80, 10);
     play.user("hello");
-    play.route_key(KeyCode::Up, NONE); // idle: pace · theme · help · detach
+    play.route_key(KeyCode::Up, NONE); // idle: pace · sessions · theme · help · detach
+    play.route_key(KeyCode::Right, NONE);
     play.route_key(KeyCode::Right, NONE);
     play.route_key(KeyCode::Right, NONE);
     play.route_key(KeyCode::Right, NONE);
@@ -285,7 +304,7 @@ fn strip_gate_set_leads_with_approve() {
     assert_eq!(
         labels(&play),
         vec![
-            "approve", "allow…", "abort", "pace", "theme", "help", "detach"
+            "approve", "allow…", "abort", "pace", "sessions", "theme", "help", "detach"
         ],
         "the gate verbs in rank order, then the tail"
     );
@@ -516,6 +535,7 @@ fn strip_freezes_while_engaged_and_greys_what_stops_applying() {
             "kill",
             "pause",
             "pace",
+            "sessions",
             "theme",
             "help",
             "detach"
@@ -537,6 +557,7 @@ fn strip_freezes_while_engaged_and_greys_what_stops_applying() {
             "kill",
             "pause",
             "pace",
+            "sessions",
             "theme",
             "help",
             "detach"
@@ -578,7 +599,7 @@ fn strip_freezes_while_engaged_and_greys_what_stops_applying() {
     play.route_key(KeyCode::Up, NONE);
     assert_eq!(
         labels(&play),
-        vec!["pace", "theme", "help", "detach"],
+        vec!["pace", "sessions", "theme", "help", "detach"],
         "the list re-ranked once focus left"
     );
 }
@@ -611,7 +632,7 @@ fn hovering_the_strip_pins_it_and_leaving_releases_it() {
     play.render();
     assert_eq!(
         labels(&play),
-        vec!["pace", "theme", "help", "detach"],
+        vec!["pace", "sessions", "theme", "help", "detach"],
         "leaving the row re-ranks it"
     );
 }

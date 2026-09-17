@@ -14,7 +14,7 @@ expression: self.render()
  6 │                                                                                │
  7 │                                                                                │
  8 │                                                                                │
- 9 │   background b     kill ⎋⎋     pause ⎋     pace fast     theme t     help ?    │
+ 9 │   background b     kill ⎋⎋     pause ⎋     pace fast     sessions s            │
 10 │›                                                                               │
    │  ^                                                                             │
 11 │   efference — ↑ controls                                                       │

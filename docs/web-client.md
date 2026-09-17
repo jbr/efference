@@ -148,12 +148,36 @@ daemon that went away — reads as a session, which is what a root has always be
 the session view's own connection banner reports the network state, where a second
 failure screen would only restate it.
 
-**The list is the ids and titles and nothing else** (`ui/SessionList.tsx`), because
-the listing carries the id and the current title and nothing else
-([session-title.md](session-title.md)). Model, stall, and gate chips per row would be one
-`GET /sessions/<id>/v1/state` per session on every load — acceptable at three
-sessions, and the wrong shape at thirty; the cross-session summary the list actually
-wants is a host-level resource that is not built (`backlog/host-process.md`).
+**The list is a subscription** (`ui/SessionList.tsx` over `api/sessions.ts`).
+`GET /sessions` is one resource with two readings: asked for JSON it answers the
+listing, and asked with `Accept: text/event-stream` it answers the listing now and
+again on every change ([control-api.md](control-api.md)). The list holds the second
+open, so a session created or ended anywhere — another client, a session
+commissioning one, a host reaping one — appears or disappears on its own, with no
+poll and no reload button. Level-triggered and cursorless: each frame is the whole
+listing, so a missed frame is repaired by the next and a reconnect is a fresh
+subscription rather than a resume handshake. The probe's answer seeds the first
+render; nothing above the list re-resolves after that.
+
+**A row carries what the listing carries**: the id, the title
+([session-title.md](session-title.md)), the one-word status, and the count of
+background processes the session holds. Model, cost, and per-call chips stay off the
+row — those would be one `GET /sessions/<id>/v1/state` per session on every load,
+acceptable at three sessions and the wrong shape at thirty. Status and process count
+are the two the *host* can answer for every row at once, which is why they are the
+two the listing grew.
+
+**Ending is the one thing here that is not a navigation**, so it is a button rather
+than a link, and a destructive one. `DELETE /sessions/:id` reaps the session's
+background processes and removes its scratch, and the host answers only once that
+teardown has run — so the row leaves on the next frame of the listing stream, which
+is already out by the time the call returns. The confirm rule is `ui/sessionRow.ts`,
+the same rule the TUI's switcher applies ([tui.md](tui.md)): a session that is doing
+something, or that holds processes an end would reap, confirms in place naming which;
+an idle session with nothing running ends on the first click. Creating a session from
+here is refused at the network listener on purpose
+(`backlog/web-remote-creation.md`), so the list ends sessions and does not start
+them.
 
 **Entering a session is a navigation, not client-side state.** A row is an `<a href>`
 to `/sessions/<id>/`, and the back affordance in the top bar is a link to `/`, shown

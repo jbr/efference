@@ -24,7 +24,7 @@ expression: self.render()
 16 │ │ wrote 7 lines to /tmp/counter.sh │                                          ┃│
 17 │ ╰──────────────────────────────────╯                                          ┃│
 18 │                                                                               ╹│
-19 │   pace fast     theme t     help ?     detach q                                │
+19 │   pace fast     sessions s     theme t     help ?     detach q                 │
 20 │›                                                                               │
    │  ^                                                                             │
 21 │   efference — ↑ controls                                                       │

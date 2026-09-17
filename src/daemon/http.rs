@@ -147,7 +147,7 @@ fn missing_state(conn: Conn) -> Conn {
 /// `class` naming no durability. It is also what makes `?since` past the head safe to
 /// serve as a wait rather than an error. (`daemon/keepalive.rs` is the *upstream* cache
 /// ping; unrelated.)
-const EVENTS_HEARTBEAT: Duration = Duration::from_secs(15);
+pub(crate) const EVENTS_HEARTBEAT: Duration = Duration::from_secs(15);
 
 mod events;
 mod log_reads;

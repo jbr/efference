@@ -1,5 +1,5 @@
 use super::{Control, Executor, pretty};
-use crate::client::SessionListing;
+use crate::client::SessionSummary;
 use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta, ToolOutput},
@@ -34,7 +34,7 @@ impl ToolMeta for Sessions {
 #[derive(Serialize, schemars::JsonSchema)]
 pub struct SessionsResult {
     /// The hosted sessions, sorted by id.
-    sessions: Vec<SessionListing>,
+    sessions: Vec<SessionSummary>,
 }
 
 impl ToolOutput for SessionsResult {

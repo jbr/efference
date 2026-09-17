@@ -27,7 +27,7 @@ expression: self.render()
 18 │                                                                      │                                       │
 19 │                                                                      │                                       │
 20 │                                                                      │                                       │
-21 │   pace fast     theme t     help ?     detach q                      │                                       │
+21 │   pace fast     sessions s     theme t     help ?     detach q       │                                       │
 22 │›                                                                     │                                       │
 23 │   sidebar — ↑/↓ row · ←/→ verb · ⏎ act · tab back · esc compose                                              │
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

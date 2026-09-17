@@ -200,8 +200,15 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
             }
             (None, _) => true,
         };
-        if notable && let Some(host) = host.upgrade() {
-            host.post_status(&id, &session, &status);
+        if let Some(host) = host.upgrade() {
+            if notable {
+                host.post_status(&id, &session, &status);
+            }
+            // The listing carries a status and a process count per row
+            // (`summary.rs`), and both move with the control state this loop
+            // already wakes on — so every wake pings it. Subscribers diff for
+            // themselves, so a wake that moved nothing costs a comparison.
+            host.touch_summary();
         }
         last = Some((status, level));
 

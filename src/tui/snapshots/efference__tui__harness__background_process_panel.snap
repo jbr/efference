@@ -18,7 +18,7 @@ expression: self.render()
 10 │                                                                                │
 11 │ ▶ p#1  cargo watch -x test · 4m12s · idle 8s │ test result: ok. 12 passed      │
 12 │ ▶ p#2  npm run dev · 9s · idle 9s │ ready - started server on 0.0.0.0:3000     │
-13 │   pace fast     theme t     help ?     detach q                                │
+13 │   pace fast     sessions s     theme t     help ?     detach q                 │
 14 │›                                                                               │
    │  ^                                                                             │
 15 │   efference — ↑ controls                                                       │

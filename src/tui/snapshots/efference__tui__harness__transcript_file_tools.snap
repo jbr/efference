@@ -42,7 +42,7 @@ expression: self.render()
 34 │ │ projection.rs                  │                                            ┃│
 35 │ ╰────────────────────────────────╯                                            ┃│
 36 │                                                                               ╹│
-37 │   pace fast     theme t     help ?     detach q                                │
+37 │   pace fast     sessions s     theme t     help ?     detach q                 │
 38 │›                                                                               │
    │  ^                                                                             │
 39 │   efference — ↑ controls                                                       │

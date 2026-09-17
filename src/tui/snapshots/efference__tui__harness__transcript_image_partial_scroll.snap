@@ -18,7 +18,7 @@ expression: self.render()
 10 │   ▄▄▄▄▄▄▄▄▄▄▄▀▀▀▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀▀▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                ┃│
 11 │                                                                               ┃│
 12 │ ┃ thanks — that matches the fixture                                           ╹│
-13 │   pace fast     theme t     help ?     detach q                                │
+13 │   pace fast     sessions s     theme t     help ?     detach q                 │
 14 │›                                                                               │
    │  ^                                                                             │
 15 │   efference — ↑ controls                                                       │

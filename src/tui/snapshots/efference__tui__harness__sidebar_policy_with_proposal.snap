@@ -30,7 +30,7 @@ expression: self.render()
 22 │                                                                      │                                       │
 23 │                                                                      │                                       │
 24 │                                                                      │                                       │
-25 │   pace fast     theme t     help ?     detach q                      │                                       │
+25 │   pace fast     sessions s     theme t     help ?     detach q       │                                       │
 26 │›                                                                     │                                       │
    │  ^                                                                                                           │
 27 │   efference — ↑ controls                                                                                     │

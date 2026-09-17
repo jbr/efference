@@ -1,0 +1,27 @@
+// What a session-list row says about itself (docs/web-client.md), off the
+// listing alone.
+
+import type { SessionEntry } from "../api/http.ts";
+
+/**
+ * Why ending this session should be confirmed, or `null` when there is nothing
+ * to lose by ending it now — the same rule the TUI's switcher applies
+ * (docs/tui.md): a session that is doing something, or that holds background
+ * processes ending would reap.
+ */
+export function endWarning(session: SessionEntry): string | null {
+  const doing =
+    session.status === "running"
+      ? "is mid-turn"
+      : session.status === "gated"
+        ? "is holding a call at a gate"
+        : session.status === "stalled"
+          ? "stalled and has not been answered"
+          : null;
+  const held =
+    session.processes > 0
+      ? `holds ${session.processes} background process${session.processes === 1 ? "" : "es"}`
+      : null;
+  if (doing === null && held === null) return null;
+  return [doing, held].filter((part) => part !== null).join(" and ");
+}

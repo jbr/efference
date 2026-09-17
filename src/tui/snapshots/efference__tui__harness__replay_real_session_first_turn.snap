@@ -32,7 +32,7 @@ expression: self.render()
 24 │                                                                                │
 25 │   There are 13 entries in the current directory:                               │
 26 │                                                                                │
-27 │   pace fast     theme t     help ?     detach q                                │
+27 │   pace fast     sessions s     theme t     help ?     detach q                 │
 28 │›                                                                               │
    │  ^                                                                             │
 29 │   efference — ↑ controls                                                       │

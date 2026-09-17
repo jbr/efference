@@ -14,7 +14,7 @@ expression: self.render()
  6 │                                                                                │
  7 │                                                                                │
  8 │                                                                                │
- 9 │   interrupt ⎋⎋     pause ⎋     pace fast     theme t     help ?     detach q   │
+ 9 │   interrupt ⎋⎋     pause ⎋     pace fast     sessions s     theme t     help ? │
 10 │›                                                                               │
    │  ^                                                                             │
 11 │   ↻ peek: stream aborted, retrying (3 of 12)  efference — ↑ controls           │

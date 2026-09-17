@@ -219,6 +219,12 @@ impl<'a> InteractiveState<'a> {
         if let UiMode::ThemePicker { selected_index, .. } = self.ui_mode {
             self.render_theme_picker(frame.buffer_mut(), full, selected_index);
         }
+        // Cloned rather than borrowed: the paint takes `&mut self` for the
+        // render caches, and the menu is a handful of rows.
+        if let UiMode::Sessions(menu) = &self.ui_mode {
+            let menu = menu.clone();
+            self.render_sessions(frame.buffer_mut(), full, &menu);
+        }
     }
 
     /// Draw the composer into its reserved rows and place the terminal cursor in it

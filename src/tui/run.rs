@@ -2,6 +2,15 @@
 
 use super::*;
 
+/// Attach to a session and stay there until the operator leaves it.
+///
+/// A switch leaves by returning [`Exit::Switch`], and this is the loop that
+/// honours it: the previous attach's tasks are already gone when it returns —
+/// aborting the bridge drops the SSE stream, which closes the connection — so a
+/// switch is a fresh handshake against the next session and never two cursors at
+/// once (docs/control-api.md). `client` is re-based onto the new prefix over the
+/// same transport, so the socket is dialled once per attach and nothing has to be
+/// re-resolved.
 pub async fn run(
     client: Client,
     theme: Option<String>,
@@ -11,8 +20,44 @@ pub async fn run(
     // threshold is written. `None` disables the routing and pastes inline as before.
     attachments_dir: Option<std::path::PathBuf>,
 ) -> Result<()> {
-    use crate::frontend::Approval;
+    let mut client = client;
+    let mut attachments_dir = attachments_dir;
+    loop {
+        match attach(
+            client.clone(),
+            theme.clone(),
+            images,
+            frame_cost,
+            attachments_dir.clone(),
+        )
+        .await?
+        {
+            Exit::Quit => return Ok(()),
+            Exit::Switch { id, cwd } => {
+                client = client.with_prefix(&format!("/sessions/{id}"));
+                // The host mints a session's directory under its own cwd
+                // (docs/control-channel.md), which is what the listing carries.
+                attachments_dir = cwd.map(|cwd| {
+                    crate::attachments::dir_for_session(
+                        &std::path::Path::new(&cwd)
+                            .join(crate::daemon::SESSION_BASE)
+                            .join(&id),
+                    )
+                });
+            }
+        }
+    }
+}
 
+/// One attach: open the stream, run the UI, and tear every task down on the way
+/// out. Returns why the loop ended.
+async fn attach(
+    client: Client,
+    theme: Option<String>,
+    images: ImageMode,
+    frame_cost: bool,
+    attachments_dir: Option<std::path::PathBuf>,
+) -> Result<Exit> {
     // Validate the theme up front, before the alt-screen takes over, so a bad
     // name surfaces a clean error (with the list) instead of a silent fallback.
     let theme = resolve_theme(theme)?;
@@ -22,17 +67,18 @@ pub async fn run(
     let events = client.events(Some(0), Some("log,output,state")).await?;
 
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
-    let (submit_tx, mut submit_rx) =
-        tokio::sync::mpsc::unbounded_channel::<crate::frontend::SubmittedTurn>();
-    let (recall_tx, mut recall_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let (continue_tx, mut continue_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-    let (approve_tx, mut approve_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Approval)>();
-    let (pace_tx, mut pace_rx) = tokio::sync::mpsc::unbounded_channel::<PaceCmd>();
-    let (interrupt_tx, mut interrupt_rx) =
-        tokio::sync::mpsc::unbounded_channel::<crate::frontend::Interrupt>();
-    let (sidebar_tx, mut sidebar_rx) = tokio::sync::mpsc::unbounded_channel::<SidebarCmd>();
-    let (images_tx, mut images_rx) =
-        tokio::sync::mpsc::unbounded_channel::<crate::tui::image::ImageKey>();
+    let (senders, receivers) = Senders::channels();
+    let Receivers {
+        submit: mut submit_rx,
+        recall: mut recall_rx,
+        continue_loop: mut continue_rx,
+        approve: mut approve_rx,
+        pace: mut pace_rx,
+        interrupt: mut interrupt_rx,
+        sidebar: mut sidebar_rx,
+        images: mut images_rx,
+        host: mut host_rx,
+    } = receivers;
 
     // The bridge feeds the UI thread everything — log entries, live deltas, and the
     // state topics (gate/processes/usage/policy/pace/running) as level-triggered
@@ -169,18 +215,33 @@ pub async fn run(
         }
     });
 
+    // Host verbs (`sessions.rs`): the listing and the end, addressed to the
+    // host rather than to this session — so they run against a client re-based
+    // at the socket root, where those routes live under either binding. An end
+    // is followed by a re-read, and the host answers a `DELETE` only once
+    // teardown has run, so the listing that comes back is the finished state.
+    let host_client = client.clone().with_prefix("");
+    let host_events = tx.clone();
+    let host_dispatcher = tokio::spawn(async move {
+        while let Some(cmd) = host_rx.recv().await {
+            if let HostCmd::End(id) = &cmd
+                && let Err(e) = host_client.end_session(id).await
+            {
+                let _ = host_events.send(TuiEvent::Sessions(Err(format!("ending {id}: {e}"))));
+                continue;
+            }
+            let listing = host_client
+                .sessions()
+                .await
+                .map_err(|e| format!("listing the host's sessions: {e}"));
+            if host_events.send(TuiEvent::Sessions(listing)).is_err() {
+                break; // UI thread gone.
+            }
+        }
+    });
+
     // The crossterm UI loop is blocking — run it off the async runtime.
     let ui = tokio::task::spawn_blocking(move || {
-        let senders = Senders {
-            submit: submit_tx,
-            recall: recall_tx,
-            continue_loop: continue_tx,
-            approve: approve_tx,
-            pace: pace_tx,
-            interrupt: interrupt_tx,
-            sidebar: sidebar_tx,
-            images: images_tx,
-        };
         ui_loop(
             rx,
             senders,
@@ -201,6 +262,7 @@ pub async fn run(
     pacer.abort();
     interrupter.abort();
     sidebar_dispatcher.abort();
+    host_dispatcher.abort();
     fetcher.abort();
     result.context("the TUI event loop failed")
 }
@@ -249,20 +311,11 @@ async fn run_offline(
     let theme = resolve_theme(theme)?;
 
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
-    let (submit_tx, submit_rx) =
-        tokio::sync::mpsc::unbounded_channel::<crate::frontend::SubmittedTurn>();
-    let (recall_tx, recall_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let (continue_tx, continue_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-    let (approve_tx, approve_rx) =
-        tokio::sync::mpsc::unbounded_channel::<(String, crate::frontend::Approval)>();
-    let (pace_tx, pace_rx) = tokio::sync::mpsc::unbounded_channel::<PaceCmd>();
-    let (interrupt_tx, interrupt_rx) =
-        tokio::sync::mpsc::unbounded_channel::<crate::frontend::Interrupt>();
-    let (sidebar_tx, sidebar_rx) = tokio::sync::mpsc::unbounded_channel::<SidebarCmd>();
-    // Held like the rest: an offline log's images ride the entries themselves
-    // (docs/control-api.md), so nothing should ever consume a fetch request.
-    let (images_tx, images_rx) =
-        tokio::sync::mpsc::unbounded_channel::<crate::tui::image::ImageKey>();
+    // The far ends are held for the run's life rather than consumed: an offline
+    // log's images ride the entries themselves (docs/control-api.md) and there
+    // is no daemon for the rest to reach, so nothing should answer them — but a
+    // dropped receiver would make a send from inside the state an error.
+    let (senders, receivers) = Senders::channels();
 
     for entry in entries {
         let _ = tx.send(TuiEvent::Entry(entry));
@@ -277,16 +330,6 @@ async fn run_offline(
     });
 
     let ui = tokio::task::spawn_blocking(move || {
-        let senders = Senders {
-            submit: submit_tx,
-            recall: recall_tx,
-            continue_loop: continue_tx,
-            approve: approve_tx,
-            pace: pace_tx,
-            interrupt: interrupt_tx,
-            sidebar: sidebar_tx,
-            images: images_tx,
-        };
         ui_loop(rx, senders, theme, images, viewing, frame_cost, None)
     });
     let result = ui.await.context("the TUI thread panicked")?;
@@ -295,18 +338,11 @@ async fn run_offline(
         emitter.abort();
     }
 
-    // Hold the far-ends until the UI exits, so the channels stay open for its life.
+    // Held until the UI exits, so the channels stay open for its life.
     drop(tx);
-    drop(submit_rx);
-    drop(recall_rx);
-    drop(continue_rx);
-    drop(approve_rx);
-    drop(pace_rx);
-    drop(interrupt_rx);
-    drop(sidebar_rx);
-    drop(images_rx);
+    drop(receivers);
 
-    result.context("the TUI event loop failed")
+    result.map(|_| ()).context("the TUI event loop failed")
 }
 
 /// Run the interactive TUI against a daemon control socket.

@@ -454,7 +454,7 @@ impl Client {
     /// The sessions a host holds (`GET /sessions`, docs/control-api.md), sorted
     /// by id, each with its title once one has been written. A listener route at
     /// the socket root, like [`create_session`](Self::create_session).
-    pub async fn sessions(&self) -> Result<Vec<SessionListing>> {
+    pub async fn sessions(&self) -> Result<Vec<SessionSummary>> {
         let path = "/sessions";
         let conn = self
             .http
@@ -463,6 +463,20 @@ impl Client {
             .with_context(|| format!("GET {path} on the host socket"))?;
         let body = read_2xx(conn, "GET", path).await?;
         serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
+    }
+
+    /// Subscribe to the host's session listing (`GET /sessions` with
+    /// `Accept: text/event-stream`, docs/control-api.md). Each event carries the
+    /// whole listing — the same array [`sessions`](Self::sessions) returns — so a
+    /// client holds the latest frame and needs no cursor and no reconciliation.
+    /// A listener route at the socket root, like the rest of this family.
+    pub async fn session_events(&self) -> Result<trillium_client::sse::EventStream> {
+        let path = "/sessions";
+        self.http
+            .get(path)
+            .into_sse()
+            .await
+            .map_err(|e| anyhow!("opening the session listing stream at {path}: {e}"))
     }
 
     /// The ids of the sessions a host holds: [`sessions`](Self::sessions) without
@@ -624,25 +638,10 @@ impl Client {
     }
 }
 
-/// One entry of `GET /sessions` (docs/control-api.md): a hosted session's id and,
-/// once one has been written, its title (docs/session-title.md).
-#[derive(
-    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
-)]
-pub struct SessionListing {
-    pub id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    /// The session's working directory, as its identity carries it
-    /// (docs/control-api.md): what a client scopes a host's listing to its own
-    /// project by, since one host serves many.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-    /// The session that commissioned this one, when a session did (docs/tools.md):
-    /// control state, present only for a session-driven `create`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub created_by: Option<String>,
-}
+/// One entry of `GET /sessions` (docs/control-api.md). The host defines the row
+/// and both readings of the resource serve it, so there is one type on the wire
+/// rather than a client copy that can drift.
+pub use crate::daemon::SessionSummary;
 
 /// One turn a `DELETE /turns/:submission_id` actually popped (docs/control-api.md) — the text a
 /// client splices back into its composer, with the id it was submitted under.

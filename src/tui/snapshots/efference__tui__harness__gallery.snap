@@ -92,7 +92,7 @@ expression: self.render()
 84 │ │ src/module_21.rs │                                                           │
 85 │ │ src/module_22.rs │                                                           │
 86 │ │ src/module_23.rs │                                                           │
-87 │   pace fast     theme t     help ?     detach q                                │
+87 │   pace fast     sessions s     theme t     help ?     detach q                 │
 88 │›                                                                               │
    │  ^                                                                             │
 89 │   efference — ↑ controls                                                       │

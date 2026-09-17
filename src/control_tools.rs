@@ -468,29 +468,18 @@ impl HostExecutor {
     }
 
     /// The caller's project: every session sharing its storage base.
-    fn sessions(&self) -> Result<Vec<crate::client::SessionListing>> {
+    fn sessions(&self) -> Result<Vec<crate::client::SessionSummary>> {
         let host = self.host()?;
         let caller = self.caller_session()?;
         let base = caller.storage_base();
-        let mut list = Vec::new();
-        for id in host.ids() {
-            let Some(session) = host.session(&id) else {
-                continue;
-            };
-            if session.storage_base() != base {
-                continue;
-            }
-            let identity = session.identity();
-            list.push(crate::client::SessionListing {
-                title: identity
-                    .as_ref()
-                    .and_then(|identity| identity.title.clone()),
-                cwd: identity.map(|identity| identity.cwd),
-                created_by: host.created_by(&id),
-                id,
-            });
-        }
-        Ok(list)
+        Ok(host
+            .summaries()
+            .into_iter()
+            .filter(|row| {
+                host.session(&row.id)
+                    .is_some_and(|session| session.storage_base() == base)
+            })
+            .collect())
     }
 }
 
