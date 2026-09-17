@@ -645,7 +645,8 @@ async fn a_directory_stream_pokes_for_its_own_entries() {
 }
 
 /// The stream route takes the filesystem's answer too, so neither spelling of a
-/// directory — the root's included, which used to answer `400` — is a file stream.
+/// directory is a file stream — the root's two spellings included, which is the
+/// case with no name after the last separator to read.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn either_spelling_of_a_directory_streams_it() {
     let scratch = Scratch::new("dir-stream-spellings");

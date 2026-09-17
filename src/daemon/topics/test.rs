@@ -161,17 +161,10 @@ async fn an_append_alone_wakes_the_diff() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_retry_publishes_without_an_append() {
     let retry = crate::api::upstream_retry_state();
-    let (shared, _turns_rx) = Session::full(
-        std::env::current_dir().unwrap(),
-        Log::in_memory(),
-        LoadedConfig::default(),
-        None,
-        crate::api::upstream_failure_state(),
-        Arc::clone(&retry),
-        Default::default(),
-        Default::default(),
-        Default::default(),
-    );
+    let (shared, _turns_rx) = Session::full(crate::daemon::SessionParts {
+        upstream_retry: Arc::clone(&retry),
+        ..crate::daemon::SessionParts::new(std::env::current_dir().unwrap(), Log::in_memory())
+    });
     let mut rx = shared.subscribe_state();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
     drain(&mut rx).await; // the startup snapshot

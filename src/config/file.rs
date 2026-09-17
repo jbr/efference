@@ -40,6 +40,14 @@ pub struct ConfigFile {
 }
 
 /// The outcome of a [`ConfigFile::refresh`] — which of the two permitted outcomes the edit got.
+///
+/// `Adopted` is an order of magnitude wider than the other two variants, which
+/// `large_enum_variant` flags. Boxing it would buy nothing here: a `Refreshed` is
+/// returned once per refresh — an operator or an agent editing the file — and
+/// destructured by the caller that receives it, so it never sits in a collection
+/// and is never moved in bulk. The indirection would cost an allocation on the
+/// common path and a deref at every call site.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Refreshed {
     /// The file parsed; the held document now matches disk. Carries the newly-effective config

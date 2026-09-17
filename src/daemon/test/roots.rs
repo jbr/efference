@@ -171,17 +171,12 @@ async fn sessions_use_their_own_environment_for_bash_and_context() {
             .unwrap()
             .with_child_env(policy.child_env());
         let role = LoadedConfig::default();
-        let (session, _turns) = Session::full(
-            cwd.clone(),
-            Log::in_memory(),
+        let (session, _turns) = Session::full(crate::daemon::SessionParts {
             role,
-            Some(scratch.clone()),
-            upstream_failure_state(),
-            upstream_retry_state(),
-            crate::api::plan_state(),
-            ImagePlacement::default(),
-            policy,
-        );
+            scratch: Some(scratch.clone()),
+            env_policy: policy,
+            ..crate::daemon::SessionParts::new(cwd.clone(), Log::in_memory())
+        });
         let state = session.state_json();
         assert!(!state.contains(&format!("private-{label}-credential")));
         assert!(!state.contains("host-root-secret"));

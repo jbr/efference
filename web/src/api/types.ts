@@ -419,10 +419,7 @@ export interface Pace {
 }
 
 export type ReviewLevel =
-  | "autonomous"
-  | "upstream"
-  | "spotter_human"
-  | "human_only";
+  "autonomous" | "upstream" | "spotter_human" | "human_only";
 
 // The last non-success upstream response, with consecutive occurrences of that
 // status. Ephemeral transport diagnostics: never log content (docs/transport.md).

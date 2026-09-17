@@ -488,6 +488,48 @@ pub struct Session {
     tools: Mutex<HashMap<String, crate::tools::ToolEntry>>,
 }
 
+/// What a [`Session`] is built from: the working directory and log it owns, the
+/// role it starts under, and the shared cells its client already holds.
+///
+/// Named fields rather than a parameter list, because four of these are opaque
+/// shared-state handles and a positional mistake among them would compile.
+/// [`Self::new`] fills every field a caller without a provider client has no
+/// value for, so adding a dependency to a session touches the sites that supply
+/// it rather than every site that constructs one.
+pub(crate) struct SessionParts {
+    pub cwd: PathBuf,
+    pub log: Log,
+    pub role: LoadedConfig,
+    pub scratch: Option<PathBuf>,
+    pub upstream_failure: UpstreamFailureState,
+    pub upstream_retry: UpstreamRetryState,
+    pub plan: crate::api::PlanState,
+    /// Chosen from the provider at boot and fixed thereafter, so the canonical
+    /// wire and the fork's cached prefix project byte-identically
+    /// (docs/log-and-projection.md).
+    pub image_placement: ImagePlacement,
+    pub env_policy: crate::env_table::EnvPolicy,
+}
+
+impl SessionParts {
+    /// The session's own two pieces, with every shared cell freshly allocated —
+    /// the shape a caller with no provider client behind it wants. A caller that
+    /// has one overrides the cells it holds.
+    pub(crate) fn new(cwd: PathBuf, log: Log) -> Self {
+        Self {
+            cwd,
+            log,
+            role: LoadedConfig::default(),
+            scratch: None,
+            upstream_failure: upstream_failure_state(),
+            upstream_retry: upstream_retry_state(),
+            plan: crate::api::plan_state(),
+            image_placement: ImagePlacement::default(),
+            env_policy: crate::env_table::EnvPolicy::default(),
+        }
+    }
+}
+
 impl Session {
     /// The root used by policy and child processes (docs/control-channel.md).
     pub fn cwd(&self) -> &std::path::Path {
@@ -591,33 +633,28 @@ impl Session {
         ));
         let env_policy =
             crate::env_table::EnvPolicy::build_snapshot(&role.role.env, base, &[], resolver).policy;
-        Self::full(
-            cwd,
-            log,
+        Self::full(SessionParts {
             role,
             scratch,
             upstream_failure,
-            upstream_retry_state(),
-            crate::api::plan_state(),
-            ImagePlacement::default(),
             env_policy,
-        )
+            ..SessionParts::new(cwd, log)
+        })
     }
 
-    /// The full constructor, with the session's image placement — chosen from
-    /// the provider at boot and fixed thereafter, so the canonical wire and the
-    /// fork's cached prefix project byte-identically (docs/log-and-projection.md).
-    pub(crate) fn full(
-        cwd: PathBuf,
-        mut log: Log,
-        mut role: LoadedConfig,
-        scratch: Option<PathBuf>,
-        upstream_failure: UpstreamFailureState,
-        upstream_retry: UpstreamRetryState,
-        plan: crate::api::PlanState,
-        image_placement: ImagePlacement,
-        env_policy: crate::env_table::EnvPolicy,
-    ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+    /// The full constructor.
+    pub(crate) fn full(parts: SessionParts) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+        let SessionParts {
+            cwd,
+            mut log,
+            mut role,
+            scratch,
+            upstream_failure,
+            upstream_retry,
+            plan,
+            image_placement,
+            env_policy,
+        } = parts;
         assert!(cwd.is_absolute(), "session cwd must be absolute");
         if let ConfigSource::Path(path) = &mut role.source {
             *path = cwd.join(&*path);

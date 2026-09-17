@@ -77,17 +77,16 @@ impl SessionRuntime {
         // (docs/transport.md).
         let ping_at = role.role.transport.keepalive_interval;
         let scratch = toolbox.scratch_dir().map(std::path::Path::to_path_buf);
-        let (session, turns) = Session::full(
-            paths.cwd().to_path_buf(),
-            log,
+        let (session, turns) = Session::full(crate::daemon::SessionParts {
             role,
-            scratch.clone(),
-            client.upstream_failure(),
-            client.upstream_retry(),
-            client.plan_state(),
-            client.image_placement(),
+            scratch: scratch.clone(),
+            upstream_failure: client.upstream_failure(),
+            upstream_retry: client.upstream_retry(),
+            plan: client.plan_state(),
+            image_placement: client.image_placement(),
             env_policy,
-        );
+            ..crate::daemon::SessionParts::new(paths.cwd().to_path_buf(), log)
+        });
         // The project's storage base, for the in-session `sessions` mount's
         // listing and target scope (docs/tools.md).
         session.set_storage_base(paths.storage());

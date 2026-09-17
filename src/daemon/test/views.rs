@@ -35,17 +35,10 @@ fn state_reports_upstream_failure() {
 #[test]
 fn state_reports_the_retry_in_flight() {
     let retry = crate::api::upstream_retry_state();
-    let (shared, _turns_rx) = Session::full(
-        std::env::current_dir().unwrap(),
-        Log::in_memory(),
-        LoadedConfig::default(),
-        None,
-        crate::api::upstream_failure_state(),
-        Arc::clone(&retry),
-        Default::default(),
-        Default::default(),
-        Default::default(),
-    );
+    let (shared, _turns_rx) = Session::full(crate::daemon::SessionParts {
+        upstream_retry: Arc::clone(&retry),
+        ..crate::daemon::SessionParts::new(std::env::current_dir().unwrap(), Log::in_memory())
+    });
 
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["upstream_retry"].is_null());
@@ -670,17 +663,10 @@ fn state_is_last_seq_plus_exactly_the_topics() {
 #[test]
 fn state_reports_plan_windows_under_usage() {
     let plan = crate::api::plan_state();
-    let (shared, _turns_rx) = Session::full(
-        std::env::current_dir().unwrap(),
-        Log::in_memory(),
-        LoadedConfig::default(),
-        None,
-        crate::api::upstream_failure_state(),
-        crate::api::upstream_retry_state(),
-        Arc::clone(&plan),
-        Default::default(),
-        Default::default(),
-    );
+    let (shared, _turns_rx) = Session::full(crate::daemon::SessionParts {
+        plan: Arc::clone(&plan),
+        ..crate::daemon::SessionParts::new(std::env::current_dir().unwrap(), Log::in_memory())
+    });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["usage"]["plan"].is_null());
 

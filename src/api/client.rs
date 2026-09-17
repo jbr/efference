@@ -759,15 +759,20 @@ impl Client {
                     // undershot and the provider named the overrun, so halve
                     // the reservation and go again — once per halving, down to
                     // the floor. Any other open failure stays terminal.
-                    if status == Some(Status::BadRequest) && is_window_overflow(&detail) {
-                        if let Some(halved) = self.reservation.lock().unwrap().halve() {
-                            log::warn!(
-                                "prompt plus max_tokens {max_tokens} overran the window; \
-                                 retrying with max_tokens {halved}"
-                            );
-                            max_tokens = u32::try_from(halved).unwrap_or(u32::MAX);
-                            continue;
-                        }
+                    let overran = status == Some(Status::BadRequest) && is_window_overflow(&detail);
+                    // A statement rather than a condition, so the reservation
+                    // guard is released here: the `continue` below re-enters the
+                    // request path, which reads the reservation again.
+                    let halved = overran
+                        .then(|| self.reservation.lock().unwrap().halve())
+                        .flatten();
+                    if let Some(halved) = halved {
+                        log::warn!(
+                            "prompt plus max_tokens {max_tokens} overran the window; \
+                             retrying with max_tokens {halved}"
+                        );
+                        max_tokens = u32::try_from(halved).unwrap_or(u32::MAX);
+                        continue;
                     }
                     // The credential aged out under a running host
                     // (docs/transport.md). The value is shared by every session
