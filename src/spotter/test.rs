@@ -347,6 +347,34 @@ fn render_context_resolves_grants_against_the_given_cwd_not_the_process() {
     );
 }
 
+/// Regression for a false premise the persona once left the model free to invent
+/// (backlog/spotter-persona-premises.md, `shy-ridge` log seq 93/99): a project's root
+/// config is not inside its denied session directory just because the names look
+/// related. The enforcement was always correct (`src/boot.rs`'s `CONFIG_NAME` snapshot,
+/// docs/permissions.md's origin-vs-snapshot section) — only the persona's account of it
+/// was missing. Pinned on substance, not exact wording, so the fix can be reworded freely.
+#[test]
+fn persona_says_containment_is_resolved_not_named() {
+    assert!(
+        PERSONA.contains("never by a name that merely echoes a denied one"),
+        "persona must say path containment is decided by resolution, not naming: {PERSONA}"
+    );
+}
+
+/// Regression for a second false premise from the same incident: the model described
+/// creating a session with `autonomous: true` as bypassing the spotter. The real
+/// mechanism (`policy::ReviewLevel::Autonomous`'s doc comment, docs/permissions.md's
+/// review-level dial) still runs the spotter on every move; autonomous mode only changes
+/// what happens after a `watch`/`gate` (decline-and-redirect instead of a paused human
+/// gate). Pinned on substance, not exact wording.
+#[test]
+fn persona_says_autonomous_mode_does_not_skip_the_spotter() {
+    assert!(
+        PERSONA.contains("still runs its own spotter on every move"),
+        "persona must say autonomous mode doesn't skip spotter review: {PERSONA}"
+    );
+}
+
 /// With no cwd at all, the block says so rather than inventing one, and relative
 /// grants stay in their configured spelling — nothing is resolved against a
 /// directory the caller never named.
