@@ -273,3 +273,20 @@ fn every_session_tool_takes_session() {
         }
     }
 }
+
+/// The documented temperature range (0–100 percent) must be what the model
+/// sees, not just what the runtime accepts: 255 would otherwise serialize as
+/// a 5.1 native temperature. Pinned through the advertised tool list, which is
+/// exactly what a mounting harness caches.
+#[test]
+fn create_temperature_schema_matches_documented_range() {
+    let temperature = Tools::tools_list()
+        .into_iter()
+        .find(|tool| tool.name == "create")
+        .expect("create is mounted")
+        .input_schema["properties"]["temperature"]
+        .clone();
+    assert_eq!(temperature["type"], "integer");
+    assert_eq!(temperature["minimum"], serde_json::json!(0));
+    assert_eq!(temperature["maximum"], serde_json::json!(100));
+}

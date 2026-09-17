@@ -38,9 +38,11 @@ pub struct Create {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub effort: Option<String>,
-    /// Sampling temperature, 0–100 (percent).
+    /// Sampling temperature, 0–100 (percent). 0 is (near-)deterministic; omitted
+    /// uses the provider default (docs/transport.md).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
+    #[schemars(range(min = 0, max = 100))]
     pub temperature: Option<u8>,
     /// Run without a human at the gate: calls the permission rungs do not clear are declined rather than held.
     #[serde(default)]
