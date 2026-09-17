@@ -1509,7 +1509,6 @@ dependencies = [
  "trillium-frontend",
  "trillium-head",
  "trillium-http",
- "trillium-macros",
  "trillium-quinn",
  "trillium-redirect",
  "trillium-router",

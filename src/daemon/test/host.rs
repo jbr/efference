@@ -455,3 +455,45 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
 
     host.swansong().shut_down().await;
 }
+
+/// Each session's `/files` under its own prefix. The redirect a slashless
+/// directory answers with names the whole request path, prefix included — a
+/// `Location` naming only the part below the mount would send the client to a
+/// path this listener does not serve.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_hosted_sessions_files_are_served_under_its_prefix() {
+    let roots = Roots::new();
+    let host = Host::new(crate::inference::InferenceRegistry::empty());
+    let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
+    host.adopt("one".into(), runtime);
+    let host_state = Arc::clone(&host);
+    let server = TestServer::new((
+        trillium::Init::new(move |info: trillium::Info| {
+            let host = Arc::clone(&host_state);
+            async move { info.with_shared_state(host) }
+        }),
+        crate::daemon::host::host_routes(true, true),
+    ))
+    .await;
+
+    let listing = server.get("/sessions/one/files/").await;
+    listing.assert_status(200);
+    let names: Vec<String> = json(listing.body())["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["name"].as_str().unwrap().to_string())
+        .collect();
+    assert!(names.contains(&"scratch".to_string()), "{names:?}");
+
+    server
+        .get("/sessions/one/files/scratch")
+        .await
+        .assert_status(301)
+        .assert_header("location", "/sessions/one/files/scratch/");
+
+    server
+        .get("/sessions/one/files/nowhere.txt")
+        .await
+        .assert_status(404);
+}

@@ -75,8 +75,12 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
     let web = web_auth.is_some();
     (
         // Outermost, so its `before_send` runs last and the headers land on every
-        // response the stack produces — including the routers' errors.
-        web.then_some(SecurityHeaders),
+        // response the stack produces — including the routers' errors. On every
+        // transport, not only the browser-facing one: `nosniff` is half of what
+        // makes serving a repository's `.html` as `text/plain` safe, and setting
+        // it everywhere is cheaper than reasoning about whether some consumer of
+        // the Unix socket renders what it reads.
+        SecurityHeaders,
         // HEAD support: rewrites to GET on the way in, strips the body (keeping
         // content-length) on the way out. Before the gate, so it only ever sees GET.
         trillium_head::head(),
@@ -95,8 +99,8 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         files.is_some().then(control_routes),
         host.map(|create| host_routes(create, web)),
         // The operator's read surface over the working directory (docs/web-bind.md),
-        // mounted only behind a gate so the socket never serves it. It claims
-        // `/files` and passes everything else through.
+        // mounted only behind a gate so the socket never serves it. A router over
+        // `/files/**`, so every other path passes through to the routes below.
         web.then_some(files).flatten().map(Files::handler),
         // Last: any GET the routes did not claim is the web client's surface
         // (docs/web-client.md) — an asset, or the SPA index.

@@ -410,6 +410,41 @@ async fn a_directory_without_a_trailing_slash_redirects() {
         .assert_header("location", "/files/sub/");
 }
 
+/// The slashless spelling of the *root* is the same redirect, which is the
+/// spelling with no path left to build a `Location` from except the request's own.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_root_without_a_trailing_slash_redirects() {
+    let scratch = Scratch::new("root-redirect");
+    scratch.write("a.txt", "a");
+    let server = server(&scratch).await;
+
+    server
+        .get("/files")
+        .await
+        .assert_status(301)
+        .assert_header("location", "/files/");
+}
+
+/// The listing's shape rides in the query, so a spelling correction that dropped
+/// it would answer a different question than the one asked.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_redirect_keeps_the_query() {
+    let scratch = Scratch::new("redirect-query");
+    scratch.write("sub/nested.txt", "n");
+    let server = server(&scratch).await;
+
+    server
+        .get("/files/sub?recursive=1")
+        .await
+        .assert_status(301)
+        .assert_header("location", "/files/sub/?recursive=1");
+    server
+        .get("/files?recursive=1")
+        .await
+        .assert_status(301)
+        .assert_header("location", "/files/?recursive=1");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_nested_listing_names_its_own_path() {
     let scratch = Scratch::new("nested");
@@ -468,6 +503,14 @@ async fn writes_are_refused() {
     let server = server(&scratch).await;
 
     server.post("/files/held.txt").await.assert_status(400);
+    // Every method, not just the one a form could send: the surface is read-only
+    // whatever the verb, and a method the routes did not name must not answer
+    // with a router's own 405 either.
+    server.put("/files/held.txt").await.assert_status(400);
+    server.delete("/files/held.txt").await.assert_status(400);
+    server.patch("/files/held.txt").await.assert_status(400);
+    server.post("/files/").await.assert_status(400);
+    server.post("/files").await.assert_status(400);
     assert_eq!(
         std::fs::read_to_string(scratch.path().join("held.txt")).unwrap(),
         "h"

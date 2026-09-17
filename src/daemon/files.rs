@@ -18,8 +18,8 @@
 //!   `text/plain; charset=utf-8`. Serving a repository's `.html` as `text/html`
 //!   would be same-origin script execution on a page holding a session credential
 //!   for a channel that runs commands. `nosniff` is already set on every response
-//!   by the bind's `SecurityHeaders`, so the two halves of that are covered
-//!   together.
+//!   by `SecurityHeaders`, which every listener's stack carries, so the two halves
+//!   of that are covered together.
 //! - **Refuse rather than degrade.** Non-UTF-8 and oversized files are errors, not
 //!   partial renders: there is no useful browser rendering of either, and refusing
 //!   them keeps range requests, truncation states, and windowed fetching out of
@@ -57,8 +57,8 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
-use trillium::{Handler, KnownHeaderName, Method};
-use trillium_sse::{Sse, SseHandler, sse};
+use trillium::{KnownHeaderName, Method};
+use trillium_sse::{SseHandler, sse};
 
 pub(crate) mod ignores;
 mod list;
@@ -408,10 +408,34 @@ enum StreamTarget {
     },
 }
 
-/// The request path with `/files` stripped — empty or `/`-led — set by the
-/// validating stage once it has claimed the request, so the later stages need
-/// no prefix check of their own: absent, the request was never ours.
-struct FilesPath(String);
+/// The whole request path as the client spelled it, query dropped. Under a
+/// router `conn.path()` is only the nested remainder, so a `Location` built
+/// from it would name a path relative to the mount rather than the origin.
+fn request_path(conn: &Conn) -> &str {
+    let path_and_query = conn.path_and_query();
+    path_and_query
+        .split_once('?')
+        .map_or(path_and_query, |(path, _)| path)
+}
+
+/// The path below the mount, in the spelling this surface's checks read: empty
+/// or `/`-led, trailing slash intact.
+///
+/// The router's wildcard capture is the remainder without a leading slash, and
+/// routefinder trims a trailing slash off the path before matching, so the
+/// capture cannot tell `/files/sub` from `/files/sub/`. Those are two different
+/// answers here — a redirect and a listing — so the trailing slash is read back
+/// off the request path.
+fn rest_of(conn: &Conn) -> String {
+    let wildcard = conn.path();
+    let trailing = request_path(conn).ends_with('/');
+    match (wildcard.is_empty(), trailing) {
+        (true, false) => String::new(),
+        (true, true) => "/".into(),
+        (false, false) => format!("/{wildcard}"),
+        (false, true) => format!("/{wildcard}/"),
+    }
+}
 
 type ChangeStream = Pin<Box<dyn Stream<Item = ChangeEvent> + Send + Sync + 'static>>;
 
@@ -443,36 +467,18 @@ impl SseHandler for Connect {
     }
 }
 
-/// The `Sse` handler, run only when the validating stage prepared a stream.
-/// `Sse` negotiates on `Accept` alone, and this handler sits in a stack that
-/// serves every path the router did not claim — unguarded, any such request
-/// naming `text/event-stream` would be answered with an empty stream instead
-/// of falling through. Everything but `run` (init's runtime capture for the
-/// heartbeat, and the post-header upgrade that drives the stream) is
-/// delegated whole.
-#[derive(trillium_macros::Handler)]
-struct StreamStage {
-    #[handler(except = run)]
-    sse: Sse<Connect>,
-}
-
-impl StreamStage {
-    async fn run(&self, conn: Conn) -> Conn {
-        if conn.state::<StreamTarget>().is_none() {
-            return conn;
-        }
-        self.sse.run(conn).await
-    }
-}
-
 impl Files {
-    /// The `/files` surface as a handler: three stages in a tuple.
+    /// The `/files` surface as one route — `.all`, so a write meets this
+    /// surface's own refusal rather than the router's `405` — over three stages
+    /// in a tuple.
     ///
-    /// 1. **Validate** — claims `/files` and `/files/...` (never `/filesomething`),
-    ///    refuses non-GET and a missing root, and for a request negotiating a
-    ///    stream prepares the watch, refusing here so the `Sse` stage never sees
-    ///    a request it cannot serve.
-    /// 2. **Stream** — the `Sse` handler over that prepared target.
+    /// 1. **Validate** — refuses non-GET and a missing root, and for a request
+    ///    negotiating a stream prepares the watch, refusing here so the `Sse`
+    ///    stage never sees a request it cannot serve.
+    /// 2. **Stream** — the `Sse` handler over that prepared target. It
+    ///    negotiates on `Accept` alone, which is sound because the route bounds
+    ///    it: the same `Accept` that makes it answer is the one the stage above
+    ///    prepares or refuses for.
     /// 3. **Read** — the body: a file, a listing, or the directory redirect.
     ///
     /// Trillium's `Sse` drives the stream through the handler's upgrade hook,
@@ -481,101 +487,100 @@ impl Files {
     pub(crate) fn handler(self) -> impl trillium::Handler {
         let validate = self.clone();
         let reader = self;
-        (
-            move |conn: Conn| {
-                let files = validate.clone();
-                async move {
-                    // Claim `/files` and `/files/...`, but not `/filesomething`.
-                    let Some(rest) = conn.path().strip_prefix("/files") else {
-                        return conn;
-                    };
-                    if !(rest.is_empty() || rest.starts_with('/')) {
-                        return conn;
+        Router::new().all(
+            "/files/*",
+            (
+                move |conn: Conn| {
+                    let files = validate.clone();
+                    async move {
+                        let rest = rest_of(&conn);
+                        if conn.method() != Method::Get {
+                            return fail(
+                                conn,
+                                ErrorCode::BadRequest,
+                                "/files is read-only; GET a path or a directory",
+                            );
+                        }
+                        if files.root.is_none() {
+                            return fail(
+                                conn,
+                                ErrorCode::Internal,
+                                "no working directory to serve files from",
+                            );
+                        }
+                        // Content negotiation (docs/web-bind.md): a request whose Accept
+                        // *explicitly* names `text/event-stream` gets a stream of change pokes
+                        // instead of the body. Explicit-only — `*/*` (a fetch's default) gets
+                        // the file, so only a client that asked to stream ever streams. The
+                        // `Sse` stage applies the same rule to the same header.
+                        let streams = conn
+                            .request_headers()
+                            .get_str(KnownHeaderName::Accept)
+                            .is_some_and(|accept| accept.contains("text/event-stream"));
+                        if !streams {
+                            return conn;
+                        }
+                        match files.prepare_stream(&rest).await {
+                            Ok(target) => conn.with_state(target),
+                            Err((code, message)) => fail(conn, code, message),
+                        }
                     }
-                    let rest = rest.to_owned();
-                    if conn.method() != Method::Get {
-                        return fail(
-                            conn,
-                            ErrorCode::BadRequest,
-                            "/files is read-only; GET a path or a directory",
-                        );
-                    }
-                    if files.root.is_none() {
-                        return fail(
-                            conn,
-                            ErrorCode::Internal,
-                            "no working directory to serve files from",
-                        );
-                    }
-                    // Content negotiation (docs/web-bind.md): a request whose Accept
-                    // *explicitly* names `text/event-stream` gets a stream of change pokes
-                    // instead of the body. Explicit-only — `*/*` (a fetch's default) gets
-                    // the file, so only a client that asked to stream ever streams. The
-                    // `Sse` stage applies the same rule to the same header.
-                    let streams = conn
-                        .request_headers()
-                        .get_str(KnownHeaderName::Accept)
-                        .is_some_and(|accept| accept.contains("text/event-stream"));
-                    if !streams {
-                        return conn.with_state(FilesPath(rest));
-                    }
-                    match files.prepare_stream(&rest).await {
-                        Ok(target) => conn.with_state(FilesPath(rest)).with_state(target),
-                        Err((code, message)) => fail(conn, code, message),
-                    }
-                }
-            },
-            StreamStage {
-                sse: sse(Connect).with_heartbeat(HEARTBEAT),
-            },
-            move |mut conn: Conn| {
-                let files = reader.clone();
-                async move {
-                    let Some(FilesPath(rest)) = conn.take_state::<FilesPath>() else {
-                        return conn;
-                    };
-                    let Some(path) = files.resolve(&rest) else {
-                        return fail(
-                            conn,
-                            ErrorCode::NotFound,
-                            "no such path under the working directory",
-                        );
-                    };
-                    let Ok(meta) = tokio::fs::metadata(&path).await else {
-                        return fail(conn, ErrorCode::NotFound, "no such path");
-                    };
-                    if meta.is_dir() {
-                        // A listing's relative links only compose under a trailing slash, so the
-                        // slashless spelling is a redirect rather than a second served shape.
-                        if !rest.ends_with('/') {
-                            // The query carries the listing's shape (`?recursive=1`), so
-                            // the redirect must keep it or the client's options vanish on
-                            // a spelling correction.
-                            let query = conn.querystring();
-                            let location = match query.is_empty() {
-                                true => format!("{}/", conn.path()),
-                                false => format!("{}/?{query}", conn.path()),
+                },
+                sse(Connect).with_heartbeat(HEARTBEAT),
+                move |conn: Conn| {
+                    let files = reader.clone();
+                    async move {
+                        let rest = rest_of(&conn);
+                        let Some(path) = files.resolve(&rest) else {
+                            return fail(
+                                conn,
+                                ErrorCode::NotFound,
+                                "no such path under the working directory",
+                            );
+                        };
+                        let Ok(meta) = tokio::fs::metadata(&path).await else {
+                            return fail(conn, ErrorCode::NotFound, "no such path");
+                        };
+                        if meta.is_dir() {
+                            // A listing's relative links only compose under a trailing slash, so the
+                            // slashless spelling is a redirect rather than a second served shape.
+                            if !rest.ends_with('/') {
+                                // The query carries the listing's shape (`?recursive=1`), so
+                                // the redirect must keep it or the client's options vanish on
+                                // a spelling correction.
+                                let query = conn.querystring();
+                                let location = match query.is_empty() {
+                                    true => format!("{}/", request_path(&conn)),
+                                    false => format!("{}/?{query}", request_path(&conn)),
+                                };
+                                return conn
+                                    .with_status(301)
+                                    .with_response_header(KnownHeaderName::Location, location)
+                                    .halt();
+                            }
+                            let options = Options::from_query(conn.querystring());
+                            let scope = files.scope(&path);
+                            let root = files.root.as_ref().expect("root checked").clone();
+                            let Some(listing) = listing(&path, &root, scope, options).await else {
+                                return fail(
+                                    conn,
+                                    ErrorCode::NotFound,
+                                    "cannot list this directory",
+                                );
                             };
                             return conn
-                                .with_status(301)
-                                .with_response_header(KnownHeaderName::Location, location)
+                                .with_status(200)
+                                .with_response_header(
+                                    KnownHeaderName::ContentType,
+                                    "application/json",
+                                )
+                                .with_body(serde_json::to_string(&listing).unwrap_or_default())
                                 .halt();
                         }
-                        let options = Options::from_query(conn.querystring());
-                        let scope = files.scope(&path);
-                        let root = files.root.as_ref().expect("root checked").clone();
-                        let Some(listing) = listing(&path, &root, scope, options).await else {
-                            return fail(conn, ErrorCode::NotFound, "cannot list this directory");
-                        };
-                        return conn
-                            .with_status(200)
-                            .with_response_header(KnownHeaderName::ContentType, "application/json")
-                            .with_body(serde_json::to_string(&listing).unwrap_or_default())
-                            .halt();
+                        read(conn, &path, &meta).await
                     }
-                    read(conn, &path, &meta).await
-                }
-            },
+                },
+            ),
         )
     }
 }

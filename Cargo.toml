@@ -65,10 +65,6 @@ trillium-head = "0.3"
 # with a 304. What the single-entry reads use instead of `immutable` (docs/control-api.md).
 trillium-caching-headers = "0.4.3"
 trillium-sse = "0.4.0"
-# `#[derive(Handler)]`: whole-trait delegation for the wrapper that gates the
-# `/files` Sse stage on conn state — delegating `run` alone would drop the
-# upgrade hook the stream is driven through. Already in-tree under trillium.
-trillium-macros = "0.1"
 # The web client (docs/web-client.md): builds `web/` at compile time and embeds
 # the dist assets in the binary; the `dev-proxy` feature below proxies to a
 # spawned Vite dev server instead (HMR). Build mode needs pnpm on PATH.

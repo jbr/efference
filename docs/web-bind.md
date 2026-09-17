@@ -33,9 +33,9 @@ TCP bind, the host, and every test. Its tuple is fixed; each layer that is not a
 present is an `Option`, which trillium runs as a pass-through when `None`, and the
 `Transport` picks which are `Some`:
 
-- **Socket:** HEAD rewriting, the `ETag` validator, the enrollment routes (below),
-  the `/v1` routes. No gate, no hardening headers, no web client.
-- **Web:** security headers, HEAD rewriting, the cookie jar, the gate, the `ETag`
+- **Socket:** the security headers, HEAD rewriting, the `ETag` validator, the
+  enrollment routes (below), the `/v1` routes. No gate, no web client.
+- **Web:** the security headers, HEAD rewriting, the cookie jar, the gate, the `ETag`
   validator, the credential mint, the `/v1` routes, `/files`, then the web client —
   every conn passes the gate first; the trailing frontend handler serves the
   embedded web client ([web-client.md](web-client.md)) for the GETs no route
@@ -172,7 +172,11 @@ The `401`/`403`/`429` codes are `ErrorCode` variants in the standard error envel
 ## `/files` — the operator's read surface over the working directory
 
 `src/daemon/files.rs`, mounted on a web transport only, after the routes and before
-the web client's frontend handler. Read-only and human-facing: it is what running a
+the web client's frontend handler. It is a router over one `/files/*` route rather
+than a handler that strips its own prefix, so the mount point is a route spelling
+like every other and the path below it arrives as the router's wildcard; the
+directory redirect builds its `Location` from the whole request path, since the
+wildcard names only the part below the mount. Read-only and human-facing: it is what running a
 static file server beside the daemon was doing, moved inside it, so project files
 are readable through the same page the session runs in — including from away from
 the machine. It is the server half of the file viewer

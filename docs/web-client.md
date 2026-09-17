@@ -1318,14 +1318,15 @@ or a `/language-(\w+)/` capture. Links come from `react-markdown`'s
 `xmpp` — so a `javascript:` or `data:` URL in model output never reaches an
 `href`.
 
-**A `Content-Security-Policy` on every response the bind produces**
+**A `Content-Security-Policy` on every response any listener produces**
 (`SecurityHeaders` in `src/daemon/tcp.rs`), alongside `x-content-type-options:
 nosniff`, `referrer-policy: no-referrer`, and `x-frame-options: DENY` (redundant
 with `frame-ancestors` for anything current, and one header for browsers that
 predate CSP3). It sits outermost in the handler
 stack so its `before_send` runs last, and the headers land on the SPA index, a
 hashed asset, a `/v1` rejection and a 404 alike — a handler that answered without
-them would be the hole. The stack is built once by `handler()`
+them would be the hole. The layer is on the Unix socket's stack too, so `nosniff`
+does not depend on which listener a response came from. The stack is built once by `handler()`
 (`src/daemon/handler.rs`) and used by both the listener and the tests, because a
 hand-copied test stack is what lets the two drift.
 
