@@ -109,11 +109,73 @@ pub struct SessionRequest {
     pub created_by: Option<String>,
 }
 
+/// What this creation attempt minted, for rollback (docs/control-channel.md).
+///
+/// A path is recorded here only after an exclusive `create_dir` returned success,
+/// which is what makes it this attempt's: a dir an existing session or a racing
+/// attempt holds makes the create fail, so it is never recorded and never removed.
+/// A boot that succeeds hands these to the session instead.
+#[derive(Default)]
+struct Minted {
+    session_dir: Option<PathBuf>,
+    scratch: Option<PathBuf>,
+    /// `--keep-scratch`, honored on a failed boot as it is at session end
+    /// (docs/tools.md): the post-mortem artifact survives the rollback.
+    keep_scratch: bool,
+}
+
+impl Minted {
+    /// Remove what this attempt minted, naming anything that resists on stderr —
+    /// the boot report's surface. A failed removal is not escalated: the
+    /// preparation error the caller is already returning is the one that matters.
+    fn roll_back(self) {
+        if let Some(dir) = &self.session_dir
+            && let Err(e) = std::fs::remove_dir_all(dir)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!("[session dir: could not remove {}: {e}]", dir.display());
+        }
+        match (&self.scratch, self.keep_scratch) {
+            (Some(scratch), true) => eprintln!("scratch kept: {}", scratch.display()),
+            (Some(scratch), false) => {
+                if let Err(e) = std::fs::remove_dir_all(scratch)
+                    && e.kind() != std::io::ErrorKind::NotFound
+                {
+                    eprintln!("[scratch: could not remove {}: {e}]", scratch.display());
+                }
+            }
+            (None, _) => {}
+        }
+    }
+}
+
 /// Prepare a session: everything from the origin config to the provider client,
 /// in the order the boot report prints it. Fails before minting anything when the
-/// config, a reference, or the provider is unusable; fails after minting when a
-/// later step does, leaving the minted dir for the operator.
+/// config, a reference, the provider, or the effort level is unusable; a failure
+/// after that point rolls back what this attempt minted, so the name is free for a
+/// corrected retry (docs/control-channel.md).
+///
+/// Spawned resources need no entry in [`Minted`]: an stdio MCP server's child is
+/// killed when the toolbox holding it drops, which the error return does.
 pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, Error> {
+    let mut minted = Minted {
+        keep_scratch: request.keep_scratch,
+        ..Minted::default()
+    };
+    match prepare_minting(request, &mut minted).await {
+        Ok(boot) => Ok(boot),
+        Err(error) => {
+            minted.roll_back();
+            Err(error)
+        }
+    }
+}
+
+/// [`prepare`], recording what it mints as it goes.
+async fn prepare_minting(
+    request: SessionRequest,
+    minted: &mut Minted,
+) -> Result<SessionBoot<ForkSpot>, Error> {
     let SessionRequest {
         cwd,
         base_env,
@@ -196,12 +258,48 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
             .unwrap_or_default()
     );
 
+    // The session's effort level (docs/transport.md): the flag if given, else the
+    // config's `[transport] effort`, else nothing on the wire at all. Boot-time and
+    // frozen — no runtime toggle, because a mid-session change would move the cached
+    // prefix. Read from the origin, which the session's snapshot below copies
+    // verbatim, so the level is settled before anything is minted.
+    //
+    // The one cross-axis coupling is checked here rather than forwarded as the
+    // provider's 400: `xhigh`/`max` need thinking, which either `EFFERENCE_THINKING=off`
+    // or a model whose turns fall through to explicit `disabled` takes away — the
+    // capability lookup above is what makes the effective answer computable here.
+    let effort = effort.or_else(|| origin.role.transport.effort.clone());
+    // Validate before the coupling check: the metadata's list is the level's
+    // only defense, so an unsupported spelling is named first (docs/transport.md).
+    if let Some(effort) = &effort
+        && endpoint.provider.validates_effort_levels()
+        && let Err(why) = capabilities.check_effort(effort, model)
+    {
+        return Err(why.into());
+    }
+    if let Err(why) = crate::api::check_effort_thinking(
+        effort.as_deref(),
+        crate::api::auto_turns_disable_thinking(model, capabilities.supports_reasoning),
+    ) {
+        return Err(why.into());
+    }
+    match (&effort, &capabilities.default_effort) {
+        (Some(effort), _) => eprintln!("effort: {effort}"),
+        (None, Some(default)) => {
+            eprintln!("effort: unset · provider default {default}");
+        }
+        (None, None) => {}
+    }
+
     // Everything for this session is colocated in its own dir (gitignored), standard-named since
     // the dir is the unique unit (docs/permissions.md). Minting it is also the guard against
     // re-serving a name: an existing dir is refused here, before the log is opened and before
     // the socket is unlinked, so neither the sequential nor the concurrent corruption path is
     // reachable (docs/control-channel.md).
     mint_session_dir(&session_dir)?;
+    // A successful exclusive create is the proof of ownership rollback needs: this
+    // path is this attempt's alone, so a later failure may remove it (docs/control-channel.md).
+    minted.session_dir = Some(session_dir.clone());
 
     // Snapshot the origin config into the session's own `config.toml` *once* (a fresh session). The
     // origin (`--config`/the `efference.toml` probe) is a template consumed at boot; thereafter the
@@ -243,36 +341,6 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
         }
     };
 
-    // The session's effort level (docs/transport.md): the flag if given, else the
-    // session config's `[transport] effort`, else nothing on the wire at all. Boot-time
-    // and frozen — no runtime toggle, because a mid-session change would move the cached
-    // prefix. The one cross-axis coupling is checked here rather than forwarded as the
-    // provider's 400: `xhigh`/`max` need thinking, which either `EFFERENCE_THINKING=off`
-    // or a model whose turns fall through to explicit `disabled` takes away — the
-    // capability lookup above is what makes the effective answer computable here.
-    let effort = effort.or_else(|| loaded.role.transport.effort.clone());
-    // Validate before the coupling check: the metadata's list is the level's
-    // only defense, so an unsupported spelling is named first (docs/transport.md).
-    if let Some(effort) = &effort
-        && endpoint.provider.validates_effort_levels()
-        && let Err(why) = capabilities.check_effort(effort, model)
-    {
-        return Err(why.into());
-    }
-    if let Err(why) = crate::api::check_effort_thinking(
-        effort.as_deref(),
-        crate::api::auto_turns_disable_thinking(model, capabilities.supports_reasoning),
-    ) {
-        return Err(why.into());
-    }
-    match (&effort, &capabilities.default_effort) {
-        (Some(effort), _) => eprintln!("effort: {effort}"),
-        (None, Some(default)) => {
-            eprintln!("effort: unset · provider default {default}");
-        }
-        (None, None) => {}
-    }
-
     // Layer the harness's self-surface protection over the operator's grants (docs/permissions.md).
     // The session dir holds this session's control socket, its append-only log, and — under the same
     // base — every *other* session's dir; all of it sits inside the operator's `.` grant, so nothing
@@ -301,6 +369,9 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
     // spotter-log survey). It lives outside `.` and outside the session dir, so it
     // collides with neither the operator's grants nor the self-surface deny above.
     let scratch = mint_scratch_dir()?;
+    // Minted by exclusive create under a random name, so — like the session dir — it
+    // belongs to this attempt and a later failure may remove it.
+    minted.scratch = Some(scratch.clone());
     eprintln!("scratch: {} (exported as $TMPDIR)", scratch.display());
     loaded.role.paths.insert(
         scratch.to_string_lossy().into_owned(),

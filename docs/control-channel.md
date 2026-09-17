@@ -96,7 +96,22 @@ the `[env]` policy, the log, the toolbox and MCP mounts (`src/boot/mcp_mount.rs`
 the one step that may wait for a human), the frozen preamble, the client, the
 spotter, and the fork peek. The CLI builds the request from flags; a host's
 creation handler builds it from a request body. Boot progress prints to stderr
-today. Listener binding stays with whoever runs the runtime. The runtime owns the
+today. Listener binding stays with whoever runs the runtime.
+
+Everything that can be judged without persistent allocation is judged before the
+mint: the config, its `[env]` references, the capability lookup, the temperature,
+and the effort level with its thinking coupling — the level is read from the
+origin, which the session's snapshot copies verbatim. A failure after the mint
+rolls back what that attempt minted: the session dir (with the config snapshot
+and the log inside it) and the scratch dir, under `--keep-scratch` the scratch is
+left as a post-mortem artifact. What may be rolled back is exactly what an
+exclusive `create_dir` returned success for in this call, which is what makes the
+path this attempt's and no one else's; a refused mint records nothing and removes
+nothing, so a collision with an existing session or a racing creation leaves that
+session's files untouched. Spawned stdio MCP servers need no rollback entry: the
+child is killed when the toolbox holding it drops, which the error return does.
+The net effect is that a rejected creation frees its name for a corrected retry
+instead of making the retry collide with its own wreckage. The runtime owns the
 session's lifetime from `start` to teardown and nothing outside it.
 
 ## The host: several sessions in one process
@@ -173,7 +188,8 @@ determine storage; the CLI still places it in the session directory.
 
 The daemon binds with trillium's `bind_uds(path)`. Each session lives in its own directory — `.efference/<id>/` (the id is `--name <id>`, or a minted word pair, [session-title.md](session-title.md)) — holding standard-named files: `control.sock`, `log.jsonl`, and (the snapshot) `config.toml` (see [permissions](permissions.md)). A hosted session has no socket of its own: it answers under `/sessions/<id>/` on its host's socket. **Hosts are found in two places**, in order: this project's `.efference/host.sock`, then the user's `~/.efference/host.sock` — what a bare `efference host` binds, so one host serves every project; `host --socket <path>` binds elsewhere (a project-local host is `--socket .efference/host.sock`). A client verb resolves its target (`ClientTarget` in the CLI, and the same rule in the library's `ClientExecutor` behind `control` and `mcp`) as: `--socket <path>` verbatim; else `--name <id>` — that session's own live socket, or a live host whose `GET /sessions` lists the id **with this directory as its cwd**; else the single **live** session found by scanning the session dirs and asking every live host for its sessions here. The cwd scope is what keeps a user-wide host from answering project A's plain `tui` with project B's session. `tui --new` creates on the first live host (`--host-socket` overrides); `control` and `mcp` address the first live host, else the user's, since a mount may outlive the host. Liveness means a successful connect, not a file's existence, so a stale dir from a dead process doesn't shadow a running one. A name nothing serves, or zero or several candidates with no name, is an error before any UI opens; the TUI also opens its event stream before taking the terminal, so a dead target is a printed error rather than an empty screen.
 
-**Creation mints a session dir; it never reuses one.** The dir is created with `create_dir` (not `create_dir_all`) on the leaf, so an existing `--name` is refused with an error naming the dir and the log inside it, and two creations racing the same name cannot both proceed. A session does not outlive its process: `Log::create` opens the log for append with an empty in-memory `entries`, so a second run over the same file would restart `seq` at 0 and leave a duplicated seq space that every offline reader (`view`, `wire`, the TUI fold) reads as one sequence. The guard also runs before the socket is unlinked, so a second creation named `X` cannot take the socket away from a running session. Resuming a prior session is not implemented; when it is, this guard changes as part of that design.
+**Creation mints a session dir; it never reuses one.** The dir is created with `create_dir` (not `create_dir_all`) on the leaf, so an existing `--name` is refused with an error naming the dir and the log inside it, and two creations racing the same name cannot both proceed — the loser is refused
+before it mints anything, so its rollback has nothing of the winner's to remove. A session does not outlive its process: `Log::create` opens the log for append with an empty in-memory `entries`, so a second run over the same file would restart `seq` at 0 and leave a duplicated seq space that every offline reader (`view`, `wire`, the TUI fold) reads as one sequence. The guard also runs before the socket is unlinked, so a second creation named `X` cannot take the socket away from a running session. Resuming a prior session is not implemented; when it is, this guard changes as part of that design.
 
 Clients dial via `UnixClientConfig`, which routes requests to a fixed path — the URL host is a placeholder; only path and headers matter.
 
