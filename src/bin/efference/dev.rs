@@ -50,6 +50,23 @@ pub(crate) enum DevCommand {
         #[arg(long, conflicts_with = "session")]
         all: bool,
     },
+    /// Report what a session's turn endings bought
+    /// (backlog/turn-persistence-in-the-preamble.md). A turn ends when the model
+    /// emits no tool call, which is the harness's only way to put a question *and*
+    /// its only way to say the work is done. This counts which it turned out to be,
+    /// by what the next turn carried: a **barren** ending asked nothing and was
+    /// answered with nothing, so it bought a round trip and no information.
+    /// Offline: no daemon, no network.
+    Stops {
+        /// Which session to read: a session name (`.efference/<name>/log.jsonl`), a
+        /// session directory, or a path to a `log.jsonl`. Omit for the most
+        /// recently written session.
+        session: Option<String>,
+        /// Sweep every session under `.efference/` instead of one — the corpus view,
+        /// which is where a rate is worth comparing against.
+        #[arg(long, conflicts_with = "session")]
+        all: bool,
+    },
     /// Read a recorded session in the TUI, inert: the same transcript rendering as
     /// `tui`, over a session's `log.jsonl` instead of a live daemon. Nothing can be
     /// sent — no composer, no approvals, no loop verbs — and the log is read once,
@@ -342,6 +359,7 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
         }
         DevCommand::Open { print, bearer } => open(client_target().await?, print, bearer).await,
         DevCommand::Cache { session, all } => cache_report::cache(session, name, all),
+        DevCommand::Stops { session, all } => stop_report::stops_report(session, name, all),
         DevCommand::View {
             session,
             theme,

@@ -171,6 +171,7 @@ mod setup;
 mod spot_report;
 #[cfg(feature = "dev")]
 mod spotter_eval;
+mod stop_report;
 mod verbs;
 
 #[cfg(test)]

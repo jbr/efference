@@ -9,11 +9,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 mod process;
+pub mod stops;
 mod upstream;
 
 #[cfg(test)]
 mod test;
 pub use process::{ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn};
+pub use stops::Stop;
 pub use upstream::{
     CAPTURED_HEADERS, FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord,
     is_captured_header,

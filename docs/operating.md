@@ -295,6 +295,17 @@ cache TTL) from the ones that do not, and reporting the longest run of the latte
 argument it reads the most recently written session; `--all` sweeps the corpus, which is
 where a rate is worth comparing against. It needs no daemon and no network.
 
+**`efference dev stops`** is its sibling over `log.jsonl`, about turn endings rather
+than spend. A turn ends when the model emits no tool call, which is the harness's only
+way to put a question *and* its only way to say the work is done, so the ending alone
+does not say which was meant. What the *next* turn carried does: an ending is
+`question` when the parting prose asked one, `answered` when the reply supplied
+something, `final` when nothing followed, and **`barren`** when neither — the model
+asked nothing and was told nothing, so the round trip bought a request and a cache
+write and no information. It takes the same session argument and `--all` sweep, and
+reports the longest run of barren endings, since a run is the shape a stalled session
+makes where a scattered few are ordinary. The classification is `log/stops.rs`.
+
 **`efference check [path]`** is the other no-daemon verb, and it is about the template rather
 than a session: it parses `efference.toml` (or the path given), applies the soundness
 checks a session boot applies, resolves every `[context]` entry from the current

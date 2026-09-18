@@ -8,6 +8,10 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`efference dev stops`** (docs/operating.md): fold a session's turn endings — or the
+  whole corpus's — into what each one bought, by what the next turn carried. A *barren*
+  ending asked nothing and was answered with nothing; a run of them is what a stalled
+  session looks like from outside.
 - **Host-backed new-session options** (docs/control-api.md): `GET /inference` lists the
   host's connections, sorted and secret-free; `QUERY /sessions` resolves a proposed
   session without minting it, answering each field with the value that would be used
