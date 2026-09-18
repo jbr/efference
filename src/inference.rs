@@ -16,6 +16,47 @@ use crate::distill::TriageModel;
 use crate::env_table::EnvSnapshot;
 use crate::secrets::Secrets;
 
+/// The triage choice a session creator makes. Omission inherits the configured
+/// default; `Shared` explicitly bypasses a configured separate default; `Separate`
+/// carries the existing independent-client options.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum TriageChoice {
+    Shared,
+    Separate {
+        /// Names the connection, making `model` a provider-native id. Absent, the
+        /// `model` string is the `connection/model` slug.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        connection: Option<String>,
+        model: String,
+        #[serde(default)]
+        thinking: bool,
+        #[serde(default)]
+        auto_choice: bool,
+        #[serde(default)]
+        effort: Option<String>,
+    },
+}
+
+impl TriageChoice {
+    /// The slug form: `model` is `connection/model`, or a native id resolved
+    /// against `[defaults].model`'s connection.
+    pub fn separate(
+        model: String,
+        thinking: bool,
+        auto_choice: bool,
+        effort: Option<String>,
+    ) -> Self {
+        Self::Separate {
+            connection: None,
+            model,
+            thinking,
+            auto_choice,
+            effort,
+        }
+    }
+}
+
 /// Where the user configuration lives under `HOME`; `efference setup` writes
 /// it and every host and offline verb reads it.
 pub const CONFIG_RELATIVE_PATH: &str = ".efference/config.toml";
@@ -114,6 +155,15 @@ pub struct TriageIdentity {
     pub shared: bool,
     #[serde(flatten)]
     pub selection: ModelSelection,
+}
+
+/// One connection a host can disclose to an inference-options client. It reports
+/// configuration status only; it never carries an endpoint or credential source.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct ConnectionInventory {
+    pub name: String,
+    pub provider: Provider,
+    pub available: bool,
 }
 
 /// The ready/unavailable host connection catalog. It intentionally has no Debug
@@ -300,6 +350,19 @@ impl InferenceRegistry {
             .collect()
     }
 
+    /// The configured connection rows a host may disclose. `BTreeMap` iteration
+    /// keeps the response sorted by connection name.
+    pub fn inventory(&self) -> Vec<ConnectionInventory> {
+        self.connections
+            .iter()
+            .map(|(name, connection)| ConnectionInventory {
+                name: name.clone(),
+                provider: connection.provider,
+                available: !connection.disabled && connection.credential.is_ok(),
+            })
+            .collect()
+    }
+
     pub fn empty() -> Self {
         Self {
             connections: BTreeMap::new(),
@@ -307,107 +370,30 @@ impl InferenceRegistry {
         }
     }
 
-    /// Resolve all role selections before preparation starts. Main is required;
-    /// an omitted spotter takes its configured default or the main connection's
-    /// existing cheap-band default. Omitted triage shares the main client.
+    /// Resolve a session's roles from the slug spellings the CLI and offline
+    /// verbs carry, then attach credentials. One call through the shared flow
+    /// (`options.rs`), so these surfaces and the control routes cannot drift.
     pub fn resolve(
         &self,
         model: Option<&str>,
         spotter: Option<&str>,
-        triage: Option<TriageModel>,
+        triage: Option<TriageChoice>,
     ) -> Result<SessionInference, Error> {
-        let main = self.resolve_role(model, self.defaults.model.as_ref(), "main")?;
-        let spotter = match spotter {
-            Some(value) => self.resolve_role(Some(value), None, "spotter")?,
-            None => match self.defaults.spotter.as_ref() {
-                Some(default) => self.resolve_reference(default, "spotter")?,
-                None => self.resolve_reference(
-                    &ModelReference {
-                        connection: main.selection.connection.clone(),
-                        model: main.endpoint.provider.default_spotter_model().to_string(),
-                    },
-                    "spotter",
-                )?,
+        self.prepare(self.resolve_options(
+            &options::SessionOptions {
+                model: model.map(str::to_string),
+                spotter_model: spotter.map(str::to_string),
+                triage,
+                ..Default::default()
             },
-        };
-        let triage = match triage {
-            Some(mut options) => {
-                let role = self.resolve_role(
-                    Some(&options.model),
-                    self.defaults.triage.as_ref(),
-                    "triage",
-                )?;
-                options.model = role.selection.model.clone();
-                Some(ResolvedTriage { role, options })
-            }
-            None => match self.defaults.triage.as_ref() {
-                Some(default) => {
-                    let role = self.resolve_reference(default, "triage")?;
-                    Some(ResolvedTriage {
-                        options: TriageModel {
-                            model: role.selection.model.clone(),
-                            thinking: false,
-                            auto_choice: false,
-                            effort: None,
-                        },
-                        role,
-                    })
-                }
-                None => None,
-            },
-        };
-        if let Some(triage) = &triage
-            && triage.role.endpoint.provider.dialect() != main.endpoint.provider.dialect()
-        {
-            return Err(format!(
-                "triage {} ({}) cannot replay main {} ({}) because their wire dialects differ",
-                triage.role.selection.model,
-                triage.role.endpoint.provider.name(),
-                main.selection.model,
-                main.endpoint.provider.name(),
-            )
-            .into());
-        }
-        let mut secret_values = Vec::new();
-        for role in [&main, &spotter] {
-            secret_values.extend(role_secret_values(role));
-        }
-        if let Some(triage) = &triage {
-            secret_values.extend(role_secret_values(&triage.role));
-        }
-        secret_values.sort();
-        secret_values.dedup();
-        Ok(SessionInference {
-            main,
-            spotter,
-            triage,
-            secret_values,
-        })
+            None,
+        ))
     }
 
-    fn resolve_role(
-        &self,
-        value: Option<&str>,
-        default: Option<&ModelReference>,
-        role: &str,
-    ) -> Result<ResolvedRole, Error> {
-        match value {
-            Some(value) => self.resolve_reference(&self.parse_model(value, role)?, role),
-            None => match default {
-                Some(default) => self.resolve_reference(default, role),
-                None => {
-                    // The main role's config key and CLI flag are both spelled `model`.
-                    let key = if role == "main" { "model" } else { role };
-                    Err(format!(
-                        "no {role} model configured: add [defaults].{key} to \
-                         ~/.efference/config.toml or pass --{key}"
-                    )
-                    .into())
-                }
-            },
-        }
-    }
-
+    /// Split a `connection/model` slug, or resolve a bare native id against
+    /// `[defaults].model`'s connection. A native id may itself contain a slash,
+    /// so a prefix only names a connection when one by that name exists; the
+    /// unambiguous spelling is a separate `connection` field (`options.rs`).
     fn parse_model(&self, value: &str, role: &str) -> Result<ModelReference, Error> {
         if value.is_empty() {
             return Err(format!("{role} model cannot be empty").into());
@@ -439,34 +425,6 @@ impl InferenceRegistry {
         Ok(ModelReference {
             connection: default.connection.clone(),
             model: value.to_string(),
-        })
-    }
-
-    fn resolve_reference(
-        &self,
-        reference: &ModelReference,
-        role: &str,
-    ) -> Result<ResolvedRole, Error> {
-        let connection = self.connections.get(&reference.connection).ok_or_else(|| {
-            format!(
-                "{role} model selects connection {:?}, but it is not configured in ~/.efference/config.toml",
-                reference.connection
-            )
-        })?;
-        let credential = connection.credential.as_ref().map_err(|error| {
-            format!(
-                "{role} model selects connection {:?}, but it is unavailable: {error}",
-                reference.connection
-            )
-        })?;
-        Ok(ResolvedRole {
-            selection: ModelSelection {
-                connection: reference.connection.clone(),
-                provider: connection.provider,
-                model: reference.model.clone(),
-            },
-            endpoint: credential.endpoint.clone(),
-            secret_values: credential.secret_values.clone(),
         })
     }
 }
@@ -689,6 +647,11 @@ fn validate_connection_name(name: &str) -> Result<(), Error> {
 }
 
 pub mod chatgpt;
+pub mod options;
+pub use options::{
+    Effective, EffectiveOptions, EffectiveTriage, Issue, IssueCode, ResolvedOptions,
+    SelectionSource, SessionOptions, TEMPERATURE,
+};
 
 #[cfg(test)]
 mod test;

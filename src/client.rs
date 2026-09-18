@@ -17,7 +17,7 @@ use anyhow::{Context, Result, anyhow};
 use trillium_client::{Client as HttpClient, Connector};
 use trillium_tokio::UnixClientConfig;
 
-use crate::daemon::CreateSession;
+use crate::daemon::{CreateSession, SessionOptionsRequest};
 use crate::frontend::Approval;
 
 /// A client bound to one daemon control socket. Cheap to [`Clone`] (the inner
@@ -449,6 +449,35 @@ impl Client {
             .await
             .with_context(|| format!("POST {path} to the host socket"))?;
         json_field(&read_2xx(conn, "POST", path).await?, "id")
+    }
+
+    /// Resolve a proposed hosted session (`QUERY /sessions`, docs/control-api.md)
+    /// without creating a directory or starting a runtime: the effective
+    /// selections, where each came from, and the issues that would stop creation.
+    /// A listener route, so it always addresses the socket root.
+    pub async fn session_options(
+        &self,
+        request: &SessionOptionsRequest,
+    ) -> Result<serde_json::Value> {
+        let body = serde_json::to_string(request).context("encoding the session options")?;
+        let path = "/sessions";
+        let conn = self
+            .http
+            .build_conn(trillium::Method::Query, path)
+            .with_request_header("content-type", "application/json; charset=utf-8")
+            .with_body(body)
+            .await
+            .with_context(|| format!("QUERY {path} on the host socket"))?;
+        let body = read_2xx(conn, "QUERY", path).await?;
+        serde_json::from_str(&body).with_context(|| format!("decoding QUERY {path}"))
+    }
+
+    /// The host's configured inference connections (`GET /inference`). This is a
+    /// listener route, so it always addresses the socket root.
+    pub async fn inference_inventory(&self) -> Result<serde_json::Value> {
+        let path = "/inference";
+        let body = self.get_unversioned(path).await?;
+        serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
     }
 
     /// The sessions a host holds (`GET /sessions`, docs/control-api.md), sorted

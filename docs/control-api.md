@@ -86,18 +86,68 @@ sessions from one process. Its own routes are the listener's, not a session's:
   handshake, and nothing here holds one. A client that wants a session's own
   entries opens that session's `/v1/events` beside this
   (backlog/host-process.md).
+- `GET /inference` — the host's loaded connection inventory:
+  `{"connections":[{"name": …, "provider": …, "available": bool}]}`. Rows are
+  sorted by connection name. The response contains configuration status only; it never
+  exposes endpoint URLs, credential sources, credentials, or environment values. It is
+  available on authenticated Unix and TCP host listeners.
+- `QUERY /sessions` — resolve a proposed session without minting a directory or
+  starting runtime preparation. The body carries an absolute `cwd`, an optional
+  `config`, and the same editable selections creation takes: `connection`, `model`,
+  `spotter_connection`, `spotter_model`, tagged `triage`, `temperature`, `effort`.
+  A role names its connection and its provider-native model separately, or gives
+  the `connection/model` slug as `model` alone — naming the connection is what
+  makes a native id that itself contains a slash unambiguous. The response is
+
+  ```json
+  {"effective": {"main": {"value": {"connection": …, "provider": …, "model": …},
+                          "source": "user_default"},
+                 "spotter": {…}, "triage": {…}, "effort": {…}, "temperature": {…}},
+   "issues": [{"field": "model", "code": "invalid_selection", "message": …}]}
+  ```
+
+  **`effective` is what a session would actually get**, field by field: the value
+  and the precedence branch that supplied it. `source` is closed —
+  `request`, `user_default`, `main_provider`, `project_config`, `provider_default`,
+  `shared_main` — and only the branches that apply to a field occur for it.
+  `triage` resolves to `{"mode": "shared"}` or a flattened separate selection, so
+  an inherited `[defaults].triage` previews as the separate client creation would
+  build rather than as sharing main.
+
+  **Fields resolve independently.** One unusable value never empties another: a
+  field with an issue has `value: null` *and* `source: null`, while a field nothing
+  named has `value: null` with its source — the two are different answers. An
+  invalid explicit override never silently falls back to a default. A value the
+  host can *disprove* (a connection it has not configured, a temperature outside
+  0–100) is an issue; one it merely cannot check (a model name it has no catalog
+  for) resolves unquestioned, so an empty `issues` means only that nothing is known
+  to be wrong. `code` is closed — `required`, `invalid_type`, `out_of_range`,
+  `invalid_selection`, `unavailable_connection`, `incompatible_dialect`,
+  `invalid_config` — and a config that will not load reports that it did not,
+  never its contents.
+
+  Only malformed JSON or a non-object body is `400`; every field-level problem is
+  an issue inside a `200`. This is a preview, not a reservation: the host retains
+  nothing, and a client sends its own overrides — not these effective values — to
+  creation, which resolves again through the same flow (`inference/options.rs`).
+  Available on every authenticated listener, Unix and TCP alike: it mints nothing
+  and reads no environment.
 - `POST /sessions` — create a session. The body is the session request: `cwd`
   (absolute, always sent), `env` (the complete base environment, [env.md](env.md)),
-  `model`, and optionally `name`, `config`, `spotter_model`, `triage`,
+  the `QUERY /sessions` selections above, and optionally `name`, `config`,
   `temperature`, `effort`, `upstream`, `autonomous`, `reauth`, `keep_scratch`,
   and `detached` (meaningful for a session-driven create only: whether the new
   session outlives its creator, docs/tools.md).
   `name` omitted mints an `adjective-noun` id free on the host and under the
   session base ([session-title.md](session-title.md)). `201 {"id": …}`; `400` with the reason when the body, the name, the cwd, or
   preparation is unusable, in which case nothing was minted. Accepted on the
-  host's Unix socket only: a network listener answers `403`, because remote
-  creation has no environment source yet (backlog/host-process.md). The
-  environment is applied and dropped, never logged or echoed.
+  host's Unix socket only: a network listener answers `403` because a remote
+  caller has no environment to send and the host has no recipe to build one
+  (backlog/web-remote-creation.md). That is an unfinished engineering problem,
+  **not a security boundary** — this API is trusted over a secure channel, and a
+  caller that can approve a gate can already have a session run anything. Nothing
+  about creation widens that. The environment is applied and dropped, never logged
+  or echoed.
 - `DELETE /sessions/:id` — end the session. Answers `200` once its teardown has
   run (background children reaped, scratch removed); the id leaves the list once
   the loop has returned. `404` for an id that is not hosted.

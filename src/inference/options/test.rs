@@ -1,0 +1,560 @@
+//! Resolution tests. The properties that matter are *independence* (one bad field
+//! never empties another) and *agreement* (what preview reports is what creation
+//! builds), so most of these assert one field while a neighbour stays resolved.
+
+use super::*;
+use crate::env_table::EnvSnapshot;
+use crate::inference::InferenceConfig;
+use crate::secrets::Secrets;
+use std::path::Path;
+use std::sync::Arc;
+
+fn registry(toml: &str) -> InferenceRegistry {
+    let config = InferenceConfig::from_toml(toml).unwrap();
+    let environment = EnvSnapshot::new(
+        [
+            ("ANTHROPIC_KEY".to_string(), "secret".to_string()),
+            ("OPENAI_KEY".to_string(), "other".to_string()),
+        ]
+        .into(),
+    )
+    .unwrap();
+    InferenceRegistry::from_config(
+        config,
+        Path::new("/host"),
+        environment,
+        &Arc::new(Secrets::in_memory()),
+    )
+    .unwrap()
+}
+
+/// One anthropic connection named `main`, with `[defaults].model` on it.
+fn one_connection() -> InferenceRegistry {
+    registry(
+        r#"
+[defaults]
+model = "main/claude-sonnet-4-5"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    )
+}
+
+fn options(json: serde_json::Value) -> SessionOptions {
+    serde_json::from_value(json).expect("a session options body")
+}
+
+fn codes(resolved: &ResolvedOptions) -> Vec<(&str, IssueCode)> {
+    resolved
+        .issues
+        .iter()
+        .map(|issue| (issue.field, issue.code))
+        .collect()
+}
+
+/// **The effective triage is what creation would build.** An omitted triage takes
+/// `[defaults].triage` before it falls back to sharing main's client, so reporting
+/// `shared` here would describe a session the host would not create.
+#[test]
+fn an_omitted_triage_reports_the_configured_default_rather_than_shared() {
+    let registry = registry(
+        r#"
+[defaults]
+model = "main/claude-sonnet-4-5"
+triage = "main/claude-haiku-4-5"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    );
+    let resolved = registry.resolve_options(&SessionOptions::default(), None);
+    assert_eq!(resolved.issues, vec![]);
+    let EffectiveTriage::Separate { selection, .. } = resolved
+        .effective
+        .triage
+        .value
+        .clone()
+        .expect("a configured default triage resolves")
+    else {
+        panic!("a configured [defaults].triage is a separate client");
+    };
+    assert_eq!(selection.model, "claude-haiku-4-5");
+    assert_eq!(
+        resolved.effective.triage.source,
+        Some(SelectionSource::UserDefault)
+    );
+    // And creation agrees: the same resolution, prepared, has its own client.
+    assert!(registry.prepare(resolved).unwrap().triage().is_some());
+}
+
+/// With nothing configured, triage shares main — and says so, so a client can tell
+/// the two reasons for `shared` apart.
+#[test]
+fn an_omitted_triage_with_no_default_shares_main() {
+    let resolved = one_connection().resolve_options(&SessionOptions::default(), None);
+    assert_eq!(
+        resolved.effective.triage.value,
+        Some(EffectiveTriage::Shared)
+    );
+    assert_eq!(
+        resolved.effective.triage.source,
+        Some(SelectionSource::SharedMain)
+    );
+}
+
+/// An explicit `shared` bypasses a configured separate default, and reports the
+/// request as its source rather than the fallback.
+#[test]
+fn an_explicit_shared_triage_bypasses_a_configured_separate_default() {
+    let registry = registry(
+        r#"
+[defaults]
+model = "main/claude-sonnet-4-5"
+triage = "main/claude-haiku-4-5"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    );
+    let resolved = registry.resolve_options(
+        &SessionOptions {
+            triage: Some(TriageChoice::Shared),
+            ..Default::default()
+        },
+        None,
+    );
+    assert_eq!(
+        resolved.effective.triage.value,
+        Some(EffectiveTriage::Shared)
+    );
+    assert_eq!(
+        resolved.effective.triage.source,
+        Some(SelectionSource::Request)
+    );
+    assert!(registry.prepare(resolved).unwrap().triage().is_none());
+}
+
+/// **Fields are independent.** An unusable spotter must not take the main
+/// selection, the triage, the effort, or the temperature down with it — a form
+/// showing one error still shows every other resolved value.
+#[test]
+fn an_unresolvable_role_leaves_every_other_field_resolved() {
+    let resolved = one_connection().resolve_options(
+        &options(serde_json::json!({
+            "spotter_connection": "absent",
+            "spotter_model": "whatever",
+            "temperature": 42,
+            "effort": "high",
+        })),
+        None,
+    );
+    assert_eq!(
+        codes(&resolved),
+        [("spotter_model", IssueCode::InvalidSelection)]
+    );
+    assert_eq!(resolved.effective.spotter.value, None);
+    assert_eq!(resolved.effective.spotter.source, None);
+    assert_eq!(
+        resolved
+            .effective
+            .main
+            .value
+            .as_ref()
+            .map(|s| s.model.as_str()),
+        Some("claude-sonnet-4-5")
+    );
+    assert_eq!(resolved.effective.temperature.value, Some(42));
+    assert_eq!(resolved.effective.effort.value.as_deref(), Some("high"));
+    assert_eq!(
+        resolved.effective.triage.value,
+        Some(EffectiveTriage::Shared)
+    );
+}
+
+/// A host with no `[defaults].model` is the ordinary first-run state. It leaves an
+/// editable response — one issue on `model`, every independent field resolved —
+/// rather than an empty one the form cannot open on.
+#[test]
+fn a_missing_main_default_still_resolves_the_independent_fields() {
+    let registry = registry(
+        r#"
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    );
+    let resolved = registry.resolve_options(
+        &options(serde_json::json!({"temperature": 42, "effort": "high"})),
+        None,
+    );
+    assert_eq!(codes(&resolved), [("model", IssueCode::Required)]);
+    assert_eq!(resolved.effective.main.value, None);
+    assert_eq!(resolved.effective.temperature.value, Some(42));
+    assert_eq!(resolved.effective.effort.value.as_deref(), Some("high"));
+    // The spotter borrows main's provider, so it has nothing to resolve from —
+    // and adds no second issue for the one mistake.
+    assert_eq!(resolved.effective.spotter.value, None);
+}
+
+/// Two unrelated mistakes are two issues, not the first one found. (200 is a
+/// `u8` the resolver rejects; a value past 255 never deserializes at all, which
+/// is why `QUERY /sessions` decodes leniently before it resolves.)
+#[test]
+fn independent_issues_survive_together() {
+    let resolved = one_connection().resolve_options(
+        &options(serde_json::json!({"connection": "absent", "model": "m", "temperature": 200})),
+        None,
+    );
+    assert_eq!(
+        codes(&resolved),
+        [
+            ("model", IssueCode::InvalidSelection),
+            ("temperature", IssueCode::OutOfRange),
+        ]
+    );
+}
+
+/// **A requested value reports the request.** Reporting `provider_default` for a
+/// temperature the caller just sent tells a form its own edit was ignored.
+#[test]
+fn a_requested_tuning_value_reports_the_request_as_its_source() {
+    let resolved =
+        one_connection().resolve_options(&options(serde_json::json!({"temperature": 42})), None);
+    assert_eq!(resolved.effective.temperature.value, Some(42));
+    assert_eq!(
+        resolved.effective.temperature.source,
+        Some(SelectionSource::Request)
+    );
+}
+
+/// An omitted tuning field is a known omission — a value the wire will not carry —
+/// which is a different answer from a field that failed to resolve.
+#[test]
+fn an_omitted_tuning_value_is_an_omission_not_a_failure() {
+    let resolved = one_connection().resolve_options(&SessionOptions::default(), None);
+    assert_eq!(resolved.effective.temperature.value, None);
+    assert_eq!(
+        resolved.effective.temperature.source,
+        Some(SelectionSource::ProviderDefault)
+    );
+    assert_eq!(resolved.effective.effort.value, None);
+    assert_eq!(
+        resolved.effective.effort.source,
+        Some(SelectionSource::ProviderDefault)
+    );
+}
+
+/// The request beats the project config; the project config beats omission.
+#[test]
+fn request_effort_beats_project_effort_which_beats_omission() {
+    let registry = one_connection();
+    let requested = registry.resolve_options(
+        &options(serde_json::json!({"effort": "high"})),
+        Some("medium"),
+    );
+    assert_eq!(requested.effective.effort.value.as_deref(), Some("high"));
+    assert_eq!(
+        requested.effective.effort.source,
+        Some(SelectionSource::Request)
+    );
+    let inherited = registry.resolve_options(&SessionOptions::default(), Some("medium"));
+    assert_eq!(inherited.effective.effort.value.as_deref(), Some("medium"));
+    assert_eq!(
+        inherited.effective.effort.source,
+        Some(SelectionSource::ProjectConfig)
+    );
+}
+
+/// **Naming the connection makes the model a native id.** OpenRouter ids carry a
+/// slash of their own, so the slug grammar cannot tell `work/x` the connection
+/// from `anthropic/claude` the model — the split spelling has no such ambiguity.
+#[test]
+fn an_explicit_connection_makes_a_slash_bearing_model_a_native_id() {
+    let registry = registry(
+        r#"
+[defaults]
+model = "main/claude-sonnet-4-5"
+
+[connections.main]
+provider = "openrouter"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    );
+    let resolved = registry.resolve_options(
+        &options(serde_json::json!({"connection": "main", "model": "anthropic/claude-sonnet-4-5"})),
+        None,
+    );
+    assert_eq!(resolved.issues, vec![]);
+    let main = resolved
+        .effective
+        .main
+        .value
+        .expect("an explicit selection");
+    assert_eq!(main.connection, "main");
+    assert_eq!(main.model, "anthropic/claude-sonnet-4-5");
+}
+
+/// The slug spelling still resolves, so one opaque string remains a usable way to
+/// name a model — what the CLI flags and the `create` tool pass.
+#[test]
+fn the_slug_spelling_still_names_a_connection_and_a_model() {
+    let resolved = one_connection().resolve_options(
+        &options(serde_json::json!({"model": "main/claude-opus-4-5"})),
+        None,
+    );
+    assert_eq!(resolved.issues, vec![]);
+    let main = resolved.effective.main.value.expect("a slug selection");
+    assert_eq!(
+        (main.connection.as_str(), main.model.as_str()),
+        ("main", "claude-opus-4-5")
+    );
+}
+
+/// A connection the host does not have is disprovable, so it is an issue — not a
+/// silent native id on whatever connection the defaults happened to name.
+#[test]
+fn an_unknown_connection_is_an_issue() {
+    let resolved = one_connection().resolve_options(
+        &options(serde_json::json!({"connection": "absent", "model": "m"})),
+        None,
+    );
+    assert_eq!(codes(&resolved), [("model", IssueCode::InvalidSelection)]);
+    assert_eq!(resolved.effective.main.value, None);
+}
+
+/// A model name the host has no catalog for is *not* disprovable, so it resolves
+/// unquestioned: "could not validate" reads the same as "nothing known wrong".
+#[test]
+fn an_unknown_model_on_a_known_connection_resolves() {
+    let resolved = one_connection().resolve_options(
+        &options(serde_json::json!({"connection": "main", "model": "not-a-real-model"})),
+        None,
+    );
+    assert_eq!(resolved.issues, vec![]);
+    assert_eq!(
+        resolved.effective.main.value.map(|s| s.model),
+        Some("not-a-real-model".to_string())
+    );
+}
+
+/// A form picks a connection before it has a model. There is no provider-default
+/// main model to stand in, so the honest answer is that one is still needed.
+#[test]
+fn a_connection_without_a_model_asks_for_a_model() {
+    let resolved =
+        one_connection().resolve_options(&options(serde_json::json!({"connection": "main"})), None);
+    assert_eq!(codes(&resolved), [("model", IssueCode::Required)]);
+    assert_eq!(resolved.effective.main.value, None);
+}
+
+/// An invalid explicit override never silently becomes the default: the form must
+/// show the edit as rejected, not quietly replace it.
+#[test]
+fn an_invalid_override_does_not_fall_back_to_the_default() {
+    let resolved = one_connection().resolve_options(
+        &options(serde_json::json!({"connection": "absent", "model": "m"})),
+        None,
+    );
+    assert_eq!(resolved.effective.main.value, None);
+    assert_eq!(resolved.effective.main.source, None);
+}
+
+/// A disabled connection is configured but unusable, and says which of the two it
+/// is — the operator turned it off, rather than a credential failing to load.
+#[test]
+fn a_disabled_connection_is_an_unavailable_one() {
+    let registry = registry(
+        r#"
+[connections.off]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+disabled = true
+"#,
+    );
+    let resolved = registry.resolve_options(
+        &options(serde_json::json!({"connection": "off", "model": "m"})),
+        None,
+    );
+    assert_eq!(
+        codes(&resolved),
+        [("model", IssueCode::UnavailableConnection)]
+    );
+}
+
+/// A separate triage replays main's transcript, so it must speak main's dialect.
+/// Preview reports it rather than letting creation be the first to find out.
+#[test]
+fn a_cross_dialect_triage_is_an_issue() {
+    let registry = registry(
+        r#"
+[defaults]
+model = "messages/claude-sonnet-4-5"
+
+[connections.messages]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+
+[connections.responses]
+provider = "openai"
+auth = { kind = "env", key = "OPENAI_KEY" }
+"#,
+    );
+    let resolved = registry.resolve_options(
+        &options(serde_json::json!({
+            "triage": {"mode": "separate", "connection": "responses", "model": "gpt-5.6"},
+        })),
+        None,
+    );
+    assert_eq!(
+        codes(&resolved),
+        [("triage", IssueCode::IncompatibleDialect)]
+    );
+    assert_eq!(resolved.effective.triage.value, None);
+    // And creation refuses the same draft rather than booting it.
+    assert!(registry.prepare(resolved).is_err());
+}
+
+/// An omitted spotter takes `[defaults].spotter` before the main provider's own
+/// cheap-band pick, and names which branch it used.
+#[test]
+fn an_omitted_spotter_prefers_the_configured_default_to_the_main_provider() {
+    let configured = registry(
+        r#"
+[defaults]
+model = "main/claude-sonnet-4-5"
+spotter = "spot/claude-haiku-4-5"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+
+[connections.spot]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    )
+    .resolve_options(&SessionOptions::default(), None);
+    assert_eq!(
+        configured.effective.spotter.source,
+        Some(SelectionSource::UserDefault)
+    );
+    assert_eq!(
+        configured.effective.spotter.value.map(|s| s.connection),
+        Some("spot".to_string())
+    );
+
+    let borrowed = one_connection().resolve_options(&SessionOptions::default(), None);
+    assert_eq!(
+        borrowed.effective.spotter.source,
+        Some(SelectionSource::MainProvider)
+    );
+    assert_eq!(
+        borrowed.effective.spotter.value.map(|s| s.model),
+        Some("claude-haiku-4-5".to_string())
+    );
+}
+
+/// **Preview and creation agree.** The selections creation boots with are the ones
+/// preview reported — the whole reason both go through one resolution.
+#[test]
+fn creation_prepares_exactly_the_selections_preview_reports() {
+    let registry = registry(
+        r#"
+[defaults]
+model = "main/claude-sonnet-4-5"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+
+[connections.other]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    );
+    let options = options(serde_json::json!({
+        "spotter_connection": "other",
+        "spotter_model": "claude-haiku-4-5",
+        "triage": {"mode": "separate", "connection": "main", "model": "claude-haiku-4-5",
+                   "thinking": true},
+    }));
+    let resolved = registry.resolve_options(&options, None);
+    let effective = resolved.effective.clone();
+    let prepared = registry.prepare(resolved).expect("a clean draft boots");
+    assert_eq!(Some(prepared.main().0.clone()), effective.main.value);
+    assert_eq!(Some(prepared.spotter().0.clone()), effective.spotter.value);
+    let (selection, _, triage_options) = prepared.triage().expect("a separate triage client");
+    let EffectiveTriage::Separate {
+        selection: previewed,
+        thinking,
+        ..
+    } = effective.triage.value.expect("a previewed triage")
+    else {
+        panic!("an explicit separate choice previews as separate");
+    };
+    assert_eq!(*selection, previewed);
+    assert!(thinking && triage_options.thinking);
+}
+
+/// Creation refuses a draft preview flagged, rather than booting past it.
+#[test]
+fn creation_refuses_a_draft_with_issues() {
+    let registry = one_connection();
+    let resolved =
+        registry.resolve_options(&options(serde_json::json!({"temperature": 200})), None);
+    // `SessionInference` has no Debug — it holds credential material — so the
+    // refusal is read out of the Err arm rather than unwrapped.
+    let Err(error) = registry.prepare(resolved) else {
+        panic!("an out-of-range draft unexpectedly prepared");
+    };
+    assert!(error.to_string().contains("temperature"), "{error}");
+}
+
+/// The range lives in one place, so the CLI, `POST /sessions`, and the preview
+/// cannot disagree about where the bound is.
+#[test]
+fn the_temperature_bound_is_the_resolver_s() {
+    let registry = one_connection();
+    for (temperature, expected) in [(0u8, true), (100, true), (101, false)] {
+        let resolved = registry.resolve_options(
+            &options(serde_json::json!({"temperature": temperature})),
+            None,
+        );
+        assert_eq!(
+            resolved.issues.is_empty(),
+            expected,
+            "temperature {temperature} should {}be accepted",
+            if expected { "" } else { "not " }
+        );
+    }
+}
+
+/// The loader's own words reach the operator at creation and stop at the wire: a
+/// credential error may name an environment key or a keychain item, and the
+/// preview response is the one surface that is not certainly local.
+#[test]
+fn a_credential_loader_error_reaches_creation_but_not_the_response() {
+    let registry = registry(
+        r#"
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ABSENT_KEY" }
+"#,
+    );
+    let resolved = registry.resolve_options(
+        &options(serde_json::json!({"connection": "main", "model": "m"})),
+        None,
+    );
+    let issue = resolved.issues.first().expect("an unavailable connection");
+    assert_eq!(issue.code, IssueCode::UnavailableConnection);
+    let wire = serde_json::to_string(&resolved).unwrap();
+    assert!(!wire.contains("ABSENT_KEY"), "{wire}");
+    let Err(error) = registry.prepare(resolved) else {
+        panic!("an unavailable connection unexpectedly prepared");
+    };
+    assert!(error.to_string().contains("ABSENT_KEY"), "{error}");
+}

@@ -20,7 +20,7 @@ use clap::{Parser, Subcommand};
 use efference::api::Client;
 use efference::client::Client as ControlClient;
 use efference::daemon;
-use efference::distill::TriageModel;
+use efference::inference::TriageChoice;
 #[cfg(feature = "dev")]
 use efference::spotter::ForkSpot;
 #[cfg(feature = "dev")]

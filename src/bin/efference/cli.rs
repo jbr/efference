@@ -367,6 +367,13 @@ pub(crate) struct SessionFlags {
     /// gpt-5.6-luna on OpenAI and OpenAI-Codex.
     #[arg(long)]
     pub(crate) spotter_model: Option<String>,
+    /// Use the main client for the fork peek even when `[defaults].triage` configures
+    /// a separate model.
+    #[arg(
+        long,
+        conflicts_with_all = ["triage_model", "triage_thinking", "triage_auto_choice", "triage_effort"]
+    )]
+    pub(crate) triage_shared: bool,
     /// Model for the fork peek that triages every tool result, selected like --model.
     ///
     /// Experimental. Omitted, the peek runs on the agent's own client and reads the
@@ -456,14 +463,20 @@ pub(crate) struct SessionFlags {
 }
 
 impl SessionFlags {
-    /// `--triage-model` and its knobs as the one value the request carries.
-    pub(crate) fn triage(&self) -> Option<TriageModel> {
-        self.triage_model.clone().map(|model| TriageModel {
-            model,
-            thinking: self.triage_thinking,
-            auto_choice: self.triage_auto_choice,
-            effort: self.triage_effort.clone(),
-        })
+    /// The tagged triage choice the creation request carries.
+    pub(crate) fn triage(&self) -> Option<TriageChoice> {
+        if self.triage_shared {
+            Some(TriageChoice::Shared)
+        } else {
+            self.triage_model.clone().map(|model| {
+                TriageChoice::separate(
+                    model,
+                    self.triage_thinking,
+                    self.triage_auto_choice,
+                    self.triage_effort.clone(),
+                )
+            })
+        }
     }
 
     /// Whether any session flag was given, for a verb that only accepts them in

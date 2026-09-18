@@ -3,8 +3,7 @@
 //! (docs/transport.md), resolved once per invocation.
 
 use efference::api::{Endpoint, Error};
-use efference::distill::TriageModel;
-use efference::inference::{InferenceRegistry, SessionInference};
+use efference::inference::{InferenceRegistry, SessionInference, TriageChoice};
 
 /// Load the operator's connections from this process's environment.
 pub(crate) fn registry() -> Result<InferenceRegistry, Error> {
@@ -18,7 +17,7 @@ pub(crate) fn registry() -> Result<InferenceRegistry, Error> {
 pub(crate) fn resolve(
     model: Option<&str>,
     spotter: Option<&str>,
-    triage: Option<TriageModel>,
+    triage: Option<TriageChoice>,
 ) -> Result<SessionInference, Error> {
     registry()?.resolve(model, spotter, triage)
 }

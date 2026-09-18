@@ -12,10 +12,15 @@ use super::files::Files;
 use super::http::control_routes;
 use super::runtime::SessionRuntime;
 use super::*;
+use crate::inference::SessionOptions;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use trillium::Handler;
 use trillium_tokio::Swansong;
+
+mod options;
+pub use options::SessionOptionsRequest;
+use options::preview_session;
 
 mod summary;
 pub use summary::SessionSummary;
@@ -205,11 +210,10 @@ impl Host {
             Ok(base) => base,
             Err(e) => return Err(format!("env: {e}")),
         };
-        let inference = match self.inference.resolve(
-            body.model.as_deref(),
-            body.spotter_model.as_deref(),
-            body.triage,
-        ) {
+        // The same resolution preview reports, then credentials for the roles it
+        // selected. Project effort is boot's to apply, so it is not resolved here.
+        let resolved = self.inference.resolve_options(&body.options, None);
+        let inference = match self.inference.prepare(resolved) {
             Ok(inference) => inference,
             Err(error) => return Err(error.to_string()),
         };
@@ -219,8 +223,8 @@ impl Host {
             base_env,
             config: body.config,
             inference,
-            temperature: body.temperature,
-            effort: body.effort,
+            temperature: body.options.temperature,
+            effort: body.options.effort,
             upstream: body.upstream,
             autonomous: body.autonomous,
             reauth: body.reauth,
@@ -273,6 +277,8 @@ impl Host {
 /// `/files` under its prefix — the web transport, as on a session bind.
 pub(crate) fn host_routes(create: bool, files: bool) -> impl trillium::Handler {
     let mut router = Router::new()
+        .get("/inference", inference_inventory)
+        .with_route(trillium::Method::Query, "/sessions", preview_session)
         .get("/sessions", list_sessions())
         .delete("/sessions/:id", end_session)
         // The wildcard remainder becomes the conn's path, so the control routes
@@ -299,6 +305,18 @@ fn host_of(conn: &Conn) -> Option<Arc<Host>> {
 
 fn missing_host(conn: Conn) -> Conn {
     fail(conn, ErrorCode::Internal, "missing host state")
+}
+
+/// `GET /inference`: configured host connections, sorted by name. The registry is
+/// loaded once at host startup, so this never reads config or credentials per request.
+async fn inference_inventory(conn: Conn) -> Conn {
+    match host_of(&conn) {
+        Some(host) => conn
+            .with_status(200)
+            .with_body(serde_json::json!({ "connections": host.inference.inventory() }).to_string())
+            .halt(),
+        None => missing_host(conn),
+    }
 }
 
 /// `GET /sessions`: the listing (`summary.rs`) — one row per hosted session,
@@ -403,16 +421,11 @@ pub struct CreateSession {
     pub cwd: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub spotter_model: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub triage: Option<crate::distill::TriageModel>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub effort: Option<String>,
+    /// The editable selections, spelled exactly as `QUERY /sessions` accepts
+    /// them and resolved by the same flow (docs/control-api.md). Flattened, so
+    /// the two routes cannot drift and a new option is one field in one place.
+    #[serde(flatten)]
+    pub options: SessionOptions,
     #[serde(default)]
     pub upstream: Vec<String>,
     #[serde(default)]
@@ -438,7 +451,13 @@ async fn create_session(mut conn: Conn) -> Conn {
     let body = conn.request_body_string().await.unwrap_or_default();
     let body: CreateSession = match serde_json::from_str(&body) {
         Ok(body) => body,
-        Err(e) => return fail(conn, ErrorCode::BadRequest, format!("invalid body: {e}")),
+        Err(error) => {
+            return fail(
+                conn,
+                ErrorCode::BadRequest,
+                format!("invalid body: {error}"),
+            );
+        }
     };
     // A human root: no session commissioned it, so it has no `created_by`
     // (docs/tools.md).

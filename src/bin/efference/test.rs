@@ -143,8 +143,18 @@ fn tui_session_flags_need_new() {
     .unwrap() else {
         panic!("tui")
     };
-    let triage = session.triage().unwrap();
-    assert!(triage.model == "t" && triage.thinking && !triage.auto_choice);
+    assert_eq!(
+        session.triage(),
+        Some(TriageChoice::separate("t".into(), true, false, None))
+    );
+    let Command::Tui { session, .. } = parse(&["efference", "tui", "--new", "--triage-shared"])
+        .unwrap()
+        .command
+        .unwrap()
+    else {
+        panic!("tui")
+    };
+    assert_eq!(session.triage(), Some(TriageChoice::Shared));
 }
 
 #[test]

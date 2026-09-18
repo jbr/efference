@@ -89,6 +89,177 @@ fn json(body: &str) -> Value {
     serde_json::from_str(body).unwrap_or_else(|e| panic!("{e}: {body}"))
 }
 
+/// `QUERY /sessions` (docs/control-api.md): the host's preview of a proposed
+/// session — the effective selections, where each came from, and the issues that
+/// would stop creation — without minting anything.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn query_sessions_previews_a_proposed_session_without_creating_one() {
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry());
+    let client = host_client(&host, "one").await.with_prefix("");
+    let preview = client
+        .session_options(&SessionOptionsRequest::new(roots.0.join("one")))
+        .await
+        .expect("preview a proposed session");
+    assert_eq!(
+        preview,
+        serde_json::json!({
+            "effective": {
+                "main": {
+                    "value": {"connection": "test", "provider": "anthropic", "model": "m"},
+                    "source": "user_default",
+                },
+                "spotter": {
+                    "value": {
+                        "connection": "test",
+                        "provider": "anthropic",
+                        "model": "claude-haiku-4-5",
+                    },
+                    "source": "main_provider",
+                },
+                "triage": {"value": {"mode": "shared"}, "source": "shared_main"},
+                "effort": {"value": null, "source": "provider_default"},
+                "temperature": {"value": null, "source": "provider_default"},
+            },
+            "issues": [],
+        })
+    );
+    assert!(host.ids().is_empty());
+    host.swansong().shut_down().await;
+}
+
+/// **One bad field does not hide the good ones.** A malformed temperature is its
+/// own issue; every independently resolvable selection still comes back, because
+/// the form has to stay usable while the operator is mid-edit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn query_sessions_reports_an_invalid_field_without_hiding_the_rest() {
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry());
+    let server = host_server(&host, true).await;
+    let response = server
+        .build(trillium::Method::Query, "/sessions")
+        .with_json_body(&serde_json::json!({
+            "cwd": roots.0.join("one"),
+            "temperature": "260",
+            "effort": "high",
+        }))
+        .await;
+    response.assert_status(200);
+    let body = json(response.body());
+    assert_eq!(
+        body["issues"],
+        serde_json::json!([{
+            "field": "temperature",
+            "code": "invalid_type",
+            "message": "must be a whole number from 0 to 100",
+        }])
+    );
+    assert_eq!(body["effective"]["main"]["value"]["model"], "m");
+    assert_eq!(
+        body["effective"]["effort"],
+        serde_json::json!({"value": "high", "source": "request"})
+    );
+    // The field that failed is the only one with no source.
+    assert_eq!(
+        body["effective"]["temperature"],
+        serde_json::json!({"value": null, "source": null})
+    );
+    assert!(host.ids().is_empty());
+    host.swansong().shut_down().await;
+}
+
+/// A body that is not a JSON object has no fields to resolve independently, so it
+/// is the one shape that answers `400` rather than a preview.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn query_sessions_refuses_a_non_object_body() {
+    let host = Host::new(one_connection_registry());
+    let server = host_server(&host, true).await;
+    server
+        .build(trillium::Method::Query, "/sessions")
+        .with_json_body(&serde_json::json!(["not", "an", "object"]))
+        .await
+        .assert_status(400);
+    host.swansong().shut_down().await;
+}
+
+/// Preview mints nothing and reads no environment, so it is not a network
+/// boundary: a listener without the Unix creation capability still answers it.
+/// Creation itself still refuses, for want of an environment recipe rather than
+/// for a security reason (backlog/host-process.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_network_host_previews_but_does_not_create() {
+    let host = Host::new(one_connection_registry());
+    let server = host_server(&host, false).await;
+    let response = server
+        .build(trillium::Method::Query, "/sessions")
+        .with_json_body(&serde_json::json!({"cwd": "/project"}))
+        .await;
+    response.assert_status(200);
+    assert_eq!(
+        json(response.body())["effective"]["main"]["value"]["model"],
+        "m"
+    );
+    assert!(host.ids().is_empty());
+    server
+        .post("/sessions")
+        .with_json_body(&serde_json::json!({"cwd": "/project", "env": {}}))
+        .await
+        .assert_status(403);
+    host.swansong().shut_down().await;
+}
+
+/// `GET /inference` is a host inventory, never a projection of its credential
+/// sources or their values. Rows are sorted by name, and a disabled connection is
+/// listed as unavailable rather than omitted.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn inference_inventory_is_sorted_and_secret_free() {
+    let config = crate::inference::InferenceConfig::from_toml(
+        r#"
+[defaults]
+model = "test/m"
+
+[connections.test]
+provider = "anthropic"
+auth = { kind = "env", key = "TEST_KEY" }
+
+[connections.also]
+provider = "openai"
+auth = { kind = "env", key = "TEST_KEY" }
+disabled = true
+"#,
+    )
+    .unwrap();
+    let env = crate::env_table::EnvSnapshot::new(
+        [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
+    )
+    .unwrap();
+    let host = Host::new(
+        crate::inference::InferenceRegistry::from_config(
+            config,
+            Path::new("/host"),
+            env,
+            &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+        )
+        .unwrap(),
+    );
+    let client = host_client(&host, "one").await.with_prefix("");
+    let inventory = client
+        .inference_inventory()
+        .await
+        .expect("read inference inventory");
+    assert_eq!(
+        inventory,
+        serde_json::json!({
+            "connections": [
+                {"name": "also", "provider": "openai", "available": false},
+                {"name": "test", "provider": "anthropic", "available": true},
+            ]
+        })
+    );
+    assert!(!inventory.to_string().contains("test-secret"));
+    host.swansong().shut_down().await;
+}
+
 /// The listing is one resource with two readings: `GET /sessions` answers the
 /// array, and the same path with `Accept: text/event-stream` subscribes to it —
 /// the current value on connect, then the whole value again on every change,
@@ -397,7 +568,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
             "name": "b", "cwd": roots.0.join("two"), "env": caller_env,
             "model": "platform/gpt-5.6",
             "spotter_model": "codex/gpt-5.6-luna",
-            "triage": {"model": "platform/gpt-5.6-luna"},
+            "triage": {"mode": "separate", "model": "platform/gpt-5.6-luna"},
         }))
         .await
         .assert_status(201);
@@ -432,7 +603,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         .post("/sessions")
         .with_json_body(&serde_json::json!({
             "name": "c", "cwd": roots.0.join("two"), "env": caller_env,
-            "triage": {"model": "messages/claude-haiku-4-5"},
+            "triage": {"mode": "separate", "model": "messages/claude-haiku-4-5"},
         }))
         .await;
     refused
@@ -548,4 +719,25 @@ async fn a_hosted_sessions_files_are_served_under_its_prefix() {
         .get("/sessions/one/files/nowhere.txt")
         .await
         .assert_status(404);
+}
+
+/// The accepted temperature is the resolver's rule, so it holds at creation's
+/// HTTP boundary too: a value `u8` accepts but the range does not is refused
+/// there, not left for the first request to the provider.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn creation_enforces_the_temperature_range() {
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry());
+    let server = host_server(&host, true).await;
+    for (temperature, status) in [(200u16, 400), (260, 400)] {
+        server
+            .post("/sessions")
+            .with_json_body(&serde_json::json!({
+                "cwd": roots.0.join("one"), "env": {}, "temperature": temperature,
+            }))
+            .await
+            .assert_status(status);
+    }
+    assert!(host.ids().is_empty());
+    host.swansong().shut_down().await;
 }

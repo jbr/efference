@@ -186,11 +186,10 @@ async fn a_prefixed_client_joins_v1_only() {
         name: Some("minted".into()),
         cwd: PathBuf::from("/work"),
         config: None,
-        model: Some("m".into()),
-        spotter_model: None,
-        triage: None,
-        temperature: None,
-        effort: None,
+        options: crate::inference::SessionOptions {
+            model: Some("m".into()),
+            ..Default::default()
+        },
         upstream: vec![],
         autonomous: false,
         reauth: vec![],

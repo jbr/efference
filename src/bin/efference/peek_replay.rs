@@ -316,7 +316,18 @@ pub(crate) async fn peek(
     // placement and cache-breakpoint placement — matching what a live session on
     // that provider projects; a dry run with no usable config falls back to the
     // defaults (docs/log-and-projection.md).
-    let inference = crate::inference::resolve(Some(model), None, triage.clone());
+    let inference = crate::inference::resolve(
+        Some(model),
+        None,
+        triage.clone().map(|triage| {
+            efference::inference::TriageChoice::separate(
+                triage.model,
+                triage.thinking,
+                triage.auto_choice,
+                triage.effort,
+            )
+        }),
+    );
     let provider = inference.as_ref().ok().map(|i| i.main().1.provider);
     let placement = provider
         .map(|p| p.image_placement(model))

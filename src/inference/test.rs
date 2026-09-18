@@ -126,12 +126,12 @@ auth = { kind = "env", key = "OPENAI_KEY" }
     let error = match registry.resolve(
         None,
         None,
-        Some(TriageModel {
-            model: "responses/gpt-5.6".to_string(),
-            thinking: false,
-            auto_choice: false,
-            effort: None,
-        }),
+        Some(TriageChoice::separate(
+            "responses/gpt-5.6".to_string(),
+            false,
+            false,
+            None,
+        )),
     ) {
         Ok(_) => panic!("cross-dialect triage unexpectedly resolved"),
         Err(error) => error.to_string(),
@@ -315,12 +315,12 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
         .resolve(
             None,
             None,
-            Some(TriageModel {
-                model: "claude".to_string(),
-                thinking: true,
-                auto_choice: false,
-                effort: None,
-            }),
+            Some(TriageChoice::separate(
+                "claude".to_string(),
+                true,
+                false,
+                None,
+            )),
         )
         .unwrap();
     let (selection, _, options) = own.triage().unwrap();

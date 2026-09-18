@@ -8,6 +8,16 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Host-backed new-session options** (docs/control-api.md): `GET /inference` lists the
+  host's connections, sorted and secret-free; `QUERY /sessions` resolves a proposed
+  session without minting it, answering each field with the value that would be used
+  and the precedence branch it came from, plus the issues that would stop creation.
+  Fields resolve independently, so one unusable value never hides the rest. Creation
+  runs the same resolution and then attaches credentials, so preview cannot disagree
+  with what the host builds. A role may name its `connection` and native `model`
+  separately — unambiguous where a model id contains a slash — or keep the one-string
+  slug. Tagged triage choices distinguish inheriting, explicitly sharing, and a
+  separate triage client.
 - **A fixed-data new-session form experiment** (`efference dev session-form [--embedded]`, docs/tui.md): one draft/editing state and renderer over an inline viewport or the offline Sessions panel; no host call, no session created — the ground for wiring real creation options.
 - **A client can list, switch between, and end the host's sessions** (docs/tui.md, docs/web-client.md): the TUI's `sessions s` opens a switcher over `GET /sessions` where `⏎` closes this session's stream and opens another's — one cursor per handshake, so a switch is a re-attach — and `e` ends a session, confirming first when it is mid-turn, holding a gate, stalled, or holding background processes, and not at all when it is idle. The web list carries the same rows and the same end verb.
 - **`GET /sessions` is a subscription as well as a read** (docs/control-api.md): the same path with `Accept: text/event-stream` answers the listing now and again on every change, level-triggered with no durable class and no cursor. Each row gained a one-word `status` and a `processes` count, so a list surface says what a session is doing without one `GET /state` per row; the web list holds it open and needs no reload button.

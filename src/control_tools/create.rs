@@ -110,11 +110,16 @@ impl Tool<Control> for Create {
                     name: self.name,
                     cwd,
                     config: self.config,
-                    model: self.model,
-                    spotter_model: self.spotter_model,
-                    triage: None,
-                    temperature: self.temperature,
-                    effort: self.effort,
+                    // The agent-facing surface takes one opaque model slug;
+                    // `connection` stays absent so it resolves as one
+                    // (docs/control-api.md).
+                    options: crate::inference::SessionOptions {
+                        model: self.model,
+                        spotter_model: self.spotter_model,
+                        temperature: self.temperature,
+                        effort: self.effort,
+                        ..Default::default()
+                    },
                     upstream: self.upstream,
                     autonomous: self.autonomous,
                     reauth: Vec::new(),
@@ -160,11 +165,13 @@ impl Tool<Control> for Create {
                     name: self.name,
                     cwd,
                     config: self.config,
-                    model: self.model,
-                    spotter_model: self.spotter_model,
-                    triage: None,
-                    temperature: self.temperature,
-                    effort: self.effort,
+                    options: crate::inference::SessionOptions {
+                        model: self.model,
+                        spotter_model: self.spotter_model,
+                        temperature: self.temperature,
+                        effort: self.effort,
+                        ..Default::default()
+                    },
                     upstream: self.upstream,
                     autonomous: self.autonomous,
                     reauth: Vec::new(),
