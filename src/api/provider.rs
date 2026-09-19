@@ -589,7 +589,11 @@ impl Provider {
                     // unvalidated; the provider's own 400 is the feedback.
                     supported_efforts: None,
                     default_effort: None,
-                    reasoning_mandatory: false,
+                    // Anthropic's metadata names no reasoning block. Claude's
+                    // spelling is decided by the family rule in `api/thinking.rs`
+                    // regardless, so this is `None` as a statement about the
+                    // source, not a claim about the model.
+                    reasoning_mandatory: None,
                 })
             }
             Self::OpenRouter => {
@@ -740,7 +744,7 @@ impl Provider {
                     // response said.
                     supported_efforts: None,
                     default_effort: None,
-                    reasoning_mandatory: false,
+                    reasoning_mandatory: None,
                 })
             }
         }
@@ -954,8 +958,16 @@ pub struct ModelCapabilities {
     /// an explicit `thinking: disabled` (docs/transport.md). Decides how a
     /// client built `without_thinking` says so: explicit `disabled` for a model
     /// whose reasoning is optional, the field omitted for one whose reasoning is
-    /// mandatory. `false` from every other source.
-    pub reasoning_mandatory: bool,
+    /// mandatory.
+    ///
+    /// `None` is **not** a synonym for `Some(false)`, and the distinction is the
+    /// reason this is three-state: `Some(false)` makes the harness *assert*
+    /// something (the explicit `disabled` spelling), which a mandatory-reasoning
+    /// endpoint answers with a 400. So a source that declares nothing reads as
+    /// `None` and takes the same silent spelling `Some(true)` does — asserting
+    /// nothing is what "unknown" can honestly do. Only OpenRouter's metadata
+    /// declares this field; every other source leaves it `None`.
+    pub reasoning_mandatory: Option<bool>,
 }
 
 impl ModelCapabilities {
@@ -1047,7 +1059,7 @@ impl Endpoint {
                 })?;
             capabilities.supported_efforts = efforts.supported;
             capabilities.default_effort = efforts.default;
-            capabilities.reasoning_mandatory = efforts.mandatory;
+            capabilities.reasoning_mandatory = Some(efforts.mandatory);
         }
         Ok(capabilities)
     }

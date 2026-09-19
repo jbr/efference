@@ -569,11 +569,14 @@ impl Client {
     /// `reasoning_mandatory` is the capability lookup's answer
     /// (`ModelCapabilities::reasoning_mandatory`): a model that can be told not to
     /// reason gets the explicit `disabled`; one that cannot gets the field omitted.
-    pub fn without_thinking(mut self, reasoning_mandatory: bool) -> Self {
-        self.thinking_off = if reasoning_mandatory {
-            ThinkingOff::Omit
-        } else {
-            ThinkingOff::Disable
+    /// `None` — a source that declares nothing — takes the omitted spelling too,
+    /// because the explicit one is an assertion and a mandatory-reasoning endpoint
+    /// rejects it. Claude is unaffected either way: `api/thinking.rs`'s family rule
+    /// sends it explicit `disabled` whichever spelling arrives here.
+    pub fn without_thinking(mut self, reasoning_mandatory: Option<bool>) -> Self {
+        self.thinking_off = match reasoning_mandatory {
+            Some(false) => ThinkingOff::Disable,
+            Some(true) | None => ThinkingOff::Omit,
         };
         self.model_reasoning = false;
         self

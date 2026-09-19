@@ -62,7 +62,7 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
             prompt_cache: PromptCachePolicy::None,
             supported_efforts: None,
             default_effort: None,
-            reasoning_mandatory: false,
+            reasoning_mandatory: None,
         },
         model: "m".into(),
         inference: None,

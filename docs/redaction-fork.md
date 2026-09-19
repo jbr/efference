@@ -169,8 +169,8 @@ drops the parts of it that only served that:
   and tokens per gate. How "off" is spelled follows the model's metadata
   (`ModelCapabilities::reasoning_mandatory`, [transport.md](transport.md)): a model
   whose reasoning is optional gets the explicit `thinking: disabled`; one whose
-  reasoning is mandatory has the field omitted and, on OpenRouter, `reasoning:
-  {enabled: false}` beside it. `--triage-effort <level>` turns the model down instead
+  reasoning is mandatory — or whose capability source declares nothing either way —
+  has the field omitted and, on OpenRouter, `reasoning: {enabled: false}` beside it. `--triage-effort <level>` turns the model down instead
   of off, validated against its declared levels like `--effort`.
 - **A peek-sized output cap** (`PEEK_MAX_OUTPUT`, 16k, or the model's cap if
   smaller): a verdict is one small call, and reserving the model's whole cap against

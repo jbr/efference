@@ -141,8 +141,12 @@ idle triage rides the agent's client and thinks as the agent does
 ([redaction-fork.md](redaction-fork.md)) (`Client::without_thinking`: explicit
 `disabled` for a foreign model whose metadata says reasoning is optional, the field
 omitted plus OpenRouter's `reasoning: {enabled: false}` for one whose reasoning is
-mandatory — `ModelCapabilities::reasoning_mandatory`, from the model entry's
-`reasoning.mandatory`; [redaction-fork.md](redaction-fork.md)); the keepalive follows the same family split
+mandatory *or whose source declares nothing* — `ModelCapabilities::reasoning_mandatory`
+is three-state, `Some(false)`/`Some(true)`/`None`, from the model entry's
+`reasoning.mandatory` where a source has one. `None` shares the mandatory spelling
+because the explicit `disabled` is an assertion and a mandatory endpoint answers it
+with a 400, so silence is the only spelling that is safe without knowing;
+[redaction-fork.md](redaction-fork.md)); the keepalive follows the same family split
 independently (`max_tokens: 0` rejects thinking-on). Toggling thinking
 keeps the tools+system cache tier valid (see
 [log-and-projection.md](log-and-projection.md)), and it's set once per

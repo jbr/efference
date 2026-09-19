@@ -282,7 +282,7 @@ fn caps_with_effort_levels(
         prompt_cache: PromptCachePolicy::Explicit,
         supported_efforts: levels.map(|l| l.iter().map(|s| s.to_string()).collect()),
         default_effort: default.map(String::from),
-        reasoning_mandatory: false,
+        reasoning_mandatory: None,
     }
 }
 
@@ -466,17 +466,23 @@ fn thinking_off_reaches_a_foreign_openrouter_model_as_reasoning_disabled() {
     };
     // Mandatory reasoning: `thinking` is omitted, so OpenRouter's own switch rides.
     let mandatory =
-        Client::new(openrouter.clone(), "ibm/granite", "sys", None).without_thinking(true);
+        Client::new(openrouter.clone(), "ibm/granite", "sys", None).without_thinking(Some(true));
     assert_eq!(field(&mandatory).as_deref(), Some(r#"{"enabled":false}"#));
     // Optional reasoning: explicit `thinking: disabled` says it, nothing else needed.
-    let optional =
-        Client::new(openrouter.clone(), "qwen/qwen3.8-flash", "sys", None).without_thinking(false);
+    let optional = Client::new(openrouter.clone(), "qwen/qwen3.8-flash", "sys", None)
+        .without_thinking(Some(false));
     assert_eq!(field(&optional), None);
     let claude = Client::new(openrouter.clone(), "anthropic/claude-opus-5", "sys", None)
-        .without_thinking(false);
+        .without_thinking(Some(false));
     assert_eq!(field(&claude), None);
-    let direct = Client::new(anthropic, "claude-opus-5", "sys", None).without_thinking(false);
+    let direct = Client::new(anthropic, "claude-opus-5", "sys", None).without_thinking(Some(false));
     assert_eq!(field(&direct), None);
+    // Unknown reasoning requirement takes the mandatory spelling: the field is
+    // omitted and OpenRouter's own switch rides, because the explicit
+    // `thinking: disabled` is an assertion a mandatory endpoint would reject.
+    let unknown =
+        Client::new(openrouter.clone(), "ibm/granite", "sys", None).without_thinking(None);
+    assert_eq!(field(&unknown).as_deref(), Some(r#"{"enabled":false}"#));
     let unasked = Client::new(openrouter, "ibm/granite", "sys", None);
     assert_eq!(field(&unasked), None);
 }

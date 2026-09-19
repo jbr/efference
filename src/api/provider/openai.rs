@@ -44,7 +44,10 @@ pub fn model_capabilities(provider: Provider, model: &str) -> Result<ModelCapabi
             prompt_cache: PromptCachePolicy::Explicit,
             supported_efforts: efforts(GPT_5_6_EFFORTS),
             default_effort: Some("medium".to_string()),
-            reasoning_mandatory: false,
+            // Nothing in this catalog declares a reasoning requirement, and
+            // the Responses encoder serializes no `thinking` field for it to
+            // govern (`api/responses.rs`), so the value is inert here.
+            reasoning_mandatory: None,
         }),
         // Codex Spark is a ChatGPT Pro research preview on the subscription
         // backend, not an API model. Its launch profile is text-only with a
@@ -59,7 +62,7 @@ pub fn model_capabilities(provider: Provider, model: &str) -> Result<ModelCapabi
             prompt_cache: PromptCachePolicy::Explicit,
             supported_efforts: efforts(GPT_5_3_CODEX_EFFORTS),
             default_effort: Some("medium".to_string()),
-            reasoning_mandatory: false,
+            reasoning_mandatory: None,
         }),
         "gpt-5.3-codex-spark" => Err(
             "OpenAI model \"gpt-5.3-codex-spark\" is available only on the openai-codex provider"
@@ -77,7 +80,7 @@ pub fn model_capabilities(provider: Provider, model: &str) -> Result<ModelCapabi
             prompt_cache: PromptCachePolicy::Explicit,
             supported_efforts: efforts(GPT_6_ASTRA_EFFORTS),
             default_effort: None,
-            reasoning_mandatory: false,
+            reasoning_mandatory: None,
         }),
         _ => Err(format!(
             "OpenAI model {model:?} has no capability profile in this efference build; \
