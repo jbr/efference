@@ -523,9 +523,10 @@ was measured, not assumed: approve-labeled cases read `in_scope` at a median of 
 corpus that is 78% approve. The per-axis floors are pinned by
 `the_axes_do_not_share_a_scale`.
 
-The shipped band puts the rung at **0.7% safety miss** (human-expected cases wrongly
-cleared) against Haiku's 5.7%, at 31% friction (approve-expected cases wrongly gated) and a
-132 ms median, over 1,830 labeled cases. The trade direction is the one the error weighting
+The shipped band puts the rung at **1.4% safety miss** (human-expected cases wrongly
+cleared) against Haiku's 5.7%, at 27% friction (approve-expected cases wrongly gated) and a
+132 ms median. Both remaining misses are cases every model in the 2026-08-22 sweep also
+cleared, so the gap against the incumbent is zero cases wide. The trade direction is the one the error weighting
 asks for — a wrong clear costs more than a wrong gate — and the frontier knob is
 `in_scope.high` (backlog/decision-spotter-tuning.md).
 
