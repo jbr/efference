@@ -15,11 +15,36 @@ fn clean() -> Axes {
         in_scope: 0.95,
         reversible: 0.95,
         sanctioned: 0.05,
-        outside_grants: 0.02,
+        path_outside: 0.02,
+        path_denied: 0.01,
         exposes_secrets: 0.01,
         watch_for_hit: None,
         prefix_safe: None,
     }
+}
+
+/// The shipped bands are a tuning result, not a guess (the sweep of 2026-09-18,
+/// backlog/decision-spotter-tuning.md). Pinned because the thing they encode is
+/// that the axes do **not** share a scale: a single pair cannot sit above
+/// `path_outside`'s 0.19 floor and below `exposes_secrets`'s 0.03 one, and the
+/// pair that tried gated 42% of a corpus that is 78% approve. A future edit that
+/// collapses them back toward each other should have to break this first.
+#[test]
+fn the_axes_do_not_share_a_scale() {
+    let t = Thresholds::default();
+    // The measured background: a flat "no" reads ~0.19 on `path_outside` and
+    // ~0.03 on `exposes_secrets`. One `low` would have to sit above the first
+    // and below the second, which is not a number.
+    assert!(
+        t.path_outside.low > 0.19 && t.exposes_secrets.low < 0.19,
+        "the two floors ({} and {}) no longer straddle path_outside's measured \
+         background — a single band could cover them, which the sweep says it cannot",
+        t.path_outside.low,
+        t.exposes_secrets.low
+    );
+    // And the in_scope band lives entirely above every other axis's floor: its
+    // "no" is a low probability of being in scope, not a high one of trouble.
+    assert!(t.in_scope.high > t.path_outside.high);
 }
 
 fn stance(axes: &Axes, probe: bool) -> Stance {
@@ -75,7 +100,7 @@ fn a_clean_move_clears() {
 /// the default band; a value inside it is uncertain, not clean.
 #[test]
 fn a_disqualifying_axis_gates() {
-    let cases: [(&str, Axes, Stance); 4] = [
+    let cases: [(&str, Axes, Stance); 5] = [
         (
             "exposed secret",
             Axes {
@@ -85,9 +110,17 @@ fn a_disqualifying_axis_gates() {
             Stance::Gate,
         ),
         (
-            "outside the grants",
+            "names a path outside the grants",
             Axes {
-                outside_grants: 0.9,
+                path_outside: 0.9,
+                ..clean()
+            },
+            Stance::Gate,
+        ),
+        (
+            "names a path under a denied carve-out",
+            Axes {
+                path_denied: 0.9,
                 ..clean()
             },
             Stance::Gate,
@@ -126,7 +159,11 @@ fn the_uncertain_middle_never_clears() {
             ..clean()
         },
         Axes {
-            outside_grants: 0.5,
+            path_outside: 0.5,
+            ..clean()
+        },
+        Axes {
+            path_denied: 0.5,
             ..clean()
         },
         Axes {
@@ -221,6 +258,45 @@ fn the_reason_names_the_deciding_axis_with_its_figure() {
     assert!(reason.contains("scope"), "no axis named in {reason:?}");
 }
 
+/// The grants question is two questions (backlog/decision-spotter-tuning.md), and
+/// the fold names the more specific one: "under a deliberate carve-out" tells the
+/// reader something "outside the grants" does not.
+#[test]
+fn a_denied_carve_out_is_named_as_itself() {
+    let axes = Axes {
+        path_denied: 0.9,
+        path_outside: 0.02,
+        ..clean()
+    };
+    let (stance, deciding) = combine(&axes, &Thresholds::default(), false);
+    assert_eq!(stance, Stance::Gate);
+    assert_eq!(deciding, Deciding::DeniedPath);
+    let reason = questions::reason(stance, deciding, &axes);
+    assert!(reason.contains("denied"), "{reason:?}");
+
+    // And it outranks the broader finding when both trip, since a path can be
+    // both outside a grant and under a carve-out.
+    let both = Axes {
+        path_denied: 0.9,
+        path_outside: 0.9,
+        ..clean()
+    };
+    assert_eq!(
+        combine(&both, &Thresholds::default(), false).1,
+        Deciding::DeniedPath
+    );
+}
+
+/// Both halves of the split are asked on every call: a corpus case with no
+/// denied entry still needs the question posed, because "no denied entry exists"
+/// is an answer the model gives rather than one the harness assumes.
+#[test]
+fn both_halves_of_the_grants_question_are_always_asked() {
+    let bare = ask::questions(false, false);
+    assert!(bare.contains_key(questions::PATH_OUTSIDE));
+    assert!(bare.contains_key(questions::PATH_DENIED));
+}
+
 /// The conditional axes are asked only when the state carries the thing they are
 /// about: a question about a list that isn't there invites an answer invented
 /// from nothing.
@@ -243,26 +319,27 @@ fn a_missing_answer_for_an_asked_question_fails_rather_than_reading_as_absent() 
     let answered = |answers: serde_json::Value| -> crate::api::Decisions {
         serde_json::from_value(json!({ "answers": answers, "usage": {} })).expect("parses")
     };
-    let five = json!({
+    let full = json!({
         "in_scope": { "type": "noul", "noul": 0.9 },
         "reversible": { "type": "noul", "noul": 0.9 },
         "sanctioned": { "type": "noul", "noul": 0.1 },
-        "outside_grants": { "type": "noul", "noul": 0.1 },
+        "path_outside": { "type": "noul", "noul": 0.1 },
+        "path_denied": { "type": "noul", "noul": 0.1 },
         "exposes_secrets": { "type": "noul", "noul": 0.1 },
     });
     // Not asked: the axis is absent and the read succeeds.
     assert_eq!(
-        read_axes(&answered(five.clone()), false, false)
+        read_axes(&answered(full.clone()), false, false)
             .expect("the unconditional set is complete")
             .watch_for_hit,
         None
     );
     // Asked and unanswered: no verdict.
-    assert!(read_axes(&answered(five.clone()), true, false).is_none());
+    assert!(read_axes(&answered(full.clone()), true, false).is_none());
     // One unconditional axis missing: no verdict.
-    let mut four = five;
-    four.as_object_mut().expect("object").remove("reversible");
-    assert!(read_axes(&answered(four), false, false).is_none());
+    let mut fewer = full;
+    fewer.as_object_mut().expect("object").remove("reversible");
+    assert!(read_axes(&answered(fewer), false, false).is_none());
 }
 
 #[test]

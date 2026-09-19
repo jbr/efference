@@ -41,7 +41,7 @@ mod ask;
 mod questions;
 mod state;
 
-pub use questions::{Axes, Thresholds};
+pub use questions::{Axes, Band, Thresholds};
 
 /// Whether a spotter selection reaches the decisions route
 /// (docs/permissions.md) — the switch between this rung and the prose one.
@@ -181,7 +181,8 @@ fn read_axes(decisions: &crate::api::Decisions, watch_for: bool, probe: bool) ->
         in_scope: decisions.probability(questions::IN_SCOPE)?,
         reversible: decisions.probability(questions::REVERSIBLE)?,
         sanctioned: decisions.probability(questions::SANCTIONED)?,
-        outside_grants: decisions.probability(questions::OUTSIDE_GRANTS)?,
+        path_outside: decisions.probability(questions::PATH_OUTSIDE)?,
+        path_denied: decisions.probability(questions::PATH_DENIED)?,
         exposes_secrets: decisions.probability(questions::EXPOSES_SECRETS)?,
         // A conditional axis is `None` when it wasn't asked, and a hard failure
         // when it was asked and went unanswered — the fold reads "not asked" as
@@ -199,6 +200,21 @@ fn conditional(decisions: &crate::api::Decisions, key: &str, asked: bool) -> Opt
         true => decisions.probability(key).map(Some),
         false => Some(None),
     }
+}
+
+/// Replay a recorded [`Axes`] through a band, without a request
+/// (docs/permissions.md).
+///
+/// This is the whole point of folding in code rather than in the model: the
+/// stance is a pure function of numbers the eval already wrote down, so moving a
+/// threshold is re-scored against a whole corpus for free. One paid pass records
+/// the vectors; every band question after it is arithmetic.
+///
+/// `probe` says whether a promotion probe rode the original call — the recorded
+/// `prefix_safe` already answers that, but the fold needs to know whether the
+/// question was asked at all.
+pub fn replay(axes: &Axes, thresholds: &Thresholds, probe: bool) -> crate::log::Stance {
+    questions::combine(axes, thresholds, probe).0
 }
 
 /// The exact state a request would carry for this call, pretty-printed — what the

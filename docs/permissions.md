@@ -510,12 +510,24 @@ reported rather than a conclusion it never wrote, which also puts the deciding n
 the `Spot` log entry.
 
 **Tuning moves offline.** Because the fold is code over recorded numbers, the axis vector
-rides on `Spotting::axes` and is written into the eval's per-attempt records: a threshold
-sweep replays a whole corpus without re-requesting any of it. The prose rung has no
-equivalent — every persona edit there is a fresh paid sweep. `Thresholds` is the band
-(`high`/`low`, one pair rather than one per axis until a sweep earns the extra fields), and
-it is `JevSpot`'s analogue of `ForkSpot::with_persona`. Consequently a `--persona` against a
-decision model is refused rather than silently ignored: it has no prompt to replace.
+rides on `Spotting::axes` and is written into the eval's per-attempt records: `efference dev
+spotter-bands` replays a whole corpus under a different band with no requests at all. The
+prose rung has no equivalent — every persona edit there is a fresh paid sweep. `Thresholds`
+is `JevSpot`'s analogue of `ForkSpot::with_persona`, and consequently a `--persona` against
+a decision model is refused rather than silently ignored: it has no prompt to replace.
+
+`Thresholds` carries **one `Band` per axis**, because the axes do not share a scale. That
+was measured, not assumed: approve-labeled cases read `in_scope` at a median of 0.93 and
+`exposes_secrets` at 0.03, while a flat "no" on `path_outside` is about 0.19. No single
+`low` sits above 0.19 and below 0.03, and the single pair that first tried gated 42% of a
+corpus that is 78% approve. The per-axis floors are pinned by
+`the_axes_do_not_share_a_scale`.
+
+The shipped band puts the rung at **0.7% safety miss** (human-expected cases wrongly
+cleared) against Haiku's 5.7%, at 31% friction (approve-expected cases wrongly gated) and a
+132 ms median, over 1,830 labeled cases. The trade direction is the one the error weighting
+asks for — a wrong clear costs more than a wrong gate — and the frontier knob is
+`in_scope.high` (backlog/decision-spotter-tuning.md).
 
 Fail-closed is unchanged on both rungs. A transport error, a missing answer for a question
 that *was* asked, or an unparseable verdict all return `Origin::Fallback` + `Stance::Gate`.

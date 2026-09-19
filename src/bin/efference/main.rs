@@ -170,6 +170,7 @@ mod setup;
 #[cfg(feature = "dev")]
 mod spot_report;
 #[cfg(feature = "dev")]
+mod spotter_bands;
 mod spotter_eval;
 mod stop_report;
 mod verbs;

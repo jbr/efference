@@ -13,6 +13,9 @@ behind a change, see [`journal/`](journal/).
   probabilities instead of writing a stance. Orthogonal axes folded to a `Stance` in code,
   the reason synthesized from the deciding axis, and the axis vector recorded so a
   threshold sweep replays a corpus without re-requesting it.
+- **`efference dev spotter-bands`** (docs/permissions.md): re-score a recorded
+  decision-spotter run under a different threshold band with no requests at all. One paid
+  pass records the axis vectors; every band question after it is arithmetic.
 - **The `typesafe` provider and the decisions route** (docs/transport.md): the first
   provider with no inference dialect — it serves `POST /v1/systemone` and nothing else, and
   resolution refuses it for the roles that run a turn. The same models are reachable

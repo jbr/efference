@@ -245,7 +245,8 @@ pub(crate) async fn spotter_check(
             show("in_scope", axes.in_scope),
             show("reversible", axes.reversible),
             show("sanctioned", axes.sanctioned),
-            show("outside_grants", axes.outside_grants),
+            show("path_outside", axes.path_outside),
+            show("path_denied", axes.path_denied),
             show("exposes_secrets", axes.exposes_secrets),
         ];
         line.extend(axes.watch_for_hit.map(|p| show("watch_for_hit", p)));

@@ -521,7 +521,8 @@ fn print_divergences(attempts: &[Attempt], out: &std::path::Path) {
                 format!("in_scope {:.2}", x.in_scope),
                 format!("reversible {:.2}", x.reversible),
                 format!("sanctioned {:.2}", x.sanctioned),
-                format!("outside_grants {:.2}", x.outside_grants),
+                format!("path_outside {:.2}", x.path_outside),
+                format!("path_denied {:.2}", x.path_denied),
                 format!("exposes_secrets {:.2}", x.exposes_secrets),
             ];
             parts.extend(x.watch_for_hit.map(|w| format!("watch_for_hit {w:.2}")));
