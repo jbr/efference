@@ -290,11 +290,14 @@ impl InferenceRegistry {
         ) {
             Requested::Failed => Effective::failed(),
             Requested::Reference(reference) => {
-                self.select(&reference, "model", SelectionSource::Request, issues)
+                let selected = self.select(&reference, "model", SelectionSource::Request, issues);
+                inference_only(selected, "model", issues)
             }
             Requested::Omitted => match self.defaults.model.as_ref() {
                 Some(default) => {
-                    self.select(default, "model", SelectionSource::UserDefault, issues)
+                    let selected =
+                        self.select(default, "model", SelectionSource::UserDefault, issues);
+                    inference_only(selected, "model", issues)
                 }
                 None => {
                     issues.push(Issue::new(
@@ -413,8 +416,11 @@ impl InferenceRegistry {
         // A separate triage replays main's transcript, so it must speak main's
         // dialect. Unknowable when main did not resolve, and silence there is
         // correct: creation checks it again with both roles in hand.
+        if !requires_inference(&selection, "triage", issues) {
+            return Effective::failed();
+        }
         if let Some(main) = main.value.as_ref()
-            && selection.provider.dialect() != main.provider.dialect()
+            && selection.provider.inference_dialect() != main.provider.inference_dialect()
         {
             issues.push(Issue::new(
                 "triage",
@@ -487,6 +493,11 @@ impl InferenceRegistry {
     /// Check a reference against the catalog. An unconfigured or unavailable
     /// connection is disprovable and becomes an issue; the model name is not
     /// checkable here and passes through.
+    /// A role that runs a turn cannot sit on a provider that serves no inference
+    /// (docs/transport.md) — a decision-model connection answers questions about
+    /// a state and produces no assistant output to encode, assemble, or log. The
+    /// refusal happens here, at resolution, which is why everything downstream
+    /// can read `inference_dialect()` as present.
     fn select(
         &self,
         reference: &ModelReference,
@@ -619,3 +630,40 @@ fn required<T>(effective: Effective<T>, field: &str) -> Result<T, Error> {
 
 #[cfg(test)]
 mod test;
+
+/// Reject a selection whose provider serves no inference, for a role that needs
+/// it. Separate from `select` because the spotter role is exactly the one that
+/// may name such a provider (docs/permissions.md).
+fn requires_inference(
+    selection: &ModelSelection,
+    field: &'static str,
+    issues: &mut Vec<Issue>,
+) -> bool {
+    if selection.provider.serves_inference() {
+        return true;
+    }
+    issues.push(Issue::new(
+        field,
+        IssueCode::InvalidSelection,
+        format!(
+            "connection {:?} is a {} connection, which serves decision models only — it can \
+             back the spotter, but not {field} (docs/permissions.md)",
+            selection.connection,
+            selection.provider.name(),
+        ),
+    ));
+    false
+}
+
+/// [`requires_inference`] applied to an already-resolved selection, failing it
+/// when the provider cannot serve a turn.
+fn inference_only(
+    selected: Effective<ModelSelection>,
+    field: &'static str,
+    issues: &mut Vec<Issue>,
+) -> Effective<ModelSelection> {
+    match selected.value.as_ref() {
+        Some(selection) if !requires_inference(selection, field, issues) => Effective::failed(),
+        _ => selected,
+    }
+}

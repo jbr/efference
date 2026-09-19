@@ -93,6 +93,7 @@ impl Spotter for RecordingSpotter {
                 reason: self.reason.clone(),
             },
             origin: crate::log::Origin::Model,
+            axes: None,
             usage: None,
         }
     }

@@ -471,6 +471,55 @@ one-shot, **fresh-context** model call (the provider's cheap band by default, on
 acting session can't check its own folly because it shares its own trajectory; the spotter
 can, precisely because its context is built from scratch — *not* `project(log)`.
 
+### Two rungs behind one trait
+
+`Spotter::assess` has two implementations, and which one a session mounts is decided once
+at boot by `MountedSpotter::mount` (`src/spotter/mount.rs`) from the spotter selection
+alone:
+
+- **`ForkSpot`** — the prose rung, described in the rest of this section. A generative
+  model reads a rendered persona + scope + move and answers with a stance and a sentence.
+- **`JevSpot`** (`src/spotter/jev.rs`) — the **decision** rung. A decision model reads a
+  JSON state and answers a fixed set of boolean questions with a probability each
+  ([transport.md](transport.md): the decisions route). Selected when the spotter's provider
+  serves no inference (`typesafe`, where every model is one) or its model id names the
+  family on a provider that serves both (`typesafe/jev-1.13` on OpenRouter).
+
+The connection and the model id are the whole switch. A separate flag saying "and it is a
+decision model" would be a second thing to keep consistent with the first, and every way
+they could disagree is a misconfiguration the id alone cannot have.
+
+Three things change with the rung, and they are why it is a second implementation rather
+than a model swap:
+
+**The judgement is decomposed.** No single question can be "what is your stance?" — the
+stance is a policy over several considerations, and a decision model answers one fixed
+question at a time. So the rung asks orthogonal axes (`in_scope`, `reversible`,
+`sanctioned`, `outside_grants`, `exposes_secrets`, plus `watch_for_hit` when the config
+names one and `prefix_safe` when a promotion probe rides along) and folds them into a
+`Stance` in code (`src/spotter/jev/questions.rs`). The fold is ordered worst-first, and
+every arm treats *uncertain* as a reason to involve the human: `Gate` where the axis would
+be disqualifying if true, `Watch` where it would only be worth a beat. That direction is the
+error weighting stated in backlog/spotter-eval.md — a wrong clear costs more than a wrong
+gate — expressed as a rule rather than as a persona instruction.
+
+**The reason is synthesized.** A decision model emits no prose, so the one line the acting
+session and the human gate read is written from the deciding axis and its figure ("scope
+fit reads at 7% — this looks outside the mission"). It states what the model actually
+reported rather than a conclusion it never wrote, which also puts the deciding number in
+the `Spot` log entry.
+
+**Tuning moves offline.** Because the fold is code over recorded numbers, the axis vector
+rides on `Spotting::axes` and is written into the eval's per-attempt records: a threshold
+sweep replays a whole corpus without re-requesting any of it. The prose rung has no
+equivalent — every persona edit there is a fresh paid sweep. `Thresholds` is the band
+(`high`/`low`, one pair rather than one per axis until a sweep earns the extra fields), and
+it is `JevSpot`'s analogue of `ForkSpot::with_persona`. Consequently a `--persona` against a
+decision model is refused rather than silently ignored: it has no prompt to replace.
+
+Fail-closed is unchanged on both rungs. A transport error, a missing answer for a question
+that *was* asked, or an unparseable verdict all return `Origin::Fallback` + `Stance::Gate`.
+
 **Spotter independence is contextual, not process-level.** It runs inside the acting
 session's own daemon; the independence comes from its *fresh context*, not from isolation.
 Only an in-process compromise of the daemon itself defeats it — which is the same

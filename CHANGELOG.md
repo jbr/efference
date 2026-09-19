@@ -8,6 +8,15 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **The decision spotter** (docs/permissions.md): a second implementation of the permission
+  rung against a decision model, which answers fixed boolean questions with calibrated
+  probabilities instead of writing a stance. Orthogonal axes folded to a `Stance` in code,
+  the reason synthesized from the deciding axis, and the axis vector recorded so a
+  threshold sweep replays a corpus without re-requesting it.
+- **The `typesafe` provider and the decisions route** (docs/transport.md): the first
+  provider with no inference dialect — it serves `POST /v1/systemone` and nothing else, and
+  resolution refuses it for the roles that run a turn. The same models are reachable
+  through OpenRouter's alpha route on an existing connection.
 - **Stopping-behaviour eval tasks** (eval/harness/README.md): `tcp-cache-falsified`,
   `-hedged`, and `-ambiguous` break a brief in three different ways — an instruction
   that is false, an expectation that is false, a fact that is missing — so the exercise

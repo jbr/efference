@@ -379,7 +379,7 @@ async fn only_the_shared_turn_envelope_carries_the_effort() {
 
         let endpoint = Endpoint {
             provider: Provider::Anthropic,
-            url: format!("http://{addr}/v1/messages"),
+            url: Some(format!("http://{addr}/v1/messages")),
             auth_header: "x-api-key".into(),
             auth_value: "k".into(),
             session_id: None,

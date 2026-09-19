@@ -22,7 +22,7 @@ use efference::client::Client as ControlClient;
 use efference::daemon;
 use efference::inference::TriageChoice;
 #[cfg(feature = "dev")]
-use efference::spotter::ForkSpot;
+use efference::spotter::MountedSpotter;
 #[cfg(feature = "dev")]
 use efference::spotter::Spotter;
 use efference::tools::Toolbox;

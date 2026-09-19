@@ -792,11 +792,66 @@ semantic fold, and the cache-frontier model are provider-independent. What varie
 between providers is the **dialect**, **where** the POST goes, **how** it
 authenticates, and **which metadata source** answers questions about the selected
 model. All derive from one declared identity: `api::Provider`, a closed enum
-(`anthropic`, `openrouter`, `openai`, `openai-codex`) grown in code as providers
-are added. Identity is an input, never inferred from URL shape (sniffing fails for
-proxies and custom URLs). `api::Endpoint` carries the derived `url` +
+(`anthropic`, `openrouter`, `openai`, `openai-codex`, `typesafe`) grown in code as
+providers are added. Identity is an input, never inferred from URL shape (sniffing
+fails for proxies and custom URLs). `api::Endpoint` carries the derived `url` +
 `auth_header` + `auth_value` alongside the provider; its `Debug` redacts the
 credential and extra headers.
+
+### A provider that serves no turns
+
+`typesafe` is the first provider with **no inference dialect**:
+`Provider::inference_dialect` returns `None` for it, and `Endpoint::url` — the
+turns URL — is `None` too. It serves one route, the decisions route below, which
+answers typed questions about a state rather than producing an assistant turn.
+There is no dialect it could honestly claim, so it claims none.
+
+The absence is enforced once, at resolution (`src/inference/options.rs`): the
+`model` and `triage` roles refuse a provider whose `serves_inference()` is false,
+with an issue naming the spotter as what it *can* back. Every reader downstream —
+the encoders, the assemblers, `Client::dialect`, `Client::url` — therefore treats
+the dialect and the URL as present, because the only way to reach them is through
+a role that already refused the alternative.
+
+### The decisions route (`src/api/decisions.rs`)
+
+A **decision model** is an LLM with generation replaced by a classifier head. One
+POST of `{model, state, questions}` returns one JSON body: a calibrated
+probability per question, no stream, no assistant output, no text.
+
+```json
+{ "answers": { "in_scope": { "type": "noul", "noul": 0.91 } }, "usage": { "input_tokens": 1081 } }
+```
+
+`noul` is the API's own name for the boolean question type, on both the asking and
+the answering side, and is spelled as the wire spells it. Answers are parsed
+leniently — a shape this harness does not model yet yields `None` for that
+question rather than failing the response away, and the caller's `None` handling
+is the same fail-closed path a transport error takes.
+
+Two providers front the same models and the request differs slightly between them:
+OpenRouter documents `session_id`/`user`/`trace` alongside the three required
+fields, while the first-party API documents the three alone and validates the body
+(an unrecognized key is a 422, which for this route means a failed permission
+check). `Provider::decisions_takes_session_id` is where that difference lives, so
+the grouping key rides only where it is named. Attribution headers follow the same
+rule they already do — OpenRouter's, nobody else's.
+
+Nothing on this route caches (the model's endpoint metadata reports
+`supports_implicit_caching: false` and there are no markers to send), so the
+byte-stability rule that governs the Messages prefix
+([log-and-projection.md](log-and-projection.md)) has nothing to hold here. The
+`RequestUsage` a response reports carries **zero** cache counts — a truthful zero
+rather than a missing reading, which is what keeps a decisions request out of the
+cold-streak classification.
+
+A decision model also publishes no per-model capabilities: there is no context
+window, output cap, or cache policy behind a decisions request. `capabilities_url`
+errors for it, and boot skips the spotter capability lookup on a provider that
+serves no inference — so a misspelled decision-model id surfaces at the first gate
+rather than at boot. That direction is fail-closed (the gate routes to the human),
+but it is worse feedback than boot failure, and the auth half is still checked via
+`key_check_url`.
 
 **Host-owned connections (`src/inference.rs`).** A host names its connections in
 `~/.efference/config.toml`, read from the host's startup `HOME` — a secret-free

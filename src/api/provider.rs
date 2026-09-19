@@ -95,6 +95,14 @@ pub enum Provider {
     /// mirrors what Codex CLI sends ([`ResponsesProfile::Codex`]).
     #[serde(rename = "openai-codex")]
     OpenAICodex,
+    /// TypeSafe's System One API (`/v1/systemone`): `authorization: Bearer`
+    /// auth, and **no inference dialect at all**. It serves decision models —
+    /// state plus typed questions in, a calibrated probability per question out
+    /// — so it can back the spotter rung (docs/permissions.md) and nothing else.
+    /// [`Self::inference_dialect`] returns `None` for it, and resolution refuses
+    /// it for the main and triage roles before anything downstream could ask.
+    #[serde(rename = "typesafe")]
+    TypeSafe,
 }
 
 /// Which Responses request shape a provider takes (docs/transport.md). The
@@ -124,19 +132,36 @@ impl Provider {
         matches!(self, Self::OpenRouter | Self::OpenAI | Self::OpenAICodex)
     }
 
-    /// The wire dialect this provider speaks (docs/transport.md).
-    pub fn dialect(&self) -> WireDialect {
+    /// The wire dialect this provider speaks a *turn* in (docs/transport.md), or
+    /// `None` for a provider that serves no inference at all.
+    ///
+    /// `None` is not a gap to fill in later: a decision-model provider has no
+    /// assistant turn to encode or assemble, so there is no dialect it could
+    /// honestly claim. [`Self::serves_inference`] is the same fact as a
+    /// predicate, and resolution checks it, so every caller that unwraps this
+    /// is downstream of a role that already refused the provider.
+    pub fn inference_dialect(&self) -> Option<WireDialect> {
         match self {
-            Self::Anthropic | Self::OpenRouter => WireDialect::Messages,
-            Self::OpenAI | Self::OpenAICodex => WireDialect::Responses,
+            Self::Anthropic | Self::OpenRouter => Some(WireDialect::Messages),
+            Self::OpenAI | Self::OpenAICodex => Some(WireDialect::Responses),
+            Self::TypeSafe => None,
         }
+    }
+
+    /// Whether this provider can serve a session's main model or its triage
+    /// peek. False only for a decision-model provider, which answers questions
+    /// about a state and never produces a turn.
+    pub fn serves_inference(&self) -> bool {
+        self.inference_dialect().is_some()
     }
 
     /// The Responses request shape, for providers on that dialect.
     pub fn responses_profile(&self) -> ResponsesProfile {
         match self {
             Self::OpenAICodex => ResponsesProfile::Codex,
-            Self::Anthropic | Self::OpenRouter | Self::OpenAI => ResponsesProfile::Platform,
+            Self::Anthropic | Self::OpenRouter | Self::OpenAI | Self::TypeSafe => {
+                ResponsesProfile::Platform
+            }
         }
     }
 
@@ -157,6 +182,10 @@ impl Provider {
             // route before the first request.
             Self::OpenRouter => "anthropic/claude-haiku-4-5",
             Self::OpenAI | Self::OpenAICodex => openai::CHEAPEST_MODEL,
+            // The one model family this provider serves. The floating alias
+            // rather than a dated slug: TypeSafe publishes `jev-latest` as the
+            // entry point and the API takes it directly.
+            Self::TypeSafe => "jev-latest",
         }
     }
 
@@ -168,6 +197,7 @@ impl Provider {
             "openrouter" => Ok(Self::OpenRouter),
             "openai" => Ok(Self::OpenAI),
             "openai-codex" | "codex" => Ok(Self::OpenAICodex),
+            "typesafe" => Ok(Self::TypeSafe),
             other => Err(format!(
                 "provider {other:?} not recognized: valid values are `anthropic`, \
                  `openrouter`, `openai`, and `openai-codex` (docs/transport.md)"
@@ -198,6 +228,11 @@ impl Provider {
                 crate::project::ImagePlacement::AfterInterposedTurn
             }
             Self::OpenRouter => crate::project::ImagePlacement::FollowingUserBlock,
+            // Projection placement is read while encoding a turn, and a provider
+            // with no inference dialect never has one encoded for it. The arm
+            // exists because the match is exhaustive, not because the value means
+            // anything here.
+            Self::TypeSafe => crate::project::ImagePlacement::InToolResult,
         }
     }
 
@@ -217,6 +252,9 @@ impl Provider {
                 crate::project::BreakpointPlacement::TrailingBlock
             }
             Self::OpenRouter => crate::project::BreakpointPlacement::LastTextBlock,
+            // Unreachable for the same reason as `image_placement`'s arm: nothing
+            // projects a turn for a provider that serves none.
+            Self::TypeSafe => crate::project::BreakpointPlacement::TrailingBlock,
         }
     }
 
@@ -228,6 +266,7 @@ impl Provider {
             Self::OpenRouter => "openrouter",
             Self::OpenAI => "openai",
             Self::OpenAICodex => "openai-codex",
+            Self::TypeSafe => "typesafe",
         }
     }
     /// Map the session's 0–100 integer temperature to this provider's native
@@ -241,25 +280,54 @@ impl Provider {
         let v = (t as f64) / 100.0;
         match self {
             Self::Anthropic => v,
-            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => v * 2.0,
+            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex | Self::TypeSafe => v * 2.0,
         }
     }
 
-    /// The messages endpoint this provider serves the Anthropic wire on.
-    pub(super) fn messages_url(&self) -> &'static str {
+    /// The endpoint this provider serves *turns* on, or `None` for one that
+    /// serves no inference ([`Self::inference_dialect`]). A decision-model
+    /// provider has a route ([`Self::decisions_url`]) but not this one, and the
+    /// two are not interchangeable — posting a turn body to the decisions route
+    /// is a 422, not a degraded answer.
+    pub(super) fn messages_url(&self) -> Option<&'static str> {
         match self {
-            Self::Anthropic => "https://api.anthropic.com/v1/messages",
-            Self::OpenRouter => "https://openrouter.ai/api/v1/messages",
-            Self::OpenAI => "https://api.openai.com/v1/responses",
-            Self::OpenAICodex => "https://chatgpt.com/backend-api/codex/responses",
+            Self::Anthropic => Some("https://api.anthropic.com/v1/messages"),
+            Self::OpenRouter => Some("https://openrouter.ai/api/v1/messages"),
+            Self::OpenAI => Some("https://api.openai.com/v1/responses"),
+            Self::OpenAICodex => Some("https://chatgpt.com/backend-api/codex/responses"),
+            Self::TypeSafe => None,
+        }
+    }
+
+    /// The Decisions route (docs/permissions.md), for providers that serve a
+    /// structured-decision model. `None` everywhere else: this is a distinct API
+    /// — a single JSON POST of `{model, state, questions}` answered with a
+    /// probability per question, not a Messages or Responses request — so a
+    /// provider either serves it or the spotter band that uses it is unreachable
+    /// there.
+    pub(super) fn decisions_url(&self) -> Option<&'static str> {
+        match self {
+            Self::TypeSafe => Some("https://api.typesafe.ai/v1/systemone"),
+            // OpenRouter fronts the same models on its own alpha route, which is
+            // how this rung was reachable before first-party access existed.
+            Self::OpenRouter => Some("https://openrouter.ai/api/alpha/decisions"),
+            Self::Anthropic | Self::OpenAI | Self::OpenAICodex => None,
         }
     }
 
     /// The auth header **name** this provider reads.
+    /// Whether this provider's decisions route accepts a `session_id` for
+    /// grouping. OpenRouter documents it alongside `user` and `trace`; the
+    /// first-party API documents `state`, `model`, and `questions` only, and
+    /// validates the body, so the field is sent only where it is named.
+    pub(super) fn decisions_takes_session_id(&self) -> bool {
+        matches!(self, Self::OpenRouter)
+    }
+
     pub(super) fn auth_header(&self) -> &'static str {
         match self {
             Self::Anthropic => "x-api-key",
-            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => "authorization",
+            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex | Self::TypeSafe => "authorization",
         }
     }
 
@@ -282,7 +350,7 @@ impl Provider {
     /// `thread-id` sets no key on its own and is not sent.
     pub(super) fn session_header(&self) -> Option<&'static str> {
         match self {
-            Self::Anthropic | Self::OpenAI => None,
+            Self::Anthropic | Self::OpenAI | Self::TypeSafe => None,
             Self::OpenAICodex => Some("session-id"),
             Self::OpenRouter => Some("x-session-id"),
         }
@@ -296,7 +364,7 @@ impl Provider {
     pub(super) fn turn_routing_header(&self) -> Option<&'static str> {
         match self {
             Self::OpenAICodex => Some("x-codex-turn-state"),
-            Self::Anthropic | Self::OpenAI | Self::OpenRouter => None,
+            Self::Anthropic | Self::OpenAI | Self::OpenRouter | Self::TypeSafe => None,
         }
     }
 
@@ -311,7 +379,7 @@ impl Provider {
     pub(super) fn routing_hint_header(&self) -> Option<&'static str> {
         match self {
             Self::OpenAICodex => Some("x-codex-routing-hint"),
-            Self::Anthropic | Self::OpenAI | Self::OpenRouter => None,
+            Self::Anthropic | Self::OpenAI | Self::OpenRouter | Self::TypeSafe => None,
         }
     }
 
@@ -331,7 +399,7 @@ impl Provider {
     /// server or to Anthropic would assert a referring page that does not exist.
     pub(super) fn attribution(&self) -> &'static [(&'static str, &'static str)] {
         match self {
-            Self::Anthropic | Self::OpenAI => &[],
+            Self::Anthropic | Self::OpenAI | Self::TypeSafe => &[],
             // Codex CLI names itself with this header; the backend may key on it.
             Self::OpenAICodex => &[("originator", "efference")],
             Self::OpenRouter => &[
@@ -362,7 +430,7 @@ impl Provider {
     /// the value sent is the same one either way.
     pub(super) fn prompt_cache_key_field(&self) -> bool {
         match self {
-            Self::Anthropic => false,
+            Self::Anthropic | Self::TypeSafe => false,
             Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => true,
         }
     }
@@ -373,7 +441,7 @@ impl Provider {
     fn auth_prefix(&self) -> &'static str {
         match self {
             Self::Anthropic => "",
-            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => "Bearer ",
+            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex | Self::TypeSafe => "Bearer ",
         }
     }
 
@@ -403,6 +471,13 @@ impl Provider {
             Self::OpenAI | Self::OpenAICodex => Err("OpenAI capabilities come from the \
                                                     compiled catalog, not a metadata URL"
                 .into()),
+            // A decision model has no context window, output cap, or cache policy
+            // to look up: the request is one state and a set of questions, and the
+            // only per-model fact is whether the id exists. Boot checks that with
+            // `key_check_url` instead (docs/permissions.md).
+            Self::TypeSafe => {
+                Err("typesafe models report no inference capabilities to fetch".into())
+            }
         }
     }
 
@@ -416,6 +491,7 @@ impl Provider {
             Self::Anthropic => Some("https://api.anthropic.com/v1/models?limit=1"),
             Self::OpenRouter => Some("https://openrouter.ai/api/v1/key"),
             Self::OpenAI => Some("https://api.openai.com/v1/models"),
+            Self::TypeSafe => Some("https://api.typesafe.ai/v1/models"),
             Self::OpenAICodex => None,
         }
     }
@@ -430,7 +506,7 @@ impl Provider {
     /// passes through to the provider's own validation.
     pub(super) fn effort_levels_url(&self, model: &str) -> Result<Option<String>, Error> {
         match self {
-            Self::Anthropic | Self::OpenAI | Self::OpenAICodex => Ok(None),
+            Self::Anthropic | Self::OpenAI | Self::OpenAICodex | Self::TypeSafe => Ok(None),
             Self::OpenRouter => {
                 let (author, slug) = openrouter_slug(model)?;
                 Ok(Some(format!(
@@ -458,6 +534,7 @@ impl Provider {
             Self::OpenAI | Self::OpenAICodex => {
                 Err("OpenAI capabilities come from the compiled catalog".into())
             }
+            Self::TypeSafe => Err("typesafe publishes no inference capabilities".into()),
             Self::Anthropic => {
                 // `GET /v1/models/{id}`: `max_input_tokens` is the context
                 // window, `max_tokens` the output cap. Unknown fields are
@@ -683,6 +760,7 @@ impl Provider {
             Self::OpenAI | Self::OpenAICodex => {
                 Err("OpenAI effort levels come from the compiled catalog".into())
             }
+            Self::TypeSafe => Err("a decision model takes no effort level".into()),
             Self::OpenRouter => {
                 // Same envelope as every other OpenRouter response: the entry
                 // sits under `data` (parse_capabilities parses the same
@@ -990,6 +1068,9 @@ impl Endpoint {
             }
             Provider::OpenAI | Provider::OpenAICodex => {
                 return Err("openai exposes no per-generation cost endpoint".into());
+            }
+            Provider::TypeSafe => {
+                return Err("typesafe exposes no per-generation cost endpoint".into());
             }
         };
         parse_generation_cost(&self.authed_get(&url).await?)

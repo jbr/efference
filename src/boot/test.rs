@@ -135,7 +135,7 @@ auth = { kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }
 
 /// The scratch dir a successful boot owns, removed here as the runtime's
 /// teardown would (docs/tools.md).
-fn drop_boot(boot: SessionBoot<ForkSpot>) {
+fn drop_boot(boot: SessionBoot<MountedSpotter>) {
     if let Some(scratch) = boot.toolbox.scratch_dir() {
         let _ = std::fs::remove_dir_all(scratch);
     }
@@ -143,7 +143,7 @@ fn drop_boot(boot: SessionBoot<ForkSpot>) {
 
 /// The error a preparation that must fail returned, cleaning up after it if it
 /// unexpectedly succeeded. `Result::expect_err` wants a `Debug` boot.
-fn failure(result: Result<SessionBoot<ForkSpot>, Error>, what: &str) -> Error {
+fn failure(result: Result<SessionBoot<MountedSpotter>, Error>, what: &str) -> Error {
     match result {
         Ok(boot) => {
             drop_boot(boot);

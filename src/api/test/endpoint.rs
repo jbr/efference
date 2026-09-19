@@ -10,12 +10,18 @@ use super::*;
 fn endpoint_is_derived_from_the_declared_provider() {
     let anthropic =
         Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None).unwrap();
-    assert_eq!(anthropic.url, "https://api.anthropic.com/v1/messages");
+    assert_eq!(
+        anthropic.url.as_deref(),
+        Some("https://api.anthropic.com/v1/messages")
+    );
     assert_eq!(anthropic.auth_header, "x-api-key");
     assert_eq!(anthropic.auth_value, "sk-ant-xyz");
     let openrouter =
         Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None).unwrap();
-    assert_eq!(openrouter.url, "https://openrouter.ai/api/v1/messages");
+    assert_eq!(
+        openrouter.url.as_deref(),
+        Some("https://openrouter.ai/api/v1/messages")
+    );
     assert_eq!(openrouter.auth_header, "authorization");
     assert_eq!(openrouter.auth_value, "Bearer sk-or-v1-abc");
     // Base64 padding rides through verbatim.
@@ -261,7 +267,7 @@ async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
     let counted = std::sync::Arc::clone(&reads);
     let endpoint = Endpoint {
         provider: Provider::Anthropic,
-        url: format!("http://{addr}/v1/messages"),
+        url: Some(format!("http://{addr}/v1/messages")),
         auth_header: "x-api-key".into(),
         auth_value: crate::api::AuthValue::reloadable(
             "stale".into(),

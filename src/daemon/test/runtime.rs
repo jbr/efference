@@ -35,7 +35,7 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
     let scratch = cwd.join("scratch");
     let endpoint = Endpoint {
         provider: Provider::Anthropic,
-        url: "http://127.0.0.1:9/v1/messages".into(),
+        url: Some("http://127.0.0.1:9/v1/messages".into()),
         auth_header: "x-api-key".into(),
         auth_value: "k".into(),
         session_id: None,

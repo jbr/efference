@@ -18,8 +18,12 @@ pub struct Endpoint {
     /// (`Endpoint::fetch_capabilities`, docs/transport.md).
     pub provider: Provider,
     /// Full messages URL, e.g. `https://api.anthropic.com/v1/messages` or
-    /// `https://openrouter.ai/api/v1/messages`. Derived from `provider`.
-    pub url: String,
+    /// `https://openrouter.ai/api/v1/messages`. Derived from `provider`, and
+    /// `None` for a provider that serves no turns (`Provider::messages_url`) —
+    /// a decision-model connection has only `Provider::decisions_url`. Resolution
+    /// refuses such a provider for every role that would build a
+    /// [`Client`](crate::api::Client), so a client's url is always present.
+    pub url: Option<String>,
     /// The auth header **name** — `x-api-key` for Anthropic, `authorization`
     /// for OpenRouter's `Bearer` scheme. Derived from `provider`.
     pub auth_header: String,
@@ -195,7 +199,7 @@ impl Endpoint {
     ) -> Result<Self, Error> {
         let mut endpoint = Self {
             provider,
-            url: provider.messages_url().to_string(),
+            url: provider.messages_url().map(str::to_string),
             auth_header: provider.auth_header().to_string(),
             auth_value: AuthValue::from(provider.auth_header_value(&token)),
             session_id: None,

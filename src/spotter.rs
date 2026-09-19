@@ -19,6 +19,11 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+pub mod jev;
+mod mount;
+
+pub use mount::MountedSpotter;
+
 use crate::api::{Client, Endpoint, RequestUsage};
 use crate::bash;
 use crate::config::Config;
@@ -56,6 +61,14 @@ pub struct Spotting {
     pub read: Read,
     pub origin: Origin,
     pub usage: Option<RequestUsage>,
+    /// The per-axis probabilities behind the stance, when the rung that produced
+    /// it works that way ([`jev::JevSpot`]). `None` from the prose spotter, which
+    /// judges inside the model and has no intermediate to report, and from the
+    /// fail-closed path, which never asked.
+    ///
+    /// Recorded so a threshold sweep replays a corpus of real assessments without
+    /// re-requesting any of them (backlog/spotter-eval.md).
+    pub axes: Option<jev::Axes>,
 }
 
 impl Spotting {
@@ -69,6 +82,7 @@ impl Spotting {
             },
             origin: Origin::Fallback,
             usage,
+            axes: None,
         }
     }
 }
@@ -215,6 +229,7 @@ impl Spotter for ForkSpot {
                         read,
                         origin: Origin::Model,
                         usage,
+                        axes: None,
                     },
                     None => Spotting::fail_closed(usage),
                 }
@@ -247,6 +262,7 @@ impl Spotter for StaticSpotter {
             },
             origin: Origin::Fallback,
             usage: None,
+            axes: None,
         }
     }
 }

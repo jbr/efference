@@ -20,7 +20,7 @@ use crate::api::{Client, Error};
 use crate::daemon::SessionBoot;
 use crate::distill::ForkPeek;
 use crate::persist::Log;
-use crate::spotter::ForkSpot;
+use crate::spotter::MountedSpotter;
 use crate::tools::Toolbox;
 
 pub mod mcp_mount;
@@ -157,7 +157,7 @@ impl Minted {
 ///
 /// Spawned resources need no entry in [`Minted`]: an stdio MCP server's child is
 /// killed when the toolbox holding it drops, which the error return does.
-pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, Error> {
+pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<MountedSpotter>, Error> {
     let mut minted = Minted {
         keep_scratch: request.keep_scratch,
         ..Minted::default()
@@ -175,7 +175,7 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<ForkSpot>, E
 async fn prepare_minting(
     request: SessionRequest,
     minted: &mut Minted,
-) -> Result<SessionBoot<ForkSpot>, Error> {
+) -> Result<SessionBoot<MountedSpotter>, Error> {
     let SessionRequest {
         cwd,
         base_env,
@@ -478,7 +478,13 @@ async fn prepare_minting(
     // The frozen toolbox against the dialect's name rule (docs/tools.md): a name the
     // request would reject fails the boot here, by its display name, instead of the
     // first turn failing with a 400 that names nothing.
-    let illegal = toolbox.illegal_names(endpoint.provider.dialect());
+    // Boot's endpoint is the session's main model, which resolution already
+    // refused for a provider that serves no turns (`src/inference/options.rs`).
+    let dialect = endpoint
+        .provider
+        .inference_dialect()
+        .expect("the main model's provider serves turns");
+    let illegal = toolbox.illegal_names(dialect);
     if !illegal.is_empty() {
         for problem in &illegal {
             eprintln!("error: tool name {problem}");
@@ -487,7 +493,7 @@ async fn prepare_minting(
             "{} mounted tool name{} the {} dialect rejects",
             illegal.len(),
             if illegal.len() == 1 { "" } else { "s" },
-            endpoint.provider.dialect()
+            dialect
         )
         .into());
     }
@@ -585,9 +591,16 @@ async fn prepare_minting(
     // spotter sends a short fresh prompt with no thinking, effort, or temperature —
     // so the lookup is the existence check that fails boot instead of the first
     // permission decision.
-    if let Err(error) = spotter_endpoint
-        .fetch_capabilities(&spotter_model, &[])
-        .await
+    //
+    // A decision-model provider publishes no such metadata: there is no context
+    // window, output cap, or cache policy behind a decisions request
+    // (docs/permissions.md). Nothing stands in for the existence check there, so a
+    // misspelled model id surfaces at the first gate — fail-closed, which routes to
+    // the human rather than clearing.
+    if spotter_endpoint.provider.serves_inference()
+        && let Err(error) = spotter_endpoint
+            .fetch_capabilities(&spotter_model, &[])
+            .await
     {
         return Err(format!(
             "spotter model {spotter_model:?} on {}: {error}",
@@ -595,9 +608,15 @@ async fn prepare_minting(
         )
         .into());
     }
-    let spotter = ForkSpot::new(spotter_endpoint.for_spotter(), &spotter_model)
-        .with_scratch(Some(scratch.clone()))
-        .with_cwd(cwd.clone());
+    // Which rung the id names (docs/permissions.md): a decision model reaches a
+    // different API and answers differently, so the choice is made here, once.
+    let spotter = MountedSpotter::mount(
+        spotter_endpoint.for_spotter(),
+        &spotter_model,
+        Some(scratch.clone()),
+        cwd.clone(),
+    );
+    eprintln!("spotter rung: {}", spotter.kind());
 
     // The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
     // canonical wire keeps only what the model retains. `Toolbox` is the docs/tools.md tool

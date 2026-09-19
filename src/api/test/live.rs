@@ -52,7 +52,7 @@ async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
 
     let endpoint = Endpoint {
         provider: Provider::Anthropic,
-        url: format!("http://{addr}/v1/messages"),
+        url: Some(format!("http://{addr}/v1/messages")),
         auth_header: "x-api-key".into(),
         auth_value: "k".into(),
         session_id: None,
@@ -110,7 +110,7 @@ async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
 
     let endpoint = Endpoint {
         provider: Provider::Anthropic,
-        url: format!("http://{addr}/v1/messages"),
+        url: Some(format!("http://{addr}/v1/messages")),
         auth_header: "x-api-key".into(),
         auth_value: "k".into(),
         session_id: None,
@@ -186,7 +186,7 @@ async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
 
     let endpoint = Endpoint {
         provider: Provider::OpenRouter,
-        url: format!("http://{addr}/api/v1/messages"),
+        url: Some(format!("http://{addr}/api/v1/messages")),
         auth_header: "authorization".into(),
         auth_value: "Bearer k".into(),
         session_id: None,
@@ -288,7 +288,7 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
 
         let endpoint = Endpoint {
             provider,
-            url: format!("http://{addr}/v1/messages"),
+            url: Some(format!("http://{addr}/v1/messages")),
             auth_header: "x-api-key".into(),
             auth_value: "k".into(),
             session_id: None,
@@ -377,7 +377,7 @@ async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
     });
     let endpoint = Endpoint {
         provider: Provider::OpenAI,
-        url: format!("http://{addr}/v1/responses"),
+        url: Some(format!("http://{addr}/v1/responses")),
         auth_header: "authorization".into(),
         auth_value: "Bearer k".into(),
         session_id: None,
@@ -410,7 +410,7 @@ async fn a_foreign_dialect_turn_list_never_becomes_a_request() {
     use crate::project::WireTurn;
     let endpoint = Endpoint {
         provider: Provider::Anthropic,
-        url: "http://127.0.0.1:1/v1/messages".into(),
+        url: Some("http://127.0.0.1:1/v1/messages".into()),
         auth_header: "x-api-key".into(),
         auth_value: "k".into(),
         session_id: None,

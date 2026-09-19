@@ -207,22 +207,51 @@ pub(crate) async fn spotter_check(
         )
         .into());
     }
-    if show_move || tool.is_some() {
-        println!(
-            "{}\n",
-            efference::spotter::preview_move(&call, sent, probe.as_deref())
-        );
-    }
-    // Credentials are resolved last, after the config, the mount, and the brief: a typo'd
-    // tool name or an unreachable server should fail on its own terms, and the move
-    // preview is useful with no key at all.
+    // Credentials are resolved after the config, the mount, and the brief, so a typo'd
+    // tool name or an unreachable server fails on its own terms rather than behind a
+    // missing key. They come before the preview because what gets previewed depends on
+    // which rung the model id names: the prose spotter reads a rendered move block, the
+    // decision model reads a JSON state (docs/permissions.md).
     let (model, endpoint) = crate::inference::spotter_endpoint(model)?;
-    let spotting = ForkSpot::new(endpoint, model)
-        .with_cwd(cwd)
+    let spotter = MountedSpotter::mount(endpoint, &model, None, cwd.clone());
+    if show_move || tool.is_some() {
+        let preview = match &spotter {
+            MountedSpotter::Jev(_) => efference::spotter::jev::preview_state(
+                &role,
+                &call,
+                sent,
+                probe.as_deref(),
+                Some(&cwd),
+                None,
+            ),
+            MountedSpotter::Fork(_) => {
+                efference::spotter::preview_move(&call, sent, probe.as_deref())
+            }
+        };
+        println!("{preview}\n");
+    }
+    let spotting = spotter
         .assess(&role, &call, sent, &[], probe.as_deref())
         .await;
     println!("stance: {:?}", spotting.read.stance);
     println!("reason: {}", spotting.read.reason);
+    // The decision rung's stance is a fold over per-axis probabilities
+    // (docs/permissions.md), and the synthesized reason names only the deciding
+    // one. Iterating on a question's wording means reading all of them, so the
+    // tester prints the whole vector.
+    if let Some(axes) = &spotting.axes {
+        let show = |label: &str, p: f64| format!("{label} {p:.2}");
+        let mut line = vec![
+            show("in_scope", axes.in_scope),
+            show("reversible", axes.reversible),
+            show("sanctioned", axes.sanctioned),
+            show("outside_grants", axes.outside_grants),
+            show("exposes_secrets", axes.exposes_secrets),
+        ];
+        line.extend(axes.watch_for_hit.map(|p| show("watch_for_hit", p)));
+        line.extend(axes.prefix_safe.map(|p| show("prefix_safe", p)));
+        println!("axes:   {}", line.join(" · "));
+    }
     if let Some(prefix) = &probe {
         // The probe's answer is the stance: `clear_always` (from a real model verdict) is the safe-vote.
         let safe = spotting.origin == efference::log::Origin::Model

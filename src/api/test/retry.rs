@@ -228,7 +228,7 @@ async fn a_terminal_429_body_is_answered_once() {
         });
         let endpoint = Endpoint {
             provider: Provider::OpenAICodex,
-            url: format!("http://{addr}/backend-api/codex/responses"),
+            url: Some(format!("http://{addr}/backend-api/codex/responses")),
             auth_header: "authorization".into(),
             auth_value: "Bearer k".into(),
             session_id: None,
@@ -286,7 +286,7 @@ async fn a_400_open_returns_its_body_once_and_queues_the_attempt() {
     });
     let endpoint = Endpoint {
         provider: Provider::OpenAI,
-        url: format!("http://{addr}/v1/responses"),
+        url: Some(format!("http://{addr}/v1/responses")),
         auth_header: "authorization".into(),
         auth_value: "Bearer k".into(),
         session_id: None,
@@ -348,7 +348,7 @@ async fn a_503_open_is_retried_and_the_attempt_is_queued() {
     });
     let endpoint = Endpoint {
         provider: Provider::OpenAI,
-        url: format!("http://{addr}/v1/responses"),
+        url: Some(format!("http://{addr}/v1/responses")),
         auth_header: "authorization".into(),
         auth_value: "Bearer k".into(),
         session_id: None,

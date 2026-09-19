@@ -523,7 +523,10 @@ impl Client {
 
     /// The wire dialect this client speaks, fixed by the provider (docs/transport.md).
     pub fn dialect(&self) -> WireDialect {
-        self.endpoint.provider.dialect()
+        self.endpoint
+            .provider
+            .inference_dialect()
+            .expect("a client is only built on a provider that serves turns")
     }
 
     pub fn with_upstream(mut self, upstream: Option<Upstream>) -> Self {
@@ -721,7 +724,7 @@ impl Client {
             };
             log::debug!(
                 "POST {}: {} turns, {} request bytes, max_tokens {max_tokens}",
-                self.endpoint.url,
+                self.url(),
                 turns.len(),
                 body.len()
             );
@@ -912,13 +915,24 @@ impl Client {
         completion
     }
 
+    /// The turns URL this client posts to. Present by construction: resolution
+    /// refuses a provider with no inference dialect for every role that builds a
+    /// client (`src/inference/options.rs`), so the only way here is a provider
+    /// that has one.
+    fn url(&self) -> &str {
+        self.endpoint
+            .url
+            .as_deref()
+            .expect("a client is only built on a provider that serves turns")
+    }
+
     /// The authenticated POST every request starts from. The `anthropic-version`
     /// header is part of the Messages dialect, not a provider identity, so it rides
     /// only that dialect (docs/transport.md).
     fn post(&self) -> trillium_client::Conn {
         let conn = self
             .http
-            .post(self.endpoint.url.as_str())
+            .post(self.url())
             .with_request_header(
                 self.endpoint.auth_header.clone(),
                 self.endpoint.auth_value.get(),

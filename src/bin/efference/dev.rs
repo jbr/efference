@@ -556,7 +556,7 @@ pub(crate) async fn wire(
     // drop every assistant turn (docs/transport.md).
     let recorded = efference::project::recorded_dialect(&turns)?;
     let dialect = provider
-        .map(|p| p.dialect())
+        .and_then(|p| p.inference_dialect())
         .or(recorded)
         .unwrap_or(efference::api::WireDialect::Messages);
     efference::project::check_dialect(&turns, dialect)?;

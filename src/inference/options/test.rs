@@ -558,3 +558,74 @@ auth = { kind = "env", key = "ABSENT_KEY" }
     };
     assert!(error.to_string().contains("ABSENT_KEY"), "{error}");
 }
+
+/// A registry with a decision-model connection beside an ordinary one
+/// (docs/permissions.md): `typesafe` serves the decisions route only.
+fn with_a_decision_connection() -> InferenceRegistry {
+    registry(
+        r#"
+[defaults]
+model = "main/claude-sonnet-4-5"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+
+[connections.typesafe]
+provider = "typesafe"
+auth = { kind = "env", key = "OPENAI_KEY" }
+"#,
+    )
+}
+
+/// **A decision-model provider can back the spotter and nothing else.** It
+/// produces no assistant turn, so a role that runs one is refused at resolution
+/// — which is the invariant every `inference_dialect()` reader downstream rests
+/// on (docs/transport.md).
+#[test]
+fn a_decision_connection_is_refused_for_the_main_model() {
+    let resolved = with_a_decision_connection().resolve_options(
+        &options(serde_json::json!({
+            "connection": "typesafe",
+            "model": "jev-latest",
+        })),
+        None,
+    );
+    assert_eq!(codes(&resolved), [("model", IssueCode::InvalidSelection)]);
+    assert_eq!(resolved.effective.main.value, None);
+}
+
+/// The same refusal for triage, which replays main's transcript and so runs a
+/// turn of its own.
+#[test]
+fn a_decision_connection_is_refused_for_triage() {
+    let resolved = with_a_decision_connection().resolve_options(
+        &options(serde_json::json!({
+            "triage": {"mode": "separate", "connection": "typesafe", "model": "jev-latest"},
+        })),
+        None,
+    );
+    assert_eq!(codes(&resolved), [("triage", IssueCode::InvalidSelection)]);
+}
+
+/// The same connection is fine for the spotter, which is the whole point of it.
+#[test]
+fn a_decision_connection_backs_the_spotter() {
+    let resolved = with_a_decision_connection().resolve_options(
+        &options(serde_json::json!({
+            "spotter_connection": "typesafe",
+            "spotter_model": "jev-latest",
+        })),
+        None,
+    );
+    assert_eq!(codes(&resolved), []);
+    assert_eq!(
+        resolved
+            .effective
+            .spotter
+            .value
+            .as_ref()
+            .map(|s| s.model.as_str()),
+        Some("jev-latest")
+    );
+}

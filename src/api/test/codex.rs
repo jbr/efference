@@ -45,7 +45,7 @@ async fn codex_turn_routing_token_is_replayed_within_a_turn_and_dropped_at_the_n
 
     let endpoint = Endpoint {
         provider: Provider::OpenAICodex,
-        url: format!("http://{addr}/backend-api/codex/responses"),
+        url: Some(format!("http://{addr}/backend-api/codex/responses")),
         auth_header: "authorization".into(),
         auth_value: "Bearer k".into(),
         session_id: None,
@@ -108,7 +108,7 @@ async fn codex_turn_routing_token_is_replayed_within_a_turn_and_dropped_at_the_n
 fn a_client_without_turn_routing_holds_no_token() {
     let endpoint = Endpoint {
         provider: Provider::OpenAICodex,
-        url: "http://127.0.0.1:1/x".into(),
+        url: Some("http://127.0.0.1:1/x".into()),
         auth_header: "authorization".into(),
         auth_value: "Bearer k".into(),
         session_id: None,
@@ -174,7 +174,7 @@ async fn codex_plan_windows_are_read_off_every_response_and_retained_when_absent
 
     let endpoint = Endpoint {
         provider: Provider::OpenAICodex,
-        url: format!("http://{addr}/backend-api/codex/responses"),
+        url: Some(format!("http://{addr}/backend-api/codex/responses")),
         auth_header: "authorization".into(),
         auth_value: "Bearer k".into(),
         session_id: None,
@@ -265,7 +265,7 @@ async fn plan_windows_are_ignored_off_the_codex_backend() {
     });
     let endpoint = Endpoint {
         provider: Provider::OpenRouter,
-        url: format!("http://{addr}/api/v1/messages"),
+        url: Some(format!("http://{addr}/api/v1/messages")),
         auth_header: "authorization".into(),
         auth_value: "Bearer k".into(),
         session_id: None,
@@ -307,7 +307,7 @@ async fn a_codex_request_carries_its_headers_and_no_anthropic_version() {
     });
     let endpoint = Endpoint {
         provider: Provider::OpenAICodex,
-        url: format!("http://{addr}/backend-api/codex/responses"),
+        url: Some(format!("http://{addr}/backend-api/codex/responses")),
         auth_header: "authorization".into(),
         auth_value: "Bearer tok".into(),
         session_id: None,

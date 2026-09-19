@@ -17,7 +17,7 @@
 use super::*;
 use efference::config::Perms;
 use efference::log::{Origin, Stance};
-use efference::spotter::{ForkSpot, Spotter};
+use efference::spotter::{MountedSpotter, Spotter};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -99,6 +99,11 @@ struct Attempt {
     /// Provider-billed USD for this request (OpenRouter only), fetched after
     /// the runs; absent when unpriced.
     cost: Option<f64>,
+    /// The per-axis probabilities a decision rung reported, absent for the prose
+    /// rung. Written out so a threshold sweep replays this run's answers without
+    /// re-requesting any of them (backlog/spotter-eval.md).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    axes: Option<efference::spotter::jev::Axes>,
 }
 
 #[cfg(test)]
@@ -184,6 +189,9 @@ pub(crate) async fn spotter_eval(
         None => None,
     };
     let (model, endpoint) = crate::inference::spotter_endpoint(Some(&model))?;
+    // Reject a persona against a decision model before spending anything: the
+    // per-case mount below then cannot fail.
+    MountedSpotter::mount_with_persona(endpoint.clone(), &model, persona.clone())?;
     // Briefs come from the same lookup a live gate uses; connected-server tools
     // in recorded cases have no mount here and run brief-less, which matches
     // how most were recorded.
@@ -258,15 +266,18 @@ pub(crate) async fn spotter_eval(
                             "toolu_spotter_eval",
                             case.call.input.clone(),
                         );
-                        let spot = match &persona {
-                            Some(p) => {
-                                ForkSpot::with_persona(endpoint.clone(), model.clone(), p.clone())
-                            }
-                            None => ForkSpot::new(endpoint.clone(), model.clone()),
-                        }
+                        // Which rung the model id names (docs/permissions.md).
+                        // The persona/model mismatch was rejected before the
+                        // first request, so this cannot fail here.
+                        let spot = MountedSpotter::mount_with_persona(
+                            endpoint.clone(),
+                            &model,
+                            persona.clone(),
+                        )
+                        .expect("the rung was validated before the runs began")
                         .with_scratch(case.scratch.then(|| PathBuf::from(SCRATCH_PLACEHOLDER)));
                         // A case without a recorded cwd keeps the pre-existing
-                        // behavior (the process cwd, via `ForkSpot`'s fallback);
+                        // behavior (the process cwd, via the rung's fallback);
                         // the count is warned about up front.
                         let spot = match &case.cwd {
                             Some(cwd) => spot.with_cwd(cwd.as_str()),
@@ -308,6 +319,7 @@ pub(crate) async fn spotter_eval(
                                 .map_or(0, |u| u.usage.cache_creation_input_tokens),
                             generation_id: usage.and_then(|u| u.id),
                             cost: None,
+                            axes: spotting.axes,
                         });
                     }
                     case_attempts
