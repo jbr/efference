@@ -490,6 +490,10 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
             let spotting = spotter
                 .assess(&role, judged, brief.as_ref(), chain, probe.as_deref())
                 .await;
+            // What actually answered, read off the response rather than the
+            // configured id (docs/permissions.md). Taken before the usage moves
+            // into the ledger; `None` when no request happened at all.
+            let model = spotting.usage.as_ref().and_then(|u| u.model.clone());
             if let Some(u) = spotting.usage {
                 shared.record_request(RequestOrigin::Spot, u);
             }
@@ -503,6 +507,7 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
                     stance,
                     reason: reason.clone(),
                     origin,
+                    model,
                     probed_prefix: probe.clone(),
                 }),
             )?;

@@ -48,6 +48,25 @@ struct CaseIn {
     call: CallIn,
     #[serde(default)]
     expected: Option<String>,
+    /// What the spotter that actually ran said at the time. A **prior, not
+    /// ground truth** — `eval/spotter/README.md` records why, and the labeled
+    /// corpus includes recorded clears whose correct verdict is human. Read only
+    /// by `--against-recorded`, which compares against it to produce a review
+    /// queue rather than a score.
+    #[serde(default)]
+    recorded: Option<RecordedIn>,
+}
+
+#[derive(serde::Deserialize, Serialize, Clone)]
+struct RecordedIn {
+    stance: String,
+    #[serde(default)]
+    reason: Option<String>,
+    /// Which spotter produced the prior. The corpus spans more than one, so a
+    /// divergence is only legible once you know what it diverged *from*.
+    /// `None` for sessions predating origin-tagged usage records.
+    #[serde(default)]
+    model: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -99,6 +118,11 @@ struct Attempt {
     /// Provider-billed USD for this request (OpenRouter only), fetched after
     /// the runs; absent when unpriced.
     cost: Option<f64>,
+    /// The prior this case carried, when the corpus recorded one. Written out
+    /// whether or not `--against-recorded` ran, so a results file can be
+    /// re-scored against either baseline offline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recorded: Option<RecordedIn>,
     /// The per-axis probabilities a decision rung reported, absent for the prose
     /// rung. Written out so a threshold sweep replays this run's answers without
     /// re-requesting any of them (backlog/spotter-eval.md).
@@ -142,6 +166,7 @@ pub(crate) async fn spotter_eval(
     concurrency: usize,
     persona: Option<PathBuf>,
     no_cost: bool,
+    against_recorded: bool,
 ) -> CliResult {
     let runs = runs.max(1);
     let labels: BTreeMap<String, LabelIn> = match &labels_file {
@@ -170,6 +195,13 @@ pub(crate) async fn spotter_eval(
             let bucket = joined.and_then(|l| l.bucket.clone());
             match expected.as_deref() {
                 Some("approve") | Some("human") => cases.push((case, expected.unwrap(), bucket)),
+                // Against the recorded prior, a case needs no label — the
+                // baseline is what the spotter of the day said. The prior is
+                // still required: a case with neither is comparable to nothing.
+                _ if against_recorded && case.recorded.is_some() => {
+                    let prior = binary_name(&case.recorded.as_ref().expect("checked").stance);
+                    cases.push((case, prior.to_string(), bucket));
+                }
                 _ => unlabeled += 1,
             }
         }
@@ -181,7 +213,10 @@ pub(crate) async fn spotter_eval(
         cases.truncate(n);
     }
     if cases.is_empty() {
-        return Err("no labeled cases matched".into());
+        return Err(match against_recorded {
+            true => "no cases matched (need a label or a recorded stance)".into(),
+            false => "no labeled cases matched".into(),
+        });
     }
 
     let persona = match persona {
@@ -320,6 +355,7 @@ pub(crate) async fn spotter_eval(
                             generation_id: usage.and_then(|u| u.id),
                             cost: None,
                             axes: spotting.axes,
+                            recorded: case.recorded.clone(),
                         });
                     }
                     case_attempts
@@ -410,8 +446,105 @@ pub(crate) async fn spotter_eval(
     }
     std::fs::write(&out, body)?;
 
-    print_summary(&attempts, &out);
+    match against_recorded {
+        true => print_divergences(&attempts, &out),
+        false => print_summary(&attempts, &out),
+    }
     Ok(())
+}
+
+/// The binary a recorded stance maps to, by name. The same fold `binary` applies
+/// to a `Stance`, for the corpus's string spelling.
+fn binary_name(stance: &str) -> &'static str {
+    match stance {
+        "clear" | "clear_always" => "approve",
+        _ => "human",
+    }
+}
+
+/// The review queue: every case where this rung and the recorded spotter reached
+/// different binaries, and nothing else.
+///
+/// Deliberately not scored. The recorded stance is a **prior, not ground truth**
+/// (eval/spotter/README.md) — the labeled corpus contains recorded clears whose
+/// correct verdict is human — so an agreement rate here would measure imitation,
+/// not correctness. What the dump is for is adjudication: each line resolves to
+/// "the new rung is wrong", "the recorded one was wrong", or "both defensible",
+/// and the second kind is a new label the labeled corpus does not yet have.
+///
+/// Grouped by the model that produced the prior, because the corpus spans more
+/// than one and a divergence is only legible against a named baseline.
+fn print_divergences(attempts: &[Attempt], out: &std::path::Path) {
+    // One row per case: repeated runs of the same case say nothing extra here,
+    // and the flip rate is the summary's job.
+    let mut seen: BTreeMap<&str, &Attempt> = BTreeMap::new();
+    for a in attempts {
+        seen.entry(&a.id).or_insert(a);
+    }
+    let rows: Vec<&Attempt> = seen.values().copied().collect();
+    let judged: Vec<&&Attempt> = rows.iter().filter(|a| a.ok.is_some()).collect();
+    let diverged: Vec<&&Attempt> = judged
+        .iter()
+        .copied()
+        .filter(|a| a.ok == Some(false))
+        .collect();
+
+    let mut by_model: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+    for a in &judged {
+        let model = a
+            .recorded
+            .as_ref()
+            .and_then(|r| r.model.as_deref())
+            .unwrap_or("(unattributed)");
+        let entry = by_model.entry(model).or_default();
+        entry.1 += 1;
+        if a.ok == Some(false) {
+            entry.0 += 1;
+        }
+    }
+
+    println!();
+    for a in &diverged {
+        let recorded = a.recorded.as_ref();
+        let prior = recorded.map_or("?", |r| r.stance.as_str());
+        let model = recorded
+            .and_then(|r| r.model.as_deref())
+            .unwrap_or("(unattributed)");
+        println!("{}  [{model}]", a.id);
+        println!(
+            "  recorded {prior:<12} {}",
+            recorded.and_then(|r| r.reason.as_deref()).unwrap_or("")
+        );
+        println!("  now      {:<12} {}", a.stance, a.reason);
+        if let Some(x) = &a.axes {
+            let mut parts = vec![
+                format!("in_scope {:.2}", x.in_scope),
+                format!("reversible {:.2}", x.reversible),
+                format!("sanctioned {:.2}", x.sanctioned),
+                format!("outside_grants {:.2}", x.outside_grants),
+                format!("exposes_secrets {:.2}", x.exposes_secrets),
+            ];
+            parts.extend(x.watch_for_hit.map(|w| format!("watch_for_hit {w:.2}")));
+            parts.extend(x.prefix_safe.map(|p| format!("prefix_safe {p:.2}")));
+            println!("  axes     {}", parts.join(" · "));
+        }
+        println!();
+    }
+
+    println!(
+        "{} diverged of {} judged ({} case(s) failed outright)",
+        diverged.len(),
+        judged.len(),
+        rows.len() - judged.len()
+    );
+    for (model, (diverged, total)) in &by_model {
+        println!("  vs {model}: {diverged}/{total}");
+    }
+    println!(
+        "the recorded stance is a prior, not ground truth — these are for adjudication, \
+         not a score"
+    );
+    println!("results: {}", out.display());
 }
 
 /// The aggregate read. Per-class rates rather than one accuracy figure: the

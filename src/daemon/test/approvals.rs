@@ -17,6 +17,7 @@ fn the_gate_carries_the_spotter_reason() {
                 stance: crate::log::Stance::Gate,
                 reason: "deletes outside the git tree — not reversible".into(),
                 origin: crate::log::Origin::Model,
+                model: None,
                 probed_prefix: None,
             }),
         )

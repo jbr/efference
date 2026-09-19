@@ -778,6 +778,18 @@ pub struct Spot {
     pub stance: Stance,
     pub reason: String,
     pub origin: Origin,
+    /// Which model returned this verdict, as **the response named itself** — the
+    /// same string `RequestUsage` carries, not the configured id, so a slug that
+    /// routes to something else records what actually answered.
+    ///
+    /// A session's spotter is fixed at boot, so this is constant within a log;
+    /// it is recorded per entry anyway because the corpus that reads these
+    /// spans sessions and models, and attributing a verdict by re-deriving the
+    /// boot config is a join that can be wrong. `None` for a fail-closed verdict
+    /// (no request happened, so nothing answered) and for entries written before
+    /// this field existed — in both cases the absence is the honest reading.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     /// The command prefix this spotter call was also asked to judge for **promotion**, if a
     /// prefix-promotion probe rode along (docs/permissions.md). The probe's
     /// answer *is* the stance — `ClearAlways` is the safe-vote for this prefix, any other stance is

@@ -195,6 +195,7 @@ impl Screenplay<'_> {
             stance,
             reason: reason.into(),
             origin: crate::log::Origin::Model,
+            model: None,
             probed_prefix: None,
         }))
     }

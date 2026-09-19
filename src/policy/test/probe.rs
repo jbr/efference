@@ -101,6 +101,7 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
                 stance,
                 reason: String::new(),
                 origin: Origin::Model,
+                model: None,
                 probed_prefix: probed.map(str::to_string),
             }),
         }
@@ -161,6 +162,7 @@ fn probe_ledger_ignores_fallback_verdicts() {
             stance: Stance::ClearAlways, // would be a safe vote — but origin is Fallback
             reason: String::new(),
             origin: Origin::Fallback,
+            model: None,
             probed_prefix: Some("cargo".into()),
         }),
     }];

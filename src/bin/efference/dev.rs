@@ -337,6 +337,13 @@ pub(crate) enum DevCommand {
         /// Skip the per-generation cost lookup.
         #[arg(long = "no-cost")]
         no_cost: bool,
+        /// Compare against what the spotter of the day actually said, rather
+        /// than against a label, and print only the cases that diverge. Runs
+        /// unlabeled cases too — every case carrying a `recorded` stance is in.
+        /// Not a score: the recorded stance is a prior, so the dump is a review
+        /// queue (eval/spotter/README.md).
+        #[arg(long = "against-recorded")]
+        against_recorded: bool,
     },
 }
 
@@ -451,6 +458,7 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             concurrency,
             persona,
             no_cost,
+            against_recorded,
         } => {
             spotter_eval::spotter_eval(
                 cases,
@@ -463,6 +471,7 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
                 concurrency,
                 persona,
                 no_cost,
+                against_recorded,
             )
             .await
         }
